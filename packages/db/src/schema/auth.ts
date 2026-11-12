@@ -22,11 +22,22 @@ const onboardingOwnerRole = "polaris_onboarding_owner";
  * notice of the call (0098, 0101).
  */
 const noticeRecipientOwnerRole = "polaris_notice_recipient_owner";
+/**
+ * Owns the freezing of the M3 (ADR 0106, D9): three columns of every session, read only to count; the filter is the
+ * function's.
+ */
+const activationOwnerRole = "polaris_activation_owner";
+/**
+ * Owns `activation_notice_recipient` (ADR 0106, D2): the address of the person of one notice of the series still owed,
+ * the verified founder of its store, and no other row; never the owner of the candidates' function.
+ */
+const activationRecipientOwnerRole = "polaris_activation_recipient_owner";
 const deviceSessionUserScope = sql`NULLIF(pg_catalog.current_setting('app.owner_scope.device_session_user_id', true), '')`;
 const onboardingUserScope = sql`NULLIF(pg_catalog.current_setting('app.owner_scope.onboarding_user_id', true), '')`;
 const noticeRecipientNoticeScope = sql`NULLIF(pg_catalog.current_setting('app.owner_scope.notice_recipient_notice_id', true), '')`;
 // the setting as a uuid only when it is one (a malformed setting is false, never an error), compared by the primary key
 const billingNoticeRecipientScope = sql`(CASE WHEN pg_catalog.current_setting('app.owner_scope.billing_notice_recipient_notice_id', true) ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' THEN pg_catalog.current_setting('app.owner_scope.billing_notice_recipient_notice_id', true)::uuid END)`;
+const activationRecipientScope = sql`(CASE WHEN pg_catalog.current_setting('app.owner_scope.activation_notice_recipient_notice_id', true) ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' THEN pg_catalog.current_setting('app.owner_scope.activation_notice_recipient_notice_id', true)::uuid END)`;
 /** The same predicate as the candidates of `purge_unverified_users()`: the owner never sees a verified user's rows. */
 const ofUnverifiedUser = (userId: unknown) =>
   sql`EXISTS (SELECT 1 FROM public."user" AS u WHERE u.id = ${userId} AND NOT u.email_verified)`;
@@ -106,6 +117,13 @@ export const user = pgTable(
       to: noticeRecipientOwnerRole,
       using: sql`EXISTS (SELECT 1 FROM public.billing_notices AS n WHERE n.id = ${billingNoticeRecipientScope} AND (n.user_id = ${table.id} OR (n.user_id IS NULL AND EXISTS (SELECT 1 FROM public.memberships AS m WHERE m.organization_id = n.organization_id AND m.user_id = ${table.id} AND m.role = 'owner' AND m.status = 'active'))))`,
     }),
+    // the notice of the series of the call (ADR 0106, D2): its person, only verified and only while the oldest active owner
+    // of the notice's store; the owner sees that notice only while it is owed, and only the owners of its store
+    pgPolicy("user_activation_recipient_owner_select", {
+      for: "select",
+      to: activationRecipientOwnerRole,
+      using: sql`${table.emailVerified} AND EXISTS (SELECT 1 FROM public.activation_notices AS n WHERE n.id = ${activationRecipientScope} AND n.user_id = ${table.id} AND n.user_id = (SELECT f.user_id FROM public.memberships AS f WHERE f.organization_id = n.organization_id AND f.role = 'owner' AND f.status = 'active' ORDER BY f.created_at, f.user_id LIMIT 1))`,
+    }),
   ]
 ).enableRLS();
 
@@ -129,7 +147,8 @@ export const session = pgTable(
       .references(() => user.id, { onDelete: "cascade" }),
   },
   // Row security with FORCE (0097): one policy per role with a grant, none TO PUBLIC; a role that gets a grant one day and
-  // no policy sees no row. The purge owner sees only the sessions of users never verified (0098).
+  // no policy sees no row. The purge owner sees only the sessions of users never verified (0098); the owner of the
+  // measure sees every row, through its column grant of `user_id`, `created_at` and `updated_at` only.
   (table) => [
     index("session_user_id_idx").on(table.userId),
     pgPolicy("session_auth_runtime_all", {
@@ -152,6 +171,11 @@ export const session = pgTable(
       for: "delete",
       to: deviceSessionOwnerRole,
       using: sql`${table.userId} = ${deviceSessionUserScope}`,
+    }),
+    pgPolicy("session_activation_owner_select", {
+      for: "select",
+      to: activationOwnerRole,
+      using: sql`true`,
     }),
   ]
 ).enableRLS();

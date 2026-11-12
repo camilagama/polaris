@@ -144,13 +144,21 @@ export function clampDay(
   return max !== undefined && day > max ? max : day;
 }
 
-export type RangePreset = "hoje" | "7-dias" | "este-mes" | "mes-passado";
+export type RangePreset =
+  | "30-dias"
+  | "7-dias"
+  | "este-ano"
+  | "este-mes"
+  | "hoje"
+  | "mes-passado";
 
-export const RANGE_PRESETS: readonly { label: string; value: RangePreset }[] = [
-  { label: "Hoje", value: "hoje" },
-  { label: "7 dias", value: "7-dias" },
-  { label: "Este mês", value: "este-mes" },
-  { label: "Mês passado", value: "mes-passado" },
+export const RANGE_PRESETS: readonly RangePreset[] = [
+  "hoje",
+  "7-dias",
+  "este-mes",
+  "mes-passado",
+  "30-dias",
+  "este-ano",
 ];
 
 function shiftDays(value: IsoDate, days: number): IsoDate {
@@ -159,9 +167,16 @@ function shiftDays(value: IsoDate, days: number): IsoDate {
   return toIsoDate(date);
 }
 
+function lastDayOfMonth(year: string, month: string): string {
+  const days = new Date(Date.UTC(Number(year), Number(month), 0)).getUTCDate();
+  return String(days).padStart(2, "0");
+}
+
 /**
- * The range of a shortcut, counted back to `today` (the store's day, which the screen takes from the server): "7 dias"
- * is today and the six before it, "Este mês" the 1st to today, "Mês passado" the whole month before.
+ * The range of a shortcut on the store's day (`today`, which the screen takes from the server): the 7 days are today
+ * and the six before it, the 30 days today and the 29 before, the year January 1st to today. A month is a calendar
+ * month and nothing else, "Este mês" included, so the shortcut means one period on every screen: the 1st
+ * to the last day of the month. A screen that has no future days cuts the end itself (`endsToday`, `cutRange`).
  */
 export function presetRange(preset: RangePreset, today: IsoDate): DateRange {
   const { month, year } = parts(today);
@@ -170,8 +185,15 @@ export function presetRange(preset: RangePreset, today: IsoDate): DateRange {
       return { from: today, to: today };
     case "7-dias":
       return { from: shiftDays(today, -6), to: today };
+    case "30-dias":
+      return { from: shiftDays(today, -29), to: today };
     case "este-mes":
-      return { from: `${year}-${month}-01`, to: today };
+      return {
+        from: `${year}-${month}-01`,
+        to: `${year}-${month}-${lastDayOfMonth(year, month)}`,
+      };
+    case "este-ano":
+      return { from: `${year}-01-01`, to: today };
     case "mes-passado": {
       const firstOfThisMonth = `${year}-${month}-01`;
       const lastOfPrevious = shiftDays(firstOfThisMonth, -1);
@@ -186,16 +208,174 @@ export function presetRange(preset: RangePreset, today: IsoDate): DateRange {
   }
 }
 
-/** The shortcut whose range is exactly `range`, if there is one (the segment shown as pressed). */
+/** `range` with its end no later than `last`: a screen without future days (the Histórico) cuts the month at today. */
+export function cutRange(range: DateRange, last: IsoDate): DateRange {
+  return range.to > last ? { from: range.from, to: last } : range;
+}
+
+/** The range a shortcut gives on a screen: whole, or cut at today when the screen has no future days. */
+export function shortcutRange(
+  preset: RangePreset,
+  today: IsoDate,
+  endsToday: boolean
+): DateRange {
+  const range = presetRange(preset, today);
+  return endsToday ? cutRange(range, today) : range;
+}
+
 export function matchingPreset(
   range: DateRange | null,
-  today: IsoDate
+  today: IsoDate,
+  shown: readonly RangePreset[] = RANGE_PRESETS,
+  endsToday = false
 ): RangePreset | undefined {
   if (!range) {
     return undefined;
   }
-  return RANGE_PRESETS.find(({ value }) => {
-    const preset = presetRange(value, today);
-    return preset.from === range.from && preset.to === range.to;
-  })?.value;
+  return RANGE_PRESETS.filter((value) => shown.includes(value)).find(
+    (value) => {
+      const preset = shortcutRange(value, today, endsToday);
+      return preset.from === range.from && preset.to === range.to;
+    }
+  );
+}
+
+export interface RangeSpan {
+  days: number;
+  reason: string;
+}
+
+const DAY_MS = 86_400_000;
+
+/** How many days the range between `a` and `b` has, both ends counted, whichever comes first. */
+export function daysInRange(a: IsoDate, b: IsoDate): number {
+  const first = parseIsoDate(a);
+  const second = parseIsoDate(b);
+  if (!(first && second)) {
+    return 0;
+  }
+  return Math.round(Math.abs(first.getTime() - second.getTime()) / DAY_MS) + 1;
+}
+
+const TYPED_DATE = /^(\d{2})\/(\d{2})\/(\d{4})$/;
+const TYPED_ISO = /^(\d{4})-(\d{2})-(\d{2})$/;
+const FIRST_TYPED_YEAR = 2000;
+const LAST_TYPED_YEAR = 2099;
+
+/**
+ * What a text field of the period shows after a key or a paste: only the digits, at most eight, with the bars put
+ * where the next digit needs them ("01/1", never "01/" so the bar can be erased). A pasted `AAAA-MM-DD` is turned into
+ * `dd/mm/aaaa` first, for its digits would otherwise be read in the wrong order.
+ */
+export function maskTypedDate(text: string): string {
+  const iso = TYPED_ISO.exec(text.trim());
+  const source = iso ? `${iso[3]}${iso[2]}${iso[1]}` : text;
+  const digits = source.replace(/\D/g, "").slice(0, 8);
+  return [digits.slice(0, 2), digits.slice(2, 4), digits.slice(4)]
+    .filter(Boolean)
+    .join("/");
+}
+
+type TypedReason = "empty" | "incomplete" | "invalid" | "year";
+
+type TypedDate =
+  | { iso: IsoDate; ok: true }
+  | { ok: false; reason: TypedReason };
+
+/**
+ * The day a text field holds: empty, not yet all there (`dd/mm/aaaa`), a year outside 2000 to 2099 (`01/10/1999`, which
+ * a slip of the finger makes), not a real day (`31/02/2026`) or the day.
+ */
+export function parseTypedDate(text: string): TypedDate {
+  const trimmed = text.trim();
+  if (!trimmed) {
+    return { ok: false, reason: "empty" };
+  }
+  const match = TYPED_DATE.exec(trimmed);
+  if (!match) {
+    return { ok: false, reason: "incomplete" };
+  }
+  const iso = `${match[3]}-${match[2]}-${match[1]}`;
+  const year = Number(match[3]);
+  if (year < FIRST_TYPED_YEAR || year > LAST_TYPED_YEAR) {
+    return { ok: false, reason: "year" };
+  }
+  return parseIsoDate(iso)
+    ? { iso, ok: true }
+    : { ok: false, reason: "invalid" };
+}
+
+export interface TypedTexts {
+  from: string;
+  to: string;
+}
+
+export type TypedField = keyof TypedTexts;
+
+/** The two fields' texts, as `dd/mm/aaaa`, for the days of a range being chosen. */
+export function typedTextsOf(range: DraftRange | undefined): TypedTexts {
+  return {
+    from: range?.from ? formatDate(range.from) : "",
+    to: range?.to ? formatDate(range.to) : "",
+  };
+}
+
+const TYPED_YEAR_OUT_OF_RANGE = "O ano precisa estar entre 2000 e 2099.";
+
+const TYPED_MESSAGES: Record<TypedField, Record<TypedReason, string>> = {
+  from: {
+    empty: "Digite a data de início, como 01/10/2026.",
+    incomplete: "Faltam números. Escreva dia, mês e ano, como 01/10/2026.",
+    invalid: "Essa data não existe. Confira dia, mês e ano.",
+    year: TYPED_YEAR_OUT_OF_RANGE,
+  },
+  to: {
+    empty: "Digite a data final, como 14/10/2026.",
+    incomplete: "Faltam números. Escreva dia, mês e ano, como 14/10/2026.",
+    invalid: "Essa data não existe. Confira dia, mês e ano.",
+    year: TYPED_YEAR_OUT_OF_RANGE,
+  },
+};
+
+export const INVERTED_TYPED_RANGE = "A data final vem antes da inicial.";
+
+/** What is wrong with each text field, in words; a field that is fine has no entry. An inverted range is the end's fault. */
+export function typedProblems(
+  texts: TypedTexts,
+  span?: RangeSpan
+): Partial<Record<TypedField, string>> {
+  const from = parseTypedDate(texts.from);
+  const to = parseTypedDate(texts.to);
+  const problems: Partial<Record<TypedField, string>> = {};
+  if (!from.ok) {
+    problems.from = TYPED_MESSAGES.from[from.reason];
+  }
+  if (!to.ok) {
+    problems.to = TYPED_MESSAGES.to[to.reason];
+  } else if (from.ok && to.iso < from.iso) {
+    problems.to = INVERTED_TYPED_RANGE;
+  } else if (
+    span &&
+    from.ok &&
+    to.ok &&
+    daysInRange(from.iso, to.iso) > span.days
+  ) {
+    problems.to = span.reason;
+  }
+  return problems;
+}
+
+/** The range both fields hold, in order; null while either is empty, unfinished, not a day, the end is before the start or the range is longer than `span` allows. */
+export function typedRange(
+  texts: TypedTexts,
+  span?: RangeSpan
+): DateRange | null {
+  const from = parseTypedDate(texts.from);
+  const to = parseTypedDate(texts.to);
+  if (!(from.ok && to.ok) || from.iso > to.iso) {
+    return null;
+  }
+  return span && daysInRange(from.iso, to.iso) > span.days
+    ? null
+    : { from: from.iso, to: to.iso };
 }

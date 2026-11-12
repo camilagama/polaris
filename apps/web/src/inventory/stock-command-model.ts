@@ -15,6 +15,7 @@ import { DecimalAmount } from "@polaris/domain/money/money";
 import { isCalendarDate } from "../lib/dates";
 import {
   formatBrlAmount,
+  formatBrlCents,
   formatCalendarDate,
   formatQuantity,
 } from "../lib/format";
@@ -337,12 +338,16 @@ export function receiveNeedsCost(
   return action === "receive" && canInformCost(target);
 }
 
+function informedCostText(cost: string | null): string {
+  return cost === null ? costText(cost) : formatBrlCents(cost);
+}
+
 function costActionBlock(target: StockTarget): string | null {
   if (target.costUnavailable) {
     return "Sem conexão. O custo só pode ser informado com conexão.";
   }
   if (target.movingAverageCost !== null) {
-    return `Esta variante já tem custo: ${formatBrlAmount(target.movingAverageCost)} por unidade.`;
+    return `Esta variante já tem custo: ${formatBrlCents(target.movingAverageCost)} por unidade.`;
   }
   if (target.quantity === 0) {
     return "Esta variante está com saldo 0. Para informar o custo, dê entrada no estoque.";
@@ -677,7 +682,7 @@ function receiveCostLine(
 export function costSummaryText(
   body: Extract<StockBody, { action: "cost" }>
 ): string {
-  return `${formatBrlAmount(body.valuationUnitCost)} por unidade, para ${unitsText(body.physicalQuantity)}. Depois de confirmar, o custo não pode ser editado.`;
+  return `${formatBrlCents(body.valuationUnitCost)} por unidade, para ${unitsText(body.physicalQuantity)}. Depois de confirmar, o custo não pode ser editado.`;
 }
 
 /** "Para as 5 unidades que você tem agora.": the quantity the cost covers is the balance, not a field. */
@@ -705,7 +710,7 @@ export function stockSummary(
   if (body.action === "receive") {
     lines.push(
       { label: "Quantidade recebida", value: signedUnits(body.quantity) },
-      { label: "Custo unitário", value: formatBrlAmount(body.unitCost) },
+      { label: "Custo unitário", value: formatBrlCents(body.unitCost) },
       {
         label: "Data do recebimento",
         value: formatCalendarDate(body.occurredOn),
@@ -737,7 +742,7 @@ export function stockSummary(
     if (body.valuationUnitCost !== null) {
       lines.push({
         label: "Custo unitário informado",
-        value: formatBrlAmount(body.valuationUnitCost),
+        value: formatBrlCents(body.valuationUnitCost),
       });
     } else if (
       target.movingAverageCost === null &&
@@ -1057,6 +1062,8 @@ export interface StockCommandState {
   action: StockAction;
   attempt: StockAttempt | null;
   draft: StockDraft;
+  /** The draft the panel opened with: what "changed" and a fresh start are measured against. */
+  initial: StockDraft;
   showErrors: boolean;
   step: "confirming" | "editing";
   submission: StockSubmission;
@@ -1064,21 +1071,61 @@ export interface StockCommandState {
   today: string;
 }
 
-export function startStockCommand(
+/**
+ * The quantity a receive panel opens with when the link asks for one: a whole number the variant can still take, or 1.
+ */
+function openingQuantity(
+  requested: number | undefined,
+  balance: number
+): string {
+  if (
+    requested === undefined ||
+    !Number.isSafeInteger(requested) ||
+    requested < 1 ||
+    balance + requested > MAX_INVENTORY_QUANTITY
+  ) {
+    return "1";
+  }
+  return String(requested);
+}
+
+function stockStateFrom(
   action: StockAction,
   target: StockTarget,
-  today: string
+  today: string,
+  initial: StockDraft
 ): StockCommandState {
   return {
     action,
     attempt: null,
-    draft: initialStockDraft(action, today),
+    draft: initial,
+    initial,
     showErrors: false,
     step: "editing",
     submission: { phase: "idle" },
     target,
     today,
   };
+}
+
+export function startStockCommand(
+  action: StockAction,
+  target: StockTarget,
+  today: string,
+  requestedQuantity?: number
+): StockCommandState {
+  const base = initialStockDraft(action, today);
+  return stockStateFrom(
+    action,
+    target,
+    today,
+    base.action === "receive"
+      ? {
+          ...base,
+          quantity: openingQuantity(requestedQuantity, target.quantity),
+        }
+      : base
+  );
 }
 
 function isStockSubmitting(state: StockCommandState): boolean {
@@ -1102,8 +1149,7 @@ export function isStockDraftChanged(state: StockCommandState): boolean {
   if (state.submission.phase === "success") {
     return false;
   }
-  const initial = initialStockDraft(state.action, state.today);
-  return isDraftChanged(state.draft, initial);
+  return isDraftChanged(state.draft, state.initial);
 }
 
 /** The panel can be closed unless a request is in flight or its outcome unknown. */
@@ -1428,7 +1474,7 @@ function stockSuccessMessage(
     return `Este mesmo pedido já tinha sido registrado. Nada foi duplicado. ${balanceText}`;
   }
   if (action === "cost") {
-    return `Custo informado: ${costText(result.balance.movingAverageCost)} por unidade.`;
+    return `Custo informado: ${informedCostText(result.balance.movingAverageCost)} por unidade.`;
   }
   if (action === "receive") {
     return `Recebimento registrado. ${balanceText} Custo médio: ${costText(result.balance.movingAverageCost)}.`;
@@ -1574,7 +1620,7 @@ export function discardLockedStock(
 ): StockCommandState | null {
   return state.submission.phase === "locked" &&
     state.submission.confirmingDiscard
-    ? startStockCommand(state.action, state.target, state.today)
+    ? stockStateFrom(state.action, state.target, state.today, state.initial)
     : null;
 }
 

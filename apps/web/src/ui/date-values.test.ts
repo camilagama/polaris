@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   clampDay,
+  cutRange,
   formatDate,
   formatRange,
   isWithin,
@@ -8,6 +9,7 @@ import {
   nextRange,
   parseIsoDate,
   presetRange,
+  shortcutRange,
   todayOr,
   toIsoDate,
   validDay,
@@ -92,6 +94,54 @@ describe("escolha do intervalo", () => {
   });
 });
 
+describe("Este mês, um sentido só", () => {
+  const cases = [
+    { month: ["2026-11-01", "2026-11-30"], today: "2026-11-09" },
+    { month: ["2026-02-01", "2026-02-28"], today: "2026-02-10" },
+    { month: ["2028-02-01", "2028-02-29"], today: "2028-02-29" },
+    { month: ["2026-12-01", "2026-12-31"], today: "2026-12-31" },
+    { month: ["2026-01-01", "2026-01-31"], today: "2026-01-01" },
+  ] as const;
+
+  it.each(cases)(
+    "a função de atalho devolve o mês completo em $today",
+    ({ month, today }) => {
+      expect(presetRange("este-mes", today)).toEqual({
+        from: month[0],
+        to: month[1],
+      });
+      expect(shortcutRange("este-mes", today, false)).toEqual({
+        from: month[0],
+        to: month[1],
+      });
+    }
+  );
+
+  it.each(cases)(
+    "a tela sem dias futuros corta o fim em hoje: $today",
+    ({ month, today }) => {
+      expect(shortcutRange("este-mes", today, true)).toEqual({
+        from: month[0],
+        to: today,
+      });
+    }
+  );
+
+  it("o corte só encurta: o mês passado e os atalhos de hoje para trás ficam como estão", () => {
+    expect(shortcutRange("mes-passado", "2026-11-09", true)).toEqual({
+      from: "2026-10-01",
+      to: "2026-10-31",
+    });
+    expect(shortcutRange("7-dias", "2026-11-09", true)).toEqual({
+      from: "2026-11-03",
+      to: "2026-11-09",
+    });
+    expect(
+      cutRange({ from: "2026-11-01", to: "2026-11-05" }, "2026-11-09")
+    ).toEqual({ from: "2026-11-01", to: "2026-11-05" });
+  });
+});
+
 describe("atalhos", () => {
   it("contam a partir do dia de hoje dado", () => {
     expect(presetRange("hoje", "2026-10-24")).toEqual({
@@ -104,7 +154,7 @@ describe("atalhos", () => {
     });
     expect(presetRange("este-mes", "2026-10-24")).toEqual({
       from: "2026-10-01",
-      to: "2026-10-24",
+      to: "2026-10-31",
     });
     expect(presetRange("mes-passado", "2026-10-24")).toEqual({
       from: "2026-09-01",
@@ -129,7 +179,15 @@ describe("atalhos", () => {
 
   it("reconhecem o atalho do intervalo escolhido", () => {
     expect(
-      matchingPreset({ from: "2026-10-01", to: "2026-10-24" }, "2026-10-24")
+      matchingPreset({ from: "2026-10-01", to: "2026-10-31" }, "2026-10-24")
+    ).toBe("este-mes");
+    expect(
+      matchingPreset(
+        { from: "2026-10-01", to: "2026-10-24" },
+        "2026-10-24",
+        undefined,
+        true
+      )
     ).toBe("este-mes");
     expect(
       matchingPreset({ from: "2026-10-02", to: "2026-10-24" }, "2026-10-24")

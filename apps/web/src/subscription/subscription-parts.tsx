@@ -23,6 +23,9 @@ import {
 /* A label longer than the card at a large browser font breaks into lines instead of widening the card. */
 export const WRAPS = "h-auto min-h-ctl-md whitespace-normal py-1.5";
 
+/* The main action of the tab: the same wrapping, with the floor of the `xl` size (36 with a mouse, 44 with touch). */
+export const WRAPS_XL = "h-auto min-h-ctl-xl whitespace-normal py-1.5";
+
 /** The heading of a card that names a section of the screen (the card title is a div, as in the registry). */
 export function SectionTitle({
   children,
@@ -38,16 +41,16 @@ export function SectionTitle({
   );
 }
 
-function UsageBox({ row }: { row: UsageRow }) {
+function UsageLine({ row }: { row: UsageRow }) {
   const used =
     row.limit === null ? `${row.used}` : `${row.used} de ${row.limit}`;
   const summary = `${row.label}: ${used}${row.over ? ", acima do limite" : ""}`;
   return (
-    <div className="grid gap-1.5 rounded-lg border px-3 py-2.5">
-      <p className="m-0 font-medium text-muted-foreground text-xs uppercase tracking-wide">
+    <div className="grid grid-cols-[minmax(min-content,1fr)_minmax(0,auto)] items-center gap-x-3 gap-y-1.5 sm:grid-cols-[minmax(0,10rem)_minmax(0,1fr)_7rem]">
+      <p className="m-0 font-medium text-muted-foreground text-sm sm:col-start-1 sm:row-start-1">
         {row.label}
       </p>
-      <p className="m-0 flex flex-wrap items-center gap-x-2 gap-y-1 text-muted-foreground text-sm">
+      <p className="m-0 flex flex-wrap items-center justify-end gap-x-2 gap-y-1 text-muted-foreground text-sm sm:col-start-3 sm:row-start-1">
         <span>
           <span className="font-semibold text-foreground tabular-nums">
             {row.used}
@@ -59,6 +62,7 @@ function UsageBox({ row }: { row: UsageRow }) {
       {row.limit === null ? null : (
         <Progress
           aria-label={summary}
+          className="col-span-2 sm:col-span-1 sm:col-start-2 sm:row-start-1"
           max={Math.max(row.limit, 1)}
           value={Math.min(row.used, Math.max(row.limit, 1))}
         />
@@ -106,9 +110,9 @@ export function PlanCard({
       </CardHeader>
       {showUsage ? (
         <CardContent>
-          <div className="grid gap-2 sm:grid-cols-3">
+          <div className="grid gap-3" data-usage-lines="">
             {usageRows(plan).map((row) => (
-              <UsageBox key={row.id} row={row} />
+              <UsageLine key={row.id} row={row} />
             ))}
           </div>
         </CardContent>
@@ -166,10 +170,10 @@ export function PlanLoading() {
         <Skeleton className="h-4 w-56" />
       </CardHeader>
       <CardContent>
-        <div className="grid gap-2 sm:grid-cols-3">
-          <Skeleton className="h-16" />
-          <Skeleton className="h-16" />
-          <Skeleton className="h-16" />
+        <div className="grid gap-3">
+          <Skeleton className="h-7.5 sm:h-5" />
+          <Skeleton className="h-7.5 sm:h-5" />
+          <Skeleton className="h-7.5 sm:h-5" />
         </div>
       </CardContent>
     </Card>

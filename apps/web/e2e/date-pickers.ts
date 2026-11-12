@@ -61,3 +61,21 @@ export async function pickPeriod(
   await touchDay(popup, second);
   await expect(popup).toBeHidden();
 }
+
+/**
+ * With "Digitar as datas" open the month keeps its six weeks and no box of its own scrolls: what does not fit is
+ * reached by scrolling the panel as a whole, and the last week can be brought into view.
+ */
+export async function expectWholeMonthWhileTyping(popup: Locator) {
+  const month = popup.locator("[data-range-month]");
+  const { clientHeight, scrollHeight } = await month.evaluate((element) => ({
+    clientHeight: element.clientHeight,
+    scrollHeight: element.scrollHeight,
+  }));
+  expect(scrollHeight).toBeLessThanOrEqual(clientHeight + 1);
+  const rows = popup.getByRole("grid").first().getByRole("row");
+  await expect(rows).toHaveCount(6);
+  const lastWeek = rows.last();
+  await lastWeek.scrollIntoViewIfNeeded();
+  await expect(lastWeek).toBeInViewport({ ratio: 1 });
+}

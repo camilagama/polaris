@@ -13,10 +13,10 @@ import {
 import { serveLabWorker, WORKER_MARK } from "./worker-mark";
 
 /**
- * The title of the list card of Despesas and its "Nova despesa" button read at 320 px with the browser font at 20 px
- * (`./reflow`): the title is whole, the button is whole inside the card, and neither covers the other, at the top of
- * the page and after scrolling, with the form closed and with the categories load error on the screen. With the
- * default font (16 px) at 360 px the two stay on one line and the button keeps a touch target of 44 px.
+ * The title of Despesas and its "Nova despesa" button read at 320 px with the browser font at 20 px (`./reflow`): the
+ * title is whole, the button is whole and outside the list card, and neither covers the other, with the form closed and
+ * with the categories load error on the screen. On a phone with the default font (16 px) at 360 px the button is as wide
+ * as the screen right under the title and keeps a touch target of 44 px.
  */
 skipOutsideChromium();
 
@@ -26,6 +26,8 @@ const NOW = "2026-10-14T12:00:00.000Z";
 const TODAY = "2026-10-14";
 const uuid = (n: number) =>
   `0199c2d0-0000-7000-8000-${n.toString(16).padStart(12, "0")}`;
+const FILTER_BUTTON_NAME = /^Filtrar( despesas)?$/;
+const CATEGORY_ITEM = /^Categoria/;
 const ROWS = 14;
 
 const CATEGORIES = [
@@ -112,10 +114,10 @@ async function openExpenses(
   await expect(page.getByText("Despesa 1", { exact: true })).toBeVisible();
 }
 
-const card = (page: Page) =>
-  page.getByRole("region", { name: "Despesas do período" });
 const title = (page: Page) =>
-  page.getByRole("heading", { exact: true, name: "Despesas do período" });
+  page.getByRole("heading", { exact: true, level: 1, name: "Despesas" });
+const header = (page: Page) =>
+  page.locator("header").filter({ has: title(page) });
 const newButton = (page: Page) =>
   page.getByRole("button", { exact: true, name: "Nova despesa" });
 
@@ -158,18 +160,21 @@ function inWindow(locator: Locator) {
 }
 
 async function expectTitleAndButtonApart(page: Page) {
-  const cardBox = await boxOf(card(page));
   const titleBox = await boxOf(title(page));
   const buttonBox = await boxOf(newButton(page));
   expect(overlap(titleBox, buttonBox), "the title and the button cross").toBe(
     false
   );
-  for (const inner of [titleBox, buttonBox]) {
-    expect(inner.x).toBeGreaterThanOrEqual(cardBox.x - 0.5);
-    expect(inner.x + inner.width).toBeLessThanOrEqual(
-      cardBox.x + cardBox.width + 0.5
-    );
-  }
+  expect(
+    await newButton(page).evaluate(
+      (element) => element.closest('[data-slot="card"]') === null
+    ),
+    "the button is inside a card"
+  ).toBe(true);
+  expect(buttonBox.x).toBeGreaterThanOrEqual(-0.5);
+  expect(buttonBox.x + buttonBox.width).toBeLessThanOrEqual(
+    (await page.evaluate(() => innerWidth)) + 0.5
+  );
   if (await inWindow(title(page))) {
     expect(await topAtCenter(title(page)), "the title is covered").toBe(true);
   }
@@ -178,7 +183,7 @@ async function expectTitleAndButtonApart(page: Page) {
       true
     );
   }
-  await assertNothingClipped(card(page));
+  await assertNothingClipped(header(page));
   await assertNoEllipsis(title(page));
   await assertNoPageScroll(page);
 }
@@ -188,50 +193,92 @@ const scrollTop = (page: Page) =>
     () => (document.scrollingElement ?? document.documentElement).scrollTop
   );
 
-/** Scrolls for real and returns where the page stopped; "card" puts the header of the list card at the top of the window. */
-async function scrollTo(page: Page, where: "top" | "card" | "bottom") {
-  await card(page).evaluate((element, target) => {
+/** Scrolls the page to its end for real and returns where it stopped, once it stopped. */
+async function scrollToBottom(page: Page) {
+  await page.evaluate(() => {
     const scroller = document.scrollingElement ?? document.documentElement;
-    if (target === "top") {
-      scroller.scrollTo(0, 0);
-    } else if (target === "bottom") {
-      scroller.scrollTo(0, scroller.scrollHeight);
-    } else {
-      element
-        .querySelector('[data-slot="card-header"]')
-        ?.scrollIntoView({ block: "start" });
-    }
-  }, where);
+    scroller.scrollTo(0, scroller.scrollHeight);
+  });
   const first = await scrollTop(page);
   await expect.poll(() => scrollTop(page)).toBe(first);
   return first;
 }
 
 test.describe("a 320 px com letra de 20 px", () => {
+  // the button sits under the title, outside the card, so scrolling does not carry it: the end of the list is what is checked
   reflowTest(
-    "o título do cartão lê inteiro e o botão Nova despesa não cobre nada, no início e depois de rolar",
+    "o título lê inteiro e o botão Nova despesa, fora do cartão, não cobre nada, e o total da lista chega à vista ao rolar até o fim",
     async ({ page }) => {
       await openReflowViewport(page);
       await openExpenses(page);
       await expectReflowFont(page);
       await expect(newButton(page)).toBeVisible();
 
-      expect(await scrollTo(page, "top")).toBe(0);
       await expectTitleAndButtonApart(page);
 
       expect(
-        await scrollTo(page, "card"),
-        "the page did not scroll"
-      ).toBeGreaterThan(0);
-      await expect(newButton(page)).toBeInViewport();
-      await expectTitleAndButtonApart(page);
-
-      expect(
-        await scrollTo(page, "bottom"),
+        await scrollToBottom(page),
         "the page did not scroll"
       ).toBeGreaterThan(0);
       await expect(page.locator("[data-list-total]")).toBeInViewport();
       await expectTitleAndButtonApart(page);
+    }
+  );
+
+  reflowTest(
+    "a barra Filtrar despesas, com a categoria e Anuladas, não corta nada nem rola a página, o segmentado segue à vista e fechar o editor devolve o foco à pílula",
+    async ({ page }) => {
+      await openReflowViewport(page);
+      await openExpenses(page);
+      await expectReflowFont(page);
+      const bar = page.getByRole("search", {
+        exact: true,
+        name: "Filtrar despesas",
+      });
+      const segmented = bar.getByRole("group", {
+        exact: true,
+        name: "Situação",
+      });
+      const voided = segmented.getByRole("button", {
+        exact: true,
+        name: "Anuladas",
+      });
+      await expect(
+        segmented.getByRole("button", { exact: true, name: "Ativas" })
+      ).toBeInViewport({ ratio: 1 });
+      await expect(voided).toBeInViewport({ ratio: 1 });
+      await voided.click();
+      await expect(voided).toHaveAttribute("aria-pressed", "true");
+
+      await bar.getByRole("button", { name: FILTER_BUTTON_NAME }).click();
+      await page
+        .getByRole("menu", { name: "Filtrar por" })
+        .getByRole("menuitem", { name: CATEGORY_ITEM })
+        .click();
+      const chooser = page.getByRole("dialog", { name: "Categoria" });
+      await chooser
+        .getByRole("button", { exact: true, name: "Marketing" })
+        .click();
+      await chooser
+        .getByRole("button", { exact: true, name: "Aplicar" })
+        .click();
+      await expect(chooser).toHaveCount(0);
+      await expect(bar.locator('[data-slot="filter-pill"]')).toHaveCount(1);
+      await expect(voided).toBeInViewport({ ratio: 1 });
+      await assertNothingClipped(bar);
+      await assertNoPageScroll(page);
+
+      const pill = page.locator(
+        'search[aria-label="Filtrar despesas"] button[aria-label^="Categoria: "]'
+      );
+      await pill.click();
+      const editor = page.getByRole("dialog", { name: "Categoria" });
+      await expect(editor).toBeVisible();
+      await editor
+        .getByRole("button", { exact: true, name: "Cancelar" })
+        .click();
+      await expect(editor).toHaveCount(0);
+      await expect(pill).toBeFocused();
     }
   );
 
@@ -245,13 +292,6 @@ test.describe("a 320 px com letra de 20 px", () => {
         page.getByRole("button", { name: "Tentar novamente" }).first()
       ).toBeVisible({ timeout: 20_000 });
 
-      expect(await scrollTo(page, "top")).toBe(0);
-      await expectTitleAndButtonApart(page);
-      expect(
-        await scrollTo(page, "card"),
-        "the page did not scroll"
-      ).toBeGreaterThan(0);
-      await expect(newButton(page)).toBeInViewport();
       await expectTitleAndButtonApart(page);
     }
   );
@@ -259,15 +299,25 @@ test.describe("a 320 px com letra de 20 px", () => {
 
 test.describe("a 360 px com a letra padrão", () => {
   reflowTest(
-    "o título e o botão ficam numa linha e o alvo do botão tem 44 px ou mais",
+    "o botão fica logo abaixo do título, com a largura da tela, e o alvo tem 44 px ou mais",
     async ({ page }) => {
       await page.setViewportSize({ height: 740, width: 360 });
       await openExpenses(page);
       const titleBox = await boxOf(title(page));
       const buttonBox = await boxOf(newButton(page));
-      expect(buttonBox.y, "the button went below the title").toBeLessThan(
-        titleBox.y + titleBox.height
-      );
+      const titleBottom = titleBox.y + titleBox.height;
+      expect(
+        buttonBox.y,
+        "the button is above the title bottom"
+      ).toBeGreaterThanOrEqual(titleBottom - 0.5);
+      expect(
+        buttonBox.y,
+        "the button is not right under the title"
+      ).toBeLessThanOrEqual(titleBottom + 16);
+      expect(
+        buttonBox.width,
+        "the button is not as wide as the screen"
+      ).toBeGreaterThan(320);
       expect(overlap(titleBox, buttonBox)).toBe(false);
       const height = await newButton(page).evaluate((element) => {
         const box = element.getBoundingClientRect();

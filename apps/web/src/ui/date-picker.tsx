@@ -19,11 +19,29 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/ui/popover";
 /** The error of a date that must be chosen (never "campo obrigatório"). */
 const DATE_REQUIRED_ERROR = "Escolha uma data";
 
-export interface DatePickerProps {
+/**
+ * The limits of a date and the reason for them: a field that disables days (`min` or `max`) must say why, so the
+ * disabled day is never mute for the screen reader.
+ */
+export type DateLimits =
+  | {
+      min?: undefined;
+      max?: undefined;
+      /** Why the days outside `min`..`max` cannot be chosen ("Só até hoje"). */
+      disabledReason?: string | undefined;
+    }
+  | {
+      /** The first day that can be chosen, `AAAA-MM-DD`. */
+      min?: IsoDate | undefined;
+      /** The last day that can be chosen, `AAAA-MM-DD`. */
+      max?: IsoDate | undefined;
+      /** Why the days outside `min`..`max` cannot be chosen ("Só até hoje"). */
+      disabledReason: string;
+    };
+
+export type DatePickerProps = DateLimits & {
   className?: string | undefined;
   disabled?: boolean | undefined;
-  /** Why the days outside `min`..`max` cannot be chosen ("Só até hoje"). */
-  disabledReason?: string | undefined;
   /** The id of a help text the screen shows under the button, read after the error. */
   describedBy?: string | undefined;
   /** The error under the button; `true` is the default text, "Escolha uma data". */
@@ -31,16 +49,12 @@ export interface DatePickerProps {
   id?: string | undefined;
   /** The name of the field, in the accessible name of the button: "Data de competência, 24/10/2026". */
   label: string;
-  /** The last day that can be chosen, `AAAA-MM-DD`. */
-  max?: IsoDate | undefined;
-  /** The first day that can be chosen, `AAAA-MM-DD`. */
-  min?: IsoDate | undefined;
   onValueChange: (value: IsoDate | null) => void;
   /** The store's day (the screen takes it from the server); the device's day when absent. */
   today?: IsoDate | undefined;
   /** The chosen day, `AAAA-MM-DD`, or null. */
   value: IsoDate | null;
-}
+};
 
 /**
  * One date: an outline button with the calendar icon and the date written "24/10/2026" ("Escolher data" when there
@@ -103,8 +117,6 @@ export function DatePicker({
       choose(today);
     }
   }, [choose, today, todayAllowed]);
-  const todayReasonId = useId();
-  const todayReason = disabledReason ?? "Hoje está fora das datas permitidas";
 
   return (
     <div className={cn("grid gap-1.5", className)}>
@@ -152,29 +164,62 @@ export function DatePicker({
               key={openings}
               mode="single"
               onSelect={pickDay}
+              reasonInFooter={!todayAllowed}
               selected={selected}
               today={todayDate}
             />
           </div>
-          <div className="flex shrink-0 justify-end border-border border-t pt-2">
-            <Button
-              aria-describedby={todayAllowed ? undefined : todayReasonId}
-              aria-disabled={todayAllowed ? undefined : true}
-              onClick={pickToday}
-              size="sm"
-              variant="ghost"
-            >
-              Hoje
-            </Button>
-            {todayAllowed ? null : (
-              <span className="sr-only" id={todayReasonId}>
-                {todayReason}
-              </span>
-            )}
-          </div>
+          <TodayFooter
+            allowed={todayAllowed}
+            onPickToday={pickToday}
+            reason={disabledReason}
+          />
         </PopoverContent>
       </Popover>
       <FieldError id={errorId}>{errorText}</FieldError>
+    </div>
+  );
+}
+
+/**
+ * The footer of the popover: "Hoje" and, when today is outside the allowed days, the reason written beside it in
+ * small secondary text, tied to the button by `aria-describedby` (the only place the popover writes it: the calendar
+ * keeps its own line out of the layout, `reasonInFooter`). The button
+ * stays focusable (`aria-disabled`, never `disabled`) and chooses nothing.
+ */
+export function TodayFooter({
+  allowed,
+  onPickToday,
+  reason,
+}: {
+  allowed: boolean;
+  onPickToday: () => void;
+  reason?: string | undefined;
+}) {
+  const reasonId = useId();
+  return (
+    <div
+      className="flex shrink-0 items-center justify-end gap-2 border-border border-t pt-2"
+      data-date-footer
+    >
+      {allowed || !reason ? null : (
+        <p
+          className="min-w-0 flex-1 text-muted-foreground text-support"
+          id={reasonId}
+        >
+          {reason}
+        </p>
+      )}
+      <Button
+        aria-describedby={allowed || !reason ? undefined : reasonId}
+        aria-disabled={allowed ? undefined : true}
+        className="shrink-0"
+        onClick={onPickToday}
+        size="sm"
+        variant="ghost"
+      >
+        Hoje
+      </Button>
     </div>
   );
 }

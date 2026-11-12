@@ -240,7 +240,7 @@ export function CategoriesPage() {
   return (
     <div className="grid gap-4 font-sans text-foreground text-sm antialiased">
       <div className="grid gap-1">
-        <ScreenTitle>Categorias</ScreenTitle>
+        <ScreenTitle tabNamesIt>Categorias</ScreenTitle>
         <p className="text-muted-foreground text-support">
           Agrupam os produtos do catálogo. As categorias de despesa ficam em
           Despesas.

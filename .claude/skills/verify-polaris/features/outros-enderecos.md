@@ -1,27 +1,27 @@
 # Outros endereços
 
-Os endereços que o app abre fora dos 8 destinos: Pendências (no shell, só quando há registro recusado), Ajuda e contato (no shell, estática), as páginas de entrada, as páginas legais, o aceite e o painel da loja encerrada (fora do shell, sem menu), a página 404 e os endereços antigos que hoje abrem uma aba.
+Os endereços que o app abre fora dos 9 destinos da lateral: Pendências (no shell, só quando há registro recusado), as páginas de entrada, as páginas legais, o aceite e o painel da loja encerrada (fora do shell, sem menu), a página 404 e os endereços antigos que hoje abrem uma aba.
 
 ## Sub-features
 
 - `pendencias` `/attention`: os registros deste aparelho que o servidor recusou; o item "Pendências" aparece no menu depois de "Histórico" só enquanto houver algum.
-- `ajuda` `/ajuda`: "Ajuda e contato", dentro do shell: o e-mail do suporte e o do encarregado (DPO) como links `mailto:`, "Antes de escrever" e os links dos Termos e da Política. Estática: abre sem conexão. A linha "Precisa de ajuda? Escreva para {endereço}." também está em `/entrar` e em "Abra a sua loja".
 - `entrada` `/entrar`, `/criar-conta`, `/confirmar-email`, `/esqueci-a-senha`, `/redefinir-senha` e `/desbloquear`.
 - `legais` `/termos` (Termos de Uso) e `/privacidade` (Política de Privacidade), públicas.
 - `aceite` `/aceite`: "Termos de Uso e Política de Privacidade", caixa de aceite e "Aceitar e continuar".
 - `loja-encerrada` `/loja-encerrada`: o painel da loja encerrada do dono ("{nome} está encerrada"), com a fase, as três datas, a renovação e a cópia dos dados. `?loja=<id>` abre uma loja (`organization.closedStatus`); sem ele, lista as encerradas do dono (`organization.listClosed`). O botão "Abrir o painel" dos e-mails do encerramento leva aqui. "Desfazer encerramento" abre o diálogo "Desfazer o encerramento?" ("Voltar" / "Sim, desfazer"); reaberta vai a `/?reaberta=1`. Com operações não enviadas deste aparelho para a loja, o cartão `region "Neste aparelho"` entre o estado e "Cópia dos dados": na janela de desfazer só a frase; depois dela, o botão "Descartar o que não foi enviado…" abre o diálogo "Descartar {N} operações deste aparelho?" ("Voltar" / "Sim, descartar"), com "Operações descartadas neste aparelho." ao fim. O pé tem "Abrir outra loja" (`/?nova-loja=1`).
+- `parar-dicas` `/api/parar-dicas?t=<token>`: a página do link do e-mail "Dicas para começar", fora do shell e sem sessão, servida pelo Worker em HTML sem script. Com token válido: "Parar de receber as dicas?" e o botão "Parar de receber" (um formulário que posta para o mesmo endereço); depois do POST, "Pronto. Você não recebe mais as dicas." e o link "Abrir o Polaris". Token adulterado ou de outra finalidade: "Não foi possível abrir este link." (400). Mais de 20 pedidos por minuto do mesmo endereço: "Muitos pedidos. Espere alguns minutos." (429, `role="status"`). Sem o segredo `UNSUBSCRIBE_TOKEN_SECRET` ou sem a conexão de cobrança: "Não foi possível concluir agora." (503).
 - `nao-encontrada` qualquer outro endereço do shell: "Erro 404", "Página não encontrada".
-- `enderecos-antigos` `/categories`, `/expenses`, `/payment-profiles`, `/public-catalog`, `/devices`, `/subscription` e `/conta/seguranca` abrem a aba nova no lugar.
+- `enderecos-antigos` `/dashboard?aba=despesas` (abre `/expenses`), `/categories`, `/payment-profiles`, `/public-catalog`, `/devices`, `/subscription` e `/conta/seguranca` abrem a aba nova no lugar.
 
 ## How to get to it (user POV)
 
 - Pendências: pelo menu, quando existe; ou `/attention`.
-- Ajuda: no desktop, o "?" do cabeçalho (1 toque); nas duas larguras, o menu "Loja, conta e ajuda" → "Ajuda e contato"; no celular também "Mais" → "Ajuda e contato" (2 toques, depois de Configurações); ou `/ajuda`.
 - Entrada: sem sessão, qualquer tela do shell manda para `/entrar?voltar=<endereço>` ("Entrar no Polaris"). Com a senha desligada (padrão), `/entrar` só tem "Continuar com o Google"; as outras páginas de entrada são da senha.
 - Legais: "Termos de Uso" e "Política de Privacidade" no menu "Loja, conta e ajuda" do cabeçalho (2 toques) e no rodapé da folha "Mais" do celular; nenhuma página do shell tem rodapé legal.
 - Aceite: depois de entrar, quando falta o aceite da versão vigente.
 - Loja encerrada: Configurações → Seus dados → "Encerrar a loja" (só o dono, com conexão e a fila do aparelho vazia); depois de encerrar, a tela vai sozinha para `/loja-encerrada?loja=<id>`. Também pelo botão "Abrir o painel" dos e-mails do encerramento.
 - 404 e endereços antigos: só digitando ou por link salvo.
+- Parar as dicas: só pelo link do rodapé do e-mail (ou o `List-Unsubscribe` do leitor de e-mail); nenhuma tela do app leva até ela.
 
 ## Driving it with verify.sh (Playwright)
 
@@ -29,13 +29,13 @@ Preconditions:
 
 - Doctor OK. Entrada e páginas legais não precisam de loja; para ver a entrada sem sessão, limpe os cookies no drive (`await context.clearCookies()`).
 
-- **Ajuda.** `$V snap /ajuda`: o `h1` é "Ajuda e contato"; `getByRole("link", { name: /^Escrever para o suporte: / })` e `getByRole("link", { name: /^Escrever ao encarregado de dados: / })` têm `href` `mailto:` com o texto do próprio endereço. No celular (360 px), `getByRole("button", { exact: true, name: "Mais" })` abre `getByRole("dialog", { name: "Mais" })` e o link "Ajuda e contato" leva a `/ajuda` (provado em `apps/web/e2e/help.e2e.ts`). O endereço é o de `VITE_LEGAL_CONTATO_EMAIL` do build; sem ela a pilha local mostra o exemplo dos Termos.
 - **Legais.** `$V snap /termos` e `$V snap /privacidade`: o `h1` é "Termos de Uso" e "Política de Privacidade" (provado; estados em `apps/web/e2e-pwa/legal-pages.e2e.ts`).
 - **Entrada.** `await context.clearCookies(); await page.goto("/")` termina em `/entrar?voltar=/` com `getByRole("heading", { level: 1, name: "Entrar no Polaris" })` (provado nesta skill). Os estados da tela estão em `apps/web/e2e/sign-in.e2e.ts`.
 - **Aceite.** `apps/web/e2e/legal-acceptance.e2e.ts` cobre a tela (`getByRole("checkbox")`, "Aceitar e continuar", `alert`). As lojas desta skill abrem direto no shell, sem passar por `/aceite`.
 - **404.** `$V snap /sales/customer`: `h1` "Página não encontrada", com "Erro 404" e links para Início e Histórico (provado; `apps/web/e2e/app-shell.e2e.ts`).
-- **Endereço antigo.** `await page.goto("/categories")` termina em `/products?aba=categorias`; `/expenses` em `/dashboard?aba=despesas`; `/subscription` em `/configuracoes?aba=assinatura`; `/public-catalog` em `/configuracoes?aba=catalogo-publico`; `/devices` em `/configuracoes?aba=aparelhos`; `/payment-profiles` e `/conta/seguranca` em `/configuracoes` (Formas de receber é a primeira aba, e Senha está desligada). Provado nesta skill.
+- **Endereço antigo.** `await page.goto("/categories")` termina em `/products?aba=categorias`; `/dashboard?aba=despesas&ver=categorias` em `/expenses?ver=categorias`; `/subscription` em `/configuracoes?aba=assinatura`; `/public-catalog` em `/configuracoes?aba=catalogo-publico`; `/devices` em `/configuracoes?aba=aparelhos`; `/payment-profiles` e `/conta/seguranca` em `/configuracoes` (Formas de receber é a primeira aba, e Senha está desligada). Provado nesta skill.
 - **Loja encerrada.** Encerrar apaga o acesso à loja de teste: use uma loja que não vai mais servir (`seed vazia` numa loja própria) e confirme pelo nome no diálogo. Depois, `$V snap /loja-encerrada`: o `h1` é "{nome} está encerrada". Sem loja encerrada, o `h1` é "Loja encerrada" com "Não encontramos uma loja encerrada nesta conta.". Os estados de cada fase, com a API simulada, estão em `apps/web/e2e/closed-store.e2e.ts`; o diálogo de encerrar em `apps/web/e2e/close-store.e2e.ts`.
+- **Parar as dicas.** O preview do e2e-real leva `UNSUBSCRIBE_TOKEN_SECRET` derivado do segredo do run (`unsubscribeTokenSecretOf` em `apps/web/e2e-real/run-environment.ts`). Num drive em `drives/local/`, leia `run.secret` de `/tmp/polaris-verify/<id>/state.json`, derive o segredo do mesmo jeito, pegue o `user.id` de `page.request.get("/api/auth/get-session")` e monte o token com `createUnsubscribeToken` (`apps/web/src/server/tips-stop/unsubscribe-token.ts`). `page.goto("/api/parar-dicas?t=<token>")` mostra `getByRole("heading", { level: 1, name: "Parar de receber as dicas?" })`; o clique em "Parar de receber" grava uma linha em `email_opt_outs` (`$V sql "SELECT count(*) FROM email_opt_outs"`, que não cresce ao repetir). Provado nesta skill; os estados e o reflow em `apps/web/e2e/parar-dicas-reflow.e2e.ts`. Os 21 pedidos que dão 429 seguram o endereço da loja por um minuto: deixe para o fim.
 - **Pendências.** Precisa de um registro recusado no aparelho, o que a pilha real com loja Free não produz: os estados estão no laboratório (`apps/web/e2e-pwa/ui-device-states.ts`, `attentionStates`).
 
 ## Gotchas

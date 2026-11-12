@@ -28,6 +28,12 @@ export const LEGAL_COMPANY_FIELDS = Object.freeze([
     kind: "email",
     token: "{{DPO_EMAIL}}",
   }),
+  Object.freeze({
+    env: "VITE_LEGAL_SUPORTE_QUEM_LE_RESPOSTAS",
+    example: "uma pessoa da equipe de suporte (exemplo)",
+    kind: "text",
+    token: "{{SUPORTE_QUEM_LE_RESPOSTAS}}",
+  }),
 ] as const);
 
 export type LegalCompanyField = (typeof LEGAL_COMPANY_FIELDS)[number];

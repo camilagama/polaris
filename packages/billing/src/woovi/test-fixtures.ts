@@ -67,7 +67,11 @@ function customerJson(
   };
 }
 
-/** `GET /api/v1/subscriptions/{id}` without the `{ subscription }` wrapper. */
+/**
+ * `GET /api/v1/subscriptions/{id}` without the `{ subscription }` wrapper, as
+ * the sandbox reads it back: `pixRecurring` has no `status` (23 of 23
+ * subscriptions), approved or not. Only the webhook body shows it.
+ */
 export function subscriptionJson(
   overrides: Record<string, unknown> = {}
 ): Record<string, unknown> {
@@ -84,25 +88,12 @@ export function subscriptionJson(
       journey: "ONLY_RECURRENCY",
       paymentLinkID: "fake-payment-link-id-0001",
       recurrencyId: "RN0000000020261020FAKE000001",
-      status: "APPROVED",
     },
     status: "ACTIVE",
     type: "PIX_RECURRING",
     value: 2490,
     ...overrides,
   };
-}
-
-/** A subscription whose payer has not acted yet: `pixRecurring.status` is absent. */
-export function subscriptionBeforeApprovalJson(
-  overrides: Record<string, unknown> = {}
-): Record<string, unknown> {
-  const base = subscriptionJson();
-  const { status: _status, ...pix } = base.pixRecurring as Record<
-    string,
-    unknown
-  >;
-  return { ...base, pixRecurring: pix, ...overrides };
 }
 
 /** `GET /api/v1/installments/{id}` (not wrapped). */
@@ -141,6 +132,50 @@ export function installmentJson(
   };
 }
 
+/**
+ * The subscription in the documented shape: the read back shows
+ * `pixRecurring.status` (`CREATED`, `APPROVED`, `REJECTED`…). Not seen in the
+ * sandbox; the rule must hold for both shapes.
+ */
+export function docSubscriptionJson(
+  authorization: string,
+  overrides: Record<string, unknown> = {}
+): Record<string, unknown> {
+  const base = subscriptionJson();
+  return {
+    ...base,
+    pixRecurring: {
+      ...(base.pixRecurring as Record<string, unknown>),
+      status: authorization,
+    },
+    ...overrides,
+  };
+}
+
+/**
+ * The installment the sandbox creates once the payer approves: it and its
+ * recurring charge are `ACTIVE` (not paid yet).
+ */
+export function liveInstallmentJson(
+  overrides: Record<string, unknown> = {}
+): Record<string, unknown> {
+  const base = installmentJson();
+  return {
+    ...base,
+    cobr: { ...(base.cobr as Record<string, unknown>), status: "ACTIVE" },
+    status: "ACTIVE",
+    ...overrides,
+  };
+}
+
+/** An installment in the sandbox shape with the documented `SCHEDULED` state (waiting for its COBR). */
+export function scheduledInstallmentJson(
+  overrides: Record<string, unknown> = {}
+): Record<string, unknown> {
+  const { cobr: _cobr, ...base } = installmentJson();
+  return { ...base, status: "SCHEDULED", ...overrides };
+}
+
 /** The body of `PIX_AUTOMATIC_APPROVED` and `PIX_AUTOMATIC_REJECTED`: the body's claim, with personal data. */
 export function subscriptionWebhookBody(
   event: string,
@@ -149,10 +184,19 @@ export function subscriptionWebhookBody(
   const {
     name: _name,
     paymentLink: _link,
+    pixRecurring,
     type: _type,
     ...claim
   } = subscriptionJson();
-  return { ...claim, event, ...overrides };
+  return {
+    ...claim,
+    event,
+    pixRecurring: {
+      ...(pixRecurring as Record<string, unknown>),
+      status: "APPROVED",
+    },
+    ...overrides,
+  };
 }
 
 /** The body of `PIX_AUTOMATIC_COBR_*`: the body's claim. */

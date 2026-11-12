@@ -28,7 +28,6 @@ export function renewalCancelledContent(
   const until = lastDayOf(email.accessEndsAt, store.timeZone);
   return {
     action: openSubscription(store),
-    footer: "subscription",
     heading: "A renovação do Polaris Pro foi cancelada",
     paragraphs:
       email.phase === "trial"

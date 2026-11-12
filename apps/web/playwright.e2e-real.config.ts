@@ -75,6 +75,8 @@ export default defineConfig({
       testIgnore: [
         "jornadas/encerramento.e2e.ts",
         "jornadas/encerramento-aparelho.e2e.ts",
+        "jornadas/venda-saldo-curto-sem-conexao.e2e.ts",
+        "jornadas/estoque-produto-sem-conexao.e2e.ts",
       ],
       use: { ...desktop, baseURL: origin("online") },
     },
@@ -84,6 +86,8 @@ export default defineConfig({
       testMatch: [
         "jornadas/cliente.e2e.ts",
         "jornadas/venda.e2e.ts",
+        "jornadas/venda-saldo-curto-sem-conexao.e2e.ts",
+        "jornadas/estoque-produto-sem-conexao.e2e.ts",
         "jornadas/encerramento.e2e.ts",
         "jornadas/encerramento-aparelho.e2e.ts",
         "harness/chave-do-runtime.e2e.ts",

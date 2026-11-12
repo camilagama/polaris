@@ -7,7 +7,9 @@ import { cn } from "@/lib/utils";
    `h-ctl-md` (32 px with a mouse, 36 px with touch), each tab has a 44 px touch area (`touch-hit`) and the keyboard
    focus is the 3 px outline (`focus-ring`). Horizontal only and one style (the segmented list on the muted
    strip): the vertical layout and the `line` variant of the registry come back with the first screen that needs
-   them. The active tab changes with no movement: background and color fade, nothing slides or scales. The open panel is a tab stop (Base UI
+   them. A tab does not point at its panel (`aria-controls`): the panel is already named by its tab
+   (`aria-labelledby`), and a reader that follows the pointer says that name again after the tab's.
+   The active tab changes with no movement: background and color fade, nothing slides or scales. The open panel is a tab stop (Base UI
    gives it `tabIndex` 0), so it draws the same focus outline. */
 function Tabs({ className, ...props }: TabsPrimitive.Root.Props) {
   return (
@@ -23,7 +25,7 @@ function TabsList({ className, ...props }: TabsPrimitive.List.Props) {
   return (
     <TabsPrimitive.List
       className={cn(
-        "inline-flex h-ctl-md w-fit items-center justify-center rounded-lg bg-muted p-[3px] text-muted-foreground",
+        "inline-flex h-ctl-md w-fit items-center justify-center rounded-lg bg-muted p-0.75 text-muted-foreground",
         className
       )}
       data-slot="tabs-list"
@@ -35,6 +37,7 @@ function TabsList({ className, ...props }: TabsPrimitive.List.Props) {
 function TabsTrigger({ className, ...props }: TabsPrimitive.Tab.Props) {
   return (
     <TabsPrimitive.Tab
+      aria-controls={undefined}
       className={cn(
         "touch-hit focus-ring relative inline-flex h-full flex-1 items-center justify-center gap-1.5 whitespace-nowrap rounded-md border border-transparent px-2.5 font-medium text-muted-foreground text-sm motion-full:transition-[background-color,color,box-shadow] hover:text-foreground disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50 data-active:bg-card data-active:text-foreground data-active:shadow-xs dark:data-active:bg-secondary [&_svg:not([class*='size-'])]:size-4 [&_svg]:pointer-events-none [&_svg]:shrink-0",
         className

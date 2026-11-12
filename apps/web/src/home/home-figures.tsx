@@ -1,7 +1,7 @@
 import type { PeriodSummaryReadModel } from "@polaris/contracts";
 import { Money } from "@polaris/domain/money/money";
 import CheckIcon from "lucide-react/dist/esm/icons/check";
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { cn } from "@/lib/utils";
 import { buttonVariants } from "@/ui/button";
 import { MoneyText } from "@/ui/hidden-values";
@@ -10,6 +10,10 @@ import {
   FIRST_STEPS_ANCHOR,
   firstStepsDone,
 } from "../app-shell/first-steps";
+import {
+  ProductThumbnail,
+  useThumbnailSequence,
+} from "../catalog/product-thumbnail";
 import { formatBrlAmount, formatQuantity } from "../lib/format";
 import { checklistLink, checklistNext } from "./home-model";
 import { HomeBlock } from "./home-parts";
@@ -30,54 +34,91 @@ function barWidth(netSales: string, top: bigint): number {
   return Number((cents * 100n) / top);
 }
 
+const ALL_RETURNED_TEXT = "As vendas do período foram devolvidas.";
+
+/** From this many lines the list takes the height the card is given, a line each; fewer stay at the top. */
+const SPREAD_FROM = 3;
+
 /**
- * The three most sold products of the month, by units net of returns; none sold, no block (AC-16). Each line has its
- * position in a circle, the name, the net sales and the units, and a green bar proportional to the net sales
- * (v7 § 3 item 11), drawn in CSS: it says the same as the value beside it. Each line is its own container: the four are
- * one row, and the name is cut with an ellipsis when it does not fit, from 15rem on a phone and from 20rem from the
- * sidebar up (a column that narrow left the name 75 to 118 px beside the sidebar); under that (a phone with the browser
- * font enlarged, a narrow column) the name takes its own line, up to two, and the net sales and the units go to the
- * line under it.
+ * The five most sold products of the month, by units net of returns; none sold, or every sale of the period returned, the same box says so (AC-16). Each line has the
+ * miniature of the product (its two initials when it has no photo or while it comes, in a box of the same size, so
+ * nothing moves when the photo arrives) with the position in a small circle over its corner, the name, the net sales
+ * and the units, and a green bar proportional to the net sales (v7 § 3 item 11), drawn in CSS: it says the same as
+ * the value beside it. Each line is its own container: from 20.75 rem the five are one row, and the name is cut with
+ * an ellipsis when it does not fit; under that (a phone, a narrow column, the browser font enlarged) the name takes its
+ * own line, up to two, the miniature sits beside both lines, and the net sales and the units go to the line under
+ * the name.
  */
-export function TopProductsBlock({ products }: { products: TopProducts }) {
+export function TopProductsBlock({
+  products,
+  salesCount,
+  title = "Mais vendidos do mês",
+}: {
+  products: TopProducts;
+  /** Sales of the period: with some and no product left in the ranking, every one of them was returned. */
+  salesCount: number;
+  title?: string;
+}) {
   const top = products.reduce((max, product) => {
     const cents = Money.from(product.netSales).minorUnits;
     return cents > max ? cents : max;
   }, 0n);
+  const covers = useMemo(
+    () => products.map((product) => product.coverAssetId),
+    [products]
+  );
+  useThumbnailSequence(covers);
+  if (products.length === 0) {
+    return (
+      <HomeBlock id="home-top" title={title}>
+        <p className="grid flex-1 place-items-center text-center text-muted-foreground">
+          {salesCount > 0 ? ALL_RETURNED_TEXT : "Sem vendas no período."}
+        </p>
+      </HomeBlock>
+    );
+  }
+  const spread = products.length >= SPREAD_FROM;
   return (
-    <HomeBlock id="home-top" title="Mais vendidos do mês">
-      <ol className="grid min-w-0">
+    <HomeBlock id="home-top" title={title}>
+      <ol className="flex min-w-0 flex-1 flex-col">
         {products.map((product, index) => {
           const content = (
             <>
               <span
                 data-top-line=""
-                className="grid min-w-0 grid-cols-[1.375rem_minmax(0,1fr)] items-center gap-x-3 gap-y-0.5 max-[47.499rem]:@min-[15rem]:flex min-[47.5rem]:@min-[20rem]:flex"
+                className="@min-[20.75rem]:flex grid min-w-0 grid-cols-[32px_minmax(0,1fr)] items-center gap-x-3 gap-y-0.5"
               >
-                <span className="grid size-[1.375rem] shrink-0 place-items-center rounded-full bg-muted font-semibold text-xs tabular-nums">
-                  {index + 1}
+                <span className="relative row-span-2 shrink-0 self-center">
+                  <ProductThumbnail
+                    assetId={product.coverAssetId}
+                    name={product.name}
+                    size={32}
+                  />
+                  <span className="absolute -top-1.5 -left-1.5 grid size-[1.125rem] place-items-center rounded-full bg-background font-semibold text-xs tabular-nums ring-1 ring-border">
+                    {index + 1}
+                  </span>
                 </span>
                 <span
                   data-top-name=""
-                  className="line-clamp-2 min-w-0 break-words max-[47.499rem]:@min-[15rem]:line-clamp-none max-[47.499rem]:@min-[15rem]:flex-1 max-[47.499rem]:@min-[15rem]:truncate min-[47.5rem]:@min-[20rem]:line-clamp-none min-[47.5rem]:@min-[20rem]:flex-1 min-[47.5rem]:@min-[20rem]:truncate"
+                  className="line-clamp-2 @min-[20.75rem]:line-clamp-none min-w-0 @min-[20.75rem]:flex-1 @min-[20.75rem]:truncate break-words"
                 >
                   {product.name}
                 </span>
                 <span
                   data-top-figures=""
-                  className="col-start-2 flex flex-wrap items-baseline gap-x-3 max-[47.499rem]:@min-[15rem]:contents min-[47.5rem]:@min-[20rem]:contents"
+                  className="col-start-2 flex @min-[20.75rem]:contents flex-wrap items-baseline gap-x-3"
                 >
                   <span className="shrink-0 font-semibold tabular-nums">
                     <MoneyText text={formatBrlAmount(product.netSales)} />
                   </span>
-                  <span className="ml-auto text-right text-muted-foreground tabular-nums max-[47.499rem]:@min-[15rem]:ml-0 max-[47.499rem]:@min-[15rem]:w-12 max-[47.499rem]:@min-[15rem]:shrink-0 min-[47.5rem]:@min-[20rem]:ml-0 min-[47.5rem]:@min-[20rem]:w-12 min-[47.5rem]:@min-[20rem]:shrink-0">
+                  <span className="@min-[20.75rem]:ml-0 ml-auto @min-[20.75rem]:w-12 @min-[20.75rem]:shrink-0 text-right text-muted-foreground tabular-nums">
                     {`${formatQuantity(product.quantity)} un.`}
                   </span>
                 </span>
               </span>
               <span
                 aria-hidden="true"
-                className="ml-[2.125rem] block h-1.5 overflow-hidden rounded-full bg-muted"
+                className="ml-[calc(32px+0.75rem)] block h-1.5 overflow-hidden rounded-full bg-muted"
               >
                 <span
                   className="block h-full rounded-full bg-chart-sales"
@@ -90,7 +131,10 @@ export function TopProductsBlock({ products }: { products: TopProducts }) {
           const row = "grid min-h-12 content-center gap-1.5 py-2";
           return (
             <li
-              className="@container min-w-0 border-t first:border-t-0"
+              className={cn(
+                "@container grid min-w-0 border-t first:border-t-0",
+                spread && "flex-1"
+              )}
               key={product.productId}
             >
               {product.deleted ? (

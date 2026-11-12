@@ -126,6 +126,43 @@ export function percent(
   };
 }
 
+function optionalCount(
+  cell: RawActivationFunnelCell | undefined
+): ActivationFunnelCount | undefined {
+  return cell === undefined ? undefined : count(cell);
+}
+
+/**
+ * The cells the function may or may not send (the "up to 14 days" band and the Pro trial) and their shares, each key
+ * only when the function sent its cell: an old function's answer gives the old shape, with no key made up.
+ */
+function fourteenDayCells(
+  cohort: RawActivationFunnel["cohorts"][number],
+  stores: ActivationFunnelCount
+) {
+  const activatedWithin14Days = optionalCount(cohort.activatedWithin14Days);
+  const trialStarted = optionalCount(cohort.trialStarted);
+  const soldInTrial = optionalCount(cohort.soldInTrial);
+  if (trialStarted) {
+    // a part of the cohort: more than the cohort cannot be (it has no share of its own to show)
+    percent(trialStarted, stores);
+  }
+  return {
+    cells: {
+      ...(activatedWithin14Days && { activatedWithin14Days }),
+      ...(soldInTrial && { soldInTrial }),
+      ...(trialStarted && { trialStarted }),
+    },
+    percent: {
+      ...(activatedWithin14Days && {
+        activatedWithin14Days: percent(activatedWithin14Days, stores),
+      }),
+      ...(soldInTrial &&
+        trialStarted && { soldInTrial: percent(soldInTrial, trialStarted) }),
+    },
+  };
+}
+
 /** The route's answer from the function's: same numbers, `null` with a reason where there is none, and the shares. */
 export function activationFunnelView(
   raw: RawActivationFunnel
@@ -151,10 +188,13 @@ export function activationFunnelView(
         week3: count(cohort.retention.week3),
         week5: count(cohort.retention.week5),
       };
+      const fourteenDays = fourteenDayCells(cohort, stores);
       return {
+        ...fourteenDays.cells,
         activatedIn7Days,
         inProgress: cohort.inProgress,
         percent: {
+          ...fourteenDays.percent,
           activatedIn7Days: percent(activatedIn7Days, stores),
           retentionWeek2: percent(retention.week2, stores),
           retentionWeek3: percent(retention.week3, stores),

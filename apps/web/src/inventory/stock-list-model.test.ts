@@ -1,6 +1,11 @@
 import type { InventoryBalanceEntryReadModel } from "@polaris/contracts";
 import { describe, expect, it } from "vitest";
 import {
+  productStockHref,
+  stockProductHref,
+  stockProductLinks,
+} from "../catalog/products-link-model";
+import {
   canLoadMoreStock,
   defaultStockFilters,
   initialStockListState,
@@ -21,6 +26,7 @@ import {
   stockMoreStarted,
   stockMoreView,
   readStockLinkFilters,
+  readStockLinkSearch,
   stockRowActions,
   stockRows,
   type VariantCount,
@@ -142,6 +148,68 @@ describe("stockListRequest", () => {
         null
       )
     ).not.toHaveProperty("query");
+  });
+});
+
+describe("the link between the stock and the product", () => {
+  it("leads the name of a variant row to the product on that variant, and a default variant to the product", () => {
+    const [variant] = stockRows([entry(1)]);
+    const [single] = stockRows([
+      entry(2, { isDefaultVariant: true, values: [] }),
+    ]);
+    expect(variant?.productHref).toBe(
+      `/products?produto=11111111-1111-4111-8111-111111111111&variante=${variantId(1)}`
+    );
+    expect(single?.productHref).toBe(
+      "/products?produto=11111111-1111-4111-8111-111111111111"
+    );
+  });
+
+  it("opens the stock on the name of the product, with the archived ones in only when the product is archived", () => {
+    expect(stockProductHref("Camiseta & Cia", false)).toBe(
+      "/inventory?busca=Camiseta+%26+Cia"
+    );
+    expect(stockProductHref("Camiseta", true)).toBe(
+      "/inventory?busca=Camiseta&arquivados=1"
+    );
+  });
+
+  it("offers each link only to a role that can read what it leads to, and fails closed for an unknown one", () => {
+    expect(stockProductLinks("owner")).toEqual({
+      toProduct: true,
+      toStock: true,
+    });
+    for (const role of ["", "visitante", "OWNER"]) {
+      expect(stockProductLinks(role)).toEqual({
+        toProduct: false,
+        toStock: false,
+      });
+    }
+  });
+
+  it('gives "Ver estoque" to a product that exists and to a role that can read the stock, with the archived switch for an archived one', () => {
+    const active = { name: "Camiseta", status: "active" };
+    expect(productStockHref(active, "owner")).toBe("/inventory?busca=Camiseta");
+    expect(productStockHref({ ...active, status: "archived" }, "owner")).toBe(
+      "/inventory?busca=Camiseta&arquivados=1"
+    );
+    expect(productStockHref(active, "visitante")).toBeNull();
+    expect(productStockHref(null, "owner")).toBeNull();
+  });
+
+  it("reads the search back as typed, cut to what the server takes, and nothing else", () => {
+    expect(
+      readStockLinkSearch(stockProductHref("Camiseta & Cia", true).slice(10))
+    ).toEqual({ includeArchived: true, query: "Camiseta & Cia" });
+    expect(readStockLinkSearch(`?busca=${"a".repeat(150)}`).query).toHaveLength(
+      100
+    );
+    for (const search of ["", "?", "?arquivados=sim", "?busca="]) {
+      expect(readStockLinkSearch(search)).toEqual({
+        includeArchived: false,
+        query: "",
+      });
+    }
   });
 });
 
@@ -549,7 +617,7 @@ describe("stockRowActions (the buttons of a row, AC-1 and AC-7)", () => {
     expect(actions[1]).toEqual({
       action: "cost",
       label: "Informar custo",
-      name: "Informar custo de Camiseta Polaris · Azul / M",
+      name: "Informar custo de Camiseta Polaris, Azul / M",
     });
   });
 

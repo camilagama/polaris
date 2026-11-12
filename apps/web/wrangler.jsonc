@@ -20,14 +20,16 @@
     "CLOSURE_AUTO_PURGE_ENABLED": "false",
     // the e-mail of the closure notices (ADR 0102, amended): off until the responsible turns it on
     "CLOSURE_NOTICE_EMAIL_ENABLED": "false",
+    // the tips of the activation series (ADR 0106, D6): off in every environment, staging included, until the user
+    // turns it on; off, the hourly sweep only clears the instant it was seen on
+    "ACTIVATION_EMAILS_ENABLED": "false",
     // the owner's billing self-service (ADR 0104): off until the screens, the e-mails and the Gate 7 are in
     "BILLING_SELF_SERVICE_ENABLED": "false",
     // the thumbnails of Produtos and Venda and their batch route: off until the CPU of the batch is measured
     "MEDIA_THUMBS_ENABLED": "false",
     // the support box of the billing e-mails, their footer and reply-to (ADR 0104): empty on purpose until the
-    // responsible sets it; without it the billing e-mails and the welcome stay off (their notices are skipped)
+    // responsible sets it; without it the billing e-mails stay off (their notices are skipped)
     "BILLING_SUPPORT_EMAIL": "",
-    "WELCOME_EMAIL_ENABLED": "false",
     // the server control of the legal acceptance (ADR 0100): off until the client that pauses the sync
     // on it is published and the service worker had time to update every device (release checklist)
     "LEGAL_ACCEPTANCE_ENFORCED": "false",
@@ -110,7 +112,10 @@
   // whole store shares one address. The calls of the import (`kind: "bulk"`, one row each) count in
   // RPC_BULK_RATE_LIMIT, 30 per minute per session and per address (30 rows), and spend neither of the others.
   // Reads, writes and bulk calls come from the `kind` of each procedure in the contract. CLIENT_ERROR_RATE_LIMIT counts
-  // the reports of errors of the browser (POST /api/client-errors) per address only, 10 per minute.
+  // the reports of errors of the browser (POST /api/client-errors) per address only, 10 per minute. TIPS_STOP_RATE_LIMIT
+  // counts the page that stops the tips e-mails (/api/parar-dicas, GET and POST) per address only, 20 per minute. The
+  // token of its links is signed with UNSUBSCRIBE_TOKEN_SECRET (and UNSUBSCRIBE_TOKEN_PREVIOUS_SECRET during a rotation),
+  // Worker secrets of each environment, never vars (runbook staging.md): without them the page answers 503.
   "ratelimits": [
     {
       "name": "AUTH_RATE_LIMITER",
@@ -156,6 +161,11 @@
       "name": "CLIENT_ERROR_RATE_LIMIT",
       "namespace_id": "900024",
       "simple": { "limit": 10, "period": 60 }
+    },
+    {
+      "name": "TIPS_STOP_RATE_LIMIT",
+      "namespace_id": "900025",
+      "simple": { "limit": 20, "period": 60 }
     }
   ],
   // The three queues of the plan and the dead-letter queue (ADR 0083, ADR 0085, runbook docs/runbooks/queues.md). Declaring them here
@@ -272,18 +282,19 @@
         // ASAAS_WEBHOOK_TOKEN, WOOVI_APP_ID, BILLING_PAYER_KEY) are Worker secrets (runbook staging.md).
         "ASAAS_BASE_URL": "https://api-sandbox.asaas.com/v3",
         "WOOVI_BASE_URL": "https://api.woovi-sandbox.com",
-        // Woovi's public key that signs every webhook (public, the same in the sandbox and in production; runbook
-        // billing-providers.md): base64 of the DER, key_identifier 9dce618794f8986c603915a51b7029126c260e5cfdb2aa47e131d837fd62311c
-        "WOOVI_WEBHOOK_PUBLIC_KEYS": "MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQC/+NtIkjzevvqD+I3MMv3bLXDtpvxBjY4BsRrSdca3rtAwMcRYYvxSnd7jagVLpctMiOxQO8ieUCKLSWHpsMAjO/zZWMKbqoG8MNpi/u3fp6zz0mcHCOSqYsPUUG19buW8bis5ZZ2IZgBObWSpTvJ0cnj6HKBAA82Jln+lGwS1MwIDAQAB",
+        // Public key of the Woovi sandbox that signs the sandbox webhooks (the sandbox and production keys differ;
+        // runbook billing-providers.md): base64 of the DER, key_identifier 7c8efa31466209cf247d23f6198a61643b8c322a0d80ea6d0a7a54073b2d6e91
+        "WOOVI_WEBHOOK_PUBLIC_KEYS": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAoZwBaFwmstKqy9VAqqxiSbCWgJR3dd5CTtDi6Fwthtd2owFkZIMqTqKg3Bq5ExjuOxE+v/1gIWFqR9jNjbtYumwPq+wXQhvx9TrQgrrFMVZ6tMPcwzj8Nknw182N/HMIQsV6B+8JWWzf/cN4ZZVSsRZfQvoVgFM7PSvSvc/h6v0X2Lkzjypvw7ZRkfxoc+z7B0p3vdQmLSKxPRpLzdLLVlJ+CJA2aATKVQR5feiuWHKdOlvCT7IRhal0hxUAjc7rxho5eHgaxWO5rITke8wSIjYIpuw38vMobYSxXb6iuj5Zrjpe2GV8vwuGud8H2dngYhkqbGuY5f4j1kfcN7gC8QIDAQAB",
         // on in the sandbox, so the refund of a Pix installment can be proven there (S3.2, Gate 7)
         "WOOVI_REFUND_ENABLED": "true",
         "CLOSURE_AUTO_PURGE_ENABLED": "false",
         "CLOSURE_NOTICE_EMAIL_ENABLED": "true",
+        // off in staging too: the real sending of the tips there is a later phase
+        "ACTIVATION_EMAILS_ENABLED": "false",
         "BILLING_SELF_SERVICE_ENABLED": "true",
         "MEDIA_THUMBS_ENABLED": "true",
         // the footer and reply-to of the billing e-mails: one address on araute.app (the isolation check refuses another domain)
         "BILLING_SUPPORT_EMAIL": "suporte@araute.app",
-        "WELCOME_EMAIL_ENABLED": "false",
         "LEGAL_ACCEPTANCE_ENFORCED": "false",
         "BETTER_AUTH_BASE_URL": "https://dash.araute.app",
         "CATALOG_ORIGIN": "https://catalogo.araute.app",
@@ -386,6 +397,11 @@
           "name": "CLIENT_ERROR_RATE_LIMIT",
           "namespace_id": "902024",
           "simple": { "limit": 10, "period": 60 }
+        },
+        {
+          "name": "TIPS_STOP_RATE_LIMIT",
+          "namespace_id": "902025",
+          "simple": { "limit": 20, "period": 60 }
         }
       ],
       "queues": {
@@ -458,10 +474,10 @@
         "WOOVI_REFUND_ENABLED": "false",
         "CLOSURE_AUTO_PURGE_ENABLED": "false",
         "CLOSURE_NOTICE_EMAIL_ENABLED": "false",
+        "ACTIVATION_EMAILS_ENABLED": "false",
         "BILLING_SELF_SERVICE_ENABLED": "false",
         "MEDIA_THUMBS_ENABLED": "false",
         "BILLING_SUPPORT_EMAIL": "",
-        "WELCOME_EMAIL_ENABLED": "false",
         "LEGAL_ACCEPTANCE_ENFORCED": "false",
         "BETTER_AUTH_BASE_URL": "https://PLACEHOLDER-production-web-origin",
         "CATALOG_ORIGIN": "https://PLACEHOLDER-production-catalog-origin",
@@ -561,6 +577,11 @@
           "name": "CLIENT_ERROR_RATE_LIMIT",
           "namespace_id": "901024",
           "simple": { "limit": 10, "period": 60 }
+        },
+        {
+          "name": "TIPS_STOP_RATE_LIMIT",
+          "namespace_id": "901025",
+          "simple": { "limit": 20, "period": 60 }
         }
       ],
       "queues": {

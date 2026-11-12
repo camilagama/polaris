@@ -14,8 +14,8 @@ const { ChartFailed: ResultChartFailed } = await import(
 );
 
 /**
- * What the chart says when its chunk does not open, by where the numbers sit: in the Início the table is under the
- * chart (in "Ver os números"); in the Resultado the totals are above the chart and the table is below it.
+ * What the chart says when its chunk does not open, by where the numbers sit: in the Início the table is shown under the
+ * chart when it does not open; in the Resultado the totals are above the chart and the table is below it.
  */
 const HOME_WITHOUT_INTERNET =
   "O gráfico abre quando a internet voltar. Os números estão abaixo.";

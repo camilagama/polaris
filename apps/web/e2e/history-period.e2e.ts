@@ -1,7 +1,11 @@
 /// <reference lib="dom" />
 import type { Page, Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
-import { FORM_VIEWPORTS, touchDay } from "./date-pickers";
+import {
+  expectWholeMonthWhileTyping,
+  FORM_VIEWPORTS,
+  touchDay,
+} from "./date-pickers";
 import { applyEditor, onPhone } from "./filter-bar-editor";
 import { serveLabWorker, WORKER_MARK } from "./worker-mark";
 
@@ -129,7 +133,6 @@ for (const viewport of FORM_VIEWPORTS) {
         .getByRole("group", { name: "Atalhos do período" })
         .getByRole("button", { exact: true, name: "7 dias" })
         .click();
-      await applyEditor(page, shortcuts);
       await expect(shortcuts).toBeHidden();
       await expect(pill(page, "Período")).toHaveAccessibleName(
         "Período: 08/10 a 14/10, editar"
@@ -140,6 +143,31 @@ for (const viewport of FORM_VIEWPORTS) {
           occurredFrom: "2026-10-08",
           occurredTo: "2026-10-14",
         });
+
+      // "Este mês" is the calendar month everywhere; the history has no future days, so it is cut at today
+      const month = await openPeriod(page);
+      await month
+        .getByRole("group", { name: "Atalhos do período" })
+        .getByRole("button", { exact: true, name: "Este mês" })
+        .click();
+      await expect(month).toBeHidden();
+      await expect(pill(page, "Período")).toHaveAccessibleName(
+        "Período: 01/10 a 14/10, editar"
+      );
+      await expect
+        .poll(() => lastAsked(asked))
+        .toMatchObject({
+          occurredFrom: "2026-10-01",
+          occurredTo: "2026-10-14",
+        });
+      const pressed = await openPeriod(page);
+      await expect(
+        pressed
+          .getByRole("group", { name: "Atalhos do período" })
+          .getByRole("button", { exact: true, name: "Este mês" })
+      ).toHaveAttribute("aria-pressed", "true");
+      await page.keyboard.press("Escape");
+      await expect(pressed).toBeHidden();
 
       // "Limpar" empties the period: the pill goes and the list is asked for with no period
       const clearing = await openPeriod(page);
@@ -213,6 +241,66 @@ for (const viewport of FORM_VIEWPORTS) {
             askedWithout(asked, "occurredFrom")
         )
         .toBe(true);
+    });
+
+    test("digitar as datas: a data que não existe não aplica e leva o foco ao campo; o período digitado chega à lista", async ({
+      page,
+    }) => {
+      const asked = await openHistory(page);
+      const popup = await addFilter(page, "Período");
+      await expect(popup.getByRole("grid").first()).toBeVisible();
+      // a first day touched is written in the field when the typing opens, and kept where the caller applies
+      await touchDay(popup, "2026-10-12");
+      await popup.getByRole("button", { name: "Digitar as datas" }).click();
+      const start = popup.getByRole("textbox", { name: "Início" });
+      const end = popup.getByRole("textbox", { name: "Fim" });
+      await expect(start).toBeFocused();
+      await expect(start).toHaveValue("12/10/2026");
+      await expect(end).toHaveValue("");
+      await expectWholeMonthWhileTyping(popup);
+
+      await start.fill("");
+      await start.pressSequentially("31022026");
+      await end.pressSequentially("14102026");
+      const apply = popup.getByRole("button", { exact: true, name: "Aplicar" });
+      await expect(apply).toHaveAttribute("aria-disabled", "true");
+      await expect(apply).toHaveAccessibleDescription(
+        "Essa data não existe. Confira dia, mês e ano."
+      );
+      await apply.focus();
+      await page.keyboard.press("Enter");
+      await expect(start).toBeFocused();
+      await expect(popup).toBeVisible();
+      await expect(popup.getByRole("alert")).toHaveText(
+        "Essa data não existe. Confira dia, mês e ano."
+      );
+      await expect(popup.getByRole("alert")).toBeInViewport({ ratio: 1 });
+
+      await start.fill("");
+      await start.pressSequentially("01102026");
+      await expect(popup.getByRole("alert")).toHaveCount(0);
+      await expect(apply).not.toHaveAttribute("aria-disabled", "true");
+      await apply.click();
+      await expect(popup).toBeHidden();
+      await expect(pill(page, "Período")).toHaveAccessibleName(
+        "Período: 01/10 a 14/10, editar"
+      );
+      await expect
+        .poll(() => lastAsked(asked))
+        .toMatchObject({
+          occurredFrom: "2026-10-01",
+          occurredTo: "2026-10-14",
+        });
+
+      // reopened, the fields show the period there is, and a day touched is written in them
+      const again = await openPeriod(page);
+      await again.getByRole("button", { name: "Digitar as datas" }).click();
+      await expect(again.getByRole("textbox", { name: "Início" })).toHaveValue(
+        "01/10/2026"
+      );
+      await expect(again.getByRole("textbox", { name: "Fim" })).toHaveValue(
+        "14/10/2026"
+      );
     });
   });
 }

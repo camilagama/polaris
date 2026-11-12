@@ -1,7 +1,7 @@
 import type { CategoryReadModel, ProductReadModel } from "@polaris/contracts";
 import MoreHorizontalIcon from "lucide-react/dist/esm/icons/ellipsis";
 import PackageIcon from "lucide-react/dist/esm/icons/package";
-import { type ReactNode, useCallback, useMemo } from "react";
+import { useCallback, useMemo } from "react";
 import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
 import { Card } from "@/ui/card";
@@ -17,7 +17,7 @@ import type { PendingProduct } from "../offline/product-create";
 import { ProductThumbnail, useThumbnailSequence } from "./product-thumbnail";
 import { productInitials } from "./product-search-model";
 import { OFFLINE_NOTICE_ID } from "./products-page-parts";
-import { OPENABLE_ROW_CLASS, RowOpenButton } from "./screen-parts";
+import { ListNotice, OPENABLE_ROW_CLASS, RowOpenButton } from "./screen-parts";
 
 export type ProductListStatus = "active" | "archived";
 
@@ -307,16 +307,6 @@ interface ProductListProps extends RowActions {
   syncStates: ReadonlyMap<string, PendingProduct>;
   /** How many products the status has, before the search. */
   total: number;
-}
-
-function ListNotice({ children }: { children: ReactNode }) {
-  return (
-    <Card className="py-6">
-      <div className="grid justify-items-center gap-3 px-4 text-center">
-        {children}
-      </div>
-    </Card>
-  );
 }
 
 export function ProductList({

@@ -15,38 +15,36 @@ import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
 import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
 import { Card } from "@/ui/card";
-import { SearchField } from "@/ui/search-field";
 import { HelpTip } from "@/ui/help-tip";
+import { MoneyText } from "@/ui/hidden-values";
+import { RefreshButton } from "@/ui/refresh-button";
+import { SearchField } from "@/ui/search-field";
 import { Skeleton } from "@/ui/skeleton";
 import {
   ProductThumbnail,
   useThumbnailSequence,
 } from "../catalog/product-thumbnail";
-import { useMediaThumbsEnabled } from "../lib/media-thumbs-flag";
-import { useStoreToday } from "../lib/use-store-today";
+import { stockProductLinks } from "../catalog/products-link-model";
 import { useCurrentOrganization } from "../lib/current-organization";
 import { focusLater } from "../lib/focus";
+import { useMediaThumbsEnabled } from "../lib/media-thumbs-flag";
+import { useStoreToday } from "../lib/use-store-today";
 import { useLocalWorkspace } from "../offline/runtime/use-local-workspace";
+import { LINK, StockActionStrip } from "./stock-action-strip";
 import { isStockAction, type StockAction } from "./stock-command-model";
 import { StockCommandPanel } from "./stock-command-panel";
+import { StockFiltersBar } from "./stock-filters";
 import {
-  PANEL_OPEN_REASON,
-  PANEL_OPEN_REASON_ID,
-  RowActions,
-  triggerId,
-} from "./stock-row-actions";
-import {
-  type StockFilter,
+  readStockLinkFilters,
+  readStockLinkSearch,
+  type StockAttentionLink,
   type StockRow,
   stockCountText,
   stockCoverIds,
   stockListView,
   stockMoreView,
-  readStockLinkFilters,
-  type StockAttentionLink,
 } from "./stock-list-model";
-import { LINK, StockActionStrip } from "./stock-action-strip";
-import { StockFiltersButton } from "./stock-filters";
+import { RowActions, triggerId } from "./stock-row-actions";
 import { type StockTarget, stockTarget } from "./stock-target";
 import { useStockAttention } from "./use-stock-attention";
 import { useStockEntryLink } from "./use-stock-entry-link";
@@ -56,8 +54,27 @@ interface OpenCommand {
   action: StockAction;
   /** Opened by the link from the sale: it stands above the list, whether or not the list holds the variant. */
   standalone: boolean;
+  /** The quantity the link from the sale asks the receive panel to open with. */
+  quantity?: number;
   /** The balance as the row showed it when the panel opened. */
   target: StockTarget;
+}
+
+/**
+ * The buttons are only off while the panel that says why is on the page: a panel opened on a row the list no longer
+ * has (a search or a refresh took it out) is not drawn, and must not leave the other rows off with no way to close it.
+ */
+function isPanelMounted(
+  open: OpenCommand | null,
+  rows: readonly StockRow[] | null
+) {
+  if (open === null) {
+    return false;
+  }
+  return (
+    open.standalone ||
+    (rows?.some((row) => row.id === open.target.variantId) ?? false)
+  );
 }
 
 /** A link on a line of its own: it gets the 44 px touch area. */
@@ -108,7 +125,11 @@ function Figure({ children, className, label }: FigureProps) {
   );
 }
 
+/** The name of a row that leads to its product: a link on a line of its own, with the 44 px touch area. */
+const PRODUCT_NAME_LINK = `touch-hit ${LINK}`;
+
 interface StockItemProps {
+  canOpenProduct: boolean;
   children: ReactNode;
   onOpen: (event: MouseEvent<HTMLButtonElement>) => void;
   otherPanelOpen: boolean;
@@ -117,6 +138,7 @@ interface StockItemProps {
 }
 
 function StockItem({
+  canOpenProduct,
   children,
   onOpen,
   otherPanelOpen,
@@ -124,6 +146,7 @@ function StockItem({
   row,
 }: StockItemProps) {
   const thumbs = useMediaThumbsEnabled();
+  const rowLocked = panelOpen || otherPanelOpen;
   return (
     <li
       className={cn(
@@ -147,7 +170,17 @@ function StockItem({
           ) : null}
           <div className="min-w-0">
             <p className="flex flex-wrap items-center gap-x-2 gap-y-1 font-medium [overflow-wrap:anywhere]">
-              {row.productName}
+              {canOpenProduct && !rowLocked ? (
+                <a
+                  aria-label={`${row.productName}, ${row.variantText}. Abrir o produto`}
+                  className={PRODUCT_NAME_LINK}
+                  href={row.productHref}
+                >
+                  {row.productName}
+                </a>
+              ) : (
+                row.productName
+              )}
               {row.archived ? <Badge variant="outline">Arquivado</Badge> : null}
             </p>
             <p className="text-muted-foreground text-support [overflow-wrap:anywhere]">
@@ -184,15 +217,11 @@ function StockItem({
                 row.costUnknown && "text-warning italic"
               )}
             >
-              {row.costText}
+              <MoneyText text={row.costText} />
             </span>
           </Figure>
         </dl>
-        <RowActions
-          disabled={panelOpen || otherPanelOpen}
-          onOpen={onOpen}
-          row={row}
-        />
+        <RowActions disabled={rowLocked} onOpen={onOpen} row={row} />
       </div>
       {children}
     </li>
@@ -238,9 +267,12 @@ export function InventoryPage() {
     workspace !== null && !workspace.online ? workspace : null;
   const offline = offlineWorkspace !== null;
   // `?filtro=sem-saldo` / `?filtro=sem-custo` open the list already filtered
-  const [linkFilters] = useState(() =>
-    readStockLinkFilters(window.location.search)
-  );
+  // `?busca=` and `?arquivados=1` come from "Ver estoque" of a product: the search box opens with the name
+  const [linkFilters] = useState(() => ({
+    ...readStockLinkFilters(window.location.search),
+    ...readStockLinkSearch(window.location.search),
+  }));
+  const canOpenProduct = stockProductLinks(organization.role).toProduct;
   const {
     applyBalance: applyListBalance,
     filters,
@@ -274,6 +306,7 @@ export function InventoryPage() {
     if (entryLink.status === "found") {
       setOpen({
         action: "receive",
+        quantity: entryLink.quantity,
         standalone: true,
         target: stockTarget(entryLink.entry, {
           costUnavailable: offlineRef.current,
@@ -291,18 +324,6 @@ export function InventoryPage() {
 
   const handleQuery = useCallback(
     (query: string) => setFilters({ query }),
-    [setFilters]
-  );
-  const handleArchived = useCallback(
-    (checked: boolean) => setFilters({ includeArchived: checked }),
-    [setFilters]
-  );
-  const handleUnknownCost = useCallback(
-    (checked: boolean) => setFilters({ unknownCost: checked }),
-    [setFilters]
-  );
-  const handleFilter = useCallback(
-    (stock: StockFilter) => setFilters({ stock }),
     [setFilters]
   );
   const handleOpen = useCallback(
@@ -367,6 +388,11 @@ export function InventoryPage() {
     [setFilters]
   );
 
+  const panelMounted = isPanelMounted(
+    open,
+    view.kind === "ready" ? view.rows : null
+  );
+
   return (
     <div className="grid gap-4 font-sans text-foreground text-sm antialiased">
       <header className="grid gap-1">
@@ -390,24 +416,21 @@ export function InventoryPage() {
         <EntryNotFoundNotice unavailable={entryLink.status === "unavailable"} />
       ) : null}
 
-      <search aria-label="Filtrar estoque" className="grid gap-3">
-        <div className="flex flex-wrap items-center gap-2">
+      <StockFiltersBar
+        filters={filters}
+        leading={
           <SearchField
-            className="min-w-0 flex-1 md:max-w-md"
+            className="min-w-0 flex-1 basis-[calc(100%-7rem)] md:max-w-md"
             hintClassName="order-last basis-full"
             label="Buscar no estoque"
             onValueChange={handleQuery}
             placeholder="Produto, variante ou SKU"
             value={filters.query}
           />
-          <StockFiltersButton
-            filters={filters}
-            onArchived={handleArchived}
-            onStock={handleFilter}
-            onUnknownCost={handleUnknownCost}
-          />
-        </div>
-      </search>
+        }
+        offline={offline}
+        onChange={setFilters}
+      />
 
       <div className="flex min-h-ctl-sm items-center justify-between gap-3">
         <p
@@ -417,27 +440,8 @@ export function InventoryPage() {
         >
           {countText ?? " "}
         </p>
-        <Button
-          className="shrink-0"
-          onClick={handleReload}
-          size="sm"
-          type="button"
-          variant="link"
-        >
-          <RefreshCwIcon aria-hidden="true" data-icon="inline-start" />
-          Atualizar
-        </Button>
+        <RefreshButton className="shrink-0" onClick={handleReload} />
       </div>
-
-      {view.kind === "ready" ? (
-        // always there, so the list does not drop a line when a panel opens
-        <p
-          className="min-h-5 text-muted-foreground text-support"
-          id={PANEL_OPEN_REASON_ID}
-        >
-          {open === null ? null : PANEL_OPEN_REASON}
-        </p>
-      ) : null}
 
       {open?.standalone ? (
         <Card className="gap-0 py-0">
@@ -451,6 +455,7 @@ export function InventoryPage() {
               onInformCost={handleInformCost}
               onReloadList={reload}
               organizationId={organizationId}
+              requestedQuantity={open.quantity}
               standalone
               target={open.target}
               today={today}
@@ -497,9 +502,11 @@ export function InventoryPage() {
           >
             {view.rows.map((row) => (
               <StockItem
+                canOpenProduct={canOpenProduct}
                 key={row.id}
                 onOpen={handleOpen}
                 otherPanelOpen={
+                  panelMounted &&
                   open !== null &&
                   (open.standalone || open.target.variantId !== row.id)
                 }

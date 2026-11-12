@@ -32,11 +32,13 @@ import {
 } from "@/ui/dialog";
 import {
   DropdownMenu,
+  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/ui/dropdown-menu";
 import {
+  type EditableFilterField,
   editLabel,
   type FilterField,
   type FilterOption,
@@ -51,7 +53,9 @@ import {
   type SelectFilterField,
   setRule,
   showClearAll,
+  TOGGLE_ON,
   type TextFilterField,
+  type ToggleFilterField,
   visibleRules,
 } from "@/ui/filter-bar-model";
 import { Input } from "@/ui/input";
@@ -64,6 +68,8 @@ export type {
 } from "@/ui/filter-bar-model";
 
 export interface FilterBarProps {
+  /** Below 760 px "Filtrar" is only the icon, named by `label`: the first line keeps room for what `leading` brings. */
+  addIconOnPhone?: boolean;
   /** The screen's `role="status"` line ("3 vendas com esse filtro"): it goes inside the `<search>`, under the bar. */
   children?: ReactNode;
   className?: string | undefined;
@@ -71,6 +77,8 @@ export interface FilterBarProps {
   fields: readonly FilterField[];
   /** The name of the `<search>`: "Filtrar vendas". */
   label: string;
+  /** A search box that shares the first line with "Filtrar": the bar wraps the pills under it, so the screen needs no line of its own for either. */
+  leading?: ReactNode;
   /** Called with the next list of filters (the order they were added in). */
   onChange: (rules: FilterRule[]) => void;
   /** The filters there are. */
@@ -259,7 +267,7 @@ function EditorContent({
   onCommit,
   value,
 }: {
-  field: FilterField;
+  field: EditableFilterField;
   onCommit: Commit;
   value: FilterRuleValue | undefined;
 }) {
@@ -283,6 +291,7 @@ function EditorContent({
     case "date-range":
       return (
         <DateRangePanel
+          endsToday={field.endsToday}
           onCommit={onCommit}
           today={field.today}
           value={value && typeof value !== "string" ? value : null}
@@ -366,7 +375,7 @@ function DraftContent({
   statusId,
 }: {
   draft: FilterRuleValue | null;
-  field: FilterField;
+  field: EditableFilterField;
   onDraft: Commit;
   onHalfChange: (half: boolean) => void;
   statusId: string;
@@ -380,6 +389,7 @@ function DraftContent({
     case "date-range":
       return (
         <DateRangePanel
+          endsToday={field.endsToday}
           onCommit={onDraft}
           onHalfChange={onHalfChange}
           statusId={statusId}
@@ -395,23 +405,39 @@ function DraftContent({
 /**
  * The editor of a pill on a phone, inside the form Dialog (the whole screen): the title is the name of the filter, the
  * body is the editor of the Popover and the footer, fixed, has "Aplicar" and "Cancelar". Nothing is applied until
- * "Aplicar": a choice, a text, a day or a shortcut only change the draft, which lives with the content, so closing
+ * "Aplicar": a choice, a text or a day only change the draft, which lives with the content, so closing
  * (Cancelar, ×, Esc, the step back) drops it. A draft with no value (an empty text, no choice, "Limpar") applies as
  * taking the filter out, as in the Popover. With only the first day of a period marked "Aplicar" is `aria-disabled`
  * (described by the line that asks for the last day), so the day touched is never dropped by applying the old range.
+ * In a period a shortcut applies and closes at once, and "Aplicar" shows only after a day was touched or typed, or
+ * "Limpar" was pressed: until then there is no draft to confirm.
  */
 function PhoneEditorContent({
   field,
   onApply,
   value,
 }: {
-  field: FilterField;
+  field: EditableFilterField;
   onApply: Commit;
   value: FilterRuleValue | undefined;
 }) {
   const [draft, setDraft] = useState<FilterRuleValue | null>(value ?? null);
   const [half, setHalf] = useState(false);
+  const [picked, setPicked] = useState(false);
   const statusId = useId();
+  const isPeriod = field.type === "date-range";
+  const showApply = !isPeriod || picked || half;
+  const draftPeriod = useCallback(
+    (next: FilterRuleValue | null, shortcut?: string) => {
+      if (shortcut) {
+        onApply(next);
+        return;
+      }
+      setDraft(next);
+      setPicked(true);
+    },
+    [onApply]
+  );
   const apply = useCallback(
     (event: FormEvent<HTMLFormElement>) => {
       event.preventDefault();
@@ -430,7 +456,7 @@ function PhoneEditorContent({
         <DraftContent
           draft={draft}
           field={field}
-          onDraft={setDraft}
+          onDraft={isPeriod ? draftPeriod : setDraft}
           onHalfChange={setHalf}
           statusId={statusId}
         />
@@ -439,14 +465,16 @@ function PhoneEditorContent({
         <DialogClose render={<Button type="button" variant="outline" />}>
           Cancelar
         </DialogClose>
-        <Button
-          aria-describedby={half ? statusId : undefined}
-          aria-disabled={half || undefined}
-          size="xl"
-          type="submit"
-        >
-          Aplicar
-        </Button>
+        {showApply ? (
+          <Button
+            aria-describedby={half ? statusId : undefined}
+            aria-disabled={half || undefined}
+            size="xl"
+            type="submit"
+          >
+            Aplicar
+          </Button>
+        ) : null}
       </DialogFooter>
     </DialogForm>
   );
@@ -454,7 +482,8 @@ function PhoneEditorContent({
 
 /** What each kind of editor needs of its Popover: the period takes the width of its month, a choice is a short list. */
 const POPUP_CLASS = {
-  "date-range": "w-auto max-w-[calc(100vw-1rem)] gap-3 p-2",
+  "date-range":
+    "max-h-(--available-height) w-auto max-w-[calc(100vw-1rem)] gap-3 overflow-y-auto overflow-x-hidden p-2",
   select: "w-56 gap-0 p-1",
   text: "",
 } as const;
@@ -466,7 +495,7 @@ interface PillEditorProps {
   commit: Commit;
   /** What the pill's button shows: the field and the value. */
   content: ReactNode;
-  field: FilterField;
+  field: EditableFilterField;
   isEditing: boolean;
   /** The accessible name of the pill's button. */
   name: string;
@@ -548,8 +577,31 @@ function PillEditor({
   );
 }
 
-interface PillProps {
+const PILL_FRAME =
+  "inline-flex h-9 touch:h-11 max-w-full shrink-0 items-stretch rounded-full border border-border bg-card text-sm has-[[aria-expanded=true]]:border-foreground/70 has-[[aria-expanded=true]]:ring-2 has-[[aria-expanded=true]]:ring-foreground/10";
+
+/** The X of a pill: the only control of a switch's pill. */
+function RemoveButton({
+  field,
+  onRemove,
+}: {
   field: FilterField;
+  onRemove: () => void;
+}) {
+  return (
+    <button
+      aria-label={removeLabel(field)}
+      className="touch-hit focus-ring grid touch:w-11 w-9 shrink-0 place-items-center rounded-e-full border-border border-s text-muted-foreground hover:bg-accent hover:text-foreground"
+      onClick={onRemove}
+      type="button"
+    >
+      <XIcon aria-hidden="true" className="size-4" />
+    </button>
+  );
+}
+
+interface PillProps {
+  field: EditableFilterField;
   /** Whether the editor of this pill is open. */
   isEditing: boolean;
   /** The animated layer, at the `full` level once loaded; null draws the pill still. */
@@ -563,6 +615,37 @@ interface PillProps {
   /** Absent on the pill of a field just chosen in the menu, which has no value yet. */
   rule: FilterRule | undefined;
   text: string;
+}
+
+/** The pill of a switch: its text alone (and the reason, when the connection it needs is missing), with only the X as a control. */
+function TogglePill({
+  field,
+  layer,
+  level,
+  onRemove,
+  text,
+}: {
+  field: ToggleFilterField;
+  layer: MotionLayer | null;
+  level: MotionLevel;
+  onRemove: (field: FilterField) => void;
+  text: string;
+}) {
+  const remove = useCallback(() => onRemove(field), [field, onRemove]);
+  const Frame = layer?.PillFrame ?? StillPillFrame;
+  return (
+    <Frame className={PILL_FRAME} motion={pillMotion(level)}>
+      <span className="flex min-w-0 items-center ps-3 pe-2 font-medium">
+        <span className="min-w-0 truncate">{text}</span>
+      </span>
+      {field.disabledReason ? (
+        <span className="flex shrink-0 items-center pe-2 text-muted-foreground text-xs">
+          {field.disabledReason}
+        </span>
+      ) : null}
+      <RemoveButton field={field} onRemove={remove} />
+    </Frame>
+  );
 }
 
 function FilterPill({
@@ -608,16 +691,11 @@ function FilterPill({
     </>
   );
 
+  const Frame = layer?.PillFrame ?? StillPillFrame;
   // the row wraps, so `max-w-full` is the width of the screen: a pill with a reason is never wider than it, and it is
   // the value that gives way (it truncates) so the reason and the X stay in sight at 320 and 360 px
-  const Frame = layer?.PillFrame ?? StillPillFrame;
   return (
-    <Frame
-      className={cn(
-        "inline-flex h-9 touch:h-11 max-w-full shrink-0 items-stretch rounded-full border border-border bg-card text-sm has-[[aria-expanded=true]]:border-foreground/70 has-[[aria-expanded=true]]:ring-2 has-[[aria-expanded=true]]:ring-foreground/10"
-      )}
-      motion={pillMotion(level)}
-    >
+    <Frame className={PILL_FRAME} motion={pillMotion(level)}>
       {blocked ? (
         <>
           <button
@@ -649,15 +727,45 @@ function FilterPill({
           value={rule?.value}
         />
       )}
-      <button
-        aria-label={removeLabel(field)}
-        className="touch-hit focus-ring grid touch:w-11 w-9 shrink-0 place-items-center rounded-e-full border-border border-s text-muted-foreground hover:bg-accent hover:text-foreground"
-        onClick={remove}
-        type="button"
-      >
-        <XIcon aria-hidden="true" className="size-4" />
-      </button>
+      <RemoveButton field={field} onRemove={remove} />
     </Frame>
+  );
+}
+
+/**
+ * A switch in the "Filtrar" menu: a `menuitemcheckbox` that is checked while its pill exists. Touching it turns the
+ * filter on or off and closes the menu, and the focus goes back to "Filtrar". Without the connection it needs
+ * (`disabledReason`) it is `aria-disabled` with the reason under its name, keeps the focus, and neither changes nor closes.
+ */
+function ToggleItem({
+  field,
+  on,
+  onToggle,
+}: {
+  field: ToggleFilterField;
+  on: boolean;
+  onToggle: (field: ToggleFilterField, on: boolean) => void;
+}) {
+  const blocked = field.disabledReason !== undefined;
+  const change = useCallback(
+    (checked: boolean) => onToggle(field, checked),
+    [field, onToggle]
+  );
+  return (
+    <DropdownMenuCheckboxItem
+      aria-disabled={blocked || undefined}
+      checked={on}
+      className={cn(blocked && "text-muted-foreground")}
+      closeOnClick={!blocked}
+      onCheckedChange={blocked ? undefined : change}
+    >
+      <span className="grid min-w-0 flex-1">
+        <span>{field.label}</span>
+        {field.disabledReason ? (
+          <span className="text-support">{field.disabledReason}</span>
+        ) : null}
+      </span>
+    </DropdownMenuCheckboxItem>
   );
 }
 
@@ -707,7 +815,8 @@ function FieldItem({
  * choice among a few options, or the `DateRangePanel` of the period) and its X takes it out. "Filtrar" opens a menu with
  * the fields: those already used are grey with their value at the end, one that cannot be used now is `aria-disabled`
  * with its reason under the name ("Só com conexão"). Choosing a field adds its pill and opens the editor; closing the
- * editor with no value takes the pill back. "Limpar tudo" shows with two or more pills.
+ * editor with no value takes the pill back. A yes-or-no field (`type: "toggle"`) is a checkbox item instead: touching it
+ * turns the filter on or off with no editor, and its pill is a text with only the X. "Limpar tudo" shows with two or more pills.
  *
  * At the `full` level of motion the pills come in and go out with opacity and scale and the neighbours slide (`motion`,
  * as the Araute has it, in `filter-bar-motion.tsx`, loaded by `import()`); on a phone and with `prefers-reduced-motion`
@@ -719,15 +828,18 @@ function FieldItem({
  * passes as `children`.
  */
 export function FilterBar({
+  addIconOnPhone = false,
   children,
   className,
   fields,
   label,
+  leading,
   onChange,
   value,
 }: FilterBarProps) {
   const level = useMotionLevel();
   const phone = usePhone();
+  const iconOnly = addIconOnPhone && phone;
   const searchRef = useRef<HTMLElement>(null);
   /** The field chosen in the menu, whose pill waits for a value. */
   const [adding, setAdding] = useState<string | null>(null);
@@ -840,6 +952,14 @@ export function FilterBar({
     return !handedOver;
   }, []);
 
+  const toggle = useCallback(
+    (field: ToggleFilterField, on: boolean) => {
+      closeEditor();
+      onChange(setRule(fields, value, field.id, on ? TOGGLE_ON : null));
+    },
+    [closeEditor, fields, onChange, value]
+  );
+
   const clearAll = useCallback(() => {
     closeEditor();
     onChange([]);
@@ -870,48 +990,80 @@ export function FilterBar({
       ref={searchRef}
     >
       <div className="flex flex-wrap items-center gap-2 touch:gap-y-3">
+        {leading}
         <DropdownMenu>
           <DropdownMenuTrigger
             render={
               <Button
+                aria-label={iconOnly ? label : undefined}
                 className="shrink-0"
                 data-slot="filter-add"
+                size={iconOnly ? "icon" : "default"}
                 variant="outline"
               />
             }
           >
-            <FunnelIcon aria-hidden="true" data-icon="inline-start" />
-            Filtrar
+            {iconOnly ? (
+              <FunnelIcon aria-hidden="true" />
+            ) : (
+              <>
+                <FunnelIcon aria-hidden="true" data-icon="inline-start" />
+                Filtrar
+              </>
+            )}
           </DropdownMenuTrigger>
           <DropdownMenuContent
             aria-label="Filtrar por"
-            className="w-64"
+            className="w-64 max-w-[calc(100vw-1rem)]"
             finalFocus={menuClosed}
           >
-            {fields.map((field) => (
-              <FieldItem
-                field={field}
-                key={field.id}
-                onChoose={choose}
-                used={shown.find((entry) => entry.field.id === field.id)?.text}
-              />
-            ))}
+            {fields.map((field) => {
+              const used = shown.find(
+                (entry) => entry.field.id === field.id
+              )?.text;
+              return field.type === "toggle" ? (
+                <ToggleItem
+                  field={field}
+                  key={field.id}
+                  on={used !== undefined}
+                  onToggle={toggle}
+                />
+              ) : (
+                <FieldItem
+                  field={field}
+                  key={field.id}
+                  onChoose={choose}
+                  used={used}
+                />
+              );
+            })}
           </DropdownMenuContent>
         </DropdownMenu>
 
         {/* one keyed list: the pill of a field just chosen and the same pill once it has a value are one element,
               so the editor's trigger (where the focus goes back) is not remounted; `AnimatePresence` does the same */}
         <PillList>
-          {pills.map(({ field, rule, text }) => (
-            <FilterPill
-              {...pillProps}
-              field={field}
-              isEditing={editing === field.id}
-              key={field.id}
-              rule={rule}
-              text={text}
-            />
-          ))}
+          {pills.map(({ field, rule, text }) =>
+            field.type === "toggle" ? (
+              <TogglePill
+                field={field}
+                key={field.id}
+                layer={layer}
+                level={level}
+                onRemove={remove}
+                text={text}
+              />
+            ) : (
+              <FilterPill
+                {...pillProps}
+                field={field}
+                isEditing={editing === field.id}
+                key={field.id}
+                rule={rule}
+                text={text}
+              />
+            )
+          )}
         </PillList>
 
         {showClearAll(shown.length) ? (

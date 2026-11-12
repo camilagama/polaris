@@ -47,6 +47,8 @@ export type UiCheck = "overflow" | "touch" | "axe" | "focus";
 export const VIEWPORTS = {
   "320": { height: 640, width: 320 },
   "360": { height: 740, width: 360 },
+  "760": { height: 900, width: 760 },
+  "1024": { height: 800, width: 1024 },
   "1280": { height: 800, width: 1280 },
 } as const;
 
@@ -99,7 +101,7 @@ export const MOTION_CONTEXT: UiContext = light("360", true);
 /** Opens an overlay by its trigger, waits for it, and closes it with Escape, waiting for the exit too. */
 async function openAndClose(
   page: Page,
-  trigger: { name: string; role: "button" | "combobox" },
+  trigger: { name: string | RegExp; role: "button" | "combobox" },
   popup: { name?: string; role: "dialog" | "listbox" | "menu" }
 ) {
   // a form dialog can be open already (its own backdrop stays): what must go is the one of this overlay
@@ -352,10 +354,12 @@ const EXPENSE_SOURCES = [
   "src/expenses/expense-categories-panel.tsx",
   "src/expenses/expense-category-form.tsx",
   "src/expenses/expense-fields.tsx",
+  "src/expenses/expense-filters.tsx",
   "src/expenses/expense-form.tsx",
   "src/expenses/expense-list.tsx",
   "src/expenses/expense-rule-form.tsx",
   "src/expenses/expense-rules-panel.tsx",
+  "src/expenses/expenses-loading.tsx",
   "src/expenses/expenses-page.tsx",
   "src/expenses/month-picker.tsx",
 ];
@@ -372,16 +376,19 @@ const expenseScreen = (
   sourceDirs: EXPENSE_SOURCES,
 });
 
-/** The category filter and the grid of months (the popover of the month picker), each opened and closed. */
-async function exerciseExpenseCategoryFilter(page: Page) {
+const FILTER_BUTTON = /^Filtrar( despesas)?$/;
+const MONTH_BUTTON = /^Mês de competência, /;
+
+/** The menu of "Filtrar" (named "Filtrar despesas" while it is only the icon, below 760 px) and the grid of months (the popover of the month picker), each opened and closed. */
+async function exerciseExpenseFilters(page: Page) {
   await openAndClose(
     page,
-    { name: "Categoria", role: "combobox" },
-    { role: "listbox" }
+    { name: FILTER_BUTTON, role: "button" },
+    { name: "Filtrar por", role: "menu" }
   );
   await openAndClose(
     page,
-    { name: "Mês de competência, Outubro de 2026", role: "button" },
+    { name: MONTH_BUTTON, role: "button" },
     { name: "Mês de competência", role: "dialog" }
   );
 }
@@ -444,7 +451,7 @@ const homeScreen = (
   sourceDirs: HOME_SOURCES,
 });
 
-/** The "Mais" panel of the phone and the numbers under the chart and the map: open each and close it, waiting for the exit. */
+/** The "Mais" panel of the phone: open it and close it, waiting for the exit. */
 async function exerciseHomePanels(page: Page) {
   const more = page.getByRole("button", { exact: true, name: "Mais" });
   const sheet = page.getByRole("dialog", { name: "Mais" });
@@ -453,16 +460,6 @@ async function exerciseHomePanels(page: Page) {
   await page.waitForTimeout(300);
   await page.keyboard.press("Escape");
   await sheet.waitFor({ state: "hidden" });
-  // under the chart and under the map
-  for (const numbers of await page
-    .getByRole("button", { name: "Ver os números" })
-    .all()) {
-    // biome-ignore lint/performance/noAwaitInLoops: one panel at a time
-    await numbers.click();
-    await page.waitForTimeout(300);
-    await numbers.click();
-    await page.waitForTimeout(300);
-  }
 }
 
 /** The files of the sales history on the new interface. */
@@ -892,7 +889,7 @@ export const SCREENS: UiScreen[] = [
   stockScreen("baixa recusada", stockStates.writeOffRefused),
   stockScreen("sem conexão", stockStates.offline),
   stockScreen("sem conexão, recebimento guardado", stockStates.offlineKept),
-  expenseScreen("lista", expenseStates.list, exerciseExpenseCategoryFilter),
+  expenseScreen("lista", expenseStates.list, exerciseExpenseFilters),
   expenseScreen("grade de meses aberta", expenseStates.monthGrid),
   expenseScreen("erros nos campos", expenseStates.errors),
   expenseScreen("recorrentes e o diálogo da regra", expenseStates.rules),
@@ -906,6 +903,7 @@ export const SCREENS: UiScreen[] = [
   resultScreen("sem dados", resultStates.empty),
   resultScreen("sem custo conhecido", resultStates.noCost),
   homeScreen("com vendas", homeStates.sold, exerciseHomePanels),
+  homeScreen("com vendas e sem meta", homeStates.soldNoGoal),
   homeScreen("loja nova", homeStates.fresh),
   homeScreen("erro nos números", homeStates.error),
   homeScreen("sem rede, com cópia", homeStates.offlineWithCopy),
@@ -943,7 +941,10 @@ export const SCREENS: UiScreen[] = [
     headingOf("Algo deu errado nesta tela")
   ),
   shellPieceScreen("carregando", "carregando", async (page) => {
-    await page.getByRole("status").getByText("Carregando…").waitFor();
+    await page
+      .getByRole("status")
+      .getByText("Carregando…")
+      .waitFor({ state: "attached" });
   }),
   shellPieceScreen("avisos de sessão e aceite", "avisos", async (page) => {
     await page.getByText("Sua sessão acabou.").first().waitFor();
@@ -1004,4 +1005,5 @@ export const SCREENS: UiScreen[] = [
   attentionScreen("com itens", attentionStates.items),
   attentionScreen("descartando", attentionStates.discarding),
   attentionScreen("vazio", attentionStates.empty),
+  attentionScreen("sem offline", attentionStates.unavailable),
 ];

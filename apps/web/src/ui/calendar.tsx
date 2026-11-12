@@ -1,7 +1,15 @@
 import { format } from "date-fns";
 import ChevronLeftIcon from "lucide-react/dist/esm/icons/chevron-left";
 import ChevronRightIcon from "lucide-react/dist/esm/icons/chevron-right";
-import { createContext, useContext, useEffect, useId, useRef } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+} from "react";
 import {
   type ChevronProps,
   DateLib,
@@ -21,16 +29,22 @@ import { buttonVariants } from "@/ui/button";
  * tokens and rules. Days are 36 px with a mouse and 44 px with touch (shrinking below 360 px so the week fits at
  * 320), the cell itself is the touch area (days touch each other and never overlap), focus is the 3 px outline of
  * the other controls, the arrows move the focus between days (DayPicker's own
- * keyboard grid), the text is Brazilian Portuguese. A day outside the allowed ones is `aria-disabled` and says why
- * through `aria-describedby` (the project's rule for a disabled control with a reason), so a screen reader that
- * reaches it hears the reason instead of a silent dimmed number.
+ * keyboard grid), the text is Brazilian Portuguese. A day outside the allowed ones is `aria-disabled`, keeps the
+ * focus of the arrows, the click and the touch, and says why through `aria-describedby` (the project's rule for a
+ * disabled control with a reason): a screen reader hears the reason once, and a line under the month shows it as
+ * text while such a day has the focus (unless the picker's footer already writes it).
  *
  * Heavy (it brings react-day-picker and date-fns): screens never import it. They use the pickers, which load it
  * on demand through `calendar-on-demand.tsx`; a guard of `pwa/precache-budget.ts` fails the build otherwise.
  */
 export type CalendarProps = DayPickerProps & {
-  /** Why the disabled days cannot be chosen ("Só até hoje"); read by the screen reader on each one. */
+  /** Why the disabled days cannot be chosen ("Só até hoje"); described on each one and shown under the month on focus. */
   disabledReason?: string | undefined;
+  /**
+   * The picker already writes the reason in its own footer: the line under the month leaves the layout (no text, no
+   * reserved height) but stays in the DOM, so each disabled day is still described by it.
+   */
+  reasonInFooter?: boolean | undefined;
 };
 
 const ReasonContext = createContext<string | undefined>(undefined);
@@ -78,7 +92,9 @@ function CalendarDayButton({
         "data-[range-middle=true]:rounded-none data-[range-middle=true]:bg-transparent data-[range-middle=true]:text-foreground",
         "data-[selected-single=true]:bg-primary data-[selected-single=true]:text-primary-foreground data-[selected-single=true]:hover:bg-primary/88",
         "data-[range-end=true]:bg-primary data-[range-start=true]:bg-primary data-[range-end=true]:text-primary-foreground data-[range-start=true]:text-primary-foreground data-[range-end=true]:hover:bg-primary/88 data-[range-start=true]:hover:bg-primary/88",
-        "aria-disabled:line-through aria-disabled:opacity-40",
+        // only the number fades (never the button's opacity, which would fade the focus outline too); no hover fill and no
+        // press scale: a day that cannot be chosen must not light up or sink like a valid one
+        "aria-disabled:pointer-events-auto aria-disabled:cursor-not-allowed aria-disabled:text-foreground/40 aria-disabled:line-through aria-disabled:opacity-100 aria-disabled:active:not-aria-[haspopup]:scale-100 aria-disabled:not-data-[selected-single=true]:hover:bg-transparent! aria-disabled:data-[outside=true]:text-muted-foreground/40!",
         className
       )}
       data-day={day.isoDate}
@@ -153,14 +169,34 @@ export function Calendar({
   classNames,
   components,
   disabledReason,
+  disabled,
   formatters,
   labels,
   fixedWeeks = true,
+  modifiers,
+  onDayBlur,
+  onDayFocus,
+  reasonInFooter = false,
   showOutsideDays = true,
   ...props
 }: CalendarProps) {
   const defaults = getDefaultClassNames();
   const reasonId = useId();
+  const [onDisabledDay, setOnDisabledDay] = useState(false);
+  const handleDayFocus = useCallback<NonNullable<CalendarProps["onDayFocus"]>>(
+    (day, dayModifiers, event) => {
+      setOnDisabledDay(Boolean(dayModifiers.disabled));
+      onDayFocus?.(day, dayModifiers, event);
+    },
+    [onDayFocus]
+  );
+  const handleDayBlur = useCallback<NonNullable<CalendarProps["onDayBlur"]>>(
+    (day, dayModifiers, event) => {
+      setOnDisabledDay(false);
+      onDayBlur?.(day, dayModifiers, event);
+    },
+    [onDayBlur]
+  );
   return (
     <ReasonContext.Provider value={disabledReason ? reasonId : undefined}>
       <DayPicker
@@ -191,10 +227,7 @@ export function Calendar({
             defaults.month_caption
           ),
           month_grid: cn("w-full border-collapse", defaults.month_grid),
-          months: cn(
-            "relative flex flex-col gap-4 xl:flex-row",
-            defaults.months
-          ),
+          months: cn("relative flex flex-col gap-4", defaults.months),
           nav: cn(
             "absolute inset-x-0 top-0 flex w-full items-center justify-between gap-1",
             defaults.nav
@@ -229,13 +262,26 @@ export function Calendar({
           ...labels,
         }}
         locale={ptBR}
+        // the limit goes in as a modifier, not as DayPicker's `disabled` prop: the arrows skip the days of the prop
+        // but stop on a day that is only a modifier, and the click and Enter still refuse it
+        modifiers={disabled ? { ...modifiers, disabled } : modifiers}
+        onDayBlur={handleDayBlur}
+        onDayFocus={handleDayFocus}
         showOutsideDays={showOutsideDays}
         {...props}
       />
       {disabledReason ? (
-        <span className="sr-only" id={reasonId}>
+        <p
+          className={cn(
+            reasonInFooter
+              ? "hidden"
+              : "sticky bottom-0 min-h-[1.375rem] bg-popover pt-1 text-center text-muted-foreground text-support",
+            !(reasonInFooter || onDisabledDay) && "invisible"
+          )}
+          id={reasonId}
+        >
           {disabledReason}
-        </span>
+        </p>
       ) : null}
     </ReasonContext.Provider>
   );

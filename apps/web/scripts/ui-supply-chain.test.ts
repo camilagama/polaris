@@ -17,6 +17,7 @@ import {
   parseBunLock,
   readWorkflow,
   scanUiFolderFile,
+  SOURCE_RULE_EXCEPTIONS,
   scanUiSource,
   secretsInInstallOrBuild,
   testPackagesOutsideDev,
@@ -423,6 +424,20 @@ export const Box = () => <Dialog.Root />;`;
     expect(
       scanUiSource("x.tsx", source).map((finding) => finding.rule)
     ).toContain(rule);
+  });
+
+  it("rejects adoptedStyleSheets in every file, the old counter's path included, and lists no exception", () => {
+    const adopt = "root.adoptedStyleSheets = [sheet];";
+    for (const file of [
+      "/repo/apps/web/src/ui/figure-counter.tsx",
+      "/repo/apps/web/src/ui/money.tsx",
+      "/repo/apps/web/src/ui/animated-figure.tsx",
+    ]) {
+      expect(scanUiSource(file, adopt, undefined, "/repo")).toEqual([
+        { file, rule: "adoptedStyleSheets" },
+      ]);
+    }
+    expect(SOURCE_RULE_EXCEPTIONS).toEqual([]);
   });
 
   it("takes a scoped package by its first two segments", () => {

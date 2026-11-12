@@ -68,6 +68,27 @@ export interface WorkerBindings {
   POLARIS_ENVIRONMENT?: string;
   /** The static assets of the build (`assets.binding`): the Worker answers `/assets/*` through it, 404 for a file that is not there. */
   ASSETS?: AssetsBinding;
+  /**
+   * `true` turns on the activation series (ADR 0106, D6): the hourly sweep records the tips owed and their outbox
+   * events, and the consumer of `activation.notice` may send them. Anything else (and absent) leaves it off: the sweep
+   * only clears the instant the switch was seen on, so switching it on later never sends what piled up, and the consumer
+   * records an owed notice `switched_off` without reading anything else. Off in every environment until the user turns
+   * it on.
+   */
+  ACTIVATION_EMAILS_ENABLED?: string;
+  /**
+   * The sender of the tips e-mails (ADR 0106), apart from `AUTH_EMAIL_FROM` so their reputation stays apart. Without it
+   * the tips are skipped `email_not_configured`. Not a secret.
+   */
+  ACTIVATION_EMAIL_FROM?: string;
+  /**
+   * The key of the HMAC of the suppressed addresses of the tips (ADR 0106, D8): a Worker secret of each environment, 32
+   * characters or more, different from every other secret of the Worker. Without it (or refused) the tips are skipped
+   * `email_not_configured`: a send never goes out unchecked.
+   */
+  ACTIVATION_SUPPRESSION_HMAC_SECRET?: string;
+  /** The secret before a rotation of `ACTIVATION_SUPPRESSION_HMAC_SECRET`: the suppressions under it still count. */
+  ACTIVATION_SUPPRESSION_HMAC_SECRET_PREVIOUS?: string;
   /** Asaas API key (secret): `$aact_hmlg_...` in staging, the production one only in production (ADR 0101). */
   ASAAS_API_KEY?: string;
   /** `https://api-sandbox.asaas.com/v3` in staging, `https://api.asaas.com/v3` in production. */
@@ -104,7 +125,7 @@ export interface WorkerBindings {
    */
   MEDIA_THUMBS_ENABLED?: string;
   /**
-   * The support box of the billing e-mails and the welcome (ADR 0104, decision 7): the footer names it and it is the
+   * The support box of the billing e-mails (ADR 0104, decision 7): the footer names it and it is the
    * reply-to. Required: without it (or without `RESEND_API_KEY`, `AUTH_EMAIL_FROM`, `BETTER_AUTH_BASE_URL` and
    * `AUTH_HYPERDRIVE`) those e-mails stay off and their notices are skipped `email_not_configured`. Not a secret.
    */
@@ -144,13 +165,6 @@ export interface WorkerBindings {
    * (and absent) leaves it off; the sign-up and `/aceite` record the acceptance either way.
    */
   LEGAL_ACCEPTANCE_ENFORCED?: string;
-  /**
-   * `true` turns on the hourly sweep of the welcome (E1, ADR 0104, decision 6): the stores of the last 24 hours get
-   * their welcome recorded, with its outbox event. Anything else leaves it off and writes nothing. Off in every
-   * environment: it goes on only with the consumer of `billing.notice` deployed (PR G), the legal basis checked (EM-37)
-   * and P48.
-   */
-  WELCOME_EMAIL_ENABLED?: string;
   GOOGLE_CLIENT_SECRET?: string;
   HYPERDRIVE: HyperdriveBinding;
   IMAGES?: MediaImagesBinding;
@@ -200,7 +214,17 @@ export interface WorkerBindings {
   SYNC_PAYLOAD_HASH_PREVIOUS_SECRET?: string;
   /** The key of the HMAC that identifies an offline command's content (ADR 0079); at least 32 bytes. */
   SYNC_PAYLOAD_HASH_SECRET?: string;
+  /** The limit of `/api/parar-dicas` per address (20 per minute), GET and POST: the page that stops the tips e-mails. */
+  TIPS_STOP_RATE_LIMIT?: RateLimitBinding;
   TURNSTILE_SECRET_KEY?: string;
+  /**
+   * The key of the HMAC of the links that stop the tips e-mails (ADR 0106, D8): a Worker secret of each environment,
+   * 32 characters or more, never the `BETTER_AUTH_SECRET` nor the one of the suppression. Without it the page answers
+   * 503 and no link is made.
+   */
+  UNSUBSCRIBE_TOKEN_SECRET?: string;
+  /** The secret before a rotation of `UNSUBSCRIBE_TOKEN_SECRET`: its links still open until it is removed. */
+  UNSUBSCRIBE_TOKEN_PREVIOUS_SECRET?: string;
   /** The public key of the Turnstile widget of this environment (not a secret). */
   TURNSTILE_SITE_KEY?: string;
   /** Woovi AppID (secret): the sandbox one in staging, the production one only in production (ADR 0101). */

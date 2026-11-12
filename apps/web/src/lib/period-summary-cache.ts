@@ -308,6 +308,9 @@ function isDaily(
   );
 }
 
+/** How many products the Início and the Resultado ask for under the same key, so the last write never loses a line of the ranking. */
+export const TOP_PRODUCTS = 5;
+
 /** Absent (not asked for), or the ranked products as the server sent them. */
 function isTopProducts(value: unknown): boolean {
   return (
@@ -316,6 +319,10 @@ function isTopProducts(value: unknown): boolean {
       value.every(
         (entry) =>
           isDictionary(entry) &&
+          (entry.coverAssetId === undefined ||
+            entry.coverAssetId === null ||
+            (isText(entry.coverAssetId) &&
+              uuidPattern.test(entry.coverAssetId))) &&
           typeof entry.deleted === "boolean" &&
           isText(entry.name) &&
           isMoney(entry.netSales) &&

@@ -226,7 +226,7 @@ async function chooseOption(page: Page, trigger: Locator, option: Locator) {
 async function openCost(page: Page) {
   await openList(page);
   await page
-    .getByRole("button", { name: "Informar custo de Camiseta do teste · Azul" })
+    .getByRole("button", { name: "Informar custo de Camiseta do teste, Azul" })
     .click();
   await page.getByLabel("Custo de cada unidade (R$)").waitFor();
 }

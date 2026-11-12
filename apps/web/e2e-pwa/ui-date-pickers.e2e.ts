@@ -62,6 +62,10 @@ async function expectDisabledDay(off: Locator) {
   await expect(off).toHaveAccessibleDescription("Só até hoje");
 }
 
+/** The reason of the turned-off days, as the text under the month (hidden, with its height kept, until one has the focus). */
+const reasonLine = (popup: Locator) =>
+  popup.getByText("Só até hoje", { exact: true });
+
 async function pickShortcut(page: Page, name: string) {
   const popup = await openPicker(page, "Período,", "Período");
   await popup
@@ -76,13 +80,31 @@ async function pickShortcut(page: Page, name: string) {
  * of the gallery, and a target covered by an open popover is not a fault of either (the page with every picker
  * closed is checked whole).
  */
-async function axeWithOpen(page: Page, label: string) {
+async function axeWithOpen(page: Page, label: string, offDay?: string) {
   const popup = await openPicker(page, `${label},`, label);
+  if (offDay) {
+    await day(popup, "2026-10-24").focus();
+    await page.keyboard.press("ArrowRight");
+    await expect(day(popup, offDay)).toBeFocused();
+    await expect(day(popup, offDay)).toHaveAttribute("aria-disabled", "true");
+  }
   const faults = await axeFaults(page, '[data-slot="popover-content"]');
   await page.keyboard.press("Escape");
   await expect(popup).toBeHidden();
   return faults;
 }
+
+/** What a day looks like to the pointer: the fill, the cursor, the opacity of the button and its press scale. */
+const paint = (button: Locator) =>
+  button.evaluate((element) => {
+    const style = getComputedStyle(element);
+    return {
+      background: style.backgroundColor,
+      cursor: style.cursor,
+      opacity: style.opacity,
+      transform: style.transform,
+    };
+  });
 
 /** Whether the page is in the touch sizes (the `touch` variant of theme.css). */
 const isTouch = (page: Page) =>
@@ -306,14 +328,19 @@ test("enquanto o chunk não chega a caixa de espera é um status que diz Abrindo
     .getByRole("region", { name: "Calendário" })
     .locator('[data-slot="calendar"]');
   const after = await calendar.boundingBox();
+  // the gallery's month has a reason for its disabled days: its line, hidden but with its height, is under the month
+  const line = await calendar
+    .locator("xpath=following-sibling::p")
+    .boundingBox();
   expect(before).not.toBeNull();
   expect(after).not.toBeNull();
+  expect(line).not.toBeNull();
   expect(Math.abs((after?.width ?? 0) - (before?.width ?? 0))).toBeLessThan(
     1.5
   );
-  expect(Math.abs((after?.height ?? 0) - (before?.height ?? 0))).toBeLessThan(
-    1.5
-  );
+  expect(
+    Math.abs((after?.height ?? 0) + (line?.height ?? 0) - (before?.height ?? 0))
+  ).toBeLessThan(1.5);
 });
 
 for (const viewport of VIEWPORTS) {
@@ -395,12 +422,24 @@ for (const viewport of VIEWPORTS) {
       await expect(day(popup, "2026-10-10")).not.toHaveAttribute(
         "aria-disabled"
       );
-      // a real click event on the day (a pointer would stop at its pointer-events: none): DayPicker ignores it
-      await day(popup, "2026-10-25").dispatchEvent("click");
+      // the arrows reach the turned-off day and the reason shows as text while it has the focus; Enter and Space do not
+      // choose it nor close the popup
+      const reason = reasonLine(popup);
+      await day(popup, "2026-10-24").focus();
+      await expect(reason).toBeHidden();
+      await page.keyboard.press("ArrowRight");
+      await expect(day(popup, "2026-10-25")).toBeFocused();
+      await expect(reason).toBeVisible();
+      await page.keyboard.press("Enter");
+      await page.keyboard.press("Space");
       await expect(popup).toBeVisible();
+      await expect(day(popup, "2026-10-25")).toBeFocused();
       await expect(trigger(page, "Data do pagamento,")).toHaveText(
         "Escolher data"
       );
+      await page.keyboard.press("ArrowLeft");
+      await expect(day(popup, "2026-10-24")).toBeFocused();
+      await expect(reason).toBeHidden();
       // the inline calendar of the gallery: the same reason after today
       const inline = page.getByRole("region", { name: "Calendário" });
       await expect(day(inline, "2026-10-30")).toHaveAccessibleDescription(
@@ -436,7 +475,7 @@ for (const viewport of VIEWPORTS) {
       await day(popup, "2026-10-10").click();
       await expect(popup).toBeVisible();
       await expect(
-        popup.getByText("Início 10/10/2026. Escolha o último dia.")
+        popup.getByText("Início 10/10. Escolha o último dia.")
       ).toBeVisible();
       await expect(button).toHaveText("Escolher período");
       await day(popup, "2026-10-05").click();
@@ -504,18 +543,64 @@ for (const viewport of VIEWPORTS) {
       await expect(button).toHaveAccessibleName("Período, Escolher período");
     });
 
-    test("período: um mês abaixo de 1280 px e dois a partir dele, o dia com 36 px no mouse e 44 no toque, nada fora da janela", async ({
+    test("período: com só o 1º dia o botão de digitar escreve a data pela regra do ano e o painel não muda de largura", async ({
+      page,
+    }) => {
+      await openGallery(page);
+      const open = () =>
+        openPicker(page, "Período das vendas,", "Período das vendas");
+      let popup = await open();
+      let toggle = popup.getByRole("button", { name: "Digitar as datas" });
+      await expect(toggle).toHaveText("Digitar as datas");
+      const before = await popup.boundingBox();
+      const toggleBefore = await toggle.boundingBox();
+
+      await day(popup, "2026-10-10").click();
+      await expect(toggle).toHaveText("10/10 a …");
+      await expect(toggle).toHaveAccessibleName("Digitar as datas: 10/10 a …");
+      const after = await popup.boundingBox();
+      expect(after?.width).toBeCloseTo(before?.width ?? 0, 0);
+      expect((await toggle.boundingBox())?.height).toBeCloseTo(
+        toggleBefore?.height ?? 0,
+        0
+      );
+
+      await page.keyboard.press("Escape");
+      await expect(popup).toBeHidden();
+      popup = await open();
+      toggle = popup.getByRole("button", { name: "Digitar as datas" });
+      await expect(toggle).toHaveText("Digitar as datas");
+      const next = popup.getByRole("button", { name: "Próximo mês" });
+      await next.click();
+      await next.click();
+      await next.click();
+      await expect(popup.getByText("Janeiro de 2027").first()).toBeVisible();
+      await day(popup, "2027-01-05").click();
+      await expect(toggle).toHaveText("05/01/2027 a …");
+      await expect(toggle).toHaveAccessibleName(
+        "Digitar as datas: 05/01/2027 a …"
+      );
+      expect((await popup.boundingBox())?.width).toBeCloseTo(
+        before?.width ?? 0,
+        0
+      );
+    });
+
+    test("período: um mês em qualquer largura, o dia com 36 px no mouse e 44 no toque, nada fora da janela", async ({
       page,
     }) => {
       await openGallery(page);
       const popup = await openPicker(page, "Período,", "Período");
-      await expect(popup.getByRole("grid")).toHaveCount(
-        viewport.width >= 1280 ? 2 : 1
-      );
+      await expect(popup.getByRole("grid")).toHaveCount(1);
       const size = (await isTouch(page)) ? 44 : 36;
       const box = await day(popup, "2026-10-15").boundingBox();
       expect(box?.width).toBeCloseTo(size, 0);
       expect(box?.height).toBeCloseTo(size, 0);
+      expect(
+        await day(popup, "2026-10-15").evaluate(
+          (element) => getComputedStyle(element, "::before").content
+        )
+      ).toBe("none");
       const popupBox = await popup.boundingBox();
       expect(popupBox?.x).toBeGreaterThanOrEqual(0);
       expect((popupBox?.x ?? 0) + (popupBox?.width ?? 0)).toBeLessThanOrEqual(
@@ -608,8 +693,168 @@ test.describe("reaberto no meio da saída, a 1280 px", () => {
 
     expect(await chooseAndReopen(page, "Período,", "Hoje")).toBe(true);
     await expect(trigger(page, "Período,")).toHaveText("24/10/2026");
-    await expect(popup.getByText("Setembro de 2026")).toBeVisible();
+    await expect(popup.getByText("Outubro de 2026")).toBeVisible();
     await expect(popup.getByText("Novembro de 2026")).toBeHidden();
+  });
+});
+
+test.describe("dia desligado, com o mouse a 1280 px", () => {
+  test.use({
+    hasTouch: false,
+    isMobile: false,
+    viewport: { height: 800, width: 1280 },
+  });
+
+  test("o clique foca o dia e mostra o motivo sem escolher; o mouse sobre ele não acende nem afunda; só o número apaga e o contorno do foco fica inteiro", async ({
+    page,
+  }) => {
+    await openGallery(page);
+    const popup = await openPicker(
+      page,
+      "Data do pagamento,",
+      "Data do pagamento"
+    );
+    const off = day(popup, "2026-10-25");
+    const reason = reasonLine(popup);
+    await expect(reason).toBeHidden();
+    await off.hover();
+    expect(await paint(off)).toEqual({
+      background: "rgba(0, 0, 0, 0)",
+      cursor: "not-allowed",
+      opacity: "1",
+      transform: "none",
+    });
+    await page.mouse.down();
+    expect((await paint(off)).transform).toBe("none");
+    await page.mouse.up();
+    await expect(off).toBeFocused();
+    await expect(reason).toBeVisible();
+    await expect(popup).toBeVisible();
+    await expect(trigger(page, "Data do pagamento,")).toHaveText(
+      "Escolher data"
+    );
+    // a valid day does light up under the same mouse: the control of the check above
+    const allowed = day(popup, "2026-10-23");
+    await allowed.hover();
+    await expect
+      .poll(async () => (await paint(allowed)).background)
+      .not.toBe("rgba(0, 0, 0, 0)");
+    // the number is what fades; the 3 px outline of the focus is the one of every control, at full opacity
+    await day(popup, "2026-10-24").focus();
+    await page.keyboard.press("ArrowRight");
+    await expect(off).toBeFocused();
+    const outline = await off.evaluate((element) => {
+      const style = getComputedStyle(element);
+      return { style: style.outlineStyle, width: style.outlineWidth };
+    });
+    expect(outline).toEqual({ style: "solid", width: "3px" });
+    expect(await paint(off)).toMatchObject({ opacity: "1" });
+    await page.mouse.move(0, 0);
+    await expect(reason).toBeVisible();
+  });
+});
+
+test.describe("dia desligado, com toque a 360 px", () => {
+  test.use({
+    hasTouch: true,
+    isMobile: true,
+    viewport: { height: 740, width: 360 },
+  });
+
+  test("o toque no dia foca, mostra o motivo e não escolhe nem fecha", async ({
+    page,
+  }) => {
+    await openGallery(page);
+    const popup = await openPicker(
+      page,
+      "Data do pagamento,",
+      "Data do pagamento"
+    );
+    const reason = reasonLine(popup);
+    await expect(reason).toBeHidden();
+    // forced: Playwright counts an aria-disabled button as not enabled, but the touch itself lands on the day
+    await day(popup, "2026-10-25").tap({ force: true });
+    await expect(day(popup, "2026-10-25")).toBeFocused();
+    await expect(reason).toBeVisible();
+    await expect(popup).toBeVisible();
+    await expect(trigger(page, "Data do pagamento,")).toHaveText(
+      "Escolher data"
+    );
+    await day(popup, "2026-10-23").tap();
+    await expect(popup).toBeHidden();
+    await expect(trigger(page, "Data do pagamento,")).toHaveText("23/10/2026");
+  });
+});
+
+test.describe("dia desligado, a 360 x 600 com toque", () => {
+  test.use({
+    hasTouch: true,
+    isMobile: true,
+    viewport: { height: 600, width: 360 },
+  });
+
+  test("com pouca altura só o mês rola e a linha do motivo fica à vista, presa ao pé da caixa do mês", async ({
+    page,
+  }) => {
+    await openGallery(page);
+    const popup = await openPicker(
+      page,
+      "Data do pagamento,",
+      "Data do pagamento"
+    );
+    await day(popup, "2026-10-24").focus();
+    await page.keyboard.press("ArrowRight");
+    await expect(day(popup, "2026-10-25")).toBeFocused();
+    const reason = reasonLine(popup);
+    await expect(reason).toBeVisible();
+    const month = popup.locator("[data-date-month]");
+    const line = await reason.boundingBox();
+    const box = await month.boundingBox();
+    expect(line).not.toBeNull();
+    expect(box).not.toBeNull();
+    expect(line?.y).toBeGreaterThanOrEqual(0);
+    expect((line?.y ?? 0) + (line?.height ?? 0)).toBeLessThanOrEqual(600);
+    expect((line?.y ?? 0) + (line?.height ?? 0)).toBeLessThanOrEqual(
+      (box?.y ?? 0) + (box?.height ?? 0) + 1
+    );
+    await expect(
+      popup.getByRole("button", { exact: true, name: "Hoje" })
+    ).toBeInViewport();
+  });
+});
+
+test.describe("dia desligado, a 360 x 420 com toque", () => {
+  test.use({
+    hasTouch: true,
+    isMobile: true,
+    viewport: { height: 420, width: 360 },
+  });
+
+  test("o dia desligado da última semana, levado à vista pelo foco, não fica atrás da linha do motivo", async ({
+    page,
+  }) => {
+    await openGallery(page);
+    const popup = await openPicker(
+      page,
+      "Data do pagamento,",
+      "Data do pagamento"
+    );
+    const month = popup.locator("[data-date-month]");
+    expect(
+      await month.evaluate((box) => box.scrollHeight - box.clientHeight)
+    ).toBeGreaterThan(0);
+    const last = day(popup, "2026-11-07");
+    await last.focus();
+    await expect(last).toBeFocused();
+    const reason = reasonLine(popup);
+    await expect(reason).toBeVisible();
+    await expect
+      .poll(async () => {
+        const dayBox = await last.boundingBox();
+        const lineBox = await reason.boundingBox();
+        return (lineBox?.y ?? 0) - ((dayBox?.y ?? 0) + (dayBox?.height ?? 0));
+      })
+      .toBeGreaterThanOrEqual(-1);
   });
 });
 
@@ -661,6 +906,153 @@ test.describe("a 320 px, com toque", () => {
   });
 });
 
+const FUTURE_REASON = "Só depois de hoje";
+
+const footerReason = (popup: Locator) =>
+  popup.locator("[data-date-footer]").getByText(FUTURE_REASON, { exact: true });
+
+async function openFuturePicker(page: Page) {
+  await openGallery(page);
+  return openPicker(page, "Data de entrega,", "Data de entrega");
+}
+
+async function expectTodayFooterFits(page: Page, popup: Locator) {
+  const reason = footerReason(popup);
+  const today = popup.getByRole("button", { exact: true, name: "Hoje" });
+  await expect(reason).toBeVisible();
+  const [popupBox, reasonBox, todayBox] = await Promise.all([
+    popup.boundingBox(),
+    reason.boundingBox(),
+    today.boundingBox(),
+  ]);
+  expect(popupBox).not.toBeNull();
+  expect(reasonBox).not.toBeNull();
+  expect(todayBox).not.toBeNull();
+  const right = (box: { width: number; x: number } | null) =>
+    (box?.x ?? 0) + (box?.width ?? 0);
+  expect(reasonBox?.x).toBeGreaterThanOrEqual((popupBox?.x ?? 0) - 0.5);
+  expect(right(reasonBox)).toBeLessThanOrEqual((todayBox?.x ?? 0) + 0.5);
+  expect(right(todayBox)).toBeLessThanOrEqual(right(popupBox) + 0.5);
+  const cut = await popup.evaluate(
+    (element) => element.scrollWidth - element.clientWidth
+  );
+  expect(cut).toBeLessThanOrEqual(0);
+  const viewport = page.viewportSize();
+  expect(popupBox?.x).toBeGreaterThanOrEqual(0);
+  expect(right(popupBox)).toBeLessThanOrEqual(viewport?.width ?? 0);
+}
+
+test.describe("Hoje desligado, com o motivo à vista", () => {
+  test.use({ viewport: { height: 740, width: 360 } });
+
+  test("o rodapé escreve o motivo, o botão o descreve, segue focável e não escolhe nem fecha", async ({
+    page,
+  }) => {
+    const popup = await openFuturePicker(page);
+    const today = popup.getByRole("button", { exact: true, name: "Hoje" });
+    await expect(footerReason(popup)).toBeVisible();
+    await expect(today).toHaveAttribute("aria-disabled", "true");
+    await expect(today).not.toHaveAttribute("disabled");
+    await expect(today).toHaveAccessibleDescription(FUTURE_REASON);
+    await today.focus();
+    await expect(today).toBeFocused();
+    await today.click({ force: true });
+    await page.keyboard.press("Enter");
+    await expect(popup).toBeVisible();
+    await expect(trigger(page, "Data de entrega,")).toHaveText("Escolher data");
+    await expectTodayFooterFits(page, popup);
+  });
+
+  test("o motivo aparece uma vez só, a altura não muda ao focar o dia desligado e o dia segue descrito por ele", async ({
+    page,
+  }) => {
+    const popup = await openFuturePicker(page);
+    const off = day(popup, "2026-10-24");
+    const before = (await popup.boundingBox())?.height;
+    await off.focus();
+    await expect(off).toBeFocused();
+    await expect(popup.getByText(FUTURE_REASON, { exact: true })).toHaveCount(
+      2
+    );
+    await expect(
+      popup.getByText(FUTURE_REASON, { exact: true }).locator("visible=true")
+    ).toHaveCount(1);
+    await expect(footerReason(popup)).toBeVisible();
+    await expect(off).toHaveAccessibleDescription(FUTURE_REASON);
+    expect((await popup.boundingBox())?.height).toBe(before);
+  });
+
+  test("com Hoje permitido o rodapé não escreve motivo nenhum", async ({
+    page,
+  }) => {
+    await openGallery(page);
+    const popup = await openPicker(
+      page,
+      "Data do pagamento,",
+      "Data do pagamento"
+    );
+    await expect(
+      popup.getByRole("button", { exact: true, name: "Hoje" })
+    ).not.toHaveAttribute("aria-disabled");
+    await expect(popup.locator("[data-date-footer] p")).toHaveCount(0);
+  });
+});
+
+test.describe("Hoje desligado, a 360 x 600 e a 320 px com fonte de 20 px", () => {
+  for (const viewport of [
+    { height: 600, width: 360 },
+    { height: 640, width: 320 },
+  ]) {
+    test(`o rodapé cabe a ${viewport.width} x ${viewport.height}, com a fonte em 20 px`, async ({
+      page,
+    }) => {
+      await page.setViewportSize(viewport);
+      await openGallery(page);
+      await page.evaluate(() => {
+        document.documentElement.style.fontSize = "20px";
+      });
+      const popup = await openPicker(
+        page,
+        "Data de entrega,",
+        "Data de entrega"
+      );
+      await expectTodayFooterFits(page, popup);
+      const today = popup.getByRole("button", { exact: true, name: "Hoje" });
+      await expect(today).toBeInViewport();
+      const bottom =
+        ((await popup.boundingBox())?.y ?? 0) +
+        ((await popup.boundingBox())?.height ?? 0);
+      expect(bottom).toBeLessThanOrEqual(viewport.height);
+    });
+  }
+});
+
+for (const viewport of VIEWPORTS) {
+  for (const theme of ["claro", "escuro"] as const) {
+    test(`o atalho em uso tem fundo próprio, pela cor computada, a ${viewport.width} px no tema ${theme}`, async ({
+      page,
+    }) => {
+      await page.setViewportSize(viewport);
+      await openGallery(page, theme);
+      const popup = await openPicker(page, "Período,", "Período");
+      const shortcuts = popup.getByRole("group", {
+        name: "Atalhos do período",
+      });
+      const pressed = shortcuts.getByRole("button", { name: "Este mês" });
+      await expect(pressed).toHaveAttribute("aria-pressed", "true");
+      const other = shortcuts.getByRole("button", { name: "Mês passado" });
+      await expect(other).toHaveAttribute("aria-pressed", "false");
+      await page.mouse.move(0, 0);
+      const background = (target: Locator) =>
+        target.evaluate((element) => getComputedStyle(element).backgroundColor);
+      const marked = await background(pressed);
+      expect(marked).not.toBe(await background(other));
+      expect(marked).not.toBe(await background(popup));
+      expect(marked).not.toBe("rgba(0, 0, 0, 0)");
+    });
+  }
+}
+
 for (const theme of ["claro", "escuro"] as const) {
   test(`axe não acha nada com cada seletor aberto (tema ${theme})`, async ({
     page,
@@ -668,6 +1060,10 @@ for (const theme of ["claro", "escuro"] as const) {
     await openGallery(page, theme);
     expect(await axeFaults(page)).toEqual([]);
     expect(await axeWithOpen(page, "Data do pagamento")).toEqual([]);
+    expect(await axeWithOpen(page, "Data do pagamento", "2026-10-25")).toEqual(
+      []
+    );
+    expect(await axeWithOpen(page, "Data de entrega")).toEqual([]);
     expect(await axeWithOpen(page, "Período")).toEqual([]);
   });
 }

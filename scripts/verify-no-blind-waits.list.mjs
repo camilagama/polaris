@@ -60,7 +60,7 @@ export const BLIND_WAITS_LIST = {
     reason: BEFORE_THE_RULE,
   },
   "apps/web/e2e-pwa/ui-sale-states.ts": { count: 1, reason: BEFORE_THE_RULE },
-  "apps/web/e2e-pwa/ui-screens.ts": { count: 5, reason: BEFORE_THE_RULE },
+  "apps/web/e2e-pwa/ui-screens.ts": { count: 3, reason: BEFORE_THE_RULE },
   "apps/web/e2e-pwa/ui-stock-states.ts": { count: 1, reason: BEFORE_THE_RULE },
   "apps/web/e2e-pwa/update-moments.e2e.ts": {
     count: 7,

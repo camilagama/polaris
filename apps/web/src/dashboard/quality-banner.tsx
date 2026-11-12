@@ -31,8 +31,8 @@ export function QualityBanner({ quality }: { quality: PeriodQuality }) {
               <p>
                 {qualitySummary(quality) ?? view.title}{" "}
                 <CollapsibleTrigger
-                  className="group/missing -my-1 inline-flex w-fit align-baseline"
-                  render={<Button size="sm" variant="link" />}
+                  className="group/missing -my-1 touch:-my-1.5 inline-flex w-fit align-baseline"
+                  render={<Button size="sm" variant="ghost" />}
                 >
                   Ver o que falta
                   <ChevronDownIcon

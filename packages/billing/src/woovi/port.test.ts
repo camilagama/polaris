@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { logger } from "@polaris/observability/logger";
+import { describe, expect, it, vi } from "vitest";
 import type { FetchInit, FetchLike } from "../http";
 import { parseProviderJson } from "../json";
 import {
@@ -18,12 +19,15 @@ import {
 } from "./mapper";
 import { createWooviPort, type WooviPortConfig } from "./port";
 import {
+  docSubscriptionJson,
   INSTALLMENT_ID,
   installmentJson,
+  liveInstallmentJson,
   OTHER_INSTALLMENT_ID,
+  OTHER_SUBSCRIPTION_ID,
   PERSONAL_VALUES,
   SUBSCRIPTION_ID,
-  subscriptionBeforeApprovalJson,
+  scheduledInstallmentJson,
   subscriptionJson,
 } from "./test-fixtures";
 
@@ -99,6 +103,11 @@ const getSubscription = (overrides: Record<string, unknown> = {}) =>
     SUBSCRIPTION_PATH,
     json({ subscription: subscriptionJson(overrides) })
   );
+const approvedPix = {
+  emv: FAKE_EMV,
+  journey: "ONLY_RECURRENCY",
+  status: "APPROVED",
+};
 const getInstallments = (...installments: Record<string, unknown>[]) =>
   on("GET", INSTALLMENTS_PATH, json({ installments }));
 const cancelRoute = () =>
@@ -174,7 +183,7 @@ describe("prepareSubscription", () => {
     on(
       "POST",
       "/api/v1/subscriptions",
-      answer ?? json({ subscription: subscriptionBeforeApprovalJson() })
+      answer ?? json({ subscription: subscriptionJson() })
     );
   const patchRoute = () =>
     on("PATCH", CUSTOMER_PATH, json({ customer: storedCustomer() }));
@@ -251,7 +260,7 @@ describe("prepareSubscription", () => {
       findCustomer(),
       createRoute(
         json({
-          subscription: subscriptionBeforeApprovalJson({
+          subscription: subscriptionJson({
             paymentLink: "https://woovi-sandbox.com/pay/fake-link-0001",
           }),
         })
@@ -286,9 +295,7 @@ describe("prepareSubscription", () => {
   ])("the paymentLink %j becomes the url %j", async (paymentLink, url) => {
     const { fetch } = woovi(
       findCustomer(),
-      createRoute(
-        json({ subscription: subscriptionBeforeApprovalJson({ paymentLink }) })
-      )
+      createRoute(json({ subscription: subscriptionJson({ paymentLink }) }))
     );
 
     const prepared = await portWith(fetch).prepareSubscription(input());
@@ -297,7 +304,7 @@ describe("prepareSubscription", () => {
   });
 
   it("a response without paymentLink has no url", async () => {
-    const { paymentLink: _link, ...bare } = subscriptionBeforeApprovalJson();
+    const { paymentLink: _link, ...bare } = subscriptionJson();
     const { fetch } = woovi(
       findCustomer(),
       createRoute(json({ subscription: bare }))
@@ -585,9 +592,7 @@ describe("prepareSubscription", () => {
   ])("a creation answer with %s is malformed", async (_name, overrides) => {
     const { fetch } = woovi(
       findCustomer(),
-      createRoute(
-        json({ subscription: subscriptionBeforeApprovalJson(overrides) })
-      )
+      createRoute(json({ subscription: subscriptionJson(overrides) }))
     );
 
     const error = await failureOf(() =>
@@ -646,10 +651,54 @@ describe("cancelRenewal", () => {
 describe("discardCheckout", () => {
   it("a subscription the payer has not approved is cancelled and discarded", async () => {
     const { calls, fetch } = fakeWoovi(
-      on(
-        "GET",
-        SUBSCRIPTION_PATH,
-        json({ subscription: subscriptionBeforeApprovalJson() })
+      on("GET", SUBSCRIPTION_PATH, json({ subscription: subscriptionJson() })),
+      getInstallments(),
+      cancelRoute()
+    );
+
+    expect(await portWith(fetch).discardCheckout(SUBSCRIPTION_ID)).toBe(
+      "discarded"
+    );
+    expect(calls.map((call) => `${call.method} ${call.url}`)).toEqual([
+      `GET ${SUBSCRIPTION_PATH}`,
+      `GET ${INSTALLMENTS_PATH}`,
+      `PUT ${SUBSCRIPTION_PATH}/cancel`,
+    ]);
+  });
+
+  it.each([
+    ["a live installment (approved now)", liveInstallmentJson()],
+    [
+      "only a paid installment (approved, its state now not shown)",
+      installmentJson(),
+    ],
+    [
+      "only an installment out of shape of this subscription",
+      installmentJson({ dateGenerateCharge: undefined }),
+    ],
+  ])(
+    "the sandbox shape with %s is no longer a checkout: already closed, with no PUT",
+    async (_name, installment) => {
+      const { calls, fetch } = fakeWoovi(
+        getSubscription(),
+        getInstallments(installment),
+        cancelRoute()
+      );
+
+      expect(await portWith(fetch).discardCheckout(SUBSCRIPTION_ID)).toBe(
+        "already_closed"
+      );
+      expect(calls.some((call) => call.method === "PUT")).toBe(false);
+    }
+  );
+
+  it("an installment of ANOTHER subscription does not keep a checkout alive", async () => {
+    const { calls, fetch } = fakeWoovi(
+      getSubscription(),
+      getInstallments(
+        liveInstallmentJson({
+          paymentSubscriptionGlobalID: OTHER_SUBSCRIPTION_ID,
+        })
       ),
       cancelRoute()
     );
@@ -658,7 +707,54 @@ describe("discardCheckout", () => {
       "discarded"
     );
     expect(calls.at(-1)?.method).toBe("PUT");
-    expect(calls.at(-1)?.url).toBe(`${SUBSCRIPTION_PATH}/cancel`);
+  });
+
+  it("the documented shape CREATED with a SCHEDULED installment is still a checkout: PUT and discarded", async () => {
+    const { calls, fetch } = fakeWoovi(
+      on(
+        "GET",
+        SUBSCRIPTION_PATH,
+        json({ subscription: docSubscriptionJson("CREATED") })
+      ),
+      getInstallments(scheduledInstallmentJson()),
+      cancelRoute()
+    );
+
+    expect(await portWith(fetch).discardCheckout(SUBSCRIPTION_ID)).toBe(
+      "discarded"
+    );
+    // the status decides alone: the installments are not even read
+    expect(calls.map((call) => `${call.method} ${call.url}`)).toEqual([
+      `GET ${SUBSCRIPTION_PATH}`,
+      `PUT ${SUBSCRIPTION_PATH}/cancel`,
+    ]);
+  });
+
+  it("logs the shape of the authorization by codes and counts only", async () => {
+    const info = vi.spyOn(logger, "info").mockImplementation(() => undefined);
+    try {
+      const { fetch } = fakeWoovi(
+        getSubscription(),
+        getInstallments(liveInstallmentJson(), installmentJson()),
+        cancelRoute()
+      );
+      await portWith(fetch).discardCheckout(SUBSCRIPTION_ID);
+      expect(info).toHaveBeenCalledWith("billing_woovi_authorization_form", {
+        authorizationShown: false,
+        installmentsByStatus: { ACTIVE: 1, COMPLETED: 1 },
+        malformedInstallments: 0,
+        provider: "woovi",
+        reading: "discard_checkout",
+        verdict: "approved",
+      });
+      const logged = JSON.stringify(info.mock.calls);
+      expect(logged).not.toContain(SUBSCRIPTION_ID);
+      for (const value of PERSONAL_VALUES) {
+        expect(logged).not.toContain(value);
+      }
+    } finally {
+      info.mockRestore();
+    }
   });
 
   it("an approved subscription is no longer a checkout: already closed, with no PUT", async () => {
@@ -681,7 +777,7 @@ describe("discardCheckout", () => {
         "GET",
         SUBSCRIPTION_PATH,
         json({
-          subscription: subscriptionBeforeApprovalJson({ status: "INACTIVE" }),
+          subscription: subscriptionJson({ status: "INACTIVE" }),
         })
       ),
       cancelRoute()
@@ -710,14 +806,12 @@ describe("discardCheckout", () => {
 
 describe("hasSubscription", () => {
   const notApproved = () =>
-    on(
-      "GET",
-      SUBSCRIPTION_PATH,
-      json({ subscription: subscriptionBeforeApprovalJson() })
-    );
+    on("GET", SUBSCRIPTION_PATH, json({ subscription: subscriptionJson() }));
 
   it("an approved authorization is a subscription, without reading installments", async () => {
-    const { calls, fetch } = fakeWoovi(getSubscription());
+    const { calls, fetch } = fakeWoovi(
+      getSubscription({ pixRecurring: approvedPix })
+    );
 
     expect(await portWith(fetch).hasSubscription(SUBSCRIPTION_ID)).toBe(true);
     expect(calls).toHaveLength(1);
@@ -736,6 +830,24 @@ describe("hasSubscription", () => {
     expect(await portWith(fetch).hasSubscription(SUBSCRIPTION_ID)).toBe(true);
   });
 
+  it("an installment of ANOTHER subscription does not make one", async () => {
+    const { fetch } = fakeWoovi(
+      notApproved(),
+      getInstallments(
+        installmentJson({ paymentSubscriptionGlobalID: OTHER_SUBSCRIPTION_ID })
+      )
+    );
+    expect(await portWith(fetch).hasSubscription(SUBSCRIPTION_ID)).toBe(false);
+  });
+
+  it("an installment out of shape does not throw: it counts on the side that never discards", async () => {
+    const { fetch } = fakeWoovi(
+      notApproved(),
+      getInstallments(installmentJson({ dateGenerateCharge: undefined }))
+    );
+    expect(await portWith(fetch).hasSubscription(SUBSCRIPTION_ID)).toBe(true);
+  });
+
   it("a 404 throws ProviderNotFoundError", async () => {
     const { fetch } = fakeWoovi();
     await expect(
@@ -750,7 +862,7 @@ const parsed = (value: unknown) => parseProviderJson(JSON.stringify(value));
 describe("readState", () => {
   it("gives the same facts as the reconciliation, tied to the globalID", async () => {
     const { fetch } = fakeWoovi(
-      getSubscription(),
+      getSubscription({ pixRecurring: approvedPix }),
       getInstallments(
         installmentJson(),
         installmentJson({
@@ -788,9 +900,79 @@ describe("readState", () => {
           ),
         ],
         now: NOW,
-        subscription: pickWooviSubscription(parsed(subscriptionJson())),
+        subscription: pickWooviSubscription(
+          parsed(subscriptionJson({ pixRecurring: approvedPix }))
+        ),
       })
     );
+  });
+
+  describe("an approval the subscription read back does not show (sandbox shape)", () => {
+    const liveInstallmentOf = (subscriptionId: string) =>
+      installmentJson({
+        cobr: {
+          ...(installmentJson().cobr as Record<string, unknown>),
+          status: "ACTIVE",
+        },
+        paymentSubscriptionGlobalID: subscriptionId,
+        status: "ACTIVE",
+      });
+
+    it("is not inferred from a live installment of ANOTHER subscription", async () => {
+      const { fetch } = fakeWoovi(
+        getSubscription(),
+        getInstallments(liveInstallmentOf(OTHER_SUBSCRIPTION_ID))
+      );
+
+      expect(await portWith(fetch).readState(SUBSCRIPTION_ID, NOW)).toEqual([]);
+    });
+
+    it("is inferred from the same live installment of THIS subscription", async () => {
+      const { fetch } = fakeWoovi(
+        getSubscription(),
+        getInstallments(liveInstallmentOf(SUBSCRIPTION_ID))
+      );
+
+      const events = await portWith(fetch).readState(SUBSCRIPTION_ID, NOW);
+
+      expect(events.map((event) => event.fact.type)).toEqual([
+        "trial_method_ready",
+      ]);
+    });
+  });
+
+  it("an installment out of shape still throws: the reconciliation stays strict", async () => {
+    const { fetch } = fakeWoovi(
+      getSubscription(),
+      getInstallments(
+        liveInstallmentJson(),
+        installmentJson({ dateGenerateCharge: undefined })
+      )
+    );
+    await expect(
+      portWith(fetch).readState(SUBSCRIPTION_ID, NOW)
+    ).rejects.toBeInstanceOf(ProviderResponseMalformedError);
+  });
+
+  it("logs the shape of the authorization it read", async () => {
+    const info = vi.spyOn(logger, "info").mockImplementation(() => undefined);
+    try {
+      const { fetch } = fakeWoovi(
+        getSubscription(),
+        getInstallments(liveInstallmentJson())
+      );
+      await portWith(fetch).readState(SUBSCRIPTION_ID, NOW);
+      expect(info).toHaveBeenCalledWith("billing_woovi_authorization_form", {
+        authorizationShown: false,
+        installmentsByStatus: { ACTIVE: 1 },
+        malformedInstallments: 0,
+        provider: "woovi",
+        reading: "reconciliation",
+        verdict: "approved",
+      });
+    } finally {
+      info.mockRestore();
+    }
   });
 
   it("carries nothing personal", async () => {

@@ -268,6 +268,30 @@ test("tamanho por papel: comum 32/36, ação principal 36/44, grupo de 24 px a 8
   );
 });
 
+test("campo de texto e seletor: 32 com mouse e 44 com toque; o grupo de várias linhas não fica preso a essa altura", async ({
+  isMobile,
+  page,
+}) => {
+  await openGallery(page, null);
+  const sale = page.getByRole("region", { name: "Componentes da venda" });
+  const heightOf = async (locator: Locator) => {
+    const box = await locator.boundingBox();
+    if (!box) {
+      throw new Error("o controle não tem caixa");
+    }
+    return box.height;
+  };
+  expect(
+    await heightOf(
+      sale.getByRole("combobox", { exact: true, name: "Perfil de pagamento" })
+    )
+  ).toBeCloseTo(isMobile ? 44 : 32, 1);
+  const group = page
+    .locator("[data-slot=input-group]")
+    .filter({ has: page.getByLabel("Observação (opcional)") });
+  expect(await heightOf(group)).toBeGreaterThan(60);
+});
+
 test('o nome do seletor é só o rótulo: o ícone do gatilho sai da leitura e não deixa o "▼" no texto', async ({
   page,
 }) => {

@@ -78,11 +78,8 @@ function addDays(day: string, days: number): string {
 }
 
 function money(cents: number): string {
-  return `${Math.floor(cents / 100)}.${String(cents % 100).padStart(2, "0")}`;
-}
-
-function signedMoney(cents: number): string {
-  return cents < 0 ? `-${money(-cents)}` : money(cents);
+  const whole = Math.abs(cents);
+  return `${cents < 0 ? "-" : ""}${Math.floor(whole / 100)}.${String(whole % 100).padStart(2, "0")}`;
 }
 
 interface Scenario {
@@ -156,8 +153,32 @@ function dayEntry(scenario: Scenario, day: string): Record<string, unknown> {
     ...entry,
     costs: result === null ? null : money(Math.max(0, cents - result)),
     operatingExpenses: "0.00",
-    operatingResult: result === null ? null : signedMoney(result),
+    operatingResult: result === null ? null : money(result),
   };
+}
+
+/** Above this many days the server sends the months, not the days. */
+const LONGEST_BY_DAY = 62;
+
+/** The days of the series added up by calendar month, as the server sends a long period. */
+function byMonth(
+  daily: readonly Record<string, unknown>[]
+): Record<string, unknown>[] {
+  const months = new Map<string, Record<string, unknown>[]>();
+  for (const day of daily) {
+    const key = String(day.date).slice(0, 7);
+    months.set(key, [...(months.get(key) ?? []), day]);
+  }
+  return [...months.values()].map((days) => ({
+    date: days[0]?.date,
+    days: days.length,
+    netSales: money(
+      days.reduce((sum, day) => sum + Math.round(Number(day.netSales) * 100), 0)
+    ),
+    salesCount: days.reduce((sum, day) => sum + Number(day.salesCount), 0),
+    to: days.at(-1)?.date,
+    unknownDays: 0,
+  }));
 }
 
 class FakeServer {
@@ -236,6 +257,7 @@ class FakeServer {
       (sum, day) => sum + Math.round(Number(day.netSales) * 100),
       0
     );
+    const grouped = daily.length > LONGEST_BY_DAY ? byMonth(daily) : null;
     const count = daily.reduce((sum, day) => sum + Number(day.salesCount), 0);
     const inMonth = from.startsWith("2026-10") || from.startsWith("2026-11");
     const unknownCost = inMonth ? this.scenario.soldWithoutCost : 0;
@@ -278,7 +300,8 @@ class FakeServer {
         processingFees: zero,
         returns: zero,
       },
-      daily,
+      daily: grouped ?? daily,
+      ...(grouped ? { granularity: "month" } : {}),
       generatedAt: new Date(this.now).toISOString(),
       period: { from, to },
       quality: {
@@ -736,6 +759,18 @@ async function closeMenuFoot(page: Page) {
 
 const region = (page: Page, name: string) =>
   page.getByRole("region", { exact: true, name });
+const PERIOD_BUTTON = /^Período: /;
+const TYPE_DATES = /Digitar as datas/;
+const periodButton = (page: Page) =>
+  page.getByRole("button", { name: PERIOD_BUTTON });
+/** The picker of the period of the Início, then one of its shortcuts ("Mês passado"): it applies and closes. */
+async function choosePeriod(page: Page, shortcut: string) {
+  await periodButton(page).click();
+  await page
+    .getByRole("group", { name: "Atalhos do período" })
+    .getByRole("button", { exact: true, name: shortcut })
+    .click();
+}
 const newSale = (page: Page) =>
   page.getByRole("link", { exact: true, name: "Nova venda" });
 const periodCalls = (server: FakeServer) =>
@@ -793,20 +828,17 @@ test.describe("loja com venda", () => {
     // the KPI cards (v7 § 3): Friday `23/10` against the mean of the 4 Fridays before it (only `02/10` sold, R$ 80,00)
     const today = region(page, "Vendas hoje");
     await expect(today).toContainText("R$ 320,10");
-    // one line of support: what it compares with and the count
-    await expect(today).toContainText("vs. média das sextas · 2 vendas");
+    await expect(today).toContainText("16,0×2 vendas");
+    await expect(today).not.toContainText("vs. média");
     // no date at rest: the title says it is today
     await expect(today.locator("[data-kpi-date]")).toHaveCount(0);
     // +1.500,5% is said as a multiple from +1.000% up: seen "16,0×", heard "subiu para 16,0 vezes o valor anterior"
     await expect(
       today.locator("[data-kpi-delta=up] [data-kpi-delta-text]")
     ).toHaveText("16,0×");
-    await expect(today.locator("[data-kpi-delta=up] .sr-only")).toHaveText(
-      "subiu para 16,0 vezes o valor anterior"
-    );
-    // the base is in sight ("vs. média das sextas"), so the chip has no name of its own
-    await expect(today.locator("[data-kpi-delta=up]")).not.toHaveAttribute(
-      "aria-label"
+    await expect(today.locator("[data-kpi-delta=up]")).toHaveAttribute(
+      "aria-label",
+      "subiu para 16,0 vezes o valor anterior em relação à média das sextas"
     );
     // the sparkline is a reinforcement: hidden from the screen reader, with no axis; the range is its keyboard
     await expect(
@@ -821,10 +853,7 @@ test.describe("loja com venda", () => {
     // 1 to 23 October against 1 to 23 September: R$ 2.660,60 against R$ 170,00
     const month = region(page, "Vendas em outubro");
     await expect(month).toContainText("R$ 2.660,60");
-    // the month and its period are said once, above the three cards of the month
-    await expect(page.locator("[data-kpi-group]")).toHaveText(
-      "Outubro · 1 a 23/10"
-    );
+    await expect(page.locator("[data-kpi-group]")).toHaveCount(0);
     await expect(month.locator("[data-kpi-date]")).toHaveCount(0);
     await expect(
       month.locator("[data-kpi-delta=up] [data-kpi-delta-text]")
@@ -836,18 +865,15 @@ test.describe("loja com venda", () => {
     await expect(month).toContainText("12 vendas");
 
     const result = region(page, "Resultado estimado");
-    await expect(result).toContainText("estimativa incompleta");
-    await expect(result).toContainText("Não é lucro líquido nem caixa");
-    // this server sends no result of the day: no sparkline, no chip and no sum of the known days (AC-9); the number is
-    // the server's card of the whole month, and the date says so
-    await expect(result.locator("[data-kpi-date]")).toHaveText(
-      "outubro inteiro"
-    );
+    await expect(result).toContainText("Incompleta");
+    // this server sends no result of the day: no sparkline, no chip and no sum of the known days (AC-9)
+    await expect(result.locator("[data-kpi-date]")).toHaveCount(0);
     await expect(result.locator("[data-kpi-spark]")).toHaveCount(0);
     await expect(result.locator("[data-kpi-delta]")).toHaveCount(0);
-    await expect(
-      result.getByRole("link", { name: "Ver o resultado" })
-    ).toHaveAttribute("href", "/dashboard");
+    await expect(result.getByRole("link")).toHaveAttribute(
+      "href",
+      "/dashboard"
+    );
 
     const ticket = region(page, "Ticket médio");
     await expect(ticket).toContainText("R$ 221,72");
@@ -902,29 +928,25 @@ test.describe("loja com venda", () => {
     await expect(top).toContainText("Boné antigo");
 
     const chart = region(page, "Vendas por dia");
-    await expect(chart.getByRole("tab", { name: "7 dias" })).toHaveAttribute(
-      "aria-selected",
-      "true"
-    );
-    await expect(chart).toContainText("R$ 2.580,60");
-    // the period it adds up, and the peak written once, in the drawing, with its date
-    await expect(chart).toContainText("17 a 23/10");
+    await expect(chart.getByRole("tab")).toHaveCount(0);
+    await expect(chart).toContainText("R$ 2.660,60");
+    // the period it adds up (the month to today), and the peak written once, in the drawing, with its date
+    await expect(chart).toContainText("1 a 23/10");
     await expect(chart).not.toContainText("Melhor dia");
     await expect(chart.locator("[data-chart-value-label]")).toHaveText(
       "18/10 · R$ 1.840,00"
     );
     await expect(chart.getByRole("img")).toHaveAttribute(
       "aria-label",
-      "Vendas líquidas por dia, de 17/10 a 23/10: R$ 2.580,60 no total"
+      "Vendas líquidas por dia, de 1 a 23/10: R$ 2.660,60 no total. A tabela dia a dia está no fim deste bloco."
     );
-    await chart.getByRole("button", { name: "Ver os números" }).click();
-    await expect(chart.getByRole("row")).toHaveCount(8);
-    await expect(chart.getByRole("row").nth(2)).toContainText(
+    await expect(
+      chart.getByRole("button", { name: "Ver os números" })
+    ).toHaveCount(0);
+    await expect(chart.getByRole("row")).toHaveCount(24);
+    await expect(chart.getByRole("row").nth(18)).toContainText(
       "18/10/2026R$ 1.840,00"
     );
-    await chart.getByRole("tab", { name: "30 dias" }).click();
-    await expect(chart).toContainText("24/09 a 23/10");
-    await expect(chart).toContainText("R$ 2.660,60");
 
     // the order of the parts at 360 px (AC-4), and nothing scrolls sideways
     const names = await page
@@ -1091,32 +1113,236 @@ test.describe("loja com venda", () => {
     expect(above).not.toContain("none");
   });
 
-  test("a troca 7 → 30 dias mantém o mesmo gráfico (sem nova revelação) e a tabela do outro período abre fechada", async ({
+  test("o gráfico desenha o mês até hoje, um ponto por dia, sem as abas 7 e 30 dias", async ({
     page,
   }) => {
     await page.setViewportSize({ height: 740, width: 360 });
     const server = new FakeServer(SOLD);
     await openHome(page, server);
     const chart = region(page, "Vendas por dia");
-    const drawing = chart.locator("[data-chart-area] svg").first();
-    await expect(drawing).toBeVisible();
+    await expect(chart.locator("[data-chart-area] svg").first()).toBeVisible();
     await expect(chart.locator('input[type="range"]')).toHaveAttribute(
       "max",
-      "6"
+      "22"
     );
+    await expect(chart.getByRole("row")).toHaveCount(24);
+    await expect(chart.getByRole("tab")).toHaveCount(0);
+  });
+});
 
-    // the drawing (not only the box around it) is the same element after the change of period: it was not mounted again
-    await drawing.evaluate((node) => node.setAttribute("data-first-mount", ""));
-    await chart.getByRole("button", { name: "Ver os números" }).click();
-    await expect(chart.getByRole("row")).toHaveCount(8);
-
-    await chart.getByRole("tab", { name: "30 dias" }).click();
-    await expect(chart.locator('input[type="range"]')).toHaveAttribute(
-      "max",
-      "29"
+test.describe("o período do Início (cartões do mês, Vendas por dia e Mais vendidos)", () => {
+  test("Mês passado muda os três cartões do mês, o gráfico e o ranking; Hoje e o Ritmo ficam; voltar a Este mês não lê de novo", async ({
+    page,
+  }) => {
+    await page.setViewportSize(SIZES[1]);
+    const server = new FakeServer(SOLD);
+    await openHome(page, server);
+    await expect(periodButton(page)).toContainText("01/10 a 31/10");
+    await expect(region(page, "Vendas em outubro")).toContainText(
+      "R$ 2.660,60"
     );
-    await expect(drawing).toHaveAttribute("data-first-mount", "");
-    await expect(chart.getByRole("row")).toHaveCount(0);
+    const today = await region(page, "Vendas hoje").innerText();
+    const rhythm = await region(page, "Ritmo de vendas")
+      .getByRole("img")
+      .getAttribute("aria-label");
+
+    await choosePeriod(page, "Mês passado");
+    await expect(periodButton(page)).toContainText("01/09 a 30/09");
+    const september = region(page, "Vendas em setembro");
+    await expect(september).toContainText("R$ 170,00");
+    await expect(region(page, "Resultado estimado")).toBeVisible();
+    await expect(region(page, "Ticket médio")).toBeVisible();
+    await expect(region(page, "Vendas por dia")).toContainText("1 a 30/09");
+    await expect(region(page, "Vendas por dia")).toContainText("R$ 170,00");
+    await expect(region(page, "Mais vendidos de setembro")).toBeVisible();
+    await expect(region(page, "Mais vendidos do mês")).toHaveCount(0);
+    // what is always "now" does not move
+    expect(await region(page, "Vendas hoje").innerText()).toBe(today);
+    expect(
+      await region(page, "Ritmo de vendas")
+        .getByRole("img")
+        .getAttribute("aria-label")
+    ).toBe(rhythm);
+    expect(
+      periodCalls(server).some(
+        (call) =>
+          call.input.from === "2026-09-01" &&
+          call.input.to === "2026-09-30" &&
+          call.input.topProducts === 5
+      )
+    ).toBe(true);
+
+    const reads = periodCalls(server).length;
+    await choosePeriod(page, "Este mês");
+    await expect(region(page, "Vendas em outubro")).toContainText(
+      "R$ 2.660,60"
+    );
+    await expect(region(page, "Mais vendidos do mês")).toBeVisible();
+    expect(periodCalls(server).length).toBe(reads);
+  });
+
+  test("Este ano vem por mês acima de 62 dias, e o período digitado vale", async ({
+    page,
+  }) => {
+    await page.setViewportSize(SIZES[1]);
+    await openHome(page, new FakeServer(SOLD));
+    await choosePeriod(page, "Este ano");
+    await expect(periodButton(page)).toContainText("01/01 a 23/10");
+    const chart = region(page, "Vendas por mês");
+    await expect(chart).toBeVisible();
+    await expect(chart.getByRole("row")).toHaveCount(11);
+    await expect(region(page, "Mais vendidos do período")).toBeVisible();
+  });
+
+  test("escolher o período pelo teclado deixa o foco no botão do período, ao carregar e ao voltar a Este mês", async ({
+    page,
+  }) => {
+    await page.setViewportSize(SIZES[1]);
+    await openHome(page, new FakeServer(SOLD));
+    const shortcut = (name: string) =>
+      page
+        .getByRole("group", { name: "Atalhos do período" })
+        .getByRole("button", { exact: true, name });
+    for (const [name, text] of [
+      ["Mês passado", "01/09 a 30/09"],
+      ["Este mês", "01/10 a 31/10"],
+    ] as const) {
+      // biome-ignore lint/performance/noAwaitInLoops: one choice after the other
+      await periodButton(page).focus();
+      await page.keyboard.press("Enter");
+      await shortcut(name).focus();
+      await page.keyboard.press("Enter");
+      await expect(periodButton(page)).toContainText(text);
+      await expect(
+        region(
+          page,
+          name === "Este mês" ? "Vendas em outubro" : "Vendas em setembro"
+        )
+      ).toContainText("R$");
+      await expect(periodButton(page)).toBeFocused();
+    }
+  });
+
+  test("o cartão de Vendas diz 'do período' quando o período não é um mês inteiro, e o mês inteiro diz 'em setembro'", async ({
+    page,
+  }) => {
+    await page.setViewportSize(SIZES[1]);
+    await openHome(page, new FakeServer(SOLD));
+    await choosePeriod(page, "Este ano");
+    await expect(periodButton(page)).toContainText("01/01 a 23/10");
+    await expect(region(page, "Vendas do período")).toBeVisible();
+    await choosePeriod(page, "Últimos 30 dias");
+    await expect(periodButton(page)).not.toContainText("01/01");
+    await expect(region(page, "Vendas do período")).toBeVisible();
+    await expect(region(page, "Vendas em o período")).toHaveCount(0);
+    await choosePeriod(page, "Mês passado");
+    await expect(region(page, "Vendas em setembro")).toBeVisible();
+    await expect(region(page, "Vendas do período")).toHaveCount(0);
+  });
+
+  test("um período que falha diz o erro no lugar dos cartões do mês e Tentar novamente lê de novo; Hoje segue", async ({
+    page,
+  }) => {
+    await page.setViewportSize(SIZES[1]);
+    const server = new FakeServer(SOLD);
+    await openHome(page, server);
+    server.broken.set("report/periodSummary", "500");
+    await choosePeriod(page, "Mês passado");
+    await expect(page.getByRole("alert").first()).toBeVisible({
+      timeout: 20_000,
+    });
+    await expect(region(page, "Vendas hoje")).toContainText("R$ 320,10");
+    await expect(region(page, "Vendas por dia")).toHaveCount(0);
+    server.broken.delete("report/periodSummary");
+    await page
+      .getByRole("button", { name: "Tentar novamente" })
+      .first()
+      .click();
+    await expect(region(page, "Vendas em setembro")).toContainText("R$ 170,00");
+  });
+
+  test("loja que nunca vendeu (primeiros passos) não tem o seletor: não há números do período a mostrar", async ({
+    page,
+  }) => {
+    await page.setViewportSize(SIZES[1]);
+    await openHome(
+      page,
+      new FakeServer({ ...SOLD, days: {}, everSold: false })
+    );
+    await expect(region(page, "Primeiros passos")).toBeVisible();
+    await expect(periodButton(page)).toHaveCount(0);
+  });
+
+  test("a releitura do período que falha deixa os números na tela e diz que não atualizou, com Tentar novamente", async ({
+    page,
+  }) => {
+    await page.setViewportSize(SIZES[1]);
+    const server = new FakeServer(SOLD);
+    await openHome(page, server);
+    await choosePeriod(page, "Mês passado");
+    await expect(region(page, "Vendas em setembro")).toContainText("R$ 170,00");
+    server.broken.set("report/periodSummary", "500");
+    await page.getByRole("button", { name: "Atualizar" }).first().click();
+    const retry = page.locator("[data-home-period]").getByRole("button", {
+      name: "Tentar novamente",
+    });
+    await expect(retry).toBeVisible({ timeout: 20_000 });
+    await expect(page.locator("[data-home-period]")).toContainText(
+      "Mostrando os números de"
+    );
+    await expect(region(page, "Vendas em setembro")).toContainText("R$ 170,00");
+    server.broken.delete("report/periodSummary");
+    await retry.click();
+    await expect(retry).toHaveCount(0);
+    await expect(region(page, "Vendas em setembro")).toContainText("R$ 170,00");
+  });
+
+  test("sem conexão só Este mês e Mês passado abrem: os outros atalhos ficam apagados com o motivo, e o calendário e os campos não valem", async ({
+    page,
+  }) => {
+    await page.setViewportSize(SIZES[1]);
+    await openWithCopy(page, new FakeServer(SOLD));
+    // the chunk of the calendar comes with the first opening; the offline panel is the second
+    await periodButton(page).click();
+    await expect(
+      page.locator('[role="grid"] button[data-day]').first()
+    ).toBeVisible();
+    await page.keyboard.press("Escape");
+    await page.context().setOffline(true);
+    const reason = "Sem conexão: só este mês e o anterior.";
+    const beside = page.locator("[data-home-period]").getByText(reason);
+    await expect(beside).toBeVisible();
+    await periodButton(page).click();
+    const shortcuts = page.getByRole("group", { name: "Atalhos do período" });
+    const off = ["Últimos 30 dias", "Este ano"].map((name) =>
+      shortcuts.getByRole("button", { exact: true, name })
+    );
+    const on = ["Este mês", "Mês passado"].map((name) =>
+      shortcuts.getByRole("button", { exact: true, name })
+    );
+    await Promise.all([
+      ...off.map(async (button) => {
+        await expect(button).toHaveAttribute("aria-disabled", "true");
+        await expect(button).toHaveAccessibleDescription(reason);
+      }),
+      ...on.map((button) =>
+        expect(button).not.toHaveAttribute("aria-disabled", "true")
+      ),
+    ]);
+    await expect(page.getByRole("button", { name: TYPE_DATES })).toHaveCount(0);
+    const days = page.locator('[role="grid"] button[data-day]');
+    await expect(days.first()).toBeVisible();
+    await expect(
+      page.locator('[role="grid"] button[data-day]:not([aria-disabled="true"])')
+    ).toHaveCount(0);
+    await shortcuts
+      .getByRole("button", { exact: true, name: "Este ano" })
+      .click({ force: true });
+    await expect(periodButton(page)).toContainText("01/10 a 31/10");
+    await expect(periodButton(page)).toBeVisible();
+    await page.keyboard.press("Escape");
+    await page.context().setOffline(false);
+    await expect(beside).toBeHidden();
   });
 });
 
@@ -1189,18 +1415,38 @@ test.describe("o Início enxuto: a dobra a 360 px e a ajuda de cada bloco", () =
       const box = await target.first().boundingBox();
       return (box?.y ?? Number.POSITIVE_INFINITY) + (box?.height ?? 0);
     };
-    // the number of Hoje, and the line that names the month and its period (the title of the month's cards)
     expect(
       await bottom(region(page, "Vendas hoje").locator("[data-kpi-value]"))
     ).toBeLessThanOrEqual(740);
-    expect(await bottom(page.locator("[data-kpi-group]"))).toBeLessThanOrEqual(
-      740
-    );
+    expect(await bottom(periodButton(page))).toBeLessThanOrEqual(740);
+    expect(
+      await bottom(region(page, "Vendas em outubro").locator("h2"))
+    ).toBeLessThanOrEqual(740);
     expect(
       await page.evaluate(
         () => document.documentElement.scrollWidth <= window.innerWidth
       )
     ).toBe(true);
+  });
+
+  test("a 360 px o seletor de período fica entre Hoje e os cartões do mês, e Hoje, o seletor e Vendas cabem na janela", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 740, width: 360 });
+    await openHome(page, new FakeServer(SOLD));
+    await expect(region(page, "Vendas hoje")).toContainText("R$ 320,10");
+    const top = async (target: Locator) =>
+      (await target.first().boundingBox())?.y ?? Number.NaN;
+    const picker = await top(periodButton(page));
+    expect(picker).toBeGreaterThan(await top(region(page, "Vendas hoje")));
+    expect(picker).toBeLessThan(await top(region(page, "Vendas em outubro")));
+    const bottom = async (target: Locator) => {
+      const box = await target.first().boundingBox();
+      return (box?.y ?? Number.POSITIVE_INFINITY) + (box?.height ?? 0);
+    };
+    expect(await bottom(region(page, "Vendas em outubro"))).toBeLessThanOrEqual(
+      740
+    );
   });
 
   test("a altura da página a 360 px com os mesmos três itens de ação", async ({
@@ -1231,14 +1477,17 @@ test.describe("o Início enxuto: a dobra a 360 px e a ajuda de cada bloco", () =
       "Vendas hoje",
       "Vendas líquidas de hoje. Compara com a média das 4 sextas-feiras anteriores.",
     ],
-    ["Vendas", "Vendas líquidas de 1 a 23/10. Compara com 1 a 23/09."],
+    [
+      "Vendas em outubro",
+      "Vendas líquidas de 1 a 23/10. Compara com 1 a 23/09.",
+    ],
     [
       "Ticket médio",
       "Vendas líquidas divididas pelo número de vendas, de 1 a 23/10. Compara com 1 a 23/09.",
     ],
     [
       "Resultado estimado",
-      "Vendas menos custos, taxas e despesas do mês inteiro.",
+      "Vendas menos custos, taxas e despesas do mês inteiro; não é lucro líquido nem caixa.",
     ],
     [
       "Meta",
@@ -1246,7 +1495,7 @@ test.describe("o Início enxuto: a dobra a 360 px e a ajuda de cada bloco", () =
     ],
     [
       "Vendas por dia",
-      "A linha tracejada são os 7 dias anteriores. Toque num dia para ver os dois valores.",
+      "Vendas líquidas de cada dia do período. Toque num dia para ver o valor.",
     ],
   ];
 
@@ -1271,7 +1520,7 @@ test.describe("o Início enxuto: a dobra a 360 px e a ajuda de cada bloco", () =
     });
   }
 
-  test("a ajuda não carrega aviso: o que é de dinheiro fica à vista, com o (i) fechado", async ({
+  test("o sinal de incompleta e os dias sem custo ficam à vista, com o (i) fechado", async ({
     page,
   }) => {
     await page.setViewportSize({ height: 740, width: 360 });
@@ -1280,8 +1529,8 @@ test.describe("o Início enxuto: a dobra a 360 px e a ajuda de cada bloco", () =
       new FakeServer({ ...SOLD, results: { "2026-10-20": null } })
     );
     const result = region(page, "Resultado estimado");
-    await expect(result).toContainText("estimativa incompleta");
-    await expect(result).toContainText("Não é lucro líquido nem caixa");
+    await expect(result).toContainText("Incompleta");
+    await expect(result).toContainText("1 de 23 dias sem custo");
     await expect(page.getByRole("dialog")).toHaveCount(0);
   });
 });
@@ -1592,7 +1841,9 @@ test.describe("loja sem venda: o checklist (AC-22, AC-23)", () => {
     ).toHaveAttribute("href", "/sales");
     await expect(region(page, "Primeiros passos")).toHaveCount(0);
     await expect(page.locator("[data-menu-first-steps]")).toHaveCount(0);
-    await expect(region(page, "Mais vendidos do mês")).toHaveCount(0);
+    await expect(region(page, "Mais vendidos do mês")).toContainText(
+      "Sem vendas no período."
+    );
     await expect(region(page, "Vendas por dia")).toContainText(
       "Sem vendas no período."
     );
@@ -1613,14 +1864,14 @@ test.describe("Vendas hoje sem base de comparação", () => {
     await openHome(page, new FakeServer(returned));
     const today = region(page, "Vendas hoje");
     await expect(today).toContainText("Nenhuma venda ainda");
-    await expect(today).toContainText(
-      "vs. média das sextas: sem média para comparar"
-    );
     await expect(today.locator("[data-kpi-delta]")).toHaveCount(0);
 
     await page.getByRole("button", { name: "Sobre Vendas hoje" }).click();
     await expect(
-      page.getByText("Vendas líquidas de hoje.", { exact: true })
+      page.getByText(
+        "Vendas líquidas de hoje. Sem média das 4 sextas-feiras anteriores para comparar.",
+        { exact: true }
+      )
     ).toBeVisible();
     await expect(page.locator("body")).not.toContainText("Compara com a média");
   });
@@ -1655,9 +1906,8 @@ test.describe("cartões de KPI (revisão de UI v7, § 3 e § 6)", () => {
     // the 18th of 23 days: the cards read the 1st to the 18th together
     const x = strip.x + 4 + ((strip.width - 8) * 17) / 22;
     await page.mouse.move(x, strip.y + strip.height / 2);
-    await expect(page.locator("[data-kpi-group]")).toHaveText(
-      "Outubro · 1 a 18/10"
-    );
+    await expect(sales.locator("[data-kpi-date]")).toHaveText("Até 18/10");
+    await expect(result.locator("[data-kpi-date]")).toHaveText("Até 18/10");
     await expect(sales.locator("[data-kpi-value]")).toHaveText("R$ 1.920,00");
     await expect(sales).toContainText("7 vendas");
     await expect(result.locator("[data-kpi-value]")).toHaveText("R$ 576,00");
@@ -1667,9 +1917,7 @@ test.describe("cartões de KPI (revisão de UI v7, § 3 e § 6)", () => {
     ).toHaveCount(0);
 
     await page.mouse.move(10, 10);
-    await expect(page.locator("[data-kpi-group]")).toHaveText(
-      "Outubro · 1 a 23/10"
-    );
+    await expect(sales.locator("[data-kpi-date]")).toHaveCount(0);
     await expect(sales.locator("[data-kpi-value]")).toHaveText("R$ 2.660,60");
   });
 
@@ -1690,9 +1938,7 @@ test.describe("cartões de KPI (revisão de UI v7, § 3 e § 6)", () => {
       "aria-valuetext",
       "Até 22/10: R$ 2.340,50"
     );
-    await expect(page.locator("[data-kpi-group]")).toHaveText(
-      "Outubro · 1 a 22/10"
-    );
+    await expect(sales.locator("[data-kpi-date]")).toHaveText("Até 22/10");
     // the outline of the keyboard focus goes round the strip, inside it
     expect(
       await slider.evaluate((node) => {
@@ -1703,15 +1949,12 @@ test.describe("cartões de KPI (revisão de UI v7, § 3 e § 6)", () => {
 
     const today = region(page, "Vendas hoje").getByRole("slider");
     await today.focus();
-    await expect(page.locator("[data-kpi-group]")).toHaveText(
-      "Outubro · 1 a 23/10"
-    );
+    await expect(sales.locator("[data-kpi-date]")).toHaveCount(0);
     await page.keyboard.press("ArrowLeft");
     await expect(today).toHaveAttribute(
       "aria-valuetext",
       "qui, 22/10: R$ 0,00"
     );
-    // another day than today: its date is at the top right
     await expect(
       region(page, "Vendas hoje").locator("[data-kpi-date]")
     ).toHaveText("qui, 22/10");
@@ -1724,7 +1967,7 @@ test.describe("cartões de KPI (revisão de UI v7, § 3 e § 6)", () => {
     await page.setViewportSize({ height: 800, width: 1280 });
     await openHome(page, new FakeServer({ ...SOLD, results: KNOWN }));
     const main = page.locator("main");
-    const toggle = main.getByRole("button", { name: "Esconder valores" });
+    const toggle = page.getByRole("button", { name: "Esconder valores" });
     await expect(toggle).toHaveAttribute("aria-pressed", "false");
     await expect(main).toContainText("R$ 320,10");
 
@@ -1763,11 +2006,11 @@ test.describe("cartões de KPI (revisão de UI v7, § 3 e § 6)", () => {
     await expect(chart.locator("[data-chart-area] svg").first()).toBeVisible();
     await expect(chart.getByRole("img")).toHaveAttribute(
       "aria-label",
-      "Vendas líquidas por dia, de 17/10 a 23/10: valor escondido no total"
+      "Vendas líquidas por dia, de 1 a 23/10: valor escondido no total. A tabela dia a dia está no fim deste bloco."
     );
     await expect(chart.getByRole("slider")).toHaveAttribute(
       "aria-valuetext",
-      "23/10: Vendas valor escondido, 7 dias antes valor escondido"
+      "23/10: valor escondido"
     );
 
     // kept on the device, like the theme: the next opening still hides
@@ -1776,11 +2019,11 @@ test.describe("cartões de KPI (revisão de UI v7, § 3 e § 6)", () => {
     ).toBe("escondidos");
     await page.reload();
     await expect(
-      main.getByRole("button", { name: "Esconder valores" })
+      page.getByRole("button", { name: "Esconder valores" })
     ).toHaveAttribute("aria-pressed", "true", { timeout: 20_000 });
     await expect(region(page, "Vendas hoje")).not.toContainText("R$ 320,10");
 
-    await main.getByRole("button", { name: "Esconder valores" }).click();
+    await page.getByRole("button", { name: "Esconder valores" }).click();
     await expect(region(page, "Vendas hoje")).toContainText("R$ 320,10");
     expect(
       await page.evaluate(() => localStorage.getItem("polaris-valores"))
@@ -1799,12 +2042,10 @@ test.describe("cartões de KPI (revisão de UI v7, § 3 e § 6)", () => {
       })
     );
     const result = region(page, "Resultado estimado");
-    await expect(result).toContainText("estimativa incompleta");
-    // the badge and the days on one line, the warning under it
+    await expect(result).toContainText("Incompleta");
     await expect(result.locator("[data-kpi-unknown]")).toHaveText(
-      "· 1 de 23 dias sem custo"
+      "1 de 23 dias sem custo"
     );
-    await expect(result).toContainText("Não é lucro líquido nem caixa");
     await expect(result.locator("[data-kpi-spark]")).toHaveCount(0);
     await expect(result.locator("[data-kpi-delta]")).toHaveCount(0);
     await expect(result.getByRole("slider")).toHaveCount(0);
@@ -1839,7 +2080,7 @@ test.describe("cartões de KPI (revisão de UI v7, § 3 e § 6)", () => {
       })
     );
     const result = region(page, "Resultado estimado");
-    await expect(result).toContainText("estimativa incompleta");
+    await expect(result).toContainText("Incompleta");
     await expect(result).toContainText(
       "Sem custo informado: não dá para estimar."
     );
@@ -1861,7 +2102,7 @@ test.describe("cartões de KPI (revisão de UI v7, § 3 e § 6)", () => {
     await page.setViewportSize({ height: 800, width: 1280 });
     await openHome(page, new FakeServer(SOLD));
     const chart = region(page, "Vendas por dia");
-    // the best day and today, whatever the period: `17/10` to `23/10` sold on 18 and on 23
+    // the best day and today: the month to today sold on the 18th and on the 23rd
     await expect(chart.locator("[data-chart-mark]")).toHaveCount(2);
     await expect(chart.locator("[data-chart-mark=sold]")).toHaveCount(2);
     await expect(chart.locator("[data-chart-best]")).toHaveAttribute(
@@ -1872,12 +2113,9 @@ test.describe("cartões de KPI (revisão de UI v7, § 3 e § 6)", () => {
     await expect(chart.locator("[data-chart-value-label]")).toHaveText([
       "18/10 · R$ 1.840,00",
     ]);
-    // the days before are a faint line with no legend, and nothing above the drawing at rest
+    // no legend, and nothing above the drawing at rest
     await expect(chart.locator("[data-chart-legend]")).toHaveCount(0);
     await expect(chart.locator("[data-chart-reading]")).toHaveCount(0);
-    await chart.getByRole("tab", { name: "30 dias" }).click();
-    await expect(chart.locator("[data-chart-mark]")).toHaveCount(2);
-    await expect(chart.locator("[data-chart-value-label]")).toHaveCount(1);
   });
 
   for (const width of [360, 320]) {
@@ -1895,12 +2133,12 @@ test.describe("cartões de KPI (revisão de UI v7, § 3 e § 6)", () => {
           nodes.map((node) => {
             const box = node.getBoundingClientRect();
             return {
+              bottom: box.bottom,
               isLabel: node.hasAttribute("data-chart-value-label"),
               left: box.left,
               right: box.right,
               text: node.textContent ?? "",
               top: box.top,
-              bottom: box.bottom,
             };
           })
         );
@@ -1923,7 +2161,7 @@ test.describe("cartões de KPI (revisão de UI v7, § 3 e § 6)", () => {
     page,
   }) => {
     await page.setViewportSize({ height: 800, width: 1280 });
-    // the week of the chart sold on the 18th and the 20th; today (`23/10`) sold nothing
+    // the month of the chart sold on the 2nd, the 18th and the 20th; today (`23/10`) sold nothing
     const { "2026-10-23": _today, ...noSaleToday } = SOLD.days;
     await openHome(page, new FakeServer({ ...SOLD, days: noSaleToday }));
     const chart = region(page, "Vendas por dia");
@@ -1956,7 +2194,7 @@ test.describe("cartões de KPI (revisão de UI v7, § 3 e § 6)", () => {
     expect(xs[0]).toBeLessThan(xs[1] ?? 0);
   });
 
-  test("Vendas por dia: a leitura de um dia pelo teclado aparece só enquanto dura, com os dois valores, e a ajuda abre pelo teclado", async ({
+  test("Vendas por dia: a leitura de um dia pelo teclado aparece só enquanto dura, com o valor do dia, e a ajuda abre pelo teclado", async ({
     page,
   }) => {
     await page.setViewportSize({ height: 800, width: 1280 });
@@ -1966,12 +2204,9 @@ test.describe("cartões de KPI (revisão de UI v7, § 3 e § 6)", () => {
     await expect(chart.locator("[data-chart-reading]")).toHaveCount(0);
     await slider.focus();
     await page.keyboard.press("ArrowLeft");
-    await expect(slider).toHaveAttribute(
-      "aria-valuetext",
-      "22/10: Vendas R$ 0,00, 7 dias antes R$ 0,00"
-    );
+    await expect(slider).toHaveAttribute("aria-valuetext", "22/10: R$ 0,00");
     await expect(chart.locator("[data-chart-reading]")).toContainText(
-      "22/10 · Vendas R$ 0,00 · 7 dias antes R$ 0,00"
+      "22/10 R$ 0,00"
     );
     await slider.blur();
     await expect(chart.locator("[data-chart-reading]")).toHaveCount(0);
@@ -1981,7 +2216,7 @@ test.describe("cartões de KPI (revisão de UI v7, § 3 e § 6)", () => {
     await page.keyboard.press("Enter");
     await expect(
       page.getByText(
-        "A linha tracejada são os 7 dias anteriores. Toque num dia para ver os dois valores."
+        "Vendas líquidas de cada dia do período. Toque num dia para ver o valor."
       )
     ).toBeVisible();
     await page.keyboard.press("Escape");
@@ -1999,7 +2234,7 @@ test.describe("cartões de KPI (revisão de UI v7, § 3 e § 6)", () => {
       await openHome(page, new FakeServer(SOLD));
       const chart = region(page, "Vendas por dia");
       const area = chart.locator("[data-chart-area]");
-      const numbers = chart.getByRole("button", { name: "Ver os números" });
+      const total = chart.locator("p.grid > span").first();
       const box = async (locator: Locator) => {
         const found = await locator.boundingBox();
         if (!found) {
@@ -2009,17 +2244,15 @@ test.describe("cartões de KPI (revisão de UI v7, § 3 e § 6)", () => {
       };
       const at = async () => ({
         area: await box(area),
-        numbers: await box(numbers),
         region: await box(chart),
+        total: await box(total),
       });
       await expect(area).toBeVisible();
       await chart.getByRole("slider").focus();
       const before = await at();
       await page.keyboard.press("ArrowLeft");
       const reading = chart.locator("[data-chart-reading]");
-      await expect(reading).toContainText(
-        "22/10 · Vendas R$ 0,00 · 7 dias antes R$ 0,00"
-      );
+      await expect(reading).toContainText("22/10 R$ 0,00");
       await expect(reading).toBeVisible();
       const tooltipRows = chart.locator("[data-chart-tooltip-row]");
       await expect(tooltipRows).toHaveCount(0);
@@ -2131,10 +2364,7 @@ test.describe("meta (AC-10, AC-11)", () => {
     await expect(
       ring.locator("[data-ring-chart] svg path").first()
     ).toBeAttached();
-    await page
-      .getByRole("main")
-      .getByRole("button", { name: "Esconder valores" })
-      .click();
+    await page.getByRole("button", { name: "Esconder valores" }).click();
     await expect(meta).not.toContainText("2.670,60");
     await expect(meta).not.toContainText("5.000,00");
     await expect(meta).not.toContainText("5.254,03");
@@ -2152,12 +2382,19 @@ test.describe("meta (AC-10, AC-11)", () => {
     server.scenario = { ...SOLD, goals: [] };
     await page.reload();
     const empty = region(page, "Meta");
-    // no goal: the title and the button, no ring and no sentence (the button says it)
+    // no goal: the title and the button, no ring; the thin strip of the wide layout has room for the sentence
     await expect(empty.locator("[data-goal-ring]")).toHaveCount(0);
-    await expect(empty).not.toContainText("Defina quanto");
+    await expect(
+      empty.getByText("Defina quanto quer vender no mês e acompanhe aqui.")
+    ).toBeVisible();
     await expect(
       empty.getByRole("link", { name: "Definir meta" })
     ).toHaveAttribute("href", "/dashboard?meta=nova");
+    // the card of a phone is the title and the button: the button says what the sentence did
+    await page.setViewportSize({ height: 740, width: 360 });
+    await expect(
+      empty.getByText("Defina quanto quer vender no mês e acompanhe aqui.")
+    ).toBeHidden();
   });
 
   test("a frase da estimativa: abaixo do alvo diz onde chega (e Esconder valores a mascara); sem venda nos 7 dias diz que não há o que estimar", async ({
@@ -2173,10 +2410,7 @@ test.describe("meta (AC-10, AC-11)", () => {
     await expect(meta.locator("[data-goal-projection]")).toHaveText(
       GOAL_PROJECTION_SHORT
     );
-    await page
-      .getByRole("main")
-      .getByRole("button", { name: "Esconder valores" })
-      .click();
+    await page.getByRole("button", { name: "Esconder valores" }).click();
     await expect(meta).not.toContainText("5.254,03");
     await expect(meta.locator("[data-masked-money]")).toHaveCount(3);
 
@@ -2885,22 +3119,23 @@ test.describe("sem conexão (§ 7, AC-28 a AC-31)", () => {
     });
   }
 
-  test("a aba do gráfico e a rolagem sobrevivem à queda e à volta da conexão", async ({
+  test("o período escolhido e a rolagem sobrevivem à queda e à volta da conexão", async ({
     page,
   }) => {
     await page.setViewportSize({ height: 740, width: 360 });
     const server = new FakeServer(SOLD);
     await openWithCopy(page, server);
     const chart = region(page, "Vendas por dia");
-    await chart.getByRole("tab", { name: "30 dias" }).click();
+    await choosePeriod(page, "Mês passado");
+    await expect(periodButton(page)).toContainText("01/09 a 30/09");
+    await expect(chart).toContainText("1 a 30/09");
     await chart.scrollIntoViewIfNeeded();
     const scrolled = await page.evaluate(() => window.scrollY);
     expect(scrolled).toBeGreaterThan(0);
-    const thirty = chart.getByRole("tab", { name: "30 dias" });
     // the blocks above the chart change height offline (the sentence under "Nova venda", the stock's lines): the
     // proof is that the page does not jump back to the top and the chart stays in view, not the exact pixel
     const kept = async () => {
-      await expect(thirty).toBeInViewport();
+      await expect(chart).toBeInViewport();
       expect(await page.evaluate(() => window.scrollY)).toBeGreaterThan(
         scrolled / 2
       );
@@ -2908,14 +3143,13 @@ test.describe("sem conexão (§ 7, AC-28 a AC-31)", () => {
 
     await page.context().setOffline(true);
     await expect(page.getByText(OFFLINE_SALE)).toBeVisible();
-    await expect(thirty).toHaveAttribute("aria-selected", "true");
+    await expect(periodButton(page)).toContainText("01/09 a 30/09");
+    await expect(chart).toContainText("1 a 30/09");
     await kept();
 
-    const reads = periodCalls(server).length;
     await page.context().setOffline(false);
-    await expect.poll(() => periodCalls(server).length).toBeGreaterThan(reads);
     await expect(page.getByText(OFFLINE_SALE)).toHaveCount(0);
-    await expect(thirty).toHaveAttribute("aria-selected", "true");
+    await expect(periodButton(page)).toContainText("01/09 a 30/09");
     await kept();
   });
 
@@ -2981,6 +3215,38 @@ test.describe("sem conexão (§ 7, AC-28 a AC-31)", () => {
     );
     await expect(page.getByText("Avisos do estoque")).toHaveCount(0);
     await expect(newSale(page)).toHaveAttribute("href", "/sales");
+  });
+
+  test("sem cópia e sem conexão o botão do período está desligado e a frase dos dois meses não aparece nem para o leitor de tela; com a cópia ela aparece", async ({
+    page,
+  }) => {
+    await page.setViewportSize(SIZES[1]);
+    const server = new FakeServer(SOLD);
+    await openWithCopy(page, server);
+    const sentence = page
+      .locator("[data-home-period]")
+      .getByText("Sem conexão: só este mês e o anterior.");
+    await page.context().setOffline(true);
+    await expect(sentence).toBeVisible();
+    await expect(sentence).not.toHaveAttribute("aria-hidden", "true");
+    await page.context().setOffline(false);
+    await page.evaluate((pattern) => {
+      for (const key of Object.keys(localStorage)) {
+        if (new RegExp(pattern).test(key)) {
+          localStorage.removeItem(key);
+        }
+      }
+    }, OFFLINE_KEYS.source);
+    await reopenWithoutNetwork(page, server);
+    await expect(region(page, "Vendas hoje")).toContainText(NO_CONNECTION, {
+      timeout: 20_000,
+    });
+    await expect(periodButton(page)).toBeDisabled();
+    const hidden = page
+      .locator("[data-home-period] p")
+      .filter({ hasText: "Sem conexão: só este mês e o anterior." });
+    await expect(hidden).toHaveAttribute("aria-hidden", "true");
+    await expect(hidden).toBeHidden();
   });
 
   test("loja que já vendeu, sem venda no mês nem antes: aberta sem rede a partir da cópia, o checklist não aparece", async ({
@@ -3423,13 +3689,28 @@ test.describe("sem conexão (§ 7, AC-28 a AC-31)", () => {
 
 test.describe("Ritmo de vendas (revisão de UI v7, § 3 item 10)", () => {
   // Friday `23/10`: the 26 weeks go from Sunday `26/04` to Saturday `24/10`; the days that sold are those of SOLD
-  // at rest the map reads today; the best day (Sunday `18/10`) has a line of its own under the legend
+  // the sentence under the map is fixed and says what only the rhythm knows; the value of a day is in the tooltip over
+  // its square, opened by the pointer, the finger or the keyboard; the best day (Sunday `18/10`) is in the summary of
+  // the map and in the tooltip of its day
   const READING = "Sexta, 23/10 · R$ 320,10 · 2 vendas · hoje";
-  const BEST_DAY_READING =
-    "Domingo, 18/10 · R$ 1.840,00 · 6 vendas · melhor dia";
+  const AT_REST =
+    "Poucas semanas de vendas ainda: o mapa enche conforme você vende. 6 dias com venda nas últimas 13 semanas.";
   const rhythm = (page: Page) => region(page, "Ritmo de vendas");
-  const reading = (page: Page) => rhythm(page).locator("[data-rhythm-reading]");
-  const bestLine = (page: Page) => rhythm(page).locator("[data-rhythm-best]");
+  const tooltip = (page: Page) =>
+    rhythm(page).locator("[data-heatmap-tooltip]");
+  const expectTooltip = async (page: Page, ...parts: string[]) => {
+    await Promise.all(
+      parts.map((part) => expect(tooltip(page)).toContainText(part))
+    );
+  };
+  const expectTooltipRow = (page: Page, label: string, value: string) =>
+    expect(
+      tooltip(page)
+        .locator("dl > div")
+        .filter({ has: page.getByText(label, { exact: true }) })
+        .locator("dd")
+    ).toHaveText(value);
+  const atRest = (page: Page) => rhythm(page).locator("[data-rhythm-insight]");
   const dataCells = (page: Page) =>
     rhythm(page).locator(
       '[data-heatmap] rect.visx-heatmap-rect:not([pointer-events="none"])'
@@ -3446,12 +3727,15 @@ test.describe("Ritmo de vendas (revisão de UI v7, § 3 item 10)", () => {
     await expect(map).toContainText("Últimas 26 semanas");
     await expect(map).not.toContainText("um quadrado por dia");
     await map.getByRole("button", { name: "Sobre Ritmo de vendas" }).click();
+    // the ranges of the four levels are in the (i), not written under the map
     await expect(
-      page.getByText("Cada quadrado é um dia: quanto mais escuro, mais venda.")
+      page.getByText(
+        "Cada quadrado é um dia: quanto mais escuro, mais venda. Vazio: sem venda · até R$ 80,00 · até R$ 320,10 · até R$ 420,50 · acima"
+      )
     ).toBeVisible();
     await page.keyboard.press("Escape");
-    await expect(reading(page)).toHaveText(READING);
-    await expect(bestLine(page)).toHaveText("Melhor dia: 18/10, R$ 1.840,00");
+    await expect(atRest(page)).toHaveText(AT_REST);
+    await expect(tooltip(page)).toHaveCount(0);
     // one read of the series: from the first Sunday of the 26 weeks to the eve of the month (the month is A's)
     expect(
       server.calls
@@ -3465,24 +3749,28 @@ test.describe("Ritmo de vendas (revisão de UI v7, § 3 item 10)", () => {
     );
     await expect(map.getByRole("img")).toHaveAttribute(
       "aria-label",
-      "Vendas por dia nas últimas 26 semanas: 6 dias com venda. Melhor dia 18/10, R$ 1.840,00. Meses anteriores atualizados até ontem. Os números estão em Ver os números."
+      "Vendas por dia nas últimas 26 semanas: 6 dias com venda. Melhor dia 18/10, R$ 1.840,00. Meses anteriores atualizados até ontem. A tabela dia a dia está no fim deste bloco."
     );
     // a cell per day of the 26 weeks; 175 known days with no sale are outlined (181 days read, 6 sold); Saturday
     // `24/10`, to come, has no outline and no fill
     await expect(dataCells(page)).toHaveCount(182);
     await expect(map.locator("[data-heatmap-empty]")).toHaveCount(175);
-    await expect(map).toContainText(
-      "Vazio: sem venda · até R$ 80,00 · até R$ 320,10 · até R$ 420,50 · acima"
-    );
-    // 3 weeks with a sale: the map says it is filling up
-    await expect(map).toContainText(
-      "Poucas semanas de vendas ainda: o mapa enche conforme você vende. 6 dias com venda nas últimas 13 semanas."
-    );
-    await expect(map).toContainText("Média por dia da semana");
-    // beside Mais vendidos, under the chart, in the left 2/3
+    await expect(map).not.toContainText("Vazio: sem venda");
+    await expect(map.locator("[data-rhythm-legend]")).toHaveText("MenosMais");
+    // 3 weeks with a sale: the map says it is filling up, in the sentence under it; there is no chart of the mean by weekday
+    await expect(map).not.toContainText("Média por dia da semana");
+    await expect(map.locator("[data-weekday-bars]")).toHaveCount(0);
+    // the cells are 12 px with a gap of 3
+    const first = await dataCells(page).first().boundingBox();
+    expect(first?.width).toBeCloseTo(12, 0);
+    // beside Mais vendidos, under the chart, with the 30 rem the map needs and the height of the pair
     const mapBox = await map.boundingBox();
     const topBox = await region(page, "Mais vendidos do mês").boundingBox();
     const chartBox = await region(page, "Vendas por dia").boundingBox();
+    expect(mapBox?.width ?? 0).toBeCloseTo(480, 0);
+    expect(
+      Math.abs((mapBox?.height ?? 0) - (topBox?.height ?? 900))
+    ).toBeLessThan(2);
     expect(Math.abs((mapBox?.y ?? 0) - (topBox?.y ?? 900))).toBeLessThan(2);
     expect((mapBox?.x ?? 900) + (mapBox?.width ?? 0)).toBeLessThan(
       topBox?.x ?? 0
@@ -3495,8 +3783,11 @@ test.describe("Ritmo de vendas (revisão de UI v7, § 3 item 10)", () => {
     expect((svgBox?.x ?? 0) + (svgBox?.width ?? 0)).toBeLessThanOrEqual(
       (mapBox?.x ?? 0) + (mapBox?.width ?? 0)
     );
-    // "Ver os números": the days read, newest first
-    await map.getByRole("button", { name: "Ver os números" }).click();
+    // no button: the days read, newest first, are a table for assistive technology, tied to the map
+    await expect(
+      map.getByRole("button", { name: "Ver os números" })
+    ).toHaveCount(0);
+    await expectInvisibleTable(map);
     await expect(map.getByRole("row")).toHaveCount(182);
     await expect(map.getByRole("row").nth(1)).toContainText(
       "23/10/2026R$ 320,102 vendas"
@@ -3506,26 +3797,37 @@ test.describe("Ritmo de vendas (revisão de UI v7, § 3 item 10)", () => {
     );
   });
 
-  test("o mouse lê o dia sob ele e, ao sair, volta para hoje", async ({
+  test("o mouse abre o tooltip do dia sob ele e, ao sair, ele fecha; a frase de baixo não muda", async ({
     page,
   }) => {
     await page.setViewportSize({ height: 800, width: 1280 });
     await openHome(page, new FakeServer(SOLD));
-    await expect(reading(page)).toHaveText(READING);
+    await expect(atRest(page)).toHaveText(AT_REST);
     // the column of the week of `18/10` is the last, the 26th (index 25); Sunday is its 1st row
     await dataCells(page)
       .nth(25 * 7)
       .hover();
-    await expect(reading(page)).toHaveText(BEST_DAY_READING);
+    await expectTooltip(
+      page,
+      "Domingo, 18/10",
+      "Vendido",
+      "R$ 1.840,00",
+      "Vendas",
+      "6",
+      "melhor dia"
+    );
+    await expect(atRest(page)).toHaveText(AT_REST);
     await dataCells(page)
       .nth(25 * 7 + 1)
       .hover();
-    await expect(reading(page)).toHaveText("Segunda, 19/10 · sem venda");
+    await expectTooltip(page, "Segunda, 19/10", "R$ 0,00");
+    await expect(tooltip(page)).not.toContainText("melhor dia");
     await page.mouse.move(5, 5);
-    await expect(reading(page)).toHaveText(READING);
+    await expect(tooltip(page)).toHaveCount(0);
+    await expect(atRest(page)).toHaveText(AT_REST);
   });
 
-  test("pelo teclado: cima e baixo andam um dia, esquerda e direita uma semana, o aria-valuetext diz a leitura", async ({
+  test("pelo teclado: o foco abre o tooltip em hoje, cima e baixo andam um dia, esquerda e direita uma semana, o aria-valuetext diz a leitura", async ({
     page,
   }) => {
     await page.setViewportSize({ height: 800, width: 1280 });
@@ -3535,52 +3837,63 @@ test.describe("Ritmo de vendas (revisão de UI v7, § 3 item 10)", () => {
     });
     await expect(slider).toHaveAttribute("aria-valuetext", READING);
     await expect(slider).toHaveValue("180");
+    await expect(tooltip(page)).toHaveCount(0);
     await slider.focus();
+    await expectTooltip(page, "Sexta, 23/10", "R$ 320,10", "hoje");
+    await expectTooltipRow(page, "Vendas", "2");
     // the keyboard starts on today: down is Saturday `24/10`, to come, so it stays; up is the day before
     await page.keyboard.press("ArrowDown");
-    await expect(reading(page)).toHaveText(READING);
+    await expectTooltip(page, "Sexta, 23/10", "R$ 320,10");
     await page.keyboard.press("ArrowUp");
-    await expect(reading(page)).toHaveText("Quinta, 22/10 · sem venda");
+    await expectTooltip(page, "Quinta, 22/10", "R$ 0,00");
     await expect(slider).toHaveAttribute(
       "aria-valuetext",
       "Quinta, 22/10 · sem venda"
     );
     await page.keyboard.press("ArrowLeft");
-    await expect(reading(page)).toHaveText("Quinta, 15/10 · sem venda");
+    await expectTooltip(page, "Quinta, 15/10");
     await page.keyboard.press("ArrowUp");
     await page.keyboard.press("ArrowUp");
-    await expect(reading(page)).toHaveText("Terça, 13/10 · sem venda");
+    await expectTooltip(page, "Terça, 13/10");
     await page.keyboard.press("ArrowRight");
-    await expect(reading(page)).toHaveText(
-      "Terça, 20/10 · R$ 420,50 · 3 vendas"
-    );
+    await expectTooltip(page, "Terça, 20/10", "R$ 420,50", "3");
     // a week ahead stops at today: the days to come are not read
     await page.keyboard.press("ArrowRight");
     await expect(slider).toHaveAttribute("aria-valuetext", READING);
     await page.keyboard.press("Home");
-    await expect(reading(page)).toHaveText("Domingo, 26/04 · sem venda");
-    // leaving the map, the reading goes back to today
+    await expectTooltip(page, "Domingo, 26/04");
+    // leaving the map, the tooltip closes
     await page.keyboard.press("Tab");
-    await expect(reading(page)).toHaveText(READING);
+    await expect(tooltip(page)).toHaveCount(0);
+    await expect(atRest(page)).toHaveText(AT_REST);
+    // Escape puts the tooltip away without leaving the control
+    await slider.focus();
+    await expectTooltip(page, "Sexta, 23/10");
+    await page.keyboard.press("Escape");
+    await expect(tooltip(page)).toHaveCount(0);
   });
 
-  test("a 360 px: 13 semanas depois de Vendas por dia, células de até 18 px, nada passa da largura", async ({
+  test("a 360 px: tantas semanas quanto cabem (de 13 a 20), células de 12 px, nada passa da largura", async ({
     page,
   }) => {
     await page.setViewportSize({ height: 740, width: 360 });
     await openHome(page, new FakeServer(SOLD));
     const map = rhythm(page);
-    await expect(map).toContainText("Últimas 13 semanas");
-    await expect(dataCells(page)).toHaveCount(91);
-    await expect(reading(page)).toHaveText(READING);
+    await expect(dataCells(page).first()).toBeVisible();
+    const weeks = (await dataCells(page).count()) / 7;
+    await expect(map).toContainText(`Últimas ${weeks} semanas`);
+    expect(weeks).toBeGreaterThanOrEqual(13);
+    expect(weeks).toBeLessThanOrEqual(20);
+    await expect(atRest(page)).toHaveText(AT_REST);
     const mapBox = await map.boundingBox();
+    // the whole block keeps to a part of a screen, with the numbers closed
+    expect(mapBox?.height ?? 999).toBeLessThanOrEqual(270);
     const svgBox = await map.locator("[data-heatmap] svg").boundingBox();
     expect((svgBox?.x ?? 0) + (svgBox?.width ?? 0)).toBeLessThanOrEqual(
       (mapBox?.x ?? 0) + (mapBox?.width ?? 0)
     );
     const cell = await dataCells(page).first().boundingBox();
-    expect(cell?.width ?? 0).toBeGreaterThanOrEqual(14);
-    expect(cell?.width ?? 99).toBeLessThanOrEqual(18);
+    expect(cell?.width ?? 0).toBeCloseTo(12, 0);
     expect(
       await page.evaluate(
         () => document.documentElement.scrollWidth <= window.innerWidth
@@ -3588,37 +3901,187 @@ test.describe("Ritmo de vendas (revisão de UI v7, § 3 item 10)", () => {
     ).toBe(true);
   });
 
-  test("Esconder valores: a leitura, a linha do melhor dia, a legenda e a frase escondem os reais e deixam as contagens", async ({
+  test("Esconder valores: o tooltip do dia, as faixas do (i) e o título da legenda escondem os reais e deixam as contagens", async ({
     page,
   }) => {
     await page.setViewportSize({ height: 800, width: 1280 });
     await openHome(page, new FakeServer(SOLD));
-    await page
-      .locator("main")
-      .getByRole("button", { name: "Esconder valores" })
-      .click();
+    await page.getByRole("button", { name: "Esconder valores" }).click();
     const map = rhythm(page);
-    await expect(reading(page)).toHaveText(
-      "Sexta, 23/10 · R$ ••••valor escondido · 2 vendas · hoje"
-    );
-    await expect(bestLine(page)).toHaveText(
-      "Melhor dia: 18/10, R$ ••••valor escondido"
-    );
+    await dataCells(page)
+      .nth(25 * 7)
+      .hover();
+    await expectTooltip(page, "Domingo, 18/10", "R$ ••••", "6", "melhor dia");
+    await expect(tooltip(page)).not.toContainText(AN_AMOUNT);
     await expect(map).not.toContainText(AN_AMOUNT);
+    await expect(map.locator("[data-rhythm-legend]")).toHaveAttribute(
+      "title",
+      "Vazio: sem venda · até R$ •••• · até R$ •••• · até R$ •••• · acima"
+    );
     await expect(map.getByRole("img")).toHaveAttribute(
       "aria-label",
-      "Vendas por dia nas últimas 26 semanas: 6 dias com venda. Melhor dia 18/10, valor escondido. Meses anteriores atualizados até ontem. Os números estão em Ver os números."
+      "Vendas por dia nas últimas 26 semanas: 6 dias com venda. Melhor dia 18/10, valor escondido. Meses anteriores atualizados até ontem. A tabela dia a dia está no fim deste bloco."
     );
+    await page.mouse.move(5, 5);
     await expect(
       map.getByRole("slider", { name: "Dia do mapa de vendas" })
     ).toHaveAttribute(
       "aria-valuetext",
       "Sexta, 23/10 · valor escondido · 2 vendas · hoje"
     );
-    await map.getByRole("button", { name: "Ver os números" }).click();
+    await map.getByRole("button", { name: "Sobre Ritmo de vendas" }).click();
+    await expect(
+      page.getByText(
+        "Vazio: sem venda · até R$ •••• · até R$ •••• · até R$ •••• · acima",
+        { exact: false }
+      )
+    ).toBeVisible();
+    await page.keyboard.press("Escape");
     await expect(map).not.toContainText(AN_AMOUNT);
     await expect(map.getByRole("row").nth(1)).toContainText("2 vendas");
+    // the invisible table is read by a screen reader and found by a search: no digit of an amount in any of its texts
+    const table = map.getByRole("table");
+    expect(await table.evaluate((node) => node.textContent)).not.toMatch(
+      AN_AMOUNT
+    );
+    expect(
+      await table.evaluate((node) => (node as HTMLElement).innerText)
+    ).not.toMatch(AN_AMOUNT);
+    await expect(table.getByText("R$ ••••").first()).toBeAttached();
+    expect(
+      await map.evaluate((node) =>
+        [...node.querySelectorAll("[aria-label],[aria-valuetext]")].map(
+          (element) =>
+            `${element.getAttribute("aria-label")} ${element.getAttribute("aria-valuetext")}`
+        )
+      )
+    ).not.toContainEqual(expect.stringMatching(AN_AMOUNT));
   });
+
+  test("o gráfico não abriu: a tabela aparece à vista com o erro e Tentar novamente, e o resto do bloco fica", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 800, width: 1280 });
+    await page.route(HEATMAP_CHUNK, (route) => route.abort());
+    await openHome(page, new FakeServer(SOLD));
+    const map = rhythm(page);
+    await expect(map.getByText("O gráfico não abriu.")).toBeVisible({
+      timeout: 20_000,
+    });
+    await expect(
+      map.getByRole("button", { name: "Tentar novamente" })
+    ).toBeVisible();
+    await expect(atRest(page)).toHaveText(AT_REST);
+    // the numbers are on the screen, not an option: the table, newest day first, with the values
+    await expect(map.getByRole("table")).toBeVisible();
+    await expect(map.locator("[data-chart-data-table]")).toHaveAttribute(
+      "data-chart-data-table",
+      "visible"
+    );
+    await expect(map.getByRole("row")).toHaveCount(182);
+    await expect(map.getByRole("row").nth(1)).toContainText(
+      "23/10/2026R$ 320,102 vendas"
+    );
+    await expect(
+      map.getByRole("button", { name: "Ver os números" })
+    ).toHaveCount(0);
+    await page.getByRole("button", { name: "Esconder valores" }).click();
+    await expect(map.getByRole("table")).toBeVisible();
+    await expect(map.getByRole("table")).not.toContainText(AN_AMOUNT);
+  });
+
+  for (const size of [
+    { height: 740, width: 360 },
+    { height: 900, width: 900 },
+    { height: 800, width: 1280 },
+  ]) {
+    test(`lugar reservado: a caixa do carregando tem a altura do bloco pronto e ler um dia não a muda (${size.width} px)`, async ({
+      page,
+    }) => {
+      await page.setViewportSize(size);
+      let release: () => void = () => undefined;
+      const server = new FakeServer(SOLD);
+      server.held.set(
+        "report/dailySales",
+        new Promise<void>((resolve) => {
+          release = resolve;
+        })
+      );
+      await openHome(page, server);
+      const loading = page
+        .getByRole("status")
+        .filter({ hasText: "Carregando o ritmo de vendas…" });
+      await expect(loading).toBeVisible();
+      await settled(page);
+      const reserved = (await placeOf(loading)).height;
+
+      release();
+      await expect(atRest(page)).toHaveText(AT_REST);
+      await settled(page);
+      const ready = await placeOf(rhythm(page));
+      expect(Math.abs(ready.height - reserved)).toBeLessThanOrEqual(1);
+
+      // the tooltip of a day read is over the map, and moves nothing
+      const total = await dataCells(page).count();
+      await dataCells(page)
+        .nth(total - 7)
+        .hover();
+      await expect(tooltip(page)).toBeVisible();
+      await settled(page);
+      expect(
+        Math.abs((await placeOf(rhythm(page))).height - ready.height)
+      ).toBeLessThanOrEqual(1);
+    });
+  }
+
+  for (const size of [
+    { height: 740, width: 360 },
+    { height: 568, width: 320 },
+  ]) {
+    test(`o tooltip de um dia fica inteiro dentro da tela em toda coluna do mapa (${size.width} px)`, async ({
+      page,
+    }) => {
+      await page.setViewportSize(size);
+      await openHome(page, new FakeServer(SOLD));
+      await expect(atRest(page)).toHaveText(AT_REST);
+      await settled(page);
+      const columns = Math.floor((await dataCells(page).count()) / 7);
+      expect(columns).toBeGreaterThanOrEqual(16);
+      const panelBox = () =>
+        tooltip(page).evaluate((content) => {
+          const panel = content.closest(".pointer-events-none.absolute");
+          const box = panel?.getBoundingClientRect();
+          const map = content
+            .closest("[data-heatmap]")
+            ?.getBoundingClientRect();
+          return box && map
+            ? {
+                left: box.left,
+                mapLeft: map.left,
+                mapRight: map.right,
+                right: box.right,
+                width: window.innerWidth,
+              }
+            : null;
+        });
+      for (let column = 0; column < columns; column += 1) {
+        // biome-ignore lint/performance/noAwaitInLoops: one pointer, one column after the other
+        await dataCells(page)
+          .nth(column * 7 + 3)
+          .hover();
+        await expect(tooltip(page)).toBeVisible();
+        await settled(page);
+        const box = await panelBox();
+        expect(box, `coluna ${column}`).not.toBeNull();
+        expect(box?.left, `coluna ${column}`).toBeGreaterThanOrEqual(
+          Math.max(0, (box?.mapLeft ?? 0) - 0.5)
+        );
+        expect(box?.right, `coluna ${column}`).toBeLessThanOrEqual(
+          Math.min(box?.width ?? 0, (box?.mapRight ?? 0) + 0.5)
+        );
+      }
+    });
+  }
 
   test("cache diário (CPU-1e): duas aberturas no mesmo dia leem a série uma vez; no dia seguinte, de novo", async ({
     page,
@@ -3630,7 +4093,7 @@ test.describe("Ritmo de vendas (revisão de UI v7, § 3 item 10)", () => {
         .filter((call) => call.procedure === "report/dailySales")
         .map((call) => [call.input.from, call.input.to]);
     await openHome(page, server);
-    await expect(reading(page)).toHaveText(READING);
+    await expect(atRest(page)).toHaveText(AT_REST);
     await expect
       .poll(() =>
         page.evaluate(() =>
@@ -3644,7 +4107,7 @@ test.describe("Ritmo de vendas (revisão de UI v7, § 3 item 10)", () => {
 
     // the second opening of the day: the figures are read again, the series comes from the copy of today
     await page.reload();
-    await expect(reading(page)).toHaveText(READING, { timeout: 20_000 });
+    await expect(atRest(page)).toHaveText(AT_REST, { timeout: 20_000 });
     await expect
       .poll(() => periodCalls(server).length)
       .toBeGreaterThan(summaries);
@@ -3670,7 +4133,7 @@ test.describe("Ritmo de vendas (revisão de UI v7, § 3 item 10)", () => {
       server.calls.filter((call) => call.procedure === "report/dailySales")
         .length;
     await openHome(page, server);
-    await expect(reading(page)).toHaveText(READING);
+    await expect(atRest(page)).toHaveText(AT_REST);
     expect(dailyCalls()).toBe(1);
 
     server.broken.set("report/periodSummary", "403");
@@ -3683,7 +4146,7 @@ test.describe("Ritmo de vendas (revisão de UI v7, § 3 item 10)", () => {
     await page.clock.runFor(31_000);
     await page.evaluate(() => window.dispatchEvent(new Event("focus")));
     await expect.poll(dailyCalls).toBe(2);
-    await expect(reading(page)).toHaveText(READING);
+    await expect(atRest(page)).toHaveText(AT_REST);
   });
 
   test("a série quebrada: o bloco diz o seu erro e Tentar novamente lê só a série; o resto fica", async ({
@@ -3703,8 +4166,28 @@ test.describe("Ritmo de vendas (revisão de UI v7, § 3 item 10)", () => {
     const summaries = periodCalls(server).length;
     server.broken.delete("report/dailySales");
     await page.getByRole("button", { name: "Tentar novamente" }).click();
-    await expect(reading(page)).toHaveText(READING);
+    await expect(atRest(page)).toHaveText(AT_REST);
     expect(periodCalls(server).length).toBe(summaries);
+  });
+
+  test("sem conexão e sem o pedaço do mapa: a tabela da cópia aparece à vista, com o aviso de internet", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 800, width: 1280 });
+    const server = new FakeServer(SOLD);
+    await openWithCopy(page, server);
+    await page.route(HEATMAP_CHUNK, (route) => route.abort());
+    await reopenWithoutNetwork(page, server);
+    const map = rhythm(page);
+    await expect(map).toContainText(
+      "O gráfico abre quando a internet voltar. Os números estão abaixo.",
+      { timeout: 20_000 }
+    );
+    await expect(map.getByRole("table")).toBeVisible();
+    await expect(map.getByRole("row")).toHaveCount(182);
+    await expect(map.getByRole("row").nth(1)).toContainText(
+      "23/10/2026R$ 320,102 vendas"
+    );
   });
 
   test("sem conexão: com a cópia da série, o mapa da cópia; sem ela, 'O mapa abre com internet.'", async ({
@@ -3719,11 +4202,11 @@ test.describe("Ritmo de vendas (revisão de UI v7, § 3 item 10)", () => {
         exact: true,
       })
     ).toBeVisible();
-    await expect(reading(page)).toHaveText(READING);
+    await expect(atRest(page)).toHaveText(AT_REST);
     await page.context().setOffline(false);
 
     await reopenWithoutNetwork(page, server);
-    await expect(reading(page)).toHaveText(READING, { timeout: 20_000 });
+    await expect(atRest(page)).toHaveText(AT_REST, { timeout: 20_000 });
 
     await page.evaluate(() => {
       for (const key of Object.keys(localStorage)) {
@@ -3921,16 +4404,39 @@ test.describe("paliativo dos 1102: leituras tentadas de novo, em fila e com frei
   });
 });
 
-const SALE_OUTSIDE_THE_WEEK: Scenario = {
+const SALE_OUTSIDE_THE_MONTH: Scenario = {
   ...SOLD,
   days: { "2026-09-25": [12_000, 2] },
 };
 const NO_SALE_AT_ALL: Scenario = { ...SOLD, days: {} };
+const SOBRE = /^Sobre /;
+const NO_COST_HELP =
+  /não é lucro líquido nem caixa\. Sem custo informado: não dá para estimar\./;
 const SIZES = [
   { height: 740, width: 360 },
   { height: 800, width: 1280 },
 ] as const;
 const CHARTS_CHUNK = "**/assets/charts-*.js";
+const HEATMAP_CHUNK = "**/assets/heatmap-*.js";
+
+/** The table of the days of a chart: in the page for a screen reader, one pixel tall on the screen and out of the tab order. */
+async function expectInvisibleTable(block: Locator, columns = 3) {
+  const table = block.getByRole("table");
+  await expect(table).toHaveCount(1);
+  await expect(table.locator("caption")).not.toHaveText("");
+  await expect(table.locator("th[scope=col]")).toHaveCount(columns);
+  await expect(block.locator("[data-chart-data-table]")).toHaveAttribute(
+    "data-chart-data-table",
+    "hidden"
+  );
+  const box = await block.locator("[data-chart-data-table]").boundingBox();
+  expect(box?.height ?? 99).toBeLessThanOrEqual(1);
+  await expect(table.locator("a, button, input, [tabindex]")).toHaveCount(0);
+  const id = await table.getAttribute("id");
+  await expect(block.locator(`[role="img"][aria-details="${id}"]`)).toHaveCount(
+    1
+  );
+}
 
 /** Where a box is on the page, whatever the scroll: the height and the top in document coordinates. */
 interface Place {
@@ -3960,35 +4466,39 @@ async function chartPlaces(page: Page) {
   return {
     card: await placeOf(chart),
     next: await placeOf(region(page, "Ritmo de vendas")),
-    numbers: await placeOf(
-      chart.getByRole("button", { name: "Ver os números" })
-    ),
     total: await placeOf(chart.locator("p.grid > span").first()),
   };
 }
 
 type ChartPlaces = Awaited<ReturnType<typeof chartPlaces>>;
 
-/** Every place of the block within a pixel of the one before: the height, the total, "Ver os números" and the block below. */
+/**
+ * The block of the chart within a pixel of the one before: its height, and where the total and the block below sit from
+ * its top. The block's own top is not compared: the cards above it have another shape when the month sold nothing.
+ */
 function expectSamePlaces(after: ChartPlaces, before: ChartPlaces) {
-  for (const key of ["card", "next", "numbers", "total"] as const) {
-    expect(
-      Math.abs(after[key].height - before[key].height),
-      `altura de ${key}`
-    ).toBeLessThanOrEqual(1);
-    expect(
-      Math.abs(after[key].top - before[key].top),
-      `topo de ${key}`
-    ).toBeLessThanOrEqual(1);
+  const from = (places: ChartPlaces) => ({
+    card: places.card.height,
+    next: places.next.top - places.card.top,
+    nextHeight: places.next.height,
+    total: places.total.top - places.card.top,
+    totalHeight: places.total.height,
+  });
+  const [now, then] = [from(after), from(before)];
+  for (const key of Object.keys(now) as (keyof typeof now)[]) {
+    expect(Math.abs(now[key] - then[key]), key).toBeLessThanOrEqual(1);
   }
 }
 
-async function chooseDays(page: Page, days: "7" | "30") {
-  const chart = region(page, "Vendas por dia");
-  await chart.getByRole("tab", { name: `${days} dias` }).click();
-  await expect(
-    chart.getByRole("tab", { name: `${days} dias` })
-  ).toHaveAttribute("aria-selected", "true");
+const MONTHS = {
+  last: { range: "01/09 a 30/09", shortcut: "Mês passado" },
+  this: { range: "01/10 a 31/10", shortcut: "Este mês" },
+} as const;
+
+/** One of the two months through the picker of the Início, once the block has the period asked. */
+async function chooseMonth(page: Page, month: keyof typeof MONTHS) {
+  await choosePeriod(page, MONTHS[month].shortcut);
+  await expect(periodButton(page)).toContainText(MONTHS[month].range);
 }
 
 /** The block of one period has either the drawing or the sentence; waits for the one the scenario gives it. */
@@ -4005,19 +4515,19 @@ async function expectPeriodShown(page: Page, empty: boolean) {
 test.describe("Vendas por dia: trocar de período não muda a altura do bloco nem o que vem depois", () => {
   const cases = [
     {
-      name: "dados e dados (7 e 30 dias com venda)",
+      empty: { last: false, this: false },
+      name: "dados e dados (este mês e o passado com venda)",
       scenario: SOLD,
-      empty: { 30: false, 7: false },
     },
     {
-      name: "dados e vazio (7 dias sem venda, 30 dias com)",
-      scenario: SALE_OUTSIDE_THE_WEEK,
-      empty: { 30: false, 7: true },
+      empty: { last: false, this: true },
+      name: "vazio e dados (este mês sem venda, o passado com)",
+      scenario: SALE_OUTSIDE_THE_MONTH,
     },
     {
-      name: "vazio e vazio (a loja que não vendeu em 30 dias)",
+      empty: { last: true, this: true },
+      name: "vazio e vazio (a loja que não vendeu nos dois meses)",
       scenario: NO_SALE_AT_ALL,
-      empty: { 30: true, 7: true },
     },
   ] as const;
 
@@ -4026,16 +4536,16 @@ test.describe("Vendas por dia: trocar de período não muda a altura do bloco ne
       test(`${name} (${size.width} px)`, async ({ page }) => {
         await page.setViewportSize(size);
         await openHome(page, new FakeServer(scenario));
-        await expectPeriodShown(page, empty[7]);
-        const week = await chartPlaces(page);
+        await expectPeriodShown(page, empty.this);
+        const thisMonth = await chartPlaces(page);
 
-        await chooseDays(page, "30");
-        await expectPeriodShown(page, empty[30]);
-        expectSamePlaces(await chartPlaces(page), week);
+        await chooseMonth(page, "last");
+        await expectPeriodShown(page, empty.last);
+        expectSamePlaces(await chartPlaces(page), thisMonth);
 
-        await chooseDays(page, "7");
-        await expectPeriodShown(page, empty[7]);
-        expectSamePlaces(await chartPlaces(page), week);
+        await chooseMonth(page, "this");
+        await expectPeriodShown(page, empty.this);
+        expectSamePlaces(await chartPlaces(page), thisMonth);
       });
     }
 
@@ -4068,7 +4578,7 @@ test.describe("Vendas por dia: trocar de período não muda a altura do bloco ne
     page,
   }) => {
     await page.setViewportSize(SIZES[1]);
-    await openHome(page, new FakeServer(SALE_OUTSIDE_THE_WEEK));
+    await openHome(page, new FakeServer(SALE_OUTSIDE_THE_MONTH));
     await expectPeriodShown(page, true);
     const chart = region(page, "Vendas por dia");
     // the chart of the chunk (the box that held its place has no `data-chart`)
@@ -4100,6 +4610,141 @@ test.describe("Vendas por dia: trocar de período não muda a altura do bloco ne
         sentenceBox.x + sentenceBox.width / 2 - (plotBox.x + plotBox.width / 2)
       )
     ).toBeLessThanOrEqual(1);
+  });
+});
+
+const HIDE_VALUES = { name: "Esconder valores" } as const;
+
+test.describe("Vendas por dia: só o gráfico, com os números numa tabela invisível (L2-6)", () => {
+  test("a tabela invisível está ligada ao gráfico e troca com o período; o botão não existe", async ({
+    page,
+  }) => {
+    await page.setViewportSize(SIZES[0]);
+    await openHome(page, new FakeServer(SOLD));
+    await expectPeriodShown(page, false);
+    const chart = region(page, "Vendas por dia");
+    await expect(
+      chart.getByRole("button", { name: "Ver os números" })
+    ).toHaveCount(0);
+    await expect(chart).not.toContainText("Os números estão abaixo");
+    await expectInvisibleTable(chart, 2);
+    await expect(chart.getByRole("row")).toHaveCount(24);
+    await expect(chart.getByRole("row").nth(1)).toContainText(
+      "01/10/2026R$ 0,00"
+    );
+    await expect(chart.getByRole("row").nth(2)).toContainText(
+      "02/10/2026R$ 80,00"
+    );
+    await expect(chart.getByRole("row").nth(18)).toContainText(
+      "18/10/2026R$ 1.840,00"
+    );
+    await expect(chart.getByRole("row").nth(23)).toContainText(
+      "23/10/2026R$ 320,10"
+    );
+    await expect(chart.getByRole("slider")).toHaveAttribute("max", "22");
+
+    await chooseMonth(page, "last");
+    await expectPeriodShown(page, false);
+    await expectInvisibleTable(chart, 2);
+    await expect(chart.getByRole("row")).toHaveCount(31);
+    await expect(chart.getByRole("row").nth(1)).toContainText("01/09/2026");
+    await expect(chart.getByRole("row").nth(20)).toContainText(
+      "20/09/2026R$ 50,00"
+    );
+    await expect(chart.getByRole("slider")).toHaveAttribute("max", "29");
+    // the keyboard control and the summary of the image stay
+    await expect(chart.getByRole("slider")).toBeVisible();
+    await expect(chart.locator('[role="img"][aria-label]')).toHaveCount(1);
+    await chart.getByRole("slider").focus();
+    await page.keyboard.press("Tab");
+    await expect(chart.getByRole("table").locator(":focus")).toHaveCount(0);
+  });
+
+  for (const size of SIZES) {
+    test(`com Esconder valores a tabela invisível também mascara, e a altura do cartão não muda entre os dois meses (${size.width} px)`, async ({
+      page,
+    }) => {
+      await page.setViewportSize(size);
+      await openHome(page, new FakeServer(SOLD));
+      await expectPeriodShown(page, false);
+      const chart = region(page, "Vendas por dia");
+      const visible = await chartPlaces(page);
+
+      await page.getByRole("button", HIDE_VALUES).click();
+      await expect(chart).not.toContainText(AN_AMOUNT);
+      for (const month of ["last", "this"] as const) {
+        // biome-ignore lint/performance/noAwaitInLoops: one period after the other
+        await chooseMonth(page, month);
+        await expectPeriodShown(page, false);
+        const table = chart.getByRole("table");
+        expect(await table.evaluate((node) => node.textContent)).not.toMatch(
+          AN_AMOUNT
+        );
+        expect(
+          await table.evaluate((node) => (node as HTMLElement).innerText)
+        ).not.toMatch(AN_AMOUNT);
+        await expect(table.getByText("R$ ••••").first()).toBeAttached();
+        expect(
+          await chart.evaluate((node) =>
+            [...node.querySelectorAll("[aria-label],[aria-valuetext]")].map(
+              (element) =>
+                `${element.getAttribute("aria-label")} ${element.getAttribute("aria-valuetext")}`
+            )
+          )
+        ).not.toContainEqual(expect.stringMatching(AN_AMOUNT));
+        expectSamePlaces(await chartPlaces(page), visible);
+      }
+    });
+  }
+
+  for (const size of SIZES) {
+    test(`o gráfico não abriu: a tabela aparece à vista, com o erro e Tentar novamente (${size.width} px)`, async ({
+      page,
+    }) => {
+      await page.setViewportSize(size);
+      await page.route(CHARTS_CHUNK, (route) => route.abort());
+      await openHome(page, new FakeServer(SOLD));
+      const chart = region(page, "Vendas por dia");
+      await expect(chart.getByText("O gráfico não abriu.")).toBeVisible({
+        timeout: 20_000,
+      });
+      await expect(
+        chart.getByRole("button", { name: "Tentar novamente" })
+      ).toBeVisible();
+      await expect(chart.getByRole("table")).toBeVisible();
+      await expect(chart.locator("[data-chart-data-table]")).toHaveAttribute(
+        "data-chart-data-table",
+        "visible"
+      );
+      await expect(chart.getByRole("row")).toHaveCount(24);
+      await expect(chart.getByRole("row").nth(18)).toContainText(
+        "18/10/2026R$ 1.840,00"
+      );
+      await expect(
+        chart.getByRole("button", { name: "Ver os números" })
+      ).toHaveCount(0);
+      await chooseMonth(page, "last");
+      await expect(chart.getByRole("row")).toHaveCount(31);
+      await page.getByRole("button", HIDE_VALUES).click();
+      await expect(chart.getByRole("table")).not.toContainText(AN_AMOUNT);
+    });
+  }
+
+  test("o gráfico não abriu e o período não tem venda: a frase de sem vendas, e a tabela de zeros continua invisível", async ({
+    page,
+  }) => {
+    await page.setViewportSize(SIZES[1]);
+    await page.route(CHARTS_CHUNK, (route) => route.abort());
+    await openHome(page, new FakeServer(SALE_OUTSIDE_THE_MONTH));
+    const chart = region(page, "Vendas por dia");
+    await expect(chart).toContainText("Sem vendas no período.", {
+      timeout: 20_000,
+    });
+    await expect(chart.locator("[data-chart-data-table]")).toHaveAttribute(
+      "data-chart-data-table",
+      "hidden"
+    );
+    await expect(chart).not.toContainText("O gráfico não abriu.");
   });
 });
 
@@ -4195,30 +4840,22 @@ test.describe("cartões de KPI: escolher ou soltar um dia não move nada no cart
       expect([...chips].sort()).toEqual([false, true]);
     });
 
-    test(`sem venda no mês: a linha do chip e a do texto de apoio continuam nos quatro cartões, vazias para o leitor de tela (${size.width} px)`, async ({
+    test(`sem venda no mês: a linha de apoio continua nos quatro cartões, sem chip (${size.width} px)`, async ({
       page,
     }) => {
       await page.setViewportSize(size);
       await openHome(page, new FakeServer(NO_SALE_AT_ALL));
       await expect(region(page, "Vendas hoje")).toContainText("R$ 0,00");
-      const rows = page.locator(
-        "[data-kpi-row] [data-kpi] [data-kpi-chip-row]"
-      );
-      await expect(rows).toHaveCount(4);
-      const chipRows = await rows.evaluateAll((elements) =>
-        elements.map((element) => ({
-          height: element.getBoundingClientRect().height,
-          text: element.textContent,
-        }))
-      );
-      for (const row of chipRows) {
-        expect(row.height).toBeGreaterThanOrEqual(20);
-        expect(row.text).toBe("");
-      }
       const notes = page.locator(
         "[data-kpi-row] [data-kpi] [data-kpi-note-row]"
       );
       await expect(notes).toHaveCount(4);
+      const heights = await notes.evaluateAll((elements) =>
+        elements.map((element) => element.getBoundingClientRect().height)
+      );
+      for (const height of heights) {
+        expect(height).toBeGreaterThanOrEqual(20);
+      }
       await expect(
         page.locator("[data-kpi-row] [data-kpi] [data-kpi-delta]")
       ).toHaveCount(0);
@@ -4267,6 +4904,240 @@ test.describe("cartões de KPI: escolher ou soltar um dia não move nada no cart
       )
     ).toBeLessThanOrEqual(1);
   });
+
+  test("metas ainda sem resposta: um esqueleto anunciado na largura toda no lugar dos blocos, que aparecem quando elas respondem", async ({
+    page,
+  }) => {
+    await page.setViewportSize(SIZES[1]);
+    const server = new FakeServer({ ...SOLD, goals: [goal({})] });
+    let answer: () => void = () => undefined;
+    server.held.set(
+      "goal/list",
+      new Promise((resolve) => {
+        answer = resolve;
+      })
+    );
+    await openHome(page, server);
+    await expect(region(page, "Vendas hoje")).toContainText("R$ 320,10");
+    const waiting = page
+      .getByRole("status")
+      .filter({ hasText: "Carregando a meta…" });
+    await expect(waiting).toBeVisible();
+    await expect(waiting).toHaveAttribute("aria-busy", "true");
+    await expect(region(page, "Vendas por dia")).toHaveCount(0);
+    await expect(region(page, "Mais vendidos do mês")).toHaveCount(0);
+    const [skeleton, content] = await Promise.all([
+      waiting.boundingBox(),
+      page.locator("[data-kpi-row]").boundingBox(),
+    ]);
+    expect(skeleton?.width ?? 0).toBeGreaterThanOrEqual(
+      (content?.width ?? 1) - 1
+    );
+
+    answer();
+    await expect(region(page, "Meta")).toContainText("da meta");
+    await expect(region(page, "Vendas por dia")).toBeVisible();
+    await expect(waiting).toHaveCount(0);
+  });
+});
+
+/** The geometry the areas of each KPI tile keep: the tile, its sparkline and the area of its number. */
+async function tileAreas(page: Page) {
+  await settled(page);
+  return page.locator("[data-kpi-row] [data-kpi]").evaluateAll((cards) =>
+    cards.map((card) => {
+      const size = (element: Element | null) => {
+        const box = element?.getBoundingClientRect();
+        return box ? { height: box.height, width: box.width } : null;
+      };
+      return {
+        figure: size(card.querySelector("[data-kpi-headline]")),
+        name: card.getAttribute("aria-labelledby"),
+        spark: size(card.querySelector("[data-kpi-spark]")),
+        tile: size(card),
+      };
+    })
+  );
+}
+
+type TileAreas = Awaited<ReturnType<typeof tileAreas>>[number];
+
+function expectSameAreas(tile: TileAreas, rest: TileAreas | undefined) {
+  const when = `${tile.name}`;
+  const same = (what: string, now?: number, before?: number) =>
+    expect(now, `${when}: ${what}`).toBeCloseTo(before ?? Number.NaN, 0);
+  same("altura", tile.tile?.height, rest?.tile?.height);
+  same("largura", tile.tile?.width, rest?.tile?.width);
+  same("área do número", tile.figure?.width, rest?.figure?.width);
+  if (tile.spark && rest?.spark) {
+    same("minigráfico", tile.spark.width, rest.spark.width);
+    same("altura do minigráfico", tile.spark.height, rest.spark.height);
+  }
+}
+
+test.describe("cartões de KPI: o valor e o minigráfico têm áreas que o número não muda", () => {
+  const SHORT: Scenario = {
+    ...SOLD,
+    results: {
+      "2026-10-18": 55_200,
+      "2026-10-20": 12_615,
+      "2026-10-23": 9603,
+    },
+  };
+  const LONG: Scenario = {
+    ...SOLD,
+    days: {
+      "2026-10-02": [8000, 1],
+      "2026-10-18": [99_964_035, 6],
+      "2026-10-23": [32_010, 2],
+    },
+    results: {
+      "2026-10-02": 100,
+      "2026-10-18": -9_964_035,
+      "2026-10-23": 100,
+    },
+  };
+  const INCOMPLETE: Scenario = {
+    ...SHORT,
+    results: { ...SHORT.results, "2026-10-20": null },
+  };
+
+  for (const size of SIZES) {
+    test(`valor curto, valor longo e estimativa incompleta: o cartão, o minigráfico e a área do número ficam do mesmo tamanho, e os quatro cartões têm a mesma altura (${size.width} px)`, async ({
+      page,
+    }) => {
+      await page.setViewportSize(size);
+      const reads: Awaited<ReturnType<typeof tileAreas>>[] = [];
+      for (const scenario of [SHORT, LONG, INCOMPLETE]) {
+        // biome-ignore lint/performance/noAwaitInLoops: one store at a time, one page
+        await openHome(page, new FakeServer(scenario));
+        await expect(region(page, "Resultado estimado")).toContainText(
+          scenario === INCOMPLETE ? "Incompleta" : "R$"
+        );
+        reads.push(await tileAreas(page));
+      }
+      const [short, long, incomplete] = reads;
+      expect(short?.length).toBe(4);
+      for (const read of [short, long, incomplete]) {
+        const heights = (read ?? []).map((tile) => tile.tile?.height ?? 0);
+        expect(
+          Math.max(...heights) - Math.min(...heights),
+          "os quatro cartões têm a mesma altura"
+        ).toBeLessThanOrEqual(1);
+      }
+      for (const read of [long, incomplete]) {
+        for (const [index, tile] of (read ?? []).entries()) {
+          expectSameAreas(tile, short?.[index]);
+        }
+      }
+    });
+  }
+
+  const NO_COST: Scenario = {
+    ...SOLD,
+    results: {
+      "2026-10-02": null,
+      "2026-10-18": null,
+      "2026-10-20": null,
+      "2026-10-23": null,
+    },
+    soldWithoutCost: 12,
+  };
+
+  async function detailInsideRow(result: Locator, detail: string) {
+    return await result.evaluate((card, selector) => {
+      const row = card
+        .querySelector("[data-kpi-note-row]")
+        ?.getBoundingClientRect();
+      const box = card.querySelector(selector)?.getBoundingClientRect();
+      return Boolean(
+        row &&
+          box &&
+          box.width > 0 &&
+          box.left >= row.left - 0.5 &&
+          box.right <= row.right + 0.5 &&
+          box.top >= row.top - 0.5 &&
+          box.bottom <= row.bottom + 0.5
+      );
+    }, detail);
+  }
+
+  test("com a lateral aberta a 1280 px, os dias sem custo ficam à vista na linha de apoio e o (i) diz a contagem", async ({
+    page,
+  }) => {
+    await page.setViewportSize(SIZES[1]);
+    await openHome(page, new FakeServer(INCOMPLETE));
+    const result = region(page, "Resultado estimado");
+    await expect(result.locator("[data-kpi-unknown]")).toContainText(
+      "de 23 dias sem custo"
+    );
+    expect(
+      await detailInsideRow(result, "[data-kpi-warning-detail]"),
+      "o detalhe está dentro da linha de apoio, não escondido"
+    ).toBe(true);
+    await result.getByRole("button", { name: SOBRE }).click();
+    await expect(
+      page.getByText("1 de 23 dias ainda sem custo informado.")
+    ).toBeVisible();
+  });
+
+  test("sem custo conhecido, com a lateral aberta a 1280 px: “Sem custo informado” à vista e o (i) diz que não dá para estimar", async ({
+    page,
+  }) => {
+    await page.setViewportSize(SIZES[1]);
+    await openHome(page, new FakeServer(NO_COST));
+    const result = region(page, "Resultado estimado");
+    await expect(result.locator("[data-kpi-no-cost]")).toContainText(
+      "Sem custo informado"
+    );
+    expect(
+      await detailInsideRow(result, "[data-kpi-warning-detail]"),
+      "o detalhe está dentro da linha de apoio, não escondido"
+    ).toBe(true);
+    await result.getByRole("button", { name: SOBRE }).click();
+    await expect(page.getByText(NO_COST_HELP)).toBeVisible();
+  });
+
+  test("a estimativa incompleta é uma linha só, com o sinal à vista, e a data de um dia lido vem antes dele (1280 px)", async ({
+    page,
+  }) => {
+    await page.setViewportSize(SIZES[1]);
+    await openHome(page, new FakeServer(INCOMPLETE));
+    const result = region(page, "Resultado estimado");
+    await expect(result.locator("[data-kpi-incomplete]")).toHaveText(
+      "Incompleta"
+    );
+    await expect(result.locator("[data-kpi-incomplete]")).toBeVisible();
+    await expect(result.locator("[data-kpi-note-row]")).toHaveCount(1);
+    await expect(result.locator("[data-kpi-warning]")).toHaveCount(1);
+    const rest = await tileAreas(page);
+    const slider = region(page, "Vendas em outubro").getByRole("slider");
+    await slider.focus();
+    await page.keyboard.press("ArrowLeft");
+    await expect(result.locator("[data-kpi-date]")).toBeVisible();
+    await expect(result.locator("[data-kpi-incomplete]")).toBeVisible();
+    const inside = await result.evaluate((card) => {
+      const row = card
+        .querySelector("[data-kpi-note-row]")
+        ?.getBoundingClientRect();
+      const sign = card
+        .querySelector("[data-kpi-incomplete]")
+        ?.getBoundingClientRect();
+      return Boolean(
+        row &&
+          sign &&
+          sign.right <= row.right + 0.5 &&
+          sign.bottom <= row.bottom + 0.5
+      );
+    });
+    expect(inside, "o sinal de incompleta cabe inteiro na linha de apoio").toBe(
+      true
+    );
+    const read = await tileAreas(page);
+    for (const [index, tile] of read.entries()) {
+      expect(tile.tile?.height).toBeCloseTo(rest[index]?.tile?.height ?? 0, 0);
+    }
+  });
 });
 
 /** Names of 30, 45 and 60 characters. */
@@ -4277,13 +5148,19 @@ const LONG_NAMES = [
 ];
 
 function rankingOf(names: readonly string[], scale = 1) {
-  const ids = [PRODUCT, DELETED, "0199c2d0-0000-7000-8000-0000000000b3"];
+  const ids = [
+    PRODUCT,
+    DELETED,
+    "0199c2d0-0000-7000-8000-0000000000b3",
+    "0199c2d0-0000-7000-8000-0000000000b4",
+    "0199c2d0-0000-7000-8000-0000000000b5",
+  ];
   return names.map((name, index) => ({
     deleted: index === 1,
     name,
-    netSales: `${(900 - index * 300) * scale}.00`,
+    netSales: `${Math.max(900 - index * 300, 100) * scale}.00`,
     productId: ids[index] ?? PRODUCT,
-    quantity: (12 - index * 4) * scale,
+    quantity: Math.max(12 - index * 4, 1) * scale,
   }));
 }
 
@@ -4365,6 +5242,176 @@ async function rankingRows(page: Page): Promise<RankingRow[]> {
     );
 }
 
+/** Today's net sales, in cents, alone in the store: the month, the result and the ticket follow from it. */
+const alone = (cents: number): Scenario => ({
+  ...SOLD,
+  days: { "2026-10-23": [cents, 3] },
+  soldWithoutCost: 0,
+});
+const BIG_SALE = 9_964_035;
+/** Below 760 px, or with a finger, the scale of money comes down a step (theme.css, "Touch … or a narrow screen"). */
+const PHONE_WIDTH = 760;
+const KPI_IDS = ["home-today", "home-month", "home-result", "home-ticket"];
+
+interface HeroRead {
+  card: string | null;
+  currency: number;
+  currencyWeight: string;
+  size: number;
+  weight: string;
+}
+
+/** The size and the weight each number of the four cards is drawn with. */
+const readHeroes = (page: Page): Promise<HeroRead[]> =>
+  page.evaluate(() =>
+    [...document.querySelectorAll("[data-kpi-value]")].map((value) => {
+      const style = getComputedStyle(value);
+      const currency = value.querySelector("[data-money-currency]");
+      const currencyStyle = currency ? getComputedStyle(currency) : null;
+      return {
+        card:
+          value.closest("[data-kpi]")?.getAttribute("aria-labelledby") ?? null,
+        currency: Number.parseFloat(currencyStyle?.fontSize ?? "NaN"),
+        currencyWeight: currencyStyle?.fontWeight ?? "",
+        size: Number.parseFloat(style.fontSize),
+        weight: style.fontWeight,
+      };
+    })
+  );
+
+const heightOf = async (target: Locator) =>
+  (await target.boundingBox())?.height ?? Number.NaN;
+
+test.describe("o padrão único dos valores nos cartões do Início (AC-3.1, AC-3.2, AC-3.6, AC-3.7)", () => {
+  test.skip(
+    ({ browserName }) => browserName !== "chromium",
+    "`Page.setFontSizes` is a Chrome DevTools command"
+  );
+
+  for (const width of [360, 1280]) {
+    test(`os quatro cartões têm o valor e o R$ no mesmo tamanho, em peso 600, a ${width} px`, async ({
+      page,
+    }) => {
+      await openReflowViewport(page, { fontPixels: 16, height: 800, width });
+      await openHome(page, new FakeServer(SOLD));
+      await expect(region(page, "Vendas hoje")).toContainText("R$ 320,10");
+      const reads = await readHeroes(page);
+      expect(reads.map((read) => read.card)).toEqual(KPI_IDS);
+      const coarse = await page.evaluate(
+        () => matchMedia("(pointer: coarse)").matches
+      );
+      const lg = width < PHONE_WIDTH || coarse ? 24 : 26;
+      expect(
+        reads.map((read) => read.size),
+        "o valor: text-value-lg nos quatro, sem um principal maior"
+      ).toEqual([lg, lg, lg, lg]);
+      expect(
+        new Set(reads.map((read) => read.currency)).size,
+        "o R$ tem um tamanho só nos quatro"
+      ).toBe(1);
+      expect(reads[0]?.currency).toBeLessThan(lg);
+      expect(new Set(reads.map((read) => read.currencyWeight)).size).toBe(1);
+      expect(reads.map((read) => read.weight)).toEqual([
+        "600",
+        "600",
+        "600",
+        "600",
+      ]);
+    });
+  }
+
+  for (const [width, fontPixels] of [
+    [360, 16],
+    [375, 16],
+    [320, 20],
+    [320, 24],
+  ] as const) {
+    for (const cents of [BIG_SALE, -BIG_SALE]) {
+      const text = `${cents < 0 ? "-" : ""}R$ 99.640,35`;
+      test(`${text} em Vendas hoje não corta nem quebra a ${width} px com a letra em ${fontPixels} px`, async ({
+        page,
+      }, testInfo) => {
+        await openReflowViewport(page, { fontPixels, width });
+        await openHome(page, new FakeServer(alone(cents)));
+        await expectReflowFont(page, fontPixels);
+        const principal = region(page, "Vendas hoje");
+        await expect(principal.locator("[data-kpi-value]")).toHaveText(text, {
+          timeout: 20_000,
+        });
+        await assertNothingClipped(principal);
+        const [today, ...rest] = await readHeroes(page);
+        const lg = 1.5 * fontPixels;
+        const floor = 0.875 * fontPixels;
+        for (const read of [today, ...rest]) {
+          expect(
+            read?.size,
+            "o valor desce só até caber na área dele, nunca abaixo do piso"
+          ).toBeLessThanOrEqual(lg + 0.01);
+          expect(read?.size).toBeGreaterThanOrEqual(floor - 0.01);
+        }
+        testInfo.annotations.push({
+          description: `Vendas hoje ${today?.size} px, KPIs ${rest[0]?.size} px`,
+          type: "medida",
+        });
+        const sameLine = await principal.evaluate((card) => {
+          const currency = card
+            .querySelector("[data-money-currency]")
+            ?.getBoundingClientRect();
+          const number = card
+            .querySelector("[data-money-number]")
+            ?.getBoundingClientRect();
+          return Boolean(
+            currency &&
+              number &&
+              number.top < currency.bottom &&
+              currency.top < number.bottom
+          );
+        });
+        expect(sameLine, "o R$ e o número na mesma linha").toBe(true);
+        await assertNoPageScroll(page);
+      });
+    }
+  }
+
+  for (const fontPixels of [20, 24]) {
+    test(`o cartão de Vendas hoje tem a mesma altura com um valor curto, um longo, um negativo e com os valores escondidos, na largura mínima com a letra em ${fontPixels} px`, async ({
+      page,
+    }) => {
+      await openReflowViewport(page, { fontPixels, width: 320 });
+      const server = new FakeServer(alone(100));
+      await openHome(page, server);
+      const principal = region(page, "Vendas hoje");
+      await expect(principal.locator("[data-kpi-value]")).toHaveText(
+        "R$ 1,00",
+        {
+          timeout: 20_000,
+        }
+      );
+      const short = await heightOf(principal);
+      const hiddenKeepsTheBox = async (cents: number, text: string) => {
+        server.scenario = alone(cents);
+        await page.reload();
+        await expect(principal.locator("[data-kpi-value]")).toHaveText(text, {
+          timeout: 20_000,
+        });
+        expect(
+          Math.abs((await heightOf(principal)) - short)
+        ).toBeLessThanOrEqual(1);
+        const before = await tileAreas(page);
+        await page.getByRole("button", { name: "Esconder valores" }).click();
+        await expect(principal.locator("[data-masked-money]")).toBeVisible();
+        expect(
+          Math.abs((await heightOf(principal)) - short)
+        ).toBeLessThanOrEqual(1);
+        expect(await tileAreas(page)).toEqual(before);
+        await page.getByRole("button", { name: "Esconder valores" }).click();
+      };
+      await hiddenKeepsTheBox(BIG_SALE, "R$ 99.640,35");
+      await hiddenKeepsTheBox(-BIG_SALE, "-R$ 99.640,35");
+    });
+  }
+});
+
 async function openRanking(
   page: Page,
   server: FakeServer,
@@ -4436,10 +5483,7 @@ test.describe("Mais vendidos do mês a 320 px com a letra do navegador em 20 px"
     await openRanking(page, server);
     const full = await rankingRows(page);
 
-    await page
-      .getByRole("main")
-      .getByRole("button", { name: "Esconder valores" })
-      .click();
+    await page.getByRole("button", { name: "Esconder valores" }).click();
     await expect(region(page, "Mais vendidos do mês")).toContainText("R$ ••••");
     expectSameRows(await rankingRows(page), full, "Esconder valores");
 
@@ -4499,15 +5543,68 @@ function expectSameRows(
   }
 }
 
-const WIDE_WINDOW = 1280;
+const WIDE_WINDOW = 1440;
 
-test.describe("Mais vendidos do mês com a letra de 16 px: a linha de sempre", () => {
-  for (const [label, width, height] of [
-    ["360", 360, 740],
-    ["1280", 1280, 800],
+reflowTest(
+  "Mais vendidos do mês: com vendas e nenhum produto restante depois das devoluções, a caixa diz que foram devolvidas",
+  async ({ page }) => {
+    const server = new FakeServer(SOLD);
+    server.top = [];
+    await openHome(page, server);
+    const block = region(page, "Mais vendidos do mês");
+    await expect(block).toContainText("As vendas do período foram devolvidas.");
+    await expect(block).not.toContainText("Sem vendas no período.");
+    await expect(block.locator("ol")).toHaveCount(0);
+  }
+);
+
+test.describe("Mais vendidos do mês: cinco linhas com a miniatura de 32 px", () => {
+  for (const [width, height] of [[360, 740]] as const) {
+    reflowTest(
+      `a ${width} px as cinco linhas têm a caixa de 32 px com as iniciais, na ordem, sem rolar de lado`,
+      async ({ page }) => {
+        await page.setViewportSize({ height, width });
+        const server = new FakeServer(SOLD);
+        server.top = rankingOf([
+          "Camiseta lisa",
+          "Boné antigo",
+          "Calça jeans",
+          "Tênis de corrida",
+          "Meia esportiva",
+        ]);
+        await openHome(page, server);
+        const block = region(page, "Mais vendidos do mês");
+        await expect(block).toContainText("un.");
+        const boxes = block.locator("[data-thumbnail]");
+        await expect(boxes).toHaveCount(5);
+        expect(
+          await boxes.evaluateAll((nodes) =>
+            nodes.map((node) => {
+              const box = node.getBoundingClientRect();
+              return [Math.round(box.width), Math.round(box.height)];
+            })
+          )
+        ).toEqual(new Array(5).fill([32, 32]));
+        await expect(boxes).toHaveText(["CA", "BO", "CA", "TÊ", "ME"]);
+        expect(
+          periodCalls(server).some((call) => call.input.topProducts === 5)
+        ).toBe(true);
+        await assertNoPageScroll(page);
+      }
+    );
+  }
+});
+
+test.describe("Mais vendidos do mês com a letra de 16 px: a linha de cada largura", () => {
+  for (const [label, width, height, oneLine] of [
+    ["360", 360, 740, false],
+    ["1280", 1280, 800, true],
+    ["1440", 1440, 900, true],
   ] as const) {
     reflowTest(
-      `a ${label} px${width >= WIDE_WINDOW ? ", com a lateral recolhida," : ""} nome, valor e unidades ficam numa linha só`,
+      oneLine
+        ? `a ${label} px, nome, valor e unidades ficam numa linha só${width >= WIDE_WINDOW ? ", com a lateral recolhida" : ""}`
+        : `a ${label} px o nome tem a sua linha, o valor e as unidades a de baixo, e a miniatura de 32 px fica ao lado das duas`,
       async ({ page }) => {
         await page.setViewportSize({ height, width });
         const server = new FakeServer(SOLD);
@@ -4519,10 +5616,17 @@ test.describe("Mais vendidos do mês com a letra de 16 px: a linha de sempre", (
         await expect(region(page, "Mais vendidos do mês")).toContainText("un.");
         const rows = await rankingRows(page);
         for (const [index, row] of rows.entries()) {
-          expect(
-            row.nameBottom,
-            `valor na linha do nome ${index + 1}`
-          ).toBeGreaterThan(row.figuresTop);
+          if (oneLine) {
+            expect(
+              row.nameBottom,
+              `valor na linha do nome ${index + 1}`
+            ).toBeGreaterThan(row.figuresTop);
+          } else {
+            expect(
+              row.figuresTop,
+              `valor ${index + 1} sob o nome`
+            ).toBeGreaterThanOrEqual(row.nameBottom - 1);
+          }
         }
         const line = region(page, "Mais vendidos do mês").locator(
           "[data-top-line]"
@@ -4531,25 +5635,27 @@ test.describe("Mais vendidos do mês com a letra de 16 px: a linha de sempre", (
           await line.evaluateAll((nodes) =>
             nodes.map((node) => getComputedStyle(node).display)
           )
-        ).toEqual(["flex", "flex", "flex"]);
-        const cut = await region(page, "Mais vendidos do mês")
-          .locator("[data-top-name]")
-          .last()
-          .evaluate((name) => {
-            const style = getComputedStyle(name);
-            return {
-              cut: name.scrollWidth > name.clientWidth,
-              ellipsis: style.textOverflow,
-              overflow: style.overflowX,
-              wrap: style.whiteSpace,
-            };
+        ).toEqual(new Array(3).fill(oneLine ? "flex" : "grid"));
+        if (oneLine) {
+          const cut = await region(page, "Mais vendidos do mês")
+            .locator("[data-top-name]")
+            .last()
+            .evaluate((name) => {
+              const style = getComputedStyle(name);
+              return {
+                cut: name.scrollWidth > name.clientWidth,
+                ellipsis: style.textOverflow,
+                overflow: style.overflowX,
+                wrap: style.whiteSpace,
+              };
+            });
+          expect(cut).toEqual({
+            cut: width < WIDE_WINDOW,
+            ellipsis: "ellipsis",
+            overflow: "hidden",
+            wrap: "nowrap",
           });
-        expect(cut).toEqual({
-          cut: true,
-          ellipsis: "ellipsis",
-          overflow: "hidden",
-          wrap: "nowrap",
-        });
+        }
         await assertNoPageScroll(page);
       },
       { coarse: width < WIDE_WINDOW }
@@ -4569,11 +5675,11 @@ async function foldSideMenu(page: Page) {
     .toBe(0);
 }
 
-/** Names that fit in one line at the 9 rem or so the row keeps for the name, with a value of up to four digits, when the column is 20 rem wide. */
+/** Names that fit in one line at the 9 rem or so the row keeps for the name, with a value of up to four digits, when the column is 20.75 rem wide. */
 const SHORT_NAMES = ["Camiseta lisa", "Calça jeans slim", "Tênis de corrida"];
 
-/** From the sidebar up the line is one row only when its box is 20 rem or wider; under it the name has its own line. */
-const ONE_LINE_REM = 20;
+/** The line is one row only when its box is 20.75 rem or wider (the miniature takes 2.75 rem of the name); under it the name has its own line. */
+const ONE_LINE_REM = 20.75;
 
 function columnRem(block: Locator) {
   return block
@@ -4605,50 +5711,92 @@ function expectNameReads(
   }
 }
 
-test.describe("Mais vendidos do mês de 1150 a 1280 px: o nome lê inteiro com a lateral aberta e recolhida", () => {
+test.describe("Mais vendidos do mês: a linha por largura da coluna (uma linha só a partir de 20,75 rem, empilhada abaixo)", () => {
+  const ONE_LINE_NAMES = SHORT_NAMES;
+
   for (const side of ["aberta", "recolhida"] as const) {
     reflowTest(
-      `lateral ${side}`,
+      `de 1024 a 1300 px, lateral ${side}: o cartão tem a largura da área e cada linha é uma só, com o nome inteiro`,
       async ({ page }) => {
-        const names = side === "aberta" ? LONG_NAMES : SHORT_NAMES;
         await page.setViewportSize({ height: 800, width: 1150 });
         const server = new FakeServer(SOLD);
-        server.top = rankingOf(names);
+        server.top = rankingOf(ONE_LINE_NAMES);
         await openHome(page, server);
         if (side === "recolhida") {
           await foldSideMenu(page);
         }
-        const seen = new Set<string>();
-        for (const width of [1150, 1200, 1280]) {
+        for (const width of [1024, 1150, 1200, 1280, 1300]) {
           // biome-ignore lint/performance/noAwaitInLoops: one viewport after the other on the same page
           await page.setViewportSize({ height: 800, width });
           const block = region(page, "Mais vendidos do mês");
           await expect(block).toContainText("un.");
           const rows = await rankingRows(page);
           const rem = await columnRem(block);
-          const stacked = rem < ONE_LINE_REM;
-          seen.add(stacked ? "empilhada" : "numa linha");
+          expect(rem, `${side} ${width} px`).toBeGreaterThanOrEqual(
+            ONE_LINE_REM
+          );
           expect(rows, `${side} ${width} px`).toHaveLength(3);
           rows.forEach((row, index) => {
             expectNameReads(
               row,
-              names[index] ?? "",
-              stacked,
+              ONE_LINE_NAMES[index] ?? "",
+              false,
               `${side} ${width} px (${rem} rem), nome ${index + 1}`
             );
           });
           await assertNoPageScroll(page);
         }
-        expect([...seen].sort()).toEqual(
-          side === "aberta" ? ["empilhada"] : ["empilhada", "numa linha"]
-        );
+      },
+      { coarse: false }
+    );
+  }
+
+  // on a phone the card is the width of the screen less the page's and the card's own padding: 20,75 rem of line at 388 px
+  const PHONE_EDGES = [
+    { stacked: true, width: 387 },
+    { stacked: false, width: 388 },
+  ] as const;
+
+  for (const edge of PHONE_EDGES) {
+    reflowTest(
+      `a ${edge.width} px o nome ${edge.stacked ? "empilha" : "fica numa linha só"}`,
+      async ({ page }) => {
+        await page.setViewportSize({ height: 800, width: edge.width });
+        const server = new FakeServer(SOLD);
+        server.top = rankingOf(SHORT_NAMES);
+        await openHome(page, server);
+        const block = region(page, "Mais vendidos do mês");
+        await expect(block).toContainText("un.");
+        const rows = await rankingRows(page);
+        const rem = await columnRem(block);
+        const when = `${edge.width} px (${rem} rem)`;
+        if (edge.stacked) {
+          expect(rem, `${when}: coluna abaixo de 20,75 rem`).toBeLessThan(
+            ONE_LINE_REM
+          );
+        } else {
+          expect(
+            rem,
+            `${when}: coluna a partir de 20,75 rem`
+          ).toBeGreaterThanOrEqual(ONE_LINE_REM);
+        }
+        expect(rows, when).toHaveLength(3);
+        rows.forEach((row, index) => {
+          expectNameReads(
+            row,
+            SHORT_NAMES[index] ?? "",
+            edge.stacked,
+            `${when}, nome ${index + 1}`
+          );
+        });
+        await assertNoPageScroll(page);
       },
       { coarse: false }
     );
   }
 
   reflowTest(
-    "a 1024 px com a lateral aberta o nome tem a sua linha, e a 360 px segue numa linha só",
+    "a 1024 px com a lateral aberta o nome fica numa linha, e a 360 px tem a sua linha",
     async ({ page }) => {
       const server = new FakeServer(SOLD);
       server.top = rankingOf(SHORT_NAMES);
@@ -4660,14 +5808,15 @@ test.describe("Mais vendidos do mês de 1150 a 1280 px: o nome lê inteiro com a
         expectNameReads(
           row,
           SHORT_NAMES[index] ?? "",
-          true,
+          false,
           `1024 px, nome ${index + 1}`
         );
       });
       await page.setViewportSize({ height: 740, width: 360 });
       const phone = await rankingRows(page);
+      expect(phone).toHaveLength(3);
       for (const row of phone) {
-        expect(row.nameBottom).toBeGreaterThan(row.figuresTop);
+        expect(row.figuresTop).toBeGreaterThanOrEqual(row.nameBottom - 1);
       }
     },
     { coarse: false }

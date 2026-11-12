@@ -109,7 +109,10 @@ interface RowGeometry {
   text: string;
 }
 
-/** Per line: its text, its height, and the pairs of text fragments that share some area. */
+/**
+ * Per line: its text, its height, and the pairs of text fragments that share some area. The text only for the screen
+ * reader (`sr-only`) is a clipped 1 px box that a range still measures at full width: it is not a block anyone sees.
+ */
 function rowGeometry(page: Page) {
   return page.evaluate(() => {
     interface Fragment {
@@ -121,6 +124,9 @@ function rowGeometry(page: Page) {
       const walker = document.createTreeWalker(item, NodeFilter.SHOW_TEXT);
       for (let node = walker.nextNode(); node; node = walker.nextNode()) {
         const text = node.textContent?.trim() ?? "";
+        if (node.parentElement?.closest(".sr-only")) {
+          continue;
+        }
         const range = document.createRange();
         range.selectNodeContents(node);
         for (const rect of range.getClientRects()) {
@@ -276,7 +282,7 @@ for (const width of [360, WIDE_WINDOW]) {
         .first();
       const [rowBox, moneyBox] = await Promise.all([
         first.boundingBox(),
-        first.locator("span.inline-flex.tabular-nums").boundingBox(),
+        first.locator("[data-money]").boundingBox(),
       ]);
       expect(
         Math.abs(

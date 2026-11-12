@@ -25,6 +25,8 @@ interface SpecRule {
   from?: string;
   /** Why each plain `test(` and each `coarse:` stays. */
   why: string;
+  /** Titles of the plain `test(` calls before `from` that read like a reflow case (320 px, 20 px) and stay plain. */
+  before?: readonly string[];
 }
 
 const SPECS: Readonly<Record<string, SpecRule>> = {
@@ -36,8 +38,9 @@ const SPECS: Readonly<Record<string, SpecRule>> = {
   "dashboard.e2e.ts": {
     bare: 0,
     coarse: 0,
-    from: 'test.describe("o passo a passo do Resultado a 320 px com a letra do navegador em 20 px"',
-    why: "",
+    from: 'test.describe("o passo a passo do Resultado a 320 px com a letra do navegador em 24, 20 e 16 px"',
+    before: ["a 320 px, o valor do cartão não quebra em duas linhas"],
+    why: "one card read at the default font, not the sweep with the browser font at 24, 20 and 16 px",
   },
   "despesas-reflow.e2e.ts": { bare: 0, coarse: 0, why: "" },
   "estoque-reflow.e2e.ts": {
@@ -58,11 +61,12 @@ const SPECS: Readonly<Record<string, SpecRule>> = {
   },
   "home.e2e.ts": {
     bare: 1,
-    coarse: 3,
+    coarse: 4,
     from: 'test.describe("Mais vendidos do mês a 320 px com a letra do navegador em 20 px"',
-    why: "the heights test opens its own browser contexts, which a finger case would not share; the windows of 1024 to 1280 px are not a phone",
+    why: "the heights test opens its own browser contexts, which a finger case would not share; the windows of 1024 to 1361 px are not a phone",
   },
   "money-nowrap-reflow.e2e.ts": { bare: 0, coarse: 0, why: "" },
+  "parar-dicas-reflow.e2e.ts": { bare: 0, coarse: 0, why: "" },
   "pendencias-reflow.e2e.ts": {
     bare: 0,
     coarse: 1,
@@ -73,10 +77,21 @@ const SPECS: Readonly<Record<string, SpecRule>> = {
     coarse: 0,
     why: "the order of the DOM does not depend on the size of anything, so there is nothing for a finger to change",
   },
+  "settings-groups.e2e.ts": {
+    bare: 0,
+    coarse: 0,
+    from: "for (const fontPixels of [20, 24]) {",
+    why: "",
+  },
   "shell-reflow.e2e.ts": {
     bare: 0,
     coarse: 2,
     why: "the window of 1280 px is not a phone; the font of 24 px is a best effort, not a promise",
+  },
+  "subtitulos-no-i.e2e.ts": {
+    bare: 0,
+    coarse: 1,
+    why: "the window of 1280 px is not a phone",
   },
 };
 
@@ -107,6 +122,16 @@ const count = (source: string, pattern: RegExp) =>
 const BARE_TEST = /^\s*test(?:\.only)?\(/gm;
 const REFLOW_TEST = /^\s*reflowTest\(/gm;
 const COARSE_OPTION = /\bcoarse:/g;
+const PLAIN_TEST_TITLE =
+  /^\s*test(?:\.(?:only|skip|fixme|fail))?\(\s*(["'`])(.*?)\1/gms;
+const REFLOW_TITLE = /\b320\s*px|\b20\s*px|reflow/i;
+
+/** Titles of the plain `test(` calls in `source` that read like a reflow case. */
+function reflowLookingTitles(source: string) {
+  return [...source.matchAll(PLAIN_TEST_TITLE)]
+    .map((match) => match[2] ?? "")
+    .filter((title) => REFLOW_TITLE.test(title));
+}
 
 /** What is wrong with one spec, in words that name the fix. */
 function problemsOf(name: string, whole: string, rule: SpecRule) {
@@ -118,6 +143,24 @@ function problemsOf(name: string, whole: string, rule: SpecRule) {
   }
   const source = whole.slice(start);
   const found: string[] = [];
+  const before = reflowLookingTitles(whole.slice(0, start));
+  const allowed = [...(rule.before ?? [])];
+  const unlisted = [...before];
+  for (const title of allowed) {
+    const at = unlisted.indexOf(title);
+    if (at < 0) {
+      found.push(
+        `${name}: SPECS \`before\` lists "${title}", which is no longer a plain test before the sweep; remove it from the list`
+      );
+    } else {
+      unlisted.splice(at, 1);
+    }
+  }
+  for (const title of unlisted) {
+    found.push(
+      `${name}: plain \`test("${title}")\` before the part that sweeps reads like a reflow case; declare it with reflowTest, or list it in SPECS \`before\` with the reason`
+    );
+  }
   if (count(source, REFLOW_TEST) === 0) {
     found.push(
       `${name}: no \`reflowTest(\`: its cases measure only the mouse; declare them with reflowTest`
@@ -156,7 +199,9 @@ describe("the reflow specs run with a finger too", () => {
 
   it("each exception in SPECS has its reason", () => {
     const missing = Object.entries(SPECS)
-      .filter(([, rule]) => rule.bare + rule.coarse > 0)
+      .filter(
+        ([, rule]) => rule.bare + rule.coarse + (rule.before?.length ?? 0) > 0
+      )
       .filter(([, rule]) => rule.why.trim().length < 20)
       .map(([name]) => name);
     expect(missing).toEqual([]);
@@ -165,6 +210,9 @@ describe("the reflow specs run with a finger too", () => {
   it("the routes spec and the helper spec keep what makes them what they are", () => {
     const rotas = readFileSync(join(E2E, "reflow-rotas.e2e.ts"), "utf8");
     expect(rotas).toContain("test.use({ hasTouch: true, isMobile: true });");
+    expect(rotas).toContain("fontPixels: BEST_EFFORT_FONT_PIXELS");
+    expect(rotas).toContain("Object.entries(COVERED_24)");
+    expect(rotas).toContain("const KNOWN_FINDINGS_24");
     const helper = readFileSync(join(E2E, "reflow-helper.e2e.ts"), "utf8");
     expect(count(helper, REFLOW_TEST)).toBe(3);
     expect(helper).toContain("@media (pointer: coarse)");
@@ -238,5 +286,48 @@ describe("the check fails on what it says it fails on", () => {
     const found = problemsOf("a.e2e.ts", big, { ...RULE, from: "NAO EXISTE" });
     expect(found).toHaveLength(1);
     expect(found[0]).toContain("is not in the file");
+  });
+  it("fails a reflow-looking plain test written before the part that sweeps, and lets a listed one stay", () => {
+    const opening = 'test.describe("SWEEP", () => {});\n';
+    const rule = { ...RULE, from: "SWEEP" };
+    for (const early of [
+      'test("a 320 px, o gráfico lê", async () => {});\n',
+      '  test.only("com a letra em 20 px", async () => {});\n',
+      'test(\n  "reflow do menu",\n  async () => {}\n);\n',
+      'test.skip("a 320 px, o gráfico lê", async () => {});\n',
+    ]) {
+      const found = problemsOf("a.e2e.ts", early + opening + WITH, rule);
+      expect(found).toHaveLength(1);
+      expect(found[0]).toContain("before the part that sweeps");
+    }
+    const listed = 'test("a 320 px, o gráfico lê", async () => {});\n';
+    expect(
+      problemsOf("a.e2e.ts", listed + opening + WITH, {
+        ...rule,
+        before: ["a 320 px, o gráfico lê"],
+      })
+    ).toEqual([]);
+    const twice = problemsOf("a.e2e.ts", listed + listed + opening + WITH, {
+      ...rule,
+      before: ["a 320 px, o gráfico lê"],
+    });
+    expect(twice).toHaveLength(1);
+    expect(twice[0]).toContain("before the part that sweeps");
+    const stale = problemsOf("a.e2e.ts", opening + WITH, {
+      ...rule,
+      before: ["a 320 px, o gráfico lê"],
+    });
+    expect(stale).toHaveLength(1);
+    expect(stale[0]).toContain("no longer a plain test before the sweep");
+  });
+
+  it("does not take a plain test with no reflow title before the sweep for a reflow case", () => {
+    const early = 'test("mostra o total", async () => {});\n';
+    expect(
+      problemsOf("a.e2e.ts", `${early}SWEEP\n${WITH}`, {
+        ...RULE,
+        from: "SWEEP",
+      })
+    ).toEqual([]);
   });
 });

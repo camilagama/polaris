@@ -153,6 +153,28 @@ function twoWeeks(weeks: number): RawActivationFunnel {
   };
 }
 
+/** The same answer as the function of the next deploy writes it: the three cells more in every cohort. */
+function withFourteenDays(answer: RawActivationFunnel): RawActivationFunnel {
+  return {
+    ...answer,
+    cohorts: answer.cohorts.map((cohort, index) =>
+      index === 0
+        ? {
+            ...cohort,
+            activatedWithin14Days: shown(9),
+            soldInTrial: suppressed,
+            trialStarted: shown(6),
+          }
+        : {
+            ...cohort,
+            activatedWithin14Days: windowOpen,
+            soldInTrial: windowOpen,
+            trialStarted: suppressed,
+          }
+    ),
+  };
+}
+
 function setup(
   read: ActivationFunnelDependencies["read"] = vi.fn(() =>
     Promise.resolve(raw())
@@ -279,8 +301,129 @@ describe("GET /api/funnel", () => {
     );
   });
 
+  it("answers the same with the function of today and with the one of the next deploy (the Admin goes first)", async () => {
+    const old = await setup().get("?weeks=2");
+    const oldBody = (await old.json()) as ActivationFunnelResponse;
+    expect(old.status).toBe(200);
+    expect(oldBody.cohorts[0]).not.toHaveProperty("activatedWithin14Days");
+    expect(oldBody.cohorts[0]).not.toHaveProperty("trialStarted");
+    expect(oldBody.cohorts[0]).not.toHaveProperty("soldInTrial");
+    expect(oldBody.cohorts[0]?.percent).not.toHaveProperty(
+      "activatedWithin14Days"
+    );
+
+    const next = await setup(
+      vi.fn(() => Promise.resolve(withFourteenDays(raw())))
+    ).get("?weeks=2");
+    const nextBody = (await next.json()) as ActivationFunnelResponse;
+    expect(next.status).toBe(200);
+    expect(activationFunnelResponse.parse(nextBody)).toEqual(nextBody);
+    expect(nextBody.cohorts[0]?.activatedWithin14Days).toEqual({
+      reason: null,
+      value: 9,
+    });
+    expect(nextBody.cohorts[0]?.percent.activatedWithin14Days).toEqual({
+      reason: null,
+      value: 42.9,
+    });
+    expect(nextBody.cohorts[0]?.trialStarted).toEqual({
+      reason: null,
+      value: 6,
+    });
+    expect(nextBody.cohorts[0]?.soldInTrial).toEqual({
+      reason: "suppressed",
+      value: null,
+    });
+    expect(nextBody.cohorts[0]?.percent.soldInTrial).toEqual({
+      reason: "suppressed",
+      value: null,
+    });
+    expect(nextBody.cohorts[1]?.activatedWithin14Days).toEqual({
+      reason: "activation_window_open",
+      value: null,
+    });
+    expect(JSON.stringify(nextBody)).not.toMatch(ZERO_VALUE);
+    expect({ ...nextBody.cohorts[0], percent: undefined }).toMatchObject({
+      activatedIn7Days: oldBody.cohorts[0]?.activatedIn7Days,
+      retention: oldBody.cohorts[0]?.retention,
+      stores: oldBody.cohorts[0]?.stores,
+    });
+  });
+
   it.each([
     ["a key more", { ...raw(), storeIds: ["org-1"] }],
+    [
+      "a 14-day cell under k shown",
+      {
+        ...withFourteenDays(raw()),
+        cohorts: withFourteenDays(raw()).cohorts.map((cohort, index) =>
+          index === 0 ? { ...cohort, activatedWithin14Days: shown(4) } : cohort
+        ),
+      },
+    ],
+    [
+      "a trial cell under k shown",
+      {
+        ...withFourteenDays(raw()),
+        cohorts: withFourteenDays(raw()).cohorts.map((cohort, index) =>
+          index === 0 ? { ...cohort, trialStarted: shown(3) } : cohort
+        ),
+      },
+    ],
+    [
+      "sold in the trial without the trial started",
+      {
+        ...raw(),
+        cohorts: raw().cohorts.map((cohort, index) =>
+          index === 0 ? { ...cohort, soldInTrial: shown(5) } : cohort
+        ),
+      },
+    ],
+    [
+      "more sold in the trial than started it",
+      {
+        ...raw(),
+        cohorts: raw().cohorts.map((cohort, index) =>
+          index === 0
+            ? { ...cohort, soldInTrial: shown(8), trialStarted: shown(6) }
+            : cohort
+        ),
+      },
+    ],
+    [
+      "more stores with a trial than stores",
+      {
+        ...raw(),
+        cohorts: raw().cohorts.map((cohort, index) =>
+          index === 0
+            ? { ...cohort, soldInTrial: suppressed, trialStarted: shown(22) }
+            : cohort
+        ),
+      },
+    ],
+    [
+      "more activated in 14 days than stores",
+      {
+        ...raw(),
+        cohorts: raw().cohorts.map((cohort, index) =>
+          index === 0 ? { ...cohort, activatedWithin14Days: shown(22) } : cohort
+        ),
+      },
+    ],
+    [
+      "a 14-day cell with a value and a reason",
+      {
+        ...raw(),
+        cohorts: raw().cohorts.map((cohort, index) =>
+          index === 0
+            ? {
+                ...cohort,
+                activatedWithin14Days: { state: "suppressed", value: 3 },
+              }
+            : cohort
+        ),
+      },
+    ],
     [
       "a key more in a cohort",
       {
@@ -506,6 +649,22 @@ describe("the answer's contract", () => {
     ).toThrow("activation_funnel_inconsistent");
   });
 
+  it("keeps the shape of today when the function sends none of the three cells, and the shares of the new ones when it does", () => {
+    expect(Object.keys(closed ?? {})).not.toContain("trialStarted");
+    const next = activationFunnelView(withFourteenDays(raw()));
+    expect(next.cohorts[0]?.percent.activatedWithin14Days).toEqual({
+      reason: null,
+      value: 42.9,
+    });
+    expect(next.cohorts[0]?.percent.soldInTrial?.reason).toBe("suppressed");
+    expect(next.cohorts[1]?.percent.soldInTrial).toEqual({
+      reason: "activation_window_open",
+      value: null,
+    });
+    expect(activationFunnelResponse.parse(next)).toEqual(next);
+    expect(activationFunnelResponse.parse(view)).toEqual(view);
+  });
+
   it("says when it was read and what the numbers leave out", () => {
     expect(view.updatedAt).toBe("2026-10-27T17:05:07.123Z");
     expect(view.internalStoresExcluded).toBe(3);
@@ -544,6 +703,30 @@ describe("the answer's contract", () => {
           {
             ...view.signups[0],
             percentWithStore: { reason: null, value: 101 },
+          },
+        ],
+      },
+    ],
+    [
+      "a 14-day cell with 0 shown",
+      {
+        ...view,
+        cohorts: [
+          {
+            ...view.cohorts[0],
+            activatedWithin14Days: { reason: null, value: 0 },
+          },
+        ],
+      },
+    ],
+    [
+      "sold in the trial without the trial started",
+      {
+        ...view,
+        cohorts: [
+          {
+            ...view.cohorts[0],
+            soldInTrial: { reason: null, value: 5 },
           },
         ],
       },

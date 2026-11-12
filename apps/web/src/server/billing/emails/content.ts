@@ -1,7 +1,7 @@
 /**
- * What one e-mail of the billing cycle says (corte `emails-ciclo-cobranca`, drafts of the texts):
+ * What one e-mail of the billing cycle says (drafts of the texts):
  * the subject, the preview, the paragraphs and the one button, to the app's own screens with an absolute address and
- * no tracking parameter (AC-16). The texts are the corte's; each kind has its file next to this one.
+ * no tracking parameter (AC-16). The texts are the approved ones; each kind has its file next to this one.
  */
 
 export interface BillingEmailLink {
@@ -12,8 +12,6 @@ export interface BillingEmailLink {
 export interface BillingNoticeContent {
   /** The button; the e-mail also writes its address in full, in case the button fails. */
   action: BillingEmailLink;
-  /** The footer of a notice about the subscription, or the welcome's (E1 is not about a subscription). */
-  footer: "subscription" | "welcome";
   /** The subject with the store's whole name, the heading of the body. */
   heading: string;
   paragraphs: string[];
@@ -35,11 +33,6 @@ export interface BillingEmailStore {
 /** The subscription screen (Assinatura), where every billing e-mail leads. */
 function subscriptionUrl(appOrigin: string): string {
   return `${new URL(appOrigin).origin}/subscription`;
-}
-
-/** The products screen: the welcome's button, until the short product form has an address of its own (AC-27). */
-export function productsUrl(appOrigin: string): string {
-  return `${new URL(appOrigin).origin}/products`;
 }
 
 const OPEN_SUBSCRIPTION = "Abrir a assinatura";

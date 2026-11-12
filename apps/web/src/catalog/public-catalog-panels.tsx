@@ -64,7 +64,7 @@ function ActionMessages({ error, notice }: ActionFeedback) {
           <p className="mt-2 flex items-start gap-1.5 font-medium text-support">
             <CircleCheckIcon
               aria-hidden="true"
-              className="mt-px size-3.5 shrink-0"
+              className="mt-px size-4 shrink-0"
             />
             {notice}
           </p>
@@ -75,7 +75,7 @@ function ActionMessages({ error, notice }: ActionFeedback) {
           <p className="mt-2 flex items-start gap-1.5 font-medium text-destructive text-support">
             <CircleAlertIcon
               aria-hidden="true"
-              className="mt-px size-3.5 shrink-0"
+              className="mt-px size-4 shrink-0"
             />
             {error}
           </p>
@@ -450,7 +450,7 @@ export function ProductsCard(props: ProductsCardProps) {
         <CardTitle aria-level={2} id="catalog-products" role="heading">
           Produtos
         </CardTitle>
-        <div className="flex gap-3">
+        <div className="flex flex-wrap gap-3">
           <Button
             {...connectionControlProps(props.online)}
             disabled={

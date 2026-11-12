@@ -3,7 +3,6 @@ import type {
   PaymentProfileReadModel,
 } from "@polaris/contracts";
 import { hasCapabilityForRole } from "@polaris/domain/authorization/capabilities";
-import RefreshCwIcon from "lucide-react/dist/esm/icons/refresh-cw";
 import {
   type FormEvent,
   useCallback,
@@ -12,8 +11,8 @@ import {
   useRef,
   useState,
 } from "react";
-import { Button } from "@/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/ui/card";
+import { RefreshButton } from "@/ui/refresh-button";
 import { deviceSaleKept } from "../app-shell/first-steps";
 import { useCurrentOrganization } from "../lib/current-organization";
 import { browserStorage } from "../lib/current-organization-model";
@@ -86,9 +85,9 @@ import {
 import {
   type AdjustmentDraft,
   acknowledgeProfileReview,
-  applySalePreset,
   addAdjustment,
   addItem,
+  applySalePreset,
   type CatalogView,
   type ChoiceOption,
   cancelDiscard,
@@ -103,9 +102,10 @@ import {
   formForOfflineSale,
   type ItemDraft,
   idleSubmission,
-  type Loadable,
   isFormLocked,
   isSaleFormDirty,
+  type Loadable,
+  otherLinesQuantity,
   type PreparedConfirmation,
   prepareConfirmation,
   profilesView,
@@ -166,7 +166,7 @@ function activeCount(
     : null;
 }
 
-/** Under the methods: the single payment, and that the method came from the last sale while it is unchanged. */
+/** Under the methods: that the method came from the last sale while it is unchanged, and nothing otherwise. */
 function methodHint(
   remembered: RememberedPayment | null,
   form: SaleFormState,
@@ -176,14 +176,8 @@ function methodHint(
     remembered !== null &&
     form.payment.method !== "" &&
     form.payment.method === preset.method;
-  return same
-    ? `Igual à última venda neste aparelho. ${SINGLE_PAYMENT_TEXT}`
-    : SINGLE_PAYMENT_TEXT;
+  return same ? "Igual à última venda neste aparelho." : "";
 }
-
-/** The single payment of the sale, said under the methods. */
-const SINGLE_PAYMENT_TEXT =
-  "Um pagamento só, no valor total. O método não comprova o recebimento.";
 
 /** Focuses the first invalid control; a group of choice cards gives the focus to its first card. */
 function focusFirstInvalidField() {
@@ -1020,16 +1014,11 @@ export function SalePage() {
                 <CardTitle aria-level={2} id="sale-items-title" role="heading">
                   Itens
                 </CardTitle>
-                <Button
+                <RefreshButton
                   className="row-span-2"
+                  object="estoque e perfis"
                   onClick={handleRefresh}
-                  size="sm"
-                  type="button"
-                  variant="ghost"
-                >
-                  <RefreshCwIcon aria-hidden="true" data-icon="inline-start" />
-                  Atualizar estoque e perfis
-                </Button>
+                />
                 <ItemsCount chosen={chosenCount} />
               </CardHeader>
               <CardContent className="grid gap-4">
@@ -1047,6 +1036,7 @@ export function SalePage() {
                     onPick={handlePickVariant}
                     onRemove={handleRemoveItem}
                     organizationId={organizationId}
+                    otherLinesQuantity={otherLinesQuantity(form.items, item)}
                     priceHint={suggestionHint(lastPrices, item)}
                     stock={catalog.stock}
                     stockWarning={evaluation.stockWarnings[item.draftId]}

@@ -86,6 +86,31 @@ for (const picker of PICKERS) {
   });
 }
 
+test.describe("DatePicker, o dia desligado", () => {
+  test("o dia desligado tem nome, aria-disabled e o motivo; o permitido não tem descrição; o motivo não é região viva", async ({
+    page,
+  }) => {
+    await openGallery(page);
+    const popup = await openWithKeyboard(
+      page,
+      "Data do pagamento,",
+      "Data do pagamento"
+    );
+    await page.keyboard.press("ArrowRight");
+    const off = day(popup, "2026-10-25");
+    await expect(off).toBeFocused();
+    await expect(off).toHaveAccessibleName("domingo, 25 de outubro de 2026");
+    await expect(off).toHaveAttribute("aria-disabled", "true");
+    await expect(off).toHaveAccessibleDescription("Só até hoje");
+    const reason = popup.getByText("Só até hoje", { exact: true });
+    await expect(reason).toBeVisible();
+    await expect(reason).not.toHaveAttribute("aria-live");
+    await expect(reason).not.toHaveAttribute("role");
+    await expect(day(popup, "2026-10-23")).toHaveAccessibleDescription("");
+    await expect(day(popup, "2026-10-23")).not.toHaveAttribute("aria-disabled");
+  });
+});
+
 test.describe("DatePicker, o dia no calendário", () => {
   test("o dia escolhido é selecionado na célula e no nome, e hoje diz Hoje no nome", async ({
     page,
@@ -245,7 +270,7 @@ test.describe("DateRangePicker, os dias do período", () => {
       "Período das vendas"
     );
     await day(popup, "2026-10-10").click();
-    const status = popup.getByText("Início 10/10/2026. Escolha o último dia.");
+    const status = popup.getByText("Início 10/10. Escolha o último dia.");
     await expect(status).toHaveAttribute("aria-live", "polite");
     await expect(cellOf(day(popup, "2026-10-10"))).toHaveAttribute(
       "aria-selected",

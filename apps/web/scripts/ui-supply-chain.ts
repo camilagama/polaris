@@ -1,4 +1,5 @@
-import { dirname, resolve, sep } from "node:path";
+import { dirname, relative, resolve, sep } from "node:path";
+import { fileURLToPath } from "node:url";
 
 /**
  * The supply-chain floor of the interface packages (ADR 0103, security conditions 1, 3, 4 and 6).
@@ -319,6 +320,23 @@ const SOURCE_RULES: { rule: string; pattern: RegExp }[] = [
   { pattern: /\bvaul\b/, rule: "vaul" },
 ];
 
+/**
+ * What one file may hold of `SOURCE_RULES`, exactly: the file (its path from the repository root, matched whole, never
+ * by the end of the path: the same name in another app or folder still fails), the rule and why. Empty: a
+ * constructed sheet is the way around `style-src 'self'` refusing a `<style>`, and no file needs it.
+ */
+export const SOURCE_RULE_EXCEPTIONS: readonly {
+  file: string;
+  rule: string;
+  why: string;
+}[] = [];
+
+const REPO_ROOT = fileURLToPath(new URL("../../..", import.meta.url));
+
+function repoRelative(file: string, repoRoot: string) {
+  return relative(repoRoot, resolve(file)).split(sep).join("/");
+}
+
 const IMPORT_SPECIFIER =
   /(?:\bfrom\s*|\bimport\s*\(?\s*|\brequire\s*\(\s*|\bimport\s+)["'`]([^"'`]+)["'`]/g;
 
@@ -348,11 +366,21 @@ function escapesSource(file: string, specifier: string, srcRoot?: string) {
 export function scanUiSource(
   file: string,
   source: string,
-  srcRoot?: string
+  srcRoot?: string,
+  repoRoot: string = REPO_ROOT
 ): SourceFinding[] {
+  const fromRepoRoot = repoRelative(file, repoRoot);
   const findings: SourceFinding[] = SOURCE_RULES.filter(({ pattern }) =>
     pattern.test(source)
-  ).map(({ rule }) => ({ file, rule }));
+  )
+    .filter(
+      ({ rule }) =>
+        !SOURCE_RULE_EXCEPTIONS.some(
+          (exception) =>
+            exception.rule === rule && fromRepoRoot === exception.file
+        )
+    )
+    .map(({ rule }) => ({ file, rule }));
   const allowed = new Set<string>([
     ...UI_ALLOWED_PACKAGES,
     ...UI_SOURCE_EXTRA_PACKAGES,
@@ -386,9 +414,10 @@ const TEST_RUNNER_IMPORT = "import of vitest";
 export function scanUiFolderFile(
   file: string,
   source: string,
-  srcRoot?: string
+  srcRoot?: string,
+  repoRoot?: string
 ) {
-  return scanUiSource(file, source, srcRoot).filter(
+  return scanUiSource(file, source, srcRoot, repoRoot).filter(
     ({ rule }) => !(TEST_FILE.test(file) && rule === TEST_RUNNER_IMPORT)
   );
 }

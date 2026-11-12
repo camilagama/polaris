@@ -3,6 +3,7 @@ import type {
   InventoryBalanceReadModel,
   PolarisRpcClient,
 } from "@polaris/contracts";
+import { productHref, STOCK_QUERY_MAX } from "../catalog/products-link-model";
 import { formatQuantity } from "../lib/format";
 import { readErrorMessage } from "../lib/rpc-error";
 import { canInformCost, type StockAction } from "./stock-command-model";
@@ -53,6 +54,17 @@ export function readStockLinkFilters(
     default:
       return { stock: "all", unknownCost: false };
   }
+}
+
+/** The search and the archived switch a link from a product carries; a search is never taken from anywhere else. */
+export function readStockLinkSearch(
+  search: string
+): Pick<StockFilters, "includeArchived" | "query"> {
+  const params = new URLSearchParams(search);
+  return {
+    includeArchived: params.get("arquivados") === "1",
+    query: (params.get("busca") ?? "").trim().slice(0, STOCK_QUERY_MAX),
+  };
 }
 
 type ListBalancesInput = Parameters<
@@ -259,7 +271,7 @@ export function stockRowActions(target: StockTarget): StockRowAction[] {
       ? {
           action: "cost",
           label: "Informar custo",
-          name: `Informar custo de ${target.productName} · ${target.variantText}`,
+          name: `Informar custo de ${subject}`,
         }
       : {
           action: "count",
@@ -282,6 +294,8 @@ export interface StockRow {
   /** The product's capa; absent when the answer did not carry it (a list asked without `withCover`). */
   coverAssetId?: string | null;
   id: string;
+  /** Where the name of the row leads: the product, on the variant when the row is one of a variant. */
+  productHref: string;
   productName: string;
   quantity: number;
   quantityText: string;
@@ -305,6 +319,10 @@ export function stockRows(
       ? {}
       : { coverAssetId: entry.coverAssetId }),
     id: entry.variantId,
+    productHref: productHref(
+      entry.productId,
+      entry.isDefaultVariant ? undefined : entry.variantId
+    ),
     productName: entry.productName,
     quantity: entry.quantity,
     quantityText: formatQuantity(entry.quantity),

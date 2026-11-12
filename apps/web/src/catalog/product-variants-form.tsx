@@ -219,6 +219,9 @@ function AllCombinationsNotice({
 /** A read that hangs falls back to the product's limit, as a failed one: the form waits for it with every field off. */
 const PLAN_READ_TIMEOUT_MS = 5000;
 
+/** The label may be longer than the window with a large font: the button grows in height instead of past the box. */
+const WRAPPING_ACTION = "h-auto min-h-ctl-md whitespace-normal py-1";
+
 type PlanView = Awaited<ReturnType<typeof orpcClient.billing.readPlan>>;
 
 async function readPlanIfAllowed(
@@ -726,6 +729,7 @@ export function ProductVariantConfigurationForm({
 
       <div className="flex flex-col gap-3 min-[30rem]:flex-row min-[30rem]:justify-end">
         <Button
+          className={WRAPPING_ACTION}
           disabled={!validation.canAdd || busy}
           onClick={handleAddCombination}
           type="button"
@@ -735,6 +739,7 @@ export function ProductVariantConfigurationForm({
           Adicionar combinação
         </Button>
         <Button
+          className={WRAPPING_ACTION}
           disabled={!allCombinations.canAdd}
           onClick={allCombinations.add}
           type="button"
@@ -746,6 +751,7 @@ export function ProductVariantConfigurationForm({
         <Button
           aria-describedby={tooLongReason}
           aria-disabled={tooLongReason ? true : undefined}
+          className={WRAPPING_ACTION}
           disabled={
             !tooLongReason &&
             (!validation.canSubmit || defaultVariantHasSku || busy)

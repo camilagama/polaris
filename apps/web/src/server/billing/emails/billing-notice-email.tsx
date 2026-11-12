@@ -43,10 +43,9 @@ import {
   trialChargeEveContent,
 } from "./trial-charge-eve";
 import { type TrialStartedEmail, trialStartedContent } from "./trial-started";
-import { type WelcomeEmail, welcomeContent } from "./welcome";
 
 /**
- * The e-mails of the billing cycle and the welcome (ADR 0104, decision 7; corte `emails-ciclo-cobranca`): one model per
+ * The e-mails of the billing cycle (ADR 0104, decision 7): one model per
  * kind, the same layout for all. React Email with no image, no pixel and no tracking parameter (AC-20); the colors of
  * `theme.css` (AC-17); the HTML and the plain text from the same element. Only the store's name, the plan, dates,
  * amounts, the kind of method and what to do (AC-10): nothing of the payer, of the card or of the provider.
@@ -62,8 +61,7 @@ export type BillingNoticeEmail =
   | ({ kind: "renewal_cancelled" } & RenewalCancelledEmail)
   | ({ kind: "renewal_failed" } & RenewalFailedEmail)
   | ({ kind: "trial_charge_eve" } & TrialChargeEveEmail)
-  | ({ kind: "trial_started" } & TrialStartedEmail)
-  | ({ kind: "welcome" } & WelcomeEmail);
+  | ({ kind: "trial_started" } & TrialStartedEmail);
 
 export function billingNoticeContent(
   email: BillingNoticeEmail
@@ -87,14 +85,12 @@ export function billingNoticeContent(
       return trialChargeEveContent(email);
     case "trial_started":
       return trialStartedContent(email);
-    case "welcome":
-      return welcomeContent(email);
     default:
       throw new RangeError("billing_notice_kind_unknown");
   }
 }
 
-/** Every kind has a model (the test lists them against the domain's). */
+/** Every kind that is still sent has a model (the test lists them against the domain's). */
 export const BILLING_NOTICE_EMAIL_KINDS: readonly BillingNoticeKind[] = [
   "trial_started",
   "trial_charge_eve",
@@ -105,42 +101,36 @@ export const BILLING_NOTICE_EMAIL_KINDS: readonly BillingNoticeKind[] = [
   "renewal_cancelled",
   "refund_confirmed",
   "annual_renewal_reminder",
-  "welcome",
 ];
 
 /**
  * Who supplies the Polaris, as in the Terms (AC-19). The complete corporate name is P48: it changes here and in the
  * Terms together, before the switch goes on in production.
  */
-const BILLING_EMAIL_SUPPLIER =
+export const BILLING_EMAIL_SUPPLIER =
   "Polaris, um produto de Agência Summit, CNPJ 35.584.467/0001-00.";
 
-/** The footer of every e-mail (AC-17, AC-19); the welcome is not about a subscription. */
-export function billingEmailFooter(
-  footer: BillingNoticeContent["footer"],
-  supportEmail: string
-): string[] {
+/** The footer of every e-mail (AC-17, AC-19). */
+export function billingEmailFooter(supportEmail: string): string[] {
   return [
-    footer === "subscription"
-      ? "Este é um aviso automático sobre a sua assinatura. O Polaris nunca pede a sua senha por e-mail."
-      : "Este é um e-mail automático do Polaris. O Polaris nunca pede a sua senha por e-mail.",
+    "Este é um aviso automático sobre a sua assinatura. O Polaris nunca pede a sua senha por e-mail.",
     `Dúvidas: responda este e-mail ou escreva para ${supportEmail}.`,
     BILLING_EMAIL_SUPPLIER,
   ];
 }
 
-const paragraphStyle = {
+export const paragraphStyle = {
   fontSize: "16px",
   lineHeight: "24px",
   overflowWrap: "anywhere",
 } as const;
-const smallStyle = {
+export const smallStyle = {
   fontSize: "14px",
   lineHeight: "21px",
   overflowWrap: "anywhere",
 } as const;
 
-function ActionButton({ link }: { link: BillingEmailLink }) {
+export function ActionButton({ link }: { link: BillingEmailLink }) {
   return (
     <>
       <Button
@@ -220,7 +210,7 @@ function BillingNoticeLayout({
             </Text>
           ))}
           <ActionButton link={content.action} />
-          {billingEmailFooter(content.footer, supportEmail).map((line) => (
+          {billingEmailFooter(supportEmail).map((line) => (
             <Text
               key={line}
               style={{ ...smallStyle, color: emailColors.mutedForeground }}

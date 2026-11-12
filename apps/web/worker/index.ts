@@ -14,6 +14,8 @@ import {
 import { createPrivacyMaintenanceClient } from "@polaris/db/privacy-maintenance";
 import { createClosureNoticeRecipientClient } from "@polaris/db/closure-notice-recipient";
 import { createBillingNoticeRecipientClient } from "@polaris/db/billing-notice-recipient";
+import { createActivationNoticeRecipientClient } from "@polaris/db/activation-notice-recipient";
+import { createActivationNoticeStore } from "@polaris/db/activation-notice-store";
 import { app } from "../src/server/app";
 import {
   isBuiltAssetRequest,
@@ -23,10 +25,14 @@ import {
   reconcileRemovedMedia,
   reconcileStagedMedia,
 } from "../src/server/media-reconciler";
+import { runActivationSweep } from "../src/server/billing/activation-sweep";
+import {
+  activationNoticeDependenciesOf,
+  handleActivationNotice,
+} from "../src/server/activation/notice-consumer";
 import {
   runBillingMaintenance,
   runRefundSafetyNet,
-  runWelcomeNoticeSweep,
   runUnclaimedTrialSettlement,
   runWooviReconciliation,
 } from "../src/server/billing/maintenance";
@@ -161,8 +167,9 @@ async function runMediaMaintenance(env: WorkerBindings): Promise<JobResult> {
  * Applies the events that were received but not processed, then what time itself
  * causes, asks again for the renewal cancellations still owed, cancels the renewal
  * a refund or a chargeback left alive (and flags the owner's refunds still
- * pending, ADR 0104), records the welcome of the new stores (with its switch on), reads Woovi's
- * subscriptions again (the reconciliation), settles the trials no reservation paid for (ADR 0101), and
+ * pending, ADR 0104), reads Woovi's
+ * subscriptions again (the reconciliation), settles the trials no reservation paid for (ADR 0101), records the
+ * tips of the activation series owed (ADR 0106; with its switch off, only clears the instant it was seen on), and
  * last hands over the billing notices the queue left owed (ADR 0104).
  */
 async function runBillingJobs(env: WorkerBindings): Promise<JobResult> {
@@ -208,15 +215,6 @@ async function runBillingJobs(env: WorkerBindings): Promise<JobResult> {
     failures.push(error);
   }
   try {
-    // the welcome of the stores of the last 24 hours (ADR 0104, decision 6), only with its own switch on
-    const welcome = await runWelcomeNoticeSweep(env, store);
-    if (welcome) {
-      logger.info("billing_welcome_notices_complete", { ...welcome });
-    }
-  } catch (error: unknown) {
-    failures.push(error);
-  }
-  try {
     // the reconciliation with Woovi (ADR 0101, PR 6): what a webhook answered without a fact is read here
     const reconciled = await runWooviReconciliation(env, store);
     if (reconciled) {
@@ -235,9 +233,15 @@ async function runBillingJobs(env: WorkerBindings): Promise<JobResult> {
     failures.push(error);
   }
   try {
+    // it only records (the consumer of activation.notice sends), so it goes before the handover, the costly job
+    await runActivationSweep(env, store);
+  } catch (error: unknown) {
+    failures.push(error);
+  }
+  try {
     // last: it is the job that spends the most CPU (a render and a send per notice), so an overrun of the cron's
     // CPU costs e-mails, which the next hour hands over, and never the reconciliation or the settlement. It comes
-    // after the sweep and the welcome, which record notices: the ones due that the queue left owed (a receipt or a
+    // after the sweep, which records notices: the ones due that the queue left owed (a receipt or a
     // cancellation that waited, a delivery the queue gave up on) go out here, one at a time
     const handover = await runBillingNoticeHandover(env, store);
     logger.info("billing_notice_handover_complete", { ...handover });
@@ -637,7 +641,7 @@ async function handleRenewalCancelEvent(
 }
 
 /**
- * The handler of `billing.notice` (ADR 0104, decision 7): a notice of the billing cycle, or the welcome, was recorded.
+ * The handler of `billing.notice` (ADR 0104, decision 7): a notice of the billing cycle was recorded.
  * Without the billing role there is no notice to read, and a retry would not change it. A failure of the provider or
  * the network throws: the queue tries again, then the dead-letter queue (an incident), and the hourly handover after it.
  */
@@ -657,6 +661,34 @@ async function handleBillingNoticeEvent(
   );
   try {
     await handleBillingNotice(wired.dependencies, envelope);
+  } finally {
+    await quietly(wired.close);
+    await quietly(() => store.close());
+  }
+}
+
+/**
+ * The handler of `activation.notice` (ADR 0106): a tip of the series was recorded. The notice and the re-read of its
+ * rules go through the billing role, the address through the authentication role. Without the billing role there is
+ * no notice to read, and a retry would not change it. A failure of the provider or the network throws: the queue tries
+ * again, then the dead-letter queue (an incident).
+ */
+async function handleActivationNoticeEvent(
+  env: WorkerBindings,
+  envelope: QueueEnvelope
+): Promise<void> {
+  const connectionString = env.BILLING_HYPERDRIVE?.connectionString;
+  if (!connectionString) {
+    throw new PermanentHandlerError("activation_not_configured");
+  }
+  const store = createActivationNoticeStore(connectionString);
+  const wired = activationNoticeDependenciesOf(
+    env,
+    store,
+    createActivationNoticeRecipientClient
+  );
+  try {
+    await handleActivationNotice(wired.dependencies, envelope);
   } finally {
     await quietly(wired.close);
     await quietly(() => store.close());
@@ -762,6 +794,8 @@ async function consumeQueue(batch: QueueBatch, env: WorkerBindings) {
     return;
   }
   const handlers = {
+    "activation.notice": (envelope: QueueEnvelope) =>
+      handleActivationNoticeEvent(env, envelope),
     "billing.notice": (envelope: QueueEnvelope) =>
       handleBillingNoticeEvent(env, envelope),
     "billing.renewal_cancel_requested": (envelope: QueueEnvelope) =>

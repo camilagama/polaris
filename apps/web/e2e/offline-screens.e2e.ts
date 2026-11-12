@@ -268,21 +268,61 @@ for (const reducedMotion of ["no-preference", "reduce"] as const) {
       await network[toggle]();
     }
 
-    // the click on the trigger right after the Escape (the hole of the backdrop lets it through while the menu
-    // leaves) opens it again, or closes what the key did not: either way it ends clean
+    // the click on the trigger while the menu leaves (the hole of the backdrop lets it through) opens it again.
+    // The exit lasts 100 ms, so the observer holds the popup in the leaving state (`data-closed`) by pausing
+    // its animations the moment the attribute appears; the click then happens in the exit by construction, not by
+    // the speed of the runner. On a desktop with full motion the exit animation must exist and hold the popup, or
+    // the test no longer covers the click in the exit; elsewhere (phone, reduced motion) the popup may unmount
+    // with the close and the click then comes after it. The observer is released right after the click so the
+    // next close runs free.
+    // Each step waits for what it causes, not for a time: the Escape is sent until the trigger says "closed"
+    // (a key sent before the menu listens is lost), and the click ends in the trigger saying "open" with the
+    // popup mounted, which is the frame where the click opens it
     await trigger.click();
     await expect(trigger).toHaveAttribute("aria-expanded", "true");
-    await page.keyboard.press("Escape");
-    await trigger.click();
-    // the trigger, not only the popup, says it is closed: a menu the click is still opening has no popup yet,
-    // so "no menu" alone can pass just before it appears
+    await page.evaluate(() => {
+      const hold = () => {
+        for (const popup of document.querySelectorAll(
+          '[data-slot="dropdown-menu-content"][data-closed]'
+        )) {
+          for (const animation of popup.getAnimations()) {
+            animation.pause();
+          }
+          popup.setAttribute("data-exit-held", "");
+        }
+      };
+      const observer = new MutationObserver(hold);
+      observer.observe(document.body, {
+        attributeFilter: ["data-closed"],
+        subtree: true,
+      });
+      (window as unknown as { releaseMenuExit: () => void }).releaseMenuExit =
+        () => observer.disconnect();
+    });
     await expect(async () => {
       await page.keyboard.press("Escape");
       await expect(trigger).toHaveAttribute("aria-expanded", "false", {
         timeout: 1000,
       });
-      await expect(page.getByRole("menu")).toHaveCount(0, { timeout: 1000 });
     }).toPass({ timeout: 10_000 });
+    const leaving = page.locator(
+      '[data-slot="dropdown-menu-content"][data-closed]'
+    );
+    await expect(async () => {
+      const held = await page.locator("[data-exit-held]").count();
+      expect(held).toBeLessThanOrEqual(1);
+      if (reducedMotion === "no-preference" && !onPhone(page)) {
+        expect(held).toBe(1);
+      }
+      await expect(leaving).toHaveCount(held);
+    }).toPass({ timeout: 5000 });
+    await trigger.click();
+    await page.evaluate(() =>
+      (window as unknown as { releaseMenuExit: () => void }).releaseMenuExit()
+    );
+    await expect(trigger).toHaveAttribute("aria-expanded", "true");
+    await expect(page.getByRole("menu")).toHaveCount(1);
+    await closeMenu(page);
     await expect(page.locator("[data-base-ui-inert]")).toHaveCount(0);
     await network.check();
   });

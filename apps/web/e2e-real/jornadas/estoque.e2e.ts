@@ -1,6 +1,7 @@
 import { localDate } from "../calendar";
 import { expect, openJourney, refusedWith, runT0, test } from "../fixtures";
-import { nextCommandId, seedCashSale, seedProduct } from "../seed";
+import { fillSale } from "../pages/venda";
+import { nextCommandId, seedCashSale, seedProduct, seedStock } from "../seed";
 
 // a refusal of the rule, not a lost session, a network error or a crash of the server
 const BUSINESS_REFUSAL =
@@ -10,6 +11,7 @@ const WRITE_OFF_ABOVE_BALANCE =
 const CLOSE_BUTTON = /^Fechar$/;
 const UNIT_COST_12_50 = /^12\.50*$/;
 const SEM_CUSTO = /sem custo$/;
+const CAMISETA_OPTION = /Camiseta básica/;
 
 const ZONE = "America/Sao_Paulo";
 
@@ -160,13 +162,13 @@ test("estoque: informar custo do item com saldo muda a linha, a faixa e o Iníci
   await expect(strip).toHaveText("3 sem custo");
   const informCandle = page.getByRole("button", {
     exact: true,
-    name: `Informar custo de ${candle.productName} · Variante padrão`,
+    name: `Informar custo de ${candle.productName}, Variante padrão`,
   });
   await expect(informCandle).toBeVisible();
   await expect(
     page.getByRole("button", {
       exact: true,
-      name: `Informar custo de ${soap.productName} · Variante padrão`,
+      name: `Informar custo de ${soap.productName}, Variante padrão`,
     })
   ).toBeVisible();
   // no units: the way to a cost is the entry, which asks for it
@@ -221,4 +223,81 @@ test("estoque: informar custo do item com saldo muda a linha, a faixa e o Iníci
 
   await page.goto("/");
   await expect(attention).toContainText("2 variantes sem custo");
+});
+
+/**
+ * The average cost on screen is to the cent, half-up, while the balance keeps six decimals (ADR 0008): 18 units at
+ * R$ 22,00 plus a receipt of 5 at R$ 10,00 make 19.391304, shown as "R$ 19,39" in the receipt message, on the
+ * stock row and on the item line of the sale. The store is new on every run.
+ */
+test("estoque: o custo médio aparece ao centavo na mensagem, na linha e na Venda", async ({
+  browser,
+  sql,
+}, testInfo) => {
+  const journey = await openJourney(browser, testInfo, "estoque-centavos", {
+    organization: { timezone: ZONE },
+  });
+  const { page } = journey;
+  const organizationId = journey.organizationId as string;
+  const product = await seedProduct(
+    journey.user.rpc,
+    organizationId,
+    "Camiseta básica",
+    "30.00"
+  );
+  await seedStock(
+    journey.user.rpc,
+    organizationId,
+    product.variantId,
+    18,
+    "22.00",
+    localDate(runT0(), ZONE)
+  );
+
+  await page.goto("/inventory");
+  await page
+    .getByRole("button", {
+      name: `Receber estoque de ${product.productName}, Variante padrão`,
+    })
+    .click();
+  await page.getByLabel("Quantidade recebida").fill("5");
+  await page.getByLabel("Custo unitário (R$)").fill("10,00");
+  await page.getByRole("button", { name: "Revisar" }).click();
+  await page.getByRole("button", { name: "Confirmar recebimento" }).click();
+  await expect(
+    page.getByRole("status").filter({ hasText: "Custo médio: R$ 19,39." })
+  ).toBeVisible();
+  await expect
+    .poll(
+      async () =>
+        (
+          await sql.query<{ cost: string }>(
+            "SELECT moving_average_cost::text AS cost FROM inventory_balances WHERE variant_id = $1",
+            [product.variantId]
+          )
+        ).rows[0]?.cost
+    )
+    .toBe("19.391304");
+
+  await page.getByRole("button", { name: CLOSE_BUTTON }).click();
+  const row = page
+    .getByRole("listitem")
+    .filter({ hasText: product.productName });
+  await expect(row).toContainText("R$ 19,39");
+  await expect(row).not.toContainText("19,391304");
+
+  await page.goto("/sales");
+  await fillSale(
+    page,
+    [
+      {
+        charged: "30,00",
+        option: CAMISETA_OPTION,
+        quantity: 1,
+        search: "Camiseta",
+      },
+    ],
+    []
+  );
+  await expect(page.getByText("Custo médio: R$ 19,39.")).toBeVisible();
 });

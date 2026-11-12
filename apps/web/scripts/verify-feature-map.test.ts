@@ -211,7 +211,7 @@ describe("the feature map of verify-polaris names every address of the app", () 
     expect(missingFromMap(destinationsText, paths, appTabs)).toEqual([]);
   });
 
-  it("has the index and one file for each of the eight destinations of the menu, titled by it", () => {
+  it("has the index and one file for each of the destinations of the menu, titled by it", () => {
     expect(readdirSync(featuresDir)).toContain("README.md");
     const titles = destinationFiles.map(({ text }) => H1.exec(text)?.[1] ?? "");
     for (const item of NAV_ITEMS) {

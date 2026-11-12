@@ -1,8 +1,9 @@
-/** The destinations of the menu (the navigation map, § 1): eight, and Pendências while it has something. */
+/** The destinations of the menu (the navigation map, § 1): ten, with Ajuda e contato last, and an eleventh, Pendências, while it has something. */
 export type NavId =
   | "attention"
   | "customers"
   | "dashboard"
+  | "expenses"
   | "help"
   | "history"
   | "home"
@@ -16,6 +17,7 @@ export type ScreenId =
   | "attention"
   | "customers"
   | "dashboard"
+  | "expenses"
   | "help"
   | "home"
   | "inventory"
@@ -44,10 +46,11 @@ export type RouteId =
   | "sale"
   | "sale-detail"
   | "sale-history"
+  | "settings"
   | "subscription";
 
 /** The group of the sidebar an item is in: Início and Configurações stand alone, with no label. */
-export type NavGroup = "Gestão" | "Vendas" | null;
+export type NavGroup = "Financeiro" | "Gestão" | "Vendas" | null;
 
 export interface NavItem {
   group: NavGroup;
@@ -57,9 +60,17 @@ export interface NavItem {
 }
 
 /**
- * The eight destinations, in the order of the daily workflow, by group of the sidebar (map of navigation, § 1): Vendas
- * for what is sold, Gestão for what the store has and earns. Clientes is a register, like Produtos, as the bottom bar
- * of the phone already treats it (`BOTTOM_BAR_AREA`).
+ * "Ajuda e contato" is the last item of the sidebar, beside Configurações, on the desktop and in "Mais" on the phone. It
+ * is a page of the shell, so the offline copy opens it.
+ */
+export const HELP_HREF = "/ajuda";
+export const HELP_LABEL = "Ajuda e contato";
+
+/**
+ * The ten destinations, in the order of the daily workflow, by group of the sidebar (map of navigation, § 1): Vendas
+ * for what is sold, Gestão for what the store has, Financeiro for what it earns and spends. Clientes is a register, like
+ * Produtos, as the bottom bar of the phone already treats it (`BOTTOM_BAR_AREA`). Configurações and Ajuda e contato
+ * close the list, together in the last group, which has no label.
  */
 export const NAV_ITEMS: readonly NavItem[] = [
   { group: null, href: "/", id: "home", label: "Início" },
@@ -73,23 +84,23 @@ export const NAV_ITEMS: readonly NavItem[] = [
   { group: "Gestão", href: "/inventory", id: "inventory", label: "Estoque" },
   { group: "Gestão", href: "/products", id: "products", label: "Produtos" },
   { group: "Gestão", href: "/customers", id: "customers", label: "Clientes" },
-  { group: "Gestão", href: "/dashboard", id: "dashboard", label: "Resultado" },
+  {
+    group: "Financeiro",
+    href: "/dashboard",
+    id: "dashboard",
+    label: "Resultado",
+  },
+  { group: "Financeiro", href: "/expenses", id: "expenses", label: "Despesas" },
   {
     group: null,
     href: "/configuracoes",
     id: "settings",
     label: "Configurações",
   },
+  { group: null, href: HELP_HREF, id: "help", label: HELP_LABEL },
 ];
 
-/**
- * "Ajuda e contato" is no destination of the menu: the phone puts it in "Mais" after the destinations, and the desktop
- * beside the legal links at the foot of the column. It is a page of the shell, so the offline copy opens it.
- */
-export const HELP_HREF = "/ajuda";
-export const HELP_LABEL = "Ajuda e contato";
-
-/** The ninth destination, only while this device has a refused record: after Histórico, in Vendas, with the count. */
+/** The eleventh destination, only while this device has a refused record: after Histórico, in Vendas, with the count. */
 export const ATTENTION_NAV_ITEM: NavItem = {
   group: "Vendas",
   href: "/attention",
@@ -97,12 +108,20 @@ export const ATTENTION_NAV_ITEM: NavItem = {
   label: "Pendências",
 };
 
-/** The menu in its order: Pendências only while there is a refused record, and gone when it is back to zero. */
-export function menuItemsOf(options: { attention: boolean }): NavItem[] {
+/**
+ * The menu in its order: Pendências only while there is a refused record, and gone when it is back to zero; Despesas
+ * only for who can register an expense (`expense:create`, the capability the screen needs on the server).
+ */
+export function menuItemsOf(options: {
+  attention: boolean;
+  expenses?: boolean;
+}): NavItem[] {
+  const items = NAV_ITEMS.filter(
+    (item) => item.id !== "expenses" || (options.expenses ?? true)
+  );
   if (!options.attention) {
-    return [...NAV_ITEMS];
+    return items;
   }
-  const items = [...NAV_ITEMS];
   items.splice(
     items.findIndex((item) => item.id === "history") + 1,
     0,
@@ -130,7 +149,7 @@ export function inBottomBar(id: NavId): id is BottomBarId {
 /**
  * The destination of the bottom bar that carries the mark for a menu item: the item itself, or the one whose area it
  * is in (Estoque for Produtos and Clientes, map § 2). "more" for the items of no destination of the bar, which "Mais"
- * marks: Pendências, Resultado, Configurações and Ajuda e contato.
+ * marks: Pendências, Resultado, Despesas, Configurações and Ajuda e contato.
  */
 const BOTTOM_BAR_AREA: Readonly<Partial<Record<NavId, BottomBarId>>> = {
   customers: "inventory",
@@ -182,7 +201,6 @@ export const SCREEN_TABS: Readonly<Record<TabScreenId, readonly ScreenTab[]>> =
     dashboard: [
       { label: "Resultado", route: "dashboard", value: "resultado" },
       { label: "Metas", route: "dashboard", value: "metas" },
-      { label: "Despesas", route: "expenses", value: "despesas" },
     ],
     products: [
       { label: "Produtos", route: "products", value: "produtos" },
@@ -262,14 +280,24 @@ export function listedTabs(
   });
 }
 
-/** The path, query and hash of `href` with the tab written in; the first tab of the screen is no `aba` at all. */
+/** Whether the address names one of the screen's tabs (`?aba=senha`); no `aba`, or one that is no tab, names none. */
+export function namesTab(screen: TabScreenId, search: string): boolean {
+  const named = new URLSearchParams(search).get(TAB_PARAMETER);
+  return SCREEN_TABS[screen].some((tab) => tab.value === named);
+}
+
+/**
+ * The path, query and hash of `href` with the tab written in; the first tab of the screen is no `aba` at all, unless
+ * `explicit`: on a phone, Configurações with no `aba` is the list of its tabs, so its first tab has to be named.
+ */
 export function addressWithTab(
   href: string,
   screen: TabScreenId,
-  value: string
+  value: string,
+  explicit = false
 ): string {
   const url = new URL(href, "https://polaris.invalid");
-  if (SCREEN_TABS[screen][0]?.value === value) {
+  if (!explicit && SCREEN_TABS[screen][0]?.value === value) {
     url.searchParams.delete(TAB_PARAMETER);
   } else {
     url.searchParams.set(TAB_PARAMETER, value);
@@ -304,6 +332,7 @@ const ROUTES: Readonly<Record<string, RouteDefinition>> = {
   },
   "/customers": { navId: "customers", screen: "customers", title: "Clientes" },
   "/dashboard": { navId: "dashboard", screen: "dashboard", title: "Resultado" },
+  "/expenses": { navId: "expenses", screen: "expenses", title: "Despesas" },
   "/inventory": { navId: "inventory", screen: "inventory", title: "Estoque" },
   "/products": { navId: "products", screen: "products", title: "Produtos" },
   "/sales": { navId: "sale", screen: "sale", title: "Nova venda" },
@@ -333,7 +362,6 @@ const LEGACY_ADDRESSES: Readonly<
     tab: "senha",
   },
   "/devices": { path: "/configuracoes", screen: "settings", tab: "aparelhos" },
-  "/expenses": { path: "/dashboard", screen: "dashboard", tab: "despesas" },
   "/payment-profiles": {
     path: "/configuracoes",
     screen: "settings",
@@ -351,13 +379,39 @@ const LEGACY_ADDRESSES: Readonly<
   },
 };
 
+/** Where the tab Despesas of the Resultado was: its address opens the screen of Despesas, with the rest of the query. */
+function expensesTabAddress(
+  normalized: string,
+  search: string,
+  hash: string
+): string | null {
+  const params = new URLSearchParams(search);
+  const meta = params.get("meta");
+  const asksGoals = meta === "nova" || meta === "lista";
+  if (
+    normalized !== "/dashboard" ||
+    params.get(TAB_PARAMETER) !== "despesas" ||
+    asksGoals
+  ) {
+    return null;
+  }
+  params.delete(TAB_PARAMETER);
+  const query = params.toString();
+  return `/expenses${query ? `?${query}` : ""}${hash}`;
+}
+
 /** The address of the tab an old address opens (map § 6), or null for any other address. */
 export function legacyAddress(
   pathname: string,
   search: string,
-  hash: string
+  hash: string,
+  phone = false
 ): string | null {
   const normalized = pathname.replace(trailingSlashes, "") || "/";
+  const expenses = expensesTabAddress(normalized, search, hash);
+  if (expenses) {
+    return expenses;
+  }
   const target = Object.hasOwn(LEGACY_ADDRESSES, normalized)
     ? LEGACY_ADDRESSES[normalized]
     : undefined;
@@ -367,7 +421,8 @@ export function legacyAddress(
   return addressWithTab(
     `${target.path}${search}${hash}`,
     target.screen,
-    target.tab
+    target.tab,
+    phone && target.screen === "settings"
   );
 }
 
@@ -428,8 +483,16 @@ function isTabScreen(screen: ScreenId): screen is TabScreenId {
   return Object.hasOwn(SCREEN_TABS, screen);
 }
 
-/** Maps a location (its pathname, and its query for the tab) to a page, or to the not-found page. */
-export function resolveRoute(pathname: string, search = ""): ResolvedRoute {
+/**
+ * Maps a location (its pathname, and its query for the tab) to a page, or to the not-found page. On a phone,
+ * Configurações with no tab named is the list of its tabs: a screen of its own that needs no connection, not the
+ * first tab.
+ */
+export function resolveRoute(
+  pathname: string,
+  search = "",
+  phone = false
+): ResolvedRoute {
   const normalized = pathname.replace(trailingSlashes, "") || "/";
   const route = Object.hasOwn(ROUTES, normalized)
     ? ROUTES[normalized]
@@ -439,7 +502,9 @@ export function resolveRoute(pathname: string, search = ""): ResolvedRoute {
   }
   let id = route.screen as RouteId;
   let { title } = route;
-  if (isTabScreen(route.screen)) {
+  if (phone && route.screen === "settings" && !namesTab("settings", search)) {
+    id = "settings";
+  } else if (isTabScreen(route.screen)) {
     const tab = requestedTab(route.screen, search);
     id = tab.route;
     // the first tab is the screen itself; another one names the page by its own name
@@ -458,11 +523,17 @@ export function resolveRoute(pathname: string, search = ""): ResolvedRoute {
   };
 }
 
+const SETTINGS_LIST_KEY = "settings:lista";
+
 /**
  * The screen on display as the report of an error names it (`routeId` of `@polaris/contracts/client-error`): the
  * screen of `ROUTES`, and for a screen with tabs `screen:tab`, by the tab the address asks. Null outside the shell.
  */
-export function screenKeyOf(pathname: string, search = ""): string | null {
+export function screenKeyOf(
+  pathname: string,
+  search = "",
+  phone = false
+): string | null {
   const normalized = pathname.replace(trailingSlashes, "") || "/";
   const route = Object.hasOwn(ROUTES, normalized)
     ? ROUTES[normalized]
@@ -470,20 +541,24 @@ export function screenKeyOf(pathname: string, search = ""): string | null {
   if (!route) {
     return null;
   }
+  if (phone && route.screen === "settings" && !namesTab("settings", search)) {
+    return SETTINGS_LIST_KEY;
+  }
   return isTabScreen(route.screen)
     ? `${route.screen}:${requestedTab(route.screen, search).value}`
     : route.screen;
 }
 
-/** Every key `screenKeyOf` gives, sorted: each screen of `ROUTES`, and each tab of a screen with tabs. */
+/** Every key `screenKeyOf` gives, sorted: each screen of `ROUTES`, each tab of a screen with tabs, and the list of Configurações on a phone. */
 export function screenKeys(): string[] {
-  return Object.values(ROUTES)
-    .flatMap(({ screen }) =>
+  return [
+    ...Object.values(ROUTES).flatMap(({ screen }) =>
       isTabScreen(screen)
         ? SCREEN_TABS[screen].map((tab) => `${screen}:${tab.value}`)
         : [screen]
-    )
-    .sort();
+    ),
+    SETTINGS_LIST_KEY,
+  ].sort();
 }
 
 /**

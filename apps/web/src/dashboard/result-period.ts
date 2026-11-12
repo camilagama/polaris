@@ -1,5 +1,7 @@
-import { monthBounds, monthOfDay, shiftMonth } from "../expenses/expense-model";
+import { monthBounds, monthOfDay } from "../expenses/expense-model";
 import { isCalendarDate } from "../lib/dates";
+import { shortcutLabel } from "../ui/date-range-shortcuts";
+import { presetRange, type RangePreset } from "../ui/date-values";
 
 /**
  * The periods of the Resultado (corte resultado-v2, AC-1 and AC-2): the presets, the free range, what each one reads,
@@ -31,12 +33,29 @@ export const PRESETS: readonly PeriodPreset[] = [
   "custom",
 ];
 
+export const PRESET_SHORTCUTS: Readonly<
+  Record<Exclude<PeriodPreset, "custom">, RangePreset>
+> = {
+  "last-30": "30-dias",
+  "last-month": "mes-passado",
+  "this-month": "este-mes",
+  year: "este-ano",
+};
+
+export function presetOfShortcut(shortcut: RangePreset): PeriodPreset | null {
+  return (
+    (Object.entries(PRESET_SHORTCUTS).find(
+      ([, value]) => value === shortcut
+    )?.[0] as PeriodPreset | undefined) ?? null
+  );
+}
+
 export const PRESET_LABELS: Readonly<Record<PeriodPreset, string>> = {
   custom: "Período",
-  "last-30": "Últimos 30 dias",
-  "last-month": "Mês passado",
-  "this-month": "Este mês",
-  year: "Este ano",
+  "last-30": shortcutLabel(PRESET_SHORTCUTS["last-30"]),
+  "last-month": shortcutLabel(PRESET_SHORTCUTS["last-month"]),
+  "this-month": shortcutLabel(PRESET_SHORTCUTS["this-month"]),
+  year: shortcutLabel(PRESET_SHORTCUTS.year),
 };
 
 const DAY_MS = 86_400_000;
@@ -61,9 +80,9 @@ export function dayCount(period: Period): number {
 }
 
 /**
- * What a preset reads on a day. The month is read whole (its last day is the month's, so an expense of the competence
- * after today is in it, AC-10); the 30 days end today; the year goes from January 1st to today. `custom` is the range
- * the person gave, which the caller validated.
+ * What a preset reads on a day. "Este mês" is the calendar month, whole like everywhere else (its last day is the
+ * month's, so an expense of the competence after today is in it, AC-10); the 30 days end today; the year goes from
+ * January 1st to today. `custom` is the range the person gave, which the caller validated.
  */
 export function presetPeriod(
   preset: PeriodPreset,
@@ -72,11 +91,9 @@ export function presetPeriod(
 ): Period | null {
   switch (preset) {
     case "this-month":
-      return monthBounds(monthOfDay(today));
-    case "last-month": {
-      const previous = shiftMonth(monthOfDay(today), -1);
-      return previous === null ? null : monthBounds(previous);
-    }
+      return presetRange(PRESET_SHORTCUTS["this-month"], today);
+    case "last-month":
+      return presetRange(PRESET_SHORTCUTS["last-month"], today);
     case "last-30":
       return { from: addDays(today, -29), to: today };
     case "year":
@@ -95,6 +112,20 @@ export function copyMonthOf(
     return monthOfDay(period.from);
   }
   return null;
+}
+
+/** The month ("YYYY-MM") when the period is exactly one calendar month, from the 1st to the last day; null otherwise. */
+export function wholeMonthOf(period: Period | null): string | null {
+  if (period === null) {
+    return null;
+  }
+  const month = monthOfDay(period.from);
+  const bounds = monthBounds(month);
+  return bounds !== null &&
+    bounds.from === period.from &&
+    bounds.to === period.to
+    ? month
+    : null;
 }
 
 export type RangeProblem = "missing" | "order" | "too_long";
@@ -118,7 +149,7 @@ export function rangeMessage(problem: RangeProblem): string {
     case "order":
       return "A data inicial vem depois da final.";
     default:
-      return "Escolha até 1 ano.";
+      return "Escolha até 1 ano";
   }
 }
 

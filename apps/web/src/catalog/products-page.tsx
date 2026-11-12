@@ -41,7 +41,10 @@ import { ProductList, type ProductListStatus } from "./product-list";
 import { validateOpening } from "./product-opening-model";
 import { filterByName } from "./product-search-model";
 import type { VariantConfigurationDraft } from "./product-variants-model";
-import type { ProductLinkFailure } from "./products-link-model";
+import {
+  type ProductLinkFailure,
+  productStockHref,
+} from "./products-link-model";
 import {
   ActionFeedback,
   LoadErrorNotice,
@@ -51,6 +54,7 @@ import {
   PRODUCT_STATUS_OPTIONS,
   ProductSearch,
   ProductsHeader,
+  ProductsImportFooter,
 } from "./products-page-parts";
 import { countLineShown, shownListCount } from "./list-page-model";
 import {
@@ -286,6 +290,7 @@ export function ProductsPage() {
     returned.dialogProductId
   );
   const [dialogTab, setDialogTab] = useState<ProductTab>("dados");
+  const [focusVariantId, setFocusVariantId] = useState<string | null>(null);
   // the draft kept when the dialog was closed by Esc, "Fechar" or the step back: "new", or the id of the product
   const keptRef = useRef<string | null>(returned.keptKey);
   // where the focus goes back to when the dialog closes without a message to read: what opened it
@@ -435,6 +440,7 @@ export function ProductsPage() {
           : newButtonRef.current;
       setDialogProductId(product?.id ?? null);
       setDialogTab(tab);
+      setFocusVariantId(null);
       clearMessages();
       setDialogOpen(true);
     },
@@ -549,9 +555,10 @@ export function ProductsPage() {
       setError(message);
       focusFeedback();
     },
-    onProduct: (product) => {
+    onProduct: (product, variantId) => {
       setStatus(product.status === "archived" ? "archived" : "active");
       openDialog(product, "variantes");
+      setFocusVariantId(variantId);
     },
     onReadFailed: setLinkFailure,
   });
@@ -726,6 +733,7 @@ export function ProductsPage() {
 
   const dialogProduct =
     products.find((product) => product.id === dialogProductId) ?? null;
+  const dialogStockHref = productStockHref(dialogProduct, organization.role);
   const dialogShown =
     dialogOpen && (dialogProductId === null || dialogProduct !== null);
   // the product left the list while its dialog was open (archived on another device and synced): the dialog closes and
@@ -817,6 +825,7 @@ export function ProductsPage() {
             errorExtra={<LimitHelp help={shownLimitHelp} />}
             feedbackRef={feedbackRef}
             finalFocus={finalFocus}
+            focusVariantId={focusVariantId}
             isOffline={isOffline}
             isPending={pendingAction === "create" || pendingAction === "update"}
             notice={dialogShown ? notice : null}
@@ -832,6 +841,7 @@ export function ProductsPage() {
             open={dialogShown}
             organizationId={organizationId}
             product={dialogProduct}
+            stockHref={dialogStockHref}
             tab={dialogTab}
             variantsDraft={keptVariantsOf(variantsDraft, dialogProductId)}
           />
@@ -894,6 +904,12 @@ export function ProductsPage() {
             shown={page.items.length}
           />
         ) : null}
+        <ProductsImportFooter
+          importButtonRef={importButtonRef}
+          isOffline={isOffline}
+          onImport={handleImport}
+          showNew={status === "active"}
+        />
       </div>
     </div>
   );

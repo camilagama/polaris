@@ -7,8 +7,13 @@ import {
   OnDemandCalendar,
   whenBackOnline,
 } from "@/ui/calendar-on-demand";
-import { DatePicker } from "@/ui/date-picker";
-import { DateRangePicker } from "@/ui/date-range-picker";
+import { DatePicker, TodayFooter } from "@/ui/date-picker";
+import {
+  DateRangeFooter,
+  DateRangePanel,
+  DateRangePicker,
+  draftLabel,
+} from "@/ui/date-range-picker";
 import { parseIsoDate } from "@/ui/date-values";
 
 /**
@@ -23,6 +28,7 @@ const noop = () => undefined;
 const OCTOBER_24 = parseIsoDate("2026-10-24") as Date;
 
 const BUTTON = /<button[^>]*data-slot="popover-trigger"[^>]*>/;
+const FIRST_BUTTON = /<button[^>]*>/;
 const TODAY_LABEL = /^Hoje, sábado, 24 de outubro de 2026/;
 const DISABLED_ATTRIBUTE = /\sdisabled=""/;
 const dayButton = (markup: string, iso: string) =>
@@ -76,6 +82,51 @@ describe("DatePicker", () => {
     )?.[0];
     expect(error && attribute(error, "role")).toBe("alert");
     expect(markup).toContain("Escolha uma data");
+  });
+});
+
+describe("TodayFooter, o Hoje fora dos dias permitidos", () => {
+  const footer = (allowed: boolean) =>
+    html(
+      <TodayFooter
+        allowed={allowed}
+        onPickToday={noop}
+        reason="Só depois de hoje"
+      />
+    );
+  const todayButton = (markup: string) => FIRST_BUTTON.exec(markup)?.[0] ?? "";
+
+  it("desligado: o motivo é texto à vista (sem sr-only) e o botão o descreve, aria-disabled e nunca disabled", () => {
+    const markup = footer(false);
+    const button = todayButton(markup);
+    const reasonId = attribute(button, "aria-describedby");
+    expect(reasonId).toBeTruthy();
+    const line = new RegExp(`<p[^>]*\\sid="${reasonId}"[^>]*>`).exec(
+      markup
+    )?.[0];
+    expect(line).toBeTruthy();
+    expect(attribute(line ?? "", "class")).toContain("text-muted-foreground");
+    expect(attribute(line ?? "", "class")).toContain("text-support");
+    expect(attribute(line ?? "", "class")).not.toContain("sr-only");
+    expect(markup).toContain(">Só depois de hoje</p>");
+    expect(attribute(button, "aria-disabled")).toBe("true");
+    expect(button).not.toMatch(DISABLED_ATTRIBUTE);
+  });
+
+  it("desligado sem motivo: segue aria-disabled, sem texto nem aria-describedby", () => {
+    const markup = html(<TodayFooter allowed={false} onPickToday={noop} />);
+    const button = todayButton(markup);
+    expect(markup).not.toContain("<p");
+    expect(attribute(button, "aria-disabled")).toBe("true");
+    expect(attribute(button, "aria-describedby")).toBeUndefined();
+  });
+
+  it("permitido: nem motivo nem aria-disabled nem aria-describedby", () => {
+    const markup = footer(true);
+    const button = todayButton(markup);
+    expect(markup).not.toContain("Só depois de hoje");
+    expect(attribute(button, "aria-disabled")).toBeUndefined();
+    expect(attribute(button, "aria-describedby")).toBeUndefined();
   });
 });
 
@@ -187,6 +238,177 @@ describe("DateRangePicker", () => {
   });
 });
 
+const OPEN_TOGGLE = /<button[^>]*aria-expanded="false"[^>]*>[\s\S]*?<\/button>/;
+const SHORTCUT_GROUP = /<fieldset[^>]*aria-label="Atalhos do período"[^>]*>/;
+const PRESSED_SHORTCUT = /<button[^>]*aria-pressed="true"[^>]*>/;
+const STATUS_LINE = /<p[^>]*aria-live="polite"[^>]*sr-only/;
+const FOOTER_SENTENCE = />(Início [^<]*)<\/p>/;
+const STATUS_LINE_WITH_TEXT = /<p[^>]*aria-live="polite"[^>]*>Início /;
+
+const PRESET_OFF = /data-preset="[^"]*"[^>]*aria-disabled/;
+
+describe("DateRangePanel", () => {
+  const panel = (props: Partial<Parameters<typeof DateRangePanel>[0]> = {}) =>
+    html(
+      <DateRangePanel
+        onCommit={noop}
+        today="2026-10-24"
+        value={{ from: "2026-10-01", to: "2026-10-31" }}
+        {...props}
+      />
+    );
+
+  it("o intervalo escolhido fica escrito sob o mês, no botão que abre os campos, e o nome do botão o contém", () => {
+    const markup = panel();
+    const toggle = OPEN_TOGGLE.exec(markup)?.[0] ?? "";
+    expect(attribute(toggle, "aria-label")).toBe(
+      "Digitar as datas: 01/10 a 31/10"
+    );
+    expect(toggle).toContain("01/10 a 31/10");
+    expect(toggle).not.toContain(">Digitar as datas<");
+  });
+
+  it("sem período o botão diz Digitar as datas, sem nome próprio", () => {
+    const markup = panel({ value: null });
+    const toggle = OPEN_TOGGLE.exec(markup)?.[0] ?? "";
+    expect(attribute(toggle, "aria-label")).toBeUndefined();
+    expect(toggle).toContain("Digitar as datas");
+  });
+
+  it("sem Limpar e sem frase não há linha de rodapé (régua e altura), só a frase para o leitor de tela", () => {
+    const markup = panel({ clearable: false });
+    expect(markup).not.toContain("border-border border-t");
+    expect(markup).not.toContain("Limpar");
+    expect(markup).toMatch(STATUS_LINE);
+  });
+
+  it("com Limpar a linha do rodapé volta", () => {
+    expect(panel()).toContain("border-border border-t");
+    expect(panel()).toContain("Limpar");
+  });
+
+  it("com `only`, os atalhos de fora ficam no lugar, apagados e ligados ao motivo; os dois de dentro seguem ativos", () => {
+    const markup = panel({
+      only: {
+        reason: "Sem conexão: só este mês e o anterior.",
+        shortcuts: ["este-mes", "mes-passado"],
+      },
+      shortcuts: ["30-dias", "mes-passado", "este-mes", "este-ano"],
+    });
+    const buttons =
+      markup.match(/<button[^>]*data-preset="[^"]*"[^>]*>/g) ?? [];
+    expect(buttons).toHaveLength(4);
+    const off = buttons.filter((tag) => tag.includes('aria-disabled="true"'));
+    expect(off.map((tag) => attribute(tag, "data-preset"))).toEqual([
+      "30-dias",
+      "este-ano",
+    ]);
+    for (const tag of off) {
+      expect(attribute(tag, "aria-describedby")).toBeDefined();
+      expect(tag).not.toContain(" disabled");
+    }
+    const reasonId = attribute(off[0] ?? "", "aria-describedby") ?? "";
+    expect(markup).toContain(`id="${reasonId}"`);
+    expect(markup).toContain("Sem conexão: só este mês e o anterior.");
+  });
+
+  it("com `only` não há campos para digitar nem Limpar (os dias desligados do calendário, que abre sob demanda, são provados no navegador)", () => {
+    const markup = panel({
+      only: { reason: "Sem conexão.", shortcuts: ["este-mes"] },
+    });
+    expect(markup).not.toContain("Digitar as datas");
+    expect(markup).not.toContain("Limpar");
+  });
+
+  it("sem `only` nenhum atalho fica apagado e há campos para digitar", () => {
+    const markup = panel();
+    expect(markup).not.toContain('data-preset="este-mes" aria-disabled');
+    expect(markup).not.toMatch(PRESET_OFF);
+    expect(markup).toContain("Digitar as datas");
+  });
+
+  it("os atalhos pressionados têm fundo próprio no escuro, na coluna e no segmentado, e o segmentado rola de lado em vez de quebrar", () => {
+    const markup = panel();
+    const group = SHORTCUT_GROUP.exec(markup)?.[0] ?? "";
+    expect(attribute(group, "class")).toContain("overflow-x-auto");
+    expect(attribute(group, "class")).not.toContain("grid-cols-2");
+    const pressed = PRESSED_SHORTCUT.exec(markup)?.[0] ?? "";
+    const classes = (attribute(pressed, "class") ?? "").split(" ");
+    expect(classes).toContain("dark:aria-pressed:bg-accent");
+    expect(classes).toContain("dark:bg-transparent");
+  });
+});
+
+describe("draftLabel, o que o botão de digitar as datas escreve", () => {
+  const today = "2026-10-24";
+
+  it("o 1º dia só segue a regra de ano do intervalo completo: sem ano neste ano, com ano em outro", () => {
+    expect(draftLabel({ from: "2026-11-03" }, today)).toBe("03/11 a …");
+    expect(draftLabel({ from: "2025-11-03" }, today)).toBe("03/11/2025 a …");
+    expect(draftLabel({ from: "2027-01-05" }, today)).toBe("05/01/2027 a …");
+  });
+
+  it("o intervalo completo não muda: sem ano quando é todo deste ano, com ano nos dois quando não é", () => {
+    expect(draftLabel({ from: "2026-10-01", to: "2026-10-31" }, today)).toBe(
+      "01/10 a 31/10"
+    );
+    expect(draftLabel({ from: "2025-12-20", to: "2026-01-10" }, today)).toBe(
+      "20/12/2025 a 10/01/2026"
+    );
+  });
+
+  it("sem início não escreve nada", () => {
+    expect(draftLabel(undefined, today)).toBeUndefined();
+  });
+});
+
+describe("DateRangeFooter, a frase do 1º dia escolhido", () => {
+  const today = "2026-10-24";
+  const quiet = {
+    open: false,
+    reason: undefined,
+    statusId: "status",
+    statusQuiet: false,
+  } as const;
+  const footer = (half: string) =>
+    html(
+      <DateRangeFooter
+        clearable={false}
+        half={half}
+        onClear={noop}
+        today={today}
+        typed={quiet}
+      />
+    );
+  const sentence = (half: string) =>
+    FOOTER_SENTENCE.exec(footer(half))?.[1] ?? "";
+  const buttonDay = (half: string) =>
+    (draftLabel({ from: half }, today) ?? "").replace(" a …", "");
+
+  it("no ano de hoje o rodapé não escreve o ano, e é o mesmo dia do botão", () => {
+    expect(sentence("2026-10-10")).toBe("Início 10/10. Escolha o último dia.");
+    expect(sentence("2026-10-10")).toBe(
+      `Início ${buttonDay("2026-10-10")}. Escolha o último dia.`
+    );
+  });
+
+  it("em outro ano o rodapé escreve o ano, e é o mesmo dia do botão", () => {
+    expect(sentence("2025-10-10")).toBe(
+      "Início 10/10/2025. Escolha o último dia."
+    );
+    expect(sentence("2025-10-10")).toBe(
+      `Início ${buttonDay("2025-10-10")}. Escolha o último dia.`
+    );
+    expect(sentence("2027-01-05")).toBe(
+      `Início ${buttonDay("2027-01-05")}. Escolha o último dia.`
+    );
+  });
+
+  it("a frase segue numa região de status anunciada com educação", () => {
+    expect(footer("2026-10-10")).toMatch(STATUS_LINE_WITH_TEXT);
+  });
+});
+
 describe("Calendar", () => {
   const markup = html(
     <Calendar
@@ -220,8 +442,8 @@ describe("Calendar", () => {
     expect(off).not.toMatch(DISABLED_ATTRIBUTE);
     const reasonId = attribute(off, "aria-describedby");
     expect(reasonId).toBeTruthy();
-    expect(markup).toContain(
-      `<span class="sr-only" id="${reasonId}">Só até hoje</span>`
+    expect(markup).toMatch(
+      new RegExp(`<p[^>]*id="${reasonId}"[^>]*>Só até hoje</p>`)
     );
     const allowed = dayButton(markup, "2026-10-23");
     expect(attribute(allowed, "aria-disabled")).toBeUndefined();
@@ -317,6 +539,30 @@ describe("OnDemandCalendar, a espera do chunk", () => {
   it("e tem o tamanho de um mês, o mesmo que o calendário ocupa", () => {
     expect(markup).toContain("h-[calc(var(--cell-size)*7+3.1875rem)]");
     expect(markup).toContain("w-[calc(var(--cell-size)*7)]");
+    expect(markup).not.toContain("+1.375rem");
+  });
+
+  it("com o motivo dos dias desligados a caixa reserva também a linha dele, para o popover não crescer quando o calendário chega", () => {
+    const withReason = html(
+      <OnDemandCalendar disabledReason="Só até hoje" mode="single" />
+    );
+    expect(withReason).toContain(
+      "h-[calc(var(--cell-size)*7+3.1875rem+1.375rem)]"
+    );
+  });
+});
+
+describe("OnDemandCalendar, o motivo escrito no rodapé", () => {
+  it("a caixa não reserva a linha do motivo quando o rodapé o escreve: a altura é a do mês", () => {
+    const inFooter = html(
+      <OnDemandCalendar
+        disabledReason="Só até hoje"
+        mode="single"
+        reasonInFooter
+      />
+    );
+    expect(inFooter).toContain("h-[calc(var(--cell-size)*7+3.1875rem)]");
+    expect(inFooter).not.toContain("+1.375rem");
   });
 });
 

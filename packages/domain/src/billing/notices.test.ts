@@ -13,7 +13,6 @@ import {
   isBillingNoticeKind,
   noticesFor,
   sweepNoticesFor,
-  welcomeNotice,
 } from "./notices";
 import { GRACE_DAYS } from "./subscription-state";
 
@@ -547,15 +546,5 @@ describe("sweepNoticesFor: the hourly marks, on their local day, from 08:00 to 2
       })
     ).toEqual([]);
     expect(sweep(pro("grace", renewal, { cycleMonths: 12 }))).toEqual([]);
-  });
-});
-
-describe("welcomeNotice (E1)", () => {
-  it("is one per person, keyed by the user, due at once", () => {
-    expect(welcomeNotice("user_1", base)).toEqual({
-      dedupeKey: "user_1",
-      dueAt: base,
-      kind: "welcome",
-    });
   });
 });

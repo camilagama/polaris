@@ -1,6 +1,7 @@
 import type { InventoryBalanceEntryReadModel } from "@polaris/contracts";
 import { describe, expect, it } from "vitest";
 import {
+  costText,
   retarget,
   type StockTarget,
   stockTarget,
@@ -31,6 +32,18 @@ describe("targetBalanceText", () => {
     expect(targetBalanceText(target())).toBe(
       "Saldo atual: 5 · custo médio R$ 62,40"
     );
+  });
+
+  it("shows the average cost to the cent, half-up, while the data keeps six decimals", () => {
+    expect(targetBalanceText(target({ movingAverageCost: "19.391304" }))).toBe(
+      "Saldo atual: 5 · custo médio R$ 19,39"
+    );
+    expect(targetBalanceText(target({ movingAverageCost: "19.395" }))).toBe(
+      "Saldo atual: 5 · custo médio R$ 19,40"
+    );
+    expect(costText("8")).toBe("R$ 8,00");
+    expect(costText("19.391304")).toBe("R$ 19,39");
+    expect(costText(null)).toBe("Custo desconhecido");
   });
 
   it("says an unknown cost", () => {

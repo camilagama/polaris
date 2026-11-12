@@ -1,4 +1,4 @@
-import { NoBreakMoney } from "@/ui/hidden-values";
+import { MoneyText } from "@/ui/hidden-values";
 import type { ConfirmedSaleView } from "./sale-form-model";
 import { FeeValue } from "./sale-summary-panel";
 
@@ -15,13 +15,13 @@ export function ConfirmedDetails({
     return null;
   }
   return (
-    <dl className="grid gap-3 rounded-lg bg-muted p-4 min-[760px]:grid-cols-2">
+    <dl className="grid gap-3 rounded-lg bg-muted p-4 md:grid-cols-2">
       {details.map((detail) => (
         <div className="grid gap-0.5" key={detail.label}>
           <dt className="text-muted-foreground text-xs">{detail.label}</dt>
           <dd className="text-sm [overflow-wrap:anywhere]">
             {detail.tone === "plain" ? (
-              <NoBreakMoney text={detail.value} />
+              <MoneyText text={detail.value} />
             ) : (
               <FeeValue line={{ text: detail.value, tone: detail.tone }} />
             )}
@@ -52,10 +52,10 @@ export function ConfirmedItems({
               {item.label}
             </span>
             <span className="tabular-nums">
-              <NoBreakMoney text={item.detail} />
+              <MoneyText text={item.detail} />
             </span>
             <span className="text-muted-foreground text-support">
-              <NoBreakMoney text={item.costText} />
+              <MoneyText text={item.costText} />
             </span>
           </li>
         ))}

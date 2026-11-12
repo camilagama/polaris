@@ -548,6 +548,7 @@ describe("QueueHandlers, what the Worker binds", () => {
 
   it("asks for a handler of every type of the outbox", () => {
     const all = {
+      "activation.notice": handler,
       "billing.notice": handler,
       "billing.renewal_cancel_requested": handler,
       "data_export.requested": handler,
@@ -558,10 +559,11 @@ describe("QueueHandlers, what the Worker binds", () => {
     // a map without `billing.notice` does not compile (the consumer's own dependency stays partial)
     // @ts-expect-error missing "billing.notice"
     const missing: QueueHandlers = {
+      "activation.notice": handler,
       "billing.renewal_cancel_requested": handler,
       "data_export.requested": handler,
       "organization.closure_notice": handler,
     };
-    expect(Object.keys(missing)).toHaveLength(3);
+    expect(Object.keys(missing)).toHaveLength(4);
   });
 });

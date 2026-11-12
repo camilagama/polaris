@@ -554,6 +554,46 @@ describe("AC-4: Asaas event → Polaris fact, read back from the API", () => {
     ]);
   });
 
+  it("a charge ID with an underscore after its first character (as the sandbox writes it) is read back for CHECKOUT_PAID and PAYMENT_CONFIRMED", async () => {
+    const sandboxPaymentId = "pay_1_abcd2efgh3i4jk";
+    const api = fakeApi({
+      payments: [
+        paymentJson({
+          confirmedDate: null,
+          dateCreated: "2026-10-19",
+          id: sandboxPaymentId,
+          originalDueDate: "2026-10-26",
+          status: "PENDING",
+        }),
+      ],
+    });
+    const checkoutPaid = {
+      checkout: { id: CHECKOUT_ID },
+      dateCreated: "2026-10-19 10:00:00",
+      event: "CHECKOUT_PAID",
+      id: EVENT_ID,
+    };
+    const facts = await factsOf(checkoutPaid, api);
+    expect(facts.map((entry) => entry.fact.type)).toEqual([
+      "trial_method_ready",
+    ]);
+    const confirmed = {
+      dateCreated: "2026-10-19 10:00:00",
+      event: "PAYMENT_CONFIRMED",
+      id: EVENT_ID,
+      payment: { id: sandboxPaymentId },
+    };
+    expect(readAsaasWebhook(JSON.stringify(confirmed), clock)?.paymentId).toBe(
+      sandboxPaymentId
+    );
+    const confirmedApi = fakeApi({
+      payments: [paymentJson({ id: sandboxPaymentId })],
+    });
+    const confirmedFacts = await factsOf(confirmed, confirmedApi);
+    expect(confirmedFacts).toHaveLength(1);
+    expect(confirmedFacts[0]?.fact.type).toBe("charge_succeeded");
+  });
+
   it("CHECKOUT_PAID without a trial (first charge due the same day) gives no fact: the charge is the fact", async () => {
     const api = fakeApi({
       payments: [

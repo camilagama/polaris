@@ -3,6 +3,7 @@ import CircleAlertIcon from "lucide-react/dist/esm/icons/circle-alert";
 import CloudOffIcon from "lucide-react/dist/esm/icons/cloud-off";
 import {
   type FormEvent,
+  type MouseEvent,
   type ReactNode,
   type Ref,
   useCallback,
@@ -10,8 +11,9 @@ import {
   useRef,
   useState,
 } from "react";
+import { cn } from "@/lib/utils";
 import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
-import { Button } from "@/ui/button";
+import { Button, buttonVariants } from "@/ui/button";
 import {
   Dialog,
   DialogBody,
@@ -23,8 +25,12 @@ import {
 } from "@/ui/dialog";
 import { FORM_ELEMENT_CLASS, FORM_NOTICE_CLASS } from "@/ui/dialog-layout";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/ui/tabs";
+import { dialogEntries } from "@/ui/dialog-history";
+import { navigateInApp } from "../app-shell/address";
 import { tryConnectionNow } from "../lib/browser-connection";
 import { focusLater } from "../lib/focus";
+import { leaveForReturn } from "../lib/kept-for-return";
+import { isPlainClick } from "../subscription/limit-help";
 import { UnsentWorkScope, useUnsentWorkScope } from "../lib/unsent-work";
 import {
   PRODUCT_FORM_ID,
@@ -63,6 +69,8 @@ interface ProductDialogProps {
   feedbackRef: Ref<HTMLDivElement>;
   /** Where the focus goes when the dialog closes: the notice, or the control that opened it. */
   finalFocus: () => HTMLElement | boolean;
+  /** The variant whose SKU field takes the focus once the variants are read (the address named it). */
+  focusVariantId: string | null;
   isOffline: boolean;
   isPending: boolean;
   notice: string | null;
@@ -87,6 +95,8 @@ interface ProductDialogProps {
   organizationId: string;
   /** The product being changed; `null` is a new product. */
   product: ProductReadModel | null;
+  /** The Estoque with this product shown; null for who cannot read stock, and for a product that does not exist yet. */
+  stockHref: string | null;
   tab: ProductTab;
   /** The configuration of the variants typed for this product and kept by Esc, × or the step back. */
   variantsDraft: VariantConfigurationDraft | null;
@@ -183,6 +193,7 @@ export function dialogTexts(
 
 interface ProductTabsProps {
   dataInvalid: boolean;
+  focusVariantId: string | null;
   /** The form of the data, drawn in the first tab. */
   form: ReactNode;
   onProductUpdated: (product: ProductReadModel) => void;
@@ -201,6 +212,7 @@ interface ProductTabsProps {
 /** The tabs of a product that exists; an archived one has no images (as its menu). */
 function ProductTabs({
   dataInvalid,
+  focusVariantId,
   form,
   onProductUpdated,
   onTabChange,
@@ -233,10 +245,14 @@ function ProductTabs({
       <TabsList
         activateOnFocus
         aria-label="Partes do produto"
-        className="w-full"
+        className="h-auto w-full flex-wrap gap-y-4"
       >
         {tabs.map((value) => (
-          <TabsTrigger key={value} value={value}>
+          <TabsTrigger
+            className="h-[calc(var(--spacing-ctl-md)-0.375rem)]"
+            key={value}
+            value={value}
+          >
             <TabLabel
               invalid={value === "dados" && dataInvalid}
               label={TAB_LABELS[value]}
@@ -253,6 +269,7 @@ function ProductTabs({
           <TabScope onUnsent={onUnsent} tab="variantes">
             <ProductVariantsPanel
               configurationDraft={variantsDraft}
+              focusVariantId={focusVariantId}
               onConfigurationDraftChange={onVariantsDraftChange}
               onProductUpdated={onProductUpdated}
               organizationId={organizationId}
@@ -280,7 +297,10 @@ function ProductTabs({
 type BodyProps = Omit<
   ProductDialogProps,
   "finalFocus" | "onClosed" | "onDismiss" | "open"
->;
+> & {
+  /** What the dialog does before "Ver estoque" leaves the screen: it closes and keeps what was typed, as Esc does. */
+  onLeave: () => void;
+};
 
 /**
  * What the open dialog holds: its own state (the errors shown, the tabs seen) starts again at each opening, because
@@ -293,11 +313,13 @@ function ProductDialogBody({
   error,
   errorExtra,
   feedbackRef,
+  focusVariantId,
   isOffline,
   isPending,
   notice,
   onCancel,
   onChange,
+  onLeave,
   onProductUpdated,
   onSubmit,
   onTabChange,
@@ -305,6 +327,7 @@ function ProductDialogBody({
   onVariantsDraftChange,
   organizationId,
   product,
+  stockHref,
   tab,
   variantsDraft,
 }: BodyProps) {
@@ -390,6 +413,7 @@ function ProductDialogBody({
           {product ? (
             <ProductTabs
               dataInvalid={dataInvalid}
+              focusVariantId={focusVariantId}
               form={form}
               onProductUpdated={onProductUpdated}
               onTabChange={onTabChange}
@@ -413,6 +437,9 @@ function ProductDialogBody({
           </p>
         ) : null}
         <DialogFooter>
+          {stockHref === null ? null : (
+            <SeeStockLink href={stockHref} onLeave={onLeave} />
+          )}
           <Button
             disabled={isPending}
             onClick={onCancel}
@@ -433,6 +460,52 @@ function ProductDialogBody({
         </DialogFooter>
       </div>
     </>
+  );
+}
+
+/**
+ * "Ver estoque": the dialog closes and keeps what was typed (as Esc does) and the Estoque opens with no load of the
+ * page, so the draft is still there when the person comes back and the link works without a connection. A click that
+ * asks for a new tab or window keeps the browser's own way.
+ */
+function SeeStockLink({
+  href,
+  onLeave,
+}: {
+  href: string;
+  onLeave: () => void;
+}) {
+  const going = useRef<boolean>(false);
+  const handleClick = useCallback(
+    (event: MouseEvent<HTMLAnchorElement>) => {
+      if (!isPlainClick(event)) {
+        return;
+      }
+      event.preventDefault();
+      if (going.current) {
+        return;
+      }
+      going.current = true;
+      onLeave();
+      // after the render that closed the dialog, and after the step back that takes its entry out of the history
+      window.setTimeout(() => {
+        dialogEntries().afterSteps(() => {
+          leaveForReturn();
+          navigateInApp(href);
+          going.current = false;
+        });
+      }, 0);
+    },
+    [href, onLeave]
+  );
+  return (
+    <a
+      className={cn(buttonVariants({ variant: "link" }), "h-ctl-md md:mr-auto")}
+      href={href}
+      onClick={handleClick}
+    >
+      Ver estoque
+    </a>
   );
 }
 
@@ -490,7 +563,7 @@ export function ProductDialog({
         initialFocus={firstFocus(product ? tab : "dados")}
         layout="form"
       >
-        <ProductDialogBody {...body} />
+        <ProductDialogBody {...body} onLeave={onDismiss} />
       </DialogContent>
     </Dialog>
   );

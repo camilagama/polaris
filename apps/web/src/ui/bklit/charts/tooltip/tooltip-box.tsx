@@ -78,7 +78,7 @@ export interface TooltipBoxProps {
  * tokens (`border`, `--radius`) and Tailwind utilities.
  */
 const TOOLTIP_PANEL_CLASS_NAME =
-  "relative min-w-[120px] rounded-xl border not-dark:bg-clip-padding text-chart-tooltip-foreground shadow-lg/5 before:pointer-events-none before:absolute before:inset-0 before:rounded-[calc(var(--radius-xl)-1px)] before:shadow-[0_1px_rgb(0_0_0/0.04)] dark:before:shadow-[0_-1px_rgb(255_255_255/0.06)]";
+  "relative min-w-[7.5rem] rounded-xl border not-dark:bg-clip-padding text-chart-tooltip-foreground shadow-lg/5 before:pointer-events-none before:absolute before:inset-0 before:rounded-[calc(var(--radius-xl)-1px)] before:shadow-[0_1px_rgb(0_0_0/0.04)] dark:before:shadow-[0_-1px_rgb(255_255_255/0.06)]";
 
 /** Clips content to the panel's inner radius without clipping the edge highlight. */
 const TOOLTIP_PANEL_INNER_CLASS_NAME =
@@ -102,7 +102,7 @@ const DEFAULT_TOOLTIP_HEIGHT = 80;
 
 /** Panel position beside the cursor: flips left near the right edge and is
  * clamped vertically inside the container. */
-function resolveTooltipTarget({
+export function resolveTooltipTarget({
   x,
   flipX = x,
   y,

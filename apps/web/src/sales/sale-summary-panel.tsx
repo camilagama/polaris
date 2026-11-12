@@ -1,12 +1,17 @@
 import PackagePlusIcon from "lucide-react/dist/esm/icons/package-plus";
 import TriangleAlertIcon from "lucide-react/dist/esm/icons/triangle-alert";
 import { type ReactNode, useEffect, useRef } from "react";
+import {
+  MASKED_MONEY,
+  MASKED_SPOKEN,
+  useHiddenValues,
+} from "@/lib/hidden-values";
 import { cn } from "@/lib/utils";
 import { Alert, AlertDescription } from "@/ui/alert";
 import { Button, buttonVariants } from "@/ui/button";
 import { Card, CardContent } from "@/ui/card";
 import { FieldError } from "@/ui/field";
-import { NoBreakMoney } from "@/ui/hidden-values";
+import { MoneyText } from "@/ui/hidden-values";
 import { stockEntryHref } from "../inventory/stock-entry-link";
 import { focusLater } from "../lib/focus";
 import {
@@ -45,7 +50,7 @@ export function LeaderRow({
 }) {
   return (
     <div className="flex items-baseline gap-2">
-      <dt className="flex min-w-0 flex-1 items-baseline gap-2 after:min-w-4 after:flex-1 after:-translate-y-[3px] after:border-input after:border-b after:border-dotted after:content-['']">
+      <dt className="flex min-w-0 flex-1 items-baseline gap-2 after:min-w-4 after:flex-1 after:-translate-y-0.75 after:border-input after:border-b after:border-dotted after:content-['']">
         {label}
       </dt>
       <dd
@@ -65,7 +70,7 @@ export function Perforation() {
   return (
     <div
       aria-hidden="true"
-      className="relative h-0 border-input border-t border-dashed before:absolute before:-top-2 before:-left-2 before:size-4 before:rounded-full before:bg-background before:ring-1 before:ring-foreground/[0.08] after:absolute after:-top-2 after:-right-2 after:size-4 after:rounded-full after:bg-background after:ring-1 after:ring-foreground/[0.08]"
+      className="relative h-0 overflow-x-clip border-input border-t border-dashed before:absolute before:-top-2 before:-left-2 before:size-4 before:rounded-full before:bg-background before:ring-1 before:ring-foreground/[0.08] after:absolute after:-top-2 after:-right-2 after:size-4 after:rounded-full after:bg-background after:ring-1 after:ring-foreground/[0.08]"
     />
   );
 }
@@ -81,6 +86,21 @@ export function Money({
   /** As formatBrlAmount writes it: "R$ 1.234,56". */
   text: string;
 }) {
+  const [hidden] = useHiddenValues();
+  if (hidden) {
+    return (
+      <>
+        <span
+          aria-hidden="true"
+          className={cn("whitespace-nowrap tabular-nums", className)}
+          data-masked-money=""
+        >
+          {MASKED_MONEY}
+        </span>
+        <span className="sr-only">{MASKED_SPOKEN}</span>
+      </>
+    );
+  }
   const number = text.replace(CURRENCY_PREFIX, "");
   return (
     <span
@@ -103,7 +123,7 @@ export function FeeValue({ line }: { line: FeeLine }) {
     <span
       className={cn(line.tone === "not_applicable" && "text-muted-foreground")}
     >
-      <NoBreakMoney text={line.text} />
+      <MoneyText text={line.text} />
     </span>
   );
 }
@@ -216,7 +236,10 @@ function FailureNotice({
                 buttonVariants({ size: "sm", variant: "outline" }),
                 "h-auto min-h-ctl-sm max-w-full whitespace-normal py-1.5 text-left"
               )}
-              href={stockEntryHref(submission.failure.entry.variantId)}
+              href={stockEntryHref(
+                submission.failure.entry.variantId,
+                submission.failure.entry.missing
+              )}
             >
               <PackagePlusIcon aria-hidden="true" data-icon="inline-start" />
               Dar entrada no estoque
@@ -390,7 +413,7 @@ export function SummaryPanel({
                   key={row.key}
                   label={row.label}
                   tone={row.tone}
-                  value={row.value}
+                  value={<MoneyText text={row.value} />}
                 />
               ))}
             </dl>

@@ -10,8 +10,11 @@ import { useRuntimeSnapshot } from "./runtime-context";
  * device is online, how much is waiting to be sent and whether something needs a
  * person. A refused operation turns the chip into a link to the attention panel.
  * The visible text is short and the whole sentence is the accessible name, so the
- * name of the link starts with what is shown ("Atenção: 2", WCAG 2.5.3). On the
- * phone, the same sentence is the first line of "Mais" (`SyncStatusMenuLine`),
+ * name of the link starts with what is shown ("Atenção: 2", WCAG 2.5.3). The
+ * tooltip is the `title` of the short text, which is hidden from assistive
+ * technology and stretched over the whole chip: a `title` on the chip itself is read
+ * as its name (a status takes no name from its content) or as its description, and
+ * the sentence would be spoken twice. On the phone, the same sentence is the first line of "Mais" (`SyncStatusMenuLine`),
  * because a tooltip does not show on touch.
  */
 export interface SyncStatusLabel {
@@ -209,7 +212,7 @@ const TONE_ICON = {
 };
 
 const CHIP =
-  "sync-status inline-flex h-5 min-w-0 max-w-full shrink items-center gap-1 whitespace-nowrap rounded-full border border-transparent pr-2 pl-1.5 font-medium text-xs leading-none no-underline [&>svg]:size-3 [&>svg]:shrink-0";
+  "sync-status relative inline-flex h-5 min-w-0 max-w-full shrink items-center gap-1 whitespace-nowrap rounded-full border border-transparent pr-2 pl-1.5 font-medium text-xs leading-none no-underline [&>svg]:size-3 [&>svg]:shrink-0";
 
 export function SyncStatusView({
   screen,
@@ -223,10 +226,13 @@ export function SyncStatusView({
   const content = (
     <>
       <Icon aria-hidden="true" />
-      {/* one line; the ellipsis is only the last resort, for a chip alone on a line that is still too narrow */}
+      {/* one line; the ellipsis is only the last resort, for a chip alone on a line that is still too narrow.
+          The ::after stretches this span over the whole chip so the tooltip also shows over the icon, the padding and
+          the border; the title cannot go on the chip, where it would become its description or name. */}
       <span
         aria-hidden="true"
-        className="sync-status-short min-w-0 overflow-hidden text-ellipsis"
+        className="sync-status-short min-w-0 overflow-hidden text-ellipsis after:absolute after:inset-0 after:content-['']"
+        title={label.text}
       >
         {label.short}
       </span>
@@ -238,7 +244,6 @@ export function SyncStatusView({
       className={`${CHIP} touch-hit focus-ring ${TONE_CLASS[label.tone]}`}
       data-tone={label.tone}
       href="/attention"
-      title={label.text}
     >
       {content}
     </a>
@@ -247,7 +252,6 @@ export function SyncStatusView({
       className={`${CHIP} m-0 ${TONE_CLASS[label.tone]}`}
       data-tone={label.tone}
       role="status"
-      title={label.text}
     >
       {content}
     </p>
@@ -263,7 +267,7 @@ const LINE_TONE_CLASS: Record<SyncStatusLabel["tone"], string> = {
 
 /**
  * The whole sentence of the state as the first line of "Mais", on the phone (a `title` does not show on touch;
- * on the desktop the sentence is the `title` of the chip). Hidden from assistive technology: the chip already
+ * on the desktop the sentence is the `title` of the short text of the chip). Hidden from assistive technology: the chip already
  * says the same thing.
  */
 export function SyncStatusMenuLineView({

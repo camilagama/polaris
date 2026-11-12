@@ -6,6 +6,12 @@ import { createDatabase } from "../src/client";
 import { requestDataExport } from "../src/data-export-repository";
 import { recordOutboxEvent } from "../src/event-outbox";
 import {
+  expectedOutboxPolicies,
+  OUTBOX_POLICIES_SQL,
+  type OutboxPolicyRow,
+  sortedOutboxPolicies,
+} from "./event-outbox-policies";
+import {
   createTenantFixture,
   disposableHostPattern,
   expectSqlState,
@@ -544,29 +550,11 @@ async function run() {
         .sort(),
       INSERTABLE_COLUMNS
     );
-    const policies = await owner.pool.query<{ cmd: string; roles: string[] }>(
-      "SELECT cmd, roles::text[] AS roles FROM pg_policies WHERE schemaname = 'public' AND tablename = 'event_outbox' ORDER BY cmd, roles::text"
-    );
+    const policies =
+      await owner.pool.query<OutboxPolicyRow>(OUTBOX_POLICIES_SQL);
     assert.deepEqual(
-      policies.rows.map((row) => [row.cmd, row.roles]),
-      [
-        ["DELETE", ["polaris_purge_owner"]],
-        // the notice of the billing cycle or the welcome (ADR 0104, 0101): its own policy, proved by the gate billing-notices
-        ["INSERT", ["polaris_billing_runtime"]],
-        ["INSERT", [runtimeRole]],
-        // the request of a closed organization's copy (ADR 0081), the cancellation of the renewal at the
-        // closure (ADR 0074) and the notice of a closure milestone (ADR 0102), through the privacy owner's functions
-        ["INSERT", ["polaris_privacy_owner"]],
-        ["INSERT", ["polaris_privacy_owner"]],
-        ["INSERT", ["polaris_privacy_owner"]],
-        ["SELECT", ["polaris_outbox_owner"]],
-        ["SELECT", ["polaris_privacy_owner"]],
-        ["SELECT", ["polaris_privacy_owner"]],
-        ["SELECT", ["polaris_purge_owner"]],
-        ["UPDATE", ["polaris_outbox_owner"]],
-        ["UPDATE", ["polaris_privacy_owner"]],
-        ["UPDATE", ["polaris_privacy_owner"]],
-      ],
+      sortedOutboxPolicies(policies.rows),
+      sortedOutboxPolicies(expectedOutboxPolicies(runtimeRole)),
       "the tenant only inserts (and the privacy owner, for a closed organization's copy); reads and updates are the owners' (dispatcher and re-arm), through their functions; only the purge owner deletes (ADR 0081)"
     );
     const forced = await owner.pool.query<{ relforcerowsecurity: boolean }>(

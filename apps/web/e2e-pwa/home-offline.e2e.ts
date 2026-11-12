@@ -54,11 +54,19 @@ test("o pedaço do gráfico está no precache: aberto sem rede, o gráfico da c�
   await expect(map.locator("[data-heatmap] svg")).toBeVisible({
     timeout: 20_000,
   });
-  await expect(map.locator("[data-rhythm-reading]")).toHaveText(
-    "Sexta, 23/10 · R$ 520,00 · 2 vendas · hoje"
+  await expect(map.locator("[data-rhythm-insight]")).toContainText(
+    "nas últimas 13 semanas"
   );
-  await expect(map.locator("[data-rhythm-best]")).toHaveText(
-    "Melhor dia: 18/10, R$ 1.840,00"
+  await expect(map.locator("[data-heatmap-tooltip]")).toHaveCount(0);
+  await expect(map.getByRole("img")).toHaveAttribute(
+    "aria-label",
+    expect.stringContaining("Melhor dia 18/10, R$ 1.840,00")
+  );
+  await expect(
+    map.getByRole("slider", { name: "Dia do mapa de vendas" })
+  ).toHaveAttribute(
+    "aria-valuetext",
+    "Sexta, 23/10 · R$ 520,00 · 2 vendas · hoje"
   );
 });
 
@@ -81,10 +89,11 @@ test("sem o pedaço no Cache Storage e sem rede: os números ficam e o gráfico 
   await expect(
     chart.getByRole("button", { name: "Tentar novamente" })
   ).toHaveCount(0);
-  // the figures stay: the total, the period and "Ver os números"
+  // the figures stay: the total, the period and the table of the days, shown in the place of the drawing
   await expect(chart).toContainText("R$");
+  await expect(chart.getByRole("table")).toBeVisible();
   await expect(
     chart.getByRole("button", { name: "Ver os números" })
-  ).toBeVisible();
+  ).toHaveCount(0);
   await expect(page.getByRole("region", { name: "Hoje" })).toContainText("R$");
 });

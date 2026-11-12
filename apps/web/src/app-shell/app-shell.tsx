@@ -1,6 +1,7 @@
 import { saoPauloDateOf } from "@polaris/domain/billing/provider-period";
 import { LEGAL_PATHS } from "@polaris/domain/legal/legal-documents";
 import BarChart3Icon from "lucide-react/dist/esm/icons/chart-column";
+import WalletIcon from "lucide-react/dist/esm/icons/wallet";
 import CircleHelpIcon from "lucide-react/dist/esm/icons/circle-help";
 import ClockIcon from "lucide-react/dist/esm/icons/clock";
 import EllipsisIcon from "lucide-react/dist/esm/icons/ellipsis";
@@ -36,11 +37,11 @@ import {
   SidebarMenuItem,
   SidebarProvider,
   SidebarRail,
-  SidebarTrigger,
   useSidebar,
 } from "@/ui/sidebar";
 import { MediaThumbnailScope } from "../catalog/media-thumbnail-scope";
 import { ACCEPTANCE_OPENING_SCREEN } from "../legal/acceptance/acceptance-texts";
+import { hasCapabilityForRole } from "@polaris/domain/authorization/capabilities";
 import { canManageBilling } from "../lib/billing-access";
 import { useConnectionOnline } from "../lib/browser-connection";
 import {
@@ -76,8 +77,6 @@ import { MenuProgress, useFirstSteps } from "./menu-progress";
 import {
   BOTTOM_BAR_IDS,
   bottomBarMark,
-  HELP_HREF,
-  HELP_LABEL,
   inBottomBar,
   menuItemsOf,
   NAV_ITEMS,
@@ -104,6 +103,7 @@ const NAV_ICONS: Record<NavId, ComponentType<{ "aria-hidden"?: boolean }>> = {
   attention: TriangleAlertIcon,
   customers: UsersIcon,
   dashboard: BarChart3Icon,
+  expenses: WalletIcon,
   history: ClockIcon,
   help: CircleHelpIcon,
   home: HouseIcon,
@@ -122,14 +122,6 @@ function countText(count: number): string {
 function attentionCountText(count: number): string {
   return count === 1 ? "1 registro recusado" : `${count} registros recusados`;
 }
-
-/** "Ajuda e contato" in "Mais", after the destinations: on the desktop it is the "?" of the header. */
-const HELP_ITEM: NavItem = {
-  group: null,
-  href: HELP_HREF,
-  id: "help",
-  label: HELP_LABEL,
-};
 
 /** A destination of the menu: the current one has `aria-current="page"` and the emerald dot, Pendências its count. */
 function NavLink({
@@ -213,6 +205,8 @@ function SheetLegalLinks() {
 }
 
 interface AppSidebarProps {
+  /** Despesas is offered to who can register an expense (`expense:create`); while the store is not known it stays, so the list does not move. */
+  expenses: boolean;
   /** "dd/mm" of the first charge of the trial, for the foot of the menu. */
   chargeDay: string | null;
   /** The first steps done, for the foot of the menu; null once the store sold or while not known. */
@@ -223,45 +217,40 @@ interface AppSidebarProps {
 }
 
 /**
- * The sidebar of the desktop (the shadcn Sidebar) and, below 760 px, the same content in the "Mais" sheet without
+ * The sidebar of the desktop (the shadcn Sidebar, under the header of the shell, which holds the brand and the button that folds it) and, below 760 px, the same content in the "Mais" sheet without
  * the four destinations of the bottom bar: only navigation, and at its foot the first steps and the trial. The store,
- * the theme and "Sair" are in the menu of the header; the sheet adds "Ajuda e contato" and the two legal pages, which
- * the desktop has in the header. Pendências is there only while this device has a refused record, with the count
+ * the theme and "Sair" are in the menu of the header; the sheet adds the two legal pages, which the desktop has in the
+ * header. Pendências is there only while this device has a refused record, with the count
  * (map of navigation, § 1).
  */
 function AppSidebar({
   chargeDay,
+  expenses,
   firstSteps,
   navId,
   onlineOnly,
 }: AppSidebarProps) {
   const { isMobile } = useSidebar();
   const rejected = useRuntimeSnapshot()?.counts.rejected ?? 0;
-  // on the phone "Ajuda e contato" closes the list, in the group of Configurações
-  const items = [
-    ...menuItemsOf({ attention: rejected > 0 }).filter(
-      (item) => !(isMobile && inBottomBar(item.id))
-    ),
-    ...(isMobile ? [HELP_ITEM] : []),
-  ];
+  const items = menuItemsOf({ attention: rejected > 0, expenses }).filter(
+    (item) => !(isMobile && inBottomBar(item.id))
+  );
   return (
     <Sidebar mobileTitle="Mais" side={isMobile ? "right" : "left"}>
-      <SidebarHeader className="px-4 pt-2 pb-2 group-data-[collapsible=icon]:px-2">
-        <div className="flex min-h-10 items-center justify-between gap-2 group-data-[collapsible=icon]:flex-col group-data-[collapsible=icon]:items-center">
-          <a
-            className="touch-hit focus-ring flex w-fit items-center gap-2.5 rounded-sm font-semibold tracking-tight"
-            href="/"
-          >
-            <Logo />
-            <span className="group-data-[collapsible=icon]:sr-only">
-              Polaris
-            </span>
-          </a>
-          {/* the column folds only from 1024 px: below, the button is not there */}
-          <SidebarTrigger />
-        </div>
-        {isMobile ? <SyncStatusMenuLine onlineOnly={onlineOnly} /> : null}
-      </SidebarHeader>
+      {isMobile ? (
+        <SidebarHeader className="px-4 pt-2 pb-2">
+          <div className="flex min-h-10 items-center">
+            <a
+              className="touch-hit focus-ring flex w-fit items-center gap-2.5 rounded-sm font-semibold tracking-tight"
+              href="/"
+            >
+              <Logo />
+              <span>Polaris</span>
+            </a>
+          </div>
+          <SyncStatusMenuLine onlineOnly={onlineOnly} />
+        </SidebarHeader>
+      ) : null}
       <SidebarContent>
         <nav aria-label="Principal">
           {navGroups(items).map((group) => (
@@ -299,12 +288,14 @@ function AppSidebar({
 
 /* 4.4 em is the width of "Histórico", 0.25 rem of slack. Below the 0.6875 rem floor the label breaks in two
    lines (`--app-bottom-bar` grows) instead of being cut. `overflow-wrap: anywhere` alone breaks it where the letters
-   run out ("Históric" and "o"), so the label offers its own syllable break (`<wbr>`, which adds nothing to the text or
-   to the accessible name). */
+   run out ("Históric" and "o", "Estoqu" and "e"), so the label offers its own syllable break (`<wbr>`, which adds
+   nothing to the text). Chromium's accessibility tree still reads the two halves as two words ("Histó rico"), so each
+   link carries the whole word in `aria-label` and the split text is hidden from the tree. */
 const BOTTOM_BAR_LABEL =
   "max-w-full text-center [font-size:clamp(0.6875rem,calc((100cqw-0.25rem)/4.4),0.75rem)] [overflow-wrap:anywhere] @max-[3.275rem]/tab:tracking-[-0.01em]";
 
 const SYLLABLE_BREAKS: Readonly<Record<string, readonly [string, string]>> = {
+  Estoque: ["Esto", "que"],
   Histórico: ["Histó", "rico"],
 };
 
@@ -325,7 +316,7 @@ function BottomBarLabel({ text }: { text: string }) {
  * The bar of destinations of the phone: Início, Histórico, Vender (a pill of ink, in the middle), Estoque and "Mais",
  * which opens the rest (the sidebar in a sheet). A destination carries the mark on its own screen (`aria-current="page"`) and on the
  * screens of its area (`aria-current="true"`): Estoque on Produtos and Clientes. "Mais" carries it on the screens of
- * no destination of the bar (Pendências, Resultado, Configurações with their tabs, and Ajuda e contato), and the number of operations of
+ * no destination of the bar (Pendências, Resultado, Despesas, Configurações with their tabs, and Ajuda e contato), and the number of operations of
  * this device that need attention on its icon (the chip says the same in words, so the number is only drawn).
  */
 function BottomBar({ navId }: { navId: NavId | null }) {
@@ -365,6 +356,7 @@ function BottomBar({ navId }: { navId: NavId | null }) {
           return (
             <a
               aria-current={ariaCurrent}
+              aria-label={item.label}
               className={`${tab} text-foreground`}
               data-bottom-sell=""
               href={item.href}
@@ -374,7 +366,10 @@ function BottomBar({ navId }: { navId: NavId | null }) {
               <span className="grid h-8 w-12 place-items-center rounded-full bg-primary text-primary-foreground shadow-xs">
                 <Icon aria-hidden />
               </span>
-              <span className={`${BOTTOM_BAR_LABEL} font-semibold`}>
+              <span
+                aria-hidden="true"
+                className={`${BOTTOM_BAR_LABEL} font-semibold`}
+              >
                 <BottomBarLabel text={item.label} />
               </span>
             </a>
@@ -383,13 +378,14 @@ function BottomBar({ navId }: { navId: NavId | null }) {
         return (
           <a
             aria-current={ariaCurrent}
+            aria-label={item.label}
             className={`${tab} ${current ? "text-foreground" : "text-muted-foreground"}`}
             href={item.href}
             key={id}
           >
             {current ? mark : null}
             <Icon aria-hidden />
-            <span className={BOTTOM_BAR_LABEL}>
+            <span aria-hidden="true" className={BOTTOM_BAR_LABEL}>
               <BottomBarLabel text={item.label} />
             </span>
           </a>
@@ -409,7 +405,7 @@ function BottomBar({ navId }: { navId: NavId | null }) {
           {rejected > 0 ? (
             <span
               aria-hidden="true"
-              className="absolute -top-1.5 left-3 min-w-4 rounded-full bg-warning px-1 text-center font-semibold text-[10px] text-warning-foreground tabular-nums leading-4"
+              className="absolute -top-1.5 left-3 min-w-4 rounded-full bg-warning px-1 text-center font-semibold text-[0.625rem] text-warning-foreground tabular-nums leading-4"
               data-attention-count=""
             >
               {countText(rejected)}
@@ -489,7 +485,7 @@ function OrganizationGate({ children }: { children: ReactNode }) {
         icon={
           <TriangleAlertIcon
             aria-hidden="true"
-            className="size-5 shrink-0 text-destructive"
+            className="size-4 shrink-0 text-destructive"
           />
         }
         title="Não foi possível abrir o Polaris"
@@ -595,7 +591,7 @@ function FirstAccessPage({
   if (closedNotice) {
     return (
       <div className="flow-root min-h-dvh bg-background px-(--gutter) pt-4">
-        <main className="mx-auto max-w-[420px]" id="conteudo">
+        <main className="mx-auto max-w-[26.25rem]" id="conteudo">
           {closedNotice}
         </main>
       </div>
@@ -605,7 +601,7 @@ function FirstAccessPage({
     <>
       {sessionNotice || acceptanceNotice ? (
         <div className="flow-root bg-background px-(--gutter) pt-4">
-          <div className="mx-auto max-w-[420px]">
+          <div className="mx-auto max-w-[26.25rem]">
             {sessionNotice ? <SessionEndedNotice alone /> : null}
             {acceptanceNotice ? <LegalAcceptanceNotice /> : null}
           </div>
@@ -696,69 +692,77 @@ export function AppShell({
     );
   }
   return (
-    <SidebarProvider className="app-shell-root bg-sidebar">
+    <SidebarProvider className="app-shell-root flex-col bg-sidebar">
       <a
         className="focus-ring not-focus:sr-only fixed top-2 left-2 z-50 rounded-md bg-primary px-3 py-2 font-medium text-primary-foreground text-sm no-underline"
         href="#conteudo"
       >
         Ir para o conteúdo
       </a>
-      <AppSidebar
-        chargeDay={chargeDay}
-        firstSteps={firstSteps}
-        navId={navId}
+      <ShellHeader
+        email={email}
+        logout={logout}
         onlineOnly={onlineOnly}
+        organization={organization}
+        trigger={storeMenu}
       />
-      <SidebarInset className="pb-(--app-bottom-bar) md:pb-0">
-        <ShellHeader
-          email={email}
-          helpCurrent={navId === "help"}
-          logout={logout}
+      <div className="flex min-h-0 w-full flex-1">
+        <AppSidebar
+          chargeDay={chargeDay}
+          expenses={
+            organization === null ||
+            hasCapabilityForRole(
+              organization.organization.role,
+              "expense:create"
+            )
+          }
+          firstSteps={firstSteps}
+          navId={navId}
           onlineOnly={onlineOnly}
-          organization={organization}
-          trigger={storeMenu}
         />
-        {/* the panel of the content, in the frame of the sidebar and the header: from 760 px its top left corner is
+        <SidebarInset className="pb-(--app-bottom-bar) md:pb-0">
+          {/* the panel of the content, in the frame of the sidebar and the header: from 760 px its top left corner is
             rounded, with the 1 px ring of a card on the two edges it shares with the frame */}
-        <div
-          className="flex flex-1 flex-col bg-background md:rounded-tl-xl md:border-(--card-ring) md:border-t md:border-l"
-          data-app-panel=""
-        >
-          {/* on the phone the content fills the window between the header and the bottom bar, so a short page does
-              not scroll */}
-          <main
-            className="mx-auto w-[min(100%_-_2rem,76rem)] pt-[clamp(2rem,5vw,4.25rem)] pb-14 max-md:min-h-[var(--shell-main-min,calc(100dvh_-_var(--app-header)_-_var(--app-bottom-bar,0rem)))]"
-            id="conteudo"
-            // the target of "Ir para o conteúdo" and of a screen opened with no load ("Conhecer o Pro"): focusable by script
-            tabIndex={-1}
+          <div
+            className="flex flex-1 flex-col bg-background md:rounded-tl-xl md:border-(--card-ring) md:border-t md:border-l"
+            data-app-panel=""
           >
-            <ShellLogoutNotices logout={logout} trigger={storeMenu} />
-            <ShellNotices
-              acceptance={showAcceptanceNotice}
-              connection={
-                onlineOnly && !sessionOver ? { form: connectionForm } : null
-              }
-              session={showNotice}
-            />
-            <GraceNoticeSlot
-              facts={planFacts}
-              onSubscription={routeId === "subscription"}
-            />
-            {closedNotice && requiresOrganization ? (
-              closedNotice
-            ) : (
-              <OfflineAccessGate>
-                {requiresOrganization ? (
-                  <OrganizationGate>{children}</OrganizationGate>
-                ) : (
-                  children
-                )}
-              </OfflineAccessGate>
-            )}
-          </main>
-        </div>
-        <BottomBar navId={navId} />
-      </SidebarInset>
+            {/* on the phone the content fills the window between the header and the bottom bar, so a short page does
+              not scroll */}
+            <main
+              className="mx-auto w-[min(100%_-_2rem,76rem)] pt-[clamp(2rem,5vw,4.25rem)] pb-14 max-md:min-h-[var(--shell-main-min,calc(100dvh_-_var(--app-header)_-_var(--app-bottom-bar,0rem)))]"
+              id="conteudo"
+              // the target of "Ir para o conteúdo" and of a screen opened with no load ("Conhecer o Pro"): focusable by script
+              tabIndex={-1}
+            >
+              <ShellLogoutNotices logout={logout} trigger={storeMenu} />
+              <ShellNotices
+                acceptance={showAcceptanceNotice}
+                connection={
+                  onlineOnly && !sessionOver ? { form: connectionForm } : null
+                }
+                session={showNotice}
+              />
+              <GraceNoticeSlot
+                facts={planFacts}
+                onSubscription={routeId === "subscription"}
+              />
+              {closedNotice && requiresOrganization ? (
+                closedNotice
+              ) : (
+                <OfflineAccessGate>
+                  {requiresOrganization ? (
+                    <OrganizationGate>{children}</OrganizationGate>
+                  ) : (
+                    children
+                  )}
+                </OfflineAccessGate>
+              )}
+            </main>
+          </div>
+          <BottomBar navId={navId} />
+        </SidebarInset>
+      </div>
     </SidebarProvider>
   );
 }

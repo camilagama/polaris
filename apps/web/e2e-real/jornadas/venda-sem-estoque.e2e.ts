@@ -1,7 +1,9 @@
 import type { Locator } from "@playwright/test";
-import { expect, openJourney, test } from "../fixtures";
+import { localDate } from "../calendar";
+import { expect, openJourney, runT0, test } from "../fixtures";
+import { movements, queuedCommands } from "../pages/fila-e-estoque";
 import { fillSale } from "../pages/venda";
-import { seedProduct } from "../seed";
+import { seedProduct, seedStock } from "../seed";
 
 const MUG = /Caneca esmaltada/;
 const ENTRY_LINK = /^Dar entrada no estoque/;
@@ -69,7 +71,7 @@ test("venda sem estoque: a recusa leva à entrada, a venda em andamento volta e 
   );
   await expect(itemLink).toHaveAttribute(
     "href",
-    `/inventory?entrada=${product.variantId}&de=venda`
+    `/inventory?entrada=${product.variantId}&de=venda&quantidade=2`
   );
   expect(await itemLink.getAttribute("target")).toBeNull();
 
@@ -100,7 +102,7 @@ test("venda sem estoque: a recusa leva à entrada, a venda em andamento volta e 
   const refusalLink = refusal.getByRole("link", { name: ENTRY_LINK });
   await expect(refusalLink).toHaveAttribute(
     "href",
-    `/inventory?entrada=${product.variantId}&de=venda`
+    `/inventory?entrada=${product.variantId}&de=venda&quantidade=2`
   );
   await tap(refusalLink);
   await expect(
@@ -113,6 +115,7 @@ test("venda sem estoque: a recusa leva à entrada, a venda em andamento volta e 
     page.getByText("Caneca esmaltada · Variante padrão")
   ).toBeVisible();
   expect(new URL(page.url()).search).toBe("");
+  await expect(page.getByLabel("Quantidade recebida")).toHaveValue("2");
   await fill(page.getByLabel("Quantidade recebida"), "5");
   await fill(page.getByLabel("Custo unitário (R$)"), "12,50");
   await tap(page.getByRole("button", { exact: true, name: "Revisar" }));
@@ -173,4 +176,126 @@ test("estoque pelo link: variante que não existe mostra um aviso curto, sem err
     page.getByRole("heading", { name: "Receber estoque" })
   ).toHaveCount(0);
   expect(new URL(page.url()).search).toBe("");
+});
+
+const WRITE_CALLS = ["/rpc/inventory/receiveStock", "/rpc/sync/push"];
+
+/**
+ * The seller asks for 3 of a variant with a balance of 1: the link on the line opens the receive panel with the 2 that
+ * are missing, and opening it writes and queues nothing; the sale in progress is as it was on coming back.
+ */
+test("venda com saldo curto: o link da linha abre a entrada com a quantidade que falta e nada é gravado nem enfileirado", async ({
+  browser,
+  sql,
+}, testInfo) => {
+  const journey = await openJourney(browser, testInfo, "venda-saldo-curto", {
+    organization: { timezone: ZONE },
+  });
+  const { page } = journey;
+  const organizationId = journey.organizationId as string;
+  const product = await seedProduct(
+    journey.user.rpc,
+    organizationId,
+    "Caneca esmaltada",
+    "35.00"
+  );
+  await seedStock(
+    journey.user.rpc,
+    organizationId,
+    product.variantId,
+    1,
+    "12.00",
+    localDate(runT0(), ZONE)
+  );
+  const writes: string[] = [];
+  page.on("request", (request) => {
+    const { pathname } = new URL(request.url());
+    if (WRITE_CALLS.includes(pathname)) {
+      writes.push(pathname);
+    }
+  });
+
+  await page.goto("/sales");
+  await fillSale(
+    page,
+    [{ charged: "35,00", option: MUG, quantity: 3, search: "Caneca" }],
+    []
+  );
+  const item = page.getByRole("group", { exact: true, name: "Item 1" });
+  await expect(item).toContainText("Acima do saldo (1)");
+  const itemLink = item.getByRole("link", { name: ENTRY_LINK });
+  await expect(itemLink).toHaveAttribute(
+    "href",
+    `/inventory?entrada=${product.variantId}&de=venda&quantidade=2`
+  );
+  await itemLink.click();
+
+  await expect(
+    page.getByRole("heading", { name: "Receber estoque" })
+  ).toBeVisible();
+  await expect(page.getByLabel("Quantidade recebida")).toHaveValue("2");
+  expect(new URL(page.url()).search).toBe("");
+  expect(writes).toEqual([]);
+  expect(await movements(sql, product.variantId)).toBe(1);
+  expect(await queuedCommands(page)).toBe(0);
+
+  await page
+    .getByRole("navigation", { exact: true, name: "Principal" })
+    .getByRole("link", { exact: true, name: "Vender" })
+    .click();
+  const back = page.getByRole("group", { exact: true, name: "Item 1" });
+  await expect(back).toContainText("Caneca esmaltada");
+  await expect(back.getByLabel("Quantidade")).toHaveValue("3");
+  expect(writes).toEqual([]);
+  expect(await movements(sql, product.variantId)).toBe(1);
+});
+
+test("venda com duas linhas da mesma variante: os dois links abrem a entrada com o que falta no total", async ({
+  browser,
+  sql,
+}, testInfo) => {
+  const journey = await openJourney(
+    browser,
+    testInfo,
+    "venda-linhas-da-variante",
+    { organization: { timezone: ZONE } }
+  );
+  const { page } = journey;
+  const organizationId = journey.organizationId as string;
+  const product = await seedProduct(
+    journey.user.rpc,
+    organizationId,
+    "Caneca esmaltada",
+    "35.00"
+  );
+  await seedStock(
+    journey.user.rpc,
+    organizationId,
+    product.variantId,
+    4,
+    "12.00",
+    localDate(runT0(), ZONE)
+  );
+
+  await page.goto("/sales");
+  const line = { charged: "35,00", option: MUG, quantity: 3, search: "Caneca" };
+  await fillSale(page, [line, line], []);
+  const href = `/inventory?entrada=${product.variantId}&de=venda&quantidade=2`;
+  const first = page.getByRole("group", { exact: true, name: "Item 1" });
+  const second = page.getByRole("group", { exact: true, name: "Item 2" });
+  await expect(first).toContainText("Acima do saldo (4)");
+  await expect(second).toContainText("Acima do saldo (4)");
+  await expect(first.getByRole("link", { name: ENTRY_LINK })).toHaveAttribute(
+    "href",
+    href
+  );
+  const secondLink = second.getByRole("link", { name: ENTRY_LINK });
+  await expect(secondLink).toHaveAttribute("href", href);
+
+  await secondLink.click();
+  await expect(
+    page.getByRole("heading", { name: "Receber estoque" })
+  ).toBeVisible();
+  await expect(page.getByLabel("Quantidade recebida")).toHaveValue("2");
+  expect(await movements(sql, product.variantId)).toBe(1);
 });

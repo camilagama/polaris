@@ -1,14 +1,31 @@
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { SUPPORT_EMAIL } from "../lib/support-contact";
 import type { AttentionItem, AttentionSummary } from "./attention";
-import {
+
+const hiding = vi.hoisted(() => ({ hidden: false }));
+
+vi.mock("@/lib/hidden-values", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/hidden-values")>()),
+  useHiddenValues: () => [hiding.hidden, () => undefined],
+}));
+
+const {
   AttentionPanel,
-  type AttentionPanelProps,
+  AttentionUnavailable,
+  OFFLINE_BROWSER_REASON,
+  OFFLINE_NEUTRAL_REASON,
+  OFFLINE_PLAN_REASON,
+  OFFLINE_UNAVAILABLE_TITLE,
   refusedText,
   signInAgainButtonId,
-} from "./attention-panel";
+} = await import("./attention-panel");
+type AttentionPanelProps = import("./attention-panel").AttentionPanelProps;
+import { RECOGNIZING_UNAVAILABLE_TEXT } from "./runtime/devices-model";
+import { PLAN_REFUSED_REASON } from "./runtime/offline-runtime";
 
+const AMOUNT = /R\$\s?\d/;
+const HOME_LINK = /<a [^>]*href="\/"[^>]*>Voltar ao Início<\/a>/;
 const SIGN_IN_AGAIN_OFF = /disabled=""[^>]*>Sair e entrar de novo/;
 const none = () => undefined;
 const item = (overrides: Partial<AttentionItem> = {}): AttentionItem => ({
@@ -332,5 +349,105 @@ describe("the attention panel", () => {
     const html = render({ items: [], waitingBehind: 0 });
     expect(html).toContain("Nenhuma pendência de envio.");
     expect(html).not.toContain("Nada precisa de atenção");
+  });
+});
+
+describe("Pendências without the offline mode", () => {
+  const html = (reason: string | null) =>
+    renderToStaticMarkup(<AttentionUnavailable reason={reason} />);
+
+  it("has the title, one warning and one link back to the Início, and no subtitle", () => {
+    for (const reason of [PLAN_REFUSED_REASON, null]) {
+      const out = html(reason);
+      expect(out.match(/<h1[ >]/g)).toHaveLength(1);
+      expect(out).toContain("Pendências</h1>");
+      expect(out).not.toContain("attention-subtitle");
+      expect(out).toContain('role="status"');
+      expect(out).toContain(OFFLINE_UNAVAILABLE_TITLE);
+      expect(out.match(/<a /g)).toHaveLength(1);
+      expect(out).toMatch(HOME_LINK);
+    }
+  });
+
+  it("says the plan when the plan refused it, and never the browser's sentence", () => {
+    const out = html(PLAN_REFUSED_REASON);
+    expect(out).toContain(OFFLINE_PLAN_REASON);
+    expect(out).not.toContain(OFFLINE_BROWSER_REASON);
+  });
+
+  it.each([
+    ["no reason is known", null],
+    ["the local queue does not open", "queue_open_failed"],
+    ["the last sync failed", "sync_failed"],
+  ])(
+    "says the browser's sentence, never the plan's, when %s",
+    (_name, reason) => {
+      const out = html(reason);
+      expect(out).toContain(OFFLINE_BROWSER_REASON);
+      expect(out).not.toContain(OFFLINE_PLAN_REASON);
+      expect(out).not.toContain(OFFLINE_NEUTRAL_REASON);
+    }
+  );
+
+  it.each([
+    "legal_acceptance_required",
+    "organization_closed",
+    "purge_failed",
+    "session_changed",
+    "session_refused",
+  ])(
+    "does not blame the browser when the reason is about the account (%s)",
+    (reason) => {
+      const out = html(reason);
+      expect(out).toContain(OFFLINE_NEUTRAL_REASON);
+      expect(out).not.toContain(OFFLINE_BROWSER_REASON);
+      expect(out).not.toContain(OFFLINE_PLAN_REASON);
+    }
+  );
+
+  it("uses the words of Aparelhos for the browser", () => {
+    expect(
+      RECOGNIZING_UNAVAILABLE_TEXT.startsWith(
+        OFFLINE_BROWSER_REASON.slice(0, -1)
+      )
+    ).toBe(true);
+  });
+});
+
+describe("the attention panel, with Esconder valores", () => {
+  const sale = item({
+    actions: ["redo_sale", "discard"],
+    title: "Venda de R$ 89,90 · 01/11 14:20",
+  });
+  const redo = {
+    redoProblem: {
+      commandId: sale.commandId,
+      lines: [
+        {
+          kind: "unavailable" as const,
+          label: "Item 1 (2 un. a R$ 20,00)",
+        },
+      ],
+      message: "Não preenchi a venda.",
+    },
+  };
+
+  beforeEach(() => {
+    hiding.hidden = false;
+  });
+
+  it("writes the value of the sale and of its lines as they are while the values show", () => {
+    const html = render({ items: [sale], waitingBehind: 0 }, redo);
+    expect(html).toContain("R$ 89,90");
+    expect(html).toContain("R$ 20,00");
+  });
+
+  it("masks the value of the sale and of each line of the redo, and keeps the moment", () => {
+    hiding.hidden = true;
+    const html = render({ items: [sale], waitingBehind: 0 }, redo);
+    expect(html).not.toMatch(AMOUNT);
+    expect(html).toContain("· 01/11 14:20");
+    expect(html).toContain("un. a ");
+    expect(html).toContain("valor escondido");
   });
 });

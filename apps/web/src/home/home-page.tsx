@@ -1,13 +1,14 @@
 import PlusIcon from "lucide-react/dist/esm/icons/plus";
-import RefreshCwIcon from "lucide-react/dist/esm/icons/refresh-cw";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { Button, buttonVariants } from "@/ui/button";
-import { HideValuesButton } from "@/ui/hidden-values";
+import { RefreshButton } from "@/ui/refresh-button";
 import { SlowReadNote, StaleCopyNotice } from "../app-shell/read-wait";
+import type { Period, PeriodPreset } from "../dashboard/result-period";
 import { useCurrentOrganization } from "../lib/current-organization";
 import { browserStorage } from "../lib/current-organization-model";
 import { calendarDayInTimezone } from "../lib/dates";
+import type { StoredPeriodSummary } from "../lib/period-summary-cache";
 import { copyShownText } from "../lib/read-wait-text";
 import { OFFLINE_RUNTIME_ENABLED } from "../offline/runtime/enabled";
 import {
@@ -18,16 +19,18 @@ import { useSessionOver } from "../offline/runtime/session-ended";
 import { useLocalWorkspace } from "../offline/runtime/use-local-workspace";
 import { ClosedStoreLine, ReopenedNotice } from "./closed-store-line";
 import { AttentionBlock, AttentionNotes } from "./home-attention";
-import { ChartBlock, type ChartDays } from "./home-chart";
+import { ChartBlock } from "./home-chart";
 import { type OfflineHome, offlineHome } from "./home-copy";
 import { ChecklistBlock, TopProductsBlock } from "./home-figures";
 import { GoalBlock, OfflineGoalBlock } from "./home-goal";
 import {
   KpiCards,
   KpiCardsSkeleton,
+  type MonthPart,
   NO_CONNECTION_NOTE,
   NoFiguresCards,
 } from "./home-kpi-cards";
+import { LowerBlocks } from "./home-lower-blocks";
 import {
   copyLine,
   type GoalView,
@@ -39,30 +42,39 @@ import {
   pickGoal,
 } from "./home-model";
 import { BlockError, BlockSkeleton, HomeBlock, KeptHeight } from "./home-parts";
+import {
+  type HomeSelection,
+  THIS_MONTH,
+  topProductsTitle,
+} from "./home-period";
+import { HomePeriodRow } from "./home-period-row";
 import { RhythmBlock, type RhythmSource } from "./home-rhythm";
+import { PeriodControlProvider } from "./period-control";
 import {
   type FirstStepsMemory,
   useFirstStepsMemory,
 } from "./use-first-steps-memory";
 import { type HomeFigures, type HomeState, useHome } from "./use-home";
+import { useHomePeriod } from "./use-home-period";
 
 /**
  * The Início (`/`): "Nova venda" at once, at the top, depending on no read; then "Precisa de ação" (only when there is
  * something to do), Hoje, Mês, Meta, the chart, the map and Mais vendidos, in this order at 360 px, and in two columns
  * from 1024 px with Nova venda, Hoje and Mês above the fold (AC-4 emendado: with three lines of action the number of Hoje
  * and the title of Mês stay inside a 360 × 740 window). A store that never sold sees the checklist in place of the
- * figures (AC-22). Each block reads, waits and fails on its own (§ 5.2). Opening it writes nothing (AC-23): the only
- * write is the settling of a goal whose period ended, which `goal.list` already does when it reads (ADR 0055).
+ * figures (AC-22). Each block fails on its own (§ 5.2); the blocks under the cards wait together, as one skeleton, for
+ * the first answer of the goals. Opening it writes nothing (AC-23): the only write is the settling of a goal whose
+ * period ended, which `goal.list` already does when it reads (ADR 0055).
  */
 
 const REFRESHING_TEXT = "Atualizando…";
 
 /**
- * "Atualizar": reads every block again, past the copy of the day. An icon on a phone, as the eye beside it. While it
- * reads, and without a connection, the button is `aria-disabled` and ignores the click, so the focus stays on it (a
- * native `disabled` would drop it on the body) and the row of actions keeps its place when the connection comes back.
+ * "Atualizar" of the Início: reads every block again, past the copy of the day. While it reads, and without a
+ * connection, the button is `aria-disabled` and ignores the click, so the focus stays on it (a native `disabled` would
+ * drop it on the body) and the row of actions keeps its place when the connection comes back.
  */
-function RefreshButton({
+function HomeRefresh({
   busy,
   className,
   offline,
@@ -78,17 +90,13 @@ function RefreshButton({
 }) {
   const off = busy || offline;
   return (
-    <Button
+    <RefreshButton
       aria-describedby={busy ? undefined : offlineReasonId}
       aria-disabled={off || undefined}
-      className={cn("max-md:size-ctl-lg max-md:px-0", className)}
+      busy={busy}
+      className={className}
       onClick={off ? undefined : onClick}
-      type="button"
-      variant="outline"
-    >
-      <RefreshCwIcon aria-hidden="true" data-icon="inline-start" />
-      <span className="max-md:sr-only">Atualizar</span>
-    </Button>
+    />
   );
 }
 
@@ -128,23 +136,251 @@ interface Rhythm {
   source: RhythmSource;
 }
 
+/**
+ * The period the person chose on the Início, when it is not "Este mês": what the cards of the month, Vendas por dia and
+ * Mais vendidos show in its place (the figures of the month stay for Hoje, the goal and the map).
+ */
+interface ChosenView {
+  month: MonthPart;
+  /** The line beside the picker about what is on screen (a copy of the device). */
+  note: React.ReactNode;
+  rankingTitle: string;
+  summary: StoredPeriodSummary | null;
+  today: string;
+}
+
+/**
+ * The line beside the picker about the figures on screen: that a refresh failed (the figures are the last read) or that
+ * they are the device's copy, with "Tentar novamente" when there is a connection and the server is what failed.
+ */
+function periodNote(
+  picked: ReturnType<typeof useHomePeriod>,
+  timezone: string,
+  now: number,
+  online: boolean
+): React.ReactNode {
+  const { state } = picked;
+  let failed: string | null = null;
+  if (state.error && !state.isLoading) {
+    failed = state.error;
+  } else if (state.source === "cache" && picked.source) {
+    failed = copyShownText(
+      picked.source.summary.generatedAt,
+      timezone,
+      new Date(now)
+    );
+  }
+  if (failed === null) {
+    return null;
+  }
+  const retry = state.error ? !state.isLoading : online && state.serverFailed;
+  return (
+    <p className="flex flex-wrap items-center gap-x-2 text-muted-foreground text-support">
+      {failed}
+      {retry ? (
+        <Button
+          onClick={picked.refresh}
+          size="sm"
+          type="button"
+          variant="ghost"
+        >
+          Tentar novamente
+        </Button>
+      ) : null}
+    </p>
+  );
+}
+
+/** The chosen period as the blocks draw it: the cards' part, the ranking's title, the summary and the line about it. */
+function chosenView(
+  picked: ReturnType<typeof useHomePeriod>,
+  selection: HomeSelection,
+  timezone: string,
+  now: number,
+  online: boolean
+): ChosenView | null {
+  if (!picked.chosen) {
+    return null;
+  }
+  const base = {
+    rankingTitle: topProductsTitle(selection, picked.period),
+    today: picked.today,
+  };
+  if (picked.source) {
+    const { summary } = picked.source;
+    return {
+      ...base,
+      month: { kind: "period", source: picked.source },
+      note: periodNote(picked, timezone, now, online),
+      summary,
+    };
+  }
+  if (picked.state.error) {
+    return {
+      ...base,
+      month: {
+        error: (
+          <BlockError
+            message={picked.state.error}
+            onRetry={picked.state.isLoading ? null : picked.refresh}
+          />
+        ),
+        kind: "error",
+      },
+      note: null,
+      summary: null,
+    };
+  }
+  return { ...base, month: { kind: "loading" }, note: null, summary: null };
+}
+
+/**
+ * Whether the period chosen has figures to apply to: "yes" where the cards of the month are drawn (from the server or
+ * from the copy), "loading" while they are read, "no" for the error, the checklist of a store that never sold and a
+ * device with no copy (the picker stays in its place, off, so the page does not move when that changes), and "hidden"
+ * for whoever cannot read the results.
+ */
+type Applies = "hidden" | "loading" | "no" | "yes";
+
+function periodApplies({
+  failed,
+  readsReport,
+  state,
+  view,
+}: {
+  failed: OfflineHome | null;
+  readsReport: boolean;
+  state: HomeState;
+  view: OfflineHome | null;
+}): Applies {
+  if (!readsReport || state.sessionRefused) {
+    return "hidden";
+  }
+  if (view) {
+    return view.figures ? "yes" : "no";
+  }
+  if (failed?.figures) {
+    return "yes";
+  }
+  const { checklist, figures } = state;
+  if (figures.status === "loading" || figuresPending(state)) {
+    return "loading";
+  }
+  const stores = checklist.status === "ready" && checklist.data;
+  return figures.status === "ready" && !stores ? "yes" : "no";
+}
+
+/** The selection of the period, its read, and what the blocks draw from it. */
+function useChosenPeriod({
+  applies,
+  now,
+  online,
+  organizationId,
+  reload,
+  timezone,
+  today,
+}: {
+  applies: Applies;
+  now: number;
+  online: boolean;
+  organizationId: string;
+  /** "Atualizar" of the page's own reads. */
+  reload: () => void;
+  timezone: string;
+  today: string;
+}) {
+  const [selection, setSelection] = useState<HomeSelection>(THIS_MONTH);
+  const handlePreset = useCallback((preset: PeriodPreset) => {
+    setSelection({ custom: null, preset });
+  }, []);
+  const handleCustom = useCallback((custom: Period) => {
+    setSelection({ custom, preset: "custom" });
+  }, []);
+  const picked = useHomePeriod({
+    enabled: applies === "yes",
+    organizationId,
+    selection,
+    timezone,
+    today,
+  });
+  const chosen = chosenView(picked, selection, timezone, now, online);
+  const { chosen: reading, refresh } = picked;
+  // "Atualizar" reads the period chosen again too, when there is one
+  const reloadAll = useCallback(() => {
+    reload();
+    if (reading) {
+      refresh();
+    }
+  }, [reading, refresh, reload]);
+  const periodRow =
+    applies === "hidden" ? null : (
+      <HomePeriodRow
+        disabled={applies !== "yes"}
+        note={chosen?.note ?? null}
+        offline={!online}
+        onCustom={handleCustom}
+        onPreset={handlePreset}
+        period={picked.period}
+        selection={selection}
+        today={today}
+      />
+    );
+  return { chosen, periodRow, reloadAll };
+}
+
+/** Mais vendidos of the period shown: a skeleton while the period is read, and the same box with a sentence when no product is left (none sold, or all returned). */
+function rankingBlock(
+  top: StoredPeriodSummary["topProducts"],
+  chosen: ChosenView | null,
+  salesCount: number
+): React.ReactNode {
+  if (chosen?.month.kind === "loading") {
+    return <BlockSkeleton label="Carregando os mais vendidos…" lines={5} />;
+  }
+  // a copy kept before the ranking was read has none to say: the block is left out, never drawn as an empty period
+  if (top === undefined) {
+    return null;
+  }
+  return (
+    <TopProductsBlock
+      products={top}
+      salesCount={salesCount}
+      title={chosen?.rankingTitle ?? "Mais vendidos do mês"}
+    />
+  );
+}
+
 /** The KPI cards, the ranking and the chart of figures that were read (from the server or from the copy). */
 function readBlocks(
   figures: HomeFigures,
-  chart: { days: ChartDays; onDays: (days: ChartDays) => void },
+  chosen: ChosenView | null,
   rhythm: Rhythm,
   todayShown = true
 ): Blocks {
-  const top = figures.month.topProducts ?? [];
+  const shown = chosen ? chosen.summary : figures.month;
+  // a period that sold nothing has no ranking to read: the block says so, as the chart does
+  const top =
+    shown?.topProducts ?? (shown?.quality.salesCount === 0 ? [] : undefined);
   // a copy kept before the daily series existed: the totals stand, nothing of the series is drawn (ADR 0056, D2)
   const series =
     figures.month.daily !== undefined && figures.before.daily !== undefined;
+  const chartToday = chosen ? chosen.today : figures.today;
+  let chart: React.ReactNode = null;
+  if (chosen?.month.kind === "loading") {
+    chart = <BlockSkeleton label="Carregando o gráfico…" lines={5} />;
+  } else if (shown?.daily !== undefined && (chosen !== null || series)) {
+    chart = <ChartBlock summary={shown} today={chartToday} />;
+  }
   return {
-    chart: series ? (
-      <ChartBlock days={chart.days} figures={figures} onDays={chart.onDays} />
-    ) : null,
-    main: <KpiCards figures={figures} todayShown={todayShown && series} />,
-    ranking: top.length > 0 ? <TopProductsBlock products={top} /> : null,
+    chart,
+    main: (
+      <KpiCards
+        figures={figures}
+        month={chosen?.month ?? { kind: "figures" }}
+        todayShown={todayShown && series}
+      />
+    ),
+    ranking: rankingBlock(top, chosen, shown?.quality.salesCount ?? 0),
     // the days of the month are the figures': a copy without the series of the month draws no map either
     rhythm:
       figures.month.daily === undefined ? null : (
@@ -178,7 +414,7 @@ function figuresPending({ checklist, figures, stock }: HomeState): boolean {
 function figureBlocks(
   state: HomeState,
   onRetry: () => void,
-  chart: { days: ChartDays; onDays: (days: ChartDays) => void },
+  chosen: ChosenView | null,
   onRetryRhythm: () => void,
   firstSteps: FirstStepsMemory
 ): Blocks {
@@ -229,7 +465,7 @@ function figureBlocks(
       main: <ChecklistBlock checklist={checklist.data} />,
     };
   }
-  return readBlocks(figures.data, chart, {
+  return readBlocks(figures.data, chosen, {
     onRetry: onRetryRhythm,
     source: state.rhythm,
   });
@@ -248,7 +484,7 @@ const NO_BLOCKS: Blocks = {
  */
 function staleCopyBlocks(
   failed: OfflineHome & { figures: NonNullable<OfflineHome["figures"]> },
-  chart: { days: ChartDays; onDays: (days: ChartDays) => void },
+  chosen: ChosenView | null,
   retry: { figures: () => void; rhythm: () => void },
   timezone: string | null,
   now: Date
@@ -256,7 +492,7 @@ function staleCopyBlocks(
   const { figures } = failed;
   const blocks = readBlocks(
     figures,
-    chart,
+    chosen,
     { onRetry: retry.rhythm, source: { data: failed.rhythm, status: "copy" } },
     figures.todayShown
   );
@@ -280,7 +516,7 @@ function staleCopyBlocks(
 /** The figures' blocks and the line under the title: the server's, or without a connection the copy's (§ 7.4). */
 function pageBlocks({
   canSellOffline,
-  chart,
+  chosen,
   failed,
   firstSteps,
   now,
@@ -293,7 +529,7 @@ function pageBlocks({
   today,
 }: {
   canSellOffline: boolean;
-  chart: { days: ChartDays; onDays: (days: ChartDays) => void };
+  chosen: ChosenView | null;
   /** The copy, when every try of the figures failed with a connection (null when there is none). */
   failed: OfflineHome | null;
   firstSteps: FirstStepsMemory;
@@ -310,14 +546,20 @@ function pageBlocks({
     if (failed?.figures) {
       return staleCopyBlocks(
         { ...failed, figures: failed.figures },
-        chart,
+        chosen,
         { figures: retryFigures, rhythm: retryRhythm },
         timezone,
         now
       );
     }
     return {
-      blocks: figureBlocks(state, retryFigures, chart, retryRhythm, firstSteps),
+      blocks: figureBlocks(
+        state,
+        retryFigures,
+        chosen,
+        retryRhythm,
+        firstSteps
+      ),
       updated: figuresLine(state, timezone),
     };
   }
@@ -342,7 +584,7 @@ function pageBlocks({
   return {
     blocks: readBlocks(
       offline.figures,
-      chart,
+      chosen,
       {
         onRetry: retryRhythm,
         source: { data: offline.rhythm, status: "copy" },
@@ -371,9 +613,9 @@ function figuresLine(
 }
 
 /**
- * The title, "Atualizar", "Esconder valores" and "Nova venda" with the line that says what the sale can do without a
- * connection: the part of the page that depends on no read (and on no connection). On a phone the two buttons are
- * icons in the corner of the title and "Nova venda" takes the whole width (v7 § 3).
+ * The title, "Atualizar" and "Nova venda" with the line that says what the sale can do without a connection: the part
+ * of the page that depends on no read (and on no connection). On a phone "Atualizar" is an icon in the corner of the
+ * title and "Nova venda" takes the whole width (v7 § 3).
  */
 function HomeHeader({
   explained,
@@ -410,19 +652,18 @@ function HomeHeader({
         </div>
         <div className="flex items-start gap-2 md:hidden">
           {refresh ? (
-            <RefreshButton
+            <HomeRefresh
               busy={refresh.busy}
               offline={refresh.offline}
               offlineReasonId={offlineReasonId}
               onClick={refresh.onClick}
             />
           ) : null}
-          <HideValuesButton />
         </div>
       </div>
       <div className="flex w-full items-start gap-2 sm:w-auto">
         {refresh ? (
-          <RefreshButton
+          <HomeRefresh
             busy={refresh.busy}
             className="max-md:hidden"
             offline={refresh.offline}
@@ -430,7 +671,6 @@ function HomeHeader({
             onClick={refresh.onClick}
           />
         ) : null}
-        <HideValuesButton className="max-md:hidden" />
         <NewSale
           describedBy={
             [
@@ -521,16 +761,16 @@ function useCopyAllowed(
 }
 
 /** The clock of the page without a connection: once a minute, so the day of the store and the copy's age move on. */
-function useOfflineClock(online: boolean, serverNow: () => number): number {
-  const [now, setNow] = useState(serverNow);
+function useOfflineClock(online: boolean): number {
+  const [now, setNow] = useState(Date.now);
   useEffect(() => {
     if (online) {
       return;
     }
-    setNow(serverNow());
-    const timer = window.setInterval(() => setNow(serverNow()), 60_000);
+    setNow(Date.now());
+    const timer = window.setInterval(() => setNow(Date.now()), 60_000);
     return () => window.clearInterval(timer);
-  }, [online, serverNow]);
+  }, [online]);
   return now;
 }
 
@@ -545,7 +785,6 @@ function useOfflineView({
   organizationId,
   readsReport,
   refused,
-  serverNow,
   timezone,
 }: {
   /** Every try of the figures failed, and trying again may help (not a refusal). */
@@ -555,7 +794,6 @@ function useOfflineView({
   organizationId: string;
   readsReport: boolean;
   refused: boolean;
-  serverNow: () => number;
   timezone: string | null;
 }): {
   failed: OfflineHome | null;
@@ -563,7 +801,7 @@ function useOfflineView({
   view: OfflineHome | null;
 } {
   const copyAllowed = useCopyAllowed(organizationId, readsReport, refused);
-  const clock = useOfflineClock(online, serverNow);
+  const clock = useOfflineClock(online);
   const offline = useMemo(
     () =>
       online
@@ -572,11 +810,12 @@ function useOfflineView({
             browserStorage(),
             organizationId,
             timezone,
-            // the state of the clock may be of before the connection went: never earlier than now
-            Math.max(clock, serverNow()),
+            // the device's clock (the copy's skew makes it the store's); the state of the clock may be of before the
+            // connection went: never earlier than now
+            Math.max(clock, Date.now()),
             copyAllowed
           ),
-    [clock, copyAllowed, online, organizationId, serverNow, timezone]
+    [clock, copyAllowed, online, organizationId, timezone]
   );
   // the connection is back: the copy stays on the screen until the new read is whole, figures and what hangs on them
   // (the stock is not read when the page opens without a connection), so no skeleton takes the cards and no block leaves
@@ -596,11 +835,11 @@ function useOfflineView({
             browserStorage(),
             organizationId,
             timezone,
-            serverNow(),
+            Date.now(),
             copyAllowed
           )
         : null,
-    [copyAllowed, figuresFailed, online, organizationId, serverNow, timezone]
+    [copyAllowed, figuresFailed, online, organizationId, timezone]
   );
   return { failed: failed?.figures ? failed : null, offline, view };
 }
@@ -620,12 +859,12 @@ function pickGoalBlock({
   retryGoals: () => void;
   state: HomeState;
   view: OfflineHome | null;
-}): React.ReactNode {
+}): { loading: boolean; node: React.ReactNode } {
   if (view && readsGoals && (offline || state.goals.status === "loading")) {
-    return <OfflineGoalBlock goal={view.goal} />;
+    return { loading: false, node: <OfflineGoalBlock goal={view.goal} /> };
   }
   if (offline || state.sessionRefused) {
-    return null;
+    return { loading: false, node: null };
   }
   // the estimate only from the server's series of this read, measured on its today (never from the copy)
   const figures = state.figures.status === "ready" ? state.figures.data : null;
@@ -637,100 +876,30 @@ function pickGoalBlock({
           figures.today
         )
       : null;
-  return (
-    <GoalBlock
-      block={state.goals}
-      onRetry={retryGoals}
-      projection={projection}
-      today={figures?.today ?? null}
-      view={goal}
-    />
-  );
+  return {
+    loading: state.goals.status === "loading",
+    node: (
+      <GoalBlock
+        block={state.goals}
+        onRetry={retryGoals}
+        projection={projection}
+        today={figures?.today ?? null}
+        view={goal}
+      />
+    ),
+  };
 }
 
 /**
- * The blocks under the KPI cards. The source has the order of a phone (Meta, Vendas por dia, Ritmo de vendas, Mais
- * vendidos, v7 § 3); from 1024 px the chart takes the left 2/3 with Meta at the top of the right column, and the map
- * takes the row under it, beside Mais vendidos. Without the map the chart takes both rows and the ranking goes under the
- * goal; without the chart the blocks go two to a row.
+ * While the cards are a skeleton of a shape not known yet, nothing comes after them (`Blocks.pending`). While the goals
+ * have not answered once, a single full-width skeleton stands in for the blocks under the cards.
  */
-function LowerBlocks({
-  chart,
-  goal,
-  ranking,
-  rhythm,
-}: {
-  chart: React.ReactNode;
-  goal: React.ReactNode;
-  ranking: React.ReactNode;
-  rhythm: React.ReactNode;
-}) {
-  const placed = chart !== null;
-  const mapped = placed && rhythm !== null;
-  return (
-    <div
-      className={cn(
-        "grid min-w-0 gap-4 lg:items-start",
-        placed
-          ? "lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]"
-          : "lg:grid-cols-2",
-        placed &&
-          (mapped ? "lg:grid-rows-[auto_1fr_auto]" : "lg:grid-rows-[auto_1fr]")
-      )}
-    >
-      {goal ? (
-        <div
-          className={cn(
-            "grid min-w-0",
-            placed && "lg:col-start-2 lg:row-start-1"
-          )}
-        >
-          {goal}
-        </div>
-      ) : null}
-      {placed ? (
-        <div
-          className={cn(
-            "grid min-w-0 lg:col-start-1 lg:row-start-1",
-            "lg:row-span-2"
-          )}
-        >
-          {chart}
-        </div>
-      ) : null}
-      {rhythm ? (
-        <div
-          className={cn(
-            "grid min-w-0",
-            mapped && "lg:col-start-1 lg:row-start-3"
-          )}
-        >
-          {rhythm}
-        </div>
-      ) : null}
-      {ranking ? (
-        <div
-          className={cn(
-            "grid min-w-0",
-            placed &&
-              (mapped
-                ? "lg:col-start-2 lg:row-start-3"
-                : "lg:col-start-2 lg:row-start-2")
-          )}
-        >
-          {ranking}
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-/** While the cards are a skeleton of a shape not known yet, nothing comes after them (`Blocks.pending`). */
 function FigureArea({
   attention,
   attentionNotes,
   blocks,
   goal,
+  goalPending,
   keep,
   measure,
 }: {
@@ -738,6 +907,8 @@ function FigureArea({
   attentionNotes: React.ReactNode;
   blocks: Blocks;
   goal: React.ReactNode;
+  /** The goal has not been read yet: its card is a thin strip or a tall one, and the chart's row depends on which. */
+  goalPending: boolean;
   /** The cards keep the height they had with figures (no connection and no copy). */
   keep: boolean;
   /** The cards with figures are on the screen: their height is the one to keep. */
@@ -759,16 +930,40 @@ function FigureArea({
       {blocks.pending ? null : (
         <>
           {attentionNotes}
-          <LowerBlocks
-            chart={blocks.chart}
-            goal={goal}
-            ranking={blocks.ranking}
-            rhythm={blocks.rhythm}
-          />
+          {goalPending ? (
+            <BlockSkeleton
+              className="w-full"
+              label="Carregando a meta…"
+              lines={5}
+            />
+          ) : (
+            <LowerBlocks
+              chart={blocks.chart}
+              goal={goal}
+              ranking={blocks.ranking}
+              rhythm={blocks.rhythm}
+            />
+          )}
         </>
       )}
     </>
   );
+}
+
+/**
+ * The blocks under the cards wait for the first answer of the goals of the store: the shape of the row of the chart is
+ * that answer's (a card beside it, or a thin strip over it). A read again of the same store keeps what is on the screen.
+ */
+function useFirstGoalRead(
+  organizationId: string,
+  loading: boolean,
+  status: HomeState["goals"]["status"]
+): boolean {
+  const read = useRef<string | null>(null);
+  if (status !== "loading") {
+    read.current = organizationId;
+  }
+  return loading && read.current !== organizationId;
 }
 
 /**
@@ -799,18 +994,15 @@ export function HomePage() {
   } = useHome(organizationId, organization.role, timezone);
   const snapshot = useRuntimeSnapshot();
   const { failed, offline, view } = useOfflineView({
-    figuresFailed: state.figures.status === "error" && state.figures.retryable,
     cardsPending: figuresPending(state),
+    figuresFailed: state.figures.status === "error" && state.figures.retryable,
     online,
     organizationId,
     readsReport: reads.report,
     refused: state.sessionRefused || state.copyRefused,
-    serverNow,
     timezone,
   });
   const canSellOffline = useLocalWorkspace(organizationId) !== null;
-  const [days, setDays] = useState<ChartDays>("7");
-  const chart = { days, onDays: setDays };
   const refused = snapshot?.counts.rejected ?? 0;
   const figures = state.figures.status === "ready" ? state.figures.data : null;
   const goals = state.goals.status === "ready" ? state.goals.data : null;
@@ -820,11 +1012,25 @@ export function HomePage() {
     [goals, today, timezone]
   );
   const firstSteps = useFirstStepsMemory(organizationId);
+  const { chosen, periodRow, reloadAll } = useChosenPeriod({
+    applies: periodApplies({
+      failed,
+      readsReport: reads.report,
+      state,
+      view,
+    }),
+    now: serverNow(),
+    online,
+    organizationId,
+    reload,
+    timezone,
+    today,
+  });
   const { blocks, updated } = state.sessionRefused
     ? { blocks: NO_BLOCKS, updated: null }
     : pageBlocks({
         canSellOffline,
-        chart,
+        chosen,
         failed,
         firstSteps,
         now: new Date(serverNow()),
@@ -840,9 +1046,9 @@ export function HomePage() {
     online,
     state.sessionRefused,
     reloading,
-    reload
+    reloadAll
   );
-  const goalBlock = pickGoalBlock({
+  const picked = pickGoalBlock({
     goal,
     offline,
     readsGoals: reads.goals,
@@ -850,6 +1056,12 @@ export function HomePage() {
     state,
     view,
   });
+
+  const goalPending = useFirstGoalRead(
+    organizationId,
+    picked.loading && online,
+    state.goals.status
+  );
 
   // with the session refused nothing about the stock is known: only this device's own line can be said
   const stock: HomeState["stock"] =
@@ -891,14 +1103,17 @@ export function HomePage() {
         }
         className="grid gap-4"
       >
-        <FigureArea
-          attention={attention}
-          attentionNotes={attentionNotes}
-          blocks={blocks}
-          goal={goalBlock}
-          keep={explained}
-          measure={offline === null && figures !== null && !blocks.pending}
-        />
+        <PeriodControlProvider value={periodRow}>
+          <FigureArea
+            attention={attention}
+            attentionNotes={attentionNotes}
+            blocks={blocks}
+            goal={picked.node}
+            goalPending={goalPending}
+            keep={explained}
+            measure={offline === null && figures !== null && !blocks.pending}
+          />
+        </PeriodControlProvider>
       </div>
     </div>
   );

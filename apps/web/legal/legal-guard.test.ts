@@ -43,6 +43,7 @@ const company = {
   VITE_LEGAL_DPO_EMAIL: "dpo@empresa.com.br",
   VITE_LEGAL_ENDERECO: "Rua das Flores, 10, Centro",
   VITE_LEGAL_RAZAO_SOCIAL: "Agência Summit Serviços Digitais Ltda.",
+  VITE_LEGAL_SUPORTE_QUEM_LE_RESPOSTAS: "Ana Souza, do suporte",
 };
 
 describe("the texts in the repository", () => {
@@ -95,7 +96,7 @@ describe("the texts in the repository", () => {
     }
   );
 
-  it("carry each of the four tokens of the company, and no pending marker of its own", () => {
+  it("carry each of the tokens of the company, and no pending marker of its own", () => {
     const templates = LEGAL_DOCUMENT_IDS.map((document) =>
       new TextDecoder().decode(
         readRepositoryText(document, LEGAL_DOCUMENTS[document].version) ??
@@ -239,6 +240,35 @@ describe("the company variables (VITE_LEGAL_*)", () => {
       }
     }
   );
+
+  it("stop a production build whose Privacy Policy still has who reads the replies without a value", () => {
+    const { VITE_LEGAL_SUPORTE_QUEM_LE_RESPOSTAS: _omitted, ...rest } = company;
+    const input = checkLegalDocuments({
+      ...publish(
+        {
+          ...templates,
+          privacy: `${templates.privacy}\nLida por {{SUPORTE_QUEM_LE_RESPOSTAS}}.\n`,
+        },
+        "2026-11-01"
+      ),
+      company: rest,
+      draftNotice: null,
+      production: true,
+    });
+    const errors = input.errors.join("\n");
+    expect(errors).toContain(
+      "variável VITE_LEGAL_SUPORTE_QUEM_LE_RESPOSTAS ausente ou vazia"
+    );
+    expect(errors).toContain(
+      "privacy: ficha sem valor {{SUPORTE_QUEM_LE_RESPOSTAS}}"
+    );
+  });
+
+  it("show who reads the replies as an example in staging, never as a token", () => {
+    expect(legalCompanyValues({}, false).values).toMatchObject({
+      "{{SUPORTE_QUEM_LE_RESPOSTAS}}": expect.stringContaining("exemplo"),
+    });
+  });
 
   it("name every missing variable when none is set", () => {
     const { errors } = run({}, true);

@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils";
 import { Button, buttonVariants } from "@/ui/button";
 import { CardDescription } from "@/ui/card";
 import { FieldDescription } from "@/ui/field";
+import { MoneyText } from "@/ui/hidden-values";
 import { ProductThumbnail } from "../catalog/product-thumbnail";
 import { stockEntryHref } from "../inventory/stock-entry-link";
 import { useMediaThumbsEnabled } from "../lib/media-thumbs-flag";
@@ -20,6 +21,7 @@ import {
   MAX_SALE_ITEMS,
   type SaleSummary,
   type StockView,
+  stockMissing,
   stepQuantity,
   stockLineText,
   stockView,
@@ -45,6 +47,8 @@ interface ItemEditorProps {
   onPick: (draftId: string, entry: InventoryBalanceEntryReadModel) => void;
   onRemove: (draftId: string) => void;
   organizationId: string;
+  /** Quantity the other lines of the sale ask for of this same variant; the entry link adds it to this line's. */
+  otherLinesQuantity?: number;
   priceHint: string | null;
   stock: EvaluationContext["stock"];
   stockWarning: string | undefined;
@@ -69,6 +73,7 @@ export function ItemEditor({
   onPick,
   onRemove,
   organizationId,
+  otherLinesQuantity = 0,
   priceHint,
   stock,
   stockWarning,
@@ -83,6 +88,7 @@ export function ItemEditor({
   const stockState = chosen
     ? stockView(stock[item.variantId], canAdjustStock)
     : null;
+  const missing = stockMissing(item.quantity, stockState, otherLinesQuantity);
   const pickError =
     errors[itemFieldKey(item.draftId, "product")] ??
     errors[itemFieldKey(item.draftId, "variant")];
@@ -140,13 +146,15 @@ export function ItemEditor({
               stockState={stockState}
             />
           )}
-          {!searching && stockState?.needsEntry && canAdjustStock ? (
+          {!searching &&
+          canAdjustStock &&
+          (stockState?.needsEntry || stockWarning !== undefined) ? (
             <a
               className={cn(
                 buttonVariants({ size: "sm", variant: "link" }),
                 "justify-self-start text-support"
               )}
-              href={stockEntryHref(item.variantId)}
+              href={stockEntryHref(item.variantId, missing)}
             >
               Dar entrada no estoque
               <span className="sr-only"> de {item.label}</span>
@@ -259,7 +267,7 @@ function ChosenVariant({
             thumbs ? "pl-16" : "pl-6"
           )}
         >
-          {costText}
+          <MoneyText text={costText} />
         </p>
       ) : null}
     </div>
@@ -297,10 +305,7 @@ function ChosenItemFields({
           className="flex items-start gap-1.5 text-support text-warning"
           role="status"
         >
-          <TriangleAlertIcon
-            aria-hidden="true"
-            className="mt-0.5 size-3.5 shrink-0"
-          />
+          <TriangleAlertIcon aria-hidden="true" className="size-4 shrink-0" />
           {stockWarning}
         </p>
       ) : null}
@@ -349,13 +354,13 @@ function ChosenItemFields({
           {priceHint ?? "Preços por unidade."}
           {summaryLine?.negotiationText ? (
             <span className="mt-0.5 block text-warning">
-              {summaryLine.negotiationText}
+              <MoneyText text={summaryLine.negotiationText} />
             </span>
           ) : null}
         </FieldDescription>
         {summaryLine ? (
           <span className="shrink-0 font-semibold tabular-nums">
-            {summaryLine.lineTotalText}
+            <MoneyText text={summaryLine.lineTotalText} />
           </span>
         ) : null}
       </div>

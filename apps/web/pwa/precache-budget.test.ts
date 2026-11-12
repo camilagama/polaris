@@ -714,6 +714,18 @@ describe("the charts line (ADR 0103, amendment Gráficos, t285)", () => {
     ]);
   });
 
+  it("lets the table of a chart's numbers sit in a screen's chunk: it is plain markup, not drawing code", () => {
+    const table = "/repo/apps/web/src/ui/charts/chart-data-table.tsx";
+    expect(
+      chartsPlacementProblems([
+        {
+          fileName: "assets/home-page-abc.js",
+          modules: { [table]: { renderedLength: 1 } },
+        },
+      ])
+    ).toEqual([]);
+  });
+
   it("fails motion, framer-motion or motion-utils in a chunk that is neither the charts nor the motion chunk (control: in either of them it passes; a chart module still cannot sit in the motion chunk)", () => {
     const motion =
       "/repo/node_modules/.bun/motion@14.3.0/node_modules/motion/dist/es/react.mjs";

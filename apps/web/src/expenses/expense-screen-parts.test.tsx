@@ -1,6 +1,7 @@
 import type { ExpenseReadModel } from "@polaris/contracts";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
+import { EMPTY_TITLE_MAX } from "@/ui/empty-state";
 import { ExpenseList, ExpenseSummary } from "./expense-list";
 import { MonthPicker } from "./month-picker";
 import type { ExpenseFilters, ExpenseListState } from "./use-expense-list";
@@ -12,11 +13,11 @@ import type { ExpenseFilters, ExpenseListState } from "./use-expense-list";
  */
 const noop = () => undefined;
 const MONTH_BUTTON =
-  /<button[^>]*aria-label="Mês de competência, Outubro de 2026"[^>]*aria-haspopup="dialog"[^>]*>Outubro de 2026<\/button>/;
+  /<button[^>]*aria-label="Mês de competência, Outubro de 2026"[^>]*aria-haspopup="dialog"[^>]*><svg.*<\/svg>Outubro de 2026<\/button>/;
 const AMOUNT = /R\$\s1\.500,50/;
 
 describe("MonthPicker", () => {
-  it("says the month in words in a button that opens the grid, between the two arrows, with no native month field", () => {
+  it("says the month in words in a button that opens the grid, with no arrows beside it and no native month field", () => {
     const html = renderToStaticMarkup(
       <MonthPicker
         currentMonth="2026-10"
@@ -27,30 +28,33 @@ describe("MonthPicker", () => {
       />
     );
     expect(html).toMatch(MONTH_BUTTON);
-    expect(html).toContain('aria-label="Mês anterior"');
-    expect(html).toContain('aria-label="Próximo mês"');
+    expect(html).not.toContain('aria-label="Mês anterior"');
+    expect(html).not.toContain('aria-label="Próximo mês"');
     expect(html).not.toContain('type="month"');
-    // the group is named by the label of the field
-    expect(html).toContain('aria-labelledby="m-label"');
+    expect(html).toContain('for="m"');
   });
 
-  it("turns off the arrow past the first month there is", () => {
-    const html = renderToStaticMarkup(
-      <MonthPicker
-        currentMonth="2026-10"
-        id="m"
-        label="Mês"
-        month="0000-01"
-        onChange={noop}
-      />
-    );
-    const buttons = html.match(/<button[^>]*>/g) ?? [];
-    const previous = buttons.find((tag) => tag.includes("Mês anterior"));
-    const next = buttons.find((tag) => tag.includes("Próximo mês"));
-    expect(previous).toContain('disabled=""');
-    expect(next).toBeDefined();
-    expect(next).not.toContain('disabled=""');
-  });
+  it.each([
+    ["0000-01", "Janeiro de 0"],
+    ["2026-03", "Março de 2026"],
+    ["2026-12", "Dezembro de 2026"],
+    ["9999-12", "Dezembro de 9999"],
+  ])(
+    "writes the month %s in words as %s, the first and the last one the list can read included",
+    (month, words) => {
+      const html = renderToStaticMarkup(
+        <MonthPicker
+          currentMonth="2026-10"
+          id="m"
+          label="Mês"
+          month={month}
+          onChange={noop}
+        />
+      );
+      expect(html).toContain(`${words}</button>`);
+      expect(html).toContain(`aria-label="Mês, ${words}"`);
+    }
+  );
 });
 
 const filters: ExpenseFilters = {
@@ -68,11 +72,16 @@ const state = (overrides: Partial<ExpenseListState>): ExpenseListState => ({
   total: "0.00",
   ...overrides,
 });
-const list = (listState: ExpenseListState, status = filters.status) =>
+const list = (
+  listState: ExpenseListState,
+  status = filters.status,
+  categoryId = filters.categoryId
+) =>
   renderToStaticMarkup(
     <ExpenseList
       busyKey={null}
-      filters={{ ...filters, status }}
+      filters={{ ...filters, categoryId, status }}
+      onClearFilters={noop}
       onEdit={noop}
       onLoadMore={noop}
       onRestore={noop}
@@ -102,11 +111,26 @@ const expense = (overrides: Partial<ExpenseReadModel>): ExpenseReadModel => ({
   ...overrides,
 });
 
+const EMPTY_TITLE = /data-empty-title="" id="[^"]*">([^<]*)</;
+
 describe("ExpenseList", () => {
   it("says it is loading on the first read, as a status", () => {
     const html = list(state({ isLoading: true }));
     expect(html).toContain('role="status"');
     expect(html).toContain("Carregando despesas…");
+  });
+
+  it("the loading line is for the screen reader only, three skeleton lines are drawn, and the empty list stays drawn", () => {
+    expect(list(state({ isLoading: true }))).toContain(
+      '<span class="sr-only">Carregando despesas…</span>'
+    );
+    const loading = list(state({ isLoading: true }));
+    expect(loading.match(/data-slot="skeleton"/g)).toHaveLength(3);
+    expect(loading.match(/aria-hidden="true"/g)).toHaveLength(3);
+    expect(loading).toContain('aria-busy="true"');
+    const empty = list(state({}));
+    expect(empty).not.toContain("sr-only");
+    expect(empty).toContain("data-empty-state");
   });
 
   it("a failed read says why and offers to read again, never the empty list", () => {
@@ -116,13 +140,37 @@ describe("ExpenseList", () => {
     expect(html).not.toContain("Nenhuma despesa");
   });
 
-  it("the empty month and the empty voided tab say different things", () => {
-    expect(list(state({}))).toContain(
-      "Nenhuma despesa neste período. Toque em Nova despesa para registrar a primeira."
-    );
-    expect(list(state({}), "voided")).toContain(
+  it("the empty period is a short sentence only: the button that creates is the title line's, and no phrase names it", () => {
+    const html = list(state({}));
+    const title = EMPTY_TITLE.exec(html)?.[1];
+    expect(title).toBe("Nenhuma despesa neste período.");
+    expect(title?.length).toBeLessThanOrEqual(EMPTY_TITLE_MAX);
+    expect(html).not.toContain("<button");
+    expect(html).not.toContain("Nova despesa");
+    expect(html).not.toContain("Toque em");
+    expect(html).not.toContain("para registrar a primeira");
+  });
+
+  it("the empty list under a category says so and offers Limpar filtros, never a button to create", () => {
+    for (const html of [
+      list(state({}), "active", "c1"),
+      list(state({}), "voided", "c1"),
+    ]) {
+      expect(EMPTY_TITLE.exec(html)?.[1]).toBe(
+        "Nenhuma despesa encontrada com estes filtros."
+      );
+      expect(html).toContain("Limpar filtros");
+      expect(html).not.toContain("Nova despesa");
+    }
+    expect(list(state({}))).not.toContain("Limpar filtros");
+  });
+
+  it("the empty voided list says so with no button: the segmented, one touch away, is how to leave it", () => {
+    const html = list(state({}), "voided");
+    expect(EMPTY_TITLE.exec(html)?.[1]).toBe(
       "Nenhuma despesa anulada neste período."
     );
+    expect(html).not.toContain("<button");
   });
 
   it("says category, date and payee on one line, with no group and no word Competência", () => {
@@ -142,8 +190,8 @@ describe("ExpenseList", () => {
     const buttons = html.match(/<button[^>]*>/g) ?? [];
     const edit = buttons.find((tag) => tag.includes("Editar despesa")) ?? "";
     const cancel = buttons.find((tag) => tag.includes("Anular despesa")) ?? "";
-    expect(edit).toContain("border-input");
-    expect(cancel).not.toContain("border-input");
+    expect(edit).toContain("border-border");
+    expect(cancel).not.toContain("border-border");
     expect(cancel).toContain("text-destructive");
   });
 
@@ -181,6 +229,7 @@ describe("ExpenseSummary", () => {
       />
     );
     expect(html).toContain("Total do período");
+    expect(html).toContain('role="status"');
     expect(html).toContain("3 despesas");
     expect(html).toContain('<span class="sr-only"> em outubro de 2026</span>');
   });

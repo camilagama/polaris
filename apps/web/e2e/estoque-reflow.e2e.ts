@@ -166,6 +166,53 @@ function geometry(page: Page) {
   });
 }
 
+/** Per row: the box of the name link and of the card it sits in. */
+function nameLinks(page: Page) {
+  return page.evaluate(() => {
+    const card = document.querySelector('ul[aria-label="Saldos por variante"]');
+    if (card === null) {
+      throw new Error("the list is not on the screen");
+    }
+    const cardBox = card.getBoundingClientRect();
+    return [...card.querySelectorAll("li")].map((row) => {
+      const link = row.querySelector<HTMLAnchorElement>('a[href^="/products"]');
+      if (link === null) {
+        throw new Error("a row has no link on its name");
+      }
+      const { left, right } = link.getBoundingClientRect();
+      return {
+        cardLeft: cardBox.left,
+        cardRight: cardBox.right,
+        left,
+        name: link.textContent ?? "",
+        right,
+      };
+    });
+  });
+}
+
+for (const [width, fontPixels] of [
+  [320, 20],
+  [360, 16],
+] as const) {
+  reflowTest(
+    `a ${width} px com letra de ${fontPixels} px o nome do produto na linha fica dentro do cartão`,
+    async ({ page }) => {
+      await openStock(page, width, fontPixels);
+      const links = await nameLinks(page);
+      expect(links).toHaveLength(ENTRIES.length);
+      for (const link of links) {
+        expect(
+          link.left,
+          `${link.name} dentro do cartão`
+        ).toBeGreaterThanOrEqual(link.cardLeft - 0.5);
+        expect(link.right).toBeLessThanOrEqual(link.cardRight + 0.5);
+        expect(link.right).toBeLessThanOrEqual(width);
+      }
+    }
+  );
+}
+
 reflowTest(
   "a 320 px com letra de 20 px os três botões de cada linha empilham, inteiros, dentro do cartão e com 44 px",
   async ({ page }) => {
@@ -349,3 +396,70 @@ for (const width of [360, WIDE_WINDOW]) {
     { coarse: width !== WIDE_WINDOW }
   );
 }
+
+const BAR = "Filtrar estoque";
+
+/** Turns a yes-or-no filter on from its own item in the "Filtrar" menu: two touches, no second panel; the menu closes and the focus goes back to "Filtrar". */
+async function toggleFilter(page: Page, name: string) {
+  const open = page
+    .getByRole("search", { exact: true, name: BAR })
+    .getByRole("button", { exact: true, name: "Filtrar" });
+  await open.click();
+  await page
+    .getByRole("menu", { name: "Filtrar por" })
+    .getByRole("menuitemcheckbox", { name: new RegExp(`^${name}`) })
+    .click();
+  await expect(page.getByRole("menu", { name: "Filtrar por" })).toHaveCount(0);
+  await expect(open).toBeFocused();
+}
+
+/** Chooses a field in the "Filtrar" menu and the option in its editor (the Popover applies at once, the phone's Dialog at "Aplicar"). */
+async function addFilter(page: Page, field: string, option: string) {
+  const bar = page.getByRole("search", { exact: true, name: BAR });
+  await bar.getByRole("button", { exact: true, name: "Filtrar" }).click();
+  await page
+    .getByRole("menu", { name: "Filtrar por" })
+    .getByRole("menuitem", { name: new RegExp(`^${field}`) })
+    .click();
+  const editor = page.getByRole("dialog", { name: field });
+  await expect(editor).toBeVisible();
+  await editor.getByRole("button", { exact: true, name: option }).click();
+  const apply = editor.getByRole("button", { exact: true, name: "Aplicar" });
+  if ((await apply.count()) > 0) {
+    await apply.click();
+  }
+  await expect(editor).toHaveCount(0);
+}
+
+reflowTest(
+  "a 320 px com letra de 20 px a barra Filtrar estoque, com as três pílulas e o menu aberto, cabe inteira e nada é cortado",
+  async ({ page }) => {
+    await openStock(page, 320, 20);
+    const bar = page.getByRole("search", { exact: true, name: BAR });
+    await addFilter(page, "Saldo", "Sem saldo");
+    await toggleFilter(page, "Custo desconhecido");
+    await toggleFilter(page, "Incluir arquivados");
+    await expect(bar.locator('[data-slot="filter-pill"]')).toHaveCount(3);
+    await expect(
+      bar.getByRole("button", { name: "Limpar tudo" })
+    ).toBeVisible();
+    await assertNothingClipped(bar);
+    await assertNoEllipsis(bar.locator('[data-slot="filter-pill"] button'));
+    await assertNoPageScroll(page);
+    const overflowing = await bar.evaluate(
+      (root) =>
+        [...root.querySelectorAll("button")].filter(
+          (button) => button.getBoundingClientRect().right > 320.5
+        ).length
+    );
+    expect(overflowing, "botões da barra além da janela").toBe(0);
+    await bar.getByRole("button", { exact: true, name: "Filtrar" }).click();
+    const menu = await page
+      .getByRole("menu", { name: "Filtrar por" })
+      .boundingBox();
+    expect(
+      (menu?.x ?? 0) + (menu?.width ?? Number.POSITIVE_INFINITY)
+    ).toBeLessThanOrEqual(320);
+    expect(menu?.x ?? -1).toBeGreaterThanOrEqual(0);
+  }
+);

@@ -4,7 +4,6 @@ import type { AreaChartProps } from "./area-chart";
 import type { RingChartProps } from "./ring-chart";
 import type { SalesHeatmapProps } from "./sales-heatmap";
 import type { SparklineProps } from "./sparkline";
-import type { WeekdayBarsProps } from "./weekday-bars";
 
 /**
  * How a screen draws a chart: the charts chunk is downloaded when the first one is asked for (`import()` of
@@ -19,12 +18,15 @@ import type { WeekdayBarsProps } from "./weekday-bars";
 export type { AreaChartProps } from "./area-chart";
 export type { ChartDatum } from "./chart-data";
 export type { RingChartProps } from "./ring-chart";
-export type { HeatmapDay, SalesHeatmapProps } from "./sales-heatmap";
+export type {
+  HeatmapDay,
+  HeatmapTip,
+  SalesHeatmapProps,
+} from "./sales-heatmap";
 export type { SparklineProps } from "./sparkline";
-export type { WeekdayBarsProps } from "./weekday-bars";
 
 /** The margins of the blocks added to the plot: the same number as `EXTRA_HEIGHT` of chart-data.ts. */
-const EXTRA_HEIGHT = 40;
+export const EXTRA_HEIGHT = 40;
 
 type Charts = typeof import("./charts");
 
@@ -98,6 +100,16 @@ function useChunk<T>(downloaded: T | null, load: () => Promise<T>): State<T> {
 const useCharts = () => useChunk(loaded, loadCharts);
 const useHeatmapChunk = () => useChunk(loadedHeatmap, loadHeatmap);
 
+/** Whether the charts chunk could not be downloaded: the screen then shows the numbers the drawing would have shown. */
+export function useChartsFailed(): boolean {
+  return useCharts().status === "failed";
+}
+
+/** Whether the map's chunk could not be downloaded: the screen then shows the numbers the drawing would have shown. */
+export function useHeatmapFailed(): boolean {
+  return useHeatmapChunk().status === "failed";
+}
+
 interface OnDemandProps {
   /** What stays when the chunk cannot be downloaded. Nothing when absent. */
   failed?: ReactNode;
@@ -138,12 +150,12 @@ function Reserved({
         />
       )}
       {said ? (
-        <p
+        <div
           className="absolute inset-x-0 top-0 grid place-items-center px-4 text-center text-muted-foreground"
           style={{ bottom: floor ?? 0 }}
         >
           {message}
-        </p>
+        </div>
       ) : null}
     </div>
   );
@@ -197,12 +209,9 @@ export function OnDemandAreaChart({
         {props.readingAtRest === false ? null : (
           <div
             aria-hidden="true"
-            className={cn("min-h-[1.125rem]", props.reserve.reading)}
+            className={cn("min-h-[1.125rem]", props.reserve)}
           />
         )}
-        {props.reserve.legend ? (
-          <div aria-hidden="true" className={props.reserve.legend} />
-        ) : null}
         <Reserved
           floor={32}
           height={(props.height ?? 180) + EXTRA_HEIGHT}
@@ -278,19 +287,4 @@ export function OnDemandHeatmap({
     return failed ?? null;
   }
   return <Reserved className={props.className} height={height} />;
-}
-
-/** The bars of the mean by weekday, in the same chunk as the map. */
-export function OnDemandWeekdayBars({
-  failed,
-  ...props
-}: OnDemandProps & WeekdayBarsProps) {
-  const state = useHeatmapChunk();
-  if (state.status === "ready") {
-    return <state.charts.WeekdayBars {...props} />;
-  }
-  if (state.status === "failed") {
-    return failed ?? null;
-  }
-  return <Reserved className={props.className} height={props.height ?? 64} />;
 }

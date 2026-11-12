@@ -20,12 +20,15 @@
  *   amended); the body names the notice, and the consumer reads its milestone, owner and dates itself.
  * - `billing.notice`: a notice of the billing cycle, or the welcome, was recorded and is to go out (ADR 0104); the body
  *   names the notice, and the consumer reads its kind, the billing record and the recipient itself.
+ * - `activation.notice`: a tip's notice of the activation series was recorded and is to go out; the body names the
+ *   notice, and the consumer reads its kind, the store and the recipient itself.
  */
 export const OUTBOX_EVENT_TYPES = Object.freeze([
   "data_export.requested",
   "billing.renewal_cancel_requested",
   "organization.closure_notice",
   "billing.notice",
+  "activation.notice",
 ] as const);
 
 export type OutboxEventType = (typeof OUTBOX_EVENT_TYPES)[number];
@@ -41,6 +44,7 @@ const OUTBOX_EVENT_KEYS: Readonly<Record<OutboxEventType, readonly string[]>> =
     "billing.renewal_cancel_requested": Object.freeze(["requestedAt"]),
     "organization.closure_notice": Object.freeze(["noticeId"]),
     "billing.notice": Object.freeze(["noticeId"]),
+    "activation.notice": Object.freeze(["noticeId"]),
   });
 export type OutboxEventValue = string | number | boolean;
 export type OutboxEventBody = Readonly<Record<string, OutboxEventValue>>;

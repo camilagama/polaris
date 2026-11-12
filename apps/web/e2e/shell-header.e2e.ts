@@ -1,6 +1,6 @@
 /// <reference lib="dom" />
 
-import type { Page, Route } from "@playwright/test";
+import type { Locator, Page, Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 import {
   EMAIL,
@@ -27,6 +27,8 @@ const storeMenu = (page: Page) =>
   page.getByRole("button", { name: STORE_MENU_NAME });
 const header = (page: Page) => page.locator("[data-app-header]");
 const chip = (page: Page) => page.locator(".sync-status");
+const eye = (page: Page) =>
+  header(page).getByRole("button", { exact: true, name: "Esconder valores" });
 const more = (page: Page) =>
   page.getByRole("button", { exact: true, name: "Mais" });
 
@@ -59,6 +61,24 @@ const LONG_STORE =
 const LONG_EMAIL =
   "atendimento.da.loja.de.roupas.do.centro.da.cidade@exemplo-de-dominio-comprido.com.br";
 
+/** The pages of the shell, from the first screen of each route to a page that does not exist. */
+const HISTORY_URL = /\/sales\/history/;
+const SHELL_ROUTES = [
+  "/",
+  "/sales",
+  "/sales/history",
+  "/inventory",
+  "/products",
+  "/customers",
+  "/dashboard",
+  "/expenses",
+  "/configuracoes",
+  "/configuracoes?aba=aparelhos",
+  "/attention",
+  "/ajuda",
+  "/uma-pagina-que-nao-existe",
+];
+
 const rpcError = (route: Route, code: string, status: number, data?: unknown) =>
   route.fulfill({
     body: JSON.stringify({
@@ -77,7 +97,7 @@ interface Box {
   y: number;
 }
 
-/** Where the parts of the header are: the header itself, the chip, "?" and the button of the menu of the store. */
+/** Where the parts of the header are: the header itself, the chip, the eye and the button of the menu of the store. */
 function measure(page: Page) {
   return page.evaluate(() => {
     const box = (selector: string) => {
@@ -96,8 +116,8 @@ function measure(page: Page) {
     return {
       brand: box('[data-app-header] a[href="/"]'),
       chip: box("[data-app-header] .sync-status"),
+      eye: box("[data-app-header] button[aria-pressed]"),
       header: box("[data-app-header]"),
-      help: box("[data-header-help]"),
       menu: box("[data-store-menu]"),
       viewport: document.documentElement.clientWidth,
     };
@@ -151,12 +171,7 @@ async function openShell(page: Page, path = "/products") {
 type Measured = Awaited<ReturnType<typeof measure>>;
 
 /** One state of the chip against the first: same height, same places, on screen, left to right with no overlap. */
-function expectSamePlaces(
-  first: Measured,
-  now: Measured,
-  width: number,
-  label: string
-) {
+function expectSamePlaces(first: Measured, now: Measured, label: string) {
   expect(now.header?.height, label).toBe(first.header?.height);
   // one line: the chip keeps its height, and it shrinks (an ellipsis) instead of pushing its neighbors
   expect(now.chip?.height, label).toBe(first.chip?.height);
@@ -168,19 +183,23 @@ function expectSamePlaces(
     Math.abs((now.menu?.x ?? 0) - (first.menu?.x ?? 0)),
     label
   ).toBeLessThanOrEqual(1);
-  const after = width >= 760 ? now.help : now.menu;
-  if (width >= 760) {
-    expect(
-      Math.abs((now.help?.x ?? 0) - (first.help?.x ?? 0)),
-      label
-    ).toBeLessThanOrEqual(1);
-  }
+  expect(now.eye?.height, label).toBe(first.eye?.height);
+  expect(now.eye?.width, label).toBe(first.eye?.width);
+  expect(
+    Math.abs((now.eye?.x ?? 0) - (first.eye?.x ?? 0)),
+    label
+  ).toBeLessThanOrEqual(1);
+  expect(
+    Math.abs((now.eye?.y ?? 0) - (first.eye?.y ?? 0)),
+    label
+  ).toBeLessThanOrEqual(1);
   expect(right(now.menu), label).toBeLessThanOrEqual(now.viewport);
   expect(now.chip?.x ?? -1, label).toBeGreaterThanOrEqual(0);
   if (now.brand && now.brand.width > 0) {
     expect(right(now.brand), label).toBeLessThanOrEqual(now.chip?.x ?? 0);
   }
-  expect(right(now.chip), label).toBeLessThanOrEqual(after?.x ?? 0);
+  expect(right(now.chip), label).toBeLessThanOrEqual(now.eye?.x ?? 0);
+  expect(right(now.eye), label).toBeLessThanOrEqual(now.menu?.x ?? 0);
 }
 
 const setText = (page: Page, text: string) =>
@@ -218,13 +237,31 @@ test.describe("AC-1.1 e AC-1.2: a mesma altura e o mesmo lugar em todos os estad
           expectSamePlaces(
             first,
             await measure(page),
-            width,
             `${width} px, texto ${scale}, chip "${text}"`
           );
         }
       }
     });
   }
+
+  test("a 320 px com o texto a 200 %, a palavra Polaris só se lê e o link segue com o nome", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 740, width: 320 });
+    await serve(page);
+    await openShell(page);
+    const home = page.getByRole("link", { exact: true, name: "Polaris" });
+    const word = home.locator("span");
+    await expect(word).toBeVisible();
+    expect((await word.boundingBox())?.width).toBeGreaterThan(8);
+    await page.evaluate(() => {
+      document.documentElement.style.fontSize = "200%";
+    });
+    await expect(home).toHaveCount(1);
+    await expect
+      .poll(async () => (await word.boundingBox())?.width ?? 0)
+      .toBeLessThanOrEqual(1);
+  });
 
   test("o chip encolhe com reticências a 320 px e a frase inteira fica no nome acessível", async ({
     page,
@@ -244,6 +281,56 @@ test.describe("AC-1.1 e AC-1.2: a mesma altura e o mesmo lugar em todos os estad
       }));
     expect(clipped).toEqual({ ellipsis: "ellipsis", wraps: "nowrap" });
     await expect(header(page).locator(".sync-status .sr-only")).not.toBeEmpty();
+  });
+
+  test("1280 px: a dica vale sobre o ícone, o texto, o recheio e a borda, sem mudar o que o leitor de tela diz", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 800, width: 1280 });
+    await serve(page);
+    await openShell(page);
+    const sentence = (await chip(page).locator(".sr-only").textContent()) ?? "";
+    expect(sentence).not.toBe("");
+    const box = await chip(page).boundingBox();
+    expect(box).not.toBeNull();
+    const { height, width, x, y } = box as NonNullable<typeof box>;
+    const middle = y + height / 2;
+    const points = [
+      { left: x + 0.5, where: "borda" },
+      { left: x + 12, where: "icone" },
+      { left: x + width - 3, where: "recheio" },
+      { left: x + width / 2, where: "texto" },
+    ];
+    for (const { left, where } of points) {
+      // biome-ignore lint/performance/noAwaitInLoops: one point at a time
+      const tip = await page.evaluate(
+        ({ pointX, pointY }) => {
+          const hit = document.elementFromPoint(pointX, pointY);
+          return {
+            inside: Boolean(hit?.closest(".sync-status")),
+            title: hit?.closest("[title]")?.getAttribute("title") ?? null,
+          };
+        },
+        { pointX: left, pointY: middle }
+      );
+      expect(tip, where).toEqual({ inside: true, title: sentence });
+    }
+    for (const attribute of ["title", "aria-label", "aria-describedby"]) {
+      // biome-ignore lint/performance/noAwaitInLoops: one attribute at a time
+      expect(await chip(page).getAttribute(attribute), attribute).toBeNull();
+    }
+    const session = await page.context().newCDPSession(page);
+    const { nodes } = await session.send("Accessibility.getFullAXTree");
+    const spoken = nodes.filter(
+      (node) =>
+        node.name?.value === sentence || node.description?.value === sentence
+    );
+    expect(
+      spoken.filter((node) => node.description?.value === sentence)
+    ).toEqual([]);
+    expect(
+      spoken.filter((node) => node.name?.value === sentence)
+    ).not.toHaveLength(0);
   });
 });
 
@@ -304,7 +391,9 @@ test.describe("AC-1.1, AC-1.4 e AC-2.2: a altura do cabeçalho nos estados da ca
         await route.fallback();
       });
       await page.goto("/products");
-      await expect(page.getByText("Carregando sua loja…")).toBeVisible();
+      await expect(
+        page.getByRole("status").filter({ hasText: "Carregando sua loja…" })
+      ).toBeAttached();
       await read("carregando a loja");
       release();
       await expect(storeMenu(page)).toHaveAccessibleName(
@@ -382,7 +471,7 @@ test.describe("AC-1.1, AC-1.4 e AC-2.2: a altura do cabeçalho nos estados da ca
   });
 });
 
-/** The first tap opens the menu of the store; the second reaches any of the four; from 760 px, "?" is one tap. */
+/** The first tap opens the menu of the store; the second reaches any of the four; from 760 px, the sidebar has Ajuda in one tap and the header has no "?". */
 async function expectTwoTaps(page: Page, width: number, label: string) {
   await storeMenu(page).click();
   const menu = page.getByRole("menu");
@@ -397,27 +486,17 @@ async function expectTwoTaps(page: Page, width: number, label: string) {
   await expect(menu).toBeHidden();
   if (width >= 760) {
     await expect(
-      header(page).getByRole("link", { exact: true, name: "Ajuda e contato" }),
+      page
+        .locator('[data-slot="sidebar"]')
+        .getByRole("link", { exact: true, name: "Ajuda e contato" }),
       label
     ).toBeVisible();
+    await expect(page.locator("[data-header-help]"), label).toHaveCount(0);
   }
 }
 
 test.describe("AC-2.1: Sair, Ajuda, Termos e Política a 2 toques em toda rota da casca", () => {
-  const ROUTES = [
-    "/",
-    "/sales",
-    "/sales/history",
-    "/inventory",
-    "/products",
-    "/customers",
-    "/dashboard",
-    "/configuracoes",
-    "/configuracoes?aba=aparelhos",
-    "/attention",
-    "/ajuda",
-    "/uma-pagina-que-nao-existe",
-  ];
+  const ROUTES = SHELL_ROUTES;
   for (const width of [360, 1280]) {
     test(`${width} px, com e sem conexão`, async ({ page }) => {
       await page.setViewportSize({ height: 800, width });
@@ -439,6 +518,127 @@ test.describe("AC-2.1: Sair, Ajuda, Termos e Política a 2 toques em toda rota d
       }
     });
   }
+});
+
+test.describe("AC-3.1, AC-3.4 e AC-3.5: o olho de Esconder valores no cabeçalho", () => {
+  const HIDDEN_KEY = "polaris-valores";
+
+  /** The area a finger reaches: the box of the button, plus what its `::before` adds around it. */
+  const touchArea = (button: Locator) =>
+    button.evaluate((element) => {
+      const box = element.getBoundingClientRect();
+      const before = getComputedStyle(element, "::before");
+      if (before.content === "none" || before.position !== "absolute") {
+        return { height: box.height, width: box.width };
+      }
+      const px = (value: string) => Number.parseFloat(value);
+      const style = getComputedStyle(element);
+      return {
+        height:
+          box.height -
+          px(style.borderTopWidth) -
+          px(style.borderBottomWidth) -
+          px(before.top) -
+          px(before.bottom),
+        width:
+          box.width -
+          px(style.borderLeftWidth) -
+          px(style.borderRightWidth) -
+          px(before.left) -
+          px(before.right),
+      };
+    });
+
+  for (const width of [360, 1280]) {
+    test(`${width} px: em toda rota da casca há um só botão Esconder valores, no cabeçalho, com aria-pressed`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ height: 800, width });
+      await serve(page);
+      let first: Box | null = null;
+      for (const path of SHELL_ROUTES) {
+        // biome-ignore lint/performance/noAwaitInLoops: one page at a time
+        await page.goto(path);
+        await expect(storeMenu(page), path).toBeVisible();
+        const all = page.getByRole("button", { name: "Esconder valores" });
+        await expect(all, `${path}: uma só vez na tela`).toHaveCount(1);
+        await expect(eye(page), `${path}: dentro do cabeçalho`).toHaveCount(1);
+        await expect(eye(page), path).toHaveAttribute("aria-pressed", "false");
+        const box = (await eye(page).boundingBox()) as Box;
+        first ??= box;
+        expect(
+          [box.x, box.y, box.width, box.height],
+          `${path}: o mesmo botão no mesmo lugar e do mesmo tamanho`
+        ).toEqual([first.x, first.y, first.width, first.height]);
+      }
+    });
+  }
+
+  test("o botão tem 44 px de área de toque no celular, e o ícone muda com a escolha, não o nome", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 740, width: 360 });
+    await serve(page);
+    await openShell(page);
+    const area = await touchArea(eye(page));
+    expect(area.height).toBeGreaterThanOrEqual(44);
+    expect(area.width).toBeGreaterThanOrEqual(44);
+    const before = await eye(page).innerHTML();
+    await eye(page).click();
+    await expect(eye(page)).toHaveAttribute("aria-pressed", "true");
+    expect(await eye(page).innerHTML()).not.toBe(before);
+    await expect(
+      header(page).getByRole("button", {
+        exact: true,
+        name: "Esconder valores",
+      })
+    ).toHaveCount(1);
+  });
+
+  test("a ordem do Tab no cabeçalho é o chip, o olho e a conta", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 800, width: 1280 });
+    await serve(page);
+    await leaveOneRefused(page);
+    const attention = header(page).locator("a.sync-status");
+    await expect(attention).toBeVisible();
+    await attention.focus();
+    await page.keyboard.press("Tab");
+    await expect(eye(page)).toBeFocused();
+    await page.keyboard.press("Tab");
+    await expect(storeMenu(page)).toBeFocused();
+    await page.keyboard.press("Shift+Tab");
+    await expect(eye(page)).toBeFocused();
+    await page.keyboard.press("Space");
+    await expect(eye(page)).toHaveAttribute("aria-pressed", "true");
+  });
+
+  test("a escolha fica ao trocar de tela, ao recarregar e no aparelho (polaris-valores)", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 800, width: 1280 });
+    await serve(page);
+    await openShell(page, "/products");
+    await eye(page).click();
+    await expect(eye(page)).toHaveAttribute("aria-pressed", "true");
+    expect(
+      await page.evaluate((key) => localStorage.getItem(key), HIDDEN_KEY)
+    ).toBe("escondidos");
+    await page
+      .getByRole("navigation", { name: "Principal" })
+      .getByRole("link", { name: "Histórico" })
+      .click();
+    await expect(page).toHaveURL(HISTORY_URL);
+    await expect(eye(page)).toHaveAttribute("aria-pressed", "true");
+    await page.reload();
+    await expect(eye(page)).toHaveAttribute("aria-pressed", "true");
+    await eye(page).click();
+    await expect(eye(page)).toHaveAttribute("aria-pressed", "false");
+    expect(
+      await page.evaluate((key) => localStorage.getItem(key), HIDDEN_KEY)
+    ).toBeNull();
+  });
 });
 
 test.describe("AC-2.3: teclado, foco e alvos", () => {
@@ -476,6 +676,42 @@ test.describe("AC-2.3: teclado, foco e alvos", () => {
             2 * Number.parseFloat(before.top);
     });
     expect(area).toBeGreaterThanOrEqual(44);
+  });
+
+  test("o link de atenção do chip tem área de toque de 44 × 44 px no celular", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 740, width: 360 });
+    await serve(page);
+    await leaveOneRefused(page);
+    const attention = header(page).locator("a.sync-status");
+    await expect(attention).toBeVisible();
+    await expect(attention).toHaveAttribute("href", "/attention");
+    const area = await attention.evaluate((element) => {
+      const box = element.getBoundingClientRect();
+      const before = getComputedStyle(element, "::before");
+      if (before.content === "none" || before.position !== "absolute") {
+        return { height: box.height, width: box.width };
+      }
+      const px = (value: string) => Number.parseFloat(value);
+      const style = getComputedStyle(element);
+      return {
+        height:
+          box.height -
+          px(style.borderTopWidth) -
+          px(style.borderBottomWidth) -
+          px(before.top) -
+          px(before.bottom),
+        width:
+          box.width -
+          px(style.borderLeftWidth) -
+          px(style.borderRightWidth) -
+          px(before.left) -
+          px(before.right),
+      };
+    });
+    expect(area.height).toBeGreaterThanOrEqual(44);
+    expect(area.width).toBeGreaterThanOrEqual(44);
   });
 
   test("AC-4.5: o foco ao rolar fica abaixo do cabeçalho e Ir para o conteúdo é o primeiro alvo", async ({
@@ -675,8 +911,10 @@ test.describe("AC-1.6: nenhuma rolagem de lado, na página, na lateral e em Mais
         .map((element) => element.textContent?.trim() || element.tagName);
     });
     expect(wider).toEqual([]);
-    // no help nor legal link in the column, open or folded
-    await expect(inner.getByRole("link", { name: "Ajuda" })).toHaveCount(0);
+    // Ajuda e contato is in the column, folded too, and the legal links are not
+    await expect(
+      inner.getByRole("link", { exact: true, name: "Ajuda e contato" })
+    ).toBeVisible();
     await expect(inner.getByRole("link", { name: "Termos" })).toHaveCount(0);
   });
 });
@@ -792,5 +1030,107 @@ test.describe("AC-4: a folha Mais só com navegação", () => {
       await expect(link).toHaveAttribute("target", "_blank");
       await expect(link).toHaveAttribute("rel", "noopener noreferrer");
     }
+  });
+});
+
+test.describe("AC-6: a logo no cabeçalho de largura total e a lateral abaixo dele", () => {
+  const places = (page: Page) =>
+    page.evaluate(() => {
+      const box = (selector: string) => {
+        const rect = document.querySelector(selector)?.getBoundingClientRect();
+        return rect
+          ? { height: rect.height, width: rect.width, x: rect.x, y: rect.y }
+          : null;
+      };
+      return {
+        brand: box('[data-app-header] a[href="/"]'),
+        header: box("[data-app-header]"),
+        inner: box('[data-slot="sidebar-inner"]'),
+        menu: box("[data-store-menu]"),
+        trigger: box("[data-app-header] [data-slot=sidebar-trigger]"),
+        viewport: document.documentElement.clientWidth,
+      };
+    });
+
+  for (const width of [768, 1024, 1280]) {
+    test(`${width} px: o cabeçalho cobre a largura, a lateral começa embaixo dele e a logo é uma só, no cabeçalho`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ height: 800, width });
+      await serve(page);
+      await openShell(page);
+      const found = await places(page);
+      expect(found.header?.x).toBe(0);
+      expect(found.header?.width).toBe(found.viewport);
+      expect(found.inner?.y).toBe(found.header?.height);
+      expect(found.brand?.y).toBeLessThan(found.header?.height ?? 0);
+      expect(found.menu?.x).toBeGreaterThan(found.brand?.x ?? 0);
+      await expect(
+        page.getByRole("link", { exact: true, name: "Polaris" })
+      ).toHaveCount(1);
+      await expect(
+        header(page).getByRole("link", { exact: true, name: "Polaris" })
+      ).toHaveCount(1);
+      await expect(page.locator('[data-slot="sidebar-trigger"]')).toHaveCount(
+        width >= 1024 ? 1 : 0
+      );
+    });
+  }
+
+  test("1280 px: recolher mexe só nas opções; o cabeçalho, a logo e o botão ficam onde estavam, o item atual segue marcado e cada ícone tem dica", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 800, width: 1280 });
+    await serve(page);
+    await openShell(page);
+    const open = await places(page);
+    const nav = page.getByRole("navigation", { name: "Principal" });
+    await page
+      .getByRole("button", { exact: true, name: "Recolher menu" })
+      .click();
+    await expect(
+      page.locator('[data-slot="sidebar"][data-state="collapsed"]')
+    ).toHaveCount(1);
+    await expect.poll(async () => (await places(page)).inner?.width).toBe(48);
+    const folded = await places(page);
+    expect(folded.header).toEqual(open.header);
+    expect(folded.brand).toEqual(open.brand);
+    expect(folded.trigger).toEqual(open.trigger);
+    expect(folded.inner?.y).toBe(open.inner?.y);
+    await expect(nav.locator("[data-active]")).toHaveCount(1);
+    const current = nav.locator("[data-active]");
+    await current.hover();
+    await expect(page.locator("[data-slot=tooltip-content]")).toHaveText(
+      "Produtos"
+    );
+  });
+
+  test("1280 px: a ordem é Ir para o conteúdo, a logo, o botão de recolher, e o cabeçalho vem antes da lateral e da lateral ao conteúdo", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 800, width: 1280 });
+    await serve(page);
+    await openShell(page);
+    await page.keyboard.press("Tab");
+    await expect(
+      page.getByRole("link", { name: "Ir para o conteúdo" })
+    ).toBeFocused();
+    await page.keyboard.press("Tab");
+    await expect(header(page).locator('a[href="/"]')).toBeFocused();
+    await page.keyboard.press("Tab");
+    await expect(
+      page.getByRole("button", { exact: true, name: "Recolher menu" })
+    ).toBeFocused();
+    const order = await page.evaluate(() => {
+      const top = document.querySelector("[data-app-header]");
+      const nav = document.querySelector('nav[aria-label="Principal"]');
+      const main = document.querySelector("main");
+      const before = (a: Element | null, b: Element | null) =>
+        a !== null &&
+        b !== null &&
+        a.compareDocumentPosition(b) === Node.DOCUMENT_POSITION_FOLLOWING;
+      return [before(top, nav), before(nav, main)];
+    });
+    expect(order).toEqual([true, true]);
   });
 });

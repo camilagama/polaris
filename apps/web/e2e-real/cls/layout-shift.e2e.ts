@@ -356,7 +356,8 @@ const SCREENS: Record<Path, (page: Page) => Locator[]> = {
   ],
   "/configuracoes": (page) => [
     page.getByRole("heading", { level: 1, name: "Configurações" }),
-    page.getByRole("heading", { level: 2, name: "Formas de receber" }),
+    page.getByRole("heading", { level: 2, name: "Da loja" }),
+    page.getByRole("link", { exact: true, name: "Formas de receber" }),
   ],
   "/dashboard": (page) => [
     page.getByRole("heading", { level: 1, name: "Resultado" }),
@@ -541,6 +542,12 @@ test("layout shift no celular: o Início aberto sem rede, na cópia, quando a re
   await seedSales(journey);
   await makePro(sql, journey.organizationId as string);
   const { page } = journey;
+  // the fixture's clock starts at T0, and this journey starts minutes after it: the copy takes a device clock more than
+  // 5 minutes behind the server's read as wrong (`CLOCK_BEHIND_MS`) and shows no number for today, so the clock is
+  // brought to the server's time (the `Date` header, not a read of the wall clock) before the page opens
+  const serverNow = (await page.request.get("/health")).headers().date;
+  expect(serverNow, "the server answers with its date").toBeDefined();
+  await page.clock.setSystemTime(new Date(serverNow as string));
   await page.context().addInitScript(recordLayoutShifts);
   await page.goto("/");
   await settle(page, SCREENS["/"](page));

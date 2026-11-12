@@ -17,6 +17,28 @@ export function replaceAddress(next: string): void {
   window.dispatchEvent(new Event(ADDRESS_EVENT));
 }
 
+function historyState(): Record<string, unknown> {
+  const state: unknown = window.history.state;
+  return typeof state === "object" && state !== null
+    ? Object.fromEntries(Object.entries(state))
+    : {};
+}
+
+/**
+ * Adds a step to the history for an address of the same screen, with no scroll and no focus move (the caller places the
+ * focus). `mark` is written in the entry's state, so `isMarkedEntry` tells later that this step was added by the screen
+ * and the one before it is the screen's own list.
+ */
+export function pushAddress(next: string, mark: string): void {
+  window.history.pushState({ [mark]: true }, "", next);
+  window.dispatchEvent(new Event(ADDRESS_EVENT));
+}
+
+/** Whether the current history entry was added by `pushAddress` with this `mark`. */
+export function isMarkedEntry(mark: string): boolean {
+  return historyState()[mark] === true;
+}
+
 /**
  * Opens another screen of the app with no load of the page (corte 1.6, AC-7): a step in the history, so "voltar" comes
  * back, and the shell draws the screen of the new address. What lives in memory (a draft kept by Esc) stays.

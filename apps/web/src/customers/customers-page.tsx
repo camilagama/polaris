@@ -266,7 +266,7 @@ export function CustomersPage() {
   );
 
   const handleNew = useCallback((event?: MouseEvent<HTMLElement>) => {
-    // what was pressed (the header button, the one of the empty list, or "Cadastrar outro" in the notice)
+    // what was pressed (the header button or "Cadastrar outro" in the notice)
     const pressed = event?.currentTarget;
     originRef.current = () =>
       pressed?.isConnected ? pressed : newButtonRef.current;
@@ -600,18 +600,12 @@ export function CustomersPage() {
   const isPending = pendingAction !== null;
   const foundCustomers = filterCustomers(customers, query);
   const listIsShown = !(isLoading || loadError);
-  // the empty list has the button itself: not two of them
-  const emptyList =
-    status === "active" &&
-    !isLoading &&
-    loadError === null &&
-    customers.length === 0;
   const newButton = useMemo(
     () =>
-      status === "active" && !emptyList
+      status === "active"
         ? { disabled: isPending, onClick: handleNew, ref: newButtonRef }
         : null,
-    [emptyList, handleNew, isPending, status]
+    [handleNew, isPending, status]
   );
   const noticeAction = useMemo(
     () =>
@@ -677,7 +671,6 @@ export function CustomersPage() {
           isLoading={isLoading}
           isOffline={isOffline}
           onAnonymize={handleAnonymize}
-          onNew={handleNew}
           onArchive={handleArchive}
           onEdit={handleEdit}
           onRestore={handleRestore}

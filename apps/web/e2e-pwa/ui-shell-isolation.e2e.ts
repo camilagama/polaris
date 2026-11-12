@@ -736,6 +736,7 @@ const EXPENSE_SCREENS = [
       openExpenses(page, async () => {
         await page
           .getByRole("button", { exact: true, name: "Nova despesa" })
+          .and(page.locator("[data-expense-new]"))
           .click();
         await page.getByRole("button", { name: "Registrar despesa" }).click();
         await expect(page.locator("#expense-description-error")).toBeVisible();
@@ -905,16 +906,12 @@ const SCREENS = [
       ),
   },
   {
-    // without the runtime (the pwa-e2e shell has no server for it) the page is the loading of the shell pieces, which
-    // says the offline mode is not ready; the panel with its title is measured by the guardrails
+    // without the runtime (the pwa-e2e shell has no server for it) the page is the title with the warning that says the
+    // offline mode is not available, and the way back
     name: "Pendências no shell",
     open: (page: Page) =>
       openInShell(page, "/attention", () =>
-        expect(
-          page.getByText(
-            "O modo offline não está disponível neste aparelho agora."
-          )
-        ).toBeVisible()
+        expect(page.getByText("Sem modo offline neste aparelho")).toBeVisible()
       ),
   },
   // the first access, the acceptance and a legal text stand outside the shell, on the entry card

@@ -2,6 +2,7 @@ import CheckIcon from "lucide-react/dist/esm/icons/check";
 import { type RefObject, useCallback, useState } from "react";
 import { Button } from "@/ui/button";
 import { Card, CardContent, CardHeader } from "@/ui/card";
+import { MoneyText } from "@/ui/hidden-values";
 import { Separator } from "@/ui/separator";
 import { ConfirmedDetails, ConfirmedItems } from "./confirmed-sale-parts";
 import { SaleCustomerPanel } from "./sale-customer-panel";
@@ -30,14 +31,16 @@ function ConfirmedReceipt({ sale }: { sale: ConfirmedSaleView }) {
                 key={row.key}
               >
                 <dt>{row.label}</dt>
-                <dd className="tabular-nums">{row.value}</dd>
+                <dd className="tabular-nums">
+                  <MoneyText text={row.value} />
+                </dd>
               </div>
             ) : (
               <LeaderRow
                 key={row.key}
                 label={row.label}
                 tone={row.tone}
-                value={row.value}
+                value={<MoneyText text={row.value} />}
               />
             )
           )}

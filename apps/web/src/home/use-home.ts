@@ -13,6 +13,7 @@ import {
   clearOrganizationResultCopies,
   isPeriodSummary,
   type StoredPeriodSummary,
+  TOP_PRODUCTS,
   writePeriodSummaryCache,
 } from "../lib/period-summary-cache";
 import { readWithRetry } from "../lib/read-with-retry";
@@ -241,7 +242,7 @@ async function readFigures(
 ): Promise<Omit<HomeFigures, "today">> {
   const { before, month } = homePeriods(today);
   const [monthSummary, beforeSummary] = await Promise.all([
-    readSummary(organizationId, isCurrent, month.from, month.to, 3),
+    readSummary(organizationId, isCurrent, month.from, month.to, TOP_PRODUCTS),
     reused ?? readSummary(organizationId, isCurrent, before.from, before.to),
   ]);
   return { before: beforeSummary, month: monthSummary };
@@ -518,9 +519,12 @@ export function useHome(
               }
             );
             // a B taken from the copy is not written again: it keeps the stamp of the read it came from
+            const clockSkewMs = Number.isFinite(skew.current)
+              ? { clockSkewMs: skew.current }
+              : {};
             const change: Partial<HomeCopy> = reusedBefore
-              ? {}
-              : { before: ready.before };
+              ? clockSkewMs
+              : { before: ready.before, ...clockSkewMs };
             writeHomeCopy(storage, organizationId, change);
           });
           setMidnightAt(

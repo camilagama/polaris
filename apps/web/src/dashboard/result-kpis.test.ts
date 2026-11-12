@@ -98,7 +98,6 @@ describe("the cards of the Resultado (v7 § 8)", () => {
         trend: "up",
       },
       help: "Vendas líquidas de 1 a 25/10. Compara com 1 a 25/09.",
-      note: null,
       value: "1250.00",
     });
     // every day known: the result is the sum of the days, with its chip in reais
@@ -228,7 +227,6 @@ describe("the cards of the Resultado (v7 § 8)", () => {
     expect(rest.result).toMatchObject({
       date: "outubro inteiro",
       delta: null,
-      note: null,
       value: "1000.00",
     });
     // a day read: never the sum of the known days

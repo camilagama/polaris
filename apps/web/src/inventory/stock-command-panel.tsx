@@ -11,11 +11,13 @@ import {
 import { Alert, AlertDescription } from "@/ui/alert";
 import { Button } from "@/ui/button";
 import { FieldLegend, FieldSet } from "@/ui/field";
+import { MoneyText } from "@/ui/hidden-values";
 import { focusLater } from "../lib/focus";
 import { orpcClient } from "../lib/orpc";
 import { useHoldSwap } from "../lib/unsent-work";
 import type { LocalWorkspace } from "../offline/runtime/use-local-workspace";
 import { queueOfflineStock } from "./queue-offline-stock";
+import { PANEL_OPEN_REASON, PANEL_OPEN_REASON_ID } from "./stock-row-actions";
 import {
   backToStockEditing,
   canCloseStock,
@@ -84,6 +86,8 @@ interface StockCommandPanelProps {
   onInformCost?: ((target: StockTarget) => void) | undefined;
   /** Opened above the list (the link from the sale): no row above says the variant or its balance, so the line under the title does. Inside a row the row already says both and the line is left out. */
   standalone?: boolean | undefined;
+  /** The quantity the receive panel opens with (from the link of the sale); 1 when absent. */
+  requestedQuantity?: number | undefined;
   target: StockTarget;
   today: string;
 }
@@ -178,6 +182,15 @@ function useFocusRefusedField(
   }, [focus, refusedField]);
 }
 
+/** Why the buttons of the list are off while this panel is open: they point at it with `aria-describedby`. */
+function PanelOpenReason() {
+  return (
+    <p className="text-muted-foreground text-support" id={PANEL_OPEN_REASON_ID}>
+      {PANEL_OPEN_REASON}
+    </p>
+  );
+}
+
 /**
  * One stock command on one variant, in two steps: fill in and review, then
  * confirm. An unknown outcome locks the attempt and a retry resends the same
@@ -191,12 +204,13 @@ export function StockCommandPanel({
   onInformCost,
   onReloadList,
   organizationId,
+  requestedQuantity,
   standalone = false,
   target,
   today,
 }: StockCommandPanelProps) {
   const [state, setState] = useState(() =>
-    startStockCommand(action, target, today)
+    startStockCommand(action, target, today, requestedQuantity)
   );
   useHoldSwap(isStockDraftChanged(state));
   const inFlight = useRef<boolean>(false);
@@ -210,7 +224,7 @@ export function StockCommandPanel({
       }
       const element = document.getElementById(stockFieldId(prefix, field));
       element?.focus();
-      // a quantity that opens as 1 is replaced by typing, not appended to
+      // a quantity that opens filled is replaced by typing, not appended to
       if (
         element instanceof HTMLInputElement &&
         element.inputMode === "numeric"
@@ -429,14 +443,19 @@ export function StockCommandPanel({
             <CheckIcon aria-hidden="true" className="size-4 shrink-0" />
             {labels.title}
           </h3>
-          <p>{submission.message}</p>
+          <p>
+            <MoneyText text={submission.message} />
+          </p>
           {submission.queued ? null : (
             <p className="text-muted-foreground text-support">
               Saldo: {unitsText(submission.balance.quantity)} · custo médio:{" "}
-              {costText(submission.balance.movingAverageCost)}
+              <MoneyText
+                text={costText(submission.balance.movingAverageCost)}
+              />
             </p>
           )}
         </div>
+        <PanelOpenReason />
         <div>
           <Button onClick={onClose} type="button">
             Fechar
@@ -459,9 +478,12 @@ export function StockCommandPanel({
         </h3>
         {standalone ? (
           <p className="text-muted-foreground text-support">
-            {`${state.target.productName} · ${state.target.variantText}. ${balanceText}`}
+            <MoneyText
+              text={`${state.target.productName} · ${state.target.variantText}. ${balanceText}`}
+            />
           </p>
         ) : null}
+        <PanelOpenReason />
       </div>
       {state.target.archived ? (
         <Alert role="note" variant="warning">
@@ -474,10 +496,12 @@ export function StockCommandPanel({
       {block ? (
         <Alert id={`${prefix}-block`} role="note" variant="warning">
           <AlertDescription className="grid justify-items-start">
-            <p>{block}</p>
+            <p>
+              <MoneyText text={block} />
+            </p>
             {informCost ? (
               <Button
-                aria-label={`Informar custo de ${state.target.productName} · ${state.target.variantText}`}
+                aria-label={`Informar custo de ${state.target.productName}, ${state.target.variantText}`}
                 onClick={handleInformCost}
                 size="sm"
                 type="button"

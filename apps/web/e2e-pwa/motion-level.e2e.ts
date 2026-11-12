@@ -27,6 +27,7 @@ import { SCREENS } from "./ui-screens";
  * g) the sales history, the first screen on the filter bar, asks for neither the `motion` chunk nor the layer on
  *    a phone, and its pills go at once; on the desktop the same page loads the layer.
  */
+const PERIOD_BUTTON = /^Período: /;
 const MOTION_CHUNK = /\/assets\/motion-[\w-]+\.js$/;
 const CHARTS_CHUNK = /\/assets\/charts-[\w-]+\.js$/;
 const LAYER_CHUNK = /\/assets\/filter-bar-motion-[\w-]+\.js$/;
@@ -184,7 +185,7 @@ test("a) no celular a barra não pede o motion (a camada animada, o único camin
   );
 });
 
-test("b) no celular o gráfico aparece pronto: sem o clip da revelação, e o caminho e o eixo Y já na escala final um quadro depois da troca de 7 para 30 dias", async ({
+test("b) no celular o gráfico aparece pronto: sem o clip da revelação, e o caminho e o eixo Y já na escala final um quadro depois da troca de mês", async ({
   page,
 }) => {
   // the gallery: the area chart has no clip group (it exists only while the reveal runs)
@@ -199,30 +200,41 @@ test("b) no celular o gráfico aparece pronto: sem o clip da revelação, e o ca
   await page.waitForTimeout(1300);
   expect(await drawing(week)).toEqual(first);
 
-  // the Início: 7 to 30 days changes the data of the same chart; the frame after the click is already the final one
+  // the Início: another month draws another chart; the first frame it is there is already the final one
   await homeStates.sold(page);
   await expectPhone(page);
   const chart = page.locator("[data-chart-area]").first();
   await expect(chart.locator("svg path[stroke]").first()).toBeVisible();
   await expect(chart.locator("svg g[clip-path]")).toHaveCount(0);
-  const seven = await drawing(chart);
-  await page.getByRole("tab", { name: "30 dias" }).click();
+  const october = await drawing(chart);
+  await page.getByRole("button", { name: PERIOD_BUTTON }).click();
+  await page
+    .getByRole("group", { name: "Atalhos do período" })
+    .getByRole("button", { exact: true, name: "Mês passado" })
+    .click();
+  await expect(page.getByRole("button", { name: PERIOD_BUTTON })).toContainText(
+    "01/09 a 30/09"
+  );
+  await expect(chart.locator("svg path[stroke]").first()).toBeVisible();
+  await expect(chart.locator("svg g[clip-path]")).toHaveCount(0);
   await page.evaluate(
     () => new Promise((resolve) => requestAnimationFrame(resolve))
   );
   const next = await drawing(chart);
-  expect(next.path).not.toBe(seven.path);
-  expect(next.ticks).toContain("R$ 2.000@");
+  expect(next.path).not.toBe(october.path);
+  expect(next.ticks).not.toEqual(october.ticks);
   await page.waitForTimeout(1300);
   expect(await drawing(chart)).toEqual(next);
 
   // the map: no entrance of 1 600 ms and no wave of the cells; every cell is drawn finished a frame after it
-  // appears, nothing of it runs an animation, and reading a day changes the line at once
+  // appears, nothing of it runs an animation, and the tooltip of a day read is there at once
   const map = page.getByRole("region", { name: "Ritmo de vendas" });
   const cells = map.locator(
     '[data-heatmap] rect.visx-heatmap-rect:not([pointer-events="none"])'
   );
-  await expect(cells).toHaveCount(91);
+  await expect(cells.first()).toBeVisible();
+  const weeks = (await cells.count()) / 7;
+  expect(Number.isInteger(weeks)).toBe(true);
   await page.evaluate(
     () => new Promise((resolve) => requestAnimationFrame(resolve))
   );
@@ -240,10 +252,10 @@ test("b) no celular o gráfico aparece pronto: sem o clip da revelação, e o ca
           .map((animation) => animation.id)
       )
   ).toEqual([]);
-  await cells.nth(12 * 7 + 1).tap();
-  await expect(map.locator("[data-rhythm-reading]")).toHaveText(
-    "Segunda, 19/10 · R$ 90,00 · 1 venda"
-  );
+  await cells.nth((weeks - 1) * 7 + 1).tap();
+  const tooltip = map.locator("[data-heatmap-tooltip]");
+  await expect(tooltip).toContainText("Segunda, 19/10");
+  await expect(tooltip).toContainText("R$ 90,00");
   expect(await opacities()).toEqual(["1"]);
 });
 

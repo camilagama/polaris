@@ -424,6 +424,35 @@ test("Trocar abre a busca com a variante atual marcada; Escape volta à linha co
   await expect(item.getByLabel("Quantidade")).toHaveValue("3");
 });
 
+const NON_BLANK = /\S/;
+const SINGLE_PAYMENT_TEXT =
+  "Um pagamento só, no valor total. O método não comprova o recebimento.";
+
+/** Under "Pagamento" the two explanations are in the (i) of the title, whole, and not on the screen. */
+async function expectPaymentTip(page: Page) {
+  await expect(page.getByText(SINGLE_PAYMENT_TEXT)).toHaveCount(0);
+  await expect(page.getByText("Um pagamento só")).toHaveCount(0);
+  await page
+    .getByRole("button", { exact: true, name: "Sobre Pagamento" })
+    .click();
+  const popup = page.getByRole("dialog", { name: "Pagamento" });
+  await expect(popup).toBeVisible();
+  expect((await popup.innerText()).replace(/\s+/g, " ")).toBe(
+    `Pagamento ${SINGLE_PAYMENT_TEXT}`
+  );
+  await page.keyboard.press("Escape");
+  await expect(popup).toHaveCount(0);
+}
+
+test("Vender: sem venda lembrada nada fica sob os métodos, e as duas frases do Pagamento estão no (i) do título", async ({
+  page,
+}) => {
+  await openSaleLab(page, "claro");
+  const methods = page.getByRole("radiogroup", { name: "Método de pagamento" });
+  await expect(methods).not.toHaveAccessibleDescription(NON_BLANK);
+  await expectPaymentTip(page);
+});
+
 test('um "Sem perfil" lembrado numa loja com perfil ativo: a venda seguinte vem com o método marcado e o perfil em branco, e não vira venda em andamento', async ({
   page,
 }) => {
@@ -455,6 +484,10 @@ test('um "Sem perfil" lembrado numa loja com perfil ativo: a venda seguinte vem 
   await expect(
     page.getByText("Igual à última venda neste aparelho.")
   ).toBeVisible();
+  await expect(methods).toHaveAccessibleDescription(
+    "Igual à última venda neste aparelho."
+  );
+  await expectPaymentTip(page);
   await expect(
     page.getByRole("status").filter({ hasText: "Venda em andamento" })
   ).toHaveCount(0);

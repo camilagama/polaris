@@ -127,7 +127,7 @@
   /* links in the content: the dash's link button */
   .content :where(a) {
     /* dash: apps/web/src/ui/button.tsx */
-    @apply rounded-sm text-foreground underline decoration-input underline-offset-4 hover:decoration-foreground;
+    @apply rounded-md text-foreground underline decoration-input underline-offset-4 hover:decoration-foreground;
   }
 
   /* the card */
@@ -235,7 +235,7 @@
     margin: 0 0 0.75rem;
     list-style: none;
     /* dash: apps/web/src/ui/tabs.tsx */
-    @apply inline-flex w-fit items-center rounded-lg bg-muted p-[3px] text-muted-foreground;
+    @apply inline-flex w-fit items-center rounded-lg bg-muted p-0.75 text-muted-foreground;
   }
 
   .tabs li {

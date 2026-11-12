@@ -6,7 +6,7 @@ export const RESTORE_ENVIRONMENT = "restore-drill";
 export const RESTORE_MARKER = `polaris.environment=${RESTORE_ENVIRONMENT}`;
 export const ARCHIVE_ENTRIES = ["dump", "manifest.json", "roles.sql"];
 export const BACKUP_ENVIRONMENTS = ["production", "staging"];
-const MIN_OWNER_ROLES = 18;
+const MIN_OWNER_ROLES = 21;
 const PURGE_OWNER = "polaris_purge_owner";
 const PURGE_RUNTIMES = "polaris_privacy_runtime";
 

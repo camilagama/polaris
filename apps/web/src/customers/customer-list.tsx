@@ -1,8 +1,6 @@
 import type { CustomerReadModel } from "@polaris/contracts";
 import MoreHorizontalIcon from "lucide-react/dist/esm/icons/ellipsis";
-import PlusIcon from "lucide-react/dist/esm/icons/plus";
-import UsersIcon from "lucide-react/dist/esm/icons/users";
-import { type MouseEvent, useCallback, useState } from "react";
+import { useCallback, useState } from "react";
 import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
 import { Card } from "@/ui/card";
@@ -13,6 +11,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/ui/dropdown-menu";
+import { EmptyState } from "@/ui/empty-state";
 import { productInitials } from "../catalog/product-search-model";
 import {
   ListNotice,
@@ -479,8 +478,6 @@ interface CustomerListProps extends RowActions {
   isLoading: boolean;
   /** Working from this device's collections while the connection is down. */
   isOffline: boolean;
-  /** The button of the empty list: the form is not on the page, it opens from here. */
-  onNew: (event: MouseEvent<HTMLButtonElement>) => void;
   pendingAction: string | null;
   /** The typed search; empty when none. */
   query: string;
@@ -497,7 +494,6 @@ export function CustomerList({
   customers,
   isLoading,
   isOffline,
-  onNew,
   pendingAction,
   query,
   status,
@@ -516,31 +512,10 @@ export function CustomerList({
     );
   }
   if (total === 0) {
-    return (
-      <ListNotice>
-        {status === "active" ? (
-          <>
-            <UsersIcon
-              aria-hidden="true"
-              className="size-6 text-muted-foreground"
-            />
-            <p className="text-muted-foreground">
-              Nenhum cliente ainda. Cadastre o primeiro em “Novo cliente”.
-            </p>
-            <Button
-              disabled={pendingAction !== null}
-              onClick={onNew}
-              type="button"
-            >
-              <PlusIcon aria-hidden="true" data-icon="inline-start" />
-              Novo cliente
-            </Button>
-          </>
-        ) : (
-          <p className="text-muted-foreground">Nenhum cliente arquivado.</p>
-        )}
-      </ListNotice>
-    );
+    if (status !== "active") {
+      return <EmptyState afterRead title="Nenhum cliente arquivado." />;
+    }
+    return <EmptyState afterRead title="Nenhum cliente ainda." />;
   }
   if (customers.length === 0) {
     return (

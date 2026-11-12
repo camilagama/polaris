@@ -2,6 +2,7 @@ import { type ReactNode, useCallback, useState } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/ui/button";
 import { Card } from "@/ui/card";
+import { MoneyText } from "@/ui/hidden-values";
 import { Tabs, TabsList, TabsTrigger } from "@/ui/tabs";
 import { focusLater } from "../lib/focus";
 import { LIST_PAGE_SIZE, type ListPage, listPage } from "./list-page-model";
@@ -49,7 +50,13 @@ export function StatusNav<T extends string>({
     <Tabs onValueChange={handleChange} value={value}>
       <TabsList activateOnFocus aria-label={label}>
         {options.map(([option, text]) => (
-          <TabsTrigger disabled={disabled} key={option} value={option}>
+          <TabsTrigger
+            // three words of 20 px do not fit a 320 px window with the usual padding of a tab, and the strip would widen the page
+            className="px-1 min-[18.5rem]:px-2.5"
+            disabled={disabled}
+            key={option}
+            value={option}
+          >
             {text}
           </TabsTrigger>
         ))}
@@ -207,8 +214,8 @@ interface ListTotalFooterProps {
   count: string;
   /** What the total leaves out, always in the DOM (empty) when the screen can have it, so the height does not move. */
   note?: string;
-  /** The total, already written (a dash while it is unknown). */
-  value: ReactNode;
+  /** The total, already written ("R$ 1.454,41", or a dash or an ellipsis while it is unknown); it is masked with the other values. */
+  value: string | null;
 }
 
 /**
@@ -238,7 +245,7 @@ export function ListTotalFooter({
       >
         <div className="flex @max-[18.999rem]:grid @max-[18.999rem]:grid-cols-[minmax(0,1fr)] items-end justify-between gap-x-4 @max-[18.999rem]:gap-y-1">
           <div className="grid min-w-0 gap-0.5">
-            <p className="font-medium text-muted-foreground text-xs uppercase tracking-wide">
+            <p className="font-medium text-muted-foreground text-support">
               Total na tela
             </p>
             <p className="min-h-5 @max-[18.999rem]:whitespace-normal whitespace-nowrap text-muted-foreground text-support">
@@ -246,7 +253,7 @@ export function ListTotalFooter({
             </p>
           </div>
           <p className="@max-[18.999rem]:whitespace-normal whitespace-nowrap text-right font-semibold text-value-md tabular-nums @max-[18.999rem]:[overflow-wrap:anywhere]">
-            {value}
+            {value === null ? null : <MoneyText text={value} />}
           </p>
         </div>
         {note === undefined ? null : (

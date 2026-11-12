@@ -1,0 +1,24 @@
+Assunto: Falta só o primeiro produto na sua loja
+
+POLARIS
+
+
+FALTA SÓ O PRIMEIRO PRODUTO NA SUA LOJA
+
+A loja Loja Aurora já está criada. Para fazer a primeira venda, falta cadastrar um produto.
+
+Cadastre um agora, ou importe uma planilha se a lista já está pronta.
+
+Cadastrar o primeiro produto https://app.exemplo.app/products
+
+Se o botão não funcionar, abra este endereço: https://app.exemplo.app/products
+
+Você recebe este e-mail porque criou a loja Loja Aurora no Polaris e ainda não fez a primeira venda. São no máximo 3 e-mails nos primeiros 14 dias, só para ajudar você a começar.
+
+Parar de receber estas dicas https://app.exemplo.app/api/parar-dicas?t=dXNlcl9hdXJvcmE.c2lnbmF0dXJlLW5vdC1yZWFs
+
+Os avisos da sua conta e da cobrança continuam, porque fazem parte do serviço.
+
+Polaris, um produto de Agência Summit, CNPJ 35.584.467/0001-00.
+
+suporte@exemplo.app · Política de Privacidade https://app.exemplo.app/privacidade

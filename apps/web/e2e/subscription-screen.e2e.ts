@@ -1,6 +1,7 @@
 /// <reference lib="dom" />
 import type { Page, Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
+import { backToList, openSettingsTab } from "./settings-nav";
 import { serveHealth, WORKER_MARK } from "./worker-mark";
 
 /**
@@ -179,6 +180,52 @@ test.beforeEach(async ({ page }) => {
   await page.clock.setFixedTime(NOW);
 });
 
+test("as três contagens são linhas sem caixa: sem borda nem fundo próprio, com o número à direita da barra", async ({
+  page,
+}) => {
+  await page.setViewportSize({ height: 800, width: 1280 });
+  await openScreen(page);
+  await expect(planTitle(page)).toHaveText("Plano Free");
+  const bar = page.getByRole("progressbar", { name: "Variantes: 38 de 50" });
+  await expect(bar).toBeVisible();
+  const lines = page.locator("[data-usage-lines] > div");
+  await expect(lines).toHaveCount(3);
+  const styles = await lines.evaluateAll((elements) =>
+    elements.map((element) => {
+      const computed = getComputedStyle(element);
+      return {
+        background: computed.backgroundColor,
+        borders: [
+          computed.borderTopWidth,
+          computed.borderRightWidth,
+          computed.borderBottomWidth,
+          computed.borderLeftWidth,
+        ],
+        radius: computed.borderTopLeftRadius,
+      };
+    })
+  );
+  for (const style of styles) {
+    expect(style.borders).toEqual(["0px", "0px", "0px", "0px"]);
+    expect(style.background).toBe("rgba(0, 0, 0, 0)");
+    expect(style.radius).toBe("0px");
+  }
+  const barBox = await bar.boundingBox();
+  const number = await page
+    .locator("[data-usage-lines] > div")
+    .first()
+    .getByText("de 50")
+    .boundingBox();
+  const label = await page
+    .getByText("Variantes", { exact: true })
+    .boundingBox();
+  if (!(barBox && number && label)) {
+    throw new Error("the first line has no box");
+  }
+  expect(label.x + label.width).toBeLessThanOrEqual(barBox.x + 1);
+  expect(number.x).toBeGreaterThanOrEqual(barBox.x + barBox.width - 1);
+});
+
 test("Free com o teste: plano, uso, oferta com o mensal marcado e o anual em destaque, e o preço antes do botão (AS-9, AS-11, AS-12, AS-14)", async ({
   page,
 }) => {
@@ -242,11 +289,9 @@ test("o CPF digitado para o Pix continua lá depois de olhar outra aba de Config
     .click();
   await page.getByLabel("CPF ou CNPJ").fill("529.982.247-25");
 
-  await page
-    .getByRole("tab", { exact: true, name: "Formas de receber" })
-    .click();
+  await openSettingsTab(page, "Formas de receber");
   await expect(page.getByLabel("CPF ou CNPJ")).toBeHidden();
-  await page.getByRole("tab", { exact: true, name: "Assinatura" }).click();
+  await openSettingsTab(page, "Assinatura");
 
   await expect(page.getByLabel("CPF ou CNPJ")).toHaveValue("529.982.247-25");
 });
@@ -406,6 +451,47 @@ test("uso acima do limite, também no Pro: selo e barra cheia; sem limite, só o
   await expect(page.getByText("acima do limite")).toHaveCount(1);
   await expect(page.getByText("sem limite")).toHaveCount(0);
   await expect(page.getByRole("progressbar")).toHaveCount(2);
+});
+
+test("a 320 px com letra de 20 px, o selo 'acima do limite' não aperta o rótulo nem sobrepõe a barra", async ({
+  page,
+}) => {
+  await page.setViewportSize({ height: 640, width: 320 });
+  await openScreen(page, {
+    plans: [
+      {
+        ...ACTIVE,
+        limits: { goals: 3, images: 50, variants: 2000 },
+        usage: { goals: 4, images: 12, variants: 38 },
+      },
+    ],
+  });
+  await page.evaluate(() => {
+    document.documentElement.style.fontSize = "20px";
+  });
+  const bar = page.getByRole("progressbar", {
+    name: "Metas em andamento: 4 de 3, acima do limite",
+  });
+  await expect(bar).toBeVisible();
+  const line = page.locator("[data-usage-lines] > div").nth(2);
+  const label = line.getByText("Metas em andamento", { exact: true });
+  const labelBox = await label.boundingBox();
+  const badgeBox = await line.getByText("acima do limite").boundingBox();
+  const barBox = await bar.boundingBox();
+  const lineBox = await line.boundingBox();
+  if (!(labelBox && badgeBox && barBox && lineBox)) {
+    throw new Error("the line has no box");
+  }
+  expect(await label.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(
+    true
+  );
+  expect(labelBox.x + labelBox.width).toBeLessThanOrEqual(badgeBox.x + 1);
+  expect(badgeBox.x + badgeBox.width).toBeLessThanOrEqual(
+    lineBox.x + lineBox.width + 1
+  );
+  const barTop = barBox.y;
+  expect(barTop).toBeGreaterThanOrEqual(badgeBox.y + badgeBox.height - 1);
+  expect(barTop).toBeGreaterThanOrEqual(labelBox.y + labelBox.height - 1);
 });
 
 test("reembolso pedido e não concluído: dentro das 72 h, o texto do AS-42; depois, o suporte, sem tentar de novo (E-RP)", async ({
@@ -1033,6 +1119,26 @@ test("a leitura que falha diz o motivo e oferece 'Tentar novamente'; sem a capac
   expect(other.reads).toBe(0);
 });
 
+for (const width of [360, 1280]) {
+  test(`oferta, a ${width} px: "Começar os 7 dias grátis" tem a altura da ação principal (36 no mouse, 44 no toque)`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 800, width });
+    await openScreen(page);
+    const start = page.getByRole("button", {
+      name: "Começar os 7 dias grátis",
+    });
+    await expect(start).toBeVisible();
+    const box = await start.boundingBox();
+    expect(box).not.toBeNull();
+    const touch = await page.evaluate(
+      (viewport) => matchMedia("(pointer: coarse)").matches || viewport < 760,
+      width
+    );
+    expect(box?.height).toBe(touch ? 44 : 36);
+  });
+}
+
 test("menu: 'Assinatura' é aba de Configurações, no desktop e no celular; some sem a flag e para quem não é dono (AS-10, AS-19)", async ({
   page,
 }) => {
@@ -1057,8 +1163,11 @@ test("menu: 'Assinatura' é aba de Configurações, no desktop e no celular; som
   await page.getByRole("button", { name: "Mais" }).click();
   await page.getByRole("link", { name: "Configurações" }).click();
   await page.waitForURL("**/configuracoes");
-  await tabs.getByRole("tab", { exact: true, name: "Assinatura" }).click();
+  // below 760 px Configurações opens as the list of its screens, and the screen has "Voltar" to it
+  await expect(tabs).toHaveCount(0);
+  await page.getByRole("link", { exact: true, name: "Assinatura" }).click();
   await expect(title(page)).toBeVisible();
+  await expect(backToList(page)).toBeVisible();
 
   for (const options of [
     { billingSelfService: false },

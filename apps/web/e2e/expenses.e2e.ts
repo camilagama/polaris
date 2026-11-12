@@ -1,6 +1,7 @@
 /// <reference lib="dom" />
 import type { Locator, Page, Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
+import { axeFaults } from "../e2e-pwa/ui-guardrails";
 import {
   datePickerButton,
   FORM_VIEWPORTS,
@@ -23,7 +24,7 @@ import {
   reflowTest,
   skipOutsideChromium,
 } from "./reflow";
-import { expectTabsKeyboard } from "./tabs-keyboard";
+import { expectSamePlaces, placesOf } from "./same-place";
 import { serveLabWorker, WORKER_MARK } from "./worker-mark";
 
 /**
@@ -457,8 +458,61 @@ async function choose(
   await expect(page.getByRole("listbox")).toHaveCount(0);
 }
 
+const FILTER_BAR = "Filtrar despesas";
+const filterBar = (page: Page) =>
+  page.getByRole("search", { exact: true, name: FILTER_BAR });
+const FILTER_BUTTON_NAME = /^Filtrar( despesas)?$/;
+// the name is "Filtrar" from 760 px and "Filtrar despesas" (icon only) below it
+const filterButton = (page: Page) =>
+  filterBar(page).getByRole("button", { name: FILTER_BUTTON_NAME });
+const statusSegmented = (page: Page) =>
+  page.getByRole("group", { exact: true, name: "Situação" });
+// by `aria-label`, not by role: under the form Dialog of a phone the page behind is `aria-hidden`
+const filterPill = (page: Page, field: string) =>
+  page.locator(
+    `search[aria-label="${FILTER_BAR}"] button[aria-label^="${field}: "]`
+  );
+const startsWith = (text: string) => new RegExp(`^${text}`);
+
+/** Chooses a field in the "Filtrar" menu and the option in its editor (the Popover applies at once, the phone's Dialog at "Aplicar"). */
+async function addFilter(page: Page, field: string, option: string) {
+  await filterButton(page).click();
+  await page
+    .getByRole("menu", { name: "Filtrar por" })
+    .getByRole("menuitem", { name: startsWith(field) })
+    .click();
+  const editor = page.getByRole("dialog", { name: field });
+  await expect(editor).toBeVisible();
+  await editor.getByRole("button", { exact: true, name: option }).click();
+  const apply = editor.getByRole("button", { exact: true, name: "Aplicar" });
+  if ((await apply.count()) > 0) {
+    await apply.click();
+  }
+  await expect(editor).toHaveCount(0);
+}
+
+/** The segmented "Ativas | Anuladas" of the month's line: one touch swaps the list and marks the one on screen. */
+async function showStatus(page: Page, status: "Anuladas" | "Ativas") {
+  const option = statusSegmented(page).getByRole("button", {
+    exact: true,
+    name: status,
+  });
+  await option.click();
+  await expect(option).toHaveAttribute("aria-pressed", "true");
+}
+
+/** The category of the list: the pill of Categoria. */
+const filterCategory = (page: Page, name: string) =>
+  addFilter(page, "Categoria", name);
+
+const EMPTY_WITH_FILTERS = "Nenhuma despesa encontrada com estes filtros.";
+const EMPTY_VOIDED = "Nenhuma despesa anulada neste período.";
+
+/** The "Nova despesa" of the title line: it is always there, and the only one on the screen. */
 const newExpenseButton = (page: Page) =>
-  page.getByRole("button", { exact: true, name: "Nova despesa" });
+  page
+    .getByRole("button", { exact: true, name: "Nova despesa" })
+    .and(page.locator("[data-expense-new]"));
 const expenseForm = (page: Page) =>
   page.getByRole("dialog", { exact: true, name: "Nova despesa" });
 
@@ -636,35 +690,41 @@ test("a data de competência a 360×600: 'Hoje' fica à vista sem rolar e tocar 
   ).toHaveAccessibleName(`Data de competência, ${TODAY_BR}`);
 });
 
-test("a data de competência com pouca altura (celular deitado): o mês rola dentro do popover e 'Hoje' continua à vista", async ({
-  page,
-}) => {
-  await page.clock.setFixedTime(new Date(NOW));
-  await page.setViewportSize({ height: 300, width: 360 });
-  const server = new FakeExpenseServer();
-  await openExpenses(page, server);
-  await openNewExpense(page);
-  await datePickerButton(page, "Data de competência").evaluate((button) =>
-    button.scrollIntoView({ block: "center" })
-  );
-  const popup = await openDatePicker(page, "Data de competência");
-  await expect
-    .poll(async () => {
-      const box = await popup.boundingBox();
-      return box && box.y >= 0 && box.y + box.height <= 300;
-    })
-    .toBe(true);
-  // less room than the month needs: the month gives way, the footer stays
-  await expect
-    .poll(() =>
-      popup
-        .locator("[data-date-month]")
-        .evaluate((element) => element.scrollHeight > element.clientHeight)
-    )
-    .toBe(true);
-  await expect(
-    popup.getByRole("button", { exact: true, name: "Hoje" })
-  ).toBeInViewport({ ratio: 1 });
+// the popover is placed on a multiple of a device pixel: a scale such as 2.75 (the phone profile) makes that a repeating
+// fraction of a CSS pixel and the intersection ratio of a button wholly in the window reads 0.9999996; a scale of 2 is exact
+test.describe("com pouca altura, em escala 2", () => {
+  test.use({ deviceScaleFactor: 2 });
+
+  test("a data de competência com pouca altura (celular deitado): o mês rola dentro do popover e 'Hoje' continua à vista", async ({
+    page,
+  }) => {
+    await page.clock.setFixedTime(new Date(NOW));
+    await page.setViewportSize({ height: 300, width: 360 });
+    const server = new FakeExpenseServer();
+    await openExpenses(page, server);
+    await openNewExpense(page);
+    await datePickerButton(page, "Data de competência").evaluate((button) =>
+      button.scrollIntoView({ block: "center" })
+    );
+    const popup = await openDatePicker(page, "Data de competência");
+    await expect
+      .poll(async () => {
+        const box = await popup.boundingBox();
+        return box && box.y >= 0 && box.y + box.height <= 300;
+      })
+      .toBe(true);
+    // less room than the month needs: the month gives way, the footer stays
+    await expect
+      .poll(() =>
+        popup
+          .locator("[data-date-month]")
+          .evaluate((element) => element.scrollHeight > element.clientHeight)
+      )
+      .toBe(true);
+    await expect(
+      popup.getByRole("button", { exact: true, name: "Hoje" })
+    ).toBeInViewport({ ratio: 1 });
+  });
 });
 
 test("o calendário da data de competência: o teclado abre, as setas andam, Enter escolhe e o foco volta ao botão", async ({
@@ -709,18 +769,123 @@ test("um valor inválido é recusado na tela, sem chamar o servidor", async ({
   expect(server.expenses).toHaveLength(0);
 });
 
-test("as abas Ativas e Anuladas: setas trocam de aba, Tab sai do grupo e o leitor de tela lê aba selecionada", async ({
+test("a barra 'Filtrar despesas': abre em Ativas, Anuladas está a um toque no segmentado, sem pílula, e a contagem diz quantas", async ({
   page,
-}, testInfo) => {
-  test.skip(
-    testInfo.project.name.includes("mobile"),
-    "o teclado é o do desktop"
-  );
+}) => {
+  await page.clock.setFixedTime(new Date(NOW));
+  const server = new FakeExpenseServer();
+  seedExpense(server, 1, "10.00");
+  seedExpense(server, 2, "20.00");
+  seedExpense(server, 3, "30.00");
+  const [, , voided] = server.expenses;
+  if (voided === undefined) {
+    throw new Error("despesa do teste");
+  }
+  voided.status = "voided";
+  voided.voidedAt = NOW;
+  await openExpenses(page, server);
+
+  await expect(filterBar(page)).toBeVisible();
+  await expect(filterButton(page)).toBeVisible();
+  await expect(page.locator("[data-slot='filter-pill']")).toHaveCount(0);
+  await expect(page.locator("[data-expense-id]")).toHaveCount(2);
+  await expect(
+    statusSegmented(page).getByRole("button", { exact: true, name: "Ativas" })
+  ).toHaveAttribute("aria-pressed", "true");
+  await expect(
+    statusSegmented(page).getByRole("button", {
+      exact: true,
+      name: "Anuladas",
+    })
+  ).toHaveAttribute("aria-pressed", "false");
+  const summary = page
+    .getByRole("status")
+    .filter({ hasText: "Total do período" });
+  await expect(summary).toContainText("2 despesas");
+  await expect(summary).not.toContainText("anuladas");
+
+  await showStatus(page, "Anuladas");
+  await expect(page.locator("[data-slot='filter-pill']")).toHaveCount(0);
+  await expect(page.locator("[data-expense-id]")).toHaveCount(1);
+  await expect(summary).toContainText("1 despesa");
+  await expect(summary).toContainText("Total do período (anuladas)");
+
+  await showStatus(page, "Ativas");
+  await expect(page.locator("[data-slot='filter-pill']")).toHaveCount(0);
+  await expect(page.locator("[data-expense-id]")).toHaveCount(2);
+});
+
+test("o menu Filtrar lista só a Categoria: a Situação não é regra da barra", async ({
+  page,
+}) => {
+  await page.clock.setFixedTime(new Date(NOW));
   await openExpenses(page, new FakeExpenseServer());
-  await expectTabsKeyboard(page, "Situação das despesas", [
-    "Ativas",
-    "Anuladas",
-  ]);
+
+  await filterButton(page).click();
+  const menu = page.getByRole("menu", { name: "Filtrar por" });
+  await expect(menu.getByRole("menuitem")).toHaveCount(1);
+  await expect(
+    menu.getByRole("menuitem", { name: startsWith("Categoria") })
+  ).toBeVisible();
+  await expect(
+    menu.getByRole("menuitem", { name: startsWith("Situação") })
+  ).toHaveCount(0);
+});
+
+test("o filtro da barra sobrevive à troca de segmento, e fechar o editor devolve o foco à pílula", async ({
+  page,
+}) => {
+  await page.clock.setFixedTime(new Date(NOW));
+  const server = new FakeExpenseServer();
+  seedExpense(server, 1, "10.00");
+  await openExpenses(page, server);
+
+  await showStatus(page, "Anuladas");
+  await filterCategory(page, "Marketing");
+  await expect(filterPill(page, "Categoria")).toBeVisible();
+  await page.getByRole("tab", { name: "Recorrentes" }).click();
+  await page.getByRole("tab", { name: "Lançamentos" }).click();
+  await expect(
+    statusSegmented(page).getByRole("button", {
+      exact: true,
+      name: "Anuladas",
+    })
+  ).toHaveAttribute("aria-pressed", "true");
+  await expect(filterPill(page, "Categoria")).toBeVisible();
+  await expect(page.getByText(EMPTY_WITH_FILTERS)).toBeVisible();
+
+  await filterPill(page, "Categoria").click();
+  const editor = page.getByRole("dialog", { name: "Categoria" });
+  await expect(editor).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(editor).toHaveCount(0);
+  await expect(filterPill(page, "Categoria")).toBeFocused();
+});
+
+test("o vazio com categoria diz 'Nenhuma despesa encontrada com estes filtros.' e 'Limpar filtros' tira a pílula e mantém a situação", async ({
+  page,
+}) => {
+  await page.clock.setFixedTime(new Date(NOW));
+  const server = new FakeExpenseServer();
+  seedExpense(server, 1, "10.00");
+  await openExpenses(page, server);
+  await expect(page.getByText("Nenhuma despesa neste período.")).toHaveCount(0);
+
+  await filterCategory(page, "Marketing");
+  const empty = page.locator("[data-empty-state]");
+  await expect(empty).toContainText(EMPTY_WITH_FILTERS);
+  await expect(empty).toHaveAttribute("role", "status");
+  await expect(
+    empty.getByRole("button", { exact: true, name: "Nova despesa" })
+  ).toHaveCount(0);
+
+  await empty.getByRole("button", { name: "Limpar filtros" }).click();
+  await expect(page.locator("[data-slot='filter-pill']")).toHaveCount(0);
+  await expect(page.locator("[data-expense-id]")).toHaveCount(1);
+  await expect(filterButton(page)).toBeFocused();
+  await expect(
+    statusSegmented(page).getByRole("button", { exact: true, name: "Ativas" })
+  ).toHaveAttribute("aria-pressed", "true");
 });
 
 test("anular tira a despesa do período, aparece em Anuladas e pode ser reativada", async ({
@@ -739,7 +904,7 @@ test("anular tira a despesa do período, aparece em Anuladas e pode ser reativad
   await page.getByRole("button", { name: "Anular despesa Panfletos" }).click();
   await expect(row(page, "Panfletos")).toHaveCount(0);
 
-  await page.getByRole("tab", { name: "Anuladas" }).click();
+  await showStatus(page, "Anuladas");
   await expect(row(page, "Panfletos")).toBeVisible();
   await expect(
     page.getByRole("button", { name: "Editar despesa Panfletos" })
@@ -748,7 +913,7 @@ test("anular tira a despesa do período, aparece em Anuladas e pode ser reativad
   await page
     .getByRole("button", { name: "Reativar despesa Panfletos" })
     .click();
-  await page.getByRole("tab", { name: "Ativas" }).click();
+  await showStatus(page, "Ativas");
   await expect(row(page, "Panfletos")).toBeVisible();
 });
 
@@ -1064,6 +1229,34 @@ test("pausar uma despesa recorrente a esconde, e retomar não lança os período
   await expect(listedExpense(page, "Assinatura do sistema")).toHaveCount(1);
 });
 
+for (const viewport of FORM_VIEWPORTS) {
+  test(`o seletor de mês e o Filtrar, a ${viewport.name} px: o mês tem a altura de campo, o Filtrar a de botão, e os dois dividem o centro da linha`, async ({
+    page,
+  }) => {
+    await page.setViewportSize(viewport);
+    await page.clock.setFixedTime(new Date(NOW));
+    await openExpenses(page, new FakeExpenseServer());
+
+    const boxOf = async (locator: Locator) => {
+      const box = await locator.boundingBox();
+      expect(box).not.toBeNull();
+      return {
+        centre: (box?.y ?? 0) + (box?.height ?? 0) / 2,
+        height: Math.round((box?.height ?? 0) * 100) / 100,
+      };
+    };
+    const month = await boxOf(page.locator("#expense-month"));
+    const filter = await boxOf(filterButton(page));
+    const touch = await page.evaluate(
+      (width) => matchMedia("(pointer: coarse)").matches || width < 760,
+      viewport.width
+    );
+    expect(month.height).toBe(touch ? 44 : 32);
+    expect(filter.height).toBe(touch ? 36 : 32);
+    expect(Math.abs(month.centre - filter.centre)).toBeLessThanOrEqual(1);
+  });
+}
+
 /** Opens the screen and records the month of every list the screen asks for. */
 async function openExpensesWatchingMonths(page: Page) {
   await page.clock.setFixedTime(new Date(NOW));
@@ -1081,7 +1274,15 @@ async function openExpensesWatchingMonths(page: Page) {
   return months;
 }
 
-test("o seletor de mês mostra o mês por extenso, anda com as setas e escolhe na grade de meses", async ({
+/** Opens the grid of months and touches one of the year on screen; the popover closes with the choice. */
+async function chooseMonth(page: Page, name: string) {
+  await page.locator("#expense-month").click();
+  const popup = page.getByRole("dialog", { name: "Mês de competência" });
+  await popup.getByRole("button", { name }).click();
+  await expect(popup).toBeHidden();
+}
+
+test("o seletor de mês mostra o mês por extenso, sem setas ao lado, e escolhe na grade de meses", async ({
   page,
 }) => {
   const months = await openExpensesWatchingMonths(page);
@@ -1092,15 +1293,20 @@ test("o seletor de mês mostra o mês por extenso, anda com as setas e escolhe n
   );
   await expect(trigger).toHaveText("Outubro de 2026");
   await expect(page.locator('input[type="month"]')).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Mês anterior" })).toHaveCount(
+    0
+  );
+  await expect(page.getByRole("button", { name: "Próximo mês" })).toHaveCount(
+    0
+  );
 
-  await page.getByRole("button", { name: "Próximo mês" }).click();
+  await chooseMonth(page, "novembro de 2026");
   await expect(trigger).toHaveText("Novembro de 2026");
   // the total of the list follows the month
   await expect(
     page.getByText("Total do período").locator("../..")
   ).toContainText("novembro de 2026");
-  await page.getByRole("button", { name: "Mês anterior" }).click();
-  await page.getByRole("button", { name: "Mês anterior" }).click();
+  await chooseMonth(page, "setembro de 2026");
   await expect(trigger).toHaveText("Setembro de 2026");
 
   // the grid opens on the year of the month on screen, with that month pressed
@@ -1123,7 +1329,7 @@ test("o seletor de mês mostra o mês por extenso, anda com as setas e escolhe n
   await expect.poll(() => months.at(-1)).toBe("2026-03");
   await expect(trigger).toBeFocused();
 
-  // the year has its own arrows, and a month ahead of today is chosen as the arrow does (the list reads any month)
+  // the year has its own arrows, and a month ahead of today is chosen like any other (the list reads any month)
   await trigger.click();
   await popup.getByRole("button", { name: "Próximo ano" }).click();
   await expect(popup.getByText("2027", { exact: true })).toBeVisible();
@@ -1137,8 +1343,14 @@ test("o seletor de mês mostra o mês por extenso, anda com as setas e escolhe n
     expect.arrayContaining(["2026-10", "2026-11", "2026-09", "2026-03"])
   );
 
-  // the arrow after December goes to January of the next year
-  await page.getByRole("button", { name: "Próximo mês" }).click();
+  // the grid opens on the year of the month on screen, and January of the next year is one year arrow away
+  await trigger.click();
+  await expect(popup.getByText("2027", { exact: true })).toBeVisible();
+  await popup.getByRole("button", { name: "Próximo ano" }).click();
+  await popup
+    .getByRole("group", { name: "Meses de 2028" })
+    .getByRole("button", { name: "janeiro de 2028" })
+    .click();
   await expect(trigger).toHaveText("Janeiro de 2028");
 
   // "Este mês" in the footer chooses the store's current month (the clock says October 2026), closes, gives the focus back
@@ -1160,22 +1372,22 @@ test("reabrir a grade de meses no meio da saída dela mostra o ano do mês na te
 
   await trigger.click();
   await popup.getByRole("button", { name: "Próximo ano" }).click();
-  await popup
-    .getByRole("group", { name: "Meses de 2027" })
-    .getByRole("button", { name: "dezembro de 2027" })
-    .click();
+  await expect(popup.getByText("2027", { exact: true })).toBeVisible();
 
-  // the same turn as the choice: the popup is still leaving, the month moves ahead and the trigger opens it again
-  await page.evaluate(() => {
-    const click = (selector: string) =>
-      document.querySelector<HTMLElement>(selector)?.click();
-    click('[aria-label="Próximo mês"]');
-    click("#expense-month");
+  // a frame after the choice: "Este mês" takes the month back to 2026 while the cursor of this opening is in 2027, the
+  // popup is still leaving and the trigger opens it again
+  await page.evaluate(async () => {
+    const thisMonth = [...document.querySelectorAll("button")].find(
+      (button) => button.textContent === "Este mês"
+    );
+    thisMonth?.click();
+    await new Promise(requestAnimationFrame);
+    document.querySelector<HTMLElement>("#expense-month")?.click();
   });
-  await expect(trigger).toHaveText("Janeiro de 2028");
-  await expect(popup.getByText("2028", { exact: true })).toBeVisible();
+  await expect(trigger).toHaveText("Outubro de 2026");
+  await expect(popup.getByText("2026", { exact: true })).toBeVisible();
   await expect(
-    popup.getByRole("group", { name: "Meses de 2028" })
+    popup.getByRole("group", { name: "Meses de 2026" })
   ).toBeVisible();
 });
 
@@ -1254,9 +1466,9 @@ test("na virada do dia da loja, o mês que a pessoa escolheu fica onde está e a
   const { months, settle } = await openExpensesOnTheEveOfTheTurn(page);
   const trigger = page.locator("#expense-month");
   const popup = page.getByRole("dialog", { name: "Mês de competência" });
-  await page.getByRole("button", { name: "Mês anterior" }).click();
+  await chooseMonth(page, "setembro de 2026");
   await expect(trigger).toHaveText("Setembro de 2026");
-  await page.getByRole("button", { name: "Próximo mês" }).click();
+  await chooseMonth(page, "outubro de 2026");
   await expect(trigger).toHaveText("Outubro de 2026");
   await expect.poll(() => months.at(-1)).toBe("2026-10");
   await settle();
@@ -1344,10 +1556,8 @@ test("o teclado abre a grade de meses, anda por ela e escolhe o mês", async ({
   const popup = page.getByRole("dialog", { name: "Mês de competência" });
   const month = (name: string) => popup.getByRole("button", { name });
 
-  // the first Tab stop of the group after the arrow: Enter opens, and the focus goes to the month on screen
-  await page.getByRole("button", { name: "Mês anterior" }).focus();
-  await page.keyboard.press("Tab");
-  await expect(trigger).toBeFocused();
+  // Enter on the button opens, and the focus goes to the month on screen
+  await trigger.focus();
   await page.keyboard.press("Enter");
   await expect(month("outubro de 2026")).toBeFocused();
 
@@ -1409,11 +1619,168 @@ test("a lista que não pôde ser lida diz o motivo e oferece tentar de novo, nun
   reads.fail = false;
   await retry.click();
   await expect(retry).toHaveCount(0);
+  await expect(page.getByText("Nenhuma despesa neste período.")).toBeVisible();
+});
+
+test("o vazio do período é só a frase: o Nova despesa único é o do título, e o Esc devolve o foco a ele", async ({
+  page,
+}) => {
+  const server = new FakeExpenseServer();
+  await openExpenses(page, server);
+  const empty = page
+    .getByRole("status")
+    .filter({ hasText: "Nenhuma despesa neste período." });
+  await expect(empty).toBeVisible();
+  await expect(empty.getByText("Toque em")).toHaveCount(0);
+  expect(await axeFaults(page, "[data-empty-state]")).toEqual([]);
+  const only = page.getByRole("button", { exact: true, name: "Nova despesa" });
+  await expect(only).toHaveCount(1);
+  await expect(empty.getByRole("button")).toHaveCount(0);
+  await expect(newExpenseButton(page)).toBeVisible();
+  await only.click();
+  await expect(expenseForm(page)).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(only).toBeFocused();
+  await expect(only).toHaveCount(1);
+});
+
+test("o botão Nova despesa do título é o único em todas as partes e abas, e continua um só quando a lista ganha uma despesa", async ({
+  page,
+}) => {
+  const server = new FakeExpenseServer();
+  await openExpenses(page, server);
+  const newButtons = page.getByRole("button", {
+    exact: true,
+    name: "Nova despesa",
+  });
+  await expect(newButtons).toHaveCount(1);
+  await expect(newExpenseButton(page)).toBeVisible();
   await expect(
-    page.getByText(
-      "Nenhuma despesa neste período. Toque em Nova despesa para registrar a primeira."
-    )
-  ).toBeVisible();
+    page.getByRole("status").getByRole("button", { name: "Nova despesa" })
+  ).toHaveCount(0);
+
+  await page.getByRole("tab", { name: "Recorrentes" }).click();
+  await expect(newButtons).toHaveCount(1);
+  await expect(newExpenseButton(page)).toBeVisible();
+  await page.getByRole("tab", { name: "Lançamentos" }).click();
+  await expect(newButtons).toHaveCount(1);
+  await expect(newExpenseButton(page)).toBeVisible();
+
+  await showStatus(page, "Anuladas");
+  await expect(page.getByText(EMPTY_VOIDED)).toBeVisible();
+  await expect(newButtons).toHaveCount(1);
+  await expect(newExpenseButton(page)).toBeVisible();
+  await showStatus(page, "Ativas");
+
+  await newButtons.click();
+  await fillExpense(page, {
+    amount: "80",
+    category: "Marketing",
+    description: "Panfletos",
+  });
+  await expenseForm(page)
+    .getByRole("button", { name: "Registrar despesa" })
+    .click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(row(page, "Panfletos")).toBeVisible();
+  await expect(newButtons).toHaveCount(1);
+  await expect(newExpenseButton(page)).toBeVisible();
+});
+
+for (const viewport of FORM_VIEWPORTS) {
+  test(`Despesas a ${viewport.name} px: o título, as abas, o seletor de mês e o botão ficam no mesmo lugar (até 1 px) lendo, com despesas e vazio, inclusive ao paginar para um mês vazio e voltar`, async ({
+    page,
+  }, testInfo) => {
+    test.skip(
+      testInfo.project.name !== "chromium-desktop",
+      "a largura é a do teste"
+    );
+    await page.setViewportSize(viewport);
+    await page.clock.setFixedTime(new Date(NOW));
+    const server = new FakeExpenseServer();
+    seedExpense(server, 1, "20.00");
+    let release: (() => void) | undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await openExpenses(page, server, (target) =>
+      target.route("**/rpc/expense/list", async (route) => {
+        await held;
+        await route.fallback();
+      })
+    );
+    const parts = {
+      button: page.locator("[data-expense-new]"),
+      month: page.locator("#expense-month"),
+      tabs: page.getByRole("tablist", {
+        name: "Lançamentos, recorrentes e categorias",
+      }),
+      title: page.getByRole("heading", {
+        exact: true,
+        level: 1,
+        name: "Despesas",
+      }),
+    };
+    const newButtons = page.getByRole("button", {
+      exact: true,
+      name: "Nova despesa",
+    });
+
+    await expect(page.getByText("Carregando despesas…")).toBeVisible();
+    await expect(newButtons).toHaveCount(1);
+    const reading = await placesOf(parts);
+
+    release?.();
+    await expect(row(page, "Despesa 1")).toBeVisible();
+    await expect(newButtons).toHaveCount(1);
+    expectSamePlaces("com despesas", reading, await placesOf(parts));
+
+    await chooseMonth(page, "novembro de 2026");
+    await expect(
+      page.getByText("Nenhuma despesa neste período.")
+    ).toBeVisible();
+    await expect(newButtons).toHaveCount(1);
+    expectSamePlaces("no mês vazio", reading, await placesOf(parts));
+
+    await chooseMonth(page, "outubro de 2026");
+    await expect(row(page, "Despesa 1")).toBeVisible();
+    await expect(newButtons).toHaveCount(1);
+    expectSamePlaces(
+      "de volta ao mês com despesas",
+      reading,
+      await placesOf(parts)
+    );
+  });
+}
+
+test("a troca de carregando para vazio deixa o cartão da lista com a mesma altura e no mesmo lugar (até 1 px), no celular e no desktop", async ({
+  page,
+}) => {
+  const server = new FakeExpenseServer();
+  let release: (() => void) | undefined;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await openExpenses(page, server, (target) =>
+    target.route("**/rpc/expense/list", async (route) => {
+      await held;
+      await route.fallback();
+    })
+  );
+  const card = page.getByRole("region", { name: "Despesas do período" });
+  await expect(page.getByText("Carregando despesas…")).toBeVisible();
+  const measure = async () => {
+    const box = await card.boundingBox();
+    return { height: box?.height ?? 0, top: box?.y ?? 0 };
+  };
+  const reading = await measure();
+  release?.();
+  await expect(page.getByText("Nenhuma despesa neste período.")).toBeVisible();
+  const empty = await measure();
+  expect(Math.abs(empty.height - reading.height)).toBeLessThanOrEqual(1);
+  // the title's button is there in both states, so the card does not move
+  expect(Math.abs(empty.top - reading.top)).toBeLessThanOrEqual(1);
 });
 
 const VER_RECURRING = /[?&]ver=recorrentes(&|$)/;
@@ -1699,8 +2066,8 @@ for (const viewport of FORM_VIEWPORTS) {
     const filled = await footer.boundingBox();
 
     // a category with nothing in it empties the list: the foot stays, at zero, as tall as before
-    await choose(page, page, "Categoria", "Marketing");
-    await expect(page.getByText("Nenhuma despesa neste período")).toBeVisible();
+    await filterCategory(page, "Marketing");
+    await expect(page.getByText(EMPTY_WITH_FILTERS)).toBeVisible();
     await expect(footer).toContainText("R$ 0,00");
     await expect(footer).toContainText("0 despesas");
     const empty = await footer.boundingBox();
@@ -1778,8 +2145,7 @@ for (const width of [480, 1280]) {
     };
     const footerValue = page.locator("[data-list-total] .tabular-nums");
     const rowValues = page.locator("[data-expense-id] p.tabular-nums");
-    const expectColumn = async (tab: string) => {
-      await page.getByRole("tab", { name: tab }).click();
+    const expectColumn = async () => {
       await expect(rowValues).toHaveCount(2);
       await expect(footerValue).not.toHaveText("…");
       const total = await rightEdge(footerValue);
@@ -1788,8 +2154,9 @@ for (const width of [480, 1280]) {
       expect(Math.abs(total - first)).toBeLessThanOrEqual(0.5);
       expect(Math.abs(total - second)).toBeLessThanOrEqual(0.5);
     };
-    await expectColumn("Ativas");
-    await expectColumn("Anuladas");
+    await expectColumn();
+    await showStatus(page, "Anuladas");
+    await expectColumn();
   });
 }
 
@@ -1831,10 +2198,8 @@ test.describe("a 320 px com letra de 20 px", () => {
       await assertNoPageScroll(page);
       const filled = footerBox?.height ?? 0;
 
-      await choose(page, page, "Categoria", "Marketing");
-      await expect(
-        page.getByText("Nenhuma despesa neste período")
-      ).toBeVisible();
+      await filterCategory(page, "Marketing");
+      await expect(page.getByText(EMPTY_WITH_FILTERS)).toBeVisible();
       await expect(footer).toContainText("0 despesas");
       await expect(value).toHaveText("R$ 0,00");
       const empty = await footer.boundingBox();

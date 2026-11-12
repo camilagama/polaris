@@ -75,7 +75,7 @@ test.describe("a 360 px", () => {
   test.use({ viewport: PHONE });
 
   for (const label of ["Período", "Situação", "Cliente"]) {
-    test(`${label}: abre em tela inteira com o nome do filtro no título e Aplicar e Cancelar no rodapé fixo`, async ({
+    test(`${label}: abre em tela inteira com o nome do filtro no título e Cancelar no rodapé fixo, com Aplicar fora do período`, async ({
       page,
     }) => {
       const csp = await watchCspViolations(page);
@@ -91,7 +91,11 @@ test.describe("a 360 px", () => {
       // the footer is fixed at the bottom of the screen, both buttons in sight
       const footer = await box(open.locator('[data-slot="dialog-footer"]'));
       expect(footer.y + footer.height).toBeCloseTo(PHONE.height, 0);
-      await expect(apply(open)).toBeVisible();
+      if (label === "Período") {
+        await expect(apply(open)).toHaveCount(0);
+      } else {
+        await expect(apply(open)).toBeVisible();
+      }
       await expect(cancel(open)).toBeVisible();
       // no Dialog inside a Dialog, and no Popover next to it
       await expect(page.getByRole("dialog")).toHaveCount(1);
@@ -155,14 +159,20 @@ test.describe("a 360 px", () => {
     await expect(pill(page, "Cliente")).toHaveCount(0);
     await expect(addButton(page)).toBeFocused();
 
-    // the period: a shortcut and then two days are drafts too, and "Limpar" empties the draft
-    const period = await openPill(page, "Período");
-    await shortcut(period, "7 dias").click();
-    await expect(period).toBeVisible();
+    // the period: a shortcut applies and closes at once, with no "Aplicar" before a day is touched; two days are a draft
+    // that "Aplicar" confirms, and "Limpar" empties the draft
+    const quick = await openPill(page, "Período");
+    await expect(apply(quick)).toHaveCount(0);
+    await shortcut(quick, "7 dias").click();
+    await expect(quick).toBeHidden();
     await expect(pill(page, "Período")).toHaveAttribute(
       "aria-label",
-      "Período: 01/10 a 24/10, editar"
+      "Período: 18/10 a 24/10, editar"
     );
+    await expect(pill(page, "Período")).toBeFocused();
+    await expectNoEntryLeft(page);
+
+    const period = await openPill(page, "Período");
     await period.locator('button[data-day="2026-10-20"]').click();
     await period.locator('button[data-day="2026-10-22"]').click();
     await expect(period).toBeVisible();
@@ -180,6 +190,7 @@ test.describe("a 360 px", () => {
       "aria-label",
       "Período: 20/10 a 22/10, editar"
     );
+    await expect(apply(clearing)).toBeVisible();
     await apply(clearing).click();
     await expect(pill(page, "Período")).toHaveCount(0);
     await expect(count(page)).toHaveText("1 filtro ativo");
@@ -237,7 +248,9 @@ test.describe("a 360 px", () => {
     );
 
     const period = await openPill(page, "Período");
-    await shortcut(period, "Hoje").click();
+    await period.locator('button[data-day="2026-10-20"]').click();
+    await period.locator('button[data-day="2026-10-22"]').click();
+    await expect(apply(period)).toBeVisible();
     await cancel(period).click();
     await expect(period).toBeHidden();
     await expect(pill(page, "Período")).toHaveAttribute(
@@ -252,11 +265,11 @@ test.describe("a 360 px", () => {
   }) => {
     await openGallery(page);
     const period = await openPill(page, "Período");
-    await expect(apply(period)).not.toHaveAttribute("aria-disabled", "true");
+    await expect(apply(period)).toHaveCount(0);
     await period.locator('button[data-day="2026-10-20"]').click();
     await expect(apply(period)).toHaveAttribute("aria-disabled", "true");
     await expect(apply(period)).toHaveAccessibleDescription(
-      "Início 20/10/2026. Escolha o último dia."
+      "Início 20/10. Escolha o último dia."
     );
     await apply(period).click({ force: true });
     await expect(period).toBeVisible();
@@ -357,11 +370,10 @@ test.describe("reaberto no meio da saída, a 360 px com mouse", () => {
     const open = await openPill(page, "Período");
     await open.getByRole("button", { name: "Próximo mês" }).click();
     await expect(open.getByText("Novembro de 2026")).toBeVisible();
-    await shortcut(open, "Hoje").click();
-    await expect(shortcut(open, "Hoje")).toHaveAttribute(
-      "aria-pressed",
-      "true"
-    );
+    await open.locator('button[data-day="2026-11-03"]').click();
+    await expect(
+      open.getByText("Início 03/11. Escolha o último dia.")
+    ).toBeVisible();
 
     // Cancelar, then one turn of the page later the pill again: at the full level (a narrow window with a mouse) the
     // Dialog leaves in 220 ms and is still mounted

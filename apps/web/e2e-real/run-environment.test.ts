@@ -8,6 +8,7 @@ import {
   hyperdriveVariable,
   ownerDatabaseUrl,
   previewEnvironment,
+  unsubscribeTokenSecretOf,
 } from "./run-environment";
 
 const DATABASE_URL_REQUIRED = /POLARIS_E2E_DATABASE_URL is required/;
@@ -74,6 +75,31 @@ describe("the environment of an e2e run", () => {
     const build = closedEnvironment(on, "build");
     expect(build.OFFLINE_LEASE_SECRET).toBeUndefined();
     expect(build.SYNC_PAYLOAD_HASH_SECRET).toBeUndefined();
+  });
+
+  it("gives the key of the links of the tips to every preview, never the run's own secret, and never to the build", () => {
+    const run = ensureRunEnvironment({});
+    const origin = "http://127.0.0.1:4321";
+    for (const runtime of [true, false]) {
+      const preview = previewEnvironment(
+        new URL(OWNER),
+        run,
+        origin,
+        runtime,
+        {}
+      );
+      expect(preview.UNSUBSCRIBE_TOKEN_SECRET).toMatch(HEX_64);
+      expect(preview.UNSUBSCRIBE_TOKEN_SECRET).toBe(
+        unsubscribeTokenSecretOf(run.secret)
+      );
+      expect(preview.UNSUBSCRIBE_TOKEN_SECRET).not.toBe(run.secret);
+      expect(preview.E2E_PREVIEW_VARIABLES).toContain(
+        "UNSUBSCRIBE_TOKEN_SECRET"
+      );
+      expect(
+        closedEnvironment(preview, "build").UNSUBSCRIBE_TOKEN_SECRET
+      ).toBeUndefined();
+    }
   });
 
   it("refuses a binding missing or left on the wrangler.jsonc fallback (postgres:postgres)", () => {

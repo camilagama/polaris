@@ -191,9 +191,11 @@ for (const [fontPixels, historyLines] of [
   [20, 1],
   [21, 2],
   [22, 2],
+  [23, 2],
+  [24, 2],
 ] as const) {
   reflowTest(
-    `a 320 px com letra de ${fontPixels} px nenhum rótulo da barra deixa uma letra sozinha numa linha e Histórico quebra numa sílaba`,
+    `a 320 px com letra de ${fontPixels} px nenhum rótulo da barra deixa uma letra sozinha numa linha e Histórico e Estoque, quando quebram, quebram numa sílaba`,
     async ({ page }) => {
       await open(page, "/inventory", { fontPixels, width: 320 });
       const boxes = await labelBoxes(bar(page));
@@ -209,6 +211,11 @@ for (const [fontPixels, historyLines] of [
       expect(history?.lineTexts.join("")).toBe("Histórico");
       expect(history?.lineTexts).toEqual(
         historyLines === 1 ? ["Histórico"] : ["Histó", "rico"]
+      );
+      const inventory = boxes.find((box) => box.name === "Estoque");
+      expect(inventory?.lineTexts.join("")).toBe("Estoque");
+      expect([["Estoque"], ["Esto", "que"]]).toContainEqual(
+        inventory?.lineTexts
       );
     }
   );
@@ -350,12 +357,12 @@ function pageMargins(page: Page, panel: string) {
   }, panel);
 }
 
-for (const [path, tab] of [
-  ["/dashboard", "Resultado"],
-  ["/dashboard?aba=despesas", "Despesas"],
+for (const [path, tab, screen] of [
+  ["/dashboard", "Resultado", "Resultado"],
+  ["/expenses", "Lançamentos", "Despesas"],
 ] as const) {
   reflowTest(
-    `a 320 px com letra de 20 px a página de ${tab} não rola na horizontal e a margem direita é a da esquerda`,
+    `a 320 px com letra de 20 px a página de ${screen} não rola na horizontal e a margem direita é a da esquerda`,
     async ({ page }) => {
       await open(page, path, { fontPixels: 20, width: 320 });
       await expect(
@@ -390,7 +397,7 @@ reflowTest(
     });
     await openReflowViewport(page, { fontPixels: 20, width: 320 });
     await serve(page);
-    await page.goto("/dashboard?aba=despesas");
+    await page.goto("/expenses");
     await expect(page.getByText("Carregando as despesas…")).toBeAttached();
     await assertNoPageScroll(page);
     release();
@@ -404,7 +411,7 @@ reflowTest(
 reflowTest(
   "a 320 px com letra de 20 px a faixa de Despesas mostra o degradê do fim, que some quando se chega às Categorias",
   async ({ page }) => {
-    await open(page, "/dashboard?aba=despesas", { fontPixels: 20, width: 320 });
+    await open(page, "/expenses", { fontPixels: 20, width: 320 });
     const strip = page.getByRole("tablist", { name: EXPENSE_TABS });
     const scroller = strip.locator("xpath=..");
     const frame = scroller.locator("xpath=..");
@@ -520,14 +527,17 @@ reflowTest(
     const [fieldBox, hintBox, filtersBox] = await Promise.all([
       field.locator("xpath=..").boundingBox(),
       hint.boundingBox(),
-      page.getByRole("button", { name: "Filtros" }).boundingBox(),
+      page
+        .getByRole("search", { exact: true, name: "Filtrar estoque" })
+        .getByRole("button", { exact: true, name: "Filtrar" })
+        .boundingBox(),
     ]);
     expect(hintBox?.y ?? 0).toBeGreaterThanOrEqual(
       (fieldBox?.y ?? 0) + (fieldBox?.height ?? 0)
     );
     expect(
       Math.abs((filtersBox?.y ?? 0) - (fieldBox?.y ?? 99)),
-      "o botão Filtros fica na linha do campo"
+      "o botão Filtrar fica na linha do campo"
     ).toBeLessThanOrEqual(8);
     await field.fill("camiseta");
     await expect(field).toHaveValue("camiseta");
@@ -555,4 +565,38 @@ for (const [width, fontPixels] of [
       { coarse: width < WIDE_WINDOW }
     );
   }
+}
+
+/** The header at its tightest: the eye, the chip and the account side by side, the chip giving way before anything is cut. */
+for (const [width, fontPixels] of [
+  [320, 20],
+  [360, 16],
+] as const) {
+  reflowTest(
+    `a ${width} px com letra de ${fontPixels} px o olho, o chip e a conta cabem no cabeçalho, nessa ordem, sem corte`,
+    async ({ page }) => {
+      await open(page, "/", { fontPixels, width });
+      const header = page.locator("[data-app-header]");
+      const chip = header.locator(".sync-status");
+      await expect(chip).toBeVisible({ timeout: 20_000 });
+      const eye = header.getByRole("button", {
+        exact: true,
+        name: "Esconder valores",
+      });
+      const account = header.locator("[data-store-menu]");
+      const [chipBox, eyeBox, accountBox] = await Promise.all(
+        [chip, eye, account].map((part) => part.boundingBox())
+      );
+      expect(chipBox && eyeBox && accountBox).toBeTruthy();
+      const right = (box: typeof chipBox) => (box ? box.x + box.width : 0);
+      expect(right(chipBox)).toBeLessThanOrEqual((eyeBox?.x ?? 0) + SLACK);
+      expect(right(eyeBox)).toBeLessThanOrEqual((accountBox?.x ?? 0) + SLACK);
+      expect(right(accountBox)).toBeLessThanOrEqual(width);
+      expect(eyeBox?.width).toBeGreaterThanOrEqual(36);
+      await assertNothingClipped(header, {
+        allowScroll: [".sync-status-short"],
+      });
+      await assertNoPageScroll(page);
+    }
+  );
 }

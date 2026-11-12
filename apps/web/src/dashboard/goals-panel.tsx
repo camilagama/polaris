@@ -1,7 +1,5 @@
 import type { GoalReadModel } from "@polaris/contracts";
 import PlusIcon from "lucide-react/dist/esm/icons/plus";
-import RefreshCwIcon from "lucide-react/dist/esm/icons/refresh-cw";
-import TargetIcon from "lucide-react/dist/esm/icons/target";
 import {
   useCallback,
   useEffect,
@@ -12,6 +10,8 @@ import {
 } from "react";
 import { Button } from "@/ui/button";
 import { Card, CardContent } from "@/ui/card";
+import { EmptyState } from "@/ui/empty-state";
+import { RefreshButton } from "@/ui/refresh-button";
 import { ActionNotice, ListNote, LoadError } from "../expenses/expense-fields";
 import { focusLater } from "../lib/focus";
 import { keepForReturn, takeKept } from "../lib/kept-for-return";
@@ -60,13 +60,10 @@ interface GoalListProps {
   today: string;
 }
 
-/** The small caps label over a group of cards. */
+/** The label over a group of cards. */
 function GroupLabel({ children, id }: { children: string; id: string }) {
   return (
-    <h3
-      className="mt-1 font-medium text-muted-foreground text-xs uppercase tracking-wide"
-      id={id}
-    >
+    <h3 className="mt-1 font-medium text-muted-foreground text-support" id={id}>
       {children}
     </h3>
   );
@@ -102,19 +99,11 @@ function GoalList({
         </Card>
       ) : null}
       {!state.isLoading && goals.length === 0 && state.error === null ? (
-        <Card>
-          <CardContent className="grid justify-items-center gap-1 text-center">
-            <TargetIcon
-              aria-hidden="true"
-              className="size-5 text-muted-foreground"
-            />
-            <p className="font-medium">Nenhuma meta ainda</p>
-            <p className="text-muted-foreground text-support">
-              Crie uma para acompanhar as vendas líquidas, o resultado estimado
-              ou o número de vendas de um período.
-            </p>
-          </CardContent>
-        </Card>
+        <EmptyState
+          afterRead
+          support="Acompanhe as vendas líquidas, o resultado estimado ou o número de vendas de um período."
+          title="Nenhuma meta ainda"
+        />
       ) : null}
       {groups.active.length > 0 ? (
         <>
@@ -305,24 +294,18 @@ export function GoalsPanel({
           </p>
         </div>
         <div className="ml-auto flex gap-2">
-          <Button
-            aria-label="Atualizar metas"
+          <RefreshButton
+            busy={state.isLoading}
             disabled={state.isLoading || busy !== null}
+            object="metas"
             onClick={handleRetry}
-            size="sm"
-            type="button"
-            variant="ghost"
-          >
-            <RefreshCwIcon aria-hidden="true" data-icon="inline-start" />
-            <span className="max-sm:hidden">Atualizar</span>
-          </Button>
+          />
           <Button
             disabled={busy !== null}
             onClick={handleNew}
             ref={newButtonRef}
             size="sm"
             type="button"
-            variant="outline"
           >
             <PlusIcon aria-hidden="true" data-icon="inline-start" />
             Nova meta

@@ -21,11 +21,9 @@ import {
   LOADING_TEXT,
   OFFLINE_TEXT,
   RECOGNIZING_PATIENCE_MS,
-  RECOGNIZING_SLOW_TEXT,
-  RECOGNIZING_TEXT,
-  RECOGNIZING_UNAVAILABLE_TEXT,
   type Recognition,
   recognitionState,
+  recognitionText,
   revokedMessage,
   revokeFailure,
   SESSION_ENDED_PANEL,
@@ -184,6 +182,11 @@ function BrowserLeft({ keptWork }: { keptWork: boolean }) {
   );
 }
 
+interface RecognitionView {
+  state: Recognition;
+  text: string;
+}
+
 /**
  * Whether the screen is still waiting to know which row is this browser (null when it
  * does not need to). It gives up when the runtime says it is unavailable, or after a while.
@@ -193,7 +196,7 @@ function useRecognition(
   knowsThisDevice: boolean,
   sessionOver: boolean,
   snapshot: RuntimeSnapshot | null
-): Recognition | null {
+): RecognitionView | null {
   const [slow, setSlow] = useState(false);
   const waiting = online && !knowsThisDevice && !sessionOver;
   useEffect(() => {
@@ -207,25 +210,24 @@ function useRecognition(
   if (!waiting) {
     return null;
   }
-  return recognitionState(slow, snapshot?.phase ?? null);
+  const phase = snapshot?.phase ?? null;
+  const reason = snapshot?.reason ?? null;
+  const state = recognitionState(slow, phase, reason);
+  return { state, text: recognitionText(state, phase, reason) };
 }
 
-function RecognitionLine({ state }: { state: Recognition }) {
-  if (state === "waiting") {
+function RecognitionLine({ view }: { view: RecognitionView }) {
+  if (view.state === "waiting") {
     return (
       <p className="text-muted-foreground" id={RECOGNITION_ID} role="status">
-        {RECOGNIZING_TEXT}
+        {view.text}
       </p>
     );
   }
   return (
     <Alert id={RECOGNITION_ID} variant="warning">
       <TriangleAlertIcon aria-hidden="true" />
-      <AlertDescription>
-        {state === "slow"
-          ? RECOGNIZING_SLOW_TEXT
-          : RECOGNIZING_UNAVAILABLE_TEXT}
-      </AlertDescription>
+      <AlertDescription>{view.text}</AlertDescription>
     </Alert>
   );
 }
@@ -250,7 +252,7 @@ interface ListSectionProps {
   onRetry: () => void;
   onRevoke: (id: string) => void;
   panel: SignInAgainPanel | null;
-  recognition: Recognition | null;
+  recognition: RecognitionView | null;
   rows: DeviceRow[];
 }
 
@@ -325,7 +327,7 @@ function ListSection({
         </Card>
       ) : null}
       {devices && recognition && !sessionGone ? (
-        <RecognitionLine state={recognition} />
+        <RecognitionLine view={recognition} />
       ) : null}
       {devices && sessionGone ? (
         <p className="text-muted-foreground" id={SESSION_GONE_ID} role="status">

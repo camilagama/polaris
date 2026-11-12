@@ -1,11 +1,16 @@
 import type { ExpenseReadModel } from "@polaris/contracts";
 import PlusIcon from "lucide-react/dist/esm/icons/plus";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { type MouseEvent, useCallback, useMemo, useRef, useState } from "react";
 import { Button } from "@/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/ui/card";
 import { Dialog, DialogContent } from "@/ui/dialog";
+import { HelpTip } from "@/ui/help-tip";
 import { Tabs, TabsContent, TabsTrigger } from "@/ui/tabs";
-import { ScreenTitle } from "../app-shell/screen-title";
+import {
+  ScreenTitle,
+  TITLE_ACTION_CLASS,
+  TitleLine,
+} from "../app-shell/screen-title";
 import { ScreenTabList } from "../app-shell/screen-tabs";
 import { connectionControlProps } from "../app-shell/connection-required-notice";
 import { useConnectionOnline } from "../lib/browser-connection";
@@ -18,12 +23,8 @@ import { markPeriodSummaryStale } from "../lib/period-summary-stale";
 import { ExpenseCategoriesPanel } from "./expense-categories-panel";
 import { ActionNotice, LoadError } from "./expense-fields";
 import { ExpenseForm } from "./expense-form";
-import {
-  ExpenseCategoryFilter,
-  ExpenseList,
-  ExpenseStatusTabs,
-  ExpenseSummary,
-} from "./expense-list";
+import { ExpenseFiltersBar, focusFilterAfterClear } from "./expense-filters";
+import { ExpenseList, ExpenseSummary } from "./expense-list";
 import {
   type ExpenseDraft,
   type ExpenseInput,
@@ -77,13 +78,36 @@ function dropPreviousWindow(organizationId: string, competences: string[]) {
   }
 }
 
-function Heading() {
+function Heading({
+  busy,
+  onNew,
+}: {
+  busy: boolean;
+  onNew: (event: MouseEvent<HTMLButtonElement>) => void;
+}) {
   return (
     <header className="grid gap-1">
-      <ScreenTitle>Despesas</ScreenTitle>
-      <p className="text-muted-foreground text-support">
-        Cada despesa conta no mês de competência, não no dia do pagamento.
-      </p>
+      <TitleLine
+        action={
+          <Button
+            className={TITLE_ACTION_CLASS}
+            data-expense-new=""
+            disabled={busy}
+            onClick={onNew}
+            type="button"
+          >
+            <PlusIcon aria-hidden="true" data-icon="inline-start" />
+            Nova despesa
+          </Button>
+        }
+      >
+        <div className="flex items-center gap-1">
+          <ScreenTitle>Despesas</ScreenTitle>
+          <HelpTip about="Despesas">
+            Cada despesa conta no mês de competência, não no dia do pagamento.
+          </HelpTip>
+        </div>
+      </TitleLine>
     </header>
   );
 }
@@ -108,7 +132,7 @@ function focusNewWhenLost() {
 }
 
 /**
- * The expenses screen, the Despesas tab of the Resultado: online only, every figure comes from the server. Three parts
+ * The expenses screen, a destination of its own (`/expenses`): online only, every figure comes from the server. Three parts
  * in a segmented list, named in the address (`?ver=`): the expenses of the month, the recurring rules and the
  * categories. Every form is a dialog; the three parts stay mounted, so a filter or a ticked box survives a change of part.
  */
@@ -257,14 +281,22 @@ export function ExpensesPage() {
     (expense: ExpenseReadModel) => handleStatusChange(expense, "restore"),
     [handleStatusChange]
   );
-  const handleNew = useCallback(() => openForm("new"), [openForm]);
+  const handleNew = useCallback(
+    (event: MouseEvent<HTMLButtonElement>) => {
+      if (view !== "lancamentos") {
+        selectView("lancamentos");
+      }
+      openForm("new", event.currentTarget);
+    },
+    [openForm, selectView, view]
+  );
   const handleMonth = useCallback(
     (month: string) =>
       setChoices((current) => ({ ...current, chosenMonth: month })),
     []
   );
   const handleFilters = useCallback(
-    (next: ExpenseFilters) =>
+    (next: Pick<ExpenseFilters, "categoryId" | "status">) =>
       setChoices((current) => ({
         ...current,
         categoryId: next.categoryId,
@@ -272,6 +304,10 @@ export function ExpensesPage() {
       })),
     []
   );
+  const handleClearFilters = useCallback(() => {
+    setChoices((current) => ({ ...current, categoryId: "" }));
+    focusFilterAfterClear();
+  }, []);
 
   // The server generates the occurrences that fell due when the list is read,
   // so a changed rule means the list (and the month total) must be read again.
@@ -292,7 +328,7 @@ export function ExpensesPage() {
 
   return (
     <div className="grid gap-4 font-sans text-foreground text-sm antialiased">
-      <Heading />
+      <Heading busy={busy !== null} onNew={handleNew} />
       {categories.state.error ? (
         <LoadError
           busy={categories.state.isLoading}
@@ -319,21 +355,22 @@ export function ExpensesPage() {
         </ScreenTabList>
 
         <TabsContent className="grid gap-4" keepMounted value="lancamentos">
-          {/* the month and the category on one line: the list and its first expense come in the first screen */}
-          <div className="grid grid-cols-1 items-start gap-x-3 gap-y-3 min-[30rem]:flex min-[22.5rem]:grid-cols-[auto_minmax(0,1fr)] min-[30rem]:flex-wrap">
-            <MonthPicker
-              currentMonth={monthOfDay(today)}
-              id="expense-month"
-              label="Mês de competência"
-              month={filters.month}
-              onChange={handleMonth}
-            />
-            <ExpenseCategoryFilter
-              categories={categories.state.categories}
-              filters={filters}
-              onChange={handleFilters}
-            />
-          </div>
+          {/* the month, "Filtrar" and its pills share the line: the list and its first expense come in the first screen */}
+          <ExpenseFiltersBar
+            categories={categories.state.categories}
+            filters={filters}
+            leading={
+              <MonthPicker
+                className="[&>label]:sr-only"
+                currentMonth={monthOfDay(today)}
+                id="expense-month"
+                label="Mês de competência"
+                month={filters.month}
+                onChange={handleMonth}
+              />
+            }
+            onChange={handleFilters}
+          />
           {/* while the form is open it covers the screen: what the commands say is said inside it */}
           <ActionNotice
             errorRef={noticeRef}
@@ -362,27 +399,16 @@ export function ExpensesPage() {
           </Dialog>
           <Card aria-labelledby={LIST_TITLE_ID} role="region">
             <CardHeader className="gap-3">
-              <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
-                <CardTitle aria-level={2} id={LIST_TITLE_ID} role="heading">
-                  Despesas do período
-                </CardTitle>
-                <Button
-                  data-expense-new=""
-                  disabled={busy !== null}
-                  onClick={handleNew}
-                  type="button"
-                >
-                  <PlusIcon aria-hidden="true" data-icon="inline-start" />
-                  Nova despesa
-                </Button>
-              </div>
+              <CardTitle aria-level={2} id={LIST_TITLE_ID} role="heading">
+                Despesas do período
+              </CardTitle>
               <ExpenseSummary filters={filters} state={state} />
             </CardHeader>
             <CardContent className="grid gap-4">
-              <ExpenseStatusTabs filters={filters} onChange={handleFilters} />
               <ExpenseList
                 busyKey={busy}
                 filters={filters}
+                onClearFilters={handleClearFilters}
                 onEdit={openForm}
                 onLoadMore={loadMore}
                 onRestore={handleRestore}

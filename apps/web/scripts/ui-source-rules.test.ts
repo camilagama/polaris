@@ -194,7 +194,10 @@ const sourcesUnder = (dir: string): string[] => {
   if (statSync(root).isFile()) {
     return [dir];
   }
-  return readdirSync(root, { withFileTypes: true }).flatMap((entry) => {
+  const entries = readdirSync(root, { withFileTypes: true }).sort((a, b) =>
+    a.name.localeCompare(b.name, "en")
+  );
+  return entries.flatMap((entry) => {
     const path = `${dir}/${entry.name}`;
     if (entry.isDirectory()) {
       return sourcesUnder(path);
@@ -223,6 +226,119 @@ const FOCUS_SCOPE = sourcesUnder("src").filter((path) => TS_OR_TSX.test(path));
 const MOTION_SCOPE = sourcesUnder("src").filter((path) =>
   path.endsWith(".tsx")
 );
+
+/**
+ * Dinheiro (DESIGN.md "Dinheiro"): every amount in reais is written by `Money`, whose sizes are the four `text-value-*`.
+ * The files that write amounts have no size in rem or px (`text-[1.75rem]`), and no class string that sets a free
+ * `text-[…]` size beside `tabular-nums`; the "R$" and the cents are a fraction of the number (`text-[0.56em]`,
+ * `text-[0.72em]`) and that fraction lives only in `ui/money.tsx`, apart from the strings listed here.
+ */
+const MONEY_FILES = [
+  "src/ui/money.tsx",
+  "src/ui/hidden-values.tsx",
+  "src/ui/kpi-card.tsx",
+  "src/home/home-kpi-cards.tsx",
+  "src/dashboard/result-cards.tsx",
+] as const;
+const MONEY_COMPONENT = "src/ui/money.tsx";
+const ABSOLUTE_TEXT_SIZE = /(?:^|:)text-\[[\d.]+(?:rem|px)\]$/;
+const FREE_TEXT_SIZE = /(?:^|:)text-\[/;
+const MONEY_FRACTION = /(?:^|:)text-\[0\.(?:56|72)em\]$/;
+
+const MONEY_FRACTION_ELSEWHERE: readonly {
+  file: string;
+  strings: number;
+  why: string;
+}[] = [
+  {
+    file: "src/ui/kpi-card.tsx",
+    strings: 1,
+    why: "o sufixo % da Margem (HeroPercent) usa a mesma fração do R$ na caixa do valor do cartão",
+  },
+];
+
+const MONEY_ABSOLUTE_SIZE_ELSEWHERE: readonly {
+  file: string;
+  strings: number;
+  why: string;
+}[] = [];
+
+const stringsOf = (text: string) =>
+  [...withoutComments(text).matchAll(STRING)].map(
+    (match) => match[1] ?? match[2] ?? match[3] ?? ""
+  );
+
+export function moneyFontFaults(path: string, text: string): string[] {
+  if (!TS_OR_TSX.test(path)) {
+    return [];
+  }
+  const faults: string[] = [];
+  const values = stringsOf(text).map((value) =>
+    value.split(SPACES).filter(Boolean)
+  );
+  if ((MONEY_FILES as readonly string[]).includes(path)) {
+    const absolute = values.filter((tokens) =>
+      tokens.some((token) => ABSOLUTE_TEXT_SIZE.test(token))
+    ).length;
+    const allowed =
+      MONEY_ABSOLUTE_SIZE_ELSEWHERE.find((entry) => entry.file === path)
+        ?.strings ?? 0;
+    if (absolute !== allowed) {
+      faults.push(
+        `${absolute} texto(s) com tamanho em rem ou px em dinheiro, e a lista diz ${allowed}`
+      );
+    }
+    for (const tokens of values) {
+      if (
+        tokens.includes("tabular-nums") &&
+        tokens.some((token) => FREE_TEXT_SIZE.test(token))
+      ) {
+        faults.push("text-[…] livre junto de tabular-nums em dinheiro");
+      }
+    }
+  }
+  if (path !== MONEY_COMPONENT) {
+    const fractions = values
+      .flat()
+      .filter((token) => MONEY_FRACTION.test(token)).length;
+    const listed =
+      MONEY_FRACTION_ELSEWHERE.find((entry) => entry.file === path)?.strings ??
+      0;
+    if (fractions !== listed) {
+      faults.push(
+        `${fractions} fração(ões) do R$ ou dos centavos fora de ui/money.tsx, e a lista diz ${listed}`
+      );
+    }
+  }
+  return faults;
+}
+
+/**
+ * The lists (DESIGN.md "Dinheiro"): the amount is written by `Money` or `MoneyText`, which decide the "R$" and the
+ * mask, so these files have no "R$" of their own in a string or in JSX text. The list is of files that exist (a file
+ * that was renamed or deleted makes the test fail); a list screen that migrates to `Money` enters it in the same change.
+ */
+const MONEY_LIST_FILES = [
+  "src/catalog/screen-parts.tsx",
+  "src/expenses/expense-list.tsx",
+  "src/inventory/inventory-page.tsx",
+  "src/sales/confirmed-sale-parts.tsx",
+  "src/sales/sale-confirmed-panel.tsx",
+  "src/sales/sale-history-list.tsx",
+  "src/sales/sale-receipt.tsx",
+] as const;
+const HAND_TYPED_REAIS = /R\$/;
+
+export function handTypedReaisFaults(path: string, text: string): string[] {
+  if (!(MONEY_LIST_FILES as readonly string[]).includes(path)) {
+    return [];
+  }
+  return HAND_TYPED_REAIS.test(withoutComments(text))
+    ? [
+        '"R$" escrito à mão: o valor em reais passa pelo Money ou pelo MoneyText',
+      ]
+    : [];
+}
 
 /**
  * Focus (DESIGN.md "Acessibilidade"): `outline-none` takes the browser's focus ring away, so the class string that
@@ -349,6 +465,131 @@ export function focusListFaults(
     : [`${found} string(s) sem anel de foco, e a lista diz ${listed}`];
 }
 
+/**
+ * O número principal do cartão de KPI não rola dígitos (DESIGN.md "Movimento"): reprova o pacote de contador, o
+ * `<NumberFlow`, as opções de rolagem, o `AnimatedFigure` fora da lista fechada e a entrada fora de `motion-full:`.
+ */
+export const FIGURE_COMPONENT = "src/ui/animated-figure.tsx";
+export const FIGURE_USERS = [
+  "src/ui-gallery/ui-gallery.tsx",
+  "src/ui/kpi-card.tsx",
+] as const;
+const ROLLING_DIGITS =
+  /@number-flow\/|\bnumber-flow\b|<NumberFlow\b|\bNumberFlow\b|\bspinTiming\b|\btransformTiming\b|\bopacityTiming\b|figure-counter|data-figure-counting|data-animated-figure/;
+const FIGURE_USE = /<AnimatedFigure\b/;
+const DYNAMIC_IMPORT = /\bimport\s*\(/;
+const COUNTER_PACKAGE_NAME = /number-flow/;
+const FIGURE_ENTRANCE = /\bENTRANCE\s*=\s*\n?\s*"([^"]*)"/;
+
+export function figureFaults(path: string, text: string): string[] {
+  const code = withoutComments(text);
+  const faults: string[] = [];
+  if (ROLLING_DIGITS.test(code)) {
+    faults.push(
+      "rolagem de dígitos (NumberFlow, contador, spinTiming) nos cartões: o valor muda com um fade, inteiro"
+    );
+  }
+  if (
+    FIGURE_USE.test(code) &&
+    !(FIGURE_USERS as readonly string[]).includes(path)
+  ) {
+    faults.push("usa o AnimatedFigure fora da lista fechada dos cartões");
+  }
+  if (path === FIGURE_COMPONENT) {
+    const entrance = FIGURE_ENTRANCE.exec(code)?.[1]?.split(SPACES) ?? [];
+    if (entrance.length === 0) {
+      faults.push("o AnimatedFigure não tem a entrada (ENTRANCE)");
+    }
+    if (entrance.some((token) => !token.startsWith("motion-full:"))) {
+      faults.push("a entrada do AnimatedFigure anima fora de motion-full:");
+    }
+    if (DYNAMIC_IMPORT.test(code)) {
+      faults.push("o AnimatedFigure carrega código por import(): é só CSS");
+    }
+  }
+  return faults;
+}
+
+const FIGURE_SCOPE = sourcesUnder("src").filter((path) => TS_OR_TSX.test(path));
+
+describe("o número principal dos cartões entra com um fade, sem rolar dígitos (AC-8.1)", () => {
+  it("a lista fechada e o componente existem, cada usuário da lista usa o componente e o contador antigo não existe mais", () => {
+    expect(FIGURE_USERS).toEqual([...FIGURE_USERS].sort());
+    for (const user of FIGURE_USERS) {
+      expect(read(user), user).toMatch(FIGURE_USE);
+    }
+    expect(FIGURE_SCOPE).toContain(FIGURE_COMPONENT);
+    expect(existsSync(join(web, "src/ui/figure-counter.tsx"))).toBe(false);
+    expect(read(FIGURE_COMPONENT)).toMatch(FIGURE_ENTRANCE);
+  });
+
+  it("nenhum pacote de contador de dígitos entra no package.json do app", () => {
+    const manifest = JSON.parse(read("package.json")) as Record<
+      string,
+      Record<string, string> | undefined
+    >;
+    const declared = ["dependencies", "devDependencies", "optionalDependencies"]
+      .flatMap((group) => Object.keys(manifest[group] ?? {}))
+      .filter((name) => COUNTER_PACKAGE_NAME.test(name));
+    expect(declared).toEqual([]);
+  });
+
+  it.each(FIGURE_SCOPE)(
+    "%s: sem rolagem de dígitos, sem uso fora da lista",
+    (path) => {
+      expect(figureFaults(path, read(path))).toEqual([]);
+    }
+  );
+
+  it("reprova a rolagem de dígitos de volta e o AnimatedFigure fora da lista (controle plantado)", () => {
+    const pkg = 'import NumberFlow from "@number-flow/react";';
+    const use = "const a = <AnimatedFigure text={x}>{x}</AnimatedFigure>;";
+    expect(figureFaults("src/ui/money.tsx", pkg)).toHaveLength(1);
+    expect(figureFaults("src/ui/kpi-card.tsx", pkg)).toHaveLength(1);
+    expect(
+      figureFaults("src/ui/kpi-card.tsx", "<NumberFlow value={1} />")
+    ).toHaveLength(1);
+    expect(
+      figureFaults("src/ui/kpi-card.tsx", "const o = { spinTiming: t };")
+    ).toHaveLength(1);
+    expect(
+      figureFaults("src/home/home-kpi-cards.tsx", 'import("./figure-counter")')
+    ).toHaveLength(1);
+    for (const burla of [
+      "const o = { transformTiming: t };",
+      "const o = { opacityTiming: t };",
+      'const a = <b data-figure-counting="" />;',
+      'const a = <b data-animated-figure="" />;',
+      "import n from 'number-flow';",
+    ]) {
+      expect(figureFaults("src/ui/kpi-card.tsx", burla), burla).toHaveLength(1);
+    }
+    expect(figureFaults("src/dashboard/result-chart.tsx", use)).toHaveLength(1);
+    expect(figureFaults("src/home/home-goal.tsx", use)).toHaveLength(1);
+    expect(figureFaults("src/ui/kpi-card.tsx", use)).toEqual([]);
+    // a comment that names the package is not an import
+    expect(figureFaults("src/ui/money.tsx", "// @number-flow/react")).toEqual(
+      []
+    );
+  });
+
+  it("reprova a entrada fora de motion-full:, sem entrada, ou com código carregado por import() (controle plantado)", () => {
+    const good =
+      'export const ENTRANCE = "motion-full:animate-in motion-full:fade-in-0";';
+    expect(figureFaults(FIGURE_COMPONENT, good)).toEqual([]);
+    expect(
+      figureFaults(
+        FIGURE_COMPONENT,
+        'export const ENTRANCE = "animate-in motion-full:fade-in-0";'
+      )
+    ).toHaveLength(1);
+    expect(figureFaults(FIGURE_COMPONENT, "const a = 1;")).toHaveLength(1);
+    expect(
+      figureFaults(FIGURE_COMPONENT, `${good} const m = import("./x");`)
+    ).toHaveLength(1);
+  });
+});
+
 describe("regras de fonte da interface (t180, itens 4 e 5)", () => {
   it("cobre a base, os estilos e as pastas das telas", () => {
     expect(SCOPE).toEqual(
@@ -408,6 +649,38 @@ describe("regras de fonte da interface (t180, itens 4 e 5)", () => {
       expect(focusListFaults(path, read(path), FOCUS_ELSEWHERE)).toEqual([]);
     }
   );
+
+  it.each(FOCUS_SCOPE)(
+    "%s: dinheiro só pelo Money, nos tamanhos da escala",
+    (path) => {
+      expect(moneyFontFaults(path, read(path))).toEqual([]);
+    }
+  );
+
+  it.each(MONEY_LIST_FILES)(
+    "%s: nenhum R$ escrito à mão, o valor passa pelo Money",
+    (path) => {
+      expect(existsSync(join(web, path)), path).toBe(true);
+      expect(handTypedReaisFaults(path, read(path))).toEqual([]);
+    }
+  );
+
+  it("os arquivos de dinheiro e a lista da fração ainda existem (uma lista velha deixaria passar outra coisa)", () => {
+    for (const path of [
+      ...MONEY_FILES,
+      ...MONEY_FRACTION_ELSEWHERE.map((entry) => entry.file),
+    ]) {
+      expect(existsSync(join(web, path)), path).toBe(true);
+    }
+    const sorted = (paths: string[]) => [...paths].sort();
+    expect(sorted(MONEY_FRACTION_ELSEWHERE.map((entry) => entry.file))).toEqual(
+      sorted(
+        FOCUS_SCOPE.filter((path) => path !== MONEY_COMPONENT).filter((path) =>
+          read(path).includes("text-[0.56em]")
+        )
+      )
+    );
+  });
 
   it("a lista de foco em outro lugar ainda é verdade (uma lista velha deixaria passar outra coisa)", () => {
     expect(FOCUS_ELSEWHERE.map((entry) => entry.file)).toEqual([
@@ -585,6 +858,69 @@ describe("controle: as regras de fonte pegam o que existem para pegar", () => {
     expect(outlineStrings("src/x.tsx", text)).toEqual([]);
   });
 
+  it("dinheiro: rem, px, text livre ao lado de tabular-nums e a fração do R$ fora do Money reprovam (controle plantado)", () => {
+    const money = (text: string, path = "src/ui/money.tsx") =>
+      moneyFontFaults(path, text);
+    expect(money('const a = "font-semibold text-[1.75rem]";').join()).toContain(
+      "rem ou px"
+    );
+    expect(money('const a = "md:text-[28px] p-2";').join()).toContain(
+      "rem ou px"
+    );
+    expect(money('const a = "tabular-nums text-[0.9em]";').join()).toContain(
+      "tabular-nums"
+    );
+    expect(money('const a = "text-value-lg tabular-nums";')).toEqual([]);
+    expect(money('const a = "font-medium text-[0.56em]";')).toEqual([]);
+    expect(
+      money('const a = "text-[0.56em]";', "src/home/home-kpi-cards.tsx").join()
+    ).toContain("fora de ui/money.tsx");
+    expect(
+      money('const a = "text-[0.72em]";', "src/home/home-page.tsx").join()
+    ).toContain("fora de ui/money.tsx");
+    const strip =
+      'const a = "min-[56.25rem]:text-[1.5rem]"; const b = "x:text-[1.25rem]"; const c = "y:text-[1.125rem]"; const d = "text-[0.56em]";';
+    expect(money('const d = "text-[0.56em]";', "src/ui/kpi-card.tsx")).toEqual(
+      []
+    );
+    expect(money(strip, "src/ui/kpi-card.tsx").join()).toContain(
+      "3 texto(s) com tamanho em rem ou px em dinheiro, e a lista diz 0"
+    );
+    expect(
+      money(
+        'const a = "text-[1.3125rem] tabular-nums";',
+        "src/home/home-kpi-cards.tsx"
+      ).join()
+    ).toContain(
+      "1 texto(s) com tamanho em rem ou px em dinheiro, e a lista diz 0"
+    );
+    expect(
+      money(
+        `${strip} const e = "text-[0.56em] text-[0.72em]";`,
+        "src/ui/kpi-card.tsx"
+      ).join()
+    ).toContain("a lista diz 1");
+    expect(money(strip, "src/dashboard/result-cards.tsx").join()).toContain(
+      "3 texto(s) com tamanho em rem ou px em dinheiro, e a lista diz 0"
+    );
+    expect(money('// "text-[1.75rem]" in a comment')).toEqual([]);
+  });
+
+  it("R$ escrito à mão numa lista reprova, e só nos arquivos da lista (controle plantado)", () => {
+    const list = "src/sales/sale-history-list.tsx";
+    expect(
+      handTypedReaisFaults(list, "<span>R$ {total}</span>").join()
+    ).toContain("escrito à mão");
+    expect(handTypedReaisFaults(list, 'const a = "R$ 10,00";')).not.toEqual([]);
+    expect(handTypedReaisFaults(list, "<Money text={total} />")).toEqual([]);
+    expect(handTypedReaisFaults(list, '// "R$ 10,00" in a comment')).toEqual(
+      []
+    );
+    expect(
+      handTypedReaisFaults("src/home/home-page.tsx", "<span>R$ 1</span>")
+    ).toEqual([]);
+  });
+
   it("a lista exata reprova o que saiu dela e o que entrou (controle plantado)", () => {
     const one = [{ file: "src/ui/x.tsx", strings: 1 }];
     const bare = 'const a = "outline-none"; const b = "outline-none p-2";';
@@ -605,5 +941,513 @@ describe("controle: as regras de fonte pegam o que existem para pegar", () => {
     expect(
       focusListFaults("src/ui/x.tsx", 'const a = "outline-none";', one)
     ).toEqual([]);
+  });
+});
+
+/**
+ * "Atualizar" (DESIGN.md "A mesma ação é o mesmo componente"): the button that reads a screen again is
+ * `RefreshButton` (`ui/refresh-button.tsx`), the only file with that text as the name of a button. The screens that
+ * read again are scanned for JSX text that starts with "Atualizar" and for an `aria-label` that does, with no
+ * exception.
+ */
+const REFRESH_COMPONENT = "src/ui/refresh-button.tsx";
+const REFRESH_SCOPE = [
+  ...sourcesUnder("src/home"),
+  ...sourcesUnder("src/dashboard"),
+  ...sourcesUnder("src/inventory"),
+  "src/sales/sale-page.tsx",
+];
+const REFRESH_TEXT = />\s*Atualizar\b[^<>{}]*</g;
+const SPIN_OUTSIDE_MOTION_LEVEL = /(?<!motion-full:)animate-spin/;
+const REFRESH_LABEL = /aria-label=["{`'\s]*Atualizar/g;
+export function refreshButtonFaults(path: string, text: string): string[] {
+  if (path === REFRESH_COMPONENT) {
+    return [];
+  }
+  const code = withoutComments(text);
+  const found =
+    (code.match(REFRESH_TEXT)?.length ?? 0) +
+    (code.match(REFRESH_LABEL)?.length ?? 0);
+  return found === 0
+    ? []
+    : [`${found} "Atualizar" escrito(s) fora do RefreshButton`];
+}
+
+describe('"Atualizar" é um componente só (L1-5, AC-5.1)', () => {
+  it("o escopo cobre as cinco telas que releem", () => {
+    for (const screen of [
+      "src/home/home-page.tsx",
+      "src/dashboard/dashboard-page.tsx",
+      "src/dashboard/goals-panel.tsx",
+      "src/inventory/inventory-page.tsx",
+      "src/sales/sale-page.tsx",
+    ]) {
+      expect(REFRESH_SCOPE, screen).toContain(screen);
+    }
+  });
+
+  it.each(REFRESH_SCOPE)(
+    "%s: sem 'Atualizar' fora do RefreshButton",
+    (path) => {
+      expect(refreshButtonFaults(path, read(path))).toEqual([]);
+    }
+  );
+
+  it("o botão de verdade está no componente e as telas já migradas o usam", () => {
+    expect(withoutComments(read(REFRESH_COMPONENT))).toContain(">Atualizar<");
+    for (const screen of [
+      "src/home/home-page.tsx",
+      "src/dashboard/dashboard-page.tsx",
+      "src/dashboard/goals-panel.tsx",
+      "src/inventory/inventory-page.tsx",
+      "src/sales/sale-page.tsx",
+    ]) {
+      expect(read(screen), screen).toContain("<RefreshButton");
+    }
+  });
+
+  it("o ícone só gira sob motion-full: e o botão diz aria-busy enquanto lê", () => {
+    const code = withoutComments(read(REFRESH_COMPONENT));
+    expect(code).toContain("motion-full:animate-spin");
+    expect(code).not.toMatch(SPIN_OUTSIDE_MOTION_LEVEL);
+    expect(code).toContain("aria-busy");
+    expect(code).toContain('variant="outline"');
+  });
+
+  it("um 'Atualizar' escrito à mão reprova em qualquer tela, sem exceção (controle plantado)", () => {
+    const screen = "src/dashboard/dashboard-page.tsx";
+    expect(
+      refreshButtonFaults(screen, "<Button>\n  Atualizar\n</Button>").join()
+    ).toContain('1 "Atualizar"');
+    expect(
+      refreshButtonFaults(screen, "<Button>Atualizar metas</Button>")
+    ).not.toEqual([]);
+    expect(
+      refreshButtonFaults(screen, '<Button aria-label="Atualizar metas" />')
+    ).not.toEqual([]);
+    expect(refreshButtonFaults(screen, "<RefreshButton busy={b} />")).toEqual(
+      []
+    );
+    expect(refreshButtonFaults(screen, '// "Atualizar" in a comment')).toEqual(
+      []
+    );
+    for (const file of [
+      "src/inventory/inventory-page.tsx",
+      "src/sales/sale-page.tsx",
+    ]) {
+      expect(
+        refreshButtonFaults(file, "<Button>\n  Atualizar\n</Button>").join(),
+        file
+      ).toContain('1 "Atualizar"');
+      expect(
+        refreshButtonFaults(
+          file,
+          "<Button>Atualizar estoque e perfis</Button>"
+        ),
+        file
+      ).not.toEqual([]);
+    }
+    expect(
+      refreshButtonFaults(REFRESH_COMPONENT, "<span>Atualizar</span>")
+    ).toEqual([]);
+  });
+});
+
+/**
+ * "Mesmo botão, mesmo nome" (DESIGN.md "Sublinhado só em link dentro de texto corrido"): "Esconder valores" has one
+ * size, so no screen passes `size` to it; `variant="link"` has the radius of a control, not `rounded-sm`; and the
+ * action of a card that is a secondary link ("Ver o que falta") is a text-only button, not `variant="link"`.
+ */
+const HIDE_VALUES_SIZE = /<HideValuesButton\b[^>]*\bsize=/;
+const LINK_VARIANT_LINE = /^\s*link:\s*"[^"]*"/m;
+const SMALL_RADIUS = /\brounded-(?:sm|xs|none)\b/;
+const LINK_AS_CARD_ACTION = /variant(?:=["{]+["']?|:\s*["'])link\b/;
+const CARD_ACTION_SCREENS = ["src/dashboard/quality-banner.tsx"];
+
+export function sameButtonFaults(path: string, text: string): string[] {
+  const code = withoutComments(text);
+  const faults: string[] = [];
+  if (HIDE_VALUES_SIZE.test(code)) {
+    faults.push("HideValuesButton recebe `size`: é um tamanho só");
+  }
+  if (path === "src/ui/button.tsx") {
+    const line = LINK_VARIANT_LINE.exec(code)?.[0] ?? "";
+    if (line === "" || SMALL_RADIUS.test(line)) {
+      faults.push('`variant="link"` sem o raio de controle (rounded-md)');
+    }
+  }
+  if (CARD_ACTION_SCREENS.includes(path) && LINK_AS_CARD_ACTION.test(code)) {
+    faults.push("ação de cartão com variant=link: é botão só texto (ghost)");
+  }
+  return faults;
+}
+
+describe("mesmo botão, mesmo nome (L1-6, AC-6.1, AC-6.2, AC-6.5)", () => {
+  const files = [
+    "src/ui/button.tsx",
+    "src/ui/hidden-values.tsx",
+    "src/home/home-page.tsx",
+    "src/dashboard/dashboard-page.tsx",
+    ...CARD_ACTION_SCREENS,
+  ];
+
+  it.each(files)("%s: passa", (path) => {
+    expect(sameButtonFaults(path, read(path))).toEqual([]);
+  });
+
+  it("o botão de verdade existe onde a regra olha (ninguém passa nesta por não ter o que ler)", () => {
+    expect(read("src/ui/button.tsx")).toMatch(LINK_VARIANT_LINE);
+    expect(read("src/dashboard/quality-banner.tsx")).toContain(
+      'variant="ghost"'
+    );
+  });
+
+  it("a volta de cada uma reprova (controle plantado)", () => {
+    expect(
+      sameButtonFaults(
+        "src/dashboard/dashboard-page.tsx",
+        '<HideValuesButton size="sm" />'
+      )
+    ).toHaveLength(1);
+    expect(
+      sameButtonFaults("src/home/home-page.tsx", "<HideValuesButton />")
+    ).toEqual([]);
+    expect(
+      sameButtonFaults(
+        "src/ui/button.tsx",
+        '  link: "h-auto rounded-sm px-0 underline",'
+      )
+    ).toHaveLength(1);
+    expect(
+      sameButtonFaults("src/ui/button.tsx", '  link: "h-auto px-0 underline",')
+    ).toEqual([]);
+    expect(
+      sameButtonFaults(
+        "src/dashboard/quality-banner.tsx",
+        '<Button size="sm" variant="link" />'
+      )
+    ).toHaveLength(1);
+    expect(
+      sameButtonFaults(
+        "src/dashboard/quality-banner.tsx",
+        '<Button size="sm" variant="ghost" />'
+      )
+    ).toEqual([]);
+  });
+});
+
+/**
+ * "Uma lista de atalhos de período" (DESIGN.md "Período (`DateRangePicker`)", L2-1, AC-1.6): the names of the shortcuts
+ * live in `src/ui/date-range-shortcuts.ts` and a screen only chooses which ones it shows. A name written anywhere else
+ * in `src/` is a second list that drifts. The one exception is the "Este mês" button of the month picker of the
+ * Despesas: it chooses the competence month, not a range, and the list says so by name.
+ */
+const SHORTCUT_LIST = "src/ui/date-range-shortcuts.ts";
+const SHORTCUT_NAMES = [
+  "Este mês",
+  "Mês passado",
+  "Últimos 30 dias",
+  "Este ano",
+] as const;
+const OWN_SHORTCUT_NAME: Readonly<Record<string, readonly string[]>> = {
+  "src/expenses/month-picker.tsx": ["Este mês"],
+};
+
+export function shortcutNameFaults(path: string, text: string): string[] {
+  if (path === SHORTCUT_LIST) {
+    return [];
+  }
+  const code = withoutComments(text);
+  const own = OWN_SHORTCUT_NAME[path] ?? [];
+  return SHORTCUT_NAMES.filter(
+    (name) => code.includes(name) && !own.includes(name)
+  ).map((name) => `"${name}" escrito fora de ${SHORTCUT_LIST}`);
+}
+
+export function shortcutFaultsOver(
+  sources: ReadonlyArray<{ path: string; text: string }>
+): string[] {
+  return sources.flatMap(({ path, text }) =>
+    shortcutNameFaults(path, text).map((fault) => `${path}: ${fault}`)
+  );
+}
+
+describe("a lista de atalhos mora num arquivo só (L2-1, AC-1.6)", () => {
+  const files = sourcesUnder("src");
+
+  it("a árvore foi lida e a lista está nela", () => {
+    expect(files.length).toBeGreaterThan(500);
+    expect(files).toContain(SHORTCUT_LIST);
+    expect(files).toContain("src/dashboard/period-picker.tsx");
+    expect(files).toContain("src/dashboard/result-period.ts");
+    expect(files.filter((path) => path.includes(".test."))).toEqual([]);
+  });
+
+  it("nenhum arquivo de src escreve o nome de um atalho", () => {
+    expect(
+      shortcutFaultsOver(files.map((path) => ({ path, text: read(path) })))
+    ).toEqual([]);
+  });
+
+  it("a lista tem os seis atalhos e a exceção é exata: o arquivo dela ainda escreve o nome", () => {
+    const listed = withoutComments(read(SHORTCUT_LIST));
+    for (const name of [...SHORTCUT_NAMES, "Hoje", "7 dias"]) {
+      expect(listed, name).toContain(name);
+    }
+    expect(Object.keys(OWN_SHORTCUT_NAME)).toEqual([
+      "src/expenses/month-picker.tsx",
+    ]);
+    for (const [path, names] of Object.entries(OWN_SHORTCUT_NAME)) {
+      for (const name of names) {
+        expect(withoutComments(read(path)), `${path}: ${name}`).toContain(name);
+      }
+    }
+  });
+
+  it("o Resultado, o Histórico e as Metas escolhem da lista, sem lista própria (controle)", () => {
+    expect(read("src/dashboard/result-period.ts")).toContain("shortcutLabel(");
+    expect(read("src/dashboard/period-picker.tsx")).toContain("shortcuts=");
+    expect(read("src/ui/date-range-picker.tsx")).toContain("shortcutsOf(");
+  });
+
+  it("a varredura da árvore reprova uma lista própria plantada numa tela e nomeia o arquivo (controle plantado)", () => {
+    const planted = [
+      { path: SHORTCUT_LIST, text: '{ label: "Este mês" }' },
+      {
+        path: "src/expenses/month-picker.tsx",
+        text: "<button>Este mês</button>",
+      },
+      {
+        path: "src/dashboard/period-picker.tsx",
+        text: 'const shortcuts = ["Este mês", "Este ano"];',
+      },
+      {
+        path: "src/sales/sale-history-filters.tsx",
+        text: "const own = `Últimos 30 dias`;",
+      },
+      { path: "src/goals/goals-page.tsx", text: "// Mês passado" },
+    ];
+    expect(shortcutFaultsOver(planted)).toEqual([
+      `src/dashboard/period-picker.tsx: "Este mês" escrito fora de ${SHORTCUT_LIST}`,
+      `src/dashboard/period-picker.tsx: "Este ano" escrito fora de ${SHORTCUT_LIST}`,
+      `src/sales/sale-history-filters.tsx: "Últimos 30 dias" escrito fora de ${SHORTCUT_LIST}`,
+    ]);
+    expect(
+      shortcutFaultsOver([
+        ...planted.filter(
+          ({ path }) => path !== "src/dashboard/period-picker.tsx"
+        ),
+        {
+          path: "src/expenses/month-picker.tsx",
+          text: "<button>Mês passado</button>",
+        },
+      ])
+    ).toEqual([
+      `src/sales/sale-history-filters.tsx: "Últimos 30 dias" escrito fora de ${SHORTCUT_LIST}`,
+      `src/expenses/month-picker.tsx: "Mês passado" escrito fora de ${SHORTCUT_LIST}`,
+    ]);
+  });
+
+  it("um nome escrito à mão reprova, e a lista e a exceção não (controle plantado)", () => {
+    expect(
+      shortcutNameFaults(
+        "src/dashboard/period-picker.tsx",
+        '<button>Este mês</button> const a = "Últimos 30 dias";'
+      )
+    ).toHaveLength(2);
+    expect(
+      shortcutNameFaults(
+        "src/sales/sale-history-filters.tsx",
+        'const labels = ["Mês passado"];'
+      )
+    ).toHaveLength(1);
+    expect(
+      shortcutNameFaults("src/dashboard/x.ts", "// Este mês e Este ano")
+    ).toEqual([]);
+    expect(shortcutNameFaults(SHORTCUT_LIST, '{ label: "Este mês" }')).toEqual(
+      []
+    );
+    expect(
+      shortcutNameFaults("src/expenses/month-picker.tsx", ">Este mês<")
+    ).toEqual([]);
+    expect(
+      shortcutNameFaults("src/expenses/month-picker.tsx", ">Este ano<")
+    ).toHaveLength(1);
+  });
+});
+
+const UPPERCASE_CLASS = /^!?(?:uppercase|\[text-transform:uppercase\])!?$/;
+const UPPERCASE_STYLE =
+  /text-transform\s*:\s*uppercase|textTransform\s*:\s*["'`]uppercase|@apply\b[^;]*\buppercase\b/;
+// `cn({ uppercase: flag })`: the key of the object has no quotes, so no string holds it
+const UPPERCASE_KEY = /\b(?:cn|clsx|cva|twMerge)\([^)]*?\{[^}]*\buppercase\s*:/;
+
+// a word of a sentence: capitalized, or closed by punctuation; no class is written like that
+const SENTENCE_WORD = /^[A-ZÀ-Ý][a-zà-ÿ]+$|[a-zà-ÿ][.,?;]$/;
+
+/** The words of the strings of a source that are class lists: a sentence that says "uppercase" is not one. */
+const classTokensOutsideProse = (text: string) =>
+  [...withoutComments(text).matchAll(STRING)].flatMap((match) => {
+    const words = (match[1] ?? match[2] ?? match[3] ?? "")
+      .split(SPACES)
+      .filter(Boolean);
+    return words.some((word) => SENTENCE_WORD.test(word)) ? [] : words;
+  });
+
+/** Capital letters set by the style: the `uppercase` class (with or without a variant) and `text-transform: uppercase`. */
+export function uppercaseStyleFaults(path: string, text: string): string[] {
+  const faults: string[] = [];
+  const code = withoutComments(text);
+  if (UPPERCASE_STYLE.test(code)) {
+    faults.push("text-transform: uppercase");
+  }
+  if (UPPERCASE_KEY.test(code)) {
+    faults.push("classe uppercase como chave de objeto");
+  }
+  if (!TS_OR_TSX.test(path)) {
+    return faults;
+  }
+  for (const token of classTokensOutsideProse(text)) {
+    // the utility is what follows the last variant; a `:` inside brackets is part of an arbitrary value
+    const masked = token.replace(/\[[^\]]*\]/g, (part) =>
+      part.replaceAll(":", "_")
+    );
+    const utility = masked.slice(masked.lastIndexOf(":") + 1);
+    if (UPPERCASE_CLASS.test(utility) || UPPERCASE_CLASS.test(token)) {
+      faults.push(`classe ${token}`);
+    }
+  }
+  return faults;
+}
+
+/** The one place that keeps capital letters, with the reason: the POC of the offline persistence is a lab, not the app. */
+const UPPERCASE_ELSEWHERE: readonly { file: string; why: string }[] = [
+  {
+    file: "src/offline-poc/offline-poc.css",
+    why: "prova de conceito da persistência offline: folha própria, fora do app e das telas do lojista",
+  },
+];
+
+/** The files that carry capital letters set by the style, outside the written exception; `readFile` is injected so a control can plant one. */
+export function uppercaseScanFaults(
+  paths: readonly string[],
+  readFile: (path: string) => string
+): string[] {
+  const listed = UPPERCASE_ELSEWHERE.map((entry) => entry.file);
+  return paths
+    .filter((path) => !listed.includes(path))
+    .flatMap((path) =>
+      uppercaseStyleFaults(path, readFile(path)).map(
+        (fault) => `${path}: ${fault}`
+      )
+    );
+}
+
+const UPPERCASE_PACKAGE_DIRS = [
+  "../../packages/ui/src",
+  "../catalog/src",
+] as const;
+
+describe("o app não tem caixa alta (L1-13, AC-13.2)", () => {
+  const files = [
+    ...sourcesUnder("src"),
+    ...UPPERCASE_PACKAGE_DIRS.flatMap(sourcesUnder),
+  ];
+
+  it("a árvore de src foi lida, com o POC dentro", () => {
+    expect(files.length).toBeGreaterThan(500);
+    expect(files).toContain("src/expenses/expense-list.tsx");
+    expect(files).toContain("src/offline-poc/offline-poc.css");
+  });
+
+  it("os pacotes de interface e o catálogo entram na varredura", () => {
+    expect(files).toContain("../../packages/ui/src/theme.css");
+    expect(files).toContain("../catalog/src/styles.css");
+    expect(files).toContain("../catalog/src/views.tsx");
+  });
+
+  it("nenhum arquivo de src põe texto em caixa alta pelo estilo, fora da exceção", () => {
+    expect(uppercaseScanFaults(files, read)).toEqual([]);
+  });
+
+  it("a exceção é exata: o arquivo dela ainda tem caixa alta e a razão está escrita", () => {
+    expect(UPPERCASE_ELSEWHERE.map((entry) => entry.file)).toEqual([
+      "src/offline-poc/offline-poc.css",
+    ]);
+    for (const entry of UPPERCASE_ELSEWHERE) {
+      expect(entry.why.length, entry.file).toBeGreaterThan(20);
+      expect(
+        uppercaseStyleFaults(entry.file, read(entry.file)),
+        entry.file
+      ).not.toEqual([]);
+    }
+  });
+
+  it.each([
+    ['<p className="font-medium text-xs uppercase tracking-wide">', 1],
+    ['<p className="md:uppercase">', 1],
+    ['<p className="!uppercase">', 1],
+    ['<p className="uppercase!">', 1],
+    ['<p className="[text-transform:uppercase]">', 1],
+    ['cn("grid", open && "uppercase")', 1],
+    ["<p style={{ textTransform: 'uppercase' }}>", 1],
+    [".label { text-transform: uppercase; }", 1],
+    [".label{text-transform:uppercase}", 1],
+    [".label { @apply font-medium uppercase; }", 1],
+    ["cn({ uppercase: dense })", 1],
+    ["cn('grid', { uppercase: dense, 'p-2': true })", 1],
+  ])("%s reprova (controle plantado)", (text, count) => {
+    const path = text.startsWith(".") ? "src/x.css" : "src/x.tsx";
+    expect(uppercaseStyleFaults(path, text).length).toBeGreaterThanOrEqual(
+      count
+    );
+  });
+
+  it.each([
+    ["../../packages/ui/src/x.tsx", '<p className="font-medium uppercase">'],
+    ["../../packages/ui/src/x.css", ".label { text-transform: uppercase; }"],
+    ["../catalog/src/x.tsx", '<p className="font-medium uppercase">'],
+    ["../catalog/src/x.css", ".label { text-transform: uppercase; }"],
+  ])(
+    "caixa alta plantada em %s reprova na varredura (controle plantado)",
+    (path, text) => {
+      expect(
+        UPPERCASE_PACKAGE_DIRS.some((dir) => path.startsWith(`${dir}/`))
+      ).toBe(true);
+      expect(uppercaseScanFaults([path], () => text)).toHaveLength(1);
+    }
+  );
+
+  it("a exceção vale só para o caminho exato: o mesmo nome em outro lugar reprova (controle plantado)", () => {
+    const plant = ".x { text-transform: uppercase; }";
+    for (const path of [
+      "../catalog/src/offline-poc/offline-poc.css",
+      "../../packages/ui/src/offline-poc/offline-poc.css",
+      "src/offline-poc/offline-poc.css.bak",
+    ]) {
+      expect(
+        uppercaseScanFaults([path], () => plant),
+        path
+      ).toHaveLength(1);
+    }
+    expect(
+      uppercaseScanFaults(["src/offline-poc/offline-poc.css"], () => plant)
+    ).toEqual([]);
+  });
+
+  it.each([
+    '<p className="font-medium text-muted-foreground text-support">',
+    '<p className="normal-case">',
+    '<p className="not-uppercase-ish lowercase capitalize">',
+    "// uppercase tracking-wide",
+    "/* text-transform: uppercase */",
+    "const name = text.toUpperCase();",
+    "const errors = { uppercase: 'password_missing_uppercase' };",
+    ".label { @apply font-medium; }",
+    'const message = "Password needs an uppercase letter.";',
+    ".label { text-transform: none; }",
+  ])("%s passa (controle plantado)", (text) => {
+    const path = text.startsWith(".") ? "src/x.css" : "src/x.tsx";
+    expect(uppercaseStyleFaults(path, text)).toEqual([]);
   });
 });

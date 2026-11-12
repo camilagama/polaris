@@ -386,13 +386,33 @@ function isPlanRefusal(error: unknown): boolean {
 /** The `unavailable` reason when the plan of the store does not include offline writes (the device is fine). */
 export const PLAN_REFUSED_REASON = "entitlement_denied";
 
+/** The reason when the legal acceptance of the account is pending: the runtime waits for it, the device is fine. */
+export const LEGAL_ACCEPTANCE_REASON = "legal_acceptance_required";
+
+/** Reasons of the `unavailable` phase that come from the account or the store, not from the browser. */
+export const ACCOUNT_UNAVAILABLE_REASONS: ReadonlySet<string> = new Set([
+  LEGAL_ACCEPTANCE_REASON,
+  "organization_closed",
+  "purge_failed",
+  "session_changed",
+  "session_refused",
+]);
+
+/** Whether an `unavailable` reason blames the browser: anything that is not the plan or the account/store. */
+export function isBrowserFailure(reason: string | null): boolean {
+  return (
+    reason === null ||
+    !(reason === PLAN_REFUSED_REASON || ACCOUNT_UNAVAILABLE_REASONS.has(reason))
+  );
+}
+
 function startFailureReason(
   error: unknown,
   legal: boolean,
   failure: string
 ): string {
   if (legal) {
-    return "legal_acceptance_required";
+    return LEGAL_ACCEPTANCE_REASON;
   }
   return isPlanRefusal(error) ? PLAN_REFUSED_REASON : failure;
 }
@@ -2229,7 +2249,7 @@ export class OfflineRuntime {
         ...this.snapshot,
         dataVersion: this.snapshot.dataVersion + 1,
         legalAcceptanceRequired: true,
-        reason: "legal_acceptance_required",
+        reason: LEGAL_ACCEPTANCE_REASON,
         sessionRefused: false,
         syncing: false,
       });

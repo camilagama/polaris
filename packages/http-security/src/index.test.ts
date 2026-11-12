@@ -16,6 +16,7 @@ const PROFILES: readonly SecurityProfile[] = [
   "api",
   "app-shell",
   "auth-entry",
+  "form-document",
   "public-document",
   "public-media",
 ];
@@ -31,8 +32,14 @@ const NO_NONCE = /no nonce/;
 const NONCE_REQUIRED = /nonce/;
 
 const NONCE = "dGVzdC1ub25jZS0xMjM0NQ==";
+const STYLE_HASH = "sha256-47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU=";
+const ONLY_STYLE_HASHES = /only the sha256 hashes/;
+const NO_STYLE_HASH = /no style block by hash/;
 
 function headersOf(profile: SecurityProfile) {
+  if (profile === "form-document") {
+    return securityHeaders(profile, { styleHashes: [STYLE_HASH] });
+  }
   return securityHeaders(
     profile,
     profile === "public-document" ? { nonce: NONCE } : {}
@@ -154,6 +161,11 @@ describe("the headers of every profile", () => {
     expect(headers["X-Frame-Options"]).toBe("DENY");
   });
 
+  it("sends no referrer from the page whose URL carries a token", () => {
+    expect(headersOf("form-document")["Referrer-Policy"]).toBe("no-referrer");
+    expect(defaultCacheControl("form-document")).toBe("no-store");
+  });
+
   it("sends no referrer at all from the Admin, page or API", () => {
     expect(headersOf("admin")["Referrer-Policy"]).toBe("no-referrer");
     expect(headersOf("admin-document")["Referrer-Policy"]).toBe("no-referrer");
@@ -238,6 +250,55 @@ describe("the policy of the app shell", () => {
     expect(() => securityHeaders("app-shell", { nonce: NONCE })).toThrow(
       NO_NONCE
     );
+  });
+});
+
+describe("the policy of a page of one form", () => {
+  it("allows its style blocks by hash and its form back to the app, and no script, image, font or connection", () => {
+    const parsed = directives(
+      headersOf("form-document")["Content-Security-Policy"]
+    );
+
+    expect([...parsed.keys()]).toEqual([
+      "default-src",
+      "style-src",
+      "img-src",
+      "object-src",
+      "base-uri",
+      "form-action",
+      "frame-ancestors",
+    ]);
+    expect(parsed.get("default-src")).toEqual(["'none'"]);
+    expect(parsed.get("style-src")).toEqual([`'${STYLE_HASH}'`]);
+    expect(parsed.get("form-action")).toEqual(["'self'"]);
+    expect(parsed.get("base-uri")).toEqual(["'none'"]);
+    expect(parsed.has("script-src")).toBe(false);
+  });
+
+  it.each([
+    [{}],
+    [{ styleHashes: [] }],
+    [{ styleHashes: ["'unsafe-inline'"] }],
+    [{ styleHashes: ["sha384-abc"] }],
+    [{ styleHashes: [`${STYLE_HASH}' 'unsafe-inline`] }],
+    [{ nonce: NONCE, styleHashes: [STYLE_HASH] }],
+    [{ connectSources: ["https://a.example.com"], styleHashes: [STYLE_HASH] }],
+    [{ imgSources: ["https://a.example.com"], styleHashes: [STYLE_HASH] }],
+  ])("refuses anything but sha256 hashes of its style (%j)", (options) => {
+    expect(() => securityHeaders("form-document", options)).toThrow(
+      ONLY_STYLE_HASHES
+    );
+  });
+
+  it("is the only profile that takes a style hash", () => {
+    for (const profile of PROFILES.filter((name) => name !== "form-document")) {
+      expect(() =>
+        securityHeaders(profile, {
+          ...(profile === "public-document" ? { nonce: NONCE } : {}),
+          styleHashes: [STYLE_HASH],
+        })
+      ).toThrow(NO_STYLE_HASH);
+    }
   });
 });
 

@@ -848,6 +848,62 @@
       "when": 1793964218365,
       "tag": "0121_prazo_dos_pedidos_de_dados_no_banco",
       "breakpoints": true
+    },
+    {
+      "idx": 122,
+      "version": "7",
+      "when": 1794116077089,
+      "tag": "0124_avisos_de_ativacao",
+      "breakpoints": true
+    },
+    {
+      "idx": 123,
+      "version": "7",
+      "when": 1794122790000,
+      "tag": "0125_funil_ate_14_dias",
+      "breakpoints": true
+    },
+    {
+      "idx": 124,
+      "version": "7",
+      "when": 1794135497470,
+      "tag": "0126_candidatos_da_serie",
+      "breakpoints": true
+    },
+    {
+      "idx": 125,
+      "version": "7",
+      "when": 1794144645752,
+      "tag": "0127_m3_voltou_da_sessao",
+      "breakpoints": true
+    },
+    {
+      "idx": 126,
+      "version": "7",
+      "when": 1794404459760,
+      "tag": "0128_destinatario_das_dicas",
+      "breakpoints": true
+    },
+    {
+      "idx": 127,
+      "version": "7",
+      "when": 1794461052882,
+      "tag": "0129_descadastro_das_dicas",
+      "breakpoints": true
+    },
+    {
+      "idx": 128,
+      "version": "7",
+      "when": 1794464652882,
+      "tag": "0130_outbox_do_aviso_da_serie",
+      "breakpoints": true
+    },
+    {
+      "idx": 129,
+      "version": "7",
+      "when": 1794482293406,
+      "tag": "0131_releitura_das_dicas",
+      "breakpoints": true
     }
   ]
 }

@@ -1,6 +1,6 @@
 # Configurações
 
-Configurações (`/configuracoes`) junta, em abas, o que se ajusta uma vez: Formas de receber (`/configuracoes?aba=formas-de-receber`, a primeira, o mesmo que `/configuracoes`), Catálogo público (`/configuracoes?aba=catalogo-publico`), Aparelhos (`/configuracoes?aba=aparelhos`), Assinatura (`/configuracoes?aba=assinatura`), Senha (`/configuracoes?aba=senha`) e Seus dados (`/configuracoes?aba=seus-dados`, a última).
+Configurações (`/configuracoes`) junta, em abas, o que se ajusta uma vez (a partir de 760 px as abas ficam em duas linhas, "Da loja" e "Da conta"; abaixo disso, no celular, `/configuracoes` sem `aba` é uma lista de linhas agrupadas, e cada tela aberta traz o link "Voltar para Configurações"): Formas de receber (`/configuracoes?aba=formas-de-receber`, a primeira; a partir de 760 px é o mesmo que `/configuracoes`), Catálogo público (`/configuracoes?aba=catalogo-publico`), Aparelhos (`/configuracoes?aba=aparelhos`), Assinatura (`/configuracoes?aba=assinatura`), Senha (`/configuracoes?aba=senha`) e Seus dados (`/configuracoes?aba=seus-dados`, a última).
 
 ## Sub-features
 
@@ -14,8 +14,8 @@ Configurações (`/configuracoes`) junta, em abas, o que se ajusta uma vez: Form
 ## How to get to it (user POV)
 
 - Desktop: link `Configurações` do menu "Principal" (grupo "Configurações").
-- Celular: "Mais" e o link `Configurações`.
-- Abas: `tablist "Configurações"`. Endereços antigos: `/payment-profiles`, `/public-catalog`, `/devices`, `/subscription` e `/conta/seguranca` abrem a aba correspondente.
+- Celular: "Mais", o link `Configurações` e, na lista, a linha da tela (`list "Configurações"`, títulos `h2` "Da loja" e "Da conta"); na tela aberta, o link `Voltar para Configurações` e o `page.goBack()` levam de volta à lista (a linha de origem ganha o foco), porque abrir uma linha acrescenta um passo ao histórico; uma aba aberta direto pelo endereço não tem lista antes, e o `goBack` sai de Configurações.
+- Abas (a partir de 760 px): `tablist "Configurações"`. Endereços antigos: `/payment-profiles`, `/public-catalog`, `/devices`, `/subscription` e `/conta/seguranca` abrem a aba correspondente.
 
 ## Driving it with verify.sh (Playwright)
 
@@ -23,7 +23,7 @@ Preconditions:
 
 - Doctor OK. A Assinatura precisa de `launch --assinatura`; o plano no limite, de `$V seed limite` e `VERIFY_LOJA=limite`.
 
-- **Abrir.** `await page.goto("/configuracoes")`. `getByRole("heading", { level: 1, name: "Configurações" })`, aba "Formas de receber" selecionada.
+- **Abrir.** `await page.goto("/configuracoes")`. `getByRole("heading", { level: 1, name: "Configurações" })`; a partir de 760 px, aba "Formas de receber" selecionada; no celular, a lista (com `/configuracoes?aba=formas-de-receber` abre a primeira tela, com o "Voltar").
 - **Assinatura no limite.** Com `--assinatura` e loja `limite`: `$V snap "/configuracoes?aba=assinatura"`. `tabpanel "Assinatura"` mostra `region "Plano Free"` com "Você usa 50 de 50 variantes." e `progressbar "Variantes: 50 de 50"`, e o `status` "A assinatura do Pro não está disponível agora. Nada muda no seu plano." Provado nesta skill (captura `snap-configuracoes-aba-assinatura`).
 - **Catálogo público.** `$V snap "/configuracoes?aba=catalogo-publico"`: o aviso do plano, o formulário "Perfil público" e `region "Produtos"` com "Mostrar no catálogo" desligado.
 - **Formas de receber.** "Novo perfil" abre o formulário (`apps/web/e2e/payment-profiles-screen.e2e.ts`).
@@ -33,6 +33,6 @@ Preconditions:
 ## Gotchas
 
 - Sem `--assinatura`, a aba Assinatura diz "A assinatura não está disponível agora." (o self-service de cobrança está desligado no `wrangler.jsonc`, como na produção). Contratar o Pro nunca funciona aqui: não há provedor de cobrança nem chave, e não deve haver.
-- O `tablist` mostra Aparelhos só com o runtime offline e Assinatura só com o self-service de cobrança; a aba que o endereço pede aparece mesmo sem a condição, e a tela dela diz o que não dá para fazer (por isso Aparelhos sem `--runtime` e Assinatura sem `--assinatura` abrem com um aviso). A exceção é Senha.
+- O `tablist` (a lista, no celular) mostra Aparelhos só com o runtime offline e Assinatura só com o self-service de cobrança; a aba que o endereço pede aparece mesmo sem a condição, e a tela dela diz o que não dá para fazer (por isso Aparelhos sem `--runtime` e Assinatura sem `--assinatura` abrem com um aviso). A exceção é Senha.
 - Senha fica atrás da flag de senha, desligada: `/configuracoes?aba=senha` abre Formas de receber. Os estados da tela estão em `apps/web/e2e/password-screens.e2e.ts`.
 - Aparelhos sem `--runtime` mostra "Nenhum aparelho registrado nesta conta…" e o aviso de que o navegador não preparou o acesso offline.

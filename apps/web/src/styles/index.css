@@ -40,8 +40,8 @@
    the attention page that uses the loading). */
 @source "../app-shell/{state-panel,page-loading,read-wait,not-found-page,error-boundary,session-ended-notice,legal-acceptance-notice,connection-required-notice,closed-store-notice,first-access,grace-notice,action-strip}.tsx";
 @source "../help/help-page.tsx";
-/* the line of the version at the foot of Configurações (the build swaps by itself and says nothing elsewhere) */
-@source "../settings/app-version-line.tsx";
+/* the list of Configurações on a phone, and the line of the version at its foot (the build swaps by itself and says nothing elsewhere) */
+@source "../settings/{app-version-line,settings-screen}.tsx";
 @source "../offline/logout-dialog.tsx";
 @source "../offline/runtime/{offline-access-expired,attention-page}.tsx";
 /* The lab of those pieces (browser checks only). */
@@ -49,7 +49,7 @@
 /* The sale screen (ADR 0103, PR 4): only its own files; the other sales screens are still old. */
 @source "../sales/{sale-page,sale-fields,sale-item-editor,sale-payment-section,sale-summary-panel,sale-confirmed-panel,sale-variant-picker,offline-sale-panels,sale-draft-bar}.tsx";
 /* The expenses screen (v5.1, segmented since UI-H): the page, the forms in dialogs, the list, the recurring rules, the categories and the month picker. */
-@source "../expenses/{expenses-page,expense-form,expense-list,expense-fields,expense-rules-panel,expense-rule-form,expense-categories-panel,expense-category-form,month-picker}.tsx";
+@source "../expenses/{expenses-page,expenses-loading,expense-form,expense-list,expense-filters,expense-fields,expense-rules-panel,expense-rule-form,expense-categories-panel,expense-category-form,month-picker}.tsx";
 /* Aparelhos and Pendências (v5.1): the screens and their parts (the notice of the expired access and the loading of the
    attention page are in the list of the pieces above). */
 @source "../offline/attention-panel.tsx";
@@ -57,7 +57,7 @@
 /* Resultado and Metas (v5.1): the page, the cards, the chain and the goals; the month picker is Despesas'. */
 @source "../dashboard/{dashboard-page,quality-banner,offline-copy-notice,empty-result,parts-bar,period-picker,result-cards,result-chain,result-chart,goals-panel,goal-card,goal-form,goal-history}.tsx";
 /* The Início (F2): the page and its blocks. */
-@source "../home/{home-page,closed-store-line,home-parts,home-figures,home-goal,home-attention,home-chart,home-kpi-cards,home-rhythm}.tsx";
+@source "../home/{home-page,closed-store-line,home-parts,home-figures,home-goal,home-attention,home-chart,home-lower-blocks,home-kpi-cards,home-period-row,home-rhythm}.tsx";
 /* the Assinatura (t268, PR E) */
 @source "../subscription/{subscription-commands,subscription-page,subscription-parts,subscription-offer,subscription-waiting,limit-help}.tsx";
 /* Seus dados in Configurações: the request and the list of copies, which the closed store's panel uses too. */

@@ -45,17 +45,6 @@ const WEEKDAYS = [
   "Sábado",
 ] as const;
 
-/** The labels of the bars of the mean by weekday. */
-export const WEEKDAY_SHORT = [
-  "Dom",
-  "Seg",
-  "Ter",
-  "Qua",
-  "Qui",
-  "Sex",
-  "Sáb",
-] as const;
-
 const time = (day: string) => Date.parse(`${day}T00:00:00.000Z`);
 
 /** 0 for Sunday to 6 for Saturday. */
@@ -322,6 +311,10 @@ export function rhythmView(
 
 /** The reading of a day, in its parts: "Sábado, 17/10", "R$ 412,40 · 5 vendas" (or "sem venda") and "melhor dia". */
 export interface RhythmReading {
+  /** The net sales of the day, as money ("R$ 0,00" with no sale). */
+  amount: string;
+  /** The sales of the day, as a number ("0" with none). */
+  count: string;
   day: string;
   note: string | null;
   value: string;
@@ -340,6 +333,8 @@ export function rhythmReading(
     index === view.today ? "hoje" : null,
   ].filter((note) => note !== null);
   return {
+    amount: formatBrlAmount(cell.netSales),
+    count: formatQuantity(cell.salesCount),
     day: `${WEEKDAYS[weekdayOf(cell.date)]}, ${shortDate(cell.date)}`,
     note: notes.length > 0 ? notes.join(" · ") : null,
     value:
@@ -347,14 +342,6 @@ export function rhythmReading(
         ? "sem venda"
         : `${formatBrlAmount(cell.netSales)} · ${salesCountText(cell.salesCount)}`,
   };
-}
-
-/** "Melhor dia: 27/06, R$ 541,19", the line of its own under the legend (null when no day sold). */
-export function rhythmBestText(view: RhythmView): string | null {
-  const best = view.best === null ? null : view.cells[view.best];
-  return best?.netSales
-    ? `Melhor dia: ${shortDate(best.date)}, ${formatBrlAmount(best.netSales)}`
-    : null;
 }
 
 /** The reading in one line: what the keyboard control says. */
@@ -386,10 +373,10 @@ export function rhythmSummary(view: RhythmView): string {
   if (!best?.netSales) {
     return `${head}: nenhum dia com venda.`;
   }
-  return `${head}: ${soldDaysCount(view.soldDays)}. Melhor dia ${shortDate(best.date)}, ${formatBrlAmount(best.netSales)}. ${PAST_UNTIL_YESTERDAY} Os números estão em Ver os números.`;
+  return `${head}: ${soldDaysCount(view.soldDays)}. Melhor dia ${shortDate(best.date)}, ${formatBrlAmount(best.netSales)}. ${PAST_UNTIL_YESTERDAY} A tabela dia a dia está no fim deste bloco.`;
 }
 
-/** Under the legend: "Vazio: sem venda · até R$ 57,98 · até R$ 83,64 · até R$ 142,73 · acima". */
+/** The ranges of the four levels, for the (i) of the block and the legend title: "Vazio: sem venda · até R$ 57,98 · até R$ 83,64 · até R$ 142,73 · acima". */
 export function rhythmRangesText(view: RhythmView): string {
   if (view.thresholds === null) {
     return "Vazio: sem venda";

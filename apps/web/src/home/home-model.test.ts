@@ -5,22 +5,21 @@ import {
   bestDay,
   checklistLink,
   checklistNext,
+  copyLine,
   copyStanding,
   endedInPastMonth,
   goalDaysLeftText,
-  copyLine,
   goalPeriodShort,
-  periodShort,
   goalProjection,
   homePeriods,
   homeReads,
-  lastDays,
   monthTitle,
   msUntilNextMidnight,
   newSaleOfflineText,
   noCopyText,
   offlineGoal,
   pastGoalSummary,
+  periodShort,
   pickGoal,
   shouldRefreshOnReturn,
   storeToday,
@@ -144,10 +143,7 @@ describe("the store's today and the turn of the day (§ 5.1)", () => {
   });
 });
 
-describe("the chart comes from the series of A and B (AC-17)", () => {
-  const before = series("2026-09-01", "2026-09-30", (date) =>
-    date >= "2026-09-25" ? ["10.00", 1] : undefined
-  );
+describe("the chart's totals come from the series of the period (AC-17)", () => {
   const month = series("2026-10-01", "2026-10-31", (date) => {
     if (date === "2026-10-02") {
       return ["25.50", 2];
@@ -155,32 +151,12 @@ describe("the chart comes from the series of A and B (AC-17)", () => {
     return date === "2026-10-23" ? ["100.10", 3] : undefined;
   });
 
-  it("the last 7 or 30 days end today and cross into B at the start of the month", () => {
-    const week = lastDays(before, month, "2026-10-03", 7);
-    expect(week.map((day) => day.date)).toEqual([
-      "2026-09-27",
-      "2026-09-28",
-      "2026-09-29",
-      "2026-09-30",
-      "2026-10-01",
-      "2026-10-02",
-      "2026-10-03",
-    ]);
-    expect(sumNetSales(week)).toBe("65.50");
-    const thirty = lastDays(before, month, "2026-10-23", 30);
-    expect(thirty).toHaveLength(30);
-    expect(thirty[0]?.date).toBe("2026-09-24");
-    expect(sumNetSales(thirty)).toBe("185.60");
-  });
-
   it("the series adds up to the month's figure", () => {
     expect(sumNetSales(month)).toBe("125.60");
   });
 
   it("finds the best day of a period, and none when nothing sold", () => {
-    expect(bestDay(lastDays(before, month, "2026-10-23", 7))?.date).toBe(
-      "2026-10-23"
-    );
+    expect(bestDay(month)?.date).toBe("2026-10-23");
     expect(bestDay(series("2026-10-01", "2026-10-07"))).toBeNull();
   });
 });
@@ -483,6 +459,85 @@ describe("copyStanding (§ 7.2, AC-31)", () => {
       );
     }
   );
+});
+
+describe("copyStanding com o desvio do relógio do aparelho (§ 7.2)", () => {
+  const ZONE = "America/Sao_Paulo";
+  const SKEW = 6 * 60_000;
+  const at = (iso: string) => Date.parse(iso);
+
+  it("relógio 6 min atrás, ainda antes da meia-noite da loja: o Hoje da cópia fica", () => {
+    // store: 23:58 (02:58Z); device: 23:52
+    const read = "2026-10-15T20:00:00.000Z";
+    const device = at("2026-10-16T02:52:00.000Z");
+    expect(copyStanding(read, read, device, ZONE, SKEW).todayShown).toBe(true);
+  });
+
+  it("relógio 6 min atrás, já na meia-noite da loja: o Hoje da cópia some, que o aparelho ainda mostre o dia anterior", () => {
+    // store: 00:03 of the next day (03:03Z); device: 23:57 of the day before
+    const read = "2026-10-15T20:00:00.000Z";
+    const device = at("2026-10-16T02:57:00.000Z");
+    expect(copyStanding(read, read, device, ZONE).todayShown).toBe(true);
+    expect(copyStanding(read, read, device, ZONE, SKEW).todayShown).toBe(false);
+  });
+
+  it("relógio 6 min atrás, leitura já no dia novo da loja: o Hoje da cópia aparece", () => {
+    // read at 00:02 of the next day on the store; the device, 6 min behind, still says 23:58 of the day before
+    const read = "2026-10-16T03:02:00.000Z";
+    const device = at("2026-10-16T02:58:00.000Z");
+    expect(copyStanding(read, read, device, ZONE).todayShown).toBe(false);
+    expect(copyStanding(read, read, device, ZONE, SKEW)).toEqual({
+      stale: false,
+      todayShown: true,
+    });
+  });
+
+  it("sem desvio guardado a cópia se comporta como antes (desvio 0)", () => {
+    const read = "2026-10-15T20:00:00.000Z";
+    for (const iso of [
+      "2026-10-15T21:00:00.000Z",
+      "2026-10-16T02:59:00.000Z",
+      "2026-10-16T03:00:00.000Z",
+      "2026-10-17T03:00:00.000Z",
+      "2026-10-15T19:00:00.000Z",
+    ]) {
+      expect(copyStanding(read, read, at(iso), ZONE, 0)).toEqual(
+        copyStanding(read, read, at(iso), ZONE)
+      );
+    }
+  });
+
+  it("um relógio do aparelho 1 h antes da leitura continua errado quando o desvio guardado não o explica", () => {
+    const read = "2026-10-15T20:00:00.000Z";
+    const device = at("2026-10-15T19:00:00.000Z");
+    expect(copyStanding(read, read, device, ZONE, SKEW)).toEqual({
+      stale: true,
+      todayShown: false,
+    });
+  });
+
+  it("aparelho 10 min atrás, rede caindo 2 min depois da leitura: a cópia vale, com o Hoje", () => {
+    const skew = 10 * 60_000;
+    const read = "2026-10-15T17:00:00.000Z";
+    const device = at("2026-10-15T16:52:00.000Z");
+    expect(copyStanding(read, read, device, ZONE, skew)).toEqual({
+      stale: false,
+      todayShown: true,
+    });
+    expect(copyStanding(read, read, device, ZONE)).toEqual({
+      stale: true,
+      todayShown: false,
+    });
+  });
+
+  it("um relógio que o desvio guardado deixa mais de 5 min antes da leitura continua errado", () => {
+    const read = "2026-10-15T17:00:00.000Z";
+    const device = at("2026-10-15T16:40:00.000Z");
+    expect(copyStanding(read, read, device, ZONE, 10 * 60_000)).toEqual({
+      stale: true,
+      todayShown: false,
+    });
+  });
 });
 
 describe("offlineGoal (§ 7.3)", () => {

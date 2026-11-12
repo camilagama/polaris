@@ -5,6 +5,7 @@ import { expect, test } from "@playwright/test";
 import { buildOfflineLeaseClaims } from "@polaris/domain/offline/offline-lease";
 import { signOfflineLease } from "../src/lib/offline-lease-token";
 import { activateByKeyboard, expectFocusRing } from "./focus-ring";
+import { openSettingsTab } from "./settings-nav";
 import { serveHealth, WORKER_MARK } from "./worker-mark";
 
 const ORGANIZATION_ID = "0199c2d0-0000-7000-8000-00000000a001";
@@ -1374,7 +1375,7 @@ test("Configurações oferece a aba Aparelhos quando o runtime offline está lig
     await more.click();
   }
   await page.getByRole("link", { exact: true, name: "Configurações" }).click();
-  await page.getByRole("tab", { exact: true, name: "Aparelhos" }).click();
+  await openSettingsTab(page, "Aparelhos");
   await expect(page.getByRole("list", { name: "Aparelhos" })).toBeVisible();
 });
 
@@ -1401,5 +1402,46 @@ test("a 360 px o chip é de uma linha e Mais abre com a frase do estado; no desk
 
   await page.setViewportSize({ height: 800, width: 1280 });
   await expect(line).toHaveCount(0);
-  await expect(chip(page)).toHaveAttribute("title", "Tudo sincronizado");
+  await expect(chip(page).locator(".sync-status-short")).toHaveAttribute(
+    "title",
+    "Tudo sincronizado"
+  );
 });
+
+const INTERNET_WORD = /internet/;
+const RECOGNIZING_BY_CAUSE = [
+  {
+    name: "o plano não inclui o modo offline",
+    reason: "entitlement_denied",
+    sentence: "O modo offline faz parte do plano Pro.",
+  },
+  {
+    name: "o aceite dos termos está pendente",
+    reason: "legal_acceptance_required",
+    sentence:
+      "Aceite os Termos de Uso e a Política de Privacidade para reconhecer este aparelho.",
+  },
+] as const;
+
+for (const cause of RECOGNIZING_BY_CAUSE) {
+  test(`com internet e o runtime indisponível porque ${cause.name}: a linha diz só o que fazer, sem culpar a internet`, async ({
+    page,
+  }) => {
+    const state = scenario({ devices: twoDevices() });
+    await serve(page, state);
+    await page.route("**/rpc/device/register", (route) =>
+      route.fulfill(rpcError(403, "FORBIDDEN", cause.reason))
+    );
+    await page.goto("/devices");
+    await expect(deviceItems(page)).toHaveCount(2);
+    await expect(page.getByText(cause.sentence)).toBeVisible({
+      timeout: 5000,
+    });
+    await expect(page.getByText(RECOGNIZING_SLOW)).toHaveCount(0);
+    await expect(page.getByText(RECOGNIZING_UNAVAILABLE)).toHaveCount(0);
+    await expect(page.getByText(cause.sentence)).not.toContainText(
+      INTERNET_WORD
+    );
+    await expect(askRevoke(page, "Celular da Ana")).toBeDisabled();
+  });
+}

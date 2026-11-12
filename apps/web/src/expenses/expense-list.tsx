@@ -1,76 +1,22 @@
-import type {
-  ExpenseCategoryReadModel,
-  ExpenseReadModel,
-} from "@polaris/contracts";
+import type { ExpenseReadModel } from "@polaris/contracts";
 import { useCallback } from "react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
+import { EmptyState } from "@/ui/empty-state";
+import { Money } from "@/ui/money";
 import { connectionControlProps } from "../app-shell/connection-required-notice";
-import { ListTotalFooter, StatusNav } from "../catalog/screen-parts";
+import { ListTotalFooter } from "../catalog/screen-parts";
 import { useConnectionOnline } from "../lib/browser-connection";
 import { formatBrlAmount, formatCalendarDate } from "../lib/format";
 import { sumBrlAmounts } from "../lib/sum-brl";
-import { ExpenseCategorySelect, ListNote, LoadError } from "./expense-fields";
+import {
+  LIST_NOTE_MIN_HEIGHT_CLASS,
+  ListNote,
+  LoadError,
+} from "./expense-fields";
 import { formatMonthLabel } from "./expense-model";
-import type {
-  ExpenseFilters,
-  ExpenseListState,
-  ExpenseStatusFilter,
-} from "./use-expense-list";
-
-const statusTabs: ReadonlyArray<readonly [ExpenseStatusFilter, string]> = [
-  ["active", "Ativas"],
-  ["voided", "Anuladas"],
-];
-
-interface ExpenseFiltersBarProps {
-  categories: readonly ExpenseCategoryReadModel[];
-  filters: ExpenseFilters;
-  onChange: (filters: ExpenseFilters) => void;
-}
-
-/** The category of the list: beside the month at the top of Lançamentos, so both come before the list on one line. */
-export function ExpenseCategoryFilter({
-  categories,
-  filters,
-  onChange,
-}: ExpenseFiltersBarProps) {
-  const handleCategory = useCallback(
-    (value: string) => onChange({ ...filters, categoryId: value }),
-    [filters, onChange]
-  );
-  return (
-    <ExpenseCategorySelect
-      allLabel="Todas"
-      categories={categories}
-      className="min-[30rem]:w-64"
-      id="expense-category-filter"
-      label="Categoria"
-      onChange={handleCategory}
-      value={filters.categoryId}
-    />
-  );
-}
-
-/** Active and voided, inside the card of the list (the month and the category are above it). */
-export function ExpenseStatusTabs({
-  filters,
-  onChange,
-}: Omit<ExpenseFiltersBarProps, "categories">) {
-  const handleStatus = useCallback(
-    (value: ExpenseStatusFilter) => onChange({ ...filters, status: value }),
-    [filters, onChange]
-  );
-  return (
-    <StatusNav
-      label="Situação das despesas"
-      onSelect={handleStatus}
-      options={statusTabs}
-      value={filters.status}
-    />
-  );
-}
+import type { ExpenseFilters, ExpenseListState } from "./use-expense-list";
 
 function countLabel(count: number): string {
   return count === 1 ? "1 despesa" : `${count} despesas`;
@@ -85,21 +31,26 @@ interface ExpenseSummaryProps {
   state: ExpenseListState;
 }
 
-/** The total comes from the server: it covers every page, not only what is loaded. It sits under the title of the list. */
+/** The total comes from the server: it covers every page, not only what is loaded. It opens the card of the list; the count is its `role="status"`. */
 export function ExpenseSummary({ filters, state }: ExpenseSummaryProps) {
   const showTotal = !state.isLoading || state.expenses.length > 0;
   return (
     <div
       aria-live="polite"
       className="flex flex-wrap items-end justify-between gap-x-4 gap-y-1"
+      role="status"
     >
       <div className="grid gap-0.5">
-        <p className="font-medium text-muted-foreground text-xs uppercase tracking-wide">
+        <p className="font-medium text-muted-foreground text-support">
           Total do período
           {filters.status === "voided" ? " (anuladas)" : ""}
         </p>
-        <p className="font-semibold text-value-lg tabular-nums">
-          {showTotal ? formatBrlAmount(state.total) : "…"}
+        <p className="min-h-[2.125rem] touch:min-h-[1.9375rem] font-semibold">
+          {showTotal ? (
+            <Money size="lg" text={formatBrlAmount(state.total)} />
+          ) : (
+            "…"
+          )}
         </p>
       </div>
       <p className="text-muted-foreground text-support">
@@ -118,7 +69,7 @@ export function ExpenseSummary({ filters, state }: ExpenseSummaryProps) {
  */
 const ACTIONS_WIDTH = "min-[30rem]:w-48";
 const TOTAL_UNDER_VALUES =
-  "min-[30rem]:pr-[calc(12rem+11px)] md:pr-[calc(12rem+11px)]";
+  "min-[30rem]:pr-[calc(12rem+0.6875rem)] md:pr-[calc(12rem+0.6875rem)]";
 
 /**
  * The total of the rows loaded, under them: the sum the eye does down the column. The "Total do período" above is the
@@ -204,11 +155,11 @@ function ExpenseCard({
       <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 min-[30rem]:justify-end">
         <p
           className={cn(
-            "whitespace-nowrap font-semibold text-value-md tabular-nums",
+            "font-semibold tabular-nums",
             voided && "text-muted-foreground line-through"
           )}
         >
-          {formatBrlAmount(expense.amount)}
+          <Money size="md" text={formatBrlAmount(expense.amount)} />
         </p>
         <div
           className={cn(
@@ -264,6 +215,7 @@ function ExpenseCard({
 interface ExpenseListProps {
   busyKey: string | null;
   filters: ExpenseFilters;
+  onClearFilters: () => void;
   onEdit: (expense: ExpenseReadModel) => void;
   onLoadMore: () => void;
   onRestore: (expense: ExpenseReadModel) => void;
@@ -272,16 +224,47 @@ interface ExpenseListProps {
   state: ExpenseListState;
 }
 
-function emptyText(filters: ExpenseFilters): string {
-  if (filters.status === "voided") {
-    return "Nenhuma despesa anulada neste período.";
+/** With a category on, "Limpar filtros" takes its pill out in one touch; the status is the segmented, which stays. */
+function EmptyExpenses({
+  filters,
+  onClearFilters,
+}: {
+  filters: ExpenseFilters;
+  onClearFilters: () => void;
+}) {
+  if (filters.categoryId === "") {
+    return (
+      <EmptyState
+        afterRead
+        bare
+        title={
+          filters.status === "voided"
+            ? "Nenhuma despesa anulada neste período."
+            : "Nenhuma despesa neste período."
+        }
+      />
+    );
   }
-  return "Nenhuma despesa neste período. Toque em Nova despesa para registrar a primeira.";
+  return (
+    <EmptyState
+      afterRead
+      bare
+      title="Nenhuma despesa encontrada com estes filtros."
+    >
+      <Button onClick={onClearFilters} type="button" variant="outline">
+        Limpar filtros
+      </Button>
+    </EmptyState>
+  );
 }
+
+/** The empty list reserves the loading box's height, so the list that arrives empty does not push the screen. */
+const EMPTY_BOX_CLASS = `grid ${LIST_NOTE_MIN_HEIGHT_CLASS} content-center`;
 
 export function ExpenseList({
   busyKey,
   filters,
+  onClearFilters,
   onEdit,
   onLoadMore,
   onRestore,
@@ -300,10 +283,14 @@ export function ExpenseList({
         />
       ) : null}
       {isLoading && expenses.length === 0 ? (
-        <ListNote loading>Carregando despesas…</ListNote>
+        <div className={EMPTY_BOX_CLASS}>
+          <ListNote loading>Carregando despesas…</ListNote>
+        </div>
       ) : null}
       {!isLoading && expenses.length === 0 && state.error === null ? (
-        <ListNote>{emptyText(filters)}</ListNote>
+        <div className={`${EMPTY_BOX_CLASS} py-4`}>
+          <EmptyExpenses filters={filters} onClearFilters={onClearFilters} />
+        </div>
       ) : null}
       {expenses.length > 0 ? (
         <ul className="divide-y">

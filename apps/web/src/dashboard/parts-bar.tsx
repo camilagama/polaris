@@ -66,7 +66,10 @@ export function PartsBar({
         {parts.map((part) => {
           const mark = partMark(part);
           return (
-            <li className="flex items-center gap-1.5" key={part.id}>
+            <li
+              className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5"
+              key={part.id}
+            >
               <span
                 aria-hidden="true"
                 className={`size-2 shrink-0 rounded-full ${PART_COLORS[part.id]}`}

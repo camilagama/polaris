@@ -7,6 +7,7 @@ import MinusIcon from "lucide-react/dist/esm/icons/minus";
 import PlusIcon from "lucide-react/dist/esm/icons/plus";
 import TriangleAlertIcon from "lucide-react/dist/esm/icons/triangle-alert";
 import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
+import { AnimatedFigure } from "@/ui/animated-figure";
 import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
 import { ButtonGroup } from "@/ui/button-group";
@@ -64,9 +65,11 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/ui/dropdown-menu";
+import { EmptyState } from "@/ui/empty-state";
 import { HelpTip } from "@/ui/help-tip";
 import { HideValuesButton, MoneyText } from "@/ui/hidden-values";
-import { DeltaChip, HeroValue, KpiCard } from "@/ui/kpi-card";
+import { DeltaChip, HeroValue, KpiTile } from "@/ui/kpi-card";
+import { Money } from "@/ui/money";
 import {
   Field,
   FieldContent,
@@ -97,6 +100,7 @@ import {
 } from "@/ui/popover";
 import { Progress, ProgressLabel, ProgressValue } from "@/ui/progress";
 import { RadioGroup, RadioGroupItem } from "@/ui/radio-group";
+import { RefreshButton } from "@/ui/refresh-button";
 import { SearchField } from "@/ui/search-field";
 import { ScrollArea } from "@/ui/scroll-area";
 import {
@@ -422,6 +426,7 @@ function DatePickerStates() {
   const [empty, setEmpty] = useState<IsoDate | null>(null);
   const [chosen, setChosen] = useState<IsoDate | null>("2026-10-24");
   const [limited, setLimited] = useState<IsoDate | null>(null);
+  const [upcoming, setUpcoming] = useState<IsoDate | null>(null);
   const [required, setRequired] = useState<IsoDate | null>(null);
   const [period, setPeriod] = useState<DateRange | null>({
     from: "2026-10-01",
@@ -477,6 +482,21 @@ function DatePickerStates() {
             <FieldDescription>De 05/10 até hoje.</FieldDescription>
           </Field>
           <Field>
+            <FieldLabel htmlFor="galeria-data-futura">
+              Data de entrega
+            </FieldLabel>
+            <DatePicker
+              disabledReason="Só depois de hoje"
+              id="galeria-data-futura"
+              label="Data de entrega"
+              min="2026-10-25"
+              onValueChange={setUpcoming}
+              today={TODAY}
+              value={upcoming}
+            />
+            <FieldDescription>A partir de amanhã.</FieldDescription>
+          </Field>
+          <Field>
             <FieldLabel htmlFor="galeria-data-erro">Vencimento</FieldLabel>
             <DatePicker
               error={required === null}
@@ -495,6 +515,7 @@ function DatePickerStates() {
           <Field>
             <FieldLabel htmlFor="galeria-periodo">Período</FieldLabel>
             <DateRangePicker
+              endsToday
               id="galeria-periodo"
               label="Período"
               onValueChange={setPeriod}
@@ -526,7 +547,13 @@ function DatePickerStates() {
  * screen's own, inside the bar's `<search>`.
  */
 const FILTER_FIELDS: FilterField[] = [
-  { id: "periodo", label: "Período", today: TODAY, type: "date-range" },
+  {
+    endsToday: true,
+    id: "periodo",
+    label: "Período",
+    today: TODAY,
+    type: "date-range",
+  },
   {
     id: "situacao",
     label: "Situação",
@@ -1258,15 +1285,31 @@ export function UiGallery() {
             </Tabs>
           </Section>
 
+          <Section title="Número principal dos cartões">
+            <p className="text-support">
+              O valor do cartão aparece pronto e, quando muda (outro período,
+              atualizar), o novo entra com um fade curto no desktop; o dia lido
+              no minigráfico troca na hora, e no celular e com movimento
+              reduzido toda troca é sem animação. A variação, a meta e a margem
+              nunca animam.
+            </p>
+            <p className="font-semibold text-value-lg tabular-nums tracking-[-0.035em]">
+              <AnimatedFigure text="R$ 1.234,56">
+                <Money split text="R$ 1.234,56" />
+              </AnimatedFigure>
+            </p>
+          </Section>
+
           <Section title="Cartão de KPI e Esconder valores">
             <div className="flex flex-wrap items-center gap-3">
               <HideValuesButton />
+              <RefreshButton />
               <span className="text-support">
                 <MoneyText text="18/10 · R$ 1.840,00" />
               </span>
             </div>
             <div className="grid gap-3 sm:grid-cols-2">
-              <KpiCard
+              <KpiTile
                 chip={
                   <DeltaChip
                     delta={{
@@ -1289,14 +1332,14 @@ export function UiGallery() {
                   <OnDemandSparkline
                     color="var(--chart-sales)"
                     domain="zero"
-                    height={64}
+                    height={36}
                     values={GALLERY_KPI_SERIES}
                   />
                 }
                 title="Vendas"
-                value={<HeroValue amount="2660.60" />}
+                value={<HeroValue amount="2660.60" tile />}
               />
-              <KpiCard
+              <KpiTile
                 chip={
                   <DeltaChip
                     delta={{
@@ -1309,15 +1352,48 @@ export function UiGallery() {
                   />
                 }
                 entity="result"
-                footer="Não é lucro líquido nem caixa"
                 help={{
                   about: "Resultado estimado",
                   text: "Vendas menos custos, taxas e despesas de 1 a 25/10. Compara com 1 a 25/09.",
                 }}
                 id="galeria-kpi-resultado"
+                note="Não é lucro líquido nem caixa"
                 title="Resultado estimado"
-                value={<HeroValue amount="-48.30" size="md" />}
+                value={<HeroValue amount="-48.30" tile />}
               />
+            </div>
+          </Section>
+
+          <Section title="Estado vazio">
+            <EmptyState afterRead title="Nenhum cliente ainda.">
+              <Button type="button">
+                <PlusIcon aria-hidden="true" data-icon="inline-start" />
+                Novo cliente
+              </Button>
+            </EmptyState>
+            <EmptyState
+              afterRead
+              support="Escolha outro período ou registre vendas e despesas."
+              title="Sem vendas nem despesas em 1 a 31 de outubro"
+            >
+              <Button type="button">Nova venda</Button>
+              <Button type="button" variant="outline">
+                Nova despesa
+              </Button>
+            </EmptyState>
+          </Section>
+
+          <Section title="Dinheiro">
+            <div className="grid gap-2" data-gallery-money="">
+              {(["sm", "md", "lg", "xl"] as const).map((size) => (
+                <p className="flex flex-wrap items-baseline gap-x-3" key={size}>
+                  <span className="w-8 text-muted-foreground text-support">
+                    {size}
+                  </span>
+                  <Money size={size} text="R$ 234,50" />
+                  <Money size={size} text="-R$ 6,35" />
+                </p>
+              ))}
             </div>
           </Section>
 

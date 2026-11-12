@@ -29,7 +29,6 @@ import {
   noticesFor,
   renewalFailedOf,
   sweepNoticesFor,
-  welcomeNotice,
 } from "@polaris/domain/billing/notices";
 import { episodeStartAfter } from "@polaris/domain/billing/operational-selection";
 import {
@@ -109,6 +108,30 @@ export interface BillingSweepReport {
   noticesRecorded: number;
   scanned: number;
   transitioned: number;
+}
+
+/** How a step of the activation series is recorded (ADR 0106, D5 and D6): owed, or skipped with this reason. */
+const ACTIVATION_OUTCOMES = ["due", "expired", "series_off"] as const;
+type ActivationOutcome = (typeof ACTIVATION_OUTCOMES)[number];
+
+/** What one sweep of the activation series recorded: only counts, never a store or a person. */
+export interface ActivationSweepReport {
+  /** Owed notices recorded, each with its `activation.notice` event. */
+  due: number;
+  /** Recorded skipped `expired`: the trigger went by 3 days ago. */
+  expired: number;
+  /** Recorded skipped `series_off`: a store created before the instant the switch was seen on. */
+  seriesOff: number;
+  /** More were owed than this sweep took, by the batch or by the cap of the day: the next hour goes on. */
+  truncated: boolean;
+}
+
+export interface ActivationSweepInput {
+  /** The switch of the series (`ACTIVATION_EMAILS_ENABLED`) as the Worker reads it now. */
+  enabled: boolean;
+  /** The batch, 1 to 50 (the function refuses anything else). */
+  limit: number;
+  now: Date;
 }
 
 /**
@@ -280,17 +303,6 @@ export interface CancellationFeedbackInput {
   reason: string;
   state: "active" | "grace" | "trialing";
 }
-
-/** What one hourly pass of the welcome's sweep did (ADR 0104, decision 6). */
-export interface WelcomeNoticeReport {
-  /** Stores of the last 24 hours whose oldest owner had no welcome yet. */
-  candidates: number;
-  /** Welcomes recorded now, each with its outbox event (a concurrent pass may have recorded the others). */
-  recorded: number;
-}
-
-/** The most stores one pass of the welcome's sweep reads. */
-export const WELCOME_NOTICE_BATCH = 100;
 
 /** The reference a new `attachProvider` replaced (a checkout given up or a subscription no longer live). */
 export interface ReplacedProviderReference {
@@ -504,6 +516,21 @@ export interface BillingStore {
     now?: Date
   ) => Promise<void>;
   /**
+   * A checkout approved while the closure was giving it up, with its first charge paid at the approval (ADR 0074): the
+   * give-up already cancelled the subscription, so the payer paid for something no store keeps. Writes the ledger row
+   * `command:closure_refund_pending:<requestId>:<digest of the reference>` (one per request and checkout, a repeat
+   * adds nothing) and one occurrence of the operational incident `billing_refund_pending` with the cause
+   * `refund_not_completed`, for the operator to refund by hand (`WOOVI_REFUND_ENABLED` stays off).
+   */
+  recordClosureRefundIncident: (
+    input: {
+      link: Pick<BillingProviderLink, "provider" | "providerRef">;
+      organizationId: string;
+      requestId: string;
+    },
+    now?: Date
+  ) => Promise<void>;
+  /**
    * The hourly safety net of a refund or a chargeback (ADR 0104, decision 6): a store whose current link had a
    * payment taken back (`refund` or `chargeback`, never `won`) while its renewal was not cancelled gets the renewal
    * cancelled through `cancel`, at most `limit` stores a pass. Each try is counted before the call, and a store that
@@ -530,17 +557,6 @@ export interface BillingStore {
    * after the 10th try at the earliest. Reads at most `limit` stores of each cause. Answers how many were recorded now.
    */
   recordPendingRefundIncidents: (now?: Date, limit?: number) => Promise<number>;
-  /**
-   * The hourly sweep of the welcome (E1, ADR 0104, decision 6): for each store created in the last 24 hours, still
-   * active, whose oldest owner has no welcome and no older store, records the welcome of that person and its outbox
-   * event `billing.notice`, in one transaction (`welcome_notice_candidates` reads them; the database keeps one welcome
-   * per person). The caller runs it only with `WELCOME_EMAIL_ENABLED`: off, no row is written, so turning it on later
-   * sends no late welcome.
-   */
-  recordWelcomeNotices: (
-    now?: Date,
-    limit?: number
-  ) => Promise<WelcomeNoticeReport>;
   /**
    * The consumer of `billing.notice` (ADR 0104, decision 7): a notice still owed (neither sent, failed nor skipped) of
    * that store, read again with the record now; null otherwise.
@@ -654,6 +670,16 @@ export interface BillingStore {
     cancel: (event: UnclaimedTrialEvent) => Promise<"cancelled" | "paid">,
     now?: Date
   ) => Promise<UnclaimedTrialOutcome>;
+  /**
+   * The hourly sweep of the activation series (ADR 0106, D5 and D6). With the switch off its one write is to clear the
+   * instant the switch was seen on. With it on, one transaction records that instant when there is none, asks
+   * `activation_notice_candidates` for the steps owed (it holds the lock of the daily cap until this transaction
+   * ends) and records each: an owed notice with its `activation.notice` event, an expired step or one of a store
+   * created before the instant as a skipped notice with its reason. Nothing is sent here.
+   */
+  sweepActivationSeries: (
+    input: ActivationSweepInput
+  ) => Promise<ActivationSweepReport>;
   /**
    * Applies what time itself causes: records whose access has run out, grants
    * that ended, and trial setups abandoned (no checkout can still be finished).
@@ -775,8 +801,8 @@ function toRecord(row: BillingRow): BillingRecord {
 
 /**
  * Records notices of one store in the caller's transaction and, for each one new, its outbox event `billing.notice`
- * (ADR 0104, decision 7): the same notice again records nothing and writes no second event. The welcome carries its
- * person; a notice of the billing cycle has none (the consumer reads the owner when it sends). Answers how many were new.
+ * (ADR 0104, decision 7): the same notice again records nothing and writes no second event. A notice of the billing cycle
+ * names no person (the consumer reads the owner when it sends). Answers how many were new.
  */
 async function recordNotices(
   client: PoolClient,
@@ -787,17 +813,11 @@ async function recordNotices(
   for (const mark of marks) {
     // biome-ignore lint/performance/noAwaitInLoops: a notice and its event, one after the other, in one transaction
     const inserted = await client.query<{ id: string }>(
-      `INSERT INTO public.billing_notices (organization_id, kind, dedupe_key, due_at, user_id)
-       VALUES ($1, $2, $3, $4, $5)
+      `INSERT INTO public.billing_notices (organization_id, kind, dedupe_key, due_at)
+       VALUES ($1, $2, $3, $4)
        ON CONFLICT DO NOTHING
        RETURNING id`,
-      [
-        organizationId,
-        mark.kind,
-        mark.dedupeKey,
-        mark.dueAt,
-        mark.kind === "welcome" ? mark.dedupeKey : null,
-      ]
+      [organizationId, mark.kind, mark.dedupeKey, mark.dueAt]
     );
     const noticeId = inserted.rows[0]?.id;
     if (!noticeId) {
@@ -859,7 +879,7 @@ interface NoticeRow extends BillingRow {
   trial_started_sent_at: Date | null;
 }
 
-/** A store with no billing record yet (a welcome): Free, as `lockRecord` would create it. */
+/** A store with no billing record yet: Free, as `lockRecord` would create it. */
 const NO_RECORD: BillingRecord = {
   accessEndsAt: null,
   cancelAtPeriodEnd: false,
@@ -1258,6 +1278,89 @@ async function recordTransitionNotices(
       organizationId: opaqueId(organizationId),
     });
   }
+}
+
+interface ActivationCandidateRow {
+  due_at: Date;
+  organization_id: string;
+  outcome: string;
+  step: string;
+  truncated: boolean;
+  user_id: string;
+}
+
+/**
+ * The instant the sweep first saw the switch on, written only while there is none: an instant already there stands
+ * (switching on a switch that is on changes nothing), and the plain read keeps every later sweep off the row's lock.
+ */
+async function recordActivationInstant(
+  client: PoolClient,
+  now: Date
+): Promise<void> {
+  const state = await client.query<{ enabled_since: Date | null }>(
+    "SELECT enabled_since FROM public.activation_series_state"
+  );
+  if (state.rows[0]?.enabled_since) {
+    return;
+  }
+  await client.query(
+    `INSERT INTO public.activation_series_state (enabled_since) VALUES ($1)
+     ON CONFLICT (id) DO UPDATE SET enabled_since = EXCLUDED.enabled_since, updated_at = now()
+      WHERE activation_series_state.enabled_since IS NULL`,
+    [now]
+  );
+}
+
+/**
+ * Records one step the candidates function answered, in the caller's transaction. The billing role inserts only an
+ * owed notice (its policy), so a skipped one is that insert and then its reason. Answers how it was recorded, or null
+ * when the person already had that step (nothing written).
+ */
+async function recordActivationNotice(
+  client: PoolClient,
+  row: ActivationCandidateRow
+): Promise<ActivationOutcome | null> {
+  const outcome = ACTIVATION_OUTCOMES.find((known) => known === row.outcome);
+  if (!outcome) {
+    throw new Error("activation_candidate_outcome_unknown");
+  }
+  const inserted = await client.query<{ id: string }>(
+    `INSERT INTO public.activation_notices (organization_id, user_id, step, due_at)
+     VALUES ($1, $2, $3, $4)
+     ON CONFLICT DO NOTHING
+     RETURNING id`,
+    [row.organization_id, row.user_id, row.step, row.due_at]
+  );
+  const noticeId = inserted.rows[0]?.id;
+  if (!noticeId) {
+    return null;
+  }
+  if (outcome !== "due") {
+    await client.query(
+      "UPDATE public.activation_notices SET skipped_reason = $2 WHERE id = $1",
+      [noticeId, outcome]
+    );
+    return outcome;
+  }
+  const event = outboxEvent({
+    event: { noticeId },
+    idempotencyKey: outboxIdempotencyKey("activation.notice", noticeId),
+    organizationId: row.organization_id,
+    type: "activation.notice",
+  });
+  // the five columns the billing role may insert; the policy of this type takes the notice's ID and nothing else
+  await client.query(
+    `INSERT INTO public.event_outbox (organization_id, type, event, idempotency_key, correlation_id)
+     VALUES ($1, $2, $3::jsonb, $4, $5)`,
+    [
+      event.organizationId,
+      event.type,
+      JSON.stringify(event.event),
+      event.idempotencyKey,
+      randomUUID(),
+    ]
+  );
+  return outcome;
 }
 
 async function inTransaction<T>(
@@ -2989,6 +3092,35 @@ export function createBillingStore(
         );
       });
     },
+    async recordClosureRefundIncident(input, now = new Date()) {
+      await inTransaction(pool, async (client) => {
+        const row = await lockRecord(client, input.organizationId);
+        const inserted = await client.query<{ id: string }>(
+          `INSERT INTO public.billing_events
+             (provider, provider_event_id, organization_id, fact, fact_type, occurred_at, status, state_before, state_after, attempts, processed_at, provider_ref)
+           VALUES ('polaris', $1, $2,
+                   jsonb_build_object('type', 'refund_pending', 'occurredAt', to_char($3::timestamptz AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')),
+                   'command', $3::timestamptz, 'applied', $4, $4, 1, $3::timestamptz, $5)
+           ON CONFLICT (provider, provider_event_id) DO NOTHING
+           RETURNING id`,
+          [
+            `command:closure_refund_pending:${input.requestId}:${createHash("sha256").update(input.link.providerRef).digest("hex").slice(0, 32)}`,
+            input.organizationId,
+            now,
+            row.state,
+            input.link.providerRef,
+          ]
+        );
+        const [event] = inserted.rows;
+        if (!event) {
+          return;
+        }
+        await client.query(
+          "SELECT public.record_billing_refund_pending_incident($1::uuid, 'refund_not_completed')",
+          [event.id]
+        );
+      });
+    },
     async readCurrentCharge(organizationId) {
       const result = await pool.query<{
         amount: string | null;
@@ -3332,25 +3464,6 @@ export function createBillingStore(
       }
       return recorded;
     },
-    async recordWelcomeNotices(now = new Date(), limit = WELCOME_NOTICE_BATCH) {
-      return await inTransaction(pool, async (client) => {
-        const candidates = await client.query<{
-          organization_id: string;
-          user_id: string;
-        }>(
-          "SELECT organization_id, user_id FROM public.welcome_notice_candidates($1)",
-          [limit]
-        );
-        let recorded = 0;
-        for (const candidate of candidates.rows) {
-          // biome-ignore lint/performance/noAwaitInLoops: one store after the other, in one transaction
-          recorded += await recordNotices(client, candidate.organization_id, [
-            welcomeNotice(candidate.user_id, now),
-          ]);
-        }
-        return { candidates: candidates.rows.length, recorded };
-      });
-    },
     claimNotice: (noticeId, organizationId) =>
       claimOwedNotice(pool, noticeId, organizationId),
     async listOwedNotices(now, limit) {
@@ -3667,6 +3780,40 @@ export function createBillingStore(
         }
       }
       return started;
+    },
+    async sweepActivationSeries({ enabled, limit, now }) {
+      const report: ActivationSweepReport = {
+        due: 0,
+        expired: 0,
+        seriesOff: 0,
+        truncated: false,
+      };
+      if (!enabled) {
+        await pool.query(
+          "UPDATE public.activation_series_state SET enabled_since = NULL, updated_at = now() WHERE enabled_since IS NOT NULL"
+        );
+        return report;
+      }
+      return await inTransaction(pool, async (client) => {
+        await recordActivationInstant(client, now);
+        const candidates = await client.query<ActivationCandidateRow>(
+          "SELECT organization_id, user_id, step, due_at, outcome, truncated FROM public.activation_notice_candidates($1, $2)",
+          [now, limit]
+        );
+        for (const row of candidates.rows) {
+          report.truncated ||= row.truncated;
+          // biome-ignore lint/performance/noAwaitInLoops: a notice and its event or its reason, one after the other, in the transaction of the cap's lock
+          const outcome = await recordActivationNotice(client, row);
+          if (outcome === "due") {
+            report.due += 1;
+          } else if (outcome === "expired") {
+            report.expired += 1;
+          } else if (outcome === "series_off") {
+            report.seriesOff += 1;
+          }
+        }
+        return report;
+      });
     },
     async sweepDue(now = new Date(), limit = 50) {
       const due = await pool.query<{ organization_id: string }>(

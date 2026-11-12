@@ -38,6 +38,15 @@ import type { Block } from "./use-home";
 const LINK =
   "touch-hit focus-ring rounded-sm text-sm underline decoration-input underline-offset-4 hover:decoration-foreground";
 
+/**
+ * With no goal the card is a thin strip from 960 px of content: the title, a sentence and the way to set one on one
+ * row, and the chart takes the row under it (`data-goal-strip` is what the grid of the page reads).
+ */
+const STRIP_ATTRIBUTES = { "data-goal-strip": "" } as const;
+const STRIP_CLASS =
+  "@min-[60rem]/home:flex-row @min-[60rem]/home:flex-wrap @min-[60rem]/home:items-center @min-[60rem]/home:gap-x-6 @min-[60rem]/home:gap-y-1 @min-[60rem]/home:py-3";
+const STRIP_END = "@min-[60rem]/home:order-last @min-[60rem]/home:ml-auto";
+
 /** The side of the ring of the goal, and the width of its arc (v7 § 3 item 9). */
 const RING_SIZE = 112;
 const RING_WIDTH = 10;
@@ -188,14 +197,14 @@ function ActiveGoal({
         </p>
       </div>
       {progress && !goal.paused ? (
-        <div className="flex min-w-0 items-center gap-4">
+        <div className="flex min-w-0 items-center gap-4 group-data-[pair]/row:@min-[60rem]/home:flex-1 group-data-[pair]/row:@min-[60rem]/home:flex-col group-data-[pair]/row:@min-[60rem]/home:justify-center group-data-[pair]/row:@min-[60rem]/home:text-center">
           <GoalRing
             goal={goal}
             percent={formatGoalPercent(progress.percent)}
             spoken={`${formatGoalPercent(progress.percent)} da meta: ${formatGoalValue(goal.kind, progress.value)} de ${formatGoalValue(goal.kind, goal.target)}`}
             width={goalProgressWidth(progress.percent)}
           />
-          <div className="grid min-w-0 gap-0.5">
+          <div className="grid min-w-0 gap-0.5 group-data-[pair]/row:@min-[60rem]/home:justify-items-center">
             <p className="font-semibold text-lg tabular-nums leading-7 tracking-tight">
               <MoneyText text={formatGoalValue(goal.kind, progress.value)} />
             </p>
@@ -221,12 +230,21 @@ function ActiveGoal({
 /** No goal: the title of the block and the way to set one, nothing else (the button says what the sentence did). */
 function NoGoal() {
   return (
-    <a
-      className={cn(buttonVariants({ variant: "outline" }), "w-fit")}
-      href="/dashboard?meta=nova"
-    >
-      Definir meta
-    </a>
+    <>
+      <p className="@min-[60rem]/home:block hidden text-muted-foreground text-support">
+        Defina quanto quer vender no mês e acompanhe aqui.
+      </p>
+      <a
+        className={cn(
+          buttonVariants({ variant: "outline" }),
+          "w-fit",
+          STRIP_END
+        )}
+        href="/dashboard?meta=nova"
+      >
+        Definir meta
+      </a>
+    </>
   );
 }
 
@@ -263,7 +281,11 @@ function PastMonthGoal({
       <p className="font-medium">Sem meta ainda</p>
       {online ? (
         <a
-          className={cn(buttonVariants({ variant: "outline" }), "w-fit")}
+          className={cn(
+            buttonVariants({ variant: "outline" }),
+            "w-fit",
+            STRIP_END
+          )}
           href="/dashboard?meta=nova"
         >
           Definir meta
@@ -385,8 +407,12 @@ export function GoalBlock({
     );
   }
   const pastMonth = pastMonthOf(view, today);
+  const strip = view.kind === "none" || pastMonth !== null;
   return (
     <HomeBlock
+      {...(strip
+        ? { attributes: STRIP_ATTRIBUTES, className: STRIP_CLASS }
+        : {})}
       id="home-goal"
       title={pastMonth ? monthGoalTitle(monthTitle(pastMonth)) : "Meta"}
       {...(view.kind === "active" && projection
@@ -417,8 +443,10 @@ export function GoalBlock({
 export function OfflineGoalBlock({ goal }: { goal: OfflineGoal }) {
   let content: React.ReactNode;
   let title = "Meta";
+  let strip = true;
   switch (goal.kind) {
     case "active":
+      strip = false;
       content = goal.ended ? (
         <EndedGoal goal={goal.goal} />
       ) : (
@@ -430,6 +458,7 @@ export function OfflineGoalBlock({ goal }: { goal: OfflineGoal }) {
         title = monthGoalTitle(goal.currentMonth);
         content = <PastMonthGoal goal={goal.goal} online={false} />;
       } else {
+        strip = false;
         content = <SettledGoal goal={goal.goal} online={false} />;
       }
       break;
@@ -441,7 +470,13 @@ export function OfflineGoalBlock({ goal }: { goal: OfflineGoal }) {
       );
   }
   return (
-    <HomeBlock id="home-goal" title={title}>
+    <HomeBlock
+      {...(strip
+        ? { attributes: STRIP_ATTRIBUTES, className: STRIP_CLASS }
+        : {})}
+      id="home-goal"
+      title={title}
+    >
       {content}
     </HomeBlock>
   );

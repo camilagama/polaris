@@ -6,7 +6,11 @@ import type {
   ProductVariantConfigurationReadModel,
 } from "@polaris/contracts";
 import { describe, expect, it } from "vitest";
-import { formatBrlAmount, formatCalendarDate } from "../lib/format";
+import {
+  formatBrlAmount,
+  formatBrlCents,
+  formatCalendarDate,
+} from "../lib/format";
 import {
   acknowledgeProfileReview,
   addAdjustment,
@@ -38,6 +42,7 @@ import {
   loadErrorMessage,
   MAX_SALE_ADJUSTMENTS,
   MAX_SALE_ITEMS,
+  otherLinesQuantity,
   mapSaleSubmitError,
   NO_PROFILE_CHOICE,
   parseLocalDateTime,
@@ -62,6 +67,7 @@ import {
   selectProfileChoice,
   startSubmission,
   stepQuantity,
+  stockMissing,
   stockView,
   submitButtonLabel,
   updateAdjustment,
@@ -225,6 +231,24 @@ describe("formatting", () => {
     expect(formatBrlAmount("12.340000")).toBe("R$ 12,34");
     expect(formatBrlAmount("12.345600")).toBe("R$ 12,3456");
     expect(formatBrlAmount("0.00")).toBe("R$ 0,00");
+  });
+
+  it("formats the average cost to the cent, half-up, never dropping the zeros", () => {
+    expect(formatBrlCents("19.391304")).toBe("R$ 19,39");
+    expect(formatBrlCents("19.395")).toBe("R$ 19,40");
+    expect(formatBrlCents("19.395000")).toBe("R$ 19,40");
+    expect(formatBrlCents("19.399999")).toBe("R$ 19,40");
+    expect(formatBrlCents("19.394999")).toBe("R$ 19,39");
+    expect(formatBrlCents("8")).toBe("R$ 8,00");
+    expect(formatBrlCents("8.000000")).toBe("R$ 8,00");
+    expect(formatBrlCents("8.5")).toBe("R$ 8,50");
+    expect(formatBrlCents("0.004999")).toBe("R$ 0,00");
+    expect(formatBrlCents("0.005")).toBe("R$ 0,01");
+    expect(formatBrlCents("99.995")).toBe("R$ 100,00");
+    expect(formatBrlCents("1234567.891")).toBe("R$ 1.234.567,89");
+    expect(formatBrlCents("-1.005")).toBe("-R$ 1,01");
+    expect(formatBrlCents("-0.001")).toBe("R$ 0,00");
+    expect(formatBrlCents("abc")).toBe("abc");
   });
 
   it("formats percentages in percentage points", () => {
@@ -632,6 +656,96 @@ describe("exact totals and command body", () => {
     );
     expect(Object.keys(result.stockWarnings)).toHaveLength(2);
   });
+
+  describe("the entry link of repeated lines", () => {
+    function twoLines(quantities: [string, string], second = variantId) {
+      let form = addItem(validForm(), "item-2");
+      form = selectItemProduct(form, "item-2", productId);
+      form = selectItemVariant(form, "item-2", second, "Camiseta — Preta / M");
+      form = updateItem(form, lineOf(form).draftId, {
+        quantity: quantities[0],
+      });
+      return updateItem(form, "item-2", {
+        chargedUnitPrice: "10",
+        listedUnitPrice: "10",
+        quantity: quantities[1],
+      });
+    }
+
+    function linkNumbers(form: SaleFormState, ctx: EvaluationContext) {
+      return form.items.map((item) =>
+        stockMissing(
+          item.quantity,
+          stockView(ctx.stock[item.variantId], true),
+          otherLinesQuantity(form.items, item)
+        )
+      );
+    }
+
+    it("leads both lines of the same variant to what the whole sale lacks: 3 + 3 against a balance of 4 is 2", () => {
+      const form = twoLines(["3", "3"]);
+      const ctx = context({ stock: { [variantId]: balance(4, null) } });
+      expect(linkNumbers(form, ctx)).toEqual([2, 2]);
+    });
+
+    it("keeps the single line at its own lack", () => {
+      const form = validForm();
+      const ctx = context({ stock: { [variantId]: balance(1, null) } });
+      expect(linkNumbers(form, ctx)).toEqual([1]);
+    });
+
+    it("leads a balance-0 variant to the sum of its lines", () => {
+      const form = twoLines(["3", "2"]);
+      const ctx = context({ stock: { [variantId]: balance(0, null) } });
+      expect(linkNumbers(form, ctx)).toEqual([5, 5]);
+    });
+
+    it("does not add different variants: each line carries the lack of its own", () => {
+      const form = twoLines(["3", "3"], otherVariantId);
+      const ctx = context({
+        stock: {
+          [variantId]: balance(1, null),
+          [otherVariantId]: {
+            status: "ready",
+            value: {
+              movingAverageCost: null,
+              quantity: 2,
+              variantId: otherVariantId,
+              version: 1,
+            },
+          },
+        },
+      });
+      expect(linkNumbers(form, ctx)).toEqual([2, 1]);
+    });
+
+    it("counts a line whose quantity is not a number as zero, and a blank variant as no one's", () => {
+      const form = twoLines(["3", "abc"]);
+      const ctx = context({ stock: { [variantId]: balance(1, null) } });
+      expect(linkNumbers(form, ctx)).toEqual([2, undefined]);
+      const [first] = form.items;
+      expect(
+        first && otherLinesQuantity(form.items, { ...first, variantId: "" })
+      ).toBe(0);
+    });
+
+    it("shows the warning and the link on the same lines, from the same sum", () => {
+      const form = twoLines(["3", "3"]);
+      const ctx = context({ stock: { [variantId]: balance(4, null) } });
+      const { stockWarnings } = evaluate(form, ctx);
+      const missing = linkNumbers(form, ctx);
+      expect(form.items.map((item) => item.draftId in stockWarnings)).toEqual(
+        missing.map((count) => count !== undefined)
+      );
+      expect(Object.values(stockWarnings)).toEqual([
+        "Acima do saldo (4): a venda é recusada se ele não bastar.",
+        "Acima do saldo (4): a venda é recusada se ele não bastar.",
+      ]);
+      const fits = twoLines(["2", "2"]);
+      expect(Object.keys(evaluate(fits, ctx).stockWarnings)).toHaveLength(0);
+      expect(linkNumbers(fits, ctx)).toEqual([undefined, undefined]);
+    });
+  });
 });
 
 describe("payment profile choice and fee preview", () => {
@@ -1014,6 +1128,12 @@ describe("loading and empty states", () => {
     expect(some?.needsEntry).toBe(false);
     expect(some?.text).toBe("Saldo atual: 5 unidades.");
     expect(some?.costText).toBe("Custo médio: R$ 12,34.");
+    expect(stockView(balance(5, "19.391304"), true)?.costText).toBe(
+      "Custo médio: R$ 19,39."
+    );
+    expect(stockView(balance(5, "8.000000"), true)?.costText).toBe(
+      "Custo médio: R$ 8,00."
+    );
   });
 
   it("maps load failures to actionable messages", () => {
@@ -1671,6 +1791,25 @@ describe("submission state", () => {
     );
   });
 
+  it("shows the recorded unit cost to the cent, half-up, from the exact text", () => {
+    const costLines = (unitCost: string) => {
+      const state = confirmSubmission({
+        ...confirmed,
+        items: confirmed.items.map((item) => ({ ...item, unitCost })),
+      });
+      return state.phase === "confirmed"
+        ? state.sale.items.map((item) => item.costText)
+        : [];
+    };
+    expect(costLines("19.391304")).toEqual([
+      "Custo unitário registrado: R$ 19,39.",
+    ]);
+    expect(costLines("19.395")).toEqual([
+      "Custo unitário registrado: R$ 19,40.",
+    ]);
+    expect(costLines("17")).toEqual(["Custo unitário registrado: R$ 17,00."]);
+  });
+
   it("locks again if the retry also ends with an unknown outcome", () => {
     expect(failSubmission({ code: "GATEWAY_TIMEOUT" }, []).phase).toBe(
       "locked"
@@ -2188,6 +2327,7 @@ describe("the refusal for stock", () => {
     );
     expect(failure.entry).toEqual({
       label: "Caneca esmaltada",
+      missing: 2,
       variantId: first,
     });
   });
@@ -2203,6 +2343,7 @@ describe("the refusal for stock", () => {
     expect(failure.message).toBe(
       "A venda não foi registrada: falta estoque de Caneca esmaltada (pediu 4, saldo 3)."
     );
+    expect(failure.entry?.missing).toBe(1);
   });
 
   it("says how many lines lack stock, lists them, and links the first", () => {
@@ -2306,6 +2447,22 @@ describe("the refusal for stock", () => {
         stock: stockOf({ [first]: 0 }),
       })
     ).toBe(other);
+  });
+
+  it("says how many units a line lacks: its quantity minus the balance shown, and nothing when it fits or is not a number", () => {
+    const view = stockView(balance(1, null), true);
+    expect(stockMissing("3", view)).toBe(2);
+    expect(stockMissing(" 3 ", view)).toBe(2);
+    expect(stockMissing("1", view)).toBeUndefined();
+    expect(stockMissing("0", view)).toBeUndefined();
+    expect(stockMissing("", view)).toBeUndefined();
+    expect(stockMissing("2,5", view)).toBeUndefined();
+    expect(stockMissing("abc", view)).toBeUndefined();
+    expect(stockMissing("3", stockView(balance(0, null), true))).toBe(3);
+    expect(stockMissing("3", null)).toBeUndefined();
+    expect(
+      stockMissing("3", stockView({ status: "loading" }, true))
+    ).toBeUndefined();
   });
 
   it("offers the entry on the zero-balance line only to who can make it", () => {

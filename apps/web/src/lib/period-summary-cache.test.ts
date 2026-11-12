@@ -389,6 +389,14 @@ describe("the daily series and the ranking in a kept summary", () => {
   it("accepts a copy written before the series existed, and one with the series and the ranking", () => {
     expect(isPeriodSummary(summaryOf("2026-10"))).toBe(true);
     expect(isPeriodSummary(withSeries())).toBe(true);
+    for (const coverAssetId of [null, "0199c2d0-0000-7000-8000-0000000000c1"]) {
+      const covered = withSeries();
+      covered.topProducts = covered.topProducts?.map((entry) => ({
+        ...entry,
+        coverAssetId,
+      }));
+      expect(isPeriodSummary(covered)).toBe(true);
+    }
     const { storage } = memoryStorage();
     writePeriodSummaryCache(storage, ORG, "2026-10", withSeries(), ALLOWED);
     expect(readPeriodSummaryCache(storage, ORG, "2026-10")).toEqual(
@@ -464,6 +472,21 @@ describe("the daily series and the ranking in a kept summary", () => {
       {
         topProducts: [
           { deleted: false, name: "x", netSales: "1.00", quantity: 1 },
+        ],
+      },
+    ],
+    [
+      "a ranked product whose cover is not an ID",
+      {
+        topProducts: [
+          {
+            coverAssetId: "not-an-id",
+            deleted: false,
+            name: "x",
+            netSales: "1.00",
+            productId: PRODUCT,
+            quantity: 1,
+          },
         ],
       },
     ],

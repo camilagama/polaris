@@ -23,6 +23,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/ui/select";
+import { Skeleton } from "@/ui/skeleton";
 import { describedBy, FieldTexts } from "../sales/sale-fields";
 import { groupCategories } from "./expense-model";
 import type { Feedback } from "./use-command-runner";
@@ -102,8 +103,6 @@ function categoryLabel(category: ExpenseCategoryReadModel): string {
 }
 
 interface ExpenseCategorySelectProps {
-  /** An item for "no category" with this text (the filter's "Todas as categorias"); without it, a placeholder. */
-  allLabel?: string | undefined;
   categories: readonly ExpenseCategoryReadModel[];
   className?: string | undefined;
   disabled?: boolean | undefined;
@@ -118,7 +117,6 @@ interface ExpenseCategorySelectProps {
 
 /** The categories under the name of their group (Base UI Select): it opens below the field, never over it. */
 export function ExpenseCategorySelect({
-  allLabel,
   categories,
   className,
   disabled,
@@ -136,9 +134,6 @@ export function ExpenseCategorySelect({
   const items: { label: string; value: string | null }[] = categories.map(
     (category) => ({ label: categoryLabel(category), value: category.id })
   );
-  if (allLabel) {
-    items.unshift({ label: allLabel, value: null });
-  }
   const labelId = `${id}-label`;
   return (
     <Field className={cn("min-w-0", className)} data-invalid={Boolean(error)}>
@@ -159,7 +154,6 @@ export function ExpenseCategorySelect({
           <SelectValue placeholder={placeholder} />
         </SelectTrigger>
         <SelectContent>
-          {allLabel ? <SelectItem value={null}>{allLabel}</SelectItem> : null}
           {groupCategories(categories).map((section) => (
             <SelectGroup key={section.key}>
               <SelectLabel>{section.label}</SelectLabel>
@@ -304,7 +298,15 @@ export function LoadError({ busy, message, onRetry }: LoadErrorProps) {
   );
 }
 
-/** "Carregando…" or an empty list: a line of muted text inside the card. */
+const LOADING_ROW_WIDTHS = ["w-2/3", "w-1/2", "w-1/3"];
+
+/** The height of the loading box; a list that arrives empty reserves the same one, at every width. */
+export const LIST_NOTE_MIN_HEIGHT_CLASS = "min-h-[5.25rem] md:min-h-[4.125rem]";
+
+/**
+ * A loading box or an empty list inside the card. Loading is said to the screen reader and drawn as three skeleton
+ * lines; the box keeps the height the visible line had, so the list that arrives does not push the screen.
+ */
 export function ListNote({
   children,
   loading,
@@ -312,13 +314,27 @@ export function ListNote({
   children: string;
   loading?: boolean | undefined;
 }) {
+  if (loading) {
+    return (
+      <div
+        aria-busy="true"
+        className={`grid ${LIST_NOTE_MIN_HEIGHT_CLASS} content-center gap-2`}
+        role="status"
+      >
+        <span className="sr-only">{children}</span>
+        {LOADING_ROW_WIDTHS.map((width) => (
+          <Skeleton
+            aria-hidden="true"
+            className={`h-3.5 ${width}`}
+            key={width}
+          />
+        ))}
+      </div>
+    );
+  }
   return (
-    // two lines kept on a phone: "Carregando despesas…" and the empty list ("Nenhuma despesa neste período. Toque em…")
-    // take the same box
-    <p
-      className="min-h-[5.25rem] py-6 text-center text-muted-foreground text-support md:min-h-0"
-      role={loading ? "status" : undefined}
-    >
+    // two lines kept on a phone: the empty list of the recurring rules ("Nenhuma despesa recorrente. Crie uma para…") takes this box
+    <p className="min-h-[5.25rem] py-6 text-center text-muted-foreground text-support md:min-h-0">
       {children}
     </p>
   );

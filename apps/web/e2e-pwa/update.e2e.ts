@@ -4,6 +4,11 @@ import { join } from "node:path";
 import type { Page, Route } from "@playwright/test";
 import { expect } from "@playwright/test";
 import {
+  firstSettingsTabAddress,
+  onPhone,
+  openSettingsTab,
+} from "../e2e/settings-nav";
+import {
   checkForUpdate,
   fakeQueue,
   markPage,
@@ -31,6 +36,7 @@ import { WORKER_MARK } from "./worker-mark";
 const CHARTS_FILE = /^charts-[\w-]+\.js$/;
 const SHIRT_OPTION = /Camiseta do teste/;
 const SETTINGS_ADDRESS = /\/configuracoes$/;
+const SETTINGS_PHONE_ADDRESS = /\/configuracoes\?aba=formas-de-receber$/;
 const VERSION_LINE =
   /Versão \d{4}\.\d{2}\.\d{2} \d{2}:\d{2} \([0-9a-f]{6}\) · atualizado em \d{2}\/\d{2}/;
 const HOUR = 60 * 60 * 1000;
@@ -132,7 +138,7 @@ test("com um Dialog aberto a aba oculta não troca; fechado o Dialog, a aba ocul
   buildVersion,
   page,
 }) => {
-  await waitingOverVersion1(page, buildVersion, "/configuracoes");
+  await waitingOverVersion1(page, buildVersion, firstSettingsTabAddress(page));
   await page.getByRole("button", { name: "Novo perfil" }).click();
   await expect(page.getByRole("dialog")).toBeVisible();
   await expectHeld(page);
@@ -144,7 +150,9 @@ test("com um Dialog aberto a aba oculta não troca; fechado o Dialog, a aba ocul
   await setVisibility(page, "hidden");
   await expect.poll(() => runningVersion(page), { timeout: 20_000 }).toBe("2");
   // the same screen, by the address
-  await expect(page).toHaveURL(SETTINGS_ADDRESS);
+  await expect(page).toHaveURL(
+    onPhone(page) ? SETTINGS_PHONE_ADDRESS : SETTINGS_ADDRESS
+  );
 });
 
 test("uma venda com item segura a troca: a aba oculta não troca e a venda continua lá", async ({
@@ -203,7 +211,7 @@ test("duas abas, uma com rascunho: só a outra troca, duas vezes (A→B→C), e 
   const other = await context.newPage();
   await serveApp(other);
   await openControlled(other);
-  await other.goto("/configuracoes");
+  await other.goto(firstSettingsTabAddress(other));
   // the draft: a new payment profile with a name typed (it stays after Esc, as every form dialog keeps its draft)
   await other.getByRole("button", { name: "Novo perfil" }).click();
   await other.getByRole("dialog").getByLabel("Nome").first().fill("Maquininha");
@@ -253,7 +261,7 @@ test("duas abas, uma com rascunho: só a outra troca, duas vezes (A→B→C), e 
   await setVisibility(other, "visible");
   await other.keyboard.press("Escape");
   await expect(other.getByRole("dialog")).toHaveCount(0);
-  await other.getByRole("tab", { name: "Catálogo público" }).click();
+  await openSettingsTab(other, "Catálogo público");
   await expect(
     other.getByRole("heading", { exact: true, name: "Catálogo público" })
   ).toBeVisible({ timeout: 15_000 });

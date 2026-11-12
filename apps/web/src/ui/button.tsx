@@ -18,12 +18,12 @@ const buttonVariants = cva(
           "h-ctl-md px-3 has-data-[icon=inline-end]:pr-2.5 has-data-[icon=inline-start]:pl-2.5",
         icon: "size-ctl-md",
         "icon-lg": "size-ctl-lg",
-        "icon-sm": "size-ctl-sm [&_svg:not([class*='size-'])]:size-3.5",
-        "icon-xs": "size-ctl-xs [&_svg:not([class*='size-'])]:size-3.5",
+        "icon-sm": "size-ctl-sm [&_svg:not([class*='size-'])]:size-4",
+        "icon-xs": "size-ctl-xs [&_svg:not([class*='size-'])]:size-4",
         lg: "h-ctl-lg px-4 has-data-[icon=inline-end]:pr-3.5 has-data-[icon=inline-start]:pl-3.5",
-        sm: "h-ctl-sm gap-1 px-2.5 has-data-[icon=inline-end]:pr-2 has-data-[icon=inline-start]:pl-2 [&_svg:not([class*='size-'])]:size-3.5",
+        sm: "h-ctl-sm gap-1 px-2.5 has-data-[icon=inline-end]:pr-2 has-data-[icon=inline-start]:pl-2 [&_svg:not([class*='size-'])]:size-4",
         xl: "h-ctl-xl px-4 has-data-[icon=inline-end]:pr-3.5 has-data-[icon=inline-start]:pl-3.5",
-        xs: "h-ctl-xs gap-1 px-2 text-xs has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5 [&_svg:not([class*='size-'])]:size-3.5",
+        xs: "h-ctl-xs gap-1 px-2 text-xs has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5 [&_svg:not([class*='size-'])]:size-4",
       },
       variant: {
         default:
@@ -31,9 +31,9 @@ const buttonVariants = cva(
         destructive:
           "bg-destructive/10 text-destructive hover:bg-destructive/15 dark:bg-destructive/15 dark:hover:bg-destructive/20",
         ghost: "text-foreground hover:bg-accent aria-expanded:bg-accent",
-        link: "h-auto rounded-sm px-0 text-foreground underline decoration-input underline-offset-4 hover:decoration-foreground",
+        link: "h-auto px-0 text-foreground underline decoration-input underline-offset-4 hover:decoration-foreground",
         outline:
-          "border-input bg-card text-foreground shadow-xs hover:bg-accent aria-expanded:bg-accent dark:bg-secondary/60 dark:hover:bg-accent",
+          "border-border bg-card text-foreground shadow-xs hover:bg-accent aria-expanded:bg-accent dark:bg-secondary/60 dark:hover:bg-accent",
         secondary:
           "bg-secondary text-secondary-foreground hover:bg-accent aria-expanded:bg-accent",
       },

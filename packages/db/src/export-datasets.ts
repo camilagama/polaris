@@ -57,6 +57,8 @@ export const EXPORT_DATASETS: readonly ExportDataset[] = Object.freeze([
 /** Tables of an organization that a data export does not hold, and why. */
 export const EXPORT_EXCLUDED_TABLES: Readonly<Record<string, string>> =
   Object.freeze({
+    activation_notices:
+      "avisos das dicas para começar, só IDs, datas e códigos, por pessoa: lidos só pelo papel de billing e pelo dono da série, nunca pelo tenant (o titular os recebe no pedido de dados, quando a Política disser)",
     billing_events:
       "cobrança: lida só pelo papel de billing, fora do escopo do export do tenant",
     billing_notices:

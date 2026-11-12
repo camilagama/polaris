@@ -100,7 +100,7 @@ export function OfflineAccessExpiredView({
       icon={
         <CloudOffIcon
           aria-hidden="true"
-          className="size-5 shrink-0 text-muted-foreground"
+          className="size-4 shrink-0 text-muted-foreground"
         />
       }
       panelRef={noticeRef}

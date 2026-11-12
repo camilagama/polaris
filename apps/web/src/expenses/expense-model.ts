@@ -7,6 +7,7 @@ import {
   MAX_EXPENSE_DESCRIPTION_LENGTH,
   MAX_EXPENSE_PAYEE_LENGTH,
 } from "@polaris/domain/expenses/expense";
+import { formatDate } from "@/ui/date-values";
 import { isCalendarDate } from "../lib/dates";
 import { isDraftChanged } from "../lib/unsent-work";
 
@@ -15,6 +16,9 @@ import { isDraftChanged } from "../lib/unsent-work";
  * months and the five fixed expense groups. Money is only ever text or BigInt
  * here, never a floating point number.
  */
+
+/** Why the days before the first allowed competence cannot be chosen. */
+export const EARLIEST_COMPETENCE_REASON = `Só a partir de ${formatDate(EARLIEST_EXPENSE_COMPETENCE)}`;
 
 export type ExpenseGroupKey = ExpenseReadModel["categoryGroup"];
 

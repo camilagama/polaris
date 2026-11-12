@@ -14,6 +14,7 @@ import {
   rangeMessage,
   rangeProblem,
   samePeriod,
+  wholeMonthOf,
 } from "./result-period";
 
 describe("what each preset reads (AC-1)", () => {
@@ -143,7 +144,7 @@ describe("the range of Período (AC-2)", () => {
   it("refuses 367 days, with the limit in the text", () => {
     expect(rangeProblem("2025-11-03", "2026-11-04")).toBe("too_long");
     expect(rangeProblem("2026-01-01", "2027-01-02")).toBe("too_long");
-    expect(rangeMessage("too_long")).toBe("Escolha até 1 ano.");
+    expect(rangeMessage("too_long")).toBe("Escolha até 1 ano");
   });
 
   it("says what is wrong when an end is missing or is not a date, and when they are in the wrong order", () => {
@@ -234,5 +235,21 @@ describe("calendar arithmetic", () => {
     expect(samePeriod(null, { from: "2026-10-01", to: "2026-10-31" })).toBe(
       false
     );
+  });
+});
+
+describe("o mês inteiro (AC-B)", () => {
+  it("só um mês de calendário do dia 1 ao último dia conta como mês inteiro", () => {
+    expect(wholeMonthOf({ from: "2026-11-01", to: "2026-11-30" })).toBe(
+      "2026-11"
+    );
+    expect(wholeMonthOf({ from: "2028-02-01", to: "2028-02-29" })).toBe(
+      "2028-02"
+    );
+    expect(wholeMonthOf({ from: "2026-11-01", to: "2026-11-29" })).toBeNull();
+    expect(wholeMonthOf({ from: "2026-11-02", to: "2026-11-30" })).toBeNull();
+    expect(wholeMonthOf({ from: "2026-10-12", to: "2026-11-10" })).toBeNull();
+    expect(wholeMonthOf({ from: "2026-01-01", to: "2026-12-31" })).toBeNull();
+    expect(wholeMonthOf(null)).toBeNull();
   });
 });

@@ -6,6 +6,7 @@ import {
   ACTIVATION_FUNNEL_MAX_WEEKS,
   readActivationFunnel,
 } from "../src/admin-diagnostics-repository";
+import { TRIAL_DAYS } from "@polaris/domain/billing/subscription-state";
 import { classifyOrganization } from "../src/admin-support-repository";
 import { createDatabase } from "../src/client";
 import {
@@ -64,8 +65,10 @@ type Cell =
 
 interface Cohort {
   activatedIn7Days: Cell;
+  activatedWithin14Days: Cell;
   inProgress: boolean;
   retention: { week2: Cell; week3: Cell; week5: Cell };
+  soldInTrial: Cell;
   stores: Cell;
   timeToFirstSale: {
     after7Days: Cell;
@@ -74,6 +77,7 @@ interface Cohort {
     upTo1Hour: Cell;
     upTo7Days: Cell;
   };
+  trialStarted: Cell;
   week: string;
   weekStart: string;
   withFirstProduct: Cell;
@@ -110,6 +114,8 @@ interface Funnel {
 const EXECUTION_TIME = /duration: ([\d.]+) ms/;
 /** The band of the time to the first sale: up to 10 minutes, 1 hour, 1 day, 7 days, later. */
 const BAND_LIMITS = [600, 3600, 86_400, 604_800];
+const SEVEN_DAYS = 604_800;
+const FOURTEEN_DAYS = 1_209_600;
 const bandOf = (seconds: number): 0 | 1 | 2 | 3 | 4 => {
   const band = BAND_LIMITS.findIndex((limit) => seconds <= limit);
   return (band === -1 ? 4 : band) as 0 | 1 | 2 | 3 | 4;
@@ -126,12 +132,20 @@ const unavailable = (reason: string): Cell => ({
 interface Tally {
   b: number;
   c: [number, number, number, number, number];
+  /** First sale later than 7 days and up to 14. */
+  d: number;
+  /** First sale later than 14 days. */
+  e: number;
   n: number;
   p0: number;
   p1: number;
   r2: number;
   r3: number;
   r5: number;
+  /** The first sale came before the start of the trial plus its 7 days. */
+  s: number;
+  /** The store has a `trial_started_at`. */
+  t: number;
 }
 
 /**
@@ -170,6 +184,7 @@ function expectedCohort(
   const start = Date.parse(`${week.start}T00:00:00Z`);
   const current = Date.parse(`${clock.currentWeek}T00:00:00Z`);
   const windowClosed = start + 14 * DAY <= clock.localNow;
+  const window14Closed = start + 21 * DAY <= clock.localNow;
   const tier = tierOf(t, windowClosed);
   const a7 = t.c[0] + t.c[1] + t.c[2] + t.c[3];
   const window = (cell: Cell) =>
@@ -182,14 +197,34 @@ function expectedCohort(
     }
     return value >= K && t.b - value >= K ? shown(value) : SUPPRESSED;
   };
+  // the cell is the 7-day activation plus the band of 8 to 14 days; that band and the sales later than 14 days are its
+  // differences with two shown counts, so both hold k
+  const activatedWithin14Days = (): Cell => {
+    if (!window14Closed) {
+      return unavailable("activation_window_open");
+    }
+    // the stores that sold in week 2 are all inside the cell: with that retention shown, the rest holds k too
+    const week2Shown = t.r2 >= K && t.b - t.r2 >= K;
+    return [1, 2, 4].includes(tier) &&
+      Math.min(t.d, t.e) >= K &&
+      (!week2Shown || a7 + t.d - t.r2 >= K)
+      ? shown(a7 + t.d)
+      : SUPPRESSED;
+  };
+  // a subset of the trial stores, of the stores that sold and of the cohort: each of those and each complement holds k
+  const trialShown = Math.min(t.t, t.n - t.t) >= K;
+  const soldInTrialShown =
+    Math.min(t.t, t.n - t.t, t.s, t.t - t.s, t.b - t.s) >= K;
   return {
     activatedIn7Days: window([1, 2, 4].includes(tier) ? shown(a7) : SUPPRESSED),
+    activatedWithin14Days: activatedWithin14Days(),
     inProgress: week.start === clock.currentWeek,
     retention: {
       week2: retention(2, t.r2),
       week3: retention(3, t.r3),
       week5: retention(5, t.r5),
     },
+    soldInTrial: soldInTrialShown ? shown(t.s) : SUPPRESSED,
     stores: t.n >= K ? shown(t.n) : SUPPRESSED,
     timeToFirstSale: {
       after7Days: band(t.c[4]),
@@ -198,6 +233,7 @@ function expectedCohort(
       upTo7Days: band(t.c[3]),
       upTo10Minutes: band(t.c[0]),
     },
+    trialStarted: trialShown ? shown(t.t) : SUPPRESSED,
     week: week.label,
     weekStart: week.start,
     withFirstProduct: [1, 2, 3, 6].includes(tier)
@@ -223,6 +259,9 @@ function suppressionProblems(funnel: Funnel): string[] {
       cohort.withFirstSale,
       cohort.withoutSale,
       cohort.activatedIn7Days,
+      cohort.activatedWithin14Days,
+      cohort.trialStarted,
+      cohort.soldInTrial,
       ...bands,
       ...Object.values(cohort.retention),
     ];
@@ -236,6 +275,9 @@ function suppressionProblems(funnel: Funnel): string[] {
     const a = shownValue(cohort.withFirstProduct);
     const b = shownValue(cohort.withFirstSale);
     const a7 = shownValue(cohort.activatedIn7Days);
+    const a14 = shownValue(cohort.activatedWithin14Days);
+    const trial = shownValue(cohort.trialStarted);
+    const soldTrial = shownValue(cohort.soldInTrial);
     // nested counts: each difference is a set of stores too
     const nested: [string, number | null, number | null][] = [
       ["stores - withFirstProduct", n, a],
@@ -244,6 +286,20 @@ function suppressionProblems(funnel: Funnel): string[] {
       ["withFirstProduct - withFirstSale", a, b],
       ["withFirstProduct - activatedIn7Days", a, a7],
       ["withFirstSale - activatedIn7Days", b, a7],
+      ["stores - activatedWithin14Days", n, a14],
+      ["withFirstProduct - activatedWithin14Days", a, a14],
+      ["withFirstSale - activatedWithin14Days", b, a14],
+      ["activatedWithin14Days - activatedIn7Days", a14, a7],
+      [
+        "activatedWithin14Days - retention.week2",
+        a14,
+        shownValue(cohort.retention.week2),
+      ],
+      ["stores - trialStarted", n, trial],
+      ["trialStarted - soldInTrial", trial, soldTrial],
+      ["stores - soldInTrial", n, soldTrial],
+      ["withFirstProduct - soldInTrial", a, soldTrial],
+      ["withFirstSale - soldInTrial", b, soldTrial],
       ...Object.entries(cohort.retention).map(
         ([week, cell]) =>
           [`withFirstSale - ${week}`, b, shownValue(cell)] as [
@@ -257,6 +313,28 @@ function suppressionProblems(funnel: Funnel): string[] {
       if (outer !== null && inner !== null && outer - inner < K) {
         problems.push(`${cohort.week}: ${label} = ${outer - inner}`);
       }
+    }
+    // a cell that came through sits under the coarser ones it is part of, and never past them
+    if (a14 !== null && (a7 === null || b === null || a14 < a7 || a14 > b)) {
+      problems.push(
+        `${cohort.week}: the 14-day cell is not between the 7-day cell and the sales`
+      );
+    }
+    if (
+      soldTrial !== null &&
+      (trial === null || b === null || soldTrial > trial || soldTrial > b)
+    ) {
+      problems.push(
+        `${cohort.week}: the cell sold in the trial is not a part of the trial and of the sales`
+      );
+    }
+    if (
+      cohort.activatedWithin14Days.state === "unavailable" &&
+      cohort.activatedWithin14Days.reason !== "activation_window_open"
+    ) {
+      problems.push(
+        `${cohort.week}: the 14-day cell is unavailable for another reason`
+      );
     }
     const shownBands = bands.filter((cell) => cell.state === "shown").length;
     if (shownBands !== 0 && shownBands !== bands.length) {
@@ -497,8 +575,18 @@ async function run() {
                      ORDER BY 1) AS reach
          FROM pg_class AS c WHERE c.oid = 'public.platform_internal_organizations'::regclass`
     );
+    // the owners of the activation series and of its measure read it too (ADR 0106, D2 and D9: an internal store gets
+    // no e-mail and is not counted), by column
     assert.deepEqual(marker.rows, [
-      { forced: true, reach: ["polaris_admin_owner"], rls: true },
+      {
+        forced: true,
+        reach: [
+          "polaris_activation_notice_owner",
+          "polaris_activation_owner",
+          "polaris_admin_owner",
+        ],
+        rls: true,
+      },
     ]);
     const publicReach = await owner.pool.query<{ allowed: boolean }>(
       "SELECT has_table_privilege('public', 'public.platform_internal_organizations', 'SELECT,INSERT,UPDATE,DELETE') AS allowed"
@@ -606,6 +694,23 @@ async function run() {
     assert.deepEqual(migration.match(/CREATE TABLE "[a-z_]+"/g), [
       'CREATE TABLE "platform_internal_organizations"',
     ]);
+    const fourteenDays = readFileSync(
+      new URL("../drizzle/0125_funil_ate_14_dias.sql", import.meta.url),
+      "utf8"
+    );
+    assert.deepEqual(
+      fourteenDays.match(
+        /^(?:CREATE|ALTER|DROP)\b[^\n]*|^(?:GRANT|REVOKE)\b[^\n]*/gim
+      ),
+      [
+        "GRANT CREATE ON SCHEMA public TO polaris_admin_owner;--> statement-breakpoint",
+        "GRANT polaris_admin_owner TO CURRENT_USER WITH SET TRUE, INHERIT FALSE, ADMIN FALSE;--> statement-breakpoint",
+        "CREATE OR REPLACE FUNCTION public.admin_activation_funnel(p_weeks integer)",
+        "REVOKE polaris_admin_owner FROM CURRENT_USER;--> statement-breakpoint",
+        "REVOKE CREATE ON SCHEMA public FROM polaris_admin_owner;--> statement-breakpoint",
+      ],
+      "the migration of the 14-day cells only replaces the function: no table, column or privilege of anybody else"
+    );
     const one = await read(1);
     assert.equal(one.funnel.cohorts.length, 1);
     assert.equal(one.funnel.signups.length, 1);
@@ -873,7 +978,14 @@ async function run() {
       oldBusinessDate?: boolean;
       product?: "deleted" | "live" | "none";
       /** Offsets from the Monday 00:00 (Brasília) of the cohort, for each confirmed sale. */
-      sales?: string[];
+      sales?: string[] | undefined;
+      /** The billing record: when the trial started (an offset as above) and the state the store is in now. */
+      trial?:
+        | {
+            at: string;
+            state: "active" | "free" | "free_over_limit" | "trialing";
+          }
+        | undefined;
     }
     const weekStart = (weeksAgo: number) =>
       `(date_trunc('week', now() AT TIME ZONE '${ZONE}') - ${weeksAgo} * interval '7 days')`;
@@ -894,6 +1006,16 @@ async function run() {
         "INSERT INTO public.memberships (organization_id, user_id, role, status) VALUES ($1, $2, 'owner', 'active')",
         [organizationId, userId]
       );
+      if (spec.trial) {
+        await owner.pool.query(
+          `INSERT INTO public.organization_billing (organization_id, state, access_ends_at, cycle_months, trial_started_at)
+           VALUES ($1, $2::text,
+                   CASE WHEN $2::text IN ('trialing', 'active') THEN now() + interval '7 days' END,
+                   CASE WHEN $2::text = 'active' THEN 1 END,
+                   (${weekStart(weeksAgo)} + $3::interval) AT TIME ZONE '${ZONE}')`,
+          [organizationId, spec.trial.state, spec.trial.at]
+        );
+      }
       if (spec.product && spec.product !== "none") {
         await owner.pool.query(
           `WITH created AS (
@@ -960,11 +1082,12 @@ async function run() {
     const a: Promise<string>[] = [
       // no product and no sale
       ...times(5, () => createStore(WEEKS.a, { created: WEDNESDAY })),
-      // a product (one deleted: it still counts) and no sale
+      // a product (one deleted: it still counts) and no sale; the trial ended and the store is on Free again
       ...times(5, (index) =>
         createStore(WEEKS.a, {
           created: WEDNESDAY,
           product: index === 0 ? "deleted" : "live",
+          trial: { at: WEDNESDAY, state: "free" },
         })
       ),
       // up to 10 minutes: one dated two years back, one cancelled; all sell again in week 3
@@ -975,6 +1098,7 @@ async function run() {
           oldBusinessDate: index === 0,
           product: "live",
           sales: [at("2 days 10 hours 5 minutes"), at("15 days 12 hours")],
+          trial: { at: WEDNESDAY, state: "trialing" },
         })
       ),
       // up to 1 hour; 3 of them sell again in week 5 (3 is under k: retention of week 5 is suppressed)
@@ -986,6 +1110,7 @@ async function run() {
             index < 3
               ? [at("2 days 10 hours 30 minutes"), at("30 days 12 hours")]
               : [at("2 days 10 hours 30 minutes")],
+          trial: { at: WEDNESDAY, state: "free_over_limit" },
         })
       ),
       // up to 1 day; each sells again on Sunday 22:00 of Brasília (Monday 01:00 UTC): still week 1
@@ -994,6 +1119,7 @@ async function run() {
           created: WEDNESDAY,
           product: "live",
           sales: [at("2 days 15 hours"), at("6 days 22 hours")],
+          trial: { at: WEDNESDAY, state: "active" },
         })
       ),
       // up to 7 days: first on Sunday 23:30 (Brasília), then on Monday 09:00: week 2
@@ -1002,6 +1128,7 @@ async function run() {
           created: WEDNESDAY,
           product: "live",
           sales: [at("6 days 23 hours 30 minutes"), at("7 days 9 hours")],
+          trial: { at: WEDNESDAY, state: "free" },
         })
       ),
       // later than 7 days, in week 2
@@ -1010,6 +1137,7 @@ async function run() {
           created: WEDNESDAY,
           product: "live",
           sales: [at("12 days 10 hours")],
+          trial: { at: WEDNESDAY, state: "free" },
         })
       ),
       // internal: never counted, whatever they do
@@ -1019,6 +1147,7 @@ async function run() {
           internal: true,
           product: "live",
           sales: [at("2 days 10 hours 1 minute"), at("8 days")],
+          trial: { at: WEDNESDAY, state: "free" },
         })
       ),
     ];
@@ -1062,6 +1191,7 @@ async function run() {
         created: "3 days",
         product: "live" as const,
         sales: ["3 days 5 minutes"],
+        trial: { at: "3 days", state: "free" as const },
       })),
     ]) {
       // biome-ignore lint/performance/noAwaitInLoops: Fixture rows, in order.
@@ -1126,6 +1256,142 @@ async function run() {
     // the last week: 5 with nothing, 5 with a product only, 5 sold; the 7 days of its stores are not over
     await cohortOf(WEEKS.open, { bands: [5, 0, 0, 0, 0], p0: 5, p1: 5 });
 
+    // the "up to 14 days" cell and the Pro trial: weeks 2 to 7 hold one cohort each. Their sales stay out of last week
+    // (a store of week 3 or older sells later than 14 days only from week 4), whose active stores are counted by hand
+    const TRIAL_WEEKS = {
+      closedBare: 3,
+      secondWeek: 5,
+      d6e6: 4,
+      borders: 6,
+      e1: 7,
+      open: 2,
+    } as const;
+    const BORN = 36_000;
+    interface Group {
+      count: number;
+      /** Seconds after the creation of the first sale; none when the store never sold. */
+      sold?: number;
+      /** Seconds after the creation of a second sale. */
+      soldAgain?: number;
+      product?: boolean;
+      /** Seconds after the creation of the start of the trial, and the state the store is in now. */
+      trial?: {
+        after: number;
+        state: "active" | "free" | "free_over_limit" | "trialing";
+      };
+    }
+    const MINUTES = 60;
+    const DAYS = 86_400;
+    const groupsOf = async (weeksAgo: number, groups: Group[]) => {
+      const ids: string[][] = [];
+      for (const group of groups) {
+        // biome-ignore lint/performance/noAwaitInLoops: Fixture rows, in order.
+        const created = await Promise.all(
+          times(group.count, () =>
+            createStore(weeksAgo, {
+              created: `${BORN} seconds`,
+              product: group.product === false ? "none" : "live",
+              sales:
+                group.sold === undefined
+                  ? undefined
+                  : [
+                      `${BORN + group.sold} seconds`,
+                      ...(group.soldAgain === undefined
+                        ? []
+                        : [`${BORN + group.soldAgain} seconds`]),
+                    ],
+              trial: group.trial && {
+                at: `${BORN + group.trial.after} seconds`,
+                state: group.trial.state,
+              },
+            })
+          )
+        );
+        ids.push(created);
+      }
+      return ids;
+    };
+    const nothingSold: Group = { count: 5, product: false };
+    const productOnly: Group = { count: 5 };
+    // week 2, whose 14 days are not over: 20 sold in 5 minutes or 3 days (17 of them in a trial), and 5 with a
+    // product and a trial that never sold. 22 started a trial; the 3 who sold and are not in it leave 3 under k
+    await groupsOf(TRIAL_WEEKS.open, [
+      nothingSold,
+      { count: 5, trial: { after: 0, state: "free" } },
+      { count: 9, sold: 5 * MINUTES, trial: { after: 0, state: "trialing" } },
+      { count: 1, sold: 5 * MINUTES },
+      { count: 8, sold: 3 * DAYS, trial: { after: 0, state: "free" } },
+      { count: 2, sold: 3 * DAYS },
+    ]);
+    // week 3, the first whose 14 days are over: 4 sold between 8 and 14 days and nobody later, so the cell hides (it is
+    // not unavailable); 4 started a trial
+    await groupsOf(TRIAL_WEEKS.closedBare, [
+      nothingSold,
+      productOnly,
+      { count: 4, sold: 5 * MINUTES, trial: { after: 0, state: "free" } },
+      { count: 1, sold: 5 * MINUTES },
+      { count: 5, sold: 3 * DAYS },
+      { count: 4, sold: 10 * DAYS },
+    ]);
+    // week 4: 6 sold between 8 and 14 days and 6 later, so the cell shows; 6 started a trial, 5 sold in it
+    await groupsOf(TRIAL_WEEKS.d6e6, [
+      nothingSold,
+      productOnly,
+      { count: 5, sold: 5 * MINUTES },
+      { count: 5, sold: 3 * DAYS },
+      {
+        count: 5,
+        sold: 10 * DAYS,
+        trial: { after: 5 * DAYS, state: "trialing" },
+      },
+      { count: 1, sold: 10 * DAYS, trial: { after: 1 * DAYS, state: "free" } },
+      { count: 6, sold: 15 * DAYS },
+    ]);
+    // week 5: 6 sold between 8 and 14 days and 6 later, but every store of the cell sold in week 2 of the cohort, so
+    // the retention of week 2 (16, with 6 not in it) would give the 0 left over away: the 14-day cell hides
+    await groupsOf(TRIAL_WEEKS.secondWeek, [
+      nothingSold,
+      productOnly,
+      { count: 5, sold: 5 * MINUTES, soldAgain: 8 * DAYS },
+      { count: 5, sold: 3 * DAYS, soldAgain: 9 * DAYS },
+      { count: 6, sold: 10 * DAYS },
+      { count: 6, sold: 15 * DAYS },
+    ]);
+    // week 6, the borders: 14 days exactly is still "up to 14 days"; 14 days and a second is later; a sale exactly 7
+    // days after the start of the trial is out of it, a second before is in
+    await groupsOf(TRIAL_WEEKS.borders, [
+      nothingSold,
+      productOnly,
+      { count: 5, sold: 5 * MINUTES },
+      {
+        count: 5,
+        sold: 14 * DAYS,
+        trial: { after: TRIAL_DAYS * DAYS, state: "free" },
+      },
+      {
+        count: 5,
+        sold: 14 * DAYS + 1,
+        trial: { after: TRIAL_DAYS * DAYS + 2, state: "free" },
+      },
+    ]);
+    // week 7: one store later than 14 days (the cell hides); 12 stores started a trial in four states
+    const trialWeekSeven = await groupsOf(TRIAL_WEEKS.e1, [
+      { count: 3, product: false, trial: { after: 0, state: "free" } },
+      { count: 2, product: false },
+      { count: 3, trial: { after: 0, state: "free_over_limit" } },
+      { count: 2 },
+      { count: 3, sold: 5 * MINUTES, trial: { after: 0, state: "trialing" } },
+      { count: 2, sold: 5 * MINUTES },
+      { count: 5, sold: 3 * DAYS },
+      {
+        count: 3,
+        sold: 10 * DAYS,
+        trial: { after: 5 * DAYS, state: "active" },
+      },
+      { count: 2, sold: 10 * DAYS },
+      { count: 1, sold: 20 * DAYS },
+    ]);
+
     const byWeek = (
       source: Funnel,
       weeksAgo: number,
@@ -1152,8 +1418,10 @@ async function run() {
       { ...A.cohort, week: "", weekStart: "" },
       {
         activatedIn7Days: shown(20),
+        activatedWithin14Days: SUPPRESSED,
         inProgress: false,
         retention: { week2: shown(10), week3: shown(5), week5: SUPPRESSED },
+        soldInTrial: shown(20),
         stores: shown(35),
         timeToFirstSale: {
           after7Days: five,
@@ -1162,6 +1430,7 @@ async function run() {
           upTo7Days: five,
           upTo10Minutes: five,
         },
+        trialStarted: shown(30),
         week: "",
         weekStart: "",
         withFirstProduct: shown(30),
@@ -1312,6 +1581,158 @@ async function run() {
     );
     tests.push(
       "each cut the hand fixtures pick, with exact figures: every band (cut 1), activated and later without the bands (2), product and sale without the activation (3), the sale without the product (4 and 5), the product only (6), nothing (7); the borders of the bands are inclusive (exactly 10 minutes, 1 hour, 1 day and 7 days; 7 days and 1 second is later); in the last week the bands, the activation and the retention are unavailable with their reason, never 0"
+    );
+    const fourteenOf = (weeksAgo: number) => {
+      const { cohort } = byWeek(fixture.funnel, weeksAgo, fixture.clock);
+      return {
+        activatedIn7Days: cohort.activatedIn7Days,
+        activatedWithin14Days: cohort.activatedWithin14Days,
+        soldInTrial: cohort.soldInTrial,
+        trialStarted: cohort.trialStarted,
+      };
+    };
+    const windowOpen = unavailable("activation_window_open");
+    assert.deepEqual(
+      fourteenOf(TRIAL_WEEKS.open),
+      {
+        activatedIn7Days: SUPPRESSED,
+        activatedWithin14Days: windowOpen,
+        soldInTrial: SUPPRESSED,
+        trialStarted: shown(22),
+      },
+      "week 2: 14 days not over, never 0; 22 with a trial, of which 17 sold in it, but the 3 sellers outside it are a cell under k"
+    );
+    assert.deepEqual(
+      fourteenOf(TRIAL_WEEKS.closedBare),
+      {
+        activatedIn7Days: SUPPRESSED,
+        activatedWithin14Days: SUPPRESSED,
+        soldInTrial: SUPPRESSED,
+        trialStarted: SUPPRESSED,
+      },
+      "week 3: the first whose 14 days are over: hidden (4 between 8 and 14 days, none later), not unavailable; 4 with a trial are hidden"
+    );
+    assert.deepEqual(
+      fourteenOf(TRIAL_WEEKS.d6e6),
+      {
+        activatedIn7Days: shown(10),
+        activatedWithin14Days: shown(16),
+        soldInTrial: SUPPRESSED,
+        trialStarted: shown(6),
+      },
+      "week 4: 10 in 7 days plus 6 between 8 and 14, and 6 later: 16 show; 6 started a trial and 5 sold in it, but the 1 left over is under k"
+    );
+    assert.deepEqual(
+      fourteenOf(TRIAL_WEEKS.secondWeek),
+      {
+        activatedIn7Days: shown(10),
+        activatedWithin14Days: SUPPRESSED,
+        soldInTrial: SUPPRESSED,
+        trialStarted: SUPPRESSED,
+      },
+      "week 5: 10 + 6 stores and 6 later would show 16, but all 16 sold in week 2 of the cohort: with that retention shown (16) the difference is 0, so the 14-day cell hides"
+    );
+    assert.deepEqual(
+      byWeek(fixture.funnel, TRIAL_WEEKS.secondWeek, fixture.clock).cohort
+        .retention.week2,
+      shown(16),
+      "week 5: the retention of week 2 shows"
+    );
+    assert.deepEqual(
+      fourteenOf(TRIAL_WEEKS.borders),
+      {
+        activatedIn7Days: five,
+        activatedWithin14Days: shown(10),
+        soldInTrial: five,
+        trialStarted: shown(10),
+      },
+      "week 6: a sale at 14 days exactly is up to 14 days (5 + 5), one 1 second later is not; 10 with a trial, 5 sold in it (a sale exactly 7 days after the start is out, 1 second before is in)"
+    );
+    const weekSeven = {
+      activatedIn7Days: shown(10),
+      activatedWithin14Days: SUPPRESSED,
+      soldInTrial: shown(6),
+      trialStarted: shown(12),
+    };
+    assert.deepEqual(
+      fourteenOf(TRIAL_WEEKS.e1),
+      weekSeven,
+      "week 7: 1 store later than 14 days hides the 14-day cell; 12 started a trial in four states, 6 sold in it"
+    );
+    // the trial ending or the store going back to Free leaves `trial_started_at` and the cells as they were; only a
+    // record without `trial_started_at` leaves the trial
+    const [, , , , runningTrial, , , convertedTrial] = trialWeekSeven;
+    const billingBefore = await owner.pool.query<{
+      access_ends_at: Date | null;
+      cycle_months: number | null;
+      organization_id: string;
+      over_limit_since: Date | null;
+      state: string;
+      trial_started_at: Date;
+    }>(
+      "SELECT organization_id, state, access_ends_at, cycle_months, over_limit_since, trial_started_at FROM public.organization_billing WHERE organization_id = ANY($1::text[])",
+      [[...(runningTrial ?? []), ...(convertedTrial ?? [])]]
+    );
+    await owner.pool.query(
+      "UPDATE public.organization_billing SET state = 'free', access_ends_at = NULL, cycle_months = NULL WHERE organization_id = ANY($1::text[])",
+      [[...(runningTrial ?? []), ...(convertedTrial ?? [])]]
+    );
+    await owner.pool.query(
+      "UPDATE public.organization_billing SET state = 'free_over_limit', over_limit_since = now() WHERE organization_id = ANY($1::text[])",
+      [runningTrial ?? []]
+    );
+    const afterEnd = await read();
+    assert.deepEqual(
+      (() => {
+        const { cohort } = byWeek(
+          afterEnd.funnel,
+          TRIAL_WEEKS.e1,
+          afterEnd.clock
+        );
+        return {
+          activatedIn7Days: cohort.activatedIn7Days,
+          activatedWithin14Days: cohort.activatedWithin14Days,
+          soldInTrial: cohort.soldInTrial,
+          trialStarted: cohort.trialStarted,
+        };
+      })(),
+      weekSeven,
+      "a trial that ended, or a store back on Free, still counts as one that started"
+    );
+    await owner.pool.query(
+      "UPDATE public.organization_billing SET trial_started_at = NULL WHERE organization_id = ANY($1::text[])",
+      [runningTrial ?? []]
+    );
+    const afterClear = await read();
+    const clearedWeek = byWeek(
+      afterClear.funnel,
+      TRIAL_WEEKS.e1,
+      afterClear.clock
+    ).cohort;
+    assert.deepEqual(
+      [clearedWeek.trialStarted, clearedWeek.soldInTrial],
+      [shown(9), SUPPRESSED],
+      "the cell reads `trial_started_at`: without it 3 of the 12 leave, and the 3 left of the 6 who sold in the trial hide"
+    );
+    // the rest of the gate reads the fixture as it was written
+    await owner.pool.query(
+      `UPDATE public.organization_billing AS b
+          SET state = r.state, access_ends_at = r.access_ends_at, cycle_months = r.cycle_months,
+              over_limit_since = r.over_limit_since, trial_started_at = r.trial_started_at
+         FROM jsonb_to_recordset($1::jsonb) AS r(organization_id text, state text, access_ends_at timestamptz,
+                                                 cycle_months integer, over_limit_since timestamptz,
+                                                 trial_started_at timestamptz)
+        WHERE b.organization_id = r.organization_id`,
+      [JSON.stringify(billingBefore.rows)]
+    );
+    const restored = await read();
+    assert.deepEqual(
+      byWeek(restored.funnel, TRIAL_WEEKS.e1, restored.clock).cohort,
+      byWeek(fixture.funnel, TRIAL_WEEKS.e1, fixture.clock).cohort,
+      "the fixture is back as it was"
+    );
+    tests.push(
+      "the cells of the 14 days and of the Pro trial, with exact figures: week 2 (14 days not over) is unavailable with activation_window_open and week 3 (the first whose 14 days are over) is hidden, never 0; 10 + 6 stores that sold in 7 and 8 to 14 days show 16 when 6 sold later; 4 between 8 and 14 days and none later, or 6 and 6 with every one of the 16 selling in week 2 (the retention of that week would give the 0 left over away), hide the cell (k = 5 on the band, on the rest and on the difference with the retention of week 2); 14 days exactly is in and 14 days and a second out; trial stores of 4, 5, 6, 10, 12, 22 and 30 (one count under k hides it, and the 17 sold in the trial of 22 hide because the 3 outside it are 3); the start of the trial plus 7 days is out and a second before is in; a trial that ended (the store on Free or over the limit) or paid for Pro still counts, and a record without trial_started_at does not"
     );
     tests.push(
       "a fixture counted by hand: cohort A (35 stores, 2 internal ones out) shows each band (5 each, by confirmed_at: a sale dated two years back and a cancelled one count), 30 with a product (a deleted one counts), 25 sold, 10 not yet, 20 activated in 7 days, 10 sold in week 2 (Sunday 23:30 and 22:00 of Brasília are still week 1, Monday 09:00 is week 2), 5 in week 3 and week 5 suppressed (3); its week has 42 verified sign-ups, 37 with a store; cohorts of 1 and 4 stores show nothing, of 5 and 6 only the count (every cell is 0 or all); in a cohort of 12 with 2 stores having a product and no sale, the product is hidden and the sale shows"
@@ -1500,13 +1921,30 @@ async function run() {
         for (const _ of times(size, () => 0)) {
           const createdMinutes = draw(5) * 1440 + draw(20) * 60;
           const sold = cell >= 2;
+          // the last band is 10 days or 20 days after the creation: the first is inside the 14 days, the second is not
+          const firstSale =
+            cell === 6 && draw(2) === 0
+              ? 28_800
+              : (bandMinutes[cell - 2] as number);
+          const trialDraw = draw(3);
+          const trialDays = draw(12);
+          const trialState = (
+            ["free", "trialing", "active", "free_over_limit"] as const
+          )[draw(4)] as "active" | "free" | "free_over_limit" | "trialing";
           // biome-ignore lint/performance/noAwaitInLoops: Fixture rows, in order.
           await createStore(weeksAgo, {
             created: `${createdMinutes} minutes`,
             product: cell === 0 ? "none" : "live",
+            trial:
+              trialDraw === 0
+                ? {
+                    at: `${createdMinutes + trialDays * 1440} minutes`,
+                    state: trialState,
+                  }
+                : undefined,
             sales: sold
               ? [
-                  `${createdMinutes + (bandMinutes[cell - 2] as number)} minutes`,
+                  `${createdMinutes + firstSale} minutes`,
                   ...(draw(2) === 0 ? ["8 days 12 hours"] : []),
                   ...(draw(2) === 0 ? ["15 days 12 hours"] : []),
                   ...(draw(3) === 0 ? ["29 days 12 hours"] : []),
@@ -1545,6 +1983,8 @@ async function run() {
       first_sale_seconds: number | null;
       has_product: boolean;
       sale_weeks: number[];
+      sold_in_trial: boolean;
+      trial_started: boolean;
     }>(
       `WITH horizon AS (
          SELECT date_trunc('week', now() AT TIME ZONE '${ZONE}') - interval '29 weeks' AS first_week
@@ -1553,6 +1993,10 @@ async function run() {
               (SELECT extract(epoch FROM s.confirmed_at - o.created_at)::float8
                  FROM public.sales AS s WHERE s.organization_id = o.id ORDER BY s.confirmed_at LIMIT 1) AS first_sale_seconds,
               (SELECT count(*) FROM public.products AS p WHERE p.organization_id = o.id) > 0 AS has_product,
+              EXISTS (SELECT 1 FROM public.organization_billing AS b
+                       WHERE b.organization_id = o.id AND b.trial_started_at IS NOT NULL) AS trial_started,
+              EXISTS (SELECT 1 FROM public.organization_billing AS b JOIN public.sales AS s ON s.organization_id = b.organization_id
+                       WHERE b.organization_id = o.id AND s.confirmed_at < b.trial_started_at + ${TRIAL_DAYS} * interval '1 day') AS sold_in_trial,
               ARRAY(SELECT DISTINCT (extract(epoch FROM date_trunc('week', s.confirmed_at AT TIME ZONE '${ZONE}')
                                                 - date_trunc('week', o.created_at AT TIME ZONE '${ZONE}')) / 604800)::int + 1
                       FROM public.sales AS s WHERE s.organization_id = o.id) AS sale_weeks
@@ -1619,12 +2063,16 @@ async function run() {
       tallies.set(week.start, {
         b: 0,
         c: [0, 0, 0, 0, 0],
+        d: 0,
+        e: 0,
         n: 0,
         p0: 0,
         p1: 0,
         r2: 0,
         r3: 0,
         r5: 0,
+        s: 0,
+        t: 0,
       });
     }
     for (const store of direct.rows) {
@@ -1641,7 +2089,11 @@ async function run() {
       } else {
         tally.b += 1;
         tally.c[bandOf(seconds)] += 1;
+        tally.d += seconds > SEVEN_DAYS && seconds <= FOURTEEN_DAYS ? 1 : 0;
+        tally.e += seconds > FOURTEEN_DAYS ? 1 : 0;
       }
+      tally.t += store.trial_started ? 1 : 0;
+      tally.s += store.sold_in_trial ? 1 : 0;
       tally.r2 += store.sale_weeks.includes(2) ? 1 : 0;
       tally.r3 += store.sale_weeks.includes(3) ? 1 : 0;
       tally.r5 += store.sale_weeks.includes(5) ? 1 : 0;
@@ -1759,7 +2211,7 @@ async function run() {
       "the check looked at shown cells of the stores active in a week"
     );
     tests.push(
-      `on cohorts drawn at random (seed ${seed}, 7 weeks of 0 to 9 stores per cell) and on every other cohort: no value under 5 (the stores active in a week included: ${shownActive} weeks shown), no complement and no difference of two nested counts under 5 (the active stores minus a retention cell they contain included), bands all or none and adding up to the sales (${shownCells} shown cells checked)`
+      `on cohorts drawn at random (seed ${seed}, 7 weeks of 0 to 9 stores per cell, a third of them with a trial and the last band split at 10 and 20 days) and on every other cohort: no value under 5 (the stores active in a week included: ${shownActive} weeks shown), no complement and no difference of two nested counts under 5 (the active stores minus a retention cell they contain included), bands all or none and adding up to the sales (${shownCells} shown cells checked)`
     );
 
     // ------------------------------------------------- 6. the cost with 1,000 stores and 50,000 sales

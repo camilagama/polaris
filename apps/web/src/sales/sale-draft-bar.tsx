@@ -9,6 +9,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/ui/dialog";
+import { MoneyText } from "@/ui/hidden-values";
 import { clearSaleConsequence } from "./sale-draft-restore";
 
 interface SaleDraftBarProps {
@@ -57,7 +58,9 @@ export function SaleDraftBar({
       <div aria-live="polite" className="empty:absolute">
         {notice ? (
           <Alert variant="warning">
-            <AlertDescription>{notice}</AlertDescription>
+            <AlertDescription>
+              <MoneyText text={notice} />
+            </AlertDescription>
           </Alert>
         ) : null}
       </div>

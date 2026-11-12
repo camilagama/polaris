@@ -44,7 +44,7 @@ import {
  *   the build when a module of the calendar is in any other chunk (`calendarPlacementProblems`).
  * - the heat map chunk (`heatmap-*.js`), gzipped, 16 KB as the reference of the line (the estimate of the v7
  *   review was 12 to 16 KB), which only warns, a line of its own, as the calendar's is: the map of the Início (Bklit
- *   UI's `HeatmapChart`, its cells and patterns, `@visx/heatmap`) and the bars of the mean by weekday, loaded on demand
+ *   UI's `HeatmapChart`, its cells and patterns, `@visx/heatmap`), loaded on demand
  *   by the Início. What it shares with the charts (the sparkline, d3, `@visx/group`) stays in the charts chunk (the
  *   group `charts` of the Vite configs, `SHARED_CHART_MODULE`), and `motion` in its own. A guard fails the build when
  *   a module of the map is in any other chunk, as for the charts (`chartsPlacementProblems`).
@@ -124,13 +124,14 @@ const HEATMAP_CHUNK = /(^|\/)assets\/heatmap-[\w-]+\.js$/;
  * heat map blocks of Bklit UI with the patterns only they use, and `@visx/heatmap`.
  */
 export const HEATMAP_MODULE =
-  /(?:[\\/]apps[\\/]web[\\/]src[\\/]ui[\\/](?:charts[\\/](?:heatmap|sales-heatmap|weekday-bars)|bklit[\\/]charts[\\/](?:heatmap[\\/][^\\/]+|patterns[\\/][^\\/]+|pattern-preset|visx-pattern|chart-scale))\.tsx?$|[\\/]node_modules[\\/](?:\.bun[\\/][^\\/]+[\\/]node_modules[\\/])?@visx[\\/]heatmap[\\/])/;
+  /(?:[\\/]apps[\\/]web[\\/]src[\\/]ui[\\/](?:charts[\\/](?:heatmap|sales-heatmap)|bklit[\\/]charts[\\/](?:heatmap[\\/][^\\/]+|patterns[\\/][^\\/]+|pattern-preset|visx-pattern|chart-scale))\.tsx?$|[\\/]node_modules[\\/](?:\.bun[\\/][^\\/]+[\\/]node_modules[\\/])?@visx[\\/]heatmap[\\/])/;
 /**
  * What belongs to the charts chunk and to nothing else: the modules of `src/ui/charts/` (not `on-demand.tsx`, the
- * loader that every screen imports), the blocks of Bklit UI in `src/ui/bklit/` and the libraries only they bring.
+ * loader that every screen imports, nor `chart-data-table.tsx`, the plain table of a chart's numbers, which a screen
+ * renders itself), the blocks of Bklit UI in `src/ui/bklit/` and the libraries only they bring.
  */
 const CHARTS_MODULE =
-  /(?:[\\/]apps[\\/]web[\\/]src[\\/]ui[\\/](?:charts[\\/](?!on-demand\.tsx$)[^\\/]+|bklit[\\/].+)\.tsx?$|[\\/]node_modules[\\/](?:\.bun[\\/][^\\/]+[\\/]node_modules[\\/])?(?:@visx|d3-[a-z-]+|internmap|classnames)[\\/])/;
+  /(?:[\\/]apps[\\/]web[\\/]src[\\/]ui[\\/](?:charts[\\/](?!(?:on-demand|chart-data-table)\.tsx$)[^\\/]+|bklit[\\/].+)\.tsx?$|[\\/]node_modules[\\/](?:\.bun[\\/][^\\/]+[\\/]node_modules[\\/])?(?:@visx|d3-[a-z-]+|internmap|classnames)[\\/])/;
 /**
  * The animation library and what only it brings (`motion`, `framer-motion`, `motion-dom`, `motion-utils`). The charts draw
  * with it and so does the filter bar (`src/ui/filter-bar.tsx`), so it cannot sit in the charts chunk alone: it has

@@ -724,6 +724,16 @@ describe("submission and idempotency", () => {
       phase: "success",
       replayed: false,
     });
+    expect(received.submission).toMatchObject({
+      message: expect.stringContaining("Custo médio: R$ 11,00."),
+    });
+    const fractional = stockSucceeded(run("receive", receiveFields), {
+      ...result(23),
+      balance: { ...result(23).balance, movingAverageCost: "19.391304" },
+    });
+    expect(fractional.submission).toMatchObject({
+      message: expect.stringContaining("Custo médio: R$ 19,39."),
+    });
     expect(received.target).toMatchObject({ quantity: 15, version: 4 });
     expect(received.attempt).toBeNull();
     expect(canCloseStock(received)).toBe(true);
@@ -901,6 +911,78 @@ describe("mapStockError", () => {
 });
 
 describe("summaries", () => {
+  const nonRoundCosts: [string, string][] = [
+    ["19.391304", "R$ 19,39"],
+    ["19.395", "R$ 19,40"],
+    ["17", "R$ 17,00"],
+  ];
+
+  it("shows every unit cost to the centavo, half-up, while the body keeps six places", () => {
+    const receive = validateStockDraft(
+      filled("receive", { ...receiveFields, unitCost: "19,391304" }).draft,
+      target,
+      today
+    ).body;
+    const count = validateStockDraft(
+      filled(
+        "count",
+        { ...countFields, valuationUnitCost: "19,391304" },
+        unknownCostTarget
+      ).draft,
+      unknownCostTarget,
+      today
+    ).body;
+    if (receive?.action !== "receive" || count?.action !== "count") {
+      throw new Error("expected receive and count bodies");
+    }
+    expect(receive.unitCost).toBe("19.391304");
+    expect(count.valuationUnitCost).toBe("19.391304");
+    const lineOf = (lines: { label: string; value: string }[], label: string) =>
+      lines.find((line) => line.label === label)?.value;
+    for (const [cost, shown] of nonRoundCosts) {
+      const received = { ...receive, unitCost: cost };
+      expect(lineOf(stockSummary(received, target), "Custo unitário")).toBe(
+        shown
+      );
+      const counted = { ...count, valuationUnitCost: cost };
+      expect(
+        lineOf(
+          stockSummary(counted, unknownCostTarget),
+          "Custo unitário informado"
+        )
+      ).toBe(shown);
+    }
+  });
+
+  it("shows the cost of the cost panel summary and of its result to the centavo, half-up", () => {
+    const costFields = { valuationUnitCost: "12,5" };
+    const state = filled("cost", costFields, unknownCostTarget);
+    const { body } = validateStockDraft(state.draft, unknownCostTarget, today);
+    if (body?.action !== "cost") {
+      throw new Error("no cost body");
+    }
+    for (const [cost, shown] of nonRoundCosts) {
+      expect(costSummaryText({ ...body, valuationUnitCost: cost })).toBe(
+        `${shown} por unidade, para 5 unidades. Depois de confirmar, o custo não pode ser editado.`
+      );
+      const done = stockSucceeded(
+        confirming(filled("cost", costFields, unknownCostTarget)),
+        {
+          balance: {
+            movingAverageCost: cost,
+            quantity: 5,
+            variantId,
+            version: 4,
+          },
+          replayed: false,
+        }
+      );
+      expect(done.submission).toMatchObject({
+        message: `Custo informado: ${shown} por unidade.`,
+      });
+    }
+  });
+
   it("previews a receipt with the resulting balance and average cost", () => {
     const state = filled("receive", receiveFields);
     const { body } = validateStockDraft(state.draft, target, today);
@@ -1191,6 +1273,26 @@ describe("informing the cost of units on hand (the cost panel)", () => {
         "O saldo mudou depois que você abriu a contagem. Atualizamos o saldo: revise a quantidade contada e confirme de novo.",
       refreshBalance: true,
     });
+  });
+
+  it("opens the receipt with the quantity the link asks for, as 1 when it is not one the variant can take, and not as an edit", () => {
+    const opened = startStockCommand("receive", target, today, 2);
+    expect(opened.draft).toMatchObject({ quantity: "2" });
+    expect(isStockDraftChanged(opened)).toBe(false);
+    expect(isStockDraftChanged(editStockField(opened, "quantity", "3"))).toBe(
+      true
+    );
+    for (const asked of [undefined, 0, -1, 1.5, Number.NaN, 2_147_483_647]) {
+      expect(
+        startStockCommand("receive", target, today, asked).draft
+      ).toMatchObject({ quantity: "1" });
+    }
+    expect(
+      startStockCommand("receive", target, today, 2_147_483_642).draft
+    ).toMatchObject({ quantity: "2147483642" });
+    expect(
+      startStockCommand("write_off", target, today, 4).draft
+    ).toMatchObject({ quantity: "1" });
   });
 
   it("starts the quantity of a receipt and of a write-off at 1, and the count empty", () => {

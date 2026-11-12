@@ -24,6 +24,8 @@ interface Options {
   authMethods?: Promise<void>;
   passwordOn?: boolean;
   search?: string;
+  /** The strip of tabs is from 760 px; the list of a phone has its own tests (`settings-groups.e2e.ts`). */
+  size?: { height: number; width: number };
 }
 
 async function openSettings(
@@ -32,8 +34,10 @@ async function openSettings(
     authMethods,
     passwordOn = false,
     search = "aba=formas-de-receber",
+    size = { height: 800, width: 1280 },
   }: Options = {}
 ) {
+  await page.setViewportSize(size);
   await page.route("**/api/auth/get-session", (route) =>
     route.fulfill({
       body: JSON.stringify({ session: { id: "s" }, user: { id: "u" } }),
@@ -67,8 +71,13 @@ async function openSettings(
   });
   await page.goto(`/configuracoes?${search}`);
   await expect(
-    page.getByRole("tablist", { name: "Configurações" })
+    page.getByRole("heading", { level: 1, name: "Configurações" })
   ).toBeVisible();
+  if (size.width >= 760) {
+    await expect(
+      page.getByRole("tablist", { name: "Configurações" })
+    ).toBeVisible();
+  }
 }
 
 const tab = (page: Page, name: string) =>
@@ -134,31 +143,29 @@ test("com a senha desligada a aba Senha sai da lista quando o servidor diz", asy
   await expect(tab(page, "Senha")).toHaveCount(0);
 });
 
-test("a 360 px a aba aberta vem para a vista e as bordas avisam que há mais abas", async ({
+test("a 360 px a linha da aba Senha tem o lugar guardado, desligada, até o servidor responder, e as vizinhas não andam", async ({
   page,
 }) => {
-  await page.setViewportSize({ height: 740, width: 360 });
-  await openSettings(page, { passwordOn: true, search: "aba=seus-dados" });
-  const list = page.getByRole("tablist", { name: "Configurações" });
-  const frame = list.locator(
-    "xpath=ancestor::div[contains(@class,'overflow-x-auto')]"
-  );
-  await expect(tab(page, "Seus dados")).toHaveAttribute(
-    "aria-selected",
-    "true"
-  );
-  await expect(page.locator('[data-tabs-edge="start"]')).toBeVisible();
-  await expect(page.locator('[data-tabs-edge="end"]')).toHaveCount(0);
-  const [area, active] = await Promise.all([
-    frame.boundingBox(),
-    tab(page, "Seus dados").boundingBox(),
-  ]);
-  expect(active?.x).toBeGreaterThanOrEqual(area?.x ?? 0);
-  expect((active?.x ?? 0) + (active?.width ?? 0)).toBeLessThanOrEqual(
-    (area?.x ?? 0) + (area?.width ?? 0)
-  );
+  let release: () => void = () => undefined;
+  const answer = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await openSettings(page, {
+    authMethods: answer,
+    passwordOn: true,
+    search: "",
+    size: { height: 740, width: 360 },
+  });
+  const password = page.locator('[aria-busy="true"]');
+  await expect(password).toHaveText("Senha");
+  await expect(password).toHaveAttribute("aria-disabled", "true");
+  const own = page.getByRole("link", { exact: true, name: "Seus dados" });
+  const before = await own.boundingBox();
 
-  await tab(page, "Formas de receber").click();
-  await expect(page.locator('[data-tabs-edge="end"]')).toBeVisible();
-  await expect(page.locator('[data-tabs-edge="start"]')).toHaveCount(0);
+  release();
+  await expect(
+    page.getByRole("link", { exact: true, name: "Senha" })
+  ).toBeVisible();
+  await expect(page.locator('[aria-busy="true"]')).toHaveCount(0);
+  expect(await own.boundingBox()).toEqual(before);
 });

@@ -4,7 +4,6 @@ import {
   divideHalfUp,
   type KpiReading,
   moneyDelta,
-  NOT_PROFIT_NOR_CASH,
   percentDelta,
   resultHelp,
   ticketHelp,
@@ -23,9 +22,9 @@ import {
 import {
   addDays,
   dayCount,
-  lastOfMonth,
   monthName,
   type Period,
+  wholeMonthOf,
 } from "./result-period";
 
 /**
@@ -56,7 +55,7 @@ const LONGEST_COMPARED = 62;
 
 /** True when the period is one whole calendar month ("Este mês", "Mês passado", or a range given as one). */
 function isWholeMonth(period: Period): boolean {
-  return period.from.endsWith("-01") && period.to === lastOfMonth(period.from);
+  return wholeMonthOf(period) !== null;
 }
 
 /**
@@ -310,7 +309,6 @@ function salesReading({
     date: range,
     delta,
     help: `Vendas líquidas de ${range}.${compare}`,
-    note: null,
     value: atRest ? cards.netSales : Money.fromMinorUnits(sum.net).toString(),
   };
 }
@@ -347,15 +345,15 @@ function resultReading({
     value = cards.operatingResult;
   }
   return {
-    count: NOT_PROFIT_NOR_CASH,
+    count: "",
     date: card ? whole : range,
     delta,
     help: resultHelp(
       card ? "do período inteiro" : `de ${range}`,
       delta ? prior.range : null,
-      result.kind === "incomplete" ? result : null
+      result.kind === "incomplete" ? result : null,
+      true
     ),
-    note: null,
     value,
   };
 }
@@ -390,7 +388,6 @@ function ticketReading({
     date: range,
     delta,
     help: ticketHelp(range, delta ? priorSales.range : null),
-    note: null,
     value,
   };
 }

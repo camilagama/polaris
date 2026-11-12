@@ -7,6 +7,7 @@ import {
   expectedFiles,
   MANIFEST_OUTPUT,
   oklchToHex,
+  PAGE_OUTPUT,
   readTheme,
   renderCatalogTokens,
   renderEmailColors,
@@ -27,7 +28,7 @@ const root = new URL("../", import.meta.url).pathname;
 describe("the files generated from theme.css", () => {
   const expected = expectedFiles();
 
-  it.each([CATALOG_OUTPUT, EMAIL_OUTPUT, MANIFEST_OUTPUT])(
+  it.each([CATALOG_OUTPUT, EMAIL_OUTPUT, MANIFEST_OUTPUT, PAGE_OUTPUT])(
     "%s is what the script writes now (bun run tokens:generate)",
     (path) => {
       expect(readFileSync(join(root, path), "utf8")).toBe(expected[path]);
@@ -36,7 +37,7 @@ describe("the files generated from theme.css", () => {
 
   it("carries the generated header with the command", () => {
     // the manifest is JSON: it has no comment to carry a header
-    for (const path of [CATALOG_OUTPUT, EMAIL_OUTPUT]) {
+    for (const path of [CATALOG_OUTPUT, EMAIL_OUTPUT, PAGE_OUTPUT]) {
       const content = expected[path];
       expect(content).toContain("Generated from packages/ui/src/theme.css");
       expect(content).toContain("Do not edit.");
@@ -102,6 +103,29 @@ describe("the files generated from theme.css", () => {
     );
     expect(tokens).toContain(`--background: ${light.background};`);
     expect(tokens).toContain(`--background: ${dark.background};`);
+  });
+});
+
+describe("the page that stops the tips e-mails", () => {
+  it("has the light block and the dark block, and every token its rules read", () => {
+    const tokens = expectedFiles()[PAGE_OUTPUT];
+    const page = readFileSync(
+      join(root, "apps/web/src/server/tips-stop/tips-stop-page.ts"),
+      "utf8"
+    );
+    const defined = new Set(
+      [...tokens.matchAll(/(--[\w-]+)\s*:/g)].map((match) => match[1])
+    );
+    const used = new Set(
+      [...page.matchAll(/var\((--[\w-]+)/g)].map((match) => match[1])
+    );
+    expect([...used].filter((name) => !defined.has(name))).toEqual([]);
+    expect(tokens).toContain("@media (prefers-color-scheme: dark)");
+    const { dark, light } = readTheme(
+      readFileSync(join(root, "packages/ui/src/theme.css"), "utf8")
+    );
+    expect(tokens).toContain(`--primary: ${light.primary};`);
+    expect(tokens).toContain(`--primary: ${dark.primary};`);
   });
 });
 

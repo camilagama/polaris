@@ -36,7 +36,9 @@ const TOKEN_ONLY =
   /^var\(--(?:chart-(?:[1-5]|sales|result|ticket|context|unknown)|card|foreground|border|destructive)\)$/;
 const SVG_COLOR_ATTRIBUTE = /\b(?:fill|stroke|stopColor)="([^"]+)"/g;
 const CHART_IMPORT =
-  /from\s+["'][^"']*\/(?:charts\/(?!on-demand)|bklit\/)[^"']*["']/;
+  /from\s+["'][^"']*\/(?:charts\/(?!on-demand|chart-data-table)|bklit\/)[^"']*["']/;
+/** The table of numbers of a chart is ours, plain markup and in the shell, not a block of Bklit UI nor a part of the chunk. */
+const OWN_MODULES = ["chart-data-table.tsx"];
 
 const sources = readdirSync(folder).filter(
   (file) => SOURCE_FILE.test(file) && !file.includes(".test.")
@@ -54,6 +56,7 @@ describe("src/ui/charts/ and src/ui/bklit/ (t285, t336)", () => {
     expect([...sources].sort()).toEqual([
       "area-chart.tsx",
       "chart-bridge.tsx",
+      "chart-data-table.tsx",
       "chart-data.ts",
       "chart-gaps.tsx",
       "chart-text.tsx",
@@ -63,7 +66,6 @@ describe("src/ui/charts/ and src/ui/bklit/ (t285, t336)", () => {
       "ring-chart.tsx",
       "sales-heatmap.tsx",
       "sparkline.tsx",
-      "weekday-bars.tsx",
     ]);
   });
 
@@ -95,12 +97,13 @@ describe("src/ui/charts/ and src/ui/bklit/ (t285, t336)", () => {
     }
   });
 
-  it.each(sources.filter((file) => file !== "on-demand.tsx"))(
-    "%s carries the notice of what it was adapted from",
-    (file) => {
-      expect(read(`src/ui/charts/${file}`)).toMatch(ATTRIBUTION);
-    }
-  );
+  it.each(
+    sources.filter(
+      (file) => file !== "on-demand.tsx" && !OWN_MODULES.includes(file)
+    )
+  )("%s carries the notice of what it was adapted from", (file) => {
+    expect(read(`src/ui/charts/${file}`)).toMatch(ATTRIBUTION);
+  });
 
   it("on-demand.tsx imports no chart module, only their types: the chunk stays out of the shell", () => {
     const source = read("src/ui/charts/on-demand.tsx");

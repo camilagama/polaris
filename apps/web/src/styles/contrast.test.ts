@@ -244,41 +244,23 @@ describe.each([
 });
 
 /**
- * The border of the outline button (src/ui/button.tsx, `border-input`) is what marks where the button ends, so it is a
- * graphic element (WCAG 1.4.11, 3:1) against the card around it and, in the dark, against the button's own fill
- * (`dark:bg-secondary/60`). Each pair is a row of the tables above; `border` stays out because it is 1.3:1.
+ * The `--input` border of a field on the `--muted` strip (the lowered block inside a card), which sits lighter than the
+ * card in the dark. It is a graphic element (WCAG 1.4.11, 3:1); with `--input` at L 0.55 it measured 2.81.
  */
-describe.each([
-  ["Tema claro", tokens(block(":root")), ["`card`"]],
-  [
-    "Tema escuro",
-    new Map([...tokens(block(":root")), ...tokens(block(".dark"))]),
-    ["`card`", "`secondary/60 sobre card`"],
-  ],
-])("contraste do contorno do botão outline, %s", (section, palette, fills) => {
-  const rows = pairs(section);
+describe("contraste do contorno do campo sobre muted, tema escuro", () => {
+  const palette = new Map([
+    ...tokens(block(":root")),
+    ...tokens(block(".dark")),
+  ]);
+  const rows = pairs("Tema escuro");
 
-  it.each(fills)("`input` / %s reaches 3:1 and is in the map", (background) => {
+  it("`input` / `muted` reaches 3:1 and is in the map", () => {
     const row = rows.find(
-      (item) => item.foreground === "`input`" && item.background === background
+      (item) => item.foreground === "`input`" && item.background === "`muted`"
     );
-    expect(row, `input / ${background} is not in "${section}"`).toBeDefined();
+    expect(row, "input / `muted` is not in the map").toBeDefined();
     expect(
-      ratio(color("`input`", palette), color(background, palette))
+      ratio(color("`input`", palette), color("`muted`", palette))
     ).toBeGreaterThanOrEqual(3);
-  });
-});
-
-const OUTLINE_VARIANT = /outline:\s*"([^"]*)"/;
-
-describe("borda do botão outline", () => {
-  it("draws the border with `--input`, the token measured above, never `--border`", () => {
-    const button = readFileSync(
-      new URL("../ui/button.tsx", import.meta.url),
-      "utf8"
-    );
-    const classes = (OUTLINE_VARIANT.exec(button)?.[1] ?? "").split(" ");
-    expect(classes).toContain("border-input");
-    expect(classes).not.toContain("border-border");
   });
 });

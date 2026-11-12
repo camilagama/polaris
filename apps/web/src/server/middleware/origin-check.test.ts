@@ -1,7 +1,12 @@
 import { Hono } from "hono";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { createServerApp } from "../app";
 import type { ServerEnv, WorkerBindings } from "../environment";
-import { originCheckMiddleware } from "./origin-check";
+import { TIPS_STOP_PATH } from "../tips-stop/unsubscribe-token";
+import {
+  ORIGIN_CHECK_EXEMPT_PATHS,
+  originCheckMiddleware,
+} from "./origin-check";
 import { requestIdMiddleware } from "./request-id";
 
 const baseURL = "https://polaris.example.invalid";
@@ -141,5 +146,69 @@ describe("origin check", () => {
       route: "/rpc/*",
     });
     expect(JSON.stringify(entry)).not.toContain("evil.example");
+  });
+});
+
+describe("the paths the origin check lets through", () => {
+  it("are exactly the page that stops the tips e-mails, and nothing else", () => {
+    expect(ORIGIN_CHECK_EXEMPT_PATHS).toEqual([TIPS_STOP_PATH]);
+  });
+
+  it.each([
+    `${TIPS_STOP_PATH}/`,
+    TIPS_STOP_PATH.toUpperCase(),
+    "/api//parar-dicas",
+    `${TIPS_STOP_PATH}/x`,
+    `${TIPS_STOP_PATH}-x`,
+  ])(
+    "a variation of its path, %s, is refused or not found, never the page",
+    async (path) => {
+      vi.spyOn(console, "warn").mockImplementation(() => undefined);
+      const response = await createServerApp().request(
+        path,
+        { body: "List-Unsubscribe=One-Click", method: "POST" },
+        { ...bindings, CLIENT_ERRORS_ENABLED: "1" } as WorkerBindings
+      );
+
+      // under `/api/` the check refuses it; out of it (the upper case) nothing answers
+      expect([403, 404]).toContain(response.status);
+    }
+  );
+
+  it("no other path of the app under /api or /rpc takes a POST with no Origin", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const app = createServerApp();
+    const paths = [
+      ...new Set(
+        app.routes
+          .map((route) => route.path)
+          .filter(
+            (path) => path.startsWith("/api/") || path.startsWith("/rpc/")
+          )
+          .map((path) =>
+            path.replaceAll(/:[A-Za-z]+/g, "x").replaceAll("*", "x")
+          )
+      ),
+    ].sort();
+    // the switch of the reports of the browser answers before the check when it is off: on, so the check is reached
+    const env = { ...bindings, CLIENT_ERRORS_ENABLED: "1" } as WorkerBindings;
+    const statuses = await Promise.all(
+      paths.map(async (path) => {
+        const response = await app.request(
+          path,
+          { body: "{}", method: "POST" },
+          env
+        );
+        await response.body?.cancel();
+        return [path, response.status === 403] as const;
+      })
+    );
+
+    expect(paths).toContain(TIPS_STOP_PATH);
+    expect(paths.length).toBeGreaterThan(5);
+    expect(
+      statuses.filter(([, refused]) => !refused).map(([path]) => path)
+    ).toEqual([TIPS_STOP_PATH]);
   });
 });

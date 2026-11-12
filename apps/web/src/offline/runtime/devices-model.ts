@@ -6,7 +6,13 @@ import {
   rpcErrorCode,
   rpcErrorReason,
 } from "../../lib/rpc-error";
-import type { RuntimeSnapshot } from "./offline-runtime";
+import {
+  ACCOUNT_UNAVAILABLE_REASONS,
+  isBrowserFailure,
+  LEGAL_ACCEPTANCE_REASON,
+  PLAN_REFUSED_REASON,
+  type RuntimeSnapshot,
+} from "./offline-runtime";
 
 /**
  * The devices of the signed-in user, as the "Aparelhos" screen shows them. A
@@ -66,9 +72,17 @@ export const REVOKE_TITLE = "Revogar este aparelho?";
 /** The way out for someone who lost the phone and the runtime does not know this browser's device yet. */
 export const RECOGNIZING_TEXT =
   "Estamos reconhecendo este aparelho. Os botões liberam em instantes.";
-/** The runtime is still getting ready, but took longer than RECOGNIZING_PATIENCE_MS. */
+/** The runtime is still getting ready in the browser, but took longer than RECOGNIZING_PATIENCE_MS. */
 export const RECOGNIZING_SLOW_TEXT =
   "Não foi possível reconhecer este aparelho agora. Recarregue a página. Se continuar, tente de novo com uma internet melhor.";
+/** The plan of the store does not include the offline mode: the sentence the Pendências screen uses for the same cause. */
+export const RECOGNIZING_PLAN_TEXT = "O modo offline faz parte do plano Pro.";
+/** The legal acceptance is pending: accepting is the way out. */
+export const RECOGNIZING_LEGAL_TEXT =
+  "Aceite os Termos de Uso e a Política de Privacidade para reconhecer este aparelho.";
+/** The session, the account or the store no longer allows this browser: signing in again is the way out. */
+export const RECOGNIZING_ACCOUNT_TEXT =
+  "Entre de novo para reconhecer este aparelho.";
 /** The runtime is unavailable or absent: waiting will not help, and revoking needs it. */
 export const RECOGNIZING_UNAVAILABLE_TEXT =
   "Este navegador não conseguiu preparar o acesso offline, e sem isso não dá para revogar por aqui. Recarregue a página. Se continuar, tente em outro celular ou computador em que o Polaris funcione.";
@@ -79,17 +93,53 @@ export type Recognition = "slow" | "unavailable" | "waiting";
 
 /**
  * What the screen says while it still does not know which row is this browser.
- * No runtime (null) or an unavailable one will not get better by waiting; one
- * that is still preparing is "waiting", and "slow" once the patience ran out.
+ * No runtime (null) or one unavailable because of the browser will not get
+ * better by waiting; one unavailable for the account, the store or the plan is
+ * not the browser's fault, so it gets the neutral sentence ("slow"). One that is
+ * still preparing is "waiting", and "slow" once the patience ran out.
  */
 export function recognitionState(
   slow: boolean,
-  phase: RuntimeSnapshot["phase"] | null
+  phase: RuntimeSnapshot["phase"] | null,
+  reason: string | null = null
 ): Recognition {
-  if (phase === null || phase === "unavailable") {
+  if (phase === null) {
     return "unavailable";
   }
+  if (phase === "unavailable") {
+    return isBrowserFailure(reason) ? "unavailable" : "slow";
+  }
   return slow ? "slow" : "waiting";
+}
+
+/**
+ * The sentence for a state that is not "waiting". "slow" also covers a runtime that is unavailable for a reason that is
+ * not the browser's, and for those the connection is not the cause, so each says what to do instead. Only a runtime
+ * still preparing keeps the sentence about the connection.
+ */
+export function recognitionText(
+  state: Recognition,
+  phase: RuntimeSnapshot["phase"] | null,
+  reason: string | null = null
+): string {
+  if (state === "waiting") {
+    return RECOGNIZING_TEXT;
+  }
+  if (state === "unavailable") {
+    return RECOGNIZING_UNAVAILABLE_TEXT;
+  }
+  if (phase !== "unavailable" || reason === null) {
+    return RECOGNIZING_SLOW_TEXT;
+  }
+  if (reason === PLAN_REFUSED_REASON) {
+    return RECOGNIZING_PLAN_TEXT;
+  }
+  if (reason === LEGAL_ACCEPTANCE_REASON) {
+    return RECOGNIZING_LEGAL_TEXT;
+  }
+  return ACCOUNT_UNAVAILABLE_REASONS.has(reason)
+    ? RECOGNIZING_ACCOUNT_TEXT
+    : RECOGNIZING_SLOW_TEXT;
 }
 
 export const SESSION_GONE_LIST_TEXT = "Entre de novo para usar esta lista.";

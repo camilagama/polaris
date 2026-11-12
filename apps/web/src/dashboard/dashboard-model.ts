@@ -1,5 +1,9 @@
 import type { PeriodSummaryReadModel } from "@polaris/contracts";
-import { type ClockParts, clockPartsInTimezone } from "../lib/dates";
+import {
+  calendarDayInTimezone,
+  type ClockParts,
+  clockPartsInTimezone,
+} from "../lib/dates";
 import { formatBrlAmount, formatQuantity } from "../lib/format";
 import {
   cogsCoverageOf,
@@ -53,13 +57,24 @@ function readClock(generatedAt: string, timezone: string | null): ClockParts {
     : clockPartsInTimezone(instant, timezone);
 }
 
-/** "Atualizado até 14/10/2026 12:30": when the server read the figures on screen. */
-export function formatUpdatedUntil(
+/**
+ * When the server read the figures on screen, to follow "Atualizado": "às 12:30" on the store's day, and with the day
+ * ("em 13/10/2026 às 23:05") when `today` (the store's day on the device's clock) is another one, so the hour alone
+ * never passes an old read for a fresh one. Null for a time that cannot be read.
+ */
+export function formatUpdatedAt(
   generatedAt: string,
-  timezone: string | null
-): string {
+  timezone: string | null,
+  today: string
+): string | null {
+  const instant = new Date(generatedAt);
+  if (Number.isNaN(instant.getTime())) {
+    return null;
+  }
   const { date, time } = readClock(generatedAt, timezone);
-  return `Atualizado até ${date} ${time}`;
+  return calendarDayInTimezone(instant, timezone) === today
+    ? `às ${time}`
+    : `em ${date} às ${time}`;
 }
 
 /** "Último resultado confirmado: 14/10/2026 12:30": the line beside the month when the figures are the device's copy. */

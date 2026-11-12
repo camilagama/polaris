@@ -2,26 +2,38 @@ import ChevronRightIcon from "lucide-react/dist/esm/icons/chevron-right";
 import type { ReactNode } from "react";
 import { Badge } from "@/ui/badge";
 import { Card } from "@/ui/card";
+import { Money } from "@/ui/money";
 import type { HistoryRow } from "./sale-history-model";
-import { Money } from "./sale-summary-panel";
 
-/** The status of a sale, as the badges of the history and of the detail write it. */
+/**
+ * The status of a sale, as the badges of the history and of the detail write it. With `commonStateAsText` (the list)
+ * the ordinary state, confirmed, is not a badge: nearly every row is confirmed, so the same badge on all of them hides
+ * the few that are not. It stays in the row's accessible name as text for the screen reader only, in the same place
+ * the badge was.
+ */
 export function SaleStatusBadges({
   backdated = false,
+  commonStateAsText = false,
   returnsBadge,
   statusLabel,
   statusTone,
 }: {
   backdated?: boolean;
+  commonStateAsText?: boolean;
   returnsBadge: string | null;
   statusLabel: string;
   statusTone: "cancelled" | "confirmed";
 }) {
+  const common = commonStateAsText && statusTone === "confirmed";
   return (
     <>
-      <Badge variant={statusTone === "cancelled" ? "destructive" : "outline"}>
-        {statusLabel}
-      </Badge>
+      {common ? (
+        <span className="sr-only">{statusLabel}</span>
+      ) : (
+        <Badge variant={statusTone === "cancelled" ? "destructive" : "outline"}>
+          {statusLabel}
+        </Badge>
+      )}
       {returnsBadge ? <Badge variant="warning">{returnsBadge}</Badge> : null}
       {backdated ? <Badge variant="outline">Retroativa</Badge> : null}
     </>
@@ -47,7 +59,7 @@ function RowBody({ chevron, row }: { chevron: boolean; row: HistoryRow }) {
     <>
       <span
         aria-hidden="true"
-        className="@max-[17.9rem]:hidden hidden size-8 shrink-0 place-items-center rounded-full bg-muted font-medium text-muted-foreground text-xs md:size-9 min-[22.5rem]:grid"
+        className={`@max-[17.9rem]:hidden hidden size-8 shrink-0 place-items-center rounded-full font-medium text-muted-foreground text-xs md:size-9 min-[22.5rem]:grid ${row.customerInitials ? "bg-muted" : ""}`}
       >
         {row.customerInitials}
       </span>
@@ -66,6 +78,7 @@ function RowBody({ chevron, row }: { chevron: boolean; row: HistoryRow }) {
           </p>
           <SaleStatusBadges
             backdated={row.backdated}
+            commonStateAsText
             returnsBadge={row.returnsBadge}
             statusLabel={row.statusLabel}
             statusTone={row.statusTone}
@@ -82,13 +95,14 @@ function RowBody({ chevron, row }: { chevron: boolean; row: HistoryRow }) {
         </p>
       </div>
       <Money
-        className="@max-[17.9rem]:ml-auto shrink-0 font-semibold text-value-sm tracking-tight md:text-value-md"
+        className="@max-[17.9rem]:ml-auto shrink-0 font-semibold tracking-tight md:text-value-md"
+        size="sm"
         text={row.totalText}
       />
       {chevron ? (
         <ChevronRightIcon
           aria-hidden="true"
-          className="size-3.5 shrink-0 text-muted-foreground md:size-4"
+          className="size-4 shrink-0 text-muted-foreground"
         />
       ) : null}
     </>

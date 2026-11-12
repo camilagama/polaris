@@ -21,6 +21,7 @@ const row: StockRow = {
   costText: "R$ 10,00",
   costUnknown: false,
   id: "variant-1",
+  productHref: "/products?produto=11111111-1111-4111-8111-111111111111",
   productName: "Camiseta Polaris",
   quantity: 5,
   quantityText: "5",
@@ -135,7 +136,7 @@ describe("the row buttons for each real state of a variant", () => {
     expect(built.target.movingAverageCost).toBeNull();
     expect(read(markup, BUTTON_NAME)).toEqual([
       "Receber estoque de Camiseta Polaris, Azul / M",
-      "Informar custo de Camiseta Polaris · Azul / M",
+      "Informar custo de Camiseta Polaris, Azul / M",
       "Baixar estoque de Camiseta Polaris, Azul / M",
     ]);
     expect(read(markup, BUTTON_LABEL)).toEqual([
@@ -230,7 +231,7 @@ describe("the row buttons for each real state of a variant", () => {
     expect(unknown.built.archived).toBe(true);
     expect(read(unknown.markup, BUTTON_NAME)).toEqual([
       "Receber estoque de Camiseta Polaris, Azul / M",
-      "Informar custo de Camiseta Polaris · Azul / M",
+      "Informar custo de Camiseta Polaris, Azul / M",
       "Baixar estoque de Camiseta Polaris, Azul / M",
     ]);
     expect(read(unknown.markup, BUTTON_ID)[1]).toBe(
@@ -264,7 +265,7 @@ describe("the row buttons for each real state of a variant", () => {
     );
     expect(read(markup, BUTTON_NAME)).toEqual([
       "Receber estoque de Camiseta Polaris, Variante padrão",
-      "Informar custo de Camiseta Polaris · Variante padrão",
+      "Informar custo de Camiseta Polaris, Variante padrão",
       "Baixar estoque de Camiseta Polaris, Variante padrão",
     ]);
   });

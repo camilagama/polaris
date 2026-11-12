@@ -13,6 +13,7 @@ import {
 } from "react";
 import { Alert, AlertDescription } from "@/ui/alert";
 import { Button } from "@/ui/button";
+import { HelpTip } from "@/ui/help-tip";
 import { useConnectionReturn, workerAnswers } from "../lib/browser-connection";
 import { useCurrentOrganization } from "../lib/current-organization";
 import { focusLater } from "../lib/focus";
@@ -42,7 +43,11 @@ import {
 } from "./payment-profile-draft";
 import { PaymentProfileForm } from "./payment-profile-form";
 import { PaymentProfileList } from "./payment-profile-list";
-import { ScreenTitle } from "../app-shell/screen-title";
+import {
+  ScreenTitle,
+  TITLE_ACTION_CLASS,
+  TitleLine,
+} from "../app-shell/screen-title";
 
 const REPEATED_RULES_TEXT =
   "Remova regras repetidas para o mesmo método e combinação de parcelas.";
@@ -575,23 +580,29 @@ export function PaymentProfilesPage() {
   return (
     <div ref={rootRef}>
       <div className="grid gap-4 font-sans text-foreground text-sm antialiased">
-        <header className="flex flex-wrap items-start justify-between gap-x-3 gap-y-2">
-          <div className="grid gap-1">
-            <ScreenTitle>Formas de receber</ScreenTitle>
-            <p className="text-muted-foreground text-support">
-              Organize métodos, parcelamento, prazo de recebimento e taxas por
-              perfil.
-            </p>
-          </div>
-          <Button
-            disabled={pending}
-            onClick={handleNew}
-            ref={newButtonRef}
-            type="button"
+        <header className="grid gap-1">
+          <TitleLine
+            action={
+              <Button
+                className={TITLE_ACTION_CLASS}
+                disabled={pending}
+                onClick={handleNew}
+                ref={newButtonRef}
+                type="button"
+              >
+                <PlusIcon aria-hidden="true" data-icon="inline-start" />
+                Novo perfil
+              </Button>
+            }
           >
-            <PlusIcon aria-hidden="true" data-icon="inline-start" />
-            Novo perfil
-          </Button>
+            <div className="flex items-center gap-1">
+              <ScreenTitle>Formas de receber</ScreenTitle>
+              <HelpTip about="Formas de receber">
+                Organize métodos, parcelamento, prazo de recebimento e taxas por
+                perfil.
+              </HelpTip>
+            </div>
+          </TitleLine>
         </header>
         {/* while the form is open it covers this part of the screen: what the actions say is said inside it */}
         {formOpen ? null : (
