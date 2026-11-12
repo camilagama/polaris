@@ -47,6 +47,8 @@ interface ItemEditorProps {
   onPick: (draftId: string, entry: InventoryBalanceEntryReadModel) => void;
   onRemove: (draftId: string) => void;
   organizationId: string;
+  /** Quantity the other lines of the sale ask for of this same variant; the entry link adds it to this line's. */
+  otherLinesQuantity?: number;
   priceHint: string | null;
   stock: EvaluationContext["stock"];
   stockWarning: string | undefined;
@@ -71,6 +73,7 @@ export function ItemEditor({
   onPick,
   onRemove,
   organizationId,
+  otherLinesQuantity = 0,
   priceHint,
   stock,
   stockWarning,
@@ -85,7 +88,7 @@ export function ItemEditor({
   const stockState = chosen
     ? stockView(stock[item.variantId], canAdjustStock)
     : null;
-  const missing = stockMissing(item.quantity, stockState);
+  const missing = stockMissing(item.quantity, stockState, otherLinesQuantity);
   const pickError =
     errors[itemFieldKey(item.draftId, "product")] ??
     errors[itemFieldKey(item.draftId, "variant")];
