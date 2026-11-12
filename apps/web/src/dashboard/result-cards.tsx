@@ -1,6 +1,5 @@
 import ArrowRightIcon from "lucide-react/dist/esm/icons/arrow-right";
-import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { cn } from "@/lib/utils";
+import { useCallback, useMemo, useState } from "react";
 import { Badge } from "@/ui/badge";
 import { OnDemandSparkline } from "@/ui/charts/on-demand";
 import {
@@ -133,87 +132,39 @@ const LINK_ARROW = "@min-[11.5rem]:block hidden size-4";
 
 /**
  * "Ver as 8 vendas" on the support line of the sales card, in the place of the count: a text button with an arrow, no
- * underline and no outline, whose name says the dates and where it goes. The line is one line tall (the tile does not
- * grow, whatever the period says): the link is there only while it fits beside the chip and ends before the sparkline
- * (whose touch area would meet it), measured on screen, and the count is the plain text again when it does not. An invisible copy keeps the width of the link while the text shows, so
- * the link comes back when the room does. The box is 24 px tall in a 20 px line (negative margin), the least a target may
- * have; the arrow goes first when the tile is narrower than the words need (320 px with the letter at 20 px).
+ * underline and no outline, whose name says the dates and where it goes. With the comparison chip it takes a line of its
+ * own under the chip, on the left, and the tile grows by that line; without the chip it stays on the support line. The
+ * box is 24 px tall in a 20 px line (negative margin), the least a target may have; the arrow goes first when the tile is
+ * narrower than the words need (320 px with the letter at 20 px).
  */
 function SalesLink({
   count,
   onOpen,
   period,
-  text,
+  underChip,
 }: {
   count: number;
   onOpen: (period: Period) => void;
   period: Period;
-  text: string;
+  underChip: boolean;
 }) {
   const label = count === 1 ? "Ver a venda" : `Ver as ${salesCountText(count)}`;
   const handleClick = useCallback(() => onOpen(period), [onOpen, period]);
-  const button = useRef<HTMLButtonElement>(null);
-  const probe = useRef<HTMLSpanElement>(null);
-  const [fits, setFits] = useState(true);
-  const measure = useCallback(() => {
-    const row = probe.current?.parentElement;
-    if (!(probe.current && row)) {
-      return;
-    }
-    const others = [...row.children].filter(
-      (child) => child !== probe.current && child !== button.current
-    );
-    const gap = Number.parseFloat(getComputedStyle(row).columnGap) || 0;
-    const used = others.reduce(
-      (sum, child) => sum + child.getBoundingClientRect().width,
-      0
-    );
-    const spark = row.closest("[data-kpi]")?.querySelector("[data-kpi-spark]");
-    const limit = spark
-      ? Math.min(
-          row.clientWidth,
-          spark.getBoundingClientRect().left - row.getBoundingClientRect().left
-        )
-      : row.clientWidth;
-    setFits(used + others.length * gap + probe.current.offsetWidth <= limit);
-  }, []);
-  // after every render (the chip comes and goes) and whenever the line changes width
-  useLayoutEffect(measure);
-  useLayoutEffect(() => {
-    const row = probe.current?.parentElement;
-    if (!row) {
-      return;
-    }
-    const observer = new ResizeObserver(measure);
-    observer.observe(row);
-    return () => observer.disconnect();
-  }, [measure]);
   return (
     <>
-      {fits ? (
-        <button
-          aria-label={`${label} de ${periodRangeLabel(period)} no Histórico`}
-          className={LINK_CLASS}
-          data-kpi-sales-link=""
-          onClick={handleClick}
-          ref={button}
-          type="button"
-        >
-          {label}
-          <ArrowRightIcon aria-hidden="true" className={LINK_ARROW} />
-        </button>
-      ) : (
-        text
-      )}
-      <span
-        aria-hidden="true"
-        className={cn(LINK_CLASS, "pointer-events-none invisible absolute")}
-        ref={probe}
-        tabIndex={-1}
+      {underChip ? (
+        <span aria-hidden="true" className="h-0 basis-full" />
+      ) : null}
+      <button
+        aria-label={`${label} de ${periodRangeLabel(period)} no Histórico`}
+        className={LINK_CLASS}
+        data-kpi-sales-link=""
+        onClick={handleClick}
+        type="button"
       >
         {label}
         <ArrowRightIcon aria-hidden="true" className={LINK_ARROW} />
-      </span>
+      </button>
     </>
   );
 }
@@ -224,6 +175,7 @@ function SalesLink({
  * period is from its first day to today, since nothing is sold after it.
  */
 function salesNote({
+  chip,
   count,
   onOpen,
   period,
@@ -231,6 +183,7 @@ function salesNote({
   text,
   today,
 }: {
+  chip: boolean;
   count: number;
   onOpen: ((period: Period) => void) | null;
   period: Period;
@@ -244,7 +197,7 @@ function salesNote({
       count={count}
       onOpen={onOpen}
       period={{ from: period.from, to }}
-      text={text}
+      underChip={chip}
     />
   ) : (
     text
@@ -374,6 +327,7 @@ export function ResultCards({
         help={{ about: salesName, text: read.sales.help }}
         id="result-kpi-sales"
         note={salesNote({
+          chip: Boolean(read.sales.delta),
           count: cards.salesCount,
           onOpen: onOpenSales,
           period: summary.period,

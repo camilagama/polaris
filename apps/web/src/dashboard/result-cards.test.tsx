@@ -582,6 +582,32 @@ describe("the link of the sales card to the Histórico", () => {
     expect(sales(summary)).not.toContain("data-kpi-sales-link");
   });
 
+  it("takes a line of its own under the chip, and stays on the support line without it", () => {
+    const withChip = sales(october([]));
+    expect(withChip).toContain("data-kpi-chip-row");
+    expect(withChip.indexOf("data-kpi-chip-row")).toBeLessThan(
+      withChip.indexOf("basis-full")
+    );
+    expect(withChip.indexOf("basis-full")).toBeLessThan(
+      withChip.indexOf("data-kpi-sales-link")
+    );
+    const without = card(
+      renderToStaticMarkup(
+        <ResultCards
+          comparison={null}
+          onOpenSales={open}
+          salesComparison={null}
+          summary={october([])}
+          today={TODAY}
+        />
+      ),
+      "result-kpi-sales"
+    );
+    expect(without).not.toContain("data-kpi-chip-row");
+    expect(without).toContain("data-kpi-sales-link");
+    expect(without).not.toContain("basis-full");
+  });
+
   it("puts the arrow after the words", () => {
     const markup = sales(october([]));
     expect(markup).toMatch(ARROW_AFTER_WORDS);

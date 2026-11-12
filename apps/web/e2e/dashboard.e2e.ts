@@ -3068,6 +3068,14 @@ async function measureStrip(page: Page) {
       .filter((value) => value.scrollWidth > value.clientWidth)
       .map((value) => value.textContent),
     height: strip.getBoundingClientRect().height,
+    linkLine: [...strip.querySelectorAll("[data-kpi]")].reduce((most, cell) => {
+      const row = cell.querySelector("[data-kpi-note-row]");
+      if (!(row && cell.querySelector("[data-kpi-sales-link]"))) {
+        return most;
+      }
+      const line = Number.parseFloat(getComputedStyle(row).minHeight);
+      return Math.max(most, row.getBoundingClientRect().height - line);
+    }, 0),
     warned: strip.querySelector("[data-kpi-notice]") !== null,
   }));
 }
@@ -3116,7 +3124,10 @@ function expectSameStripHeight(measured: Measured, width: number) {
   const heights = Object.fromEntries(
     Object.entries(measured)
       .filter(([, run]) => run.states[width]?.warned === false)
-      .map(([name, run]) => [name, run.states[width]?.height ?? 0])
+      .map(([name, run]) => [
+        name,
+        (run.states[width]?.height ?? 0) - (run.states[width]?.linkLine ?? 0),
+      ])
   );
   const values = Object.values(heights);
   expect(values.length, `${width} px: estados sem aviso`).toBeGreaterThan(0);

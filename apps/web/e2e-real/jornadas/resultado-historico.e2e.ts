@@ -117,7 +117,7 @@ test("o link cabe na linha de apoio, sem quebrar nem ficar sob o minigráfico, a
   }
 });
 
-test("com o chip de comparação o link só fica onde cabe na linha e antes do minigráfico, e o cartão não muda de altura", async ({
+test("com o chip de comparação o link desce para uma linha própria sob o chip, à esquerda e fora do minigráfico, a 360, 1024 e 1280 px", async ({
   browser,
 }, testInfo) => {
   const journey = await openJourney(
@@ -157,15 +157,50 @@ test("com o chip de comparação o link só fica onde cabe na linha e antes do m
     .click();
   const card = salesCard(page);
   await expect(card.locator("[data-kpi-chip-row]")).toBeVisible();
-  const row = card.locator("[data-kpi-note-row]");
-  await expect(row).toContainText("1 venda");
-  await expect(card.locator("[data-kpi-sales-link]")).toHaveCount(0);
-  expect((await row.boundingBox())?.height).toBeLessThanOrEqual(21);
+  const link = card.locator("[data-kpi-sales-link]");
 
-  await page.setViewportSize({ height: 800, width: 1024 });
-  await expect
-    .poll(async () => (await row.boundingBox())?.height)
-    .toBeLessThanOrEqual(21);
+  for (const width of [1280, 1024, 360]) {
+    // biome-ignore lint/performance/noAwaitInLoops: one viewport after the other, on the same page
+    await page.setViewportSize({ height: 800, width });
+    await expect(link, `${width} px`).toBeVisible();
+    await expect(link).toHaveText("Ver a venda");
+    await expect
+      .poll(
+        async () =>
+          await page.evaluate(() => {
+            const rect = (selector: string) =>
+              document.querySelector(selector)?.getBoundingClientRect();
+            const box = rect("[data-kpi=sales] [data-kpi-sales-link]");
+            const chip = rect("[data-kpi=sales] [data-kpi-chip-row]");
+            const tile = rect("[data-kpi=sales]");
+            const spark = rect("[data-kpi=sales] [data-kpi-spark]");
+            return {
+              apart: Boolean(
+                box &&
+                  spark &&
+                  (box.right <= spark.left ||
+                    box.left >= spark.right ||
+                    box.bottom <= spark.top ||
+                    box.top >= spark.bottom)
+              ),
+              inside: Boolean(
+                box && tile && box.left >= tile.left && box.right <= tile.right
+              ),
+              leftOfChip: Boolean(box && chip && box.left <= chip.left + 1),
+              underChip: Boolean(
+                box && chip && box.top + box.height / 2 >= chip.bottom
+              ),
+            };
+          }),
+        { message: `${width} px` }
+      )
+      .toEqual({
+        apart: true,
+        inside: true,
+        leftOfChip: true,
+        underChip: true,
+      });
+  }
 });
 
 test("com uma venda o link diz Ver a venda", async ({ browser }, testInfo) => {
