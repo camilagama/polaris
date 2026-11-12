@@ -4,10 +4,10 @@ import { cn } from "@/lib/utils";
 import { Button, buttonVariants } from "@/ui/button";
 import { RefreshButton } from "@/ui/refresh-button";
 import { SlowReadNote, StaleCopyNotice } from "../app-shell/read-wait";
+import type { Period, PeriodPreset } from "../dashboard/result-period";
 import { useCurrentOrganization } from "../lib/current-organization";
 import { browserStorage } from "../lib/current-organization-model";
 import { calendarDayInTimezone } from "../lib/dates";
-import type { Period, PeriodPreset } from "../dashboard/result-period";
 import type { StoredPeriodSummary } from "../lib/period-summary-cache";
 import { copyShownText } from "../lib/read-wait-text";
 import { OFFLINE_RUNTIME_ENABLED } from "../offline/runtime/enabled";
@@ -22,7 +22,6 @@ import { AttentionBlock, AttentionNotes } from "./home-attention";
 import { ChartBlock } from "./home-chart";
 import { type OfflineHome, offlineHome } from "./home-copy";
 import { ChecklistBlock, TopProductsBlock } from "./home-figures";
-import { LowerBlocks } from "./home-lower-blocks";
 import { GoalBlock, OfflineGoalBlock } from "./home-goal";
 import {
   KpiCards,
@@ -31,6 +30,7 @@ import {
   NO_CONNECTION_NOTE,
   NoFiguresCards,
 } from "./home-kpi-cards";
+import { LowerBlocks } from "./home-lower-blocks";
 import {
   copyLine,
   type GoalView,
@@ -41,15 +41,15 @@ import {
   noSaleCounted,
   pickGoal,
 } from "./home-model";
+import { BlockError, BlockSkeleton, HomeBlock, KeptHeight } from "./home-parts";
 import {
   type HomeSelection,
   THIS_MONTH,
   topProductsTitle,
 } from "./home-period";
 import { HomePeriodRow } from "./home-period-row";
-import { PeriodControlProvider } from "./period-control";
-import { BlockError, BlockSkeleton, HomeBlock, KeptHeight } from "./home-parts";
 import { RhythmBlock, type RhythmSource } from "./home-rhythm";
+import { PeriodControlProvider } from "./period-control";
 import {
   type FirstStepsMemory,
   useFirstStepsMemory,
@@ -62,8 +62,9 @@ import { useHomePeriod } from "./use-home-period";
  * something to do), Hoje, Mês, Meta, the chart, the map and Mais vendidos, in this order at 360 px, and in two columns
  * from 1024 px with Nova venda, Hoje and Mês above the fold (AC-4 emendado: with three lines of action the number of Hoje
  * and the title of Mês stay inside a 360 × 740 window). A store that never sold sees the checklist in place of the
- * figures (AC-22). Each block reads, waits and fails on its own (§ 5.2). Opening it writes nothing (AC-23): the only
- * write is the settling of a goal whose period ended, which `goal.list` already does when it reads (ADR 0055).
+ * figures (AC-22). Each block fails on its own (§ 5.2); the blocks under the cards wait together, as one skeleton, for
+ * the first answer of the goals. Opening it writes nothing (AC-23): the only write is the settling of a goal whose
+ * period ended, which `goal.list` already does when it reads (ADR 0055).
  */
 
 const REFRESHING_TEXT = "Atualizando…";
@@ -887,7 +888,10 @@ function pickGoalBlock({
   };
 }
 
-/** While the cards are a skeleton of a shape not known yet, nothing comes after them (`Blocks.pending`). */
+/**
+ * While the cards are a skeleton of a shape not known yet, nothing comes after them (`Blocks.pending`). While the goals
+ * have not answered once, a single full-width skeleton stands in for the blocks under the cards.
+ */
 function FigureArea({
   attention,
   attentionNotes,
@@ -924,7 +928,13 @@ function FigureArea({
       {blocks.pending ? null : (
         <>
           {attentionNotes}
-          {goalPending ? null : (
+          {goalPending ? (
+            <BlockSkeleton
+              className="w-full"
+              label="Carregando a meta…"
+              lines={5}
+            />
+          ) : (
             <LowerBlocks
               chart={blocks.chart}
               goal={goal}

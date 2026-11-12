@@ -2133,12 +2133,12 @@ test.describe("cartões de KPI (revisão de UI v7, § 3 e § 6)", () => {
           nodes.map((node) => {
             const box = node.getBoundingClientRect();
             return {
+              bottom: box.bottom,
               isLabel: node.hasAttribute("data-chart-value-label"),
               left: box.left,
               right: box.right,
               text: node.textContent ?? "",
               top: box.top,
-              bottom: box.bottom,
             };
           })
         );
@@ -4515,19 +4515,19 @@ async function expectPeriodShown(page: Page, empty: boolean) {
 test.describe("Vendas por dia: trocar de período não muda a altura do bloco nem o que vem depois", () => {
   const cases = [
     {
+      empty: { last: false, this: false },
       name: "dados e dados (este mês e o passado com venda)",
       scenario: SOLD,
-      empty: { last: false, this: false },
     },
     {
+      empty: { last: false, this: true },
       name: "vazio e dados (este mês sem venda, o passado com)",
       scenario: SALE_OUTSIDE_THE_MONTH,
-      empty: { last: false, this: true },
     },
     {
+      empty: { last: true, this: true },
       name: "vazio e vazio (a loja que não vendeu nos dois meses)",
       scenario: NO_SALE_AT_ALL,
-      empty: { last: true, this: true },
     },
   ] as const;
 
@@ -4903,6 +4903,41 @@ test.describe("cartões de KPI: escolher ou soltar um dia não move nada no cart
           ((loading[1]?.top ?? 0) - (loading[0]?.top ?? 0))
       )
     ).toBeLessThanOrEqual(1);
+  });
+
+  test("metas ainda sem resposta: um esqueleto anunciado na largura toda no lugar dos blocos, que aparecem quando elas respondem", async ({
+    page,
+  }) => {
+    await page.setViewportSize(SIZES[1]);
+    const server = new FakeServer({ ...SOLD, goals: [goal({})] });
+    let answer: () => void = () => undefined;
+    server.held.set(
+      "goal/list",
+      new Promise((resolve) => {
+        answer = resolve;
+      })
+    );
+    await openHome(page, server);
+    await expect(region(page, "Vendas hoje")).toContainText("R$ 320,10");
+    const waiting = page
+      .getByRole("status")
+      .filter({ hasText: "Carregando a meta…" });
+    await expect(waiting).toBeVisible();
+    await expect(waiting).toHaveAttribute("aria-busy", "true");
+    await expect(region(page, "Vendas por dia")).toHaveCount(0);
+    await expect(region(page, "Mais vendidos do mês")).toHaveCount(0);
+    const [skeleton, content] = await Promise.all([
+      waiting.boundingBox(),
+      page.locator("[data-kpi-row]").boundingBox(),
+    ]);
+    expect(skeleton?.width ?? 0).toBeGreaterThanOrEqual(
+      (content?.width ?? 1) - 1
+    );
+
+    answer();
+    await expect(region(page, "Meta")).toContainText("Meta");
+    await expect(region(page, "Vendas por dia")).toBeVisible();
+    await expect(waiting).toHaveCount(0);
   });
 });
 
