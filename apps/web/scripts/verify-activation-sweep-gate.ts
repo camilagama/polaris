@@ -54,6 +54,7 @@ const HOUR = 60 * MINUTE;
 const DAY = 24 * HOUR;
 const CAP = 60;
 const CAP_LOCK = "activation_notice_candidates";
+const CASE_LABEL = /^AC-7b\.\d(?: and AC-7b\.\d)?/;
 
 const at = (base: Date, offset: number) => new Date(base.getTime() + offset);
 
@@ -526,7 +527,7 @@ async function run() {
     // the connection check and the four cases: one that did not run would leave the gate green with less proof
     assert.equal(tests.length, 5, "every case of the gate ran");
     const proven = tests
-      .map((test) => test.match(/^AC-7b\.\d(?: and AC-7b\.\d)?/)?.[0])
+      .map((test) => test.match(CASE_LABEL)?.[0])
       .filter(Boolean);
     console.log(
       `gate-note: ${tests.length} cases passed (${proven.join(", ")})`
