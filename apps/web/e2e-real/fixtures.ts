@@ -168,6 +168,22 @@ export async function createJourneyUser(
   return { cookies, headers, id, name, rpc: rpcClient(origin, headers) };
 }
 
+/** A new session (cookies) of a user `createJourneyUser` made: the one before ended, as a sign-out ends it. */
+export async function createJourneySession(
+  origin: string,
+  user: { id: string }
+) {
+  const { helpers } = await authHelpers();
+  const cookies = await helpers.getCookies({
+    domain: new URL(origin).hostname,
+    userId: user.id,
+  });
+  return cookies.map((cookie) => ({
+    ...cookie,
+    expires: cookie.expires ?? -1,
+  }));
+}
+
 export async function openJourney(
   browser: import("@playwright/test").Browser,
   testInfo: TestInfo,
