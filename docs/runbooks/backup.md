@@ -10,8 +10,8 @@
 
 | Quem | O quê |
 | --- | --- |
-| Responsável (Arrascaeta) | cria o login, o bucket, o token R2, o Environment, as variáveis e o rótulo; liga a variável `STAGING_BACKUP_ENABLED`; cria e apaga a branch Neon do ensaio ([política de perfis da CLI](./cli-profile-policy.md)); decide qualquer restauração de verdade |
-| Titular da chave (a pessoa escolhida pelo usuário; uma chave por ambiente) | gera a chave age e entrega só a chave pública; baixa e decifra um backup e roda o ensaio de restauração |
+| Responsável (Arrascaeta) | roda o ensaio de restauração com a identidade do cofre do servidor; cria o login, o bucket, o token R2, o Environment, as variáveis e o rótulo; liga a variável `STAGING_BACKUP_ENABLED`; cria e apaga a branch Neon do ensaio ([política de perfis da CLI](./cli-profile-policy.md)); decide qualquer restauração de verdade |
+| Titular da chave (a pessoa escolhida pelo usuário; uma chave por ambiente) | gera a chave age, guarda a identidade no cofre do servidor e entrega só a chave pública |
 | Dev | mantém os scripts, o SQL e este runbook; nunca vê a chave privada nem a senha do login |
 
 A chave privada nunca vai ao GitHub nem ao R2. Por decisão do dono de 12/11/2026, ela fica no cofre do servidor OpenBot (arquivo 0400 fora do repositório), não offline, para o ensaio de restauração rodar sem o titular; o resto do desenho não muda. Perder a chave deixa todos os backups dela ilegíveis, de propósito.
@@ -65,7 +65,7 @@ O job usa o grupo `deploy-staging`, o mesmo do deploy: um `pg_dump` (que segura 
 
 ## Ensaio de restauração
 
-Quem: o titular da chave, com a branch criada pelo responsável. Quando: depois do primeiro backup do staging, depois de qualquer mudança de formato, de chave ou do script, e a cada trimestre. O ensaio do staging é o que libera o PR da produção.
+Quem: o responsável pelo servidor onde a identidade está (o titular não precisa participar, ver acima), com a branch que ele mesmo cria. Quando: depois do primeiro backup do staging, depois de qualquer mudança de formato, de chave ou do script, e a cada trimestre. O ensaio do staging é o que libera o PR da produção.
 
 1. **Branch descartável.** O responsável cria uma branch Neon filha da branch principal do projeto do staging, com nome único (`restore-drill-AAAAMMDD`; nunca `--schema-only`, que cria raiz). A branch traz os papéis do staging, então os 21 `polaris_*_owner` já existem. Nela, com o dono e a conexão direta da branch:
 
@@ -81,7 +81,7 @@ Quem: o titular da chave, com a branch criada pelo responsável. Quando: depois 
    ```bash
    export PGHOST=<host direto da branch> PGDATABASE=polaris_restore_drill PGUSER=neondb_owner PGSSLMODE=verify-full PGSSLROOTCERT=system
    # PGPASSWORD pelo ~/.pgpass (modo 600), não no histórico do shell
-   node scripts/backup/restore.mjs --environment staging --archive <stamp>.tar.age --identity staging.key.age --sha256 <hash do log do run>
+   node scripts/backup/restore.mjs --environment staging --archive <stamp>.tar.age --identity <caminho da identidade no cofre> --sha256 <hash do log do run>
    ```
 
    A identidade fica sem senha no cofre, então o `age` não pergunta nada. O script decifra num diretório `0700` (apagado no fim; `--keep-workdir` o mantém para investigar, e aí apague-o à mão, porque `restore.err` pode citar linhas de dados) e faz, sem perguntar, os passos 2, 2b e as conferências do passo 5 do [restore e deletion ledger](./deletion-ledger-restore.md): o preparo dos `GRANT` (sem o login de backup), o `pg_restore` com só os dois resultados aceitos, a reaplicação das ACLs como o dono de cada objeto, a conferência das ACLs das funções **antes** de revogar e a revogação em qualquer saída, com `set_restante` zero. O SQL de ACL só roda se vier protegido por `\restrict` e sem outro metacomando do `psql`; o pacote só é extraído se tiver exatamente os três arquivos, todos regulares; o manifest tem de ser do ambiente de `--environment`. Se o script for interrompido (Ctrl-C, máquina desligada) entre o preparo e a revogação, os `GRANT` de papel ficam no cluster da branch: apague a branch, como no passo 5.
