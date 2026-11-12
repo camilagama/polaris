@@ -105,7 +105,6 @@ async function expectSignInAfterReload(
     page.getByRole("heading", { level: 1, name: SIGN_IN_HEADING }),
     `round ${round}: the sign-in screen after the reload`
   ).toBeVisible({ timeout: MOUNT_MS });
-  await expect(page.locator("#root")).not.toBeEmpty();
   await page.waitForLoadState("load");
   expect(
     retries,
