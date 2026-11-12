@@ -98,7 +98,7 @@ No staging, com o Gate 7, o Diego envia um e-mail de cobrança a uma caixa de te
 
 ### Rastreio de abertura e de clique
 
-- No código: os modelos não têm imagem, pixel nem parâmetro de campanha, e a chamada ao Resend não envia campo de rastreio (`billing-notice-email.tsx`; `closure-notice-email.tsx`, `createResendClosureNoticeSender`).
+- No código: os modelos não têm imagem, pixel nem parâmetro de campanha, e a chamada ao Resend não envia campo de rastreio (`billing-notice-email.tsx`; `closure-notice-email.tsx`, `createResendClosureNoticeSender`). Nas dicas para começar (`activation-notice-email.tsx`) o único link com parâmetro é o de parar de receber, com o token da pessoa.
 - No provedor: abertura e clique ficam **desligados** nas configurações do domínio do remetente no painel do Resend (confira que as duas opções aparecem desligadas; os nomes dos controles não foram verificados contra o painel).
 - No e-mail recebido: abra o original e confira que não há `<img` e que o endereço do botão é igual ao que o texto escreve em "Se o botão não funcionar, abra este endereço". Link reescrito para outro domínio quer dizer rastreio de clique ligado.
 - **Não verificado** no domínio real; BLOQUEADO até o Gate 7.

@@ -712,3 +712,97 @@ describe("the sender of the provider", () => {
     });
   });
 });
+
+describe("the stop headers of the sender", () => {
+  const message = {
+    html: "<p>oi</p>",
+    idempotencyKey: "activation-notice/0199f0aa-2b3c-7d4e-8f90-123456789abc",
+    subject: "assunto",
+    text: "oi",
+    to: "dono@example.invalid",
+  };
+  const stop = {
+    "List-Unsubscribe": "<https://app.example.invalid/api/parar-dicas?t=a.b>",
+    "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+  };
+  const sender = createResendClosureNoticeSender({
+    apiKey: "re_test_key_not_real",
+    from: "Polaris <avisos@example.invalid>",
+  });
+
+  function stubFetch() {
+    const fetchMock = vi.fn(() =>
+      Promise.resolve(new Response("{}", { status: 200 }))
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    return fetchMock;
+  }
+
+  function sentBody(fetchMock: ReturnType<typeof stubFetch>) {
+    const [, init] = fetchMock.mock.calls[0] as unknown as [
+      string,
+      RequestInit,
+    ];
+    return JSON.parse(init.body as string) as Record<string, unknown>;
+  }
+
+  it("sends no headers field at all when the message has none", async () => {
+    const fetchMock = stubFetch();
+    await sender(message);
+    expect(Object.keys(sentBody(fetchMock))).not.toContain("headers");
+  });
+
+  it("passes the two stop headers to the provider as they are", async () => {
+    const fetchMock = stubFetch();
+    expect(await sender({ ...message, headers: stop })).toEqual({
+      outcome: "sent",
+    });
+    expect(sentBody(fetchMock).headers).toEqual(stop);
+  });
+
+  const refused: [string, Record<string, unknown>][] = [
+    [
+      "a CR/LF in List-Unsubscribe",
+      {
+        ...stop,
+        "List-Unsubscribe": "<https://a.invalid/>\r\nBcc: x@y.invalid",
+      },
+    ],
+    [
+      "a bare LF in List-Unsubscribe-Post",
+      { ...stop, "List-Unsubscribe-Post": "List-Unsubscribe=One-Click\nX: y" },
+    ],
+    ["a bare CR", { ...stop, "List-Unsubscribe": "<https://a.invalid/>\r" }],
+    [
+      "another control character",
+      { ...stop, "List-Unsubscribe": "<https://a.invalid/>\u0000" },
+    ],
+    ["another header", { ...stop, Bcc: "x@y.invalid" }],
+    ["an empty value", { ...stop, "List-Unsubscribe": "" }],
+    ["a value that is not text", { ...stop, "List-Unsubscribe-Post": 1 }],
+    ["only one of the two", { "List-Unsubscribe": stop["List-Unsubscribe"] }],
+    [
+      "a header name in another case",
+      {
+        "list-unsubscribe": stop["List-Unsubscribe"],
+        "List-Unsubscribe-Post": stop["List-Unsubscribe-Post"],
+      },
+    ],
+    [
+      "a character outside visible ASCII",
+      { ...stop, "List-Unsubscribe": "<https://a.invalid/\u2028>" },
+    ],
+  ];
+  for (const [label, headers] of refused) {
+    it(`refuses ${label}, before anything goes to the provider`, async () => {
+      const fetchMock = stubFetch();
+      await expect(
+        sender({
+          ...message,
+          headers: headers as unknown as typeof stop,
+        })
+      ).rejects.toThrow("email_header_refused");
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+  }
+});
