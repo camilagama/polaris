@@ -3414,6 +3414,16 @@ Origem: achado B do Diego no Pixel 6 (28/10): a venda montada em Vender sumia ao
 | Gerador do link | Em revisão | `unsubscribeLink(baseURL, token)` e `createUnsubscribeToken`, para o consumidor (7c). |
 | Fora deste PR | Pendente | O cabeçalho `List-Unsubscribe` no e-mail e o consumidor (7c); o Switch em Seus dados (8b); criar o segredo em staging e produção (responsável). |
 
+### Avisos de ativação: os modelos das dicas, o rodapé e os cabeçalhos (t1088; corte ativacao-fase1b, Item 7c-1; sem migration)
+
+| Item | Estado | Detalhe |
+| --- | --- | --- |
+| Modelos (AC-7c.4, AC-7c.11) | Em revisão | `server/activation/emails/activation-notice-email.tsx`: A1, A2-S0, A2-S1 e A3 (S0 e S1) com o texto aprovado; assunto até 40 caracteres sem a loja; A1 e A2 com um botão, A3 sem botão e com o link de texto "Abrir a loja"; loja cortada em 24 grafemas, escapada, só no corpo e no rodapé. Snapshots do HTML e do texto em `__golden__/`. |
+| Rodapé (AC-7c.5) | Em revisão | Por que recebe (com a loja), "Parar de receber estas dicas" (16 px, sublinhado, cor do texto), os avisos da conta continuam, a razão social da cobrança, o suporte e a Política de Privacidade. Nenhum e-mail diz "série", "descadastro", "opt-out", "ativação" ou "trial"; cobrança e encerramento não têm o link. |
+| Links (AC-7c.6) | Em revisão | Absolutos na origem do app, sem `<img`, `utm_`, query nem ID de loja; só o link de parar leva o token. |
+| Cabeçalhos e sender (AC-7c.9, lado modelo e sender) | Em revisão | `List-Unsubscribe` e `List-Unsubscribe-Post` só nas dicas; `createResendClosureNoticeSender` aceita `headers` só com os dois, em ASCII visível, e lança antes do envio; sem `headers` o corpo ao Resend não tem o campo. |
+| Fora deste PR | Pendente | O consumidor, a releitura, a flag em `WorkerBindings`, o remetente e o segredo da supressão (7c-2); o banco (7c-db). |
+
 ### Avisos de ativação: a varredura no Worker, atrás da flag desligada (t1065; corte ativacao-fase1b, Item 7b; sem migration)
 
 | Item | Status | Observação |
