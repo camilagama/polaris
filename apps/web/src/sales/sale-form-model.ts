@@ -828,18 +828,62 @@ export interface StockView {
 
 const askForEntryText = "Peça a quem cuida do estoque para dar entrada.";
 
-/** The line's quantity minus the balance the screen shows; undefined when the quantity is not a whole number or nothing is missing. */
+function requestedByVariant(
+  items: readonly { quantity: number; variantId: string }[]
+): Map<string, number> {
+  const requested = new Map<string, number>();
+  for (const item of items) {
+    requested.set(
+      item.variantId,
+      (requested.get(item.variantId) ?? 0) + item.quantity
+    );
+  }
+  return requested;
+}
+
+/** How many units a variant lacks when the sale asks for `total` of it in all its lines; undefined when the balance covers it. */
+function shortBy(total: number, balance: number): number | undefined {
+  const missing = total - balance;
+  return missing >= 1 ? missing : undefined;
+}
+
+/**
+ * The quantity of the other lines of the sale that ask for the same variant: what the line's own quantity adds to
+ * before it is compared with the balance. Lines whose quantity is not a whole number count as zero.
+ */
+export function otherLinesQuantity(
+  items: readonly ItemDraft[],
+  item: ItemDraft
+): number {
+  if (item.variantId === "") {
+    return 0;
+  }
+  let sum = 0;
+  for (const other of items) {
+    if (other.draftId === item.draftId || other.variantId !== item.variantId) {
+      continue;
+    }
+    const parsed = parsePositiveInteger(other.quantity);
+    sum += parsed.kind === "ok" ? parsed.value : 0;
+  }
+  return sum;
+}
+
+/**
+ * The line's quantity plus the other lines of the same variant, minus the balance the screen shows: the same sum the
+ * "Acima do saldo" warning compares. Undefined when the quantity is not a whole number or nothing is missing.
+ */
 export function stockMissing(
   quantityText: string,
-  view: StockView | null
+  view: StockView | null,
+  otherLines = 0
 ): number | undefined {
   const parsed = parsePositiveInteger(quantityText);
   const balance = view?.quantity;
   if (parsed.kind !== "ok" || balance === null || balance === undefined) {
     return undefined;
   }
-  const missing = parsed.value - balance;
-  return missing >= 1 ? missing : undefined;
+  return shortBy(parsed.value + otherLines, balance);
 }
 
 /** Current balance and moving average cost for a chosen variant. */
@@ -1661,13 +1705,7 @@ function stockWarnings(
   items: readonly ParsedItem[],
   stock: Readonly<Record<string, Loadable<InventoryBalanceReadModel>>>
 ): Record<string, string> {
-  const requested = new Map<string, number>();
-  for (const item of items) {
-    requested.set(
-      item.variantId,
-      (requested.get(item.variantId) ?? 0) + item.quantity
-    );
-  }
+  const requested = requestedByVariant(items);
   const warnings: Record<string, string> = {};
   for (const item of items) {
     const balance = stock[item.variantId];
@@ -1675,7 +1713,7 @@ function stockWarnings(
     if (
       balance?.status === "ready" &&
       balance.value.quantity !== 0 &&
-      total > balance.value.quantity
+      shortBy(total, balance.value.quantity) !== undefined
     ) {
       warnings[item.draftId] =
         `Acima do saldo (${balance.value.quantity}): a venda é recusada se ele não bastar.`;
@@ -2625,13 +2663,7 @@ function stockShortages(
   labels: ReadonlyMap<string, string>,
   stock: EvaluationContext["stock"]
 ): StockShortage[] {
-  const requested = new Map<string, number>();
-  for (const item of items) {
-    requested.set(
-      item.variantId,
-      (requested.get(item.variantId) ?? 0) + item.quantity
-    );
-  }
+  const requested = requestedByVariant(items);
   const shortages: StockShortage[] = [];
   for (const [variantId, total] of requested) {
     const balance = stock[variantId];
@@ -2639,7 +2671,7 @@ function stockShortages(
       // a line whose balance the screen never read may be the one refused: no line is named then
       return [];
     }
-    if (total > balance.value.quantity) {
+    if (shortBy(total, balance.value.quantity) !== undefined) {
       shortages.push({
         balance: balance.value.quantity,
         label: labels.get(variantId) ?? "item sem nome",

@@ -26,11 +26,12 @@ const noop = () => undefined;
 function renderItem(
   quantity: number,
   canAdjustStock: boolean,
-  asked = item.quantity
+  asked = item.quantity,
+  otherLinesQuantity = 0
 ): string {
   const draft = { ...item, quantity: asked };
   const warning =
-    quantity > 0 && Number(asked) > quantity
+    quantity > 0 && Number(asked) + otherLinesQuantity > quantity
       ? `Acima do saldo (${quantity}): a venda é recusada se ele não bastar.`
       : undefined;
   return renderToStaticMarkup(
@@ -45,6 +46,7 @@ function renderItem(
       onPick={noop}
       onRemove={noop}
       organizationId="org"
+      otherLinesQuantity={otherLinesQuantity}
       priceHint={null}
       stock={{
         [variantId]: {
@@ -143,6 +145,14 @@ describe("o caminho do saldo 0 até a entrada de estoque", () => {
   it("pedido acima de um saldo que não é zero: o link leva o que falta (pedido menos saldo)", () => {
     const html = renderItem(1, true, "3");
     expect(html).toContain("Acima do saldo (1)");
+    expect(html).toContain(
+      `href="/inventory?entrada=${variantId}&amp;de=venda&amp;quantidade=2"`
+    );
+  });
+
+  it("outra linha da mesma variante: o link leva o que falta no total das linhas, não só desta", () => {
+    const html = renderItem(4, true, "3", 3);
+    expect(html).toContain("Acima do saldo (4)");
     expect(html).toContain(
       `href="/inventory?entrada=${variantId}&amp;de=venda&amp;quantidade=2"`
     );

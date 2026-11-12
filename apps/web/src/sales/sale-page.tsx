@@ -105,6 +105,7 @@ import {
   isFormLocked,
   isSaleFormDirty,
   type Loadable,
+  otherLinesQuantity,
   type PreparedConfirmation,
   prepareConfirmation,
   profilesView,
@@ -1035,6 +1036,7 @@ export function SalePage() {
                     onPick={handlePickVariant}
                     onRemove={handleRemoveItem}
                     organizationId={organizationId}
+                    otherLinesQuantity={otherLinesQuantity(form.items, item)}
                     priceHint={suggestionHint(lastPrices, item)}
                     stock={catalog.stock}
                     stockWarning={evaluation.stockWarnings[item.draftId]}
