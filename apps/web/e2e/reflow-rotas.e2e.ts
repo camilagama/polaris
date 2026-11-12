@@ -929,9 +929,44 @@ const insideDialog = (target: Locator) =>
     );
   });
 
-async function tabStop(page: Page) {
+/**
+ * The focus trap sends the focus from its guard back into the dialog in the next animation frame, so right after a Tab
+ * that wraps around, the focus is for a moment on a guard outside the dialog. A late frame, as on a loaded runner,
+ * makes that moment long enough to be seen: this delays every frame of the page by 150 ms (and the cancelling of one),
+ * so the test observes the window instead of depending on the speed of the machine. It goes in after the dialog is
+ * open and settled, so the measures of the opening are not made emptier by it.
+ */
+const delayFrames = (page: Page) =>
+  page.evaluate(() => {
+    const frame = window.requestAnimationFrame.bind(window);
+    const cancel = window.cancelAnimationFrame.bind(window);
+    const late = new Map<number, ReturnType<typeof setTimeout>>();
+    window.requestAnimationFrame = (callback) => {
+      const id = frame((time) => {
+        late.set(
+          id,
+          setTimeout(() => {
+            late.delete(id);
+            callback(time);
+          }, 150)
+        );
+      });
+      return id;
+    };
+    window.cancelAnimationFrame = (id) => {
+      cancel(id);
+      clearTimeout(late.get(id));
+      late.delete(id);
+    };
+  });
+
+async function tabStop(page: Page, dialog: Locator) {
   await page.keyboard.press("Tab");
-  const focused = page.locator(":focus");
+  const focused = dialog.locator(":focus");
+  await expect(
+    focused,
+    "the focus is back on a control of the dialog"
+  ).toHaveCount(1);
   expect(await insideDialog(focused), "the focused control is in view").toBe(
     true
   );
@@ -987,10 +1022,11 @@ async function expectSmallDialogScrolls(
     element.scrollTop = 0;
   });
 
+  await delayFrames(page);
   const reached = new Set<string>();
   for (let step = 0; step < 6; step += 1) {
     // biome-ignore lint/performance/noAwaitInLoops: one Tab after the other
-    reached.add(await tabStop(page));
+    reached.add(await tabStop(page, dialog));
   }
   expect([...reached]).toEqual(
     expect.arrayContaining([
