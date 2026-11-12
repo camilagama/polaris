@@ -270,7 +270,7 @@ test.describe("DateRangePicker, os dias do período", () => {
       "Período das vendas"
     );
     await day(popup, "2026-10-10").click();
-    const status = popup.getByText("Início 10/10/2026. Escolha o último dia.");
+    const status = popup.getByText("Início 10/10. Escolha o último dia.");
     await expect(status).toHaveAttribute("aria-live", "polite");
     await expect(cellOf(day(popup, "2026-10-10"))).toHaveAttribute(
       "aria-selected",

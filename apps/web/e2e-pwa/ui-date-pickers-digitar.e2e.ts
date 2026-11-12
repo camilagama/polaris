@@ -368,7 +368,7 @@ for (const viewport of VIEWPORTS) {
       await day(popup, "2026-10-12").click();
       await expect(popup).toBeVisible();
       await expect(
-        popup.getByText("Início 12/10/2026. Escolha o último dia.")
+        popup.getByText("Início 12/10. Escolha o último dia.")
       ).toBeVisible();
       await day(popup, "2026-10-15").click();
       await expect(popup).toBeHidden();

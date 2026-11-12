@@ -269,7 +269,7 @@ test.describe("a 360 px", () => {
     await period.locator('button[data-day="2026-10-20"]').click();
     await expect(apply(period)).toHaveAttribute("aria-disabled", "true");
     await expect(apply(period)).toHaveAccessibleDescription(
-      "Início 20/10/2026. Escolha o último dia."
+      "Início 20/10. Escolha o último dia."
     );
     await apply(period).click({ force: true });
     await expect(period).toBeVisible();
@@ -372,7 +372,7 @@ test.describe("reaberto no meio da saída, a 360 px com mouse", () => {
     await expect(open.getByText("Novembro de 2026")).toBeVisible();
     await open.locator('button[data-day="2026-11-03"]').click();
     await expect(
-      open.getByText("Início 03/11/2026. Escolha o último dia.")
+      open.getByText("Início 03/11. Escolha o último dia.")
     ).toBeVisible();
 
     // Cancelar, then one turn of the page later the pill again: at the full level (a narrow window with a mouse) the
