@@ -201,8 +201,8 @@ export function answer(
   {
     failing,
     fresh,
-    noGoal,
-  }: { failing: boolean; fresh: boolean; noGoal: boolean }
+    noGoal = false,
+  }: { failing: boolean; fresh: boolean; noGoal?: boolean }
 ) {
   if (asked === "report/periodSummary") {
     return failing
