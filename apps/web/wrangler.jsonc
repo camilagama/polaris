@@ -20,6 +20,9 @@
     "CLOSURE_AUTO_PURGE_ENABLED": "false",
     // the e-mail of the closure notices (ADR 0102, amended): off until the responsible turns it on
     "CLOSURE_NOTICE_EMAIL_ENABLED": "false",
+    // the tips of the activation series (ADR 0106, D6): off in every environment, staging included, until the user
+    // turns it on; off, the hourly sweep only clears the instant it was seen on
+    "ACTIVATION_EMAILS_ENABLED": "false",
     // the owner's billing self-service (ADR 0104): off until the screens, the e-mails and the Gate 7 are in
     "BILLING_SELF_SERVICE_ENABLED": "false",
     // the thumbnails of Produtos and Venda and their batch route: off until the CPU of the batch is measured
@@ -278,6 +281,8 @@
         "WOOVI_REFUND_ENABLED": "true",
         "CLOSURE_AUTO_PURGE_ENABLED": "false",
         "CLOSURE_NOTICE_EMAIL_ENABLED": "true",
+        // off in staging too: the real sending of the tips there is a later phase
+        "ACTIVATION_EMAILS_ENABLED": "false",
         "BILLING_SELF_SERVICE_ENABLED": "true",
         "MEDIA_THUMBS_ENABLED": "true",
         // the footer and reply-to of the billing e-mails: one address on araute.app (the isolation check refuses another domain)
@@ -456,6 +461,7 @@
         "WOOVI_REFUND_ENABLED": "false",
         "CLOSURE_AUTO_PURGE_ENABLED": "false",
         "CLOSURE_NOTICE_EMAIL_ENABLED": "false",
+        "ACTIVATION_EMAILS_ENABLED": "false",
         "BILLING_SELF_SERVICE_ENABLED": "false",
         "MEDIA_THUMBS_ENABLED": "false",
         "BILLING_SUPPORT_EMAIL": "",

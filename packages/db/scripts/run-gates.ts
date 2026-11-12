@@ -335,6 +335,15 @@ gates.push(
     name: "catalog-worker",
     script: "verify-catalog-worker-gate.ts",
   },
+  // lives in apps/web: the Worker's hourly sweep of the activation series (ADR 0106, D5 and D6), with the real billing
+  // store. After the Workers' gates: its sweeps also record the stores the gates before left, and the activation.notice
+  // events it leaves meet no dispatcher of a later gate
+  {
+    env: salesEnv,
+    localOnly: true,
+    name: "activation-sweep",
+    script: "../../../apps/web/scripts/verify-activation-sweep-gate.ts",
+  },
   // the notices of the billing cycle and the welcome (ADR 0104, 0101): last, because its sweep of the welcome reads
   // every store of the last 24 hours and records the welcome of the ones the other gates left
   {
@@ -455,6 +464,7 @@ const suites: Record<string, string[]> = {
     "migrations-without-superuser",
     "web-worker",
     "catalog-worker",
+    "activation-sweep",
   ],
   // Run it on a fresh database (the gates are not rerunnable on one that already ran them).
   // POLARIS_CONCURRENCY_REPEAT sets the rounds of each race (default 3 here, 1 in `ci`).

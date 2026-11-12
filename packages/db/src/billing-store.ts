@@ -110,6 +110,30 @@ export interface BillingSweepReport {
   transitioned: number;
 }
 
+/** How a step of the activation series is recorded (ADR 0106, D5 and D6): owed, or skipped with this reason. */
+const ACTIVATION_OUTCOMES = ["due", "expired", "series_off"] as const;
+type ActivationOutcome = (typeof ACTIVATION_OUTCOMES)[number];
+
+/** What one sweep of the activation series recorded: only counts, never a store or a person. */
+export interface ActivationSweepReport {
+  /** Owed notices recorded, each with its `activation.notice` event. */
+  due: number;
+  /** Recorded skipped `expired`: the trigger went by 3 days ago. */
+  expired: number;
+  /** Recorded skipped `series_off`: a store created before the instant the switch was seen on. */
+  seriesOff: number;
+  /** More were owed than this sweep took, by the batch or by the cap of the day: the next hour goes on. */
+  truncated: boolean;
+}
+
+export interface ActivationSweepInput {
+  /** The switch of the series (`ACTIVATION_EMAILS_ENABLED`) as the Worker reads it now. */
+  enabled: boolean;
+  /** The batch, 1 to 50 (the function refuses anything else). */
+  limit: number;
+  now: Date;
+}
+
 /**
  * A notice still owed as the billing role reads it again to send it (ADR 0104, decision 7): the notice, the record of
  * its store now and what its rule needs. The money as text with its two decimals (money.md), the day as text.
@@ -646,6 +670,16 @@ export interface BillingStore {
     cancel: (event: UnclaimedTrialEvent) => Promise<"cancelled" | "paid">,
     now?: Date
   ) => Promise<UnclaimedTrialOutcome>;
+  /**
+   * The hourly sweep of the activation series (ADR 0106, D5 and D6). With the switch off its one write is to clear the
+   * instant the switch was seen on. With it on, one transaction records that instant when there is none, asks
+   * `activation_notice_candidates` for the steps owed (it holds the lock of the daily cap until this transaction
+   * ends) and records each: an owed notice with its `activation.notice` event, an expired step or one of a store
+   * created before the instant as a skipped notice with its reason. Nothing is sent here.
+   */
+  sweepActivationSeries: (
+    input: ActivationSweepInput
+  ) => Promise<ActivationSweepReport>;
   /**
    * Applies what time itself causes: records whose access has run out, grants
    * that ended, and trial setups abandoned (no checkout can still be finished).
@@ -1244,6 +1278,89 @@ async function recordTransitionNotices(
       organizationId: opaqueId(organizationId),
     });
   }
+}
+
+interface ActivationCandidateRow {
+  due_at: Date;
+  organization_id: string;
+  outcome: string;
+  step: string;
+  truncated: boolean;
+  user_id: string;
+}
+
+/**
+ * The instant the sweep first saw the switch on, written only while there is none: an instant already there stands
+ * (switching on a switch that is on changes nothing), and the plain read keeps every later sweep off the row's lock.
+ */
+async function recordActivationInstant(
+  client: PoolClient,
+  now: Date
+): Promise<void> {
+  const state = await client.query<{ enabled_since: Date | null }>(
+    "SELECT enabled_since FROM public.activation_series_state"
+  );
+  if (state.rows[0]?.enabled_since) {
+    return;
+  }
+  await client.query(
+    `INSERT INTO public.activation_series_state (enabled_since) VALUES ($1)
+     ON CONFLICT (id) DO UPDATE SET enabled_since = EXCLUDED.enabled_since, updated_at = now()
+      WHERE activation_series_state.enabled_since IS NULL`,
+    [now]
+  );
+}
+
+/**
+ * Records one step the candidates function answered, in the caller's transaction. The billing role inserts only an
+ * owed notice (its policy), so a skipped one is that insert and then its reason. Answers how it was recorded, or null
+ * when the person already had that step (nothing written).
+ */
+async function recordActivationNotice(
+  client: PoolClient,
+  row: ActivationCandidateRow
+): Promise<ActivationOutcome | null> {
+  const outcome = ACTIVATION_OUTCOMES.find((known) => known === row.outcome);
+  if (!outcome) {
+    throw new Error("activation_candidate_outcome_unknown");
+  }
+  const inserted = await client.query<{ id: string }>(
+    `INSERT INTO public.activation_notices (organization_id, user_id, step, due_at)
+     VALUES ($1, $2, $3, $4)
+     ON CONFLICT DO NOTHING
+     RETURNING id`,
+    [row.organization_id, row.user_id, row.step, row.due_at]
+  );
+  const noticeId = inserted.rows[0]?.id;
+  if (!noticeId) {
+    return null;
+  }
+  if (outcome !== "due") {
+    await client.query(
+      "UPDATE public.activation_notices SET skipped_reason = $2 WHERE id = $1",
+      [noticeId, outcome]
+    );
+    return outcome;
+  }
+  const event = outboxEvent({
+    event: { noticeId },
+    idempotencyKey: outboxIdempotencyKey("activation.notice", noticeId),
+    organizationId: row.organization_id,
+    type: "activation.notice",
+  });
+  // the five columns the billing role may insert; the policy of this type takes the notice's ID and nothing else
+  await client.query(
+    `INSERT INTO public.event_outbox (organization_id, type, event, idempotency_key, correlation_id)
+     VALUES ($1, $2, $3::jsonb, $4, $5)`,
+    [
+      event.organizationId,
+      event.type,
+      JSON.stringify(event.event),
+      event.idempotencyKey,
+      randomUUID(),
+    ]
+  );
+  return outcome;
 }
 
 async function inTransaction<T>(
@@ -3663,6 +3780,40 @@ export function createBillingStore(
         }
       }
       return started;
+    },
+    async sweepActivationSeries({ enabled, limit, now }) {
+      const report: ActivationSweepReport = {
+        due: 0,
+        expired: 0,
+        seriesOff: 0,
+        truncated: false,
+      };
+      if (!enabled) {
+        await pool.query(
+          "UPDATE public.activation_series_state SET enabled_since = NULL, updated_at = now() WHERE enabled_since IS NOT NULL"
+        );
+        return report;
+      }
+      return await inTransaction(pool, async (client) => {
+        await recordActivationInstant(client, now);
+        const candidates = await client.query<ActivationCandidateRow>(
+          "SELECT organization_id, user_id, step, due_at, outcome, truncated FROM public.activation_notice_candidates($1, $2)",
+          [now, limit]
+        );
+        for (const row of candidates.rows) {
+          report.truncated ||= row.truncated;
+          // biome-ignore lint/performance/noAwaitInLoops: a notice and its event or its reason, one after the other, in the transaction of the cap's lock
+          const outcome = await recordActivationNotice(client, row);
+          if (outcome === "due") {
+            report.due += 1;
+          } else if (outcome === "expired") {
+            report.expired += 1;
+          } else if (outcome === "series_off") {
+            report.seriesOff += 1;
+          }
+        }
+        return report;
+      });
     },
     async sweepDue(now = new Date(), limit = 50) {
       const due = await pool.query<{ organization_id: string }>(
