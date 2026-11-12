@@ -106,6 +106,7 @@ const daily = [
   },
 ];
 const PRODUCT = "0192a000-0000-7000-8000-0000000000aa";
+const COVER = "0192a000-0000-7000-8000-0000000000cc";
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -138,7 +139,7 @@ describe("report.periodSummary", () => {
       identity,
       { from: "2026-10-01", to: "2026-10-31" },
       // the store's today of a monthly series is the date of the answer's own clock
-      { asOf: summary.generatedAt, topProducts: undefined }
+      { asOf: summary.generatedAt, covers: true, topProducts: undefined }
     );
     expect(summary.daily).toEqual(daily);
     // a series by date says nothing more than it did
@@ -349,6 +350,7 @@ describe("report.periodSummary", () => {
       result,
       topProducts: [
         {
+          coverAssetId: COVER,
           deleted: true,
           name: "Camiseta",
           netSales: "200.00",
@@ -372,10 +374,11 @@ describe("report.periodSummary", () => {
       {},
       identity,
       { from: "2026-10-01", to: "2026-10-31" },
-      { asOf: summary.generatedAt, topProducts: 3 }
+      { asOf: summary.generatedAt, covers: true, topProducts: 3 }
     );
     expect(summary.topProducts).toEqual([
       {
+        coverAssetId: COVER,
         deleted: true,
         name: "Camiseta",
         netSales: "200.00",

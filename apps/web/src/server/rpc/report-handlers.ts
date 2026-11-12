@@ -59,7 +59,11 @@ export function createReportRpcHandlers(dependencies: ReportRpcDependencies) {
               transaction,
               identity,
               { from: input.from, to: input.to },
-              { asOf: generatedAt, topProducts: input.topProducts }
+              {
+                asOf: generatedAt,
+                covers: true,
+                topProducts: input.topProducts,
+              }
             );
             const { result } = summary;
             const output = {
@@ -90,6 +94,9 @@ export function createReportRpcHandlers(dependencies: ReportRpcDependencies) {
               ...(summary.topProducts
                 ? {
                     topProducts: summary.topProducts.map((entry) => ({
+                      ...(entry.coverAssetId === undefined
+                        ? {}
+                        : { coverAssetId: entry.coverAssetId }),
                       deleted: entry.deleted,
                       name: entry.name,
                       netSales: entry.netSales,
