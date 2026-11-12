@@ -2,6 +2,7 @@ import {
   type BillingProviderPort,
   type CheckoutHandoff,
   type PreparedSubscription,
+  type ProviderBillingEvent,
   ProviderNotConfiguredError,
   ProviderNotFoundError,
 } from "@polaris/billing/provider-port";
@@ -662,7 +663,8 @@ export async function reconcileOrganization(
       "processEvent" | "readProviderLink" | "recordEvent"
     >;
   },
-  organizationId: string
+  organizationId: string,
+  alreadyRead?: readonly ProviderBillingEvent[]
 ): Promise<ReconcileReport> {
   const { store } = dependencies;
   const now = dependencies.now?.() ?? new Date();
@@ -681,11 +683,9 @@ export async function reconcileOrganization(
   }
   report.linked = true;
   const port = dependencies.portFor(link.provider);
-  const events = await port.readState(
-    link.providerRef,
-    now,
-    link.providerSubscriptionId
-  );
+  const events =
+    alreadyRead ??
+    (await port.readState(link.providerRef, now, link.providerSubscriptionId));
   report.read = events.length;
   for (const event of events) {
     // biome-ignore lint/performance/noAwaitInLoops: Facts are stored and applied in the order the provider shows them.

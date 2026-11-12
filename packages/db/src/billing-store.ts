@@ -492,6 +492,21 @@ export interface BillingStore {
     now?: Date
   ) => Promise<void>;
   /**
+   * A checkout approved while the closure was giving it up, with its first charge paid at the approval (ADR 0074): the
+   * give-up already cancelled the subscription, so the payer paid for something no store keeps. Writes the ledger row
+   * `command:closure_refund_pending:<requestId>:<digest of the reference>` (one per request and checkout, a repeat
+   * adds nothing) and one occurrence of the operational incident `billing_refund_pending` with the cause
+   * `refund_not_completed`, for the operator to refund by hand (`WOOVI_REFUND_ENABLED` stays off).
+   */
+  recordClosureRefundIncident: (
+    input: {
+      link: Pick<BillingProviderLink, "provider" | "providerRef">;
+      organizationId: string;
+      requestId: string;
+    },
+    now?: Date
+  ) => Promise<void>;
+  /**
    * The hourly safety net of a refund or a chargeback (ADR 0104, decision 6): a store whose current link had a
    * payment taken back (`refund` or `chargeback`, never `won`) while its renewal was not cancelled gets the renewal
    * cancelled through `cancel`, at most `limit` stores a pass. Each try is counted before the call, and a store that
@@ -2957,6 +2972,35 @@ export function createBillingStore(
             stateBefore: row.state as BillingState,
           },
           now
+        );
+      });
+    },
+    async recordClosureRefundIncident(input, now = new Date()) {
+      await inTransaction(pool, async (client) => {
+        const row = await lockRecord(client, input.organizationId);
+        const inserted = await client.query<{ id: string }>(
+          `INSERT INTO public.billing_events
+             (provider, provider_event_id, organization_id, fact, fact_type, occurred_at, status, state_before, state_after, attempts, processed_at, provider_ref)
+           VALUES ('polaris', $1, $2,
+                   jsonb_build_object('type', 'refund_pending', 'occurredAt', to_char($3::timestamptz AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')),
+                   'command', $3::timestamptz, 'applied', $4, $4, 1, $3::timestamptz, $5)
+           ON CONFLICT (provider, provider_event_id) DO NOTHING
+           RETURNING id`,
+          [
+            `command:closure_refund_pending:${input.requestId}:${createHash("sha256").update(input.link.providerRef).digest("hex").slice(0, 32)}`,
+            input.organizationId,
+            now,
+            row.state,
+            input.link.providerRef,
+          ]
+        );
+        const [event] = inserted.rows;
+        if (!event) {
+          return;
+        }
+        await client.query(
+          "SELECT public.record_billing_refund_pending_incident($1::uuid, 'refund_not_completed')",
+          [event.id]
         );
       });
     },
