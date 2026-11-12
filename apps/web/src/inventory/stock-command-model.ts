@@ -1062,6 +1062,8 @@ export interface StockCommandState {
   action: StockAction;
   attempt: StockAttempt | null;
   draft: StockDraft;
+  /** The draft the panel opened with: what "changed" and a fresh start are measured against. */
+  initial: StockDraft;
   showErrors: boolean;
   step: "confirming" | "editing";
   submission: StockSubmission;
@@ -1069,21 +1071,61 @@ export interface StockCommandState {
   today: string;
 }
 
-export function startStockCommand(
+/**
+ * The quantity a receive panel opens with when the link asks for one: a whole number the variant can still take, or 1.
+ */
+function openingQuantity(
+  requested: number | undefined,
+  balance: number
+): string {
+  if (
+    requested === undefined ||
+    !Number.isSafeInteger(requested) ||
+    requested < 1 ||
+    balance + requested > MAX_INVENTORY_QUANTITY
+  ) {
+    return "1";
+  }
+  return String(requested);
+}
+
+function stockStateFrom(
   action: StockAction,
   target: StockTarget,
-  today: string
+  today: string,
+  initial: StockDraft
 ): StockCommandState {
   return {
     action,
     attempt: null,
-    draft: initialStockDraft(action, today),
+    draft: initial,
+    initial,
     showErrors: false,
     step: "editing",
     submission: { phase: "idle" },
     target,
     today,
   };
+}
+
+export function startStockCommand(
+  action: StockAction,
+  target: StockTarget,
+  today: string,
+  requestedQuantity?: number
+): StockCommandState {
+  const base = initialStockDraft(action, today);
+  return stockStateFrom(
+    action,
+    target,
+    today,
+    base.action === "receive"
+      ? {
+          ...base,
+          quantity: openingQuantity(requestedQuantity, target.quantity),
+        }
+      : base
+  );
 }
 
 function isStockSubmitting(state: StockCommandState): boolean {
@@ -1107,8 +1149,7 @@ export function isStockDraftChanged(state: StockCommandState): boolean {
   if (state.submission.phase === "success") {
     return false;
   }
-  const initial = initialStockDraft(state.action, state.today);
-  return isDraftChanged(state.draft, initial);
+  return isDraftChanged(state.draft, state.initial);
 }
 
 /** The panel can be closed unless a request is in flight or its outcome unknown. */
@@ -1579,7 +1620,7 @@ export function discardLockedStock(
 ): StockCommandState | null {
   return state.submission.phase === "locked" &&
     state.submission.confirmingDiscard
-    ? startStockCommand(state.action, state.target, state.today)
+    ? stockStateFrom(state.action, state.target, state.today, state.initial)
     : null;
 }
 

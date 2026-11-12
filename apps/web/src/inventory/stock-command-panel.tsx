@@ -86,6 +86,8 @@ interface StockCommandPanelProps {
   onInformCost?: ((target: StockTarget) => void) | undefined;
   /** Opened above the list (the link from the sale): no row above says the variant or its balance, so the line under the title does. Inside a row the row already says both and the line is left out. */
   standalone?: boolean | undefined;
+  /** The quantity the receive panel opens with (from the link of the sale); 1 when absent. */
+  requestedQuantity?: number | undefined;
   target: StockTarget;
   today: string;
 }
@@ -202,12 +204,13 @@ export function StockCommandPanel({
   onInformCost,
   onReloadList,
   organizationId,
+  requestedQuantity,
   standalone = false,
   target,
   today,
 }: StockCommandPanelProps) {
   const [state, setState] = useState(() =>
-    startStockCommand(action, target, today)
+    startStockCommand(action, target, today, requestedQuantity)
   );
   useHoldSwap(isStockDraftChanged(state));
   const inFlight = useRef<boolean>(false);
@@ -221,7 +224,7 @@ export function StockCommandPanel({
       }
       const element = document.getElementById(stockFieldId(prefix, field));
       element?.focus();
-      // a quantity that opens as 1 is replaced by typing, not appended to
+      // a quantity that opens filled is replaced by typing, not appended to
       if (
         element instanceof HTMLInputElement &&
         element.inputMode === "numeric"

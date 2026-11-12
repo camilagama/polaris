@@ -23,14 +23,23 @@ const item: ItemDraft = {
 };
 const noop = () => undefined;
 
-function renderItem(quantity: number, canAdjustStock: boolean): string {
+function renderItem(
+  quantity: number,
+  canAdjustStock: boolean,
+  asked = item.quantity
+): string {
+  const draft = { ...item, quantity: asked };
+  const warning =
+    quantity > 0 && Number(asked) > quantity
+      ? `Acima do saldo (${quantity}): a venda é recusada se ele não bastar.`
+      : undefined;
   return renderToStaticMarkup(
     <ItemEditor
       canAdjustStock={canAdjustStock}
       canRemove={false}
       errors={{}}
       index={0}
-      item={item}
+      item={draft}
       localSearch={undefined}
       onChange={noop}
       onPick={noop}
@@ -43,7 +52,7 @@ function renderItem(quantity: number, canAdjustStock: boolean): string {
           value: { movingAverageCost: null, quantity, variantId, version: 1 },
         },
       }}
-      stockWarning={undefined}
+      stockWarning={warning}
       summaryLine={undefined}
     />
   );
@@ -108,7 +117,7 @@ describe("o caminho do saldo 0 até a entrada de estoque", () => {
       "Sem estoque: saldo 0. Para vender, dê entrada no estoque."
     );
     expect(html).toContain(
-      `href="/inventory?entrada=${variantId}&amp;de=venda"`
+      `href="/inventory?entrada=${variantId}&amp;de=venda&amp;quantidade=2"`
     );
     expect(html).toContain(
       'Dar entrada no estoque<span class="sr-only"> de Caneca esmaltada</span>'
@@ -131,6 +140,28 @@ describe("o caminho do saldo 0 até a entrada de estoque", () => {
     expect(html).not.toContain("Dar entrada no estoque");
   });
 
+  it("pedido acima de um saldo que não é zero: o link leva o que falta (pedido menos saldo)", () => {
+    const html = renderItem(1, true, "3");
+    expect(html).toContain("Acima do saldo (1)");
+    expect(html).toContain(
+      `href="/inventory?entrada=${variantId}&amp;de=venda&amp;quantidade=2"`
+    );
+  });
+
+  it("pedido acima do saldo sem permissão: o aviso fica e o link não aparece", () => {
+    const html = renderItem(1, false, "3");
+    expect(html).toContain("Acima do saldo (1)");
+    expect(html).not.toContain("/inventory");
+  });
+
+  it("saldo zero com a quantidade ainda inválida: o link abre com 1, sem número", () => {
+    for (const asked of ["", "0", "2,5", "abc"]) {
+      expect(renderItem(0, true, asked)).toContain(
+        `href="/inventory?entrada=${variantId}&amp;de=venda"`
+      );
+    }
+  });
+
   it("com saldo, nenhum dos dois aparece", () => {
     const html = renderItem(3, true);
     expect(html).toContain(">Saldo 3</span>");
@@ -143,7 +174,7 @@ describe("o caminho do saldo 0 até a entrada de estoque", () => {
       "A venda não foi registrada: falta estoque de Caneca esmaltada (pediu 2, saldo 0)."
     );
     expect(html).toContain(
-      `href="/inventory?entrada=${variantId}&amp;de=venda"`
+      `href="/inventory?entrada=${variantId}&amp;de=venda&amp;quantidade=2"`
     );
     expect(html).toContain('<span class="sr-only"> de Caneca esmaltada</span>');
     expect(html.indexOf("Dar entrada no estoque")).toBeLessThan(
