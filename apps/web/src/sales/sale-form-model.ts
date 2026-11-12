@@ -828,6 +828,20 @@ export interface StockView {
 
 const askForEntryText = "Peça a quem cuida do estoque para dar entrada.";
 
+/** The line's quantity minus the balance the screen shows; undefined when the quantity is not a whole number or nothing is missing. */
+export function stockMissing(
+  quantityText: string,
+  view: StockView | null
+): number | undefined {
+  const parsed = parsePositiveInteger(quantityText);
+  const balance = view?.quantity;
+  if (parsed.kind !== "ok" || balance === null || balance === undefined) {
+    return undefined;
+  }
+  const missing = parsed.value - balance;
+  return missing >= 1 ? missing : undefined;
+}
+
 /** Current balance and moving average cost for a chosen variant. */
 export function stockView(
   load: Loadable<InventoryBalanceReadModel> | undefined,
@@ -1993,7 +2007,8 @@ type SaleFailureKind =
 export interface SaleSubmitFailure {
   /** The attempt cannot be resent as is: the next confirm gets a fresh attempt. */
   discardAttempt: boolean;
-  entry: { label: string; variantId: string } | null;
+  /** The line the refusal points at; `missing` is requested minus the balance the screen held, as the message says. */
+  entry: { label: string; missing: number; variantId: string } | null;
   kind: SaleFailureKind;
   message: string;
   /** Stable domain code from `error.data.reason`, when the server sent one. */
@@ -2676,7 +2691,11 @@ function stockRefusalNotice(
   }
   return {
     entry: canAdjustStock
-      ? { label: first.label, variantId: first.variantId }
+      ? {
+          label: first.label,
+          missing: first.requested - first.balance,
+          variantId: first.variantId,
+        }
       : null,
     message,
   };

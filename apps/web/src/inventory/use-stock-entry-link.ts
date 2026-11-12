@@ -15,7 +15,11 @@ import { stockEntryRequest } from "./stock-list-model";
 export type StockEntryLookup =
   | { status: "none" }
   | { status: "loading" }
-  | { entry: InventoryBalanceEntryReadModel; status: "found" }
+  | {
+      entry: InventoryBalanceEntryReadModel;
+      quantity: number;
+      status: "found";
+    }
   | { status: "missing" }
   | { status: "unavailable" };
 
@@ -25,10 +29,13 @@ const MISSING: StockEntryLookup = { status: "missing" };
 const UNAVAILABLE: StockEntryLookup = { status: "unavailable" };
 
 /**
- * The variant a link from the sale (`?entrada=`) asks to receive stock for. The parameter is taken out of the address
+ * The variant a link from the sale (`?entrada=`) asks to receive stock for, and the quantity the sale lacks (1 when the
+ * link carries none or a value the panel cannot open with). The parameters are taken out of the address
  * at once (a reload does not reopen the panel); the variant is read by id, from the device when there is no connection.
  * A variant that is not there is `missing`, and one that could not be read is `unavailable`: the screen says each in a
- * line and never as an error, and never claims the variant does not exist when it only could not be read.
+ * line and never as an error, and never claims the variant does not exist when it only could not be read. A read that
+ * failed is not final: with no connection the device's copy may still be opening, and the read is made again from it
+ * when it is there.
  */
 export function useStockEntryLink(
   organizationId: string,
@@ -47,6 +54,7 @@ export function useStockEntryLink(
   const localWriter = local?.stores.writer;
   const localOutbox = local?.stores.outbox;
   const variantId = request?.variantId ?? null;
+  const quantity = request?.quantity ?? 1;
 
   useEffect(() => {
     if (request === null) {
@@ -69,12 +77,12 @@ export function useStockEntryLink(
       if (!current) {
         return;
       }
-      settled.current = true;
       if (failed) {
         setLookup(UNAVAILABLE);
         return;
       }
-      setLookup(entry ? { entry, status: "found" } : MISSING);
+      settled.current = true;
+      setLookup(entry ? { entry, quantity, status: "found" } : MISSING);
     };
     const read =
       localWriter && localOutbox
@@ -96,7 +104,7 @@ export function useStockEntryLink(
     return () => {
       current = false;
     };
-  }, [localOutbox, localWriter, organizationId, variantId]);
+  }, [localOutbox, localWriter, organizationId, quantity, variantId]);
 
   return lookup;
 }

@@ -52,6 +52,8 @@ interface OpenCommand {
   action: StockAction;
   /** Opened by the link from the sale: it stands above the list, whether or not the list holds the variant. */
   standalone: boolean;
+  /** The quantity the link from the sale asks the receive panel to open with. */
+  quantity?: number;
   /** The balance as the row showed it when the panel opened. */
   target: StockTarget;
 }
@@ -287,6 +289,7 @@ export function InventoryPage() {
     if (entryLink.status === "found") {
       setOpen({
         action: "receive",
+        quantity: entryLink.quantity,
         standalone: true,
         target: stockTarget(entryLink.entry, {
           costUnavailable: offlineRef.current,
@@ -435,6 +438,7 @@ export function InventoryPage() {
               onInformCost={handleInformCost}
               onReloadList={reload}
               organizationId={organizationId}
+              requestedQuantity={open.quantity}
               standalone
               target={open.target}
               today={today}

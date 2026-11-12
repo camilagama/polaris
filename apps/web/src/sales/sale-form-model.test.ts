@@ -66,6 +66,7 @@ import {
   selectProfileChoice,
   startSubmission,
   stepQuantity,
+  stockMissing,
   stockView,
   submitButtonLabel,
   updateAdjustment,
@@ -2235,6 +2236,7 @@ describe("the refusal for stock", () => {
     );
     expect(failure.entry).toEqual({
       label: "Caneca esmaltada",
+      missing: 2,
       variantId: first,
     });
   });
@@ -2250,6 +2252,7 @@ describe("the refusal for stock", () => {
     expect(failure.message).toBe(
       "A venda não foi registrada: falta estoque de Caneca esmaltada (pediu 4, saldo 3)."
     );
+    expect(failure.entry?.missing).toBe(1);
   });
 
   it("says how many lines lack stock, lists them, and links the first", () => {
@@ -2353,6 +2356,22 @@ describe("the refusal for stock", () => {
         stock: stockOf({ [first]: 0 }),
       })
     ).toBe(other);
+  });
+
+  it("says how many units a line lacks: its quantity minus the balance shown, and nothing when it fits or is not a number", () => {
+    const view = stockView(balance(1, null), true);
+    expect(stockMissing("3", view)).toBe(2);
+    expect(stockMissing(" 3 ", view)).toBe(2);
+    expect(stockMissing("1", view)).toBeUndefined();
+    expect(stockMissing("0", view)).toBeUndefined();
+    expect(stockMissing("", view)).toBeUndefined();
+    expect(stockMissing("2,5", view)).toBeUndefined();
+    expect(stockMissing("abc", view)).toBeUndefined();
+    expect(stockMissing("3", stockView(balance(0, null), true))).toBe(3);
+    expect(stockMissing("3", null)).toBeUndefined();
+    expect(
+      stockMissing("3", stockView({ status: "loading" }, true))
+    ).toBeUndefined();
   });
 
   it("offers the entry on the zero-balance line only to who can make it", () => {

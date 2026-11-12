@@ -21,6 +21,7 @@ import {
   MAX_SALE_ITEMS,
   type SaleSummary,
   type StockView,
+  stockMissing,
   stepQuantity,
   stockLineText,
   stockView,
@@ -84,6 +85,7 @@ export function ItemEditor({
   const stockState = chosen
     ? stockView(stock[item.variantId], canAdjustStock)
     : null;
+  const missing = stockMissing(item.quantity, stockState);
   const pickError =
     errors[itemFieldKey(item.draftId, "product")] ??
     errors[itemFieldKey(item.draftId, "variant")];
@@ -141,13 +143,15 @@ export function ItemEditor({
               stockState={stockState}
             />
           )}
-          {!searching && stockState?.needsEntry && canAdjustStock ? (
+          {!searching &&
+          canAdjustStock &&
+          (stockState?.needsEntry || stockWarning !== undefined) ? (
             <a
               className={cn(
                 buttonVariants({ size: "sm", variant: "link" }),
                 "justify-self-start text-support"
               )}
-              href={stockEntryHref(item.variantId)}
+              href={stockEntryHref(item.variantId, missing)}
             >
               Dar entrada no estoque
               <span className="sr-only"> de {item.label}</span>
