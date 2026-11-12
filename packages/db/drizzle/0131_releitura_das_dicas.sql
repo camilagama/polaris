@@ -10,15 +10,17 @@
 --   else: null (the notice does not exist, is of another store, or was sent, failed or skipped), `{"skip": code}` with
 --   the first rule that stopped holding, in the fixed order below, or `{"step", "hasProduct", "store"}` when every rule
 --   still holds. The codes are the ones of `packages/domain/src/activation/notices.ts`, which the gate compares with
---   what this function answers. It never answers an address, a person, an instant, a count, the billing state, the
---   status of the store nor its request about personal data, and it writes nothing nor takes the lock of the cap.
+--   what this function answers. It answers no fact behind a rule (no address, person, instant, count, billing state or
+--   status): a code names only which rule stopped holding, and the caller records it as the reason of the skip. It
+--   writes nothing nor takes the lock of the cap.
 -- * The rules are those of `activation_notice_candidates` (0126), read again for one notice:
 --   expired, series_window_passed, activated, opted_out, billing_relation, store_not_active, privacy_request_open,
---   internal_store, not_first_owner, email_not_verified, state_changed (an a3 whose a2 never went out). The gate seeds a
+--   internal_store, not_first_owner, email_not_verified, state_changed (an a1 once the store has a live product, an a3
+--   whose a2 never went out: the candidates make neither). The gate seeds a
 --   store for each and proves both functions agree (the store leaves the candidates; its notice answers the code), so a
 --   later rule added to only one of them fails it.
 -- * `p_now` is the Worker's clock, as in 0126; a clock more than 10 minutes away from the database's is replaced by the
---   database's, so a wrong clock cannot keep a store of more than 14 days or an expired notice owed. The role sees only
+--   database's, so a wrong clock keeps a store of 14 days or an expired notice owed 10 minutes at most. The role sees only
 --   the stores of the last 14 days of the database's clock anyway, and the billing runtime that passes it could record
 --   any notice skipped by itself.
 -- * The name of the store goes into the body of the tip, so the owner of the series reads `organizations.name`: one
@@ -47,6 +49,7 @@ DECLARE
   store_name text;
   founder_user text;
   founder_since timestamptz;
+  has_product boolean;
 BEGIN
   IF p_now IS NULL THEN
     RAISE EXCEPTION 'invalid_now' USING ERRCODE = '22023';
@@ -117,20 +120,17 @@ BEGIN
   IF NOT EXISTS (SELECT 1 FROM public."user" AS account WHERE account.id = owed_user AND account.email_verified) THEN
     RETURN pg_catalog.jsonb_build_object('skip', 'email_not_verified');
   END IF;
-  IF owed_step = 'a3' AND NOT EXISTS (
+  has_product := EXISTS (
+    SELECT 1 FROM public.products AS product
+     WHERE product.organization_id = p_organization AND product.deleted_at IS NULL
+  );
+  IF (owed_step = 'a1' AND has_product) OR (owed_step = 'a3' AND NOT EXISTS (
     SELECT 1 FROM public.activation_notices AS sent
      WHERE sent.user_id = owed_user AND sent.step = 'a2' AND sent.sent_at IS NOT NULL
-  ) THEN
+  )) THEN
     RETURN pg_catalog.jsonb_build_object('skip', 'state_changed');
   END IF;
-  RETURN pg_catalog.jsonb_build_object(
-    'step', owed_step,
-    'hasProduct', EXISTS (
-      SELECT 1 FROM public.products AS product
-       WHERE product.organization_id = p_organization AND product.deleted_at IS NULL
-    ),
-    'store', store_name
-  );
+  RETURN pg_catalog.jsonb_build_object('step', owed_step, 'hasProduct', has_product, 'store', store_name);
 END;
 $function$;--> statement-breakpoint
 REVOKE ALL ON FUNCTION public.activation_notice_still_owed(text, uuid, timestamptz) FROM PUBLIC, polaris_pr11_runtime, polaris_catalog_runtime, polaris_admin_runtime, polaris_privacy_runtime, polaris_outbox_runtime, polaris_auth_runtime;--> statement-breakpoint

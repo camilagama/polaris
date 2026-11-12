@@ -3430,7 +3430,7 @@ Origem: achado B do Diego no Pixel 6 (28/10): a venda montada em Vender sumia ao
 | Função (AC-7c.12) | Em revisão | `activation_notice_still_owed(p_organization, p_notice, p_now)`, `SECURITY DEFINER` do papel da série, `EXECUTE` só ao runtime de cobrança: nulo, `{"skip": código}` (o primeiro motivo, na ordem do domínio) ou `{"step", "hasProduct", "store"}`. `p_now` a mais de 10 min do banco vira o relógio do banco. |
 | Nome da loja (P-1) | Em revisão | `SELECT (name)` em `organizations` para o papel da série: 35 colunas de leitura, conferidas no fim da migration e no gate. Os candidatos seguem sem o nome (o gate confere as colunas de saída). |
 | Códigos | Em revisão | `packages/domain/src/activation/notices.ts`: os do banco na ordem da releitura e os do Worker, com `outside_send_hours`. |
-| Gate (AC-7c.13) | Em revisão | `activation-candidates` estendido: privilégios e ACL da função, leitores exatos de `organizations.name`, lista exata do papel, uma loja por motivo com paridade contra os candidatos, a ordem dos motivos, os nulos e o limite do relógio. |
+| Gate (AC-7c.13) | Em revisão | `activation-candidates` estendido: privilégios e ACL da função, leitores exatos de `organizations.name`, lista exata do papel, uma loja por motivo com paridade contra os candidatos (o a1 de loja que já tem produto vira `state_changed`), a ordem dos motivos, os nulos e o limite do relógio. |
 | Fora deste PR | Pendente | O consumidor que chama a função (7c-2); os modelos (7c-1); `series_stopped` nas duas funções (9a). |
 
 ### UI de 11/11: Mais vendidos com cinco itens e a miniatura (t1038; sem migration)
