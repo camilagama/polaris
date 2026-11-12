@@ -39,12 +39,27 @@ export function isMarkedEntry(mark: string): boolean {
   return historyState()[mark] === true;
 }
 
+export function readNavigationState(key: string): unknown {
+  return historyState()[key];
+}
+
+/**
+ * Takes `key` out of the entry's state. The screen reads it while it renders and drops it once it is on screen: a reload
+ * keeps `history.state`, and the screen must open then as the menu opens it.
+ */
+export function dropNavigationState(key: string): void {
+  const { [key]: dropped, ...rest } = historyState();
+  if (dropped !== undefined) {
+    window.history.replaceState(rest, "");
+  }
+}
+
 /**
  * Opens another screen of the app with no load of the page (corte 1.6, AC-7): a step in the history, so "voltar" comes
  * back, and the shell draws the screen of the new address. What lives in memory (a draft kept by Esc) stays.
  */
-export function navigateInApp(next: string): void {
-  window.history.pushState(null, "", next);
+export function navigateInApp(next: string, state: unknown = null): void {
+  window.history.pushState(state, "", next);
   window.dispatchEvent(new Event(ADDRESS_EVENT));
   window.scrollTo({ top: 0 });
   // the link that was clicked left with the screen: the focus starts again at the content, as on a load of the page

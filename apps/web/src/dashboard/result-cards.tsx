@@ -1,4 +1,6 @@
+import ArrowRightIcon from "lucide-react/dist/esm/icons/arrow-right";
 import { useCallback, useMemo, useState } from "react";
+import { cn } from "@/lib/utils";
 import { Badge } from "@/ui/badge";
 import { OnDemandSparkline } from "@/ui/charts/on-demand";
 import {
@@ -14,6 +16,7 @@ import {
   unknownDaysFit,
   unknownDaysText,
 } from "../home/home-kpis";
+import { salesCountText } from "../home/home-model";
 import { formatBrlAmount } from "../lib/format";
 import {
   MASKED_SPOKEN,
@@ -31,6 +34,7 @@ import {
   NO_KNOWN_COST_RESULT,
 } from "./dashboard-model";
 import { resultKpis, untilText } from "./result-kpis";
+import { type Period, periodRangeLabel } from "./result-period";
 import type { ComparisonDays, ComparisonSales } from "./use-period-summary";
 
 export function IncompleteBadge() {
@@ -123,9 +127,101 @@ type SparkColor =
   | "var(--chart-ticket)"
   | "var(--destructive)";
 
+const LINK_CLASS =
+  "touch-hit focus-ring -my-1 inline-flex h-6 shrink-0 items-center gap-1 whitespace-nowrap rounded-sm font-medium text-foreground hover:underline";
+const LINK_ARROW = "@min-[11.5rem]:block hidden size-4";
+
+/**
+ * "Ver as 8 vendas" on the support line of the sales card, in the place of the count: a text button with an arrow, no
+ * underline and no outline, whose name says the dates and where it goes. With the comparison chip it takes a line of its
+ * own under the chip, on the left, and the tile grows by that line; without the chip it stays on the support line. The
+ * box is 24 px tall in a 20 px line (negative margin), the least a target may have; the arrow goes first when the tile is
+ * narrower than the words need (320 px with the letter at 20 px).
+ */
+function SalesLink({
+  count,
+  onOpen,
+  period,
+  today,
+  underChip,
+}: {
+  count: number;
+  onOpen: (period: Period) => void;
+  period: Period;
+  today: string;
+  underChip: boolean;
+}) {
+  const label = count === 1 ? "Ver a venda" : `Ver as ${salesCountText(count)}`;
+  const handleClick = useCallback(() => onOpen(period), [onOpen, period]);
+  return (
+    <>
+      {underChip ? (
+        <span aria-hidden="true" className="h-0 basis-full" />
+      ) : null}
+      <button
+        aria-label={`${label} de ${periodRangeLabel(period, today)} no Histórico`}
+        className={LINK_CLASS}
+        data-kpi-sales-link=""
+        onClick={handleClick}
+        type="button"
+      >
+        {label}
+        <ArrowRightIcon aria-hidden="true" className={LINK_ARROW} />
+      </button>
+    </>
+  );
+}
+
+/**
+ * What the support line of the sales card says of the count: the link to the Histórico when the count is the server's
+ * for the whole period (none while a day is read on the sparkline, whose count is another), the text otherwise. The
+ * period is from its first day to today, since nothing is sold after it. With the comparison chip the link or the text
+ * is always on the line under it, so the tile has the same height with or without sales, with or without connection, and
+ * while a day is read (the date is 4 px shorter than the chip, and the text line makes it up).
+ */
+function salesNote({
+  chip,
+  count,
+  onOpen,
+  period,
+  reading,
+  text,
+  today,
+}: {
+  chip: boolean;
+  count: number;
+  onOpen: ((period: Period) => void) | null;
+  period: Period;
+  reading: boolean;
+  text: string;
+  today: string;
+}) {
+  const to = period.to < today ? period.to : today;
+  if (onOpen && !reading && count > 0 && period.from <= to) {
+    return (
+      <SalesLink
+        count={count}
+        onOpen={onOpen}
+        period={{ from: period.from, to }}
+        today={today}
+        underChip={chip}
+      />
+    );
+  }
+  return chip ? (
+    <span className={cn("flex basis-full items-center", reading && "min-h-5")}>
+      {text}
+    </span>
+  ) : (
+    text
+  );
+}
+
 interface ResultCardsProps {
   /** The days of the period before, read for the chips; null while not read (or not readable): no chip. */
   comparison: ComparisonDays | null;
+  /** Opens the Histórico on the period of the sales card; null: the count stays text (no connection, or not the server's figures). */
+  onOpenSales: ((period: Period) => void) | null;
   /** The same days as `dailySales` read them: the chips of sales and ticket; null while not read (or not readable). */
   salesComparison: ComparisonSales | null;
   summary: StoredPeriodSummary;
@@ -140,6 +236,7 @@ interface ResultCardsProps {
  */
 export function ResultCards({
   comparison,
+  onOpenSales,
   salesComparison,
   summary,
   today,
@@ -242,7 +339,15 @@ export function ResultCards({
         entity="sales"
         help={{ about: salesName, text: read.sales.help }}
         id="result-kpi-sales"
-        note={read.sales.count}
+        note={salesNote({
+          chip: Boolean(kpis.read(null).sales.delta),
+          count: cards.salesCount,
+          onOpen: onOpenSales,
+          period: summary.period,
+          reading: index !== null,
+          text: read.sales.count,
+          today,
+        })}
         strip
         {...(drawn
           ? {

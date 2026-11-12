@@ -38,9 +38,10 @@ interface SaleHistory {
  */
 export function useSaleHistory(
   organizationId: string,
-  local: LocalWorkspace | null = null
+  local: LocalWorkspace | null = null,
+  initialFilters: HistoryFilters = emptyHistoryFilters
 ): SaleHistory {
-  const [filters, setFiltersState] = useState(emptyHistoryFilters);
+  const [filters, setFiltersState] = useState(initialFilters);
   const [state, setState] = useState(initialHistoryState);
   const [reloadVersion, setReloadVersion] = useState(0);
   const latest = useRef(0);
