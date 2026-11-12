@@ -195,7 +195,7 @@ describe("the Margem and the Resultado estimado with no cost known", () => {
     const result = card(markup, "result-kpi-result");
     expect(words(result)).toContain("estimativa incompleta");
     expect(result).toContain('data-kpi-unknown="">3 de 25 dias sem custo<');
-    expect(result).toContain('data-kpi-warning=""');
+    expect(result).toContain('data-kpi-notice=""');
     expect(words(result)).not.toContain("lucro líquido");
     expect(words(margin)).not.toContain("lucro líquido");
     expect(words(margin)).toContain("estimativa incompleta");

@@ -350,8 +350,9 @@ function CardTitle({
 /*
  * The tile of the Início and of the Resultado: about 92 px, three lines (the name with the (i); the number with the sparkline of 36 px to its
  * right; the support line, as wide as the tile). With a day read, its date takes the place of the chip on the support line
- * (the row is always there, so nothing moves). The warning of an estimate that is not whole is the support line itself:
- * one line, so the tile has the height of the others. The color of the entity is in the drawing, not in a square. With
+ * (the row is always there, so nothing moves). On the Início the warning of an estimate that is not whole is the support
+ * line itself: one line, so the tile has the height of the others. On the Resultado the `notice` has a row of its own
+ * under the support line, free to wrap, and the tile grows by it. The color of the entity is in the drawing, not in a square. With
  * touch the title row and the keyboard control of the sparkline are 44 px: the control starts under the touch area of
  * the (i), so the two never overlap (the tile grows by what it takes), and the title keeps its place.
  */
@@ -464,7 +465,7 @@ export function KpiTile({
         ) : null}
       </div>
       {notice ? (
-        <div className={TILE_SUPPORT} data-kpi-warning="">
+        <div className={TILE_SUPPORT} data-kpi-notice="">
           {notice}
         </div>
       ) : null}
