@@ -13,7 +13,12 @@ import { cn } from "@/lib/utils";
 import { Badge } from "@/ui/badge";
 import { Card, CardContent } from "@/ui/card";
 import { Tabs, TabsContent } from "@/ui/tabs";
-import { replaceAddress } from "../app-shell/address";
+import {
+  dropNavigationState,
+  navigateInApp,
+  readNavigationState,
+  replaceAddress,
+} from "../app-shell/address";
 import { addressWithTab, requestedTab } from "../app-shell/navigation-model";
 import { SlowReadNote } from "../app-shell/read-wait";
 import { TitleLine } from "../app-shell/screen-title";
@@ -41,10 +46,14 @@ import { ResultChain } from "./result-chain";
 import { ResultChart } from "./result-chart";
 import {
   copyMonthOf,
+  HISTORY_PERIOD_STATE,
   type Period,
   type PeriodPreset,
+  periodFromState,
   periodText,
+  presetOfPeriod,
   presetPeriod,
+  RESULT_PERIOD_STATE,
   samePeriod,
 } from "./result-period";
 import { comparisonPeriod, resultChipPeriod } from "./result-kpis";
@@ -219,6 +228,8 @@ interface ContentProps {
   comparison: ComparisonDays | null;
   /** The same days as `dailySales` read them, for the chips of sales and ticket (null while not read). */
   salesComparison: ComparisonSales | null;
+  /** Opens the Histórico on a period; null when the sales cannot be listed to match the card (no connection, or figures from the device's copy). */
+  onOpenSales: ((period: Period) => void) | null;
   /** What the person asked for: the figures on screen may still be those of the period before it (AC-3). */
   period: Period;
   state: PeriodSummaryState;
@@ -240,6 +251,7 @@ function onScreen<T extends { period: Period }>(
 function Content({
   canCreateExpense,
   comparison,
+  onOpenSales,
   salesComparison,
   period,
   state,
@@ -281,6 +293,7 @@ function Content({
     >
       <ResultCards
         comparison={onScreen(comparison, summary.period, today)}
+        onOpenSales={stale ? null : onOpenSales}
         salesComparison={onScreen(salesComparison, summary.period, today)}
         summary={summary}
         today={today}
@@ -318,10 +331,15 @@ export function DashboardPage() {
   const [today, setToday] = useState(() =>
     calendarDayInTimezone(new Date(), organization.timezone)
   );
-  const [selection, setSelection] = useState<Selection>({
-    custom: null,
-    preset: "this-month",
+  const [selection, setSelection] = useState<Selection>(() => {
+    const requested = periodFromState(readNavigationState(RESULT_PERIOD_STATE));
+    if (requested === null) {
+      return { custom: null, preset: "this-month" };
+    }
+    const preset = presetOfPeriod(requested, today);
+    return { custom: preset === "custom" ? requested : null, preset };
   });
+  useEffect(() => dropNavigationState(RESULT_PERIOD_STATE), []);
   const period = useMemo(
     () =>
       presetPeriod(selection.preset, today, selection.custom) ??
@@ -380,6 +398,9 @@ export function DashboardPage() {
       );
     }
   }, [initialTab]);
+  const handleOpenSales = useCallback((sales: Period) => {
+    navigateInApp("/sales/history", { [HISTORY_PERIOD_STATE]: sales });
+  }, []);
   const handlePreset = useCallback((preset: PeriodPreset) => {
     setSelection({ custom: null, preset });
   }, []);
@@ -442,6 +463,9 @@ export function DashboardPage() {
               canCreateExpense={canCreateExpense}
               comparison={comparison}
               salesComparison={salesComparison}
+              onOpenSales={
+                online && state.source === "server" ? handleOpenSales : null
+              }
               period={period}
               state={state}
               thisYear={today.slice(0, 4)}
