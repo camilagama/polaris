@@ -16,6 +16,7 @@ import {
 import { ListTotalFooter } from "../catalog/screen-parts";
 import {
   HISTORY_PERIOD_STATE,
+  HISTORY_STATUS_STATE,
   type Period,
   periodFromState,
   periodRangeLabel,
@@ -34,6 +35,7 @@ import {
   historyTotal,
   historyView,
   loadMoreView,
+  statusFromState,
 } from "./sale-history-model";
 import { useSaleHistory } from "./use-sale-history";
 
@@ -136,17 +138,23 @@ export function SaleHistoryPage() {
   const [initialPeriod] = useState(() =>
     periodFromState(readNavigationState(HISTORY_PERIOD_STATE))
   );
-  useEffect(() => dropNavigationState(HISTORY_PERIOD_STATE), []);
+  const [initialStatus] = useState(() =>
+    statusFromState(readNavigationState(HISTORY_STATUS_STATE))
+  );
+  useEffect(() => {
+    dropNavigationState(HISTORY_PERIOD_STATE);
+    dropNavigationState(HISTORY_STATUS_STATE);
+  }, []);
   const { filters, loadMore, reload, setFilters, state } = useSaleHistory(
     organizationId,
     offlineWorkspace,
-    initialPeriod
-      ? {
-          ...emptyHistoryFilters,
-          from: initialPeriod.from,
-          to: initialPeriod.to,
-        }
-      : emptyHistoryFilters
+    {
+      ...emptyHistoryFilters,
+      ...(initialPeriod
+        ? { from: initialPeriod.from, to: initialPeriod.to }
+        : {}),
+      status: initialStatus,
+    }
   );
   const resultPeriod =
     offline || !hasCapabilityForRole(organization.role, "report:read")

@@ -2,7 +2,6 @@
 
 import { addDays, localDate } from "../calendar";
 import { expect, openJourney, runT0, test } from "../fixtures";
-import { seedCashSale, seedProduct, seedStock } from "../seed";
 import {
   historyRows,
   monthToToday,
@@ -13,12 +12,14 @@ import {
   seedSales,
   ZONE,
 } from "../pages/resultado-historico";
+import { nextCommandId, seedCashSale, seedProduct, seedStock } from "../seed";
 
 const ANY_PERIOD_BUTTON = /^Período: .+, editar$/;
 const HISTORY_URL = /\/sales\/history$/;
 const DASHBOARD_URL = /\/dashboard$/;
 const ANY_PERIOD_PILL = /^Período: /;
 const ONE_SALE_LINK = /^Ver a venda de /;
+const STATUS_PILL = "Situação: Confirmadas, editar";
 const RESULT_LINK = /^Ver o resultado/;
 const SALES_LINK =
   /^Ver as \d+ vendas de \d\d\/\d\d a \d\d\/\d\d no Histórico$/;
@@ -54,6 +55,60 @@ test("o cartão de vendas leva ao Histórico com o período do cartão, e o menu
     0
   );
   await expect(historyRows(page)).toHaveCount(4);
+});
+
+test("com uma venda cancelada no período, o link do cartão abre o Histórico com as pílulas Período e Situação e exatamente N linhas", async ({
+  browser,
+}, testInfo) => {
+  const journey = await openJourney(
+    browser,
+    testInfo,
+    "resultado-historico-canceladas",
+    { organization: { timezone: ZONE } }
+  );
+  const { sell } = await seedSales(journey, 3);
+  const cancelledId = await sell(new Date(runT0()).toISOString());
+  await journey.user.rpc.sale.cancel({
+    commandId: nextCommandId(),
+    commandVersion: 1,
+    organizationId: journey.organizationId as string,
+    saleId: cancelledId,
+  });
+  const { page } = journey;
+  const { label } = monthToToday();
+
+  await page.goto("/dashboard");
+  const link = salesCard(page).getByRole("button", { name: SALES_LINK });
+  await expect(link).toHaveText("Ver as 3 vendas");
+
+  await link.click();
+  await expect(page).toHaveURL(HISTORY_URL);
+  await expect(periodPill(page, label)).toBeVisible();
+  await expect(
+    page.getByRole("button", { exact: true, name: STATUS_PILL })
+  ).toBeVisible();
+  await expect(
+    historyRows(page),
+    "a cancelada do período não entra: o N do cartão é o das confirmadas"
+  ).toHaveCount(3);
+
+  await page
+    .getByRole("button", { exact: true, name: "Tirar o filtro Situação" })
+    .click();
+  await expect(
+    page.getByRole("button", { exact: true, name: STATUS_PILL })
+  ).toHaveCount(0);
+  await expect(periodPill(page, label)).toBeVisible();
+  await expect(
+    historyRows(page),
+    "sem a Situação volta a cancelada"
+  ).toHaveCount(4);
+
+  await page.reload();
+  await expect(
+    page.getByRole("button", { exact: true, name: STATUS_PILL })
+  ).toHaveCount(0);
+  await expect(periodPill(page, label)).toHaveCount(0);
 });
 
 test("o link cabe na linha de apoio, sem quebrar nem ficar sob o minigráfico, a 1280 px e a 320 px com letra de 20 px", async ({
