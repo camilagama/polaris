@@ -90,9 +90,9 @@ const contextsOf = (file: string): readonly UiContext[] =>
 const SCREENSHOT = {
   animations: "disabled",
   caret: "hide",
-  maxDiffPixelRatio: 0.001,
+  maxDiffPixelRatio: 0,
   scale: "css",
-  threshold: 0.2,
+  threshold: 0,
   // two equal screenshots in a row of a tall page take more than the default 5 s on a loaded runner
   timeout: 20_000,
 } as const;
