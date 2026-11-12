@@ -75,6 +75,7 @@ export default defineConfig({
       testIgnore: [
         "jornadas/encerramento.e2e.ts",
         "jornadas/encerramento-aparelho.e2e.ts",
+        "jornadas/resultado-historico-offline.e2e.ts",
         "jornadas/venda-saldo-curto-sem-conexao.e2e.ts",
         "jornadas/sair-e-recarregar.e2e.ts",
         "jornadas/estoque-produto-sem-conexao.e2e.ts",
@@ -92,6 +93,7 @@ export default defineConfig({
         "jornadas/encerramento.e2e.ts",
         "jornadas/encerramento-aparelho.e2e.ts",
         "jornadas/sair-e-recarregar.e2e.ts",
+        "jornadas/resultado-historico-offline.e2e.ts",
         "harness/chave-do-runtime.e2e.ts",
       ],
       use: { ...desktop, baseURL: origin("runtime-ligado") },

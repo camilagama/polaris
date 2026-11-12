@@ -1,14 +1,30 @@
 import type { SaleListEntryReadModel } from "@polaris/contracts";
+import { hasCapabilityForRole } from "@polaris/domain/authorization/capabilities";
+import ArrowRightIcon from "lucide-react/dist/esm/icons/arrow-right";
 import CloudOffIcon from "lucide-react/dist/esm/icons/cloud-off";
 import RefreshCwIcon from "lucide-react/dist/esm/icons/refresh-cw";
-import { useCallback } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
 import { Button } from "@/ui/button";
 import { Card } from "@/ui/card";
 import { Skeleton } from "@/ui/skeleton";
+import {
+  dropNavigationState,
+  navigateInApp,
+  readNavigationState,
+} from "../app-shell/address";
 import { ListTotalFooter } from "../catalog/screen-parts";
+import {
+  HISTORY_PERIOD_STATE,
+  type Period,
+  periodFromState,
+  periodRangeLabel,
+  RESULT_PERIOD_STATE,
+  rangeProblem,
+} from "../dashboard/result-period";
 import { useCurrentOrganization } from "../lib/current-organization";
 import { useLocalWorkspace } from "../offline/runtime/use-local-workspace";
+import { todayOr } from "../ui/date-values";
 import { SavedSalesCard } from "./offline-sale-panels";
 import { HistoryEmptyCard } from "./sale-history-empty";
 import { HistoryFiltersBar } from "./sale-history-filters";
@@ -33,6 +49,35 @@ function OfflineHistoryNotice() {
       </AlertDescription>
     </Alert>
   );
+}
+
+/** "Ver o resultado deste período": a line of its own under the pills, since everything in the row of the pills filters. */
+function ResultLink({ period }: { period: Period }) {
+  const handleClick = useCallback(
+    () => navigateInApp("/dashboard", { [RESULT_PERIOD_STATE]: period }),
+    [period]
+  );
+  return (
+    <button
+      aria-label={`Ver o resultado deste período, de ${periodRangeLabel(period, todayOr(undefined))}`}
+      className="touch-hit focus-ring inline-flex h-ctl-sm w-fit items-center gap-1 whitespace-nowrap rounded-sm font-medium text-foreground text-sm hover:underline"
+      data-history-result-link=""
+      onClick={handleClick}
+      type="button"
+    >
+      Ver o resultado deste período
+      <ArrowRightIcon aria-hidden="true" className="size-4" />
+    </button>
+  );
+}
+
+/** The period of the pill, when the Resultado can read it: both ends, in order, within its limit of a year. */
+function resultPeriodOf(filters: { from: string; to: string }): Period | null {
+  return filters.from !== "" &&
+    filters.to !== "" &&
+    rangeProblem(filters.from, filters.to) === null
+    ? { from: filters.from, to: filters.to }
+    : null;
 }
 
 const LOADING_ROWS = [0, 1, 2];
@@ -81,17 +126,32 @@ function HistoryTotalFooter({
 
 /** Newest-first list of confirmed and cancelled sales, filterable on the server. */
 export function SaleHistoryPage() {
-  const { organizationId } = useCurrentOrganization();
+  const { organization, organizationId } = useCurrentOrganization();
   const workspace = useLocalWorkspace(organizationId);
   // The server's history whenever it is reachable; only without a connection
   // the device's window of recent sales.
   const offlineWorkspace =
     workspace !== null && !workspace.online ? workspace : null;
   const offline = offlineWorkspace !== null;
+  const [initialPeriod] = useState(() =>
+    periodFromState(readNavigationState(HISTORY_PERIOD_STATE))
+  );
+  useEffect(() => dropNavigationState(HISTORY_PERIOD_STATE), []);
   const { filters, loadMore, reload, setFilters, state } = useSaleHistory(
     organizationId,
-    offlineWorkspace
+    offlineWorkspace,
+    initialPeriod
+      ? {
+          ...emptyHistoryFilters,
+          from: initialPeriod.from,
+          to: initialPeriod.to,
+        }
+      : emptyHistoryFilters
   );
+  const resultPeriod =
+    offline || !hasCapabilityForRole(organization.role, "report:read")
+      ? null
+      : resultPeriodOf(filters);
   const view = historyView(state, filters);
   const handleClearFilters = useCallback(
     () => setFilters(emptyHistoryFilters),
@@ -109,6 +169,7 @@ export function SaleHistoryPage() {
         offline={offline}
         onChange={setFilters}
       />
+      {resultPeriod ? <ResultLink period={resultPeriod} /> : null}
       {view.kind === "loading" ? (
         <>
           <LoadingCard message={view.message} />

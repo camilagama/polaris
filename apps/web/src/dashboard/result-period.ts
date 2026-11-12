@@ -1,7 +1,7 @@
 import { monthBounds, monthOfDay } from "../expenses/expense-model";
 import { isCalendarDate } from "../lib/dates";
 import { shortcutLabel } from "../ui/date-range-shortcuts";
-import { presetRange, type RangePreset } from "../ui/date-values";
+import { formatRange, presetRange, type RangePreset } from "../ui/date-values";
 
 /**
  * The periods of the Resultado (corte resultado-v2, AC-1 and AC-2): the presets, the free range, what each one reads,
@@ -223,4 +223,39 @@ export function periodText(period: Period, thisYear: string): string {
 /** True when two periods are the same dates. */
 export function samePeriod(a: Period | null, b: Period | null): boolean {
   return a !== null && b !== null && a.from === b.from && a.to === b.to;
+}
+
+/** The key under which the Resultado leaves the period to filter in the state of the entry it opens in the Histórico. */
+export const HISTORY_PERIOD_STATE = "historyPeriod";
+
+/** The key under which the Histórico leaves the period to read in the state of the entry it opens in the Resultado. */
+export const RESULT_PERIOD_STATE = "resultPeriod";
+
+/** A period taken from a navigation state: both ends real days in order, within the Resultado's limit; null otherwise. */
+export function periodFromState(value: unknown): Period | null {
+  if (typeof value !== "object" || value === null) {
+    return null;
+  }
+  const from: unknown = Reflect.get(value, "from");
+  const to: unknown = Reflect.get(value, "to");
+  return typeof from === "string" &&
+    typeof to === "string" &&
+    rangeProblem(from, to) === null
+    ? { from, to }
+    : null;
+}
+
+export function presetOfPeriod(period: Period, today: string): PeriodPreset {
+  return (
+    PRESETS.find(
+      (preset) =>
+        preset !== "custom" &&
+        samePeriod(presetPeriod(preset, today, null), period)
+    ) ?? "custom"
+  );
+}
+
+/** The ends of a period as the Histórico's pill says them ("01/10 a 14/10"), with the year when they are not both in the year of `today`. */
+export function periodRangeLabel(period: Period, today: string): string {
+  return formatRange(period, today);
 }

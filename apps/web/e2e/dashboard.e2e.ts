@@ -2351,10 +2351,17 @@ const rowStep = (chart: Locator) =>
     return step;
   });
 
+/** Where the strip of KPI cards ends: the sales card is a line taller under the comparison chip, and that moves what is below. */
+async function stripBottom(page: Page): Promise<number> {
+  const strip = await placeOf(page.locator("[data-kpi-row]").first());
+  return strip.top + strip.height;
+}
+
 async function chartPlaces(page: Page) {
   await settled(page);
   const chart = chartRegion(page);
   return {
+    stripBottom: await stripBottom(page),
     card: await placeOf(chart),
     rowStep: await rowStep(chart),
     next: await placeOf(chain(page)),
@@ -2372,8 +2379,12 @@ function expectSamePlaces(after: ChartPlaces, before: ChartPlaces) {
       `altura de ${key}`
     ).toBeLessThanOrEqual(1);
     expect(
-      Math.abs(after[key].top - before[key].top),
-      `topo de ${key}`
+      Math.abs(
+        after[key].top -
+          after.stripBottom -
+          (before[key].top - before.stripBottom)
+      ),
+      `topo de ${key} a partir da faixa de KPIs`
     ).toBeLessThanOrEqual(1);
   }
 }
@@ -3068,6 +3079,16 @@ async function measureStrip(page: Page) {
       .filter((value) => value.scrollWidth > value.clientWidth)
       .map((value) => value.textContent),
     height: strip.getBoundingClientRect().height,
+    linkLine: (() => {
+      const row = strip.querySelector("[data-kpi=sales] [data-kpi-note-row]");
+      return row
+        ? Math.max(
+            0,
+            row.getBoundingClientRect().height -
+              Number.parseFloat(getComputedStyle(row).minHeight)
+          )
+        : 0;
+    })(),
     warned: strip.querySelector("[data-kpi-notice]") !== null,
   }));
 }
@@ -3116,7 +3137,10 @@ function expectSameStripHeight(measured: Measured, width: number) {
   const heights = Object.fromEntries(
     Object.entries(measured)
       .filter(([, run]) => run.states[width]?.warned === false)
-      .map(([name, run]) => [name, run.states[width]?.height ?? 0])
+      .map(([name, run]) => [
+        name,
+        (run.states[width]?.height ?? 0) - (run.states[width]?.linkLine ?? 0),
+      ])
   );
   const values = Object.values(heights);
   expect(values.length, `${width} px: estados sem aviso`).toBeGreaterThan(0);
@@ -3125,6 +3149,12 @@ function expectSameStripHeight(measured: Measured, width: number) {
     `${width} px: ${JSON.stringify(heights)}`
   ).toBeLessThanOrEqual(1);
   const rest = Math.max(...values);
+  for (const [name, run] of Object.entries(measured)) {
+    expect(
+      run.states[width]?.linkLine ?? 0,
+      `${name} a ${width} px: o cartão de vendas acrescenta no máximo uma linha de apoio sob o chip`
+    ).toBeLessThanOrEqual(17);
+  }
   for (const [name, run] of Object.entries(measured)) {
     const state = run.states[width];
     if (state?.warned) {

@@ -9,7 +9,10 @@ import {
   monthName,
   PRESET_LABELS,
   PRESETS,
+  periodFromState,
+  periodRangeLabel,
   periodText,
+  presetOfPeriod,
   presetPeriod,
   rangeMessage,
   rangeProblem,
@@ -251,5 +254,54 @@ describe("o mês inteiro (AC-B)", () => {
     expect(wholeMonthOf({ from: "2026-10-12", to: "2026-11-10" })).toBeNull();
     expect(wholeMonthOf({ from: "2026-01-01", to: "2026-12-31" })).toBeNull();
     expect(wholeMonthOf(null)).toBeNull();
+  });
+});
+
+describe("the period that travels in the navigation state", () => {
+  it("takes a whole range within a year and nothing else", () => {
+    expect(periodFromState({ from: "2026-10-01", to: "2026-10-14" })).toEqual({
+      from: "2026-10-01",
+      to: "2026-10-14",
+    });
+    for (const value of [
+      undefined,
+      null,
+      "2026-10-01",
+      { from: "2026-10-01" },
+      { from: 1, to: 2 },
+      { from: "2026-10-14", to: "2026-10-01" },
+      { from: "2026-13-01", to: "2026-13-02" },
+      { from: "2025-01-01", to: "2026-10-14" },
+    ]) {
+      expect(periodFromState(value), JSON.stringify(value)).toBeNull();
+    }
+  });
+
+  it("finds the preset that reads exactly those days, or Período", () => {
+    expect(
+      presetOfPeriod({ from: "2026-10-01", to: "2026-10-31" }, "2026-10-14")
+    ).toBe("this-month");
+    expect(
+      presetOfPeriod({ from: "2026-09-01", to: "2026-09-30" }, "2026-10-14")
+    ).toBe("last-month");
+    expect(
+      presetOfPeriod({ from: "2026-10-01", to: "2026-10-14" }, "2026-10-14")
+    ).toBe("custom");
+  });
+
+  it("says the ends as the pill does: no year only inside the year of today", () => {
+    const today = "2026-10-14";
+    expect(
+      periodRangeLabel({ from: "2026-10-01", to: "2026-10-14" }, today)
+    ).toBe("01/10 a 14/10");
+    expect(
+      periodRangeLabel({ from: "2025-10-01", to: "2025-10-14" }, today)
+    ).toBe("01/10/2025 a 14/10/2025");
+    expect(
+      periodRangeLabel({ from: "2025-11-12", to: "2026-11-12" }, today)
+    ).toBe("12/11/2025 a 12/11/2026");
+    expect(
+      periodRangeLabel({ from: "2025-10-14", to: "2025-10-14" }, today)
+    ).toBe("14/10/2025");
   });
 });
