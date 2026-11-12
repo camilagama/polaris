@@ -64,10 +64,41 @@ describe("sortedOutboxPolicies", () => {
     expect(sortedOutboxPolicies(regranted)).not.toEqual(sortedExpected());
   });
 
+  it("refuses a policy that is RESTRICTIVE with the same name, command and role, whichever it is", () => {
+    for (const row of expected()) {
+      const restrictive = expected().map((other) =>
+        other.name === row.name
+          ? { ...other, kind: "RESTRICTIVE" as const }
+          : other
+      );
+      expect(sortedOutboxPolicies(restrictive)).not.toEqual(sortedExpected());
+    }
+  });
+
+  it("refuses a RESTRICTIVE policy added as an extra row beside the one of the same name, command and role", () => {
+    const [first] = expected();
+    if (!first) {
+      throw new Error("the expected list is empty");
+    }
+    const beside = [...expected(), { ...first, kind: "RESTRICTIVE" as const }];
+    expect(sortedOutboxPolicies(beside)).not.toEqual(sortedExpected());
+  });
+
+  it("holds only PERMISSIVE policies, as the migrations create them", () => {
+    expect(new Set(expected().map((row) => row.kind))).toEqual(
+      new Set(["PERMISSIVE"])
+    );
+  });
+
   it("refuses an extra policy and a missing one", () => {
     const extra = [
       ...expected(),
-      { cmd: "INSERT", name: "event_outbox_extra", roles: [runtime] },
+      {
+        cmd: "INSERT",
+        kind: "PERMISSIVE" as const,
+        name: "event_outbox_extra",
+        roles: [runtime],
+      },
     ];
     expect(sortedOutboxPolicies(extra)).not.toEqual(sortedExpected());
     expect(sortedOutboxPolicies(expected().slice(1))).not.toEqual(
