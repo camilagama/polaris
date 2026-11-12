@@ -76,6 +76,21 @@ async function closeMenu(page: Page) {
   await expect(page.locator("[data-base-ui-inert]")).toHaveCount(0);
 }
 
+/**
+ * The menu opens a frame after the click that asks for it: the trigger says `aria-expanded` and the popup is
+ * mounted in that frame, not in the click. Two frames, the one that renders it and one more, leave the page in
+ * the state the click ended in; before that it still shows "closed" and an assertion can pass just before the
+ * menu appears.
+ */
+async function afterMenuRenders(page: Page) {
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) => {
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+      })
+  );
+}
+
 /** The name of a row, which opens the form of the customer or the product; locked, it says so by `aria-disabled`. */
 const rowButton = (page: Page, name: string) =>
   page.getByRole("button", { exact: true, name: `Editar ${name}` });
@@ -274,10 +289,11 @@ for (const reducedMotion of ["no-preference", "reduce"] as const) {
     await expect(trigger).toHaveAttribute("aria-expanded", "true");
     await page.keyboard.press("Escape");
     await trigger.click();
-    // the trigger, not only the popup, says it is closed: a menu the click is still opening has no popup yet,
-    // so "no menu" alone can pass just before it appears
+    // the trigger, not only the popup, says it is closed, and only once the click has rendered its result: an
+    // Escape sent before the menu opened is lost, and the next round of the block sends it again
     await expect(async () => {
       await page.keyboard.press("Escape");
+      await afterMenuRenders(page);
       await expect(trigger).toHaveAttribute("aria-expanded", "false", {
         timeout: 1000,
       });
