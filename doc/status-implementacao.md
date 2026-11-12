@@ -3385,6 +3385,15 @@ Origem: achado B do Diego no Pixel 6 (28/10): a venda montada em Vender sumia ao
 | Gate (AC-7a.1 a AC-7a.5) | Em revisão | `activation-candidates` estendido (só acrescenta casos): privilégios do papel novo, quem executa, logins de tenant e de cobrança recusados, tabela de casos (devido, tentado, enviado, pulado, falho, não verificado, co-dona, dona que saiu, membro que não é dono, sucessora da fundadora, outra loja, aviso inexistente), a RLS sozinha e as políticas em `"user"`. Ajustados ao papel novo: `auth-tables-row-security`, `tenant-context` e o piso `MIN_OWNER_ROLES` (21, também em `scripts/backup/restore-lib.mjs`, no ADR 0093 e nos runbooks). |
 | Fora deste PR | Pendente | A varredura no Worker (7b), o consumidor e o envio (7c), o descadastro (8a) e a parada por reclamação (9). Nada liga e-mail. |
 
+### Avisos de ativação: o descadastro, parte do banco (t1061; corte ativacao-fase1b, Item 8a-1; migration 0129, número provisório)
+
+| Item | Estado | Detalhe |
+| --- | --- | --- |
+| Função (AC-8a.5) | Em revisão | `activation_record_opt_out(p_user text)`: `SECURITY DEFINER` de `polaris_activation_notice_owner`, `search_path` fixo, sem SQL dinâmico, `INSERT … ON CONFLICT DO NOTHING` em `email_opt_outs`, devolve `void`; pessoa inexistente (recusa da chave estrangeira engolida) ou nula termina sem erro e sem linha; `EXECUTE` só a `polaris_billing_runtime`. |
+| Privilégios (AC-8a.5, AC-8a.9) | Em revisão | Sai o `SELECT` do runtime de cobrança em `email_opt_outs` (nenhum código o lia); nenhum runtime nem `PUBLIC` tem privilégio de tabela ou de coluna nela. O papel da série ganha `INSERT (user_id)` e a política de inserção. O fim da migration confere. |
+| Gate (AC-8a.4, AC-8a.5, AC-8a.9) | Em revisão | `activation-candidates` estendido (só acrescenta casos): definição da função, executores papel a papel e ACL, privilégios de tabela e de coluna de todo runtime, logins de cobrança, tenant e autenticação recusados, idempotência, pessoa inexistente e nula, e a função de candidatos sem passo da pessoa nas duas lojas com a flag ligada e desligada. |
+| Fora deste PR | Pendente | A rota, o token, a página, o limite por IP e o gerador do link (8a-2); o `skipped: opted_out` do aviso já devido e a releitura da preferência no envio por função do papel da série (7c). |
+
 ### UI de 11/11: Mais vendidos com cinco itens e a miniatura (t1038; sem migration)
 
 | Item | Status | Observação |
