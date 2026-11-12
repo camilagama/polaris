@@ -30,3 +30,89 @@ export const FORM_NOTICE_CLASS =
 
 /** The `<form>` that holds the body and the footer, so Enter submits and the footer button is the submit button. */
 export const FORM_ELEMENT_CLASS = "flex min-h-0 flex-1 flex-col";
+
+/**
+ * The small dialog (a question, a confirmation): centred, and as tall as the part of the window the person can see
+ * minus 2 rem (1 rem of margin on each side), scrolling as a whole (text and buttons together, no fixed footer) when it does not fit: with a
+ * large font the buttons grow with the text and a fixed footer would take the window. `--dialog-height` and
+ * `--dialog-center` are the ones `dialog.tsx` sets from the visual viewport; without them the box is centred in the
+ * window and as tall as `100dvh`, so a dialog that fits is placed as it always was.
+ */
+export const SMALL_POPUP_CLASS =
+  "fixed top-[var(--dialog-center,50%)] left-1/2 z-50 grid max-h-[calc(var(--dialog-height,100dvh)-2rem)] w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 overflow-y-auto overflow-x-hidden overscroll-contain rounded-xl bg-popover p-4 text-popover-foreground text-sm shadow-lg outline-none ring-1 ring-foreground/[0.06] sm:max-w-sm";
+
+export const SMALL_FOOTER_CLASS =
+  "-mx-4 -mb-4 flex-col-reverse gap-2 rounded-b-xl border-t bg-muted/50 p-4 sm:flex-row sm:justify-end";
+
+/**
+ * Keeps a dialog on the part of the screen the person can see. With the keyboard open the layout viewport does not
+ * shrink (iOS, and Chrome for Android since 108), so a box sized by `dvh` would put its footer, or the button that
+ * ends a small dialog, under the keyboard; the box follows the visual viewport instead, through the custom properties
+ * above. Returns the cleanup of the listeners.
+ */
+export function followVisualViewport(
+  popup: HTMLElement | null
+): (() => void) | undefined {
+  if (!popup) {
+    return;
+  }
+  const stopTopHold = openAtTop(popup);
+  const viewport = window.visualViewport;
+  if (!viewport) {
+    return stopTopHold;
+  }
+  const sync = () => {
+    popup.style.setProperty("--dialog-height", `${viewport.height}px`);
+    popup.style.setProperty("--dialog-top", `${viewport.offsetTop}px`);
+    popup.style.setProperty(
+      "--dialog-center",
+      `${viewport.offsetTop + viewport.height / 2}px`
+    );
+  };
+  sync();
+  viewport.addEventListener("resize", sync);
+  viewport.addEventListener("scroll", sync);
+  return () => {
+    stopTopHold();
+    viewport.removeEventListener("resize", sync);
+    viewport.removeEventListener("scroll", sync);
+  };
+}
+
+const TOUCHED_EVENTS = ["keydown", "pointerdown", "touchstart", "wheel"];
+
+const TEXT_CONTROL = "input, textarea, select, [contenteditable]";
+
+/**
+ * A dialog that scrolls as a whole must open showing its first line: the initial focus goes to the first control, and
+ * when that control is a footer button below the fold the browser scrolls it into view, so the question would open
+ * out of sight (the focus inside a field near the top does not do that). Until the person touches the dialog (key,
+ * pointer, touch or wheel) any scroll is put back at the top in the same frame, before it is painted, unless the focus
+ * is in a field (it has to be in view, the keyboard of a phone opens on it); after that the focus may scroll to the
+ * control as usual, so Tab still reveals what it reaches.
+ */
+function openAtTop(popup: HTMLElement): () => void {
+  let touched = false;
+  const markTouched = () => {
+    touched = true;
+  };
+  const putBack = () => {
+    if (touched || popup.scrollTop === 0) {
+      return;
+    }
+    if (popup.ownerDocument.activeElement?.matches(TEXT_CONTROL)) {
+      return;
+    }
+    popup.scrollTop = 0;
+  };
+  for (const name of TOUCHED_EVENTS) {
+    popup.addEventListener(name, markTouched, { capture: true, passive: true });
+  }
+  popup.addEventListener("scroll", putBack, { passive: true });
+  return () => {
+    for (const name of TOUCHED_EVENTS) {
+      popup.removeEventListener(name, markTouched, { capture: true });
+    }
+    popup.removeEventListener("scroll", putBack);
+  };
+}
