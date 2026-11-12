@@ -68,12 +68,15 @@ export function withinActivationSendHours(now: Date): boolean {
 
 // what the provider writes around an address ("Nome <a@b.com>"): only what is inside the last angle brackets counts
 const ANGLE_ADDRESS = /<([^<>]*)>\s*$/;
-const PLAIN_ADDRESS = /^[^\s@<>"(),;:]+@[^\s@<>"(),;:]+\.[^\s@<>"(),;:]+$/;
+// printable ASCII only: a Unicode or IDN address could come back from the provider in another form (punycode, another
+// normalization) and miss its suppression, so it is not sent to
+const PLAIN_ADDRESS =
+  /^[!#-'*+\-./0-9=?A-Z^-~]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+$/;
 
 /**
  * The one form of an address for the HMAC of the suppression (ADR 0106, D8): the send and the provider's webhook must
  * reach the same bytes. The address alone (no display name), trimmed, in lower case; null for a text that is not one
- * address.
+ * address or not in printable ASCII.
  */
 export function normalizeActivationAddress(raw: string): string | null {
   const inner = ANGLE_ADDRESS.exec(raw)?.[1] ?? raw;

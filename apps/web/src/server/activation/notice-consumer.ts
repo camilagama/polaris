@@ -73,33 +73,32 @@ export interface ActivationSuppressionSecrets {
   previous?: string | undefined;
 }
 
+/** The other secrets of the Worker the suppression's must never equal: one list, every secret binding of the Worker. */
+const OTHER_SECRETS = [
+  "ASAAS_API_KEY",
+  "ASAAS_WEBHOOK_TOKEN",
+  "ASAAS_WEBHOOK_TOKEN_NEXT",
+  "AUTH_PASSWORD_PEPPER",
+  "BETTER_AUTH_SECRET",
+  "BILLING_PAYER_KEY",
+  "GOOGLE_CLIENT_SECRET",
+  "OFFLINE_LEASE_PREVIOUS_SECRET",
+  "OFFLINE_LEASE_SECRET",
+  "RESEND_API_KEY",
+  "SYNC_PAYLOAD_HASH_PREVIOUS_SECRET",
+  "SYNC_PAYLOAD_HASH_SECRET",
+  "TURNSTILE_SECRET_KEY",
+  "UNSUBSCRIBE_TOKEN_PREVIOUS_SECRET",
+  "UNSUBSCRIBE_TOKEN_SECRET",
+  "WOOVI_APP_ID",
+] as const;
+
 type SecretBindings = Pick<
   WorkerBindings,
   | "ACTIVATION_SUPPRESSION_HMAC_SECRET"
   | "ACTIVATION_SUPPRESSION_HMAC_SECRET_PREVIOUS"
-  | "AUTH_PASSWORD_PEPPER"
-  | "BETTER_AUTH_SECRET"
-  | "BILLING_PAYER_KEY"
-  | "OFFLINE_LEASE_PREVIOUS_SECRET"
-  | "OFFLINE_LEASE_SECRET"
-  | "SYNC_PAYLOAD_HASH_PREVIOUS_SECRET"
-  | "SYNC_PAYLOAD_HASH_SECRET"
-  | "UNSUBSCRIBE_TOKEN_PREVIOUS_SECRET"
-  | "UNSUBSCRIBE_TOKEN_SECRET"
+  | (typeof OTHER_SECRETS)[number]
 >;
-
-/** The other secrets of the Worker the suppression's must never equal: one list. */
-const OTHER_SECRETS = [
-  "AUTH_PASSWORD_PEPPER",
-  "BETTER_AUTH_SECRET",
-  "BILLING_PAYER_KEY",
-  "OFFLINE_LEASE_PREVIOUS_SECRET",
-  "OFFLINE_LEASE_SECRET",
-  "SYNC_PAYLOAD_HASH_PREVIOUS_SECRET",
-  "SYNC_PAYLOAD_HASH_SECRET",
-  "UNSUBSCRIBE_TOKEN_PREVIOUS_SECRET",
-  "UNSUBSCRIBE_TOKEN_SECRET",
-] as const satisfies readonly (keyof SecretBindings)[];
 
 /**
  * The secrets of the suppression's HMAC, or undefined when the current one is missing, shorter than 32 characters or
@@ -359,6 +358,12 @@ export async function handleActivationNotice(
     return await skip(reread.skip);
   }
   const { step } = reread;
+  // the re-read already answers state_changed for an a1 of a store with a product; this keeps the Worker from rendering
+  // a model that does not exist if it ever did not
+  const variant = activationNoticeVariant(step, reread.hasProduct);
+  if (!variant) {
+    return await skip("state_changed", step);
+  }
   const config = dependencies.email;
   if (!config) {
     // the switch on with a sending that cannot happen (or before the stop on a complaint exists): an incident
@@ -384,11 +389,16 @@ export async function handleActivationNotice(
     return await skip("delivery_window_passed", step);
   }
   if (!withinActivationSendHours(now)) {
+    if (claimed.firstAttemptedAt) {
+      // a retry of a send that failed close to 20:00: the tip is dropped, and a failure of the provider should be seen
+      logger.warn("activation_notice_retry_outside_send_hours", {
+        ...fields,
+        outcome: "skipped",
+        reason: "outside_send_hours",
+        step,
+      });
+    }
     return await skip("outside_send_hours", step);
-  }
-  const variant = activationNoticeVariant(step, reread.hasProduct);
-  if (!variant) {
-    return await skip("state_changed", step);
   }
   const address = await dependencies.recipients.recipient(
     noticeId,
@@ -410,7 +420,8 @@ export async function handleActivationNotice(
     organizationId,
     step,
     store: reread.store,
-    to: address,
+    // the address the suppression was checked for, never another text the provider could read differently
+    to: normalized,
     userId: claimed.userId,
     variant,
   });

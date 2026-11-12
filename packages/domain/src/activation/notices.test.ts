@@ -74,10 +74,22 @@ describe("the address the suppression is keyed by", () => {
     expect(normalizeActivationAddress(raw)).toBe("a@b.com");
   });
 
-  it.each(["", "  ", "Nome", "a@b", "a b@c.com", "<>", "a@b.com, c@d.com"])(
-    "%j is no address",
-    (raw) => {
-      expect(normalizeActivationAddress(raw)).toBeNull();
-    }
-  );
+  it("takes only the last angle brackets, the one form the send and the webhook share", () => {
+    expect(normalizeActivationAddress("x <a@b.com> <C@D.com>")).toBe("c@d.com");
+  });
+
+  it.each([
+    "",
+    "  ",
+    "Nome",
+    "a@b",
+    "a b@c.com",
+    "<>",
+    "a@b.com, c@d.com",
+    "ana@exâmplo.com",
+    "ãna@b.com",
+    "a@xn--exmplo-tta.com.",
+  ])("%j is no address", (raw) => {
+    expect(normalizeActivationAddress(raw)).toBeNull();
+  });
 });

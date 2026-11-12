@@ -6,6 +6,7 @@ import type {
 import { ACTIVATION_NOTICE_REREAD_REASONS } from "@polaris/domain/activation/notices";
 import { outboxIdempotencyKey } from "@polaris/domain/events/outbox";
 import type { QueueEnvelope } from "@polaris/domain/events/queue-envelope";
+import { readFileSync } from "node:fs";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type {
   ClosureNoticeSender,
@@ -31,6 +32,8 @@ const STORE_NAME = "Loja da Ana";
 const ADDRESS = "ana@exemplo.com";
 const NOW = new Date("2026-11-12T17:00:00.000Z");
 const HOUR_MS = 3_600_000;
+const STRING_BINDING = /^\s+([A-Z][A-Z0-9_]+)\?: string;/gm;
+const SECRET_BINDING = /SECRET|PEPPER|TOKEN|API_KEY|PAYER_KEY|APP_ID/;
 
 const SECRETS = {
   ACTIVATION_SUPPRESSION_HMAC_SECRET: "suppression-secret-0123456789-abcdefgh",
@@ -467,6 +470,40 @@ describe("the consumer of an activation notice: the configuration", () => {
     ).toBeNull();
   });
 
+  it("is null when the suppression's secret equals any secret binding the Worker declares, so a new one fails here until it is listed", () => {
+    const declared = readFileSync(
+      new URL("../environment.ts", import.meta.url),
+      "utf8"
+    );
+    const secretNames = [
+      ...declared.matchAll(STRING_BINDING),
+    ]
+      .map((match) => match[1] ?? "")
+      .filter(
+        (name) =>
+          SECRET_BINDING.test(name) &&
+          !name.startsWith("ACTIVATION_SUPPRESSION_HMAC_SECRET")
+      );
+    expect(secretNames.length).toBeGreaterThanOrEqual(16);
+    const shared = "a-value-two-secrets-share-0123456789-abcdef";
+    for (const name of secretNames) {
+      expect(
+        activationNoticeEmailConfig(bindingsWith({ [name]: shared }), true),
+        `${name} set apart from the suppression's`
+      ).not.toBeNull();
+      expect(
+        activationNoticeEmailConfig(
+          bindingsWith({
+            [name]: shared,
+            ACTIVATION_SUPPRESSION_HMAC_SECRET: shared,
+          }),
+          true
+        ),
+        `${name} equal to the suppression's`
+      ).toBeNull();
+    }
+  });
+
   it("keeps only the current secret when the previous one is the same", () => {
     const previous = SECRETS.ACTIVATION_SUPPRESSION_HMAC_SECRET;
     expect(
@@ -535,6 +572,50 @@ describe("the consumer of an activation notice: the hours", () => {
       const fixture = await skippedWith({ now }, "outside_send_hours");
       expect(fixture.recipients.recipient).not.toHaveBeenCalled();
     }
+  });
+});
+
+describe("the consumer of an activation notice: a late retry", () => {
+  it("warns when a notice already tried falls after 20:00, so a failure of the provider near the hour is seen", async () => {
+    const spies = spyConsole();
+    await skippedWith(
+      {
+        claim: {
+          firstAttemptedAt: new Date("2026-11-12T22:50:00.000Z"),
+          userId: USER,
+        },
+        now: new Date("2026-11-12T23:05:00.000Z"),
+      },
+      "outside_send_hours"
+    );
+    expect(JSON.stringify(spies.warn.mock.calls)).toContain(
+      "activation_notice_retry_outside_send_hours"
+    );
+  });
+});
+
+describe("the consumer of an activation notice: the address sent to", () => {
+  it("sends to the normalized address, the one the suppression was checked for", async () => {
+    spyConsole();
+    const { dependencies, notices, send } = setup({
+      address: "Ana <ANA@Exemplo.com> <outra@exemplo.com>",
+    });
+
+    expect(await handleActivationNotice(dependencies, envelope())).toBe("sent");
+
+    expect(send.mock.calls[0]?.[0].to).toBe("outra@exemplo.com");
+    const [hmacs] = notices.isSuppressed.mock.calls[0] ?? [];
+    expect(hmacs).toEqual([
+      await activationSuppressionHmac(
+        SECRETS.ACTIVATION_SUPPRESSION_HMAC_SECRET,
+        "outra@exemplo.com"
+      ),
+    ]);
+  });
+
+  it("skips as no_recipient an address outside printable ASCII", async () => {
+    spyConsole();
+    await skippedWith({ address: "ana@exâmplo.com" }, "no_recipient");
   });
 });
 
