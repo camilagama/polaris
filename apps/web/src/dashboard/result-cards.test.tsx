@@ -122,6 +122,10 @@ function words(markup: string): string {
   return out.replace(/\s+/g, " ").trim();
 }
 
+/** The figure of a tile: its size follows the width of its own area, never the length of the amount. */
+const TILE_FIGURE =
+  /data-kpi-value="" style="font-size:max\(0\.875rem, min\(var\(--text-value-lg\), [\d.]+cqw\)\)"/;
+
 const ALL = Array.from({ length: 25 }, (_, index) => index + 1);
 
 /** The same summary with the server's `quality.cogsCoverage`: the screen reads the counts, never this field. */
@@ -325,9 +329,7 @@ describe("the strip of tiles and its (i)", () => {
       "result-kpi-sales",
       "result-kpi-ticket",
     ]) {
-      expect(card(markup, id)).toMatch(
-        /data-kpi-value="" style="font-size:max\(0\.875rem, min\(var\(--text-value-lg\), [\d.]+cqw\)\)"/
-      );
+      expect(card(markup, id)).toMatch(TILE_FIGURE);
     }
     expect(card(markup, "result-kpi-margin")).not.toContain("cqw");
   });
