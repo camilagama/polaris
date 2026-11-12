@@ -11,6 +11,8 @@
 --   person up first: the owner of the series sees only the people of the last 14 days' stores (its policy on `"user"`
 --   of 0124), so a lookup would answer "does not exist" for an older account, or need a wider policy on `"user"`. The
 --   foreign key is checked by PostgreSQL as the owner of `"user"`, past row security, and tells nothing to the caller.
+--   Only that refusal is swallowed: a malformed ID (the table's check) still fails, the same for every account, and the
+--   caller passes only the ID its token carries.
 -- * No runtime reads or writes the table directly any more: the SELECT the billing runtime got in 0124 is revoked (no
 --   Worker code reads it), so the page can only call the function, and whoever re-reads the opt-out when sending goes
 --   through a function of the owner of the series too. The candidates already leave out a person who opted out. The
@@ -52,7 +54,8 @@ REVOKE CREATE ON SCHEMA public FROM polaris_activation_notice_owner;--> statemen
 -- 0124 and 0126 plus INSERT of `email_opt_outs.user_id`, still no table privilege nor CREATE, and owns exactly its two
 -- functions; only the billing runtime executes the new one; of PUBLIC and the `polaris_*` groups only the owner of the
 -- series reaches `email_opt_outs` (none of the runtimes, not even one column; the purge needs none, the account's
--- foreign key cascades); and the migrator keeps no SET or INHERIT on the owner.
+-- foreign key cascades); and no role, the migrator included, can SET or INHERIT the owner, which would write the table
+-- past the function.
 DO $end_state$
 DECLARE
   held text[];
@@ -100,11 +103,15 @@ BEGIN
   END IF;
   IF EXISTS (
     SELECT 1 FROM pg_catalog.pg_auth_members AS m
-     WHERE m.member = (SELECT r.oid FROM pg_catalog.pg_roles AS r WHERE r.rolname = CURRENT_USER)
-       AND m.roleid = 'polaris_activation_notice_owner'::regrole
+     WHERE m.roleid = 'polaris_activation_notice_owner'::regrole
        AND (m.set_option OR m.inherit_option)
   ) THEN
-    RAISE EXCEPTION 'the migrator kept SET or INHERIT on the owner of the series';
+    RAISE EXCEPTION 'a role, the migrator included, can SET or INHERIT the owner of the series';
+  END IF;
+  IF EXISTS (SELECT 1 FROM pg_catalog.pg_roles
+              WHERE rolname = 'polaris_activation_notice_owner'
+                AND (rolcanlogin OR rolsuper OR rolbypassrls OR rolcreaterole OR rolcreatedb OR rolreplication OR rolinherit)) THEN
+    RAISE EXCEPTION 'polaris_activation_notice_owner has an attribute it must not have';
   END IF;
 END
 $end_state$;--> statement-breakpoint

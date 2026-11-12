@@ -76,7 +76,10 @@ const HOUR = 60 * MINUTE;
 const DAY = 24 * HOUR;
 const DYNAMIC_SQL = /\bEXECUTE\b|\bformat\s*\(/i;
 const OPT_OUT_INSERT =
-  /INSERT INTO public\.email_opt_outs \(user_id\) VALUES \(p_user\) ON CONFLICT \(user_id\) DO NOTHING/;
+  /INSERT INTO public\.email_opt_outs \(user_id\) VALUES \(p_user\)/;
+const OPT_OUT_NO_UPDATE = /ON CONFLICT \(user_id\) DO NOTHING/;
+const OPT_OUT_NARROW_CATCH = /EXCEPTION\s+WHEN\s+foreign_key_violation\s+THEN/;
+const OTHERS = /\bOTHERS\b/i;
 const READ_OR_CHANGE = /\bSELECT\b|\bUPDATE\b|\bDELETE\b|\bRETURNING\b/i;
 const issuer =
   "https://polaris-activation-candidates-gate.cloudflareaccess.com";
@@ -1502,10 +1505,17 @@ async function run() {
     assert.doesNotMatch(optOutFn.source, DYNAMIC_SQL, "no dynamic SQL");
     assert.equal(optOutFn.volatility, "v", "volatile: it writes");
     assert.equal(optOutFn.returns, "void", "it answers nothing");
+    assert.match(optOutFn.source, OPT_OUT_INSERT, "it inserts the person");
+    assert.match(optOutFn.source, OPT_OUT_NO_UPDATE, "a repeat does nothing");
     assert.match(
       optOutFn.source,
-      OPT_OUT_INSERT,
-      "it only inserts, and a repeat does nothing"
+      OPT_OUT_NARROW_CATCH,
+      "it swallows the refusal of the foreign key"
+    );
+    assert.doesNotMatch(
+      optOutFn.source,
+      OTHERS,
+      "and no other error: a malformed person or a missing grant still fails"
     );
     assert.doesNotMatch(
       optOutFn.source,
@@ -1608,6 +1618,37 @@ async function run() {
       ["user_id:INSERT", "user_id:SELECT"],
       "the owner of the series inserts and reads only the person, and never updates nor deletes"
     );
+    const optOutAclRoles = await owner.pool.query<{ role: string }>(
+      `SELECT DISTINCT a.grantee::regrole::text AS role
+         FROM pg_catalog.pg_class AS c, pg_catalog.aclexplode(c.relacl) AS a
+        WHERE c.oid = 'public.email_opt_outs'::regclass AND a.grantee <> c.relowner
+        UNION
+       SELECT DISTINCT a.grantee::regrole::text
+         FROM pg_catalog.pg_attribute AS t, pg_catalog.aclexplode(t.attacl) AS a
+        WHERE t.attrelid = 'public.email_opt_outs'::regclass AND t.attacl IS NOT NULL`
+    );
+    assert.deepEqual(
+      optOutAclRoles.rows.map((row) => row.role).sort(),
+      [NOTICE_OWNER],
+      "the ACL of email_opt_outs, by table and by column, names no one but the owner of the series (no login role, no PUBLIC)"
+    );
+    const ownerMembership = await owner.pool.query<{
+      attributes: boolean;
+      members: string;
+      memberOf: string;
+    }>(
+      `SELECT (SELECT count(*) FROM pg_catalog.pg_auth_members AS m
+                WHERE m.roleid = $1::regrole AND (m.set_option OR m.inherit_option))::text AS members,
+              (SELECT count(*) FROM pg_catalog.pg_auth_members AS m WHERE m.member = $1::regrole)::text AS "memberOf",
+              (SELECT rolcanlogin OR rolsuper OR rolbypassrls OR rolcreaterole OR rolcreatedb OR rolreplication OR rolinherit
+                 FROM pg_catalog.pg_roles WHERE oid = $1::regrole) AS attributes`,
+      [NOTICE_OWNER]
+    );
+    assert.deepEqual(
+      ownerMembership.rows[0],
+      { attributes: false, memberOf: "0", members: "0" },
+      "no role can SET or INHERIT the owner of the series (it would write email_opt_outs past the function), it is a member of no role, and it has no LOGIN, SUPERUSER, BYPASSRLS, CREATEROLE, CREATEDB, REPLICATION nor INHERIT"
+    );
     const optOutPolicies = await owner.pool.query<{ entry: string }>(
       `SELECT p.policyname || ':' || p.cmd || ':' || pg_catalog.array_to_string(p.roles, ',') AS entry
          FROM pg_catalog.pg_policies AS p
@@ -1648,6 +1689,14 @@ async function run() {
         [{ activation_record_opt_out: "" }],
         "a billing login records a person that does not exist with no error and no answer"
       );
+      await expectSqlState(
+        () =>
+          client.query("SELECT public.activation_record_opt_out($1)", [
+            "pessoa@malformada",
+          ]),
+        "23514",
+        "a malformed person is refused by the table's check, whoever exists: only the foreign key is swallowed"
+      );
     });
     for (const [url, role] of [
       [tenantUrl, runtimeRole],
@@ -1671,7 +1720,7 @@ async function run() {
       });
     }
     tests.push(
-      "AC-8a.5 and AC-8a.9: activation_record_opt_out is SECURITY DEFINER of polaris_activation_notice_owner, volatile, with search_path pg_catalog, public, pg_temp, no dynamic SQL, returns void and only inserts (ON CONFLICT DO NOTHING, no SELECT, UPDATE, DELETE nor RETURNING in its body); has_function_privilege role by role: of PUBLIC and every polaris_* group only the billing runtime executes it (and its owner), and its ACL names no one else; has_table_privilege and has_column_privilege (user_id, opted_out_at) are false for SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES and TRIGGER for PUBLIC and every polaris_*_runtime; of the polaris_* groups only the owner of the series reaches the table, with INSERT and SELECT of user_id only; a billing login is refused a direct SELECT, INSERT, UPDATE and DELETE (42501) and calls the function for an unknown person with no error and no answer; a tenant and an authentication login are refused the function and the table (42501)"
+      "AC-8a.5 and AC-8a.9: activation_record_opt_out is SECURITY DEFINER of polaris_activation_notice_owner, volatile, with search_path pg_catalog, public, pg_temp, no dynamic SQL, returns void and only inserts (ON CONFLICT DO NOTHING, no SELECT, UPDATE, DELETE nor RETURNING in its body); has_function_privilege role by role: of PUBLIC and every polaris_* group only the billing runtime executes it (and its owner), and its ACL names no one else; has_table_privilege and has_column_privilege (user_id, opted_out_at) are false for SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES and TRIGGER for PUBLIC and every polaris_*_runtime; of the polaris_* groups only the owner of the series reaches the table, with INSERT and SELECT of user_id only; the ACL of the table names only the owner of the series; no role can SET or INHERIT that owner, which has no login nor bypass; a billing login is refused a direct SELECT, INSERT, UPDATE and DELETE (42501), calls the function for an unknown person with no error and no answer, and gets 23514 for a malformed person (only the foreign key is swallowed); a tenant and an authentication login are refused the function and the table (42501)"
     );
 
     await scenario(async (client) => {
@@ -1745,82 +1794,104 @@ async function run() {
       "activation_record_opt_out called by the billing runtime: two calls are one row; a repeat keeps the first instant; a person that does not exist and a null person leave no row, raise nothing and leave the caller's transaction usable; the answer (columns and value) is the same for a new person, a repeat, an earlier opt-out, an unknown person and null"
     );
 
-    // AC-8a.4: once recorded, no notice of the person is born, in any of their stores, with the switch on or off
-    for (const enabled of [true, false]) {
+    // AC-8a.4: once recorded, no notice of the person is born, in any of their stores, with the switch on or off;
+    // a control person with the same two stores shows what the opted-out one would have got
+    const switchModes = [
+      ["on", at(ten, -30 * DAY), at(ten, -30 * DAY)],
+      ["off when recorded, then on", null, at(ten, -30 * DAY)],
+      ["turned on after the stores were created", at(ten, -25 * HOUR), null],
+    ] as const;
+    for (const [mode, whenRecorded, afterwards] of switchModes) {
       await scenario(async (client) => {
-        if (!enabled) {
-          await client.query(
-            "UPDATE public.activation_series_state SET enabled_since = NULL"
-          );
-        }
-        const control = await newStore(client, {
-          createdAt: at(ten, -30 * HOUR),
-        });
-        const first = await newStore(client, {
-          createdAt: at(ten, -30 * HOUR),
-        });
-        const second = await newStore(client, {
-          createdAt: at(ten, -28 * HOUR),
-          owner: first.userId,
-        });
-        const before = await candidates(client, ten);
-        assert.deepEqual(
-          stepsOf(before, first),
-          enabled ? ["a1:due"] : [],
-          "before the opt-out the first store of the person is a candidate while the switch is on"
-        );
-        await withGateRole(client, BILLING_RUNTIME, () =>
-          client.query("SELECT public.activation_record_opt_out($1)", [
-            first.userId,
-          ])
-        );
-        const switchOn = async () =>
+        const setSwitch = (since: Date | null) =>
           client.query(
             "UPDATE public.activation_series_state SET enabled_since = $1",
-            [at(ten, -30 * DAY)]
+            [since]
           );
-        if (!enabled) {
+        await setSwitch(whenRecorded);
+        const pairOf = async () => {
+          const first = await newStore(client, {
+            createdAt: at(ten, -30 * HOUR),
+          });
+          const second = await newStore(client, {
+            createdAt: at(ten, -28 * HOUR),
+            owner: first.userId,
+          });
+          return { first, second };
+        };
+        const control = await pairOf();
+        const opted = await pairOf();
+        const expectOwed = (steps: string[], label: string) => {
+          if (afterwards === null) {
+            assert.ok(
+              steps.length > 0 &&
+                steps.every((step) => step.endsWith(":series_off")),
+              `${label}: every step series_off (${steps.join(", ")})`
+            );
+          } else {
+            assert.deepEqual(steps, ["a1:due"], label);
+          }
+        };
+        const before = await candidates(client, ten);
+        if (whenRecorded === null) {
           assert.deepEqual(
-            await candidates(client, ten),
+            before,
             [],
             "nothing at all while the switch is off"
           );
-          await switchOn();
+        } else {
+          expectOwed(
+            stepsOf(before, opted.first),
+            `${mode}: before the opt-out the person's first store is a candidate`
+          );
+        }
+        await withGateRole(client, BILLING_RUNTIME, () =>
+          client.query("SELECT public.activation_record_opt_out($1)", [
+            opted.first.userId,
+          ])
+        );
+        if (afterwards !== null) {
+          await setSwitch(afterwards);
         }
         const after = await candidates(client, ten);
-        assert.deepEqual(
-          stepsOf(after, control),
-          ["a1:due"],
-          "the control person still gets the a1"
+        expectOwed(
+          stepsOf(after, control.first),
+          `${mode}: the control person's first store`
         );
         assert.deepEqual(
-          stepsOf(after, first),
+          stepsOf(after, opted.first),
           [],
-          "no notice for the first store"
+          `${mode}: nothing for the first store of the person who opted out`
         );
         assert.deepEqual(
-          stepsOf(after, second),
+          stepsOf(after, opted.second),
           [],
-          "no notice for the second store"
+          `${mode}: nothing for their second store`
         );
-        await client.query(
-          "DELETE FROM public.memberships WHERE organization_id = $1 AND user_id = $2",
-          [first.organizationId, first.userId]
-        );
+        for (const person of [control, opted]) {
+          await client.query(
+            "DELETE FROM public.memberships WHERE organization_id = $1 AND user_id = $2",
+            [person.first.organizationId, person.first.userId]
+          );
+        }
         const withoutFirst = await candidates(client, ten);
+        expectOwed(
+          stepsOf(withoutFirst, control.second),
+          `${mode}: the control person's second store, now their first`
+        );
         assert.deepEqual(
-          stepsOf(withoutFirst, second),
+          stepsOf(withoutFirst, opted.second),
           [],
-          "the second store, now the first of the person, still gets nothing"
+          `${mode}: the second store of the person who opted out, now their first, still gets nothing`
         );
         assert.ok(
-          !withoutFirst.some((row) => row.user_id === first.userId),
-          "no row of the person at all"
+          !withoutFirst.some((row) => row.user_id === opted.first.userId),
+          `${mode}: no row of the person who opted out at all`
         );
       });
     }
     tests.push(
-      "AC-8a.4 (the database's part): after the billing runtime records the opt-out of a person with two stores, activation_notice_candidates answers no step of that person in either store (also once the first store's membership is gone and the second becomes their first), while a control store keeps its a1; with the switch on, and with the switch off when the opt-out is recorded and turned on afterwards. Turning an already owed notice into skipped: opted_out at send time is the consumer's (7c)"
+      "AC-8a.4 (the database's part): after the billing runtime records the opt-out of a person with two stores, activation_notice_candidates answers no step of that person in either store, also once the first store's membership is gone and the second becomes their first, while a control person with the same two stores gets the a1 in the first and then in the second; with the switch on, off when the opt-out is recorded and turned on afterwards, and turned on after the stores were created (the control's steps come back series_off, the person's not at all). Turning an already owed notice into skipped: opted_out at send time is the consumer's (7c)"
     );
 
     console.log(
