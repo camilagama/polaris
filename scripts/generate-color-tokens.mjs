@@ -4,6 +4,8 @@
 //     dark;
 //   - the e-mails (most clients read neither OKLCH nor CSS variables): apps/web/src/server/email-colors.generated.ts,
 //     the light theme as sRGB hex;
+//   - the page that stops the tips e-mails (HTML of the Worker, no script, so no `.dark` class):
+//     apps/web/src/server/tips-stop/page-tokens.generated.ts, the variables it reads, light and dark;
 //   - the web app manifest (apps/web/public/manifest.webmanifest): only `background_color` and `theme_color`, the light
 //     --background as hex (a manifest holds one value, so the dark theme stays with the metas of index.html).
 // Run `bun run tokens:generate` after changing a color in theme.css. `scripts/generate-color-tokens.test.mjs` fails
@@ -15,6 +17,8 @@ const repo = new URL("../", import.meta.url);
 const THEME = "packages/ui/src/theme.css";
 export const CATALOG_OUTPUT = "apps/catalog/src/tokens.generated.css";
 export const EMAIL_OUTPUT = "apps/web/src/server/email-colors.generated.ts";
+export const PAGE_OUTPUT =
+  "apps/web/src/server/tips-stop/page-tokens.generated.ts";
 export const MANIFEST_OUTPUT = "apps/web/public/manifest.webmanifest";
 const COMMAND = "bun run tokens:generate";
 
@@ -38,6 +42,29 @@ const CATALOG_TOKENS = [
   "shadow-a",
 ];
 const CATALOG_THEME_VARIABLES = ["shadow-xs"];
+
+// What the page that stops the tips e-mails reads: the card of the entry screens and its one ink button.
+const PAGE_TOKENS = [
+  "background",
+  "foreground",
+  "card",
+  "muted-foreground",
+  "secondary",
+  "accent",
+  "border",
+  "input",
+  "ring",
+  "mark",
+  "primary",
+  "primary-foreground",
+  "btn-shine",
+  "btn-drop",
+  "card-ring",
+  "card-glow",
+  "shadow-l",
+  "shadow-c",
+  "shadow-a",
+];
 
 // Token of theme.css (light theme) -> name of the constant in the e-mail module.
 const EMAIL_TOKENS = {
@@ -135,31 +162,47 @@ function indented(indent, entries) {
     .join("\n");
 }
 
-export function renderCatalogTokens(css) {
+/** The `:root` block of `tokens` with their light values and a dark block in a media query, for a page with no `.dark`. */
+function systemThemeBlocks(css, tokens, indent) {
   const { dark, light, theme } = readTheme(css);
   const lightEntries = [
-    ...Object.entries(pick(light, CATALOG_TOKENS, ":root")),
+    ...Object.entries(pick(light, tokens, ":root")),
     ...Object.entries(pick(theme, CATALOG_THEME_VARIABLES, "@theme")),
   ];
   // Only what the dark theme overrides; the rest stays as in the light block.
-  const darkEntries = CATALOG_TOKENS.filter((name) => name in dark).map(
-    (name) => [name, dark[name]]
-  );
+  const darkEntries = tokens
+    .filter((name) => name in dark)
+    .map((name) => [name, dark[name]]);
+  return `${indent}:root {
+${indented(`${indent}  `, lightEntries)}
+${indent}}
+
+${indent}@media (prefers-color-scheme: dark) {
+${indent}  :root {
+${indented(`${indent}    `, darkEntries)}
+${indent}  }
+${indent}}
+`;
+}
+
+export function renderCatalogTokens(css) {
   return `/*
  * Generated from ${THEME}. Do not edit.
  * To generate again: ${COMMAND}
  * The catalog follows prefers-color-scheme, so the dark values are in a media query, not in .dark.
  */
 
-:root {
-${indented("  ", lightEntries)}
+${systemThemeBlocks(css, CATALOG_TOKENS, "")}`;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-${indented("    ", darkEntries)}
-  }
-}
+export function renderPageTokens(css) {
+  return `// Generated from ${THEME}. Do not edit.
+// To generate again: ${COMMAND}
+// The page follows prefers-color-scheme (it runs no script to read the theme of the app), so the dark values are in a
+// media query, not in .dark.
+
+export const pageTokens = \`
+${systemThemeBlocks(css, PAGE_TOKENS, "")}\`;
 `;
 }
 
@@ -237,6 +280,7 @@ export function expectedFiles() {
       readFileSync(new URL(MANIFEST_OUTPUT, repo), "utf8")
     ),
     [CATALOG_OUTPUT]: renderCatalogTokens(css),
+    [PAGE_OUTPUT]: renderPageTokens(css),
     [EMAIL_OUTPUT]: renderEmailColors(css),
   };
 }
