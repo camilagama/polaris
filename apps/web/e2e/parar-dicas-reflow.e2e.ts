@@ -75,9 +75,9 @@ for (const state of STATES) {
     for (const scheme of SCHEMES) {
       reflowTest(
         `${state} a ${width} px com fonte de ${fontPixels} px, tema ${scheme === "light" ? "claro" : "escuro"}: inteira, sem rolar de lado`,
-        async ({ page, pointer }) => {
+        async ({ page }) => {
           await page.emulateMedia({ colorScheme: scheme });
-          await openReflowViewport(page, { fontPixels, pointer, width });
+          await openReflowViewport(page, { fontPixels, width });
           const { refused } = await serve(page, state);
           await page.goto(PAGE_URL);
           await expectReflowFont(page, fontPixels);
@@ -112,8 +112,8 @@ for (const state of STATES) {
 
 reflowTest(
   "o botão posta para o próprio endereço, com o corpo do clique do leitor de e-mail, e mostra o pronto",
-  async ({ page, pointer }) => {
-    await openReflowViewport(page, { fontPixels: 16, pointer, width: 360 });
+  async ({ page }) => {
+    await openReflowViewport(page, { fontPixels: 16, width: 360 });
     const { posted, refused } = await serve(page, "confirm");
     await page.goto(PAGE_URL);
 
