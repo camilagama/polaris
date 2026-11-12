@@ -1031,7 +1031,9 @@ async function run() {
       ["free_over_limit", null],
       ["trial_setup", null],
       ["trialing", "+10 days"],
-      ["trialing", "-1 day"],
+      // a trial lapsed two days ago: one day ago would still be in the slack the engine gives a trial
+      // until 06:00 in São Paulo of the next day (AC-47), which this SQL check does not read
+      ["trialing", "-2 days"],
       ["active", "+30 days"],
       ["active", "-1 day"],
       ["grace", "+3 days"],
