@@ -14,7 +14,7 @@ import { WORKER_MARK } from "./worker-mark";
  * reload is the person's second tap. Two devices: one that has the service worker for days (the same context, the
  * worker in control across the rounds) and one that just installed it (a new context each round, a first visit).
  */
-const ROUNDS = 20;
+const ROUNDS = 70;
 const MOUNT_MS = 20_000;
 const SIGN_IN_HEADING = "Entrar no Polaris";
 const FIRST_ACCESS_HEADING = "Abra a sua loja";
