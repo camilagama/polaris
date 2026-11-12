@@ -134,8 +134,8 @@ const LINK_ARROW = "@min-[11.5rem]:block hidden size-4";
 /**
  * "Ver as 8 vendas" on the support line of the sales card, in the place of the count: a text button with an arrow, no
  * underline and no outline, whose name says the dates and where it goes. The line is one line tall (the tile does not
- * grow, whatever the period says): the link is there only while it fits beside the chip, measured on screen, and the
- * count is the plain text again when it does not. An invisible copy keeps the width of the link while the text shows, so
+ * grow, whatever the period says): the link is there only while it fits beside the chip and ends before the sparkline
+ * (whose touch area would meet it), measured on screen, and the count is the plain text again when it does not. An invisible copy keeps the width of the link while the text shows, so
  * the link comes back when the room does. The box is 24 px tall in a 20 px line (negative margin), the least a target may
  * have; the arrow goes first when the tile is narrower than the words need (320 px with the letter at 20 px).
  */
@@ -168,9 +168,14 @@ function SalesLink({
       (sum, child) => sum + child.getBoundingClientRect().width,
       0
     );
-    setFits(
-      used + others.length * gap + probe.current.offsetWidth <= row.clientWidth
-    );
+    const spark = row.closest("[data-kpi]")?.querySelector("[data-kpi-spark]");
+    const limit = spark
+      ? Math.min(
+          row.clientWidth,
+          spark.getBoundingClientRect().left - row.getBoundingClientRect().left
+        )
+      : row.clientWidth;
+    setFits(used + others.length * gap + probe.current.offsetWidth <= limit);
   }, []);
   // after every render (the chip comes and goes) and whenever the line changes width
   useLayoutEffect(measure);

@@ -117,7 +117,7 @@ test("o link cabe na linha de apoio, sem quebrar nem ficar sob o minigráfico, a
   }
 });
 
-test("com o chip de comparação o link só fica onde cabe na linha, e o cartão não muda de altura", async ({
+test("com o chip de comparação o link só fica onde cabe na linha e antes do minigráfico, e o cartão não muda de altura", async ({
   browser,
 }, testInfo) => {
   const journey = await openJourney(
@@ -163,8 +163,9 @@ test("com o chip de comparação o link só fica onde cabe na linha, e o cartão
   expect((await row.boundingBox())?.height).toBeLessThanOrEqual(21);
 
   await page.setViewportSize({ height: 800, width: 1024 });
-  await expect(card.locator("[data-kpi-sales-link]")).toBeVisible();
-  expect((await row.boundingBox())?.height).toBeLessThanOrEqual(21);
+  await expect
+    .poll(async () => (await row.boundingBox())?.height)
+    .toBeLessThanOrEqual(21);
 });
 
 test("com uma venda o link diz Ver a venda", async ({ browser }, testInfo) => {
