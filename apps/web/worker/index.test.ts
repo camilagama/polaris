@@ -34,6 +34,7 @@ const mocks = vi.hoisted(() => ({
   rearmRenewalCancellations: vi.fn(),
   reconcileRemovedMedia: vi.fn(),
   reconcileStagedMedia: vi.fn(),
+  runActivationSweep: vi.fn(),
   runBillingMaintenance: vi.fn(),
   runDataExports: vi.fn(),
   runOrganizationPurges: vi.fn(),
@@ -125,6 +126,9 @@ const quietHandover = {
   skipped: 0,
 };
 
+vi.mock("../src/server/billing/activation-sweep", () => ({
+  runActivationSweep: mocks.runActivationSweep,
+}));
 vi.mock("../src/server/billing/maintenance", () => ({
   runBillingMaintenance: mocks.runBillingMaintenance,
   runRefundSafetyNet: mocks.runRefundSafetyNet,
@@ -461,6 +465,33 @@ describe("the scheduled maintenance", () => {
     for (const job of jobs) {
       expect(job).toHaveBeenCalledTimes(1);
     }
+    expect(mocks.billingClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("sweeps the activation series on the billing connection with the Worker's switch, after the settlement and before the handover, and a failure makes the run incomplete without stopping the rest (ADR 0106)", async () => {
+    const order: string[] = [];
+    mocks.runUnclaimedTrialSettlement.mockImplementation(() => {
+      order.push("settlement");
+      return Promise.resolve(null);
+    });
+    mocks.runActivationSweep.mockImplementation(() => {
+      order.push("activation");
+      return Promise.reject(new Error("activation_sweep_failed"));
+    });
+    mocks.handOverOwedBillingNotices.mockImplementation(() => {
+      order.push("handover");
+      return Promise.resolve(quietHandover);
+    });
+
+    await expect(
+      runScheduled({ ...configured, ACTIVATION_EMAILS_ENABLED: "false" })
+    ).rejects.toThrow("activation_sweep_failed");
+
+    expect(order).toEqual(["settlement", "activation", "handover"]);
+    expect(mocks.runActivationSweep).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ ACTIVATION_EMAILS_ENABLED: "false" }),
+      expect.objectContaining({ close: mocks.billingClose })
+    );
     expect(mocks.billingClose).toHaveBeenCalledTimes(1);
   });
 
