@@ -38,7 +38,8 @@ function sources(dir: string): string[] {
 function elementUses(element: string): string[] {
   const uses: string[] = [];
   const pairs = new Map<string, { h: string[]; w: string[] }>();
-  for (const [token, variant, axis] of element.matchAll(FOURTEEN_PX)) {
+  for (const match of element.matchAll(FOURTEEN_PX)) {
+    const [token, variant = "", axis] = match;
     if (axis === "size") {
       uses.push(token);
       continue;
