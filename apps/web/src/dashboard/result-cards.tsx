@@ -172,7 +172,8 @@ function SalesLink({
 /**
  * What the support line of the sales card says of the count: the link to the Histórico when the count is the server's
  * for the whole period (none while a day is read on the sparkline, whose count is another), the text otherwise. The
- * period is from its first day to today, since nothing is sold after it.
+ * period is from its first day to today, since nothing is sold after it. A day read keeps the line the link has under
+ * the chip (the date is 4 px shorter than the chip, and the text line makes it up), so the tile does not change height.
  */
 function salesNote({
   chip,
@@ -192,15 +193,23 @@ function salesNote({
   today: string;
 }) {
   const to = period.to < today ? period.to : today;
-  return onOpen && !reading && count > 0 && period.from <= to ? (
+  if (!(onOpen && count > 0 && period.from <= to)) {
+    return text;
+  }
+  if (reading) {
+    return chip ? (
+      <span className="flex min-h-5 basis-full items-center">{text}</span>
+    ) : (
+      text
+    );
+  }
+  return (
     <SalesLink
       count={count}
       onOpen={onOpen}
       period={{ from: period.from, to }}
       underChip={chip}
     />
-  ) : (
-    text
   );
 }
 
@@ -327,7 +336,7 @@ export function ResultCards({
         help={{ about: salesName, text: read.sales.help }}
         id="result-kpi-sales"
         note={salesNote({
-          chip: Boolean(read.sales.delta),
+          chip: Boolean(kpis.read(null).sales.delta),
           count: cards.salesCount,
           onOpen: onOpenSales,
           period: summary.period,

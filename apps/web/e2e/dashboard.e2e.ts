@@ -3137,6 +3137,12 @@ function expectSameStripHeight(measured: Measured, width: number) {
   ).toBeLessThanOrEqual(1);
   const rest = Math.max(...values);
   for (const [name, run] of Object.entries(measured)) {
+    expect(
+      run.states[width]?.linkLine ?? 0,
+      `${name} a ${width} px: o link acrescenta no máximo uma linha de apoio`
+    ).toBeLessThanOrEqual(17);
+  }
+  for (const [name, run] of Object.entries(measured)) {
     const state = run.states[width];
     if (state?.warned) {
       expect(

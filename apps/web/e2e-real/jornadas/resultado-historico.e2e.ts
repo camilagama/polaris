@@ -201,6 +201,15 @@ test("com o chip de comparação o link desce para uma linha própria sob o chip
         underChip: true,
       });
   }
+
+  const height = async () => (await card.boundingBox())?.height ?? 0;
+  const resting = await height();
+  await card.getByRole("slider").press("ArrowLeft");
+  await expect(card.locator("[data-kpi-date]")).toBeVisible();
+  await expect(link, "um dia lido volta ao texto").toHaveCount(0);
+  await expect
+    .poll(height, { message: "ler um dia não muda a altura do cartão" })
+    .toBeCloseTo(resting, 0);
 });
 
 test("com uma venda o link diz Ver a venda", async ({ browser }, testInfo) => {
