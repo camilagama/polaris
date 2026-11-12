@@ -114,12 +114,38 @@ class FakeViewport {
 
 const fakePopup = () => {
   const values = new Map<string, string>();
+  const listeners = new Map<string, Set<() => void>>();
+  const active = { matches: (_selector: string) => false };
   const popup = {
+    addEventListener: (type: string, listener: () => void) => {
+      const set = listeners.get(type) ?? new Set();
+      set.add(listener);
+      listeners.set(type, set);
+    },
+    removeEventListener: (type: string, listener: () => void) => {
+      listeners.get(type)?.delete(listener);
+    },
+    ownerDocument: { activeElement: active },
+    scrollTop: 0,
     style: {
       setProperty: (name: string, value: string) => values.set(name, value),
     },
   };
-  return { popup: popup as unknown as HTMLElement, values };
+  const fire = (type: string) => {
+    for (const listener of listeners.get(type) ?? []) {
+      listener();
+    }
+  };
+  const count = () =>
+    [...listeners.values()].reduce((sum, set) => sum + set.size, 0);
+  return {
+    active,
+    count,
+    fire,
+    popup: popup as unknown as HTMLElement,
+    scroll: popup,
+    values,
+  };
 };
 
 describe("Dialog, segue a janela visível (teclado aberto)", () => {
@@ -148,11 +174,44 @@ describe("Dialog, segue a janela visível (teclado aberto)", () => {
     expect(viewport.count()).toBe(0);
   });
 
-  it("sem visualViewport ou sem popup não faz nada", () => {
+  it("sem visualViewport só mantém a abertura no topo, e sem popup não faz nada", () => {
     vi.stubGlobal("window", {});
-    expect(followVisualViewport(fakePopup().popup)).toBeUndefined();
+    const { count, popup } = fakePopup();
+    const cleanup = followVisualViewport(popup);
+    expect(count()).toBeGreaterThan(0);
+    cleanup?.();
+    expect(count()).toBe(0);
     vi.stubGlobal("window", { visualViewport: new FakeViewport() });
     expect(followVisualViewport(null)).toBeUndefined();
+  });
+
+  it.each(["keydown", "pointerdown", "touchstart", "wheel"])(
+    "devolve ao topo a rolagem que o foco inicial causou, até %s",
+    (touch) => {
+      vi.stubGlobal("window", {});
+      const { count, fire, popup, scroll } = fakePopup();
+      const cleanup = followVisualViewport(popup);
+      scroll.scrollTop = 29;
+      fire("scroll");
+      expect(scroll.scrollTop).toBe(0);
+      fire(touch);
+      scroll.scrollTop = 29;
+      fire("scroll");
+      expect(scroll.scrollTop).toBe(29);
+      cleanup?.();
+      expect(count()).toBe(0);
+    }
+  );
+
+  it("não devolve ao topo a rolagem que levou o foco a um campo", () => {
+    vi.stubGlobal("window", {});
+    const { active, fire, popup, scroll } = fakePopup();
+    active.matches = (selector: string) => selector.includes("textarea");
+    const again = followVisualViewport(popup);
+    scroll.scrollTop = 29;
+    fire("scroll");
+    expect(scroll.scrollTop).toBe(29);
+    again?.();
   });
 });
 

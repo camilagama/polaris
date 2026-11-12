@@ -53,9 +53,13 @@ export const SMALL_FOOTER_CLASS =
 export function followVisualViewport(
   popup: HTMLElement | null
 ): (() => void) | undefined {
-  const viewport = window.visualViewport;
-  if (!(popup && viewport)) {
+  if (!popup) {
     return;
+  }
+  const stopTopHold = openAtTop(popup);
+  const viewport = window.visualViewport;
+  if (!viewport) {
+    return stopTopHold;
   }
   const sync = () => {
     popup.style.setProperty("--dialog-height", `${viewport.height}px`);
@@ -69,7 +73,46 @@ export function followVisualViewport(
   viewport.addEventListener("resize", sync);
   viewport.addEventListener("scroll", sync);
   return () => {
+    stopTopHold();
     viewport.removeEventListener("resize", sync);
     viewport.removeEventListener("scroll", sync);
+  };
+}
+
+const TOUCHED_EVENTS = ["keydown", "pointerdown", "touchstart", "wheel"];
+
+const TEXT_CONTROL = "input, textarea, select, [contenteditable]";
+
+/**
+ * A dialog that scrolls as a whole must open showing its first line: the initial focus goes to the first control, and
+ * when that control is a footer button below the fold the browser scrolls it into view, so the question would open
+ * out of sight (the focus inside a field near the top does not do that). Until the person touches the dialog (key,
+ * pointer, touch or wheel) any scroll is put back at the top in the same frame, before it is painted, unless the focus
+ * is in a field (it has to be in view, the keyboard of a phone opens on it); after that the focus may scroll to the
+ * control as usual, so Tab still reveals what it reaches.
+ */
+function openAtTop(popup: HTMLElement): () => void {
+  let touched = false;
+  const markTouched = () => {
+    touched = true;
+  };
+  const putBack = () => {
+    if (touched || popup.scrollTop === 0) {
+      return;
+    }
+    if (popup.ownerDocument.activeElement?.matches(TEXT_CONTROL)) {
+      return;
+    }
+    popup.scrollTop = 0;
+  };
+  for (const name of TOUCHED_EVENTS) {
+    popup.addEventListener(name, markTouched, { capture: true, passive: true });
+  }
+  popup.addEventListener("scroll", putBack, { passive: true });
+  return () => {
+    for (const name of TOUCHED_EVENTS) {
+      popup.removeEventListener(name, markTouched, { capture: true });
+    }
+    popup.removeEventListener("scroll", putBack);
   };
 }

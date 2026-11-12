@@ -1047,6 +1047,58 @@ test.describe("o diálogo pequeno mais alto que a janela rola inteiro", () => {
     });
   });
 
+  test("a confirmação sem controle no corpo abre no topo, com a pergunta à vista, e o foco no rodapé não puxa a rolagem", async ({
+    context,
+    page,
+  }) => {
+    // measured: this confirmation is 415 px tall at 320 px / 24 px and 271 px at 568 × 320 / 20 px, which both fit; at
+    // 24 px in a 320 px-high window it passes the window, and its first focus is the footer button, below the fold
+    await openReflowViewport(page, {
+      fontPixels: BEST_EFFORT_FONT_PIXELS,
+      height: 320,
+      width: 568,
+    });
+    await stateOf("resultado metas").open(page, context);
+    const trigger = page.getByRole("button", {
+      name: "Cancelar meta Outubro forte",
+    });
+    await trigger.click();
+    await expectReflowFont(page, BEST_EFFORT_FONT_PIXELS);
+    const dialog = page.getByRole("dialog");
+    await expect(dialog).toBeVisible();
+    const back = dialog.getByRole("button", { exact: true, name: "Voltar" });
+    await expect(back).toBeFocused();
+    await page.evaluate(
+      () =>
+        new Promise((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(resolve))
+        )
+    );
+    const opened = await measureDialog(dialog);
+    expect(
+      opened.scrollHeight,
+      "the case is only worth something if the content is taller than the window"
+    ).toBeGreaterThan(opened.clientHeight);
+    expect(
+      opened.scrollTop,
+      "opens at the top with the focus in the footer"
+    ).toBe(0);
+    expect(
+      await insideDialog(dialog.getByRole("heading")),
+      "the question is in view"
+    ).toBe(true);
+    await page.keyboard.press("Tab");
+    const confirm = dialog.getByRole("button", {
+      exact: true,
+      name: "Confirmar cancelamento",
+    });
+    await expect(confirm).toBeFocused();
+    expect(
+      await insideDialog(confirm),
+      "Tab reveals the button it reaches"
+    ).toBe(true);
+  });
+
   test("o diálogo que cabe na janela não rola e fica no centro, como era", async ({
     context,
     page,
