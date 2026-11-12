@@ -1050,17 +1050,21 @@ test("sem conexão, atualizar mostra o último resultado confirmado, dito como t
   );
   // "Atualizado às" is for figures the server just gave; the copy says when it was confirmed, beside the period
   await expect(refreshButton(page)).toHaveText("Atualizar");
-  await expect(page.locator("#dashboard-updated")).toHaveText(
+  const status = page.locator("#dashboard-updated");
+  await expect(status).toHaveText(
     "Último resultado confirmado: 14/10/2026 09:00"
   );
+  const confirmedHeight = (await status.boundingBox())?.height ?? 0;
+  expect(confirmedHeight).toBeGreaterThan(1);
 
   // over the copy the read in progress takes the place of the confirmed-at line, in view
   server.networkDown = false;
   const release = server.hold("2026-10");
   await refreshButton(page).click();
-  const status = page.locator("#dashboard-updated");
   await expect(status).toHaveText("Atualizando…");
-  expect((await status.boundingBox())?.height ?? 0).toBeGreaterThan(1);
+  const readingHeight = (await status.boundingBox())?.height ?? 0;
+  expect(readingHeight).toBeGreaterThan(1);
+  expect(Math.abs(readingHeight - confirmedHeight)).toBeLessThanOrEqual(0.5);
   release();
   await expect(copyNotice(page)).toHaveCount(0);
   await expect(refreshButton(page)).toHaveText(UPDATED_AT);
