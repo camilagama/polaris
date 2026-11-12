@@ -13,6 +13,7 @@ import {
   redactedFailure,
   requiredEnvironment,
   runtimeRole,
+  sqlState,
 } from "./sales-gate-support";
 
 /**
@@ -80,6 +81,9 @@ const OPT_OUT_INSERT =
 const OPT_OUT_NO_UPDATE = /ON CONFLICT \(user_id\) DO NOTHING/;
 const OPT_OUT_NARROW_CATCH = /EXCEPTION\s+WHEN\s+foreign_key_violation\s+THEN/;
 const OTHERS = /\bOTHERS\b/i;
+const ROW_SECURITY = /row-level security/;
+const COLUMN_PRIVILEGE = /permission denied/;
+const LOWER_HEX_LETTER = /[a-f]/;
 const READ_OR_CHANGE = /\bSELECT\b|\bUPDATE\b|\bDELETE\b|\bRETURNING\b/i;
 const issuer =
   "https://polaris-activation-candidates-gate.cloudflareaccess.com";
@@ -1911,6 +1915,9 @@ async function run() {
           ).rows[0]?.id
         );
       const noticeId = await noticeOf(store);
+      const capitals = noticeId.replace(LOWER_HEX_LETTER, (letter) =>
+        letter.toUpperCase()
+      );
       const otherNoticeId = await noticeOf(other);
       const billingNoticeId = String(
         (
@@ -1933,7 +1940,7 @@ async function run() {
            VALUES ($1, $2, $3::jsonb, $4, $5${extra ? `, ${extra.split("=")[1]}` : ""})`,
           [organizationId, type, JSON.stringify(event), key, randomUUID()]
         );
-      const refused: [string, () => Promise<unknown>][] = [
+      const refused: [string, () => Promise<unknown>, RegExp][] = [
         [
           "a notice that does not exist",
           () => {
@@ -1945,6 +1952,7 @@ async function run() {
               `activation.notice:${missing}`
             );
           },
+          ROW_SECURITY,
         ],
         [
           "the notice of another store",
@@ -1955,6 +1963,7 @@ async function run() {
               { noticeId: otherNoticeId },
               `activation.notice:${otherNoticeId}`
             ),
+          ROW_SECURITY,
         ],
         [
           "a body with a key beside the notice",
@@ -1965,6 +1974,7 @@ async function run() {
               { noticeId, step: "a1" },
               `activation.notice:${noticeId}`
             ),
+          ROW_SECURITY,
         ],
         [
           "a body without the notice",
@@ -1975,6 +1985,7 @@ async function run() {
               {},
               `activation.notice:${noticeId}`
             ),
+          ROW_SECURITY,
         ],
         [
           "an ID that is not a uuid",
@@ -1985,6 +1996,7 @@ async function run() {
               { noticeId: "not-a-uuid" },
               "activation.notice:not-a-uuid"
             ),
+          ROW_SECURITY,
         ],
         [
           "the ID in capitals",
@@ -1992,9 +2004,10 @@ async function run() {
             insertEvent(
               store.organizationId,
               "activation.notice",
-              { noticeId: noticeId.toUpperCase() },
-              `activation.notice:${noticeId.toUpperCase()}`
+              { noticeId: capitals },
+              `activation.notice:${capitals}`
             ),
+          ROW_SECURITY,
         ],
         [
           "another key than the one of the body",
@@ -2005,6 +2018,7 @@ async function run() {
               { noticeId },
               `activation.notice:${otherNoticeId}`
             ),
+          ROW_SECURITY,
         ],
         [
           "the key of the billing type for the series' notice",
@@ -2015,6 +2029,7 @@ async function run() {
               { noticeId },
               `billing.notice:${noticeId}`
             ),
+          ROW_SECURITY,
         ],
         [
           "a status other than pending",
@@ -2026,6 +2041,7 @@ async function run() {
               `activation.notice:${noticeId}`,
               "status='dispatched'"
             ),
+          COLUMN_PRIVILEGE,
         ],
         [
           "attempts other than zero",
@@ -2037,6 +2053,7 @@ async function run() {
               `activation.notice:${noticeId}`,
               "attempts=3"
             ),
+          COLUMN_PRIVILEGE,
         ],
         [
           "a billing notice recorded as an activation notice",
@@ -2047,6 +2064,7 @@ async function run() {
               { noticeId: billingNoticeId },
               `activation.notice:${billingNoticeId}`
             ),
+          ROW_SECURITY,
         ],
         [
           "an activation notice recorded as a billing notice",
@@ -2057,12 +2075,21 @@ async function run() {
               { noticeId },
               `billing.notice:${noticeId}`
             ),
+          ROW_SECURITY,
         ],
       ];
       await withGateRole(client, BILLING_RUNTIME, async () => {
-        for (const [label, attempt] of refused) {
+        for (const [label, attempt, layer] of refused) {
           await client.query("SAVEPOINT probe");
-          await expectSqlState(attempt, "42501", `${label}: refused`);
+          await assert.rejects(
+            attempt,
+            (error: unknown) => {
+              assert.equal(sqlState(error), "42501", label);
+              assert.match(String((error as Error).message), layer, label);
+              return true;
+            },
+            `${label}: refused`
+          );
           await client.query("ROLLBACK TO SAVEPOINT probe");
         }
         await insertEvent(
@@ -2113,7 +2140,7 @@ async function run() {
       ]);
     });
     tests.push(
-      "the billing runtime writes the outbox event activation.notice (pending, no attempt, the body with the notice's ID alone, the key from it) for an activation_notices row of the same store, and refuses with 42501: a notice that does not exist, one of another store, a body with a key beside the notice or without it, an ID that is not a uuid or in capitals, another key, the billing type's key, a status other than pending, attempts other than zero, a billing_notices ID as an activation notice and an activation_notices ID as billing.notice (which still asks for its billing_notices row, and records with it); it still reads no event"
+      "the billing runtime writes the outbox event activation.notice (pending, no attempt, the body with the notice's ID alone, the key from it) for an activation_notices row of the same store, and refuses with 42501 (the policy, with its row-level security message): a notice that does not exist, one of another store, a body with a key beside the notice or without it, an ID that is not a uuid or in capitals, another key, the billing type's key, a billing_notices ID as an activation notice and an activation_notices ID as billing.notice (which still asks for its billing_notices row, and records with it); the status and the attempts are refused (42501, permission denied) by the column privileges, which the policy repeats; it still reads no event"
     );
 
     console.log(
