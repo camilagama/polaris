@@ -76,21 +76,6 @@ async function closeMenu(page: Page) {
   await expect(page.locator("[data-base-ui-inert]")).toHaveCount(0);
 }
 
-/**
- * The menu opens a frame after the click that asks for it: the trigger says `aria-expanded` and the popup is
- * mounted in that frame, not in the click. Two frames, the one that renders it and one more, leave the page in
- * the state the click ended in; before that it still shows "closed" and an assertion can pass just before the
- * menu appears.
- */
-async function afterMenuRenders(page: Page) {
-  await page.evaluate(
-    () =>
-      new Promise<void>((resolve) => {
-        requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
-      })
-  );
-}
-
 /** The name of a row, which opens the form of the customer or the product; locked, it says so by `aria-disabled`. */
 const rowButton = (page: Page, name: string) =>
   page.getByRole("button", { exact: true, name: `Editar ${name}` });
@@ -283,22 +268,22 @@ for (const reducedMotion of ["no-preference", "reduce"] as const) {
       await network[toggle]();
     }
 
-    // the click on the trigger right after the Escape (the hole of the backdrop lets it through while the menu
-    // leaves) opens it again, or closes what the key did not: either way it ends clean
+    // the click on the trigger while the menu leaves (the hole of the backdrop lets it through) opens it again.
+    // Each step waits for what it causes, not for a time: the Escape is sent until the trigger says "closed"
+    // (a key sent before the menu listens is lost), and the click ends in the trigger saying "open" with the
+    // popup mounted, which is the frame where the click opens it
     await trigger.click();
     await expect(trigger).toHaveAttribute("aria-expanded", "true");
-    await page.keyboard.press("Escape");
-    await trigger.click();
-    // the trigger, not only the popup, says it is closed, and only once the click has rendered its result: an
-    // Escape sent before the menu opened is lost, and the next round of the block sends it again
     await expect(async () => {
       await page.keyboard.press("Escape");
-      await afterMenuRenders(page);
       await expect(trigger).toHaveAttribute("aria-expanded", "false", {
         timeout: 1000,
       });
-      await expect(page.getByRole("menu")).toHaveCount(0, { timeout: 1000 });
     }).toPass({ timeout: 10_000 });
+    await trigger.click();
+    await expect(trigger).toHaveAttribute("aria-expanded", "true");
+    await expect(page.getByRole("menu")).toHaveCount(1);
+    await closeMenu(page);
     await expect(page.locator("[data-base-ui-inert]")).toHaveCount(0);
     await network.check();
   });
