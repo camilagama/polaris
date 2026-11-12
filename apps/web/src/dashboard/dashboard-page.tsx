@@ -90,28 +90,39 @@ interface ToolbarProps {
   today: string;
 }
 
+interface StatusLine {
+  /** False when the line must not take room on screen: it is only for the screen reader. */
+  seen: boolean;
+  text: string;
+}
+
 /**
  * What the line under the controls says, only when there is something to say: the device's copy ("Último resultado
  * confirmado"), or the read in progress. While another period loads, the figures of the one before stay on the
  * screen, dimmed, and this line says which they are. The server's time is not here: it is the text of "Atualizar".
+ * Reading the same period again over figures the server gave leaves the line empty on screen: the text would come and
+ * go and push the cards down by a line, and the button already says `aria-busy` (its icon turns only under full motion).
  */
-function statusText(
+function statusLine(
   state: PeriodSummaryState,
   timezone: string,
   period: Period,
   thisYear: string
-): string | null {
+): StatusLine | null {
   const { isLoading, source, summary } = state;
   if (isLoading) {
     if (!summary) {
       return null;
     }
     return samePeriod(summary.period, period)
-      ? "Atualizando…"
-      : `Mostrando ${periodText(summary.period, thisYear)} até o novo período carregar.`;
+      ? { seen: source !== "server", text: "Atualizando…" }
+      : {
+          seen: true,
+          text: `Mostrando ${periodText(summary.period, thisYear)} até o novo período carregar.`,
+        };
   }
   return summary && source !== "server"
-    ? formatLastConfirmed(summary.generatedAt, timezone)
+    ? { seen: true, text: formatLastConfirmed(summary.generatedAt, timezone) }
     : null;
 }
 
@@ -119,8 +130,9 @@ function statusText(
  * The one line of control: the period on the left and, on the right, the time of the server's read, which is the
  * button that reads again. When the two do not fit, the time goes down before anything is cut. The status line comes
  * under it only when it has something to say (no height kept for it), in the same `aria-live` region that is always in
- * in place; with nothing to say it is `sr-only` and tells the screen reader the time once a read ends, as the button
- * name does not change under a reader that is not looking at it.
+ * in place; with nothing to say on screen it is `sr-only`: it tells the screen reader that the same period is being
+ * read again and, once a read ends, the time, as the button name does not change under a reader that is not looking
+ * at it.
  */
 function Toolbar({
   onCustom,
@@ -142,7 +154,7 @@ function Toolbar({
           calendarDayInTimezone(new Date(), timezone)
         )
       : null;
-  const status = statusText(state, timezone, period, thisYear);
+  const status = statusLine(state, timezone, period, thisYear);
   return (
     <div>
       <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-3">
@@ -163,11 +175,11 @@ function Toolbar({
       <p
         aria-live="polite"
         className={
-          status ? "mt-2 text-muted-foreground text-support" : "sr-only"
+          status?.seen ? "mt-2 text-muted-foreground text-support" : "sr-only"
         }
         id="dashboard-updated"
       >
-        {status ?? (updated ? `Atualizado ${updated}` : null)}
+        {status?.text ?? (updated ? `Atualizado ${updated}` : null)}
       </p>
     </div>
   );
