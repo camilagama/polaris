@@ -14,6 +14,8 @@ import {
 import { createPrivacyMaintenanceClient } from "@polaris/db/privacy-maintenance";
 import { createClosureNoticeRecipientClient } from "@polaris/db/closure-notice-recipient";
 import { createBillingNoticeRecipientClient } from "@polaris/db/billing-notice-recipient";
+import { createActivationNoticeRecipientClient } from "@polaris/db/activation-notice-recipient";
+import { createActivationNoticeStore } from "@polaris/db/activation-notice-store";
 import { app } from "../src/server/app";
 import {
   isBuiltAssetRequest,
@@ -23,10 +25,11 @@ import {
   reconcileRemovedMedia,
   reconcileStagedMedia,
 } from "../src/server/media-reconciler";
+import { runActivationSweep } from "../src/server/billing/activation-sweep";
 import {
-  type ActivationSweepBindings,
-  runActivationSweep,
-} from "../src/server/billing/activation-sweep";
+  activationNoticeDependenciesOf,
+  handleActivationNotice,
+} from "../src/server/activation/notice-consumer";
 import {
   runBillingMaintenance,
   runRefundSafetyNet,
@@ -169,9 +172,7 @@ async function runMediaMaintenance(env: WorkerBindings): Promise<JobResult> {
  * tips of the activation series owed (ADR 0106; with its switch off, only clears the instant it was seen on), and
  * last hands over the billing notices the queue left owed (ADR 0104).
  */
-async function runBillingJobs(
-  env: WorkerBindings & ActivationSweepBindings
-): Promise<JobResult> {
+async function runBillingJobs(env: WorkerBindings): Promise<JobResult> {
   const connectionString = env.BILLING_HYPERDRIVE?.connectionString;
   if (!connectionString) {
     // billing is not provisioned in this environment yet: nothing to do
@@ -666,11 +667,32 @@ async function handleBillingNoticeEvent(
   }
 }
 
-/** The 7c replaces this; with the flag of the series off in every environment no row of this type is written. */
-function handleActivationNoticeEvent(): Promise<void> {
-  return Promise.reject(
-    new PermanentHandlerError("activation_consumer_not_ready")
+/**
+ * The handler of `activation.notice` (ADR 0106): a tip of the series was recorded. The notice and the re-read of its
+ * rules go through the billing role, the address through the authentication role. Without the billing role there is
+ * no notice to read, and a retry would not change it. A failure of the provider or the network throws: the queue tries
+ * again, then the dead-letter queue (an incident).
+ */
+async function handleActivationNoticeEvent(
+  env: WorkerBindings,
+  envelope: QueueEnvelope
+): Promise<void> {
+  const connectionString = env.BILLING_HYPERDRIVE?.connectionString;
+  if (!connectionString) {
+    throw new PermanentHandlerError("activation_not_configured");
+  }
+  const store = createActivationNoticeStore(connectionString);
+  const wired = activationNoticeDependenciesOf(
+    env,
+    store,
+    createActivationNoticeRecipientClient
   );
+  try {
+    await handleActivationNotice(wired.dependencies, envelope);
+  } finally {
+    await quietly(wired.close);
+    await quietly(() => store.close());
+  }
 }
 
 /**
@@ -772,7 +794,8 @@ async function consumeQueue(batch: QueueBatch, env: WorkerBindings) {
     return;
   }
   const handlers = {
-    "activation.notice": () => handleActivationNoticeEvent(),
+    "activation.notice": (envelope: QueueEnvelope) =>
+      handleActivationNoticeEvent(env, envelope),
     "billing.notice": (envelope: QueueEnvelope) =>
       handleBillingNoticeEvent(env, envelope),
     "billing.renewal_cancel_requested": (envelope: QueueEnvelope) =>

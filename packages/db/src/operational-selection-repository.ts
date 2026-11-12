@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import {
   type BillingState,
-  grantsPro,
+  planInForce,
 } from "@polaris/domain/billing/entitlements";
 import {
   type DefaultCandidate,
@@ -103,9 +103,7 @@ async function readEpisode(
   const now = new Date(row.now);
   const state = row.state as BillingState;
   const proInForce =
-    grantsPro(state) &&
-    row.accessEndsAt !== null &&
-    now.getTime() < row.accessEndsAt.getTime();
+    planInForce({ accessEndsAt: row.accessEndsAt, state }, now) === "pro";
   return {
     now,
     restrictable: state !== "free" && !proInForce,

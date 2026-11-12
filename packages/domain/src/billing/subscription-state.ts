@@ -1,4 +1,5 @@
 import {
+  accessInForceUntil,
   type BillingFacts,
   type BillingState,
   grantsPro,
@@ -156,16 +157,17 @@ function checkedPeriodEnd(
   return new Date(end);
 }
 
-/** An event that ends access is refused until the access it ends has run out. */
+/**
+ * An event that ends access is refused until the access it ends has run out
+ * (a trial's with its slack, `accessInForceUntil`).
+ */
 function requireDue(
   facts: BillingFacts,
   event: BillingEvent,
   context: TransitionContext
 ): void {
-  if (
-    facts.accessEndsAt === null ||
-    context.now.getTime() < facts.accessEndsAt.getTime()
-  ) {
+  const until = accessInForceUntil(facts);
+  if (until === null || context.now.getTime() < until.getTime()) {
     throw new RejectedBillingEventError(
       "event_not_due",
       facts.state,

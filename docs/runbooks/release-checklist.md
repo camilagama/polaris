@@ -262,6 +262,14 @@ Qualquer promoção de SHA para produção. Mudança neste checklist entra por P
 - Severidade: proposta (BLOCK), pendente de decisão do Arrascaeta.
 - Evidência: a data, a linha vista (só os códigos) e, para (a), o que a releitura mostrou ou o nome do dono do sinal.
 
+### 30. Série de dicas ligada só com a parada por reclamação (BLOCK, proposta)
+
+- Critério: `ACTIVATION_EMAILS_ENABLED` fica `"false"` no ambiente promovido até o 9a (parada por reclamação, [ADR 0106](../adr/0106-avisos-de-ativacao-e-medida-de-comportamento.md), D7) estar no SHA candidato. Além da flag, o código tem um freio próprio: `STOP_ENFORCED` em `packages/domain/src/activation/notices.ts` fica `false` até o 9a, e com ela `false` nenhuma dica sai.
+- Antes do 1º envio real: o rastreio de clique (e de abertura) do Resend desligado no domínio de envio e conferido no painel. Com ele ligado, o Resend reescreve o link de parar de receber e o token do descadastro passaria por outro serviço; o `List-Unsubscribe` de um clique perderia o efeito.
+- O `BILLING_HYPERDRIVE` do ambiente sem cache de consulta (lido de volta na configuração do Hyperdrive): o aviso devido e a supressão são lidos por ele sem outra guarda contra resposta em cache.
+- Evidência: o valor da flag no `wrangler.jsonc` do SHA candidato, o valor de `STOP_ENFORCED` no mesmo SHA e a captura (sem chave) da configuração de rastreio do domínio no painel do Resend, com a data.
+- Severidade BLOCK: proposta, pendente de decisão do responsável.
+
 ## Veredito
 
 Ordem de decisão:

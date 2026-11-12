@@ -354,13 +354,8 @@ const FOCUS_ELSEWHERE: readonly {
 }[] = [
   {
     file: "src/ui/dialog-layout.ts",
-    strings: 1,
-    why: "a folha do formulário só recebe o foco se não houver nada focável; abre no primeiro campo, que tem o anel dele",
-  },
-  {
-    file: "src/ui/dialog.tsx",
-    strings: 1,
-    why: "o popup do diálogo pequeno: o foco abre no primeiro controle (o × e os botões têm focus-ring)",
+    strings: 2,
+    why: "a folha do formulário e o popup do diálogo pequeno só recebem o foco se não houver nada focável; abrem no primeiro campo ou controle, que tem o anel dele (o × e os botões têm focus-ring)",
   },
   {
     file: "src/ui/dropdown-menu.tsx",
@@ -685,7 +680,6 @@ describe("regras de fonte da interface (t180, itens 4 e 5)", () => {
   it("a lista de foco em outro lugar ainda é verdade (uma lista velha deixaria passar outra coisa)", () => {
     expect(FOCUS_ELSEWHERE.map((entry) => entry.file)).toEqual([
       "src/ui/dialog-layout.ts",
-      "src/ui/dialog.tsx",
       "src/ui/dropdown-menu.tsx",
       "src/ui/input-group.tsx",
       "src/ui/popover.tsx",
