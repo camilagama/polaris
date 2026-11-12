@@ -35,3 +35,51 @@ export const ACTIVATION_NOTICE_SKIP_REASONS = Object.freeze([
 
 export type ActivationNoticeSkipReason =
   (typeof ACTIVATION_NOTICE_SKIP_REASONS)[number];
+
+/**
+ * Whether the stop of the series on a complaint (ADR 0106, D7) is in force in the code. Until it is, no tip may go out
+ * even with the switch on and everything configured: the consumer counts the sending as not configured
+ * (`email_not_configured`), because one complaint of a hostile sign-up could suspend the provider's account that the
+ * sign-in and the billing e-mails share. The change that brings the stop turns this to `true`.
+ */
+export const STOP_ENFORCED: boolean = false;
+
+/** The hours of São Paulo a tip may go out in, a retry of the queue included: from 08:00 to before 20:00. */
+export const ACTIVATION_SEND_HOURS = Object.freeze({
+  from: 8,
+  timeZone: "America/Sao_Paulo",
+  until: 20,
+});
+
+const hourFormat = new Intl.DateTimeFormat("en-US", {
+  hour: "numeric",
+  hourCycle: "h23",
+  timeZone: ACTIVATION_SEND_HOURS.timeZone,
+});
+
+export function withinActivationSendHours(now: Date): boolean {
+  const hour = Number(
+    hourFormat.formatToParts(now).find((part) => part.type === "hour")?.value
+  );
+  return (
+    hour >= ACTIVATION_SEND_HOURS.from && hour < ACTIVATION_SEND_HOURS.until
+  );
+}
+
+// what the provider writes around an address ("Nome <a@b.com>"): only what is inside the last angle brackets counts
+const ANGLE_ADDRESS = /<([^<>]*)>\s*$/;
+// printable ASCII only: a Unicode or IDN address could come back from the provider in another form (punycode, another
+// normalization) and miss its suppression, so it is not sent to
+const PLAIN_ADDRESS =
+  /^[!#-'*+\-./0-9=?A-Z^-~]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+$/;
+
+/**
+ * The one form of an address for the HMAC of the suppression (ADR 0106, D8): the send and the provider's webhook must
+ * reach the same bytes. The address alone (no display name), trimmed, in lower case; null for a text that is not one
+ * address or not in printable ASCII.
+ */
+export function normalizeActivationAddress(raw: string): string | null {
+  const inner = ANGLE_ADDRESS.exec(raw)?.[1] ?? raw;
+  const address = inner.trim().toLowerCase();
+  return PLAIN_ADDRESS.test(address) ? address : null;
+}
