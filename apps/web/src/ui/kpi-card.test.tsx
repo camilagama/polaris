@@ -83,6 +83,7 @@ describe("KpiTile", () => {
       warningDetail: "5 de 23 dias sem custo",
     });
     expect(warned).toContain('data-kpi-warning=""');
+    expect(warned).not.toContain("data-kpi-notice");
     expect(warned.match(/data-kpi-note-row/g)).toHaveLength(1);
     expect(warned).toContain("h-5 flex-nowrap overflow-hidden");
     expect(warned.indexOf("Incompleta")).toBeLessThan(
@@ -96,7 +97,8 @@ describe("KpiTile", () => {
   it("puts a notice on a row of its own under the support line, free to wrap and to grow the tile", () => {
     const noticed = tile({ notice: "estimativa incompleta", note: "2 vendas" });
     expect(noticed.match(/data-kpi-note-row/g)).toHaveLength(1);
-    expect(noticed).toContain('data-kpi-warning=""');
+    expect(noticed).toContain('data-kpi-notice=""');
+    expect(noticed).not.toContain("data-kpi-warning=");
     expect(noticed).not.toContain("flex-nowrap");
     expect(noticed.indexOf("2 vendas")).toBeLessThan(
       noticed.indexOf("estimativa incompleta")
