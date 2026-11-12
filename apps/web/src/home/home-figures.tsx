@@ -34,11 +34,13 @@ function barWidth(netSales: string, top: bigint): number {
   return Number((cents * 100n) / top);
 }
 
+const ALL_RETURNED_TEXT = "As vendas do período foram devolvidas.";
+
 /** From this many lines the list takes the height the card is given, a line each; fewer stay at the top. */
 const SPREAD_FROM = 3;
 
 /**
- * The five most sold products of the month, by units net of returns; none sold, the same box says so (AC-16). Each line has the
+ * The five most sold products of the month, by units net of returns; none sold, or every sale of the period returned, the same box says so (AC-16). Each line has the
  * miniature of the product (its two initials when it has no photo or while it comes, in a box of the same size, so
  * nothing moves when the photo arrives) with the position in a small circle over its corner, the name, the net sales
  * and the units, and a green bar proportional to the net sales (v7 § 3 item 11), drawn in CSS: it says the same as
@@ -49,9 +51,12 @@ const SPREAD_FROM = 3;
  */
 export function TopProductsBlock({
   products,
+  salesCount,
   title = "Mais vendidos do mês",
 }: {
   products: TopProducts;
+  /** Sales of the period: with some and no product left in the ranking, every one of them was returned. */
+  salesCount: number;
   title?: string;
 }) {
   const top = products.reduce((max, product) => {
@@ -67,7 +72,7 @@ export function TopProductsBlock({
     return (
       <HomeBlock id="home-top" title={title}>
         <p className="grid flex-1 place-items-center text-center text-muted-foreground">
-          Sem vendas no período.
+          {salesCount > 0 ? ALL_RETURNED_TEXT : "Sem vendas no período."}
         </p>
       </HomeBlock>
     );
