@@ -8,6 +8,7 @@ import {
   InvalidBillingTransitionError,
   RejectedBillingEventError,
 } from "@polaris/domain/billing/subscription-state";
+import { trialAccessEndsAt } from "@polaris/domain/billing/trial-access";
 import { Client } from "pg";
 import { createBillingStore } from "../src/billing-store";
 import { createDatabase } from "../src/client";
@@ -346,6 +347,54 @@ async function run() {
     );
     tests.push(
       "a trial from opt-in to the first charge: the webhook names only the provider reference, the organization is resolved from it, a repeat is ignored, a second trial is refused, and the ledger tells each step with the state before and after"
+    );
+
+    // ------------- 3b. a trial nobody charged keeps Pro through its slack (AC-47)
+    const unpaid = await newTenant("lifecycle unpaid trial");
+    await billing.startTrial(unpaid.organizationId, unpaid.userId, at(0));
+    await billing.attachProvider(unpaid.organizationId, "fake", "sub_U");
+    await apply(
+      "fake",
+      "evt-U-ready",
+      { cycleMonths: 1, occurredAt: at(0), type: "trial_method_ready" },
+      { providerRef: "sub_U" },
+      at(0)
+    );
+    const storedEnd = (await billing.readRecord(unpaid.organizationId))
+      ?.accessEndsAt;
+    assert.ok(storedEnd);
+    const slackEnd = trialAccessEndsAt(storedEnd);
+    for (const sweptAt of [
+      new Date(storedEnd.getTime() + 60_000),
+      new Date(slackEnd.getTime() - 1),
+    ]) {
+      // biome-ignore lint/performance/noAwaitInLoops: each sweep reads what the one before left
+      await billing.sweepDue(sweptAt);
+      assert.equal(
+        (await billing.readRecord(unpaid.organizationId))?.state,
+        "trialing",
+        "a trial inside its slack is not swept to Free"
+      );
+    }
+    assert.deepEqual(
+      (await eventRows(unpaid)).map((row) => row.fact_type),
+      ["command", "trial_method_ready"]
+    );
+    await billing.sweepDue(slackEnd);
+    assert.equal(
+      (await billing.readRecord(unpaid.organizationId))?.state,
+      "free"
+    );
+    assert.deepEqual(
+      (await eventRows(unpaid)).map((row) => [row.fact_type, row.state_after]),
+      [
+        ["command", "trial_setup"],
+        ["trial_method_ready", "trialing"],
+        ["time_elapsed", "free"],
+      ]
+    );
+    tests.push(
+      "a trial nobody charged stays a trial from its stored end through the end of its São Paulo day plus 6 hours, sweep after sweep, and the sweep ends it at that instant"
     );
 
     // --------------- 4. renewal failure, grace, recovery and expiry

@@ -9,6 +9,8 @@
  * reports facts but never grants access; Polaris derives entitlements from its
  * own records; a downgrade keeps the data and only restricts new operations.
  */
+import { trialAccessEndsAt } from "./trial-access";
+
 export const PLAN_IDS = ["free", "pro"] as const;
 export type PlanId = (typeof PLAN_IDS)[number];
 
@@ -186,13 +188,23 @@ export interface ResolveEntitlementsInput {
   now: Date;
 }
 
+/**
+ * Until when the record grants Pro: the stored end, except in a trial, which
+ * lasts until `trialAccessEndsAt` of it. Null for the states without Pro.
+ */
+export function accessInForceUntil(facts: BillingFacts): Date | null {
+  if (!grantsPro(facts.state) || facts.accessEndsAt === null) {
+    return null;
+  }
+  return facts.state === "trialing"
+    ? trialAccessEndsAt(facts.accessEndsAt)
+    : new Date(facts.accessEndsAt.getTime());
+}
+
 /** The plan in force for a state at a moment: Pro only while its end date has not passed. */
 export function planInForce(facts: BillingFacts, now: Date): PlanId {
-  if (
-    grantsPro(facts.state) &&
-    facts.accessEndsAt !== null &&
-    now.getTime() < facts.accessEndsAt.getTime()
-  ) {
+  const until = accessInForceUntil(facts);
+  if (until !== null && now.getTime() < until.getTime()) {
     return "pro";
   }
   return "free";
@@ -236,10 +248,7 @@ export function resolveEntitlements(
     }
   }
   return {
-    accessEndsAt:
-      plan === "pro" && input.facts.accessEndsAt
-        ? new Date(input.facts.accessEndsAt.getTime())
-        : null,
+    accessEndsAt: plan === "pro" ? accessInForceUntil(input.facts) : null,
     overLimit: input.facts.state === "free_over_limit" && plan === "free",
     plan,
     raisedByGrant: raised,
