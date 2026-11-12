@@ -4,7 +4,8 @@ import { productErrorMessage } from "./product-errors";
 
 /**
  * What `/products` opens by its address (the Início and the Venda link to it):
- * `?produto=<uuid>` the variants panel of that product, `?novo=1` the form of a
+ * `?produto=<uuid>` the variants panel of that product (with `&variante=<uuid>` the field of that variant takes
+ * the focus), `?novo=1` the form of a
  * new one, `?importar=1` the import of a spreadsheet (the checklist of the Início).
  * Anything else is the plain list, and no value of the address is ever written
  * on the screen.
@@ -13,7 +14,7 @@ export type ProductsLink =
   | { kind: "none" }
   | { kind: "new" }
   | { kind: "import" }
-  | { kind: "product"; productId: string };
+  | { kind: "product"; productId: string; variantId: string | null };
 
 const uuidPattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -23,14 +24,29 @@ export function readProductsLink(search: string): ProductsLink {
   const product = params.get("produto");
   if (product !== null) {
     const productId = product.trim();
-    return uuidPattern.test(productId)
-      ? { kind: "product", productId: productId.toLowerCase() }
-      : { kind: "none" };
+    if (!uuidPattern.test(productId)) {
+      return { kind: "none" };
+    }
+    const variant = params.get("variante")?.trim() ?? "";
+    return {
+      kind: "product",
+      productId: productId.toLowerCase(),
+      variantId: uuidPattern.test(variant) ? variant.toLowerCase() : null,
+    };
   }
   if (params.get("importar") === "1") {
     return { kind: "import" };
   }
   return params.get("novo") === "1" ? { kind: "new" } : { kind: "none" };
+}
+
+/** The address that opens the product on `/products`, on the variant when the row of the stock is one of a variant. */
+export function productHref(productId: string, variantId?: string): string {
+  const query = new URLSearchParams({ produto: productId });
+  if (variantId !== undefined) {
+    query.set("variante", variantId);
+  }
+  return `/products?${query.toString()}`;
 }
 
 /**

@@ -21,6 +21,9 @@ import {
   stockMoreStarted,
   stockMoreView,
   readStockLinkFilters,
+  readStockLinkSearch,
+  stockProductHref,
+  stockProductLinks,
   stockRowActions,
   stockRows,
   type VariantCount,
@@ -142,6 +145,58 @@ describe("stockListRequest", () => {
         null
       )
     ).not.toHaveProperty("query");
+  });
+});
+
+describe("the link between the stock and the product", () => {
+  it("leads the name of a variant row to the product on that variant, and a default variant to the product", () => {
+    const [variant] = stockRows([entry(1)]);
+    const [single] = stockRows([
+      entry(2, { isDefaultVariant: true, values: [] }),
+    ]);
+    expect(variant?.productHref).toBe(
+      `/products?produto=11111111-1111-4111-8111-111111111111&variante=${variantId(1)}`
+    );
+    expect(single?.productHref).toBe(
+      "/products?produto=11111111-1111-4111-8111-111111111111"
+    );
+  });
+
+  it("opens the stock on the name of the product, with the archived ones in only when the product is archived", () => {
+    expect(stockProductHref("Camiseta & Cia", false)).toBe(
+      "/inventory?busca=Camiseta+%26+Cia"
+    );
+    expect(stockProductHref("Camiseta", true)).toBe(
+      "/inventory?busca=Camiseta&arquivados=1"
+    );
+  });
+
+  it("offers each link only to a role that can read what it leads to, and fails closed for an unknown one", () => {
+    expect(stockProductLinks("owner")).toEqual({
+      toProduct: true,
+      toStock: true,
+    });
+    for (const role of ["", "visitante", "OWNER"]) {
+      expect(stockProductLinks(role)).toEqual({
+        toProduct: false,
+        toStock: false,
+      });
+    }
+  });
+
+  it("reads the search back as typed, cut to what the server takes, and nothing else", () => {
+    expect(
+      readStockLinkSearch(stockProductHref("Camiseta & Cia", true).slice(10))
+    ).toEqual({ includeArchived: true, query: "Camiseta & Cia" });
+    expect(readStockLinkSearch(`?busca=${"a".repeat(150)}`).query).toHaveLength(
+      100
+    );
+    for (const search of ["", "?", "?arquivados=sim", "?busca="]) {
+      expect(readStockLinkSearch(search)).toEqual({
+        includeArchived: false,
+        query: "",
+      });
+    }
   });
 });
 

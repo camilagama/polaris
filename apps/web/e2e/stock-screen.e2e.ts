@@ -361,6 +361,43 @@ test("cada pílula pede ao servidor o que o filtro de antes pedia e sai pelo X",
 const rowNames = (page: Page) =>
   page.getByRole("list", { name: "Saldos por variante" }).getByRole("listitem");
 
+test("o nome da linha é um link para o produto, na variante quando a linha é de variante", async ({
+  page,
+}) => {
+  await openStockLab(page, "claro");
+  const shirt = page.getByRole("link", {
+    name: "Camiseta do teste, Azul. Abrir o produto",
+  });
+  await expect(shirt).toHaveText("Camiseta do teste");
+  await expect(shirt).toHaveAttribute(
+    "href",
+    `/products?produto=${SHIRT.productId}&variante=${SHIRT.variantId}`
+  );
+  // the name is a link and not a button: the group of the row has its three commands and no more
+  const group = page.getByRole("group", {
+    name: "Movimentos de Camiseta do teste, Azul",
+  });
+  await expect(group.getByRole("button")).toHaveCount(3);
+  await expect(group.getByRole("link")).toHaveCount(0);
+});
+
+test("?busca=<nome>&arquivados=1 abre o Estoque com a busca à vista e os arquivados incluídos", async ({
+  page,
+}) => {
+  await openStockLab(page, "claro", {
+    count: "3 variantes",
+    search: "&busca=Caneca+esmaltada&arquivados=1",
+  });
+  await expect(page.getByLabel("Buscar no estoque")).toHaveValue(
+    "Caneca esmaltada"
+  );
+  await expectPills(page, ["Arquivados incluídos"]);
+  await expect
+    .poll(() => listRequests.at(-1) ?? "")
+    .toContain('"query":"Caneca esmaltada"');
+  expect(listRequests.at(-1)).toContain('"productStatus":"all"');
+});
+
 test("Custo desconhecido liga em 2 toques e a lista é a que ?filtro=sem-custo produz", async ({
   page,
 }) => {

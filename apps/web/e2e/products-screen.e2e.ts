@@ -354,6 +354,28 @@ test("?produto=<uuid> no aparelho: abre o produto ativo e o arquivado na aba Var
   );
 });
 
+test("?produto=<uuid>&variante=<uuid>: o campo de SKU da variante recebe o foco, e o rodapé leva ao estoque desse produto", async ({
+  page,
+}, testInfo) => {
+  onlyDesktop(testInfo.project.name);
+  await openProductsLab(page, "claro", `&produto=${id(21)}&variante=${id(31)}`);
+  await expect(
+    page.getByRole("dialog", { name: "Camiseta do teste" })
+  ).toBeVisible();
+  await expect(page.locator(`#product-variant-sku-${id(31)}`)).toBeFocused();
+  await expect(
+    page.getByRole("link", { exact: true, name: "Ver estoque" })
+  ).toHaveAttribute("href", "/inventory?busca=Camiseta+do+teste");
+
+  // a variant that is not the product's: the tab keeps the focus, nothing else moves
+  await page.goto(
+    `/offline-screens-lab?screen=products&catalog=seeded&produto=${id(21)}&variante=${id(98)}`
+  );
+  await page.getByLabel("Usuário").fill(`user-${crypto.randomUUID()}`);
+  await page.getByRole("button", { exact: true, name: "Iniciar" }).click();
+  await expect(page.getByRole("tab", { name: "Variantes" })).toBeFocused();
+});
+
 test("?produto=<uuid> que não está na cópia do aparelho diz o mesmo texto e não abre o produto", async ({
   page,
 }, testInfo) => {

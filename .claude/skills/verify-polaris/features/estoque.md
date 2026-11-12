@@ -9,6 +9,7 @@ O Estoque (`/inventory`) mostra o saldo e o custo médio de cada variante e é o
 - `estoque-miniatura` com `MEDIA_THUMBS_ENABLED` ligada (true no staging, false na raiz do `wrangler.jsonc` e em produção), cada linha da lista tem à esquerda a caixa de 40 px com a capa do produto ou o marcador com as duas iniciais; desligada, a linha não tem caixa. Sem drive próprio.
 - `estoque-vazio` loja sem produto: "Nenhuma variante cadastrada. Cadastre um produto para controlar o estoque dele."
 - `estoque-filtros` `search "Filtrar estoque"` (a barra do projeto), com o `searchbox "Buscar no estoque"` e o botão "Filtrar" na mesma linha (as pílulas descem para a linha de baixo): o botão "Filtrar" abre o menu "Filtrar por" com Saldo (Com saldo, Sem saldo) e os itens de sim ou não `menuitemcheckbox` "Custo desconhecido" e "Incluir arquivados" (um toque liga ou desliga, o menu fecha); cada filtro vira uma pílula ("Saldo: Com saldo, editar", X "Tirar o filtro Saldo"; as de sim ou não são só texto, "Custo desconhecido" e "Arquivados incluídos", X "Tirar o filtro Custo desconhecido") e "Limpar tudo" aparece com duas; sem conexão "Custo desconhecido" fica `aria-disabled` com "Só com conexão"; "Atualizar" fica na linha da contagem.
+- `estoque-produto` o nome do produto em cada linha é um `link` (nome acessível "<produto>, <variante>. Abrir o produto") para `/products?produto=<id do produto>`, com `&variante=<id>` quando a linha é de variante (não a padrão); só com `catalog:read`. Não entra no grupo "Movimentos de …" da linha. Do outro lado, "Ver estoque" no diálogo do produto abre `/inventory?busca=<nome>` (com `&arquivados=1` se o produto é arquivado): o `searchbox "Buscar no estoque"` já traz o nome e a pílula "Arquivados incluídos" aparece quando é o caso, sem filtro escondido.
 - `estoque-receber` recebimento com quantidade e custo unitário.
 - `estoque-contar` contagem (o saldo passa a ser o contado).
 - `estoque-informar-custo` com saldo maior que 0, custo desconhecido e conexão, "Informar custo" fica no lugar de "Contar" na linha e no recebimento bloqueado ("Antes de receber, informe o custo das unidades que você já tem."); o painel "Informar custo" tem só "Custo de cada unidade (R$)" e grava "Custo informado: R$ X por unidade." sem mudar o saldo. Sem saldo e sem custo, "Receber" vira "Dar entrada".
@@ -20,7 +21,8 @@ O Estoque (`/inventory`) mostra o saldo e o custo médio de cada variante e é o
 
 - Desktop: link `Estoque` do menu "Principal" (grupo "Catálogo").
 - Celular: link `Estoque` da barra "Destinos".
-- Endereço `/inventory`; `/inventory?filtro=sem-saldo` abre a lista só com as variantes sem saldo.
+- Endereço `/inventory`; `/inventory?filtro=sem-saldo` abre a lista só com as variantes sem saldo; `/inventory?busca=<nome>` abre com a busca preenchida (e `&arquivados=1` inclui os arquivados), o que "Ver estoque" do produto usa.
+- Pelo nome do produto na linha de [Produtos](produtos.md) e, de lá, "Ver estoque" no rodapé do diálogo, de volta ao Estoque com a busca pelo nome.
 - Pelo link "Dar entrada no estoque" de Vender: no item com saldo 0 ou com o pedido acima do saldo, ou na recusa da venda por falta de estoque ([Vender](vender.md)). A volta é por "Vender" no menu: a venda em andamento continua lá.
 
 ## Driving it with verify.sh (Playwright)

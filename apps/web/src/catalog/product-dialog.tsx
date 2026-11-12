@@ -10,8 +10,9 @@ import {
   useRef,
   useState,
 } from "react";
+import { cn } from "@/lib/utils";
 import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
-import { Button } from "@/ui/button";
+import { Button, buttonVariants } from "@/ui/button";
 import {
   Dialog,
   DialogBody,
@@ -63,6 +64,8 @@ interface ProductDialogProps {
   feedbackRef: Ref<HTMLDivElement>;
   /** Where the focus goes when the dialog closes: the notice, or the control that opened it. */
   finalFocus: () => HTMLElement | boolean;
+  /** The variant whose SKU field takes the focus once the variants are read (the address named it). */
+  focusVariantId: string | null;
   isOffline: boolean;
   isPending: boolean;
   notice: string | null;
@@ -87,6 +90,8 @@ interface ProductDialogProps {
   organizationId: string;
   /** The product being changed; `null` is a new product. */
   product: ProductReadModel | null;
+  /** The Estoque with this product shown; null for who cannot read stock, and for a product that does not exist yet. */
+  stockHref: string | null;
   tab: ProductTab;
   /** The configuration of the variants typed for this product and kept by Esc, × or the step back. */
   variantsDraft: VariantConfigurationDraft | null;
@@ -184,6 +189,7 @@ export function dialogTexts(
 interface ProductTabsProps {
   dataInvalid: boolean;
   /** The form of the data, drawn in the first tab. */
+  focusVariantId: string | null;
   form: ReactNode;
   onProductUpdated: (product: ProductReadModel) => void;
   onTabChange: (tab: ProductTab) => void;
@@ -201,6 +207,7 @@ interface ProductTabsProps {
 /** The tabs of a product that exists; an archived one has no images (as its menu). */
 function ProductTabs({
   dataInvalid,
+  focusVariantId,
   form,
   onProductUpdated,
   onTabChange,
@@ -257,6 +264,7 @@ function ProductTabs({
           <TabScope onUnsent={onUnsent} tab="variantes">
             <ProductVariantsPanel
               configurationDraft={variantsDraft}
+              focusVariantId={focusVariantId}
               onConfigurationDraftChange={onVariantsDraftChange}
               onProductUpdated={onProductUpdated}
               organizationId={organizationId}
@@ -297,6 +305,7 @@ function ProductDialogBody({
   error,
   errorExtra,
   feedbackRef,
+  focusVariantId,
   isOffline,
   isPending,
   notice,
@@ -309,6 +318,7 @@ function ProductDialogBody({
   onVariantsDraftChange,
   organizationId,
   product,
+  stockHref,
   tab,
   variantsDraft,
 }: BodyProps) {
@@ -394,6 +404,7 @@ function ProductDialogBody({
           {product ? (
             <ProductTabs
               dataInvalid={dataInvalid}
+              focusVariantId={focusVariantId}
               form={form}
               onProductUpdated={onProductUpdated}
               onTabChange={onTabChange}
@@ -417,6 +428,14 @@ function ProductDialogBody({
           </p>
         ) : null}
         <DialogFooter>
+          {stockHref === null ? null : (
+            <a
+              className={cn(buttonVariants({ variant: "link" }), "md:mr-auto")}
+              href={stockHref}
+            >
+              Ver estoque
+            </a>
+          )}
           <Button
             disabled={isPending}
             onClick={onCancel}
