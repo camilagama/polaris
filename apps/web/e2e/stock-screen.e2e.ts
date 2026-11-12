@@ -395,7 +395,10 @@ test("com um painel aberto o nome de nenhuma linha leva ao produto, e fechado o 
     page.getByRole("heading", { name: "Receber estoque" })
   ).toBeVisible();
   await expect(productLinks).toHaveCount(0);
-  await page.getByRole("button", { name: "Fechar" }).click();
+  await expect(
+    page.getByRole("listitem").filter({ hasText: "Camiseta do teste" })
+  ).toBeVisible();
+  await page.getByRole("button", { exact: true, name: "Fechar" }).click();
   await expect(
     page.getByRole("heading", { name: "Receber estoque" })
   ).toHaveCount(0);
