@@ -212,7 +212,7 @@ export function ResultCards({
         help={{ about: "Resultado estimado", text: read.result.help }}
         id="result-kpi-result"
         strip
-        warning={resultWarning({ incomplete, missing, noCost })}
+        notice={resultWarning({ incomplete, missing, noCost })}
         {...(kpis.series.result && drawn && !noCost
           ? {
               range: range(
@@ -305,7 +305,7 @@ function MarginCard({
           }
         />
       }
-      warning={incomplete ? <IncompleteBadge /> : null}
+      notice={incomplete ? <IncompleteBadge /> : null}
     />
   );
 }

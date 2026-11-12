@@ -379,6 +379,7 @@ export function KpiTile({
   help,
   id,
   note,
+  notice,
   range,
   spark,
   strip = false,
@@ -398,6 +399,8 @@ export function KpiTile({
   id: string;
   /** What goes beside the chip: the count. */
   note?: ReactNode;
+  /** A warning on a row of its own under the support line, free to wrap and to make the tile taller: the Resultado's, where the badge and the days do not fit one line at 320 px. */
+  notice?: ReactNode;
   range?: KpiRange;
   spark?: ReactNode;
   /** The tile is a column of `KPI_STRIP`: from 1280 px it gives up its own card. */
@@ -457,6 +460,11 @@ export function KpiTile({
           </span>
         ) : null}
       </div>
+      {notice ? (
+        <div className={TILE_SUPPORT} data-kpi-warning="">
+          {notice}
+        </div>
+      ) : null}
     </Card>
   );
 }
