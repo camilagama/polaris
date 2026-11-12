@@ -27,13 +27,13 @@ const TABLE_TAG =
 const FIXED_TABLE = /<table class="[^"]*\btable-fixed\b/;
 const DIGIT_OF_AMOUNT = /R\$ \d/;
 
-function render(visible?: boolean) {
+function render(visible?: boolean, rows: typeof ROWS = ROWS) {
   return renderToStaticMarkup(
     <ChartDataTable
       caption="Vendas por dia."
       columns={COLUMNS}
       id="numbers"
-      rows={ROWS}
+      rows={rows}
       {...(visible === undefined ? {} : { visible })}
     />
   );
@@ -82,5 +82,55 @@ describe("ChartDataTable", () => {
     expect(html).toContain("R$ ••••");
     expect(html).toContain("valor escondido");
     expect(html).not.toMatch(DIGIT_OF_AMOUNT);
+  });
+
+  describe("a negative amount", () => {
+    const negative = [
+      { cells: ["23/10/2026", "-R$ 5,00"], key: "a", negativeCells: [1] },
+      { cells: ["22/10/2026", "R$ 7,00"], key: "b" },
+    ];
+    const cell = (html: string, text: string) =>
+      html.match(new RegExp(`<td[^>]*>[^<]*(?:<[^>]*>)*${text}`))?.[0] ?? "";
+
+    it("takes the destructive color in the marked cell and in no other", () => {
+      const html = render(true, negative);
+      expect(cell(html, "-R\\$ 5,00")).toContain("text-destructive");
+      expect(cell(html, "R\\$ 7,00")).not.toContain("text-destructive");
+      expect(html.match(/text-destructive/g)).toHaveLength(1);
+    });
+
+    it("loses the color while the values are hidden, in the table and in the cards", () => {
+      hiddenValues.hidden = true;
+      const html = render(true, negative);
+      expect(html).not.toContain("5,00");
+      expect(html).toContain("R$ ••••");
+      expect(html).not.toContain("text-destructive");
+      const stacked = renderToStaticMarkup(
+        <ChartDataTable
+          caption="Vendas por dia."
+          columns={[
+            ...COLUMNS,
+            { header: "Custos", numeric: true },
+            { header: "Resultado do dia", numeric: true },
+          ]}
+          id="numbers"
+          rows={[
+            {
+              cells: ["23/10/2026", "R$ 1,00", "R$ 2,00", "-R$ 5,00"],
+              key: "a",
+              negativeCells: [3],
+            },
+          ]}
+          visible
+        />
+      );
+      expect(stacked).toContain("@max-3xl:grid");
+      expect(stacked).not.toContain("text-destructive");
+    });
+
+    it("takes the color back when the values show again", () => {
+      hiddenValues.hidden = false;
+      expect(render(true, negative).match(/text-destructive/g)).toHaveLength(1);
+    });
   });
 });

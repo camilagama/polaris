@@ -75,6 +75,12 @@ const COLUMNS_WITH_COSTS = (unit: string) =>
     { header: "Despesas do período", numeric: true },
   ] as const;
 
+function isNegative(value: string | null | undefined): boolean {
+  return typeof value === "string" && value.trim().startsWith("-");
+}
+
+const RESULT_CELL = 3;
+
 /**
  * The table of the numbers: every day (or month) with its sales, its costs, its result and its expenses. Invisible, it is
  * the way to the numbers for a screen reader (the chart's `aria-details` points at it); shown, it is what stays when the
@@ -119,6 +125,9 @@ export function NumbersTable({
             ]
           : [row.tableLabel, formatBrlAmount(row.netSales)],
         key: row.key,
+        ...(hasCosts && isNegative(row.operatingResult)
+          ? { negativeCells: [RESULT_CELL] }
+          : {}),
       }))}
       visible={visible}
     />
