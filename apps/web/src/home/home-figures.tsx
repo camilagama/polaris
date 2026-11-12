@@ -34,8 +34,11 @@ function barWidth(netSales: string, top: bigint): number {
   return Number((cents * 100n) / top);
 }
 
+/** From this many lines the list takes the height the card is given, a line each; fewer stay at the top. */
+const SPREAD_FROM = 3;
+
 /**
- * The five most sold products of the month, by units net of returns; none sold, no block (AC-16). Each line has the
+ * The five most sold products of the month, by units net of returns; none sold, the same box says so (AC-16). Each line has the
  * miniature of the product (its two initials when it has no photo or while it comes, in a box of the same size, so
  * nothing moves when the photo arrives) with the position in a small circle over its corner, the name, the net sales
  * and the units, and a green bar proportional to the net sales (v7 § 3 item 11), drawn in CSS: it says the same as
@@ -60,9 +63,19 @@ export function TopProductsBlock({
     [products]
   );
   useThumbnailSequence(covers);
+  if (products.length === 0) {
+    return (
+      <HomeBlock id="home-top" title={title}>
+        <p className="grid flex-1 place-items-center text-center text-muted-foreground">
+          Sem vendas no período.
+        </p>
+      </HomeBlock>
+    );
+  }
+  const spread = products.length >= SPREAD_FROM;
   return (
     <HomeBlock id="home-top" title={title}>
-      <ol className="grid min-w-0">
+      <ol className="flex min-w-0 flex-1 flex-col">
         {products.map((product, index) => {
           const content = (
             <>
@@ -113,7 +126,10 @@ export function TopProductsBlock({
           const row = "grid min-h-12 content-center gap-1.5 py-2";
           return (
             <li
-              className="@container min-w-0 border-t first:border-t-0"
+              className={cn(
+                "@container grid min-w-0 border-t first:border-t-0",
+                spread && "flex-1"
+              )}
               key={product.productId}
             >
               {product.deleted ? (

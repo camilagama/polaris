@@ -552,6 +552,20 @@ describe("OnDemandCalendar, a espera do chunk", () => {
   });
 });
 
+describe("OnDemandCalendar, o motivo escrito no rodapé", () => {
+  it("a caixa não reserva a linha do motivo quando o rodapé o escreve: a altura é a do mês", () => {
+    const inFooter = html(
+      <OnDemandCalendar
+        disabledReason="Só até hoje"
+        mode="single"
+        reasonInFooter
+      />
+    );
+    expect(inFooter).toContain("h-[calc(var(--cell-size)*7+3.1875rem)]");
+    expect(inFooter).not.toContain("+1.375rem");
+  });
+});
+
 describe("calendarChunkPath, o chunk que falhou", () => {
   const origin = "https://app.polaris.example";
   const path = "/assets/calendar-Ab12_x-9.js";

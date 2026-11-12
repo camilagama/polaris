@@ -32,7 +32,7 @@ import { buttonVariants } from "@/ui/button";
  * keyboard grid), the text is Brazilian Portuguese. A day outside the allowed ones is `aria-disabled`, keeps the
  * focus of the arrows, the click and the touch, and says why through `aria-describedby` (the project's rule for a
  * disabled control with a reason): a screen reader hears the reason once, and a line under the month shows it as
- * text while such a day has the focus.
+ * text while such a day has the focus (unless the picker's footer already writes it).
  *
  * Heavy (it brings react-day-picker and date-fns): screens never import it. They use the pickers, which load it
  * on demand through `calendar-on-demand.tsx`; a guard of `pwa/precache-budget.ts` fails the build otherwise.
@@ -40,6 +40,11 @@ import { buttonVariants } from "@/ui/button";
 export type CalendarProps = DayPickerProps & {
   /** Why the disabled days cannot be chosen ("Só até hoje"); described on each one and shown under the month on focus. */
   disabledReason?: string | undefined;
+  /**
+   * The picker already writes the reason in its own footer: the line under the month leaves the layout (no text, no
+   * reserved height) but stays in the DOM, so each disabled day is still described by it.
+   */
+  reasonInFooter?: boolean | undefined;
 };
 
 const ReasonContext = createContext<string | undefined>(undefined);
@@ -171,6 +176,7 @@ export function Calendar({
   modifiers,
   onDayBlur,
   onDayFocus,
+  reasonInFooter = false,
   showOutsideDays = true,
   ...props
 }: CalendarProps) {
@@ -267,8 +273,10 @@ export function Calendar({
       {disabledReason ? (
         <p
           className={cn(
-            "sticky bottom-0 min-h-[1.375rem] bg-popover pt-1 text-center text-muted-foreground text-support",
-            !onDisabledDay && "invisible"
+            reasonInFooter
+              ? "hidden"
+              : "sticky bottom-0 min-h-[1.375rem] bg-popover pt-1 text-center text-muted-foreground text-support",
+            !(reasonInFooter || onDisabledDay) && "invisible"
           )}
           id={reasonId}
         >

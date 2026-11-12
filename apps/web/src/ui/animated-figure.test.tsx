@@ -1,6 +1,62 @@
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
-import { AnimatedFigure, ENTRANCE, nextFigureState } from "./animated-figure";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import type { MotionLevel } from "@/lib/motion-level";
+import {
+  AnimatedFigure,
+  ENTRANCE,
+  type FigureState,
+  nextFigureState,
+} from "./animated-figure";
+
+const harness = vi.hoisted(() => ({
+  applied: 0,
+  level: "full" as MotionLevel,
+  seed: null as FigureState | null,
+}));
+
+vi.mock("@/lib/motion-level", () => ({
+  useMotionLevel: () => harness.level,
+}));
+
+/**
+ * A string render cannot update props, so the state the component had "before" is seeded at its first `useState`: the
+ * render then sees a `text` different from the one it drew last, exactly as after a re-render with a new value, and
+ * the update it makes during that render is the one that reaches the markup.
+ */
+vi.mock("react", async (importOriginal) => {
+  const original = await importOriginal<typeof import("react")>();
+  const useState = ((initial: unknown) => {
+    const seeded =
+      harness.seed !== null &&
+      typeof initial === "object" &&
+      initial !== null &&
+      "generation" in initial;
+    harness.applied += seeded ? 1 : 0;
+    return original.useState(seeded ? harness.seed : initial);
+  }) as typeof original.useState;
+  return { ...original, default: { ...original, useState }, useState };
+});
+
+afterEach(() => {
+  expect(harness.applied > 0).toBe(harness.seed !== null);
+  harness.applied = 0;
+  harness.level = "full";
+  harness.seed = null;
+});
+
+const drawn = (text: string, generation = 0): FigureState => ({
+  animate: false,
+  generation,
+  reading: false,
+  text,
+});
+
+const figure = (text: string) =>
+  renderToStaticMarkup(
+    <AnimatedFigure text={text}>
+      <span>{text}</span>
+    </AnimatedFigure>
+  );
 
 describe("AnimatedFigure", () => {
   it("escreve o número final no primeiro quadro, sem entrada (nasce pronto)", () => {
@@ -23,6 +79,41 @@ describe("AnimatedFigure", () => {
     expect(markup).not.toContain("data-animated-figure");
     expect(markup).not.toContain("aria-hidden");
     expect(markup).not.toContain("<number-flow");
+  });
+});
+
+describe("AnimatedFigure e o nível de movimento do aparelho", () => {
+  it("em full, trocar o text liga data-figure-changed e a entrada", () => {
+    harness.level = "full";
+    harness.seed = drawn("R$ 10,00");
+    const markup = figure("R$ 20,00");
+    expect(markup).toContain("data-figure-changed");
+    expect(markup).toContain("animate-in");
+    expect(markup).toContain("R$ 20,00");
+  });
+
+  it.each(["essential", "none"] as const)(
+    "no nível %s, trocar o text não liga data-figure-changed nem a entrada, e o texto novo aparece",
+    (level) => {
+      harness.level = level;
+      harness.seed = drawn("R$ 10,00");
+      const markup = figure("R$ 20,00");
+      expect(markup).not.toContain("data-figure-changed");
+      expect(markup).not.toContain("animate-in");
+      expect(markup).toContain("R$ 20,00");
+    }
+  );
+
+  it("sair de full com a entrada ligada desliga data-figure-changed sem trocar o texto", () => {
+    harness.seed = { ...drawn("R$ 20,00", 1), animate: true };
+    harness.level = "full";
+    expect(figure("R$ 20,00")).toContain("data-figure-changed");
+    for (const level of ["essential", "none"] as const) {
+      harness.level = level;
+      const markup = figure("R$ 20,00");
+      expect(markup).not.toContain("data-figure-changed");
+      expect(markup).toContain("R$ 20,00");
+    }
   });
 });
 
