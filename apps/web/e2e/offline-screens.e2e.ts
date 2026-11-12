@@ -83,6 +83,7 @@ async function dumpState(page: Page, label: string) {
       `${e.tagName}#${e.id}.${String(e.className).slice(0, 50)}[${Array.from(e.attributes).map((a) => a.name + "=" + a.value.slice(0, 20)).filter((x) => /^data-(open|closed|starting|ending|base-ui-inert|slot|side)|^inert|^hidden|^aria-(hidden|expanded)/.test(x)).join(" ")}]`;
     const trig = document.querySelector('[aria-label^="Mais ações para"]');
     return {
+      log: (window as unknown as { __log: string[] }).__log?.join(" | "),
       active: document.activeElement ? d(document.activeElement) : null,
       trig: trig ? d(trig) : null,
       inert: Array.from(document.querySelectorAll("[data-base-ui-inert]")).map(d),
@@ -278,6 +279,27 @@ for (const reducedMotion of ["no-preference", "reduce"] as const) {
     page,
   }) => {
     await page.emulateMedia({ reducedMotion });
+    await page.addInitScript(() => {
+      const w = window as unknown as { __log: string[] };
+      w.__log = [];
+      const t0 = performance.now();
+      const add = (m: string) => w.__log.push(`${Math.round(performance.now() - t0)}ms ${m}`);
+      for (const type of ["pointerdown", "mousedown", "mouseup", "click", "keydown"]) {
+        document.addEventListener(type, (e) => add(`${type}${(e as KeyboardEvent).key ? ":" + (e as KeyboardEvent).key : ""}@${(e.target as Element)?.tagName}${(e.target as Element)?.getAttribute?.("data-slot") ?? ""}`), true);
+      }
+      new MutationObserver((records) => {
+        for (const r of records) {
+          const el = r.target as Element;
+          if (r.type === "attributes") {
+            const slot = el.getAttribute("data-slot") ?? el.tagName;
+            if (/expanded|data-open|data-closed|data-starting|data-ending|data-base-ui-inert/.test(r.attributeName ?? "")) add(`${slot}.${r.attributeName}=${el.getAttribute(r.attributeName ?? "")}`);
+          } else {
+            for (const n of Array.from(r.addedNodes)) if (n instanceof Element && n.querySelector("[data-slot=dropdown-menu-content]")) add("+portal");
+            for (const n of Array.from(r.removedNodes)) if (n instanceof Element && n.querySelector("[data-slot=dropdown-menu-content]")) add("-portal");
+          }
+        }
+      }).observe(document, { attributes: true, childList: true, subtree: true });
+    });
     await openLab(page, `user-${crypto.randomUUID()}`);
     await start(page);
     await registerConfirmed(page, "Iris Prado", "11900000008");
