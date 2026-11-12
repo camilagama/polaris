@@ -73,7 +73,34 @@ async function closeMenu(page: Page) {
     await page.keyboard.press("Escape");
     await expect(page.getByRole("menu")).toHaveCount(0, { timeout: 1000 });
   }).toPass({ timeout: 10_000 });
-  await expect(page.locator("[data-base-ui-inert]")).toHaveCount(0);
+  await expectNoInert(page, "closeMenu");
+}
+
+
+async function dumpState(page: Page, label: string) {
+  const state = await page.evaluate(() => {
+    const d = (e: Element) =>
+      `${e.tagName}#${e.id}.${String(e.className).slice(0, 50)}[${Array.from(e.attributes).map((a) => a.name + "=" + a.value.slice(0, 20)).filter((x) => /^data-(open|closed|starting|ending|base-ui-inert|slot|side)|^inert|^hidden|^aria-(hidden|expanded)/.test(x)).join(" ")}]`;
+    const trig = document.querySelector('[aria-label^="Mais ações para"]');
+    return {
+      active: document.activeElement ? d(document.activeElement) : null,
+      trig: trig ? d(trig) : null,
+      inert: Array.from(document.querySelectorAll("[data-base-ui-inert]")).map(d),
+      popups: Array.from(document.querySelectorAll('[data-slot="dropdown-menu-content"]')).map((e) => d(e) + " parent=" + d(e.parentElement as Element)),
+      menus: document.querySelectorAll("[role=menu]").length,
+      dialogs: document.querySelectorAll("[role=dialog],dialog[open]").length,
+      bodyChildren: Array.from(document.body.children).map(d),
+    };
+  });
+  return `${label}: ${JSON.stringify(state)}`;
+}
+
+async function expectNoInert(page: Page, label: string) {
+  try {
+    await expect(page.locator("[data-base-ui-inert]")).toHaveCount(0, { timeout: 3000 });
+  } catch (error) {
+    throw new Error(`${await dumpState(page, label)}\n${String(error).slice(0, 200)}`);
+  }
 }
 
 /** The name of a row, which opens the form of the customer or the product; locked, it says so by `aria-disabled`. */
@@ -265,7 +292,9 @@ for (const reducedMotion of ["no-preference", "reduce"] as const) {
       await expect(trigger).toHaveAttribute("aria-expanded", "true");
       await closeMenu(page);
       // the click right after the exit is not blocked by what is left of the menu
-      await network[toggle]();
+      await network[toggle]({ timeout: 8000 }).catch(async (error) => {
+        throw new Error(`${await dumpState(page, `toggle ${toggle}`)}\n${String(error).slice(0, 300)}`);
+      });
     }
 
     // the click on the trigger right after the Escape (the hole of the backdrop lets it through while the menu
@@ -283,8 +312,10 @@ for (const reducedMotion of ["no-preference", "reduce"] as const) {
       });
       await expect(page.getByRole("menu")).toHaveCount(0, { timeout: 1000 });
     }).toPass({ timeout: 10_000 });
-    await expect(page.locator("[data-base-ui-inert]")).toHaveCount(0);
-    await network.check();
+    await expectNoInert(page, "final");
+    await network.check({ timeout: 8000 }).catch(async (error) => {
+      throw new Error(`${await dumpState(page, "check")}\n${String(error).slice(0, 300)}`);
+    });
   });
 }
 

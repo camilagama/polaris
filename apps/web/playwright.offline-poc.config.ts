@@ -11,6 +11,9 @@ const inCI = Boolean(process.env.CI);
 export default defineConfig({
   forbidOnly: inCI,
   fullyParallel: false,
+  grep: /depois do Escape/,
+  repeatEach: 25,
+  retries: 0,
   projects: [
     {
       name: "chromium-desktop",
@@ -35,7 +38,6 @@ export default defineConfig({
       : []),
   ],
   reporter: "list",
-  retries: inCI ? 1 : 0,
   testDir: "./e2e",
   testMatch: "**/*.e2e.ts",
   timeout: 45_000,
