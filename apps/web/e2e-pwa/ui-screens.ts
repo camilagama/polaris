@@ -47,6 +47,8 @@ export type UiCheck = "overflow" | "touch" | "axe" | "focus";
 export const VIEWPORTS = {
   "320": { height: 640, width: 320 },
   "360": { height: 740, width: 360 },
+  "760": { height: 900, width: 760 },
+  "1024": { height: 800, width: 1024 },
   "1280": { height: 800, width: 1280 },
 } as const;
 
@@ -901,6 +903,7 @@ export const SCREENS: UiScreen[] = [
   resultScreen("sem dados", resultStates.empty),
   resultScreen("sem custo conhecido", resultStates.noCost),
   homeScreen("com vendas", homeStates.sold, exerciseHomePanels),
+  homeScreen("com vendas e sem meta", homeStates.soldNoGoal),
   homeScreen("loja nova", homeStates.fresh),
   homeScreen("erro nos números", homeStates.error),
   homeScreen("sem rede, com cópia", homeStates.offlineWithCopy),
