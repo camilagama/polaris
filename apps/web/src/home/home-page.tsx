@@ -4,10 +4,10 @@ import { cn } from "@/lib/utils";
 import { Button, buttonVariants } from "@/ui/button";
 import { RefreshButton } from "@/ui/refresh-button";
 import { SlowReadNote, StaleCopyNotice } from "../app-shell/read-wait";
+import type { Period, PeriodPreset } from "../dashboard/result-period";
 import { useCurrentOrganization } from "../lib/current-organization";
 import { browserStorage } from "../lib/current-organization-model";
 import { calendarDayInTimezone } from "../lib/dates";
-import type { Period, PeriodPreset } from "../dashboard/result-period";
 import type { StoredPeriodSummary } from "../lib/period-summary-cache";
 import { copyShownText } from "../lib/read-wait-text";
 import { OFFLINE_RUNTIME_ENABLED } from "../offline/runtime/enabled";
@@ -30,6 +30,7 @@ import {
   NO_CONNECTION_NOTE,
   NoFiguresCards,
 } from "./home-kpi-cards";
+import { LowerBlocks } from "./home-lower-blocks";
 import {
   copyLine,
   type GoalView,
@@ -40,15 +41,15 @@ import {
   noSaleCounted,
   pickGoal,
 } from "./home-model";
+import { BlockError, BlockSkeleton, HomeBlock, KeptHeight } from "./home-parts";
 import {
   type HomeSelection,
   THIS_MONTH,
   topProductsTitle,
 } from "./home-period";
 import { HomePeriodRow } from "./home-period-row";
-import { PeriodControlProvider } from "./period-control";
-import { BlockError, BlockSkeleton, HomeBlock, KeptHeight } from "./home-parts";
 import { RhythmBlock, type RhythmSource } from "./home-rhythm";
+import { PeriodControlProvider } from "./period-control";
 import {
   type FirstStepsMemory,
   useFirstStepsMemory,
@@ -61,8 +62,9 @@ import { useHomePeriod } from "./use-home-period";
  * something to do), Hoje, Mês, Meta, the chart, the map and Mais vendidos, in this order at 360 px, and in two columns
  * from 1024 px with Nova venda, Hoje and Mês above the fold (AC-4 emendado: with three lines of action the number of Hoje
  * and the title of Mês stay inside a 360 × 740 window). A store that never sold sees the checklist in place of the
- * figures (AC-22). Each block reads, waits and fails on its own (§ 5.2). Opening it writes nothing (AC-23): the only
- * write is the settling of a goal whose period ended, which `goal.list` already does when it reads (ADR 0055).
+ * figures (AC-22). Each block fails on its own (§ 5.2); the blocks under the cards wait together, as one skeleton, for
+ * the first answer of the goals. Opening it writes nothing (AC-23): the only write is the settling of a goal whose
+ * period ended, which `goal.list` already does when it reads (ADR 0055).
  */
 
 const REFRESHING_TEXT = "Atualizando…";
@@ -326,15 +328,16 @@ function useChosenPeriod({
   return { chosen, periodRow, reloadAll };
 }
 
-/** Mais vendidos of the period shown: a skeleton while the period is read, nothing when no product sold. */
+/** Mais vendidos of the period shown: a skeleton while the period is read, and the same box with a sentence when no product sold. */
 function rankingBlock(
-  top: NonNullable<StoredPeriodSummary["topProducts"]>,
+  top: StoredPeriodSummary["topProducts"],
   chosen: ChosenView | null
 ): React.ReactNode {
   if (chosen?.month.kind === "loading") {
     return <BlockSkeleton label="Carregando os mais vendidos…" lines={5} />;
   }
-  if (top.length === 0) {
+  // a copy kept before the ranking was read has none to say: the block is left out, never drawn as an empty period
+  if (top === undefined) {
     return null;
   }
   return (
@@ -353,7 +356,9 @@ function readBlocks(
   todayShown = true
 ): Blocks {
   const shown = chosen ? chosen.summary : figures.month;
-  const top = shown?.topProducts ?? [];
+  // a period that sold nothing has no ranking to read: the block says so, as the chart does
+  const top =
+    shown?.topProducts ?? (shown?.quality.salesCount === 0 ? [] : undefined);
   // a copy kept before the daily series existed: the totals stand, nothing of the series is drawn (ADR 0056, D2)
   const series =
     figures.month.daily !== undefined && figures.before.daily !== undefined;
@@ -852,12 +857,12 @@ function pickGoalBlock({
   retryGoals: () => void;
   state: HomeState;
   view: OfflineHome | null;
-}): React.ReactNode {
+}): { loading: boolean; node: React.ReactNode } {
   if (view && readsGoals && (offline || state.goals.status === "loading")) {
-    return <OfflineGoalBlock goal={view.goal} />;
+    return { loading: false, node: <OfflineGoalBlock goal={view.goal} /> };
   }
   if (offline || state.sessionRefused) {
-    return null;
+    return { loading: false, node: null };
   }
   // the estimate only from the server's series of this read, measured on its today (never from the copy)
   const figures = state.figures.status === "ready" ? state.figures.data : null;
@@ -869,100 +874,30 @@ function pickGoalBlock({
           figures.today
         )
       : null;
-  return (
-    <GoalBlock
-      block={state.goals}
-      onRetry={retryGoals}
-      projection={projection}
-      today={figures?.today ?? null}
-      view={goal}
-    />
-  );
+  return {
+    loading: state.goals.status === "loading",
+    node: (
+      <GoalBlock
+        block={state.goals}
+        onRetry={retryGoals}
+        projection={projection}
+        today={figures?.today ?? null}
+        view={goal}
+      />
+    ),
+  };
 }
 
 /**
- * The blocks under the KPI cards. The source has the order of a phone (Meta, Vendas por dia, Ritmo de vendas, Mais
- * vendidos, v7 § 3); from 1024 px the chart takes the left 2/3 with Meta at the top of the right column, and the map
- * takes the row under it, beside Mais vendidos. Without the map the chart takes both rows and the ranking goes under the
- * goal; without the chart the blocks go two to a row.
+ * While the cards are a skeleton of a shape not known yet, nothing comes after them (`Blocks.pending`). While the goals
+ * have not answered once, a single full-width skeleton stands in for the blocks under the cards.
  */
-function LowerBlocks({
-  chart,
-  goal,
-  ranking,
-  rhythm,
-}: {
-  chart: React.ReactNode;
-  goal: React.ReactNode;
-  ranking: React.ReactNode;
-  rhythm: React.ReactNode;
-}) {
-  const placed = chart !== null;
-  const mapped = placed && rhythm !== null;
-  return (
-    <div
-      className={cn(
-        "grid min-w-0 gap-4 lg:items-start",
-        placed
-          ? "lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]"
-          : "lg:grid-cols-2",
-        placed &&
-          (mapped ? "lg:grid-rows-[auto_1fr_auto]" : "lg:grid-rows-[auto_1fr]")
-      )}
-    >
-      {goal ? (
-        <div
-          className={cn(
-            "grid min-w-0",
-            placed && "lg:col-start-2 lg:row-start-1"
-          )}
-        >
-          {goal}
-        </div>
-      ) : null}
-      {placed ? (
-        <div
-          className={cn(
-            "grid min-w-0 lg:col-start-1 lg:row-start-1",
-            "lg:row-span-2"
-          )}
-        >
-          {chart}
-        </div>
-      ) : null}
-      {rhythm ? (
-        <div
-          className={cn(
-            "grid min-w-0",
-            mapped && "lg:col-start-1 lg:row-start-3"
-          )}
-        >
-          {rhythm}
-        </div>
-      ) : null}
-      {ranking ? (
-        <div
-          className={cn(
-            "grid min-w-0",
-            placed &&
-              (mapped
-                ? "lg:col-start-2 lg:row-start-3"
-                : "lg:col-start-2 lg:row-start-2")
-          )}
-        >
-          {ranking}
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-/** While the cards are a skeleton of a shape not known yet, nothing comes after them (`Blocks.pending`). */
 function FigureArea({
   attention,
   attentionNotes,
   blocks,
   goal,
+  goalPending,
   keep,
   measure,
 }: {
@@ -970,6 +905,8 @@ function FigureArea({
   attentionNotes: React.ReactNode;
   blocks: Blocks;
   goal: React.ReactNode;
+  /** The goal has not been read yet: its card is a thin strip or a tall one, and the chart's row depends on which. */
+  goalPending: boolean;
   /** The cards keep the height they had with figures (no connection and no copy). */
   keep: boolean;
   /** The cards with figures are on the screen: their height is the one to keep. */
@@ -991,16 +928,40 @@ function FigureArea({
       {blocks.pending ? null : (
         <>
           {attentionNotes}
-          <LowerBlocks
-            chart={blocks.chart}
-            goal={goal}
-            ranking={blocks.ranking}
-            rhythm={blocks.rhythm}
-          />
+          {goalPending ? (
+            <BlockSkeleton
+              className="w-full"
+              label="Carregando a meta…"
+              lines={5}
+            />
+          ) : (
+            <LowerBlocks
+              chart={blocks.chart}
+              goal={goal}
+              ranking={blocks.ranking}
+              rhythm={blocks.rhythm}
+            />
+          )}
         </>
       )}
     </>
   );
+}
+
+/**
+ * The blocks under the cards wait for the first answer of the goals of the store: the shape of the row of the chart is
+ * that answer's (a card beside it, or a thin strip over it). A read again of the same store keeps what is on the screen.
+ */
+function useFirstGoalRead(
+  organizationId: string,
+  loading: boolean,
+  status: HomeState["goals"]["status"]
+): boolean {
+  const read = useRef<string | null>(null);
+  if (status !== "loading") {
+    read.current = organizationId;
+  }
+  return loading && read.current !== organizationId;
 }
 
 /**
@@ -1085,7 +1046,7 @@ export function HomePage() {
     reloading,
     reloadAll
   );
-  const goalBlock = pickGoalBlock({
+  const picked = pickGoalBlock({
     goal,
     offline,
     readsGoals: reads.goals,
@@ -1093,6 +1054,12 @@ export function HomePage() {
     state,
     view,
   });
+
+  const goalPending = useFirstGoalRead(
+    organizationId,
+    picked.loading && online,
+    state.goals.status
+  );
 
   // with the session refused nothing about the stock is known: only this device's own line can be said
   const stock: HomeState["stock"] =
@@ -1139,7 +1106,8 @@ export function HomePage() {
             attention={attention}
             attentionNotes={attentionNotes}
             blocks={blocks}
-            goal={goalBlock}
+            goal={picked.node}
+            goalPending={goalPending}
             keep={explained}
             measure={offline === null && figures !== null && !blocks.pending}
           />

@@ -26,6 +26,8 @@ const PRODUCTS = [
 
 const THUMBNAIL_STATE = /data-thumbnail="(\w+)"/;
 
+const SPREAD_ROW = /^<li[^>]*class="[^"]*\bflex-1\b/;
+
 const CONTAINER_ROW = /^<li[^>]*class="@container /;
 
 const items = (html: string) =>
@@ -120,5 +122,52 @@ describe("Mais vendidos: a miniatura de cada linha", () => {
     expect(rows[0]).toContain("width:32px");
     expect(rows[1]).not.toContain("<img");
     expect(rows[1]).toContain("width:32px");
+  });
+});
+
+describe("Mais vendidos: a altura que o cartão recebe", () => {
+  const product = (index: number) => ({
+    deleted: false,
+    name: `Produto ${index}`,
+    netSales: "100.00",
+    coverAssetId: null,
+    productId: `0199c2d0-0000-7000-8000-0000000001${String(index).padStart(2, "0")}`,
+    quantity: index,
+  });
+  const rowsOf = (count: number) =>
+    items(
+      renderToStaticMarkup(
+        <TopProductsBlock
+          products={Array.from({ length: count }, (_, index) =>
+            product(index + 1)
+          )}
+        />
+      )
+    );
+
+  it("de três linhas em diante cada uma divide a altura por igual", () => {
+    for (const count of [3, 5]) {
+      const rows = rowsOf(count);
+      expect(rows).toHaveLength(count);
+      for (const row of rows) {
+        expect(row).toMatch(SPREAD_ROW);
+      }
+    }
+  });
+
+  it("com uma ou duas linhas a lista fica no alto, sem esticar a linha", () => {
+    for (const count of [1, 2]) {
+      for (const row of rowsOf(count)) {
+        expect(row).not.toMatch(SPREAD_ROW);
+      }
+    }
+  });
+});
+
+describe("Mais vendidos: o período em que nada vendeu", () => {
+  it("fica na mesma caixa, com a frase do gráfico no lugar da lista", () => {
+    const html = renderToStaticMarkup(<TopProductsBlock products={[]} />);
+    expect(text(html)).toBe("Mais vendidos do mês Sem vendas no período.");
+    expect(html).not.toContain("<ol");
   });
 });

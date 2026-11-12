@@ -156,7 +156,10 @@ function Legend({ view }: { view: RhythmView }) {
 function Insight({ view }: { view: RhythmView }) {
   const insight = rhythmInsight(view);
   return (
-    <p className="min-w-0 flex-1 basis-60 text-support" data-rhythm-insight="">
+    <p
+      className="min-w-0 @min-[41rem]/rhythm:flex-none flex-1 @min-[41rem]/rhythm:basis-auto basis-60 text-support"
+      data-rhythm-insight=""
+    >
       {insight.kind === "few" ? (
         <>
           {insight.text}{" "}
@@ -336,12 +339,13 @@ function RhythmMap({ days }: { days: RhythmDay[] }) {
           {`Últimas ${weeks} semanas`}
         </p>
       }
+      className="@container/rhythm"
       help={{ about: "Ritmo de vendas", text: help }}
       id="home-rhythm"
       title="Ritmo de vendas"
     >
-      <div className="grid gap-2">
-        <div className="min-w-0" ref={ref}>
+      <div className="flex @min-[41rem]/rhythm:grid flex-1 @min-[41rem]/rhythm:grid-cols-[25.75rem_minmax(0,1fr)] flex-col gap-2 @min-[41rem]/rhythm:gap-x-6">
+        <div className="@min-[41rem]/rhythm:my-0 my-auto min-w-0" ref={ref}>
           <div
             className="relative max-w-full"
             ref={mapBox}
@@ -385,7 +389,7 @@ function RhythmMap({ days }: { days: RhythmDay[] }) {
           </div>
         </div>
         {/* the sentence takes two or three lines by width: the row keeps the room of the longest, so the card never changes height */}
-        <div className="flex min-h-20 flex-wrap items-start justify-between gap-x-6 gap-y-2 md:min-h-13.5">
+        <div className="flex @min-[41rem]/rhythm:min-h-0 min-h-20 @min-[41rem]/rhythm:flex-col flex-wrap @min-[41rem]/rhythm:flex-nowrap items-start justify-between gap-x-6 gap-y-2 md:min-h-13.5">
           <Insight view={view} />
           {drawingFailed ? null : <Legend view={view} />}
         </div>
@@ -445,7 +449,7 @@ export function RhythmBlock({
     ) : (
       // the height of the block read, so the blocks under it stay
       <BlockSkeleton
-        className="h-[16.6875rem] max-[21.25rem]:h-[18.0625rem] md:h-[15.8125rem]"
+        className="min-h-[16.6875rem] max-[21.25rem]:min-h-[18.0625rem] md:min-h-[15.8125rem]"
         label="Carregando o ritmo de vendas…"
         lines={0}
       />

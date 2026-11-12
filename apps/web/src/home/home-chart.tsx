@@ -1,8 +1,12 @@
 import { Money } from "@polaris/domain/money/money";
-import { useId, useMemo } from "react";
+import { useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/ui/button";
 import { ChartDataTable } from "@/ui/charts/chart-data-table";
-import { OnDemandAreaChart, useChartsFailed } from "@/ui/charts/on-demand";
+import {
+  EXTRA_HEIGHT,
+  OnDemandAreaChart,
+  useChartsFailed,
+} from "@/ui/charts/on-demand";
 import { EmptyState } from "@/ui/empty-state";
 import { MoneyText } from "@/ui/hidden-values";
 import { useConnectionOnline } from "../lib/browser-connection";
@@ -33,10 +37,41 @@ import { HomeBlock } from "./home-parts";
  * does not open the table is shown in the place of the drawing, and the sentence of § 5.5 says why.
  */
 
-/** The height of the plot: 140 px on a phone, 200 from 768 px; the empty period keeps the same one. */
+/** The least height of the plot: 140 px on a phone, 200 from 768 px; the empty period keeps the same one. */
 function useChartHeight() {
   const still = useIsMobile();
   return { height: still ? 140 : 200, still };
+}
+
+/**
+ * The height of the plot is the least one until the card is taller than its own content (the pair of a row takes
+ * the height of the taller card): the plot then grows to the box, so the card never has an empty foot. The box is the
+ * one the drawing is placed in, out of the flow, so the drawing never asks the card for height.
+ */
+function useFilledHeight(least: number) {
+  const box = useRef<HTMLDivElement>(null);
+  const [filled, setFilled] = useState(least);
+  useLayoutEffect(() => {
+    const element = box.current;
+    if (!element) {
+      return;
+    }
+    const read = () =>
+      setFilled(
+        Math.max(
+          least,
+          Math.round(element.getBoundingClientRect().height) - EXTRA_HEIGHT
+        )
+      );
+    read();
+    if (typeof ResizeObserver === "undefined") {
+      return;
+    }
+    const observer = new ResizeObserver(read);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [least]);
+  return { box, filled };
 }
 
 const maskedValue = () => MASKED_MONEY;
@@ -91,27 +126,37 @@ function DayChart({
   summary: string;
 }) {
   const [hidden] = useHiddenValues();
-  const { height, still } = useChartHeight();
+  const { height: least, still } = useChartHeight();
+  const { box, filled: height } = useFilledHeight(least);
   return (
-    <OnDemandAreaChart
-      color="var(--chart-sales)"
-      data={points(rows)}
-      details={details}
-      failed={<ChartFailed />}
-      {...(empty ? { empty: NO_SALE } : {})}
-      formatAxis={hidden ? noAxis : axisMoney}
-      formatSpoken={hidden ? spokenMasked : moneyText}
-      formatValue={hidden ? maskedValue : moneyText}
-      height={height}
-      label={hidden ? maskMoney(summary, MASKED_SPOKEN) : summary}
-      markers="key"
-      name="Vendas"
-      rangeLabel={grouped ? "Mês do período" : "Dia do período"}
-      readingAtRest={false}
-      still={still}
-      valueLabels="peak"
-      {...(hidden ? {} : { axisUnit: "R$" })}
-    />
+    <div
+      className="relative flex-1"
+      data-chart-box=""
+      ref={box}
+      style={{ minHeight: least + EXTRA_HEIGHT }}
+    >
+      <div className="absolute inset-0">
+        <OnDemandAreaChart
+          color="var(--chart-sales)"
+          data={points(rows)}
+          details={details}
+          failed={<ChartFailed />}
+          {...(empty ? { empty: NO_SALE } : {})}
+          formatAxis={hidden ? noAxis : axisMoney}
+          formatSpoken={hidden ? spokenMasked : moneyText}
+          formatValue={hidden ? maskedValue : moneyText}
+          height={height}
+          label={hidden ? maskMoney(summary, MASKED_SPOKEN) : summary}
+          markers="key"
+          name="Vendas"
+          rangeLabel={grouped ? "Mês do período" : "Dia do período"}
+          readingAtRest={false}
+          still={still}
+          valueLabels="peak"
+          {...(hidden ? {} : { axisUnit: "R$" })}
+        />
+      </div>
+    </div>
   );
 }
 
@@ -177,7 +222,7 @@ function Period({
   const where = periodShort(first, last, today.slice(0, 4));
   const summaryText = `Vendas líquidas por ${series.grouped ? "mês" : "dia"}, de ${where}: ${formatBrlAmount(total)} no total. A tabela ${series.grouped ? "mês a mês" : "dia a dia"} está no fim deste bloco.`;
   return (
-    <div className="grid gap-3">
+    <div className="flex flex-1 flex-col gap-3">
       <p className="grid gap-0.5">
         <span className="font-semibold text-lg tabular-nums">
           <MoneyText text={formatBrlAmount(total)} />

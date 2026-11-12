@@ -26,7 +26,7 @@ export type {
 export type { SparklineProps } from "./sparkline";
 
 /** The margins of the blocks added to the plot: the same number as `EXTRA_HEIGHT` of chart-data.ts. */
-const EXTRA_HEIGHT = 40;
+export const EXTRA_HEIGHT = 40;
 
 type Charts = typeof import("./charts");
 

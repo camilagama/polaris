@@ -7,7 +7,13 @@ import {
   VISUAL_BROWSER_VERSION,
   VISUAL_WS_ENV,
 } from "../scripts/visual-browser";
-import { COLOR_SCHEME, SCREENS, type UiScreen, VIEWPORTS } from "./ui-screens";
+import {
+  COLOR_SCHEME,
+  SCREENS,
+  type UiContext,
+  type UiScreen,
+  VIEWPORTS,
+} from "./ui-screens";
 
 /**
  * Visual regression: one state per screen of `ui-screens.ts`, plus the error and empty states the guardrails already
@@ -37,6 +43,7 @@ const VISUAL_STATES = [
   ["resultado mês incompleto e gráfico de vendas", "resultado-grafico"],
   ["resultado sem dados", "resultado-vazio"],
   ["início com vendas", "inicio-com-vendas"],
+  ["início com vendas e sem meta", "inicio-sem-meta"],
   ["início erro nos números", "inicio-erro"],
   ["assinatura oferta com Pix", "assinatura-oferta"],
   ["histórico lista", "historico-lista"],
@@ -67,6 +74,18 @@ const CONTEXTS = [
   { theme: "claro", touch: false, viewport: "1280" },
   { theme: "escuro", touch: false, viewport: "1280" },
 ] as const;
+
+/** The Início is also drawn at the widths where its grid changes shape (de 640 a 959 px de conteúdo e a faixa do meio). */
+const HOME_FILES: readonly string[] = ["inicio-com-vendas", "inicio-sem-meta"];
+const HOME_CONTEXTS = [
+  { theme: "claro", touch: false, viewport: "760" },
+  { theme: "escuro", touch: false, viewport: "760" },
+  { theme: "claro", touch: false, viewport: "1024" },
+  { theme: "escuro", touch: false, viewport: "1024" },
+] as const;
+
+const contextsOf = (file: string): readonly UiContext[] =>
+  HOME_FILES.includes(file) ? [...CONTEXTS, ...HOME_CONTEXTS] : CONTEXTS;
 
 const SCREENSHOT = {
   animations: "disabled",
@@ -191,7 +210,7 @@ test("a pasta de baselines tem exatamente as imagens da lista", () => {
   const folder = dirname(info.snapshotPath("x.png"));
   const suffix = `-${info.project.name}-${process.platform}.png`;
   const expected = STATES.flatMap(({ file }) =>
-    CONTEXTS.map(
+    contextsOf(file).map(
       ({ theme, viewport }) => `${file}-${viewport}-${theme}${suffix}`
     )
   ).sort();
@@ -234,7 +253,7 @@ test("as fontes do app carregaram: Geist e Geist Mono, sem fonte do sistema", as
 });
 
 for (const { file, screen } of STATES) {
-  for (const context of CONTEXTS) {
+  for (const context of contextsOf(file)) {
     const { theme, touch, viewport } = context;
     test.describe(`${screen.name} · ${viewport} px · tema ${theme}`, () => {
       test.use({

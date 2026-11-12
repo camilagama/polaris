@@ -17,6 +17,8 @@ import { Skeleton } from "@/ui/skeleton";
 interface BlockProps {
   /** A link or a control beside the heading. */
   action?: ReactNode;
+  /** Attributes of the card the page's rules read (the goal's thin strip). */
+  attributes?: Record<`data-${string}`, string>;
   children: ReactNode;
   className?: string;
   id: string;
@@ -28,6 +30,7 @@ interface BlockProps {
 
 export function HomeBlock({
   action,
+  attributes,
   children,
   className,
   help,
@@ -39,6 +42,7 @@ export function HomeBlock({
       aria-labelledby={id}
       className={cn("min-w-0 px-(--card-spacing)", className)}
       role="region"
+      {...attributes}
     >
       <div className="flex min-w-0 flex-wrap items-center justify-between gap-x-3 gap-y-1">
         <div className="flex min-w-0 items-center gap-1">
