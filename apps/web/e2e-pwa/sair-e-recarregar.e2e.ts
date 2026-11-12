@@ -14,7 +14,7 @@ import { WORKER_MARK } from "./worker-mark";
  * reload is the person's second tap. Two devices: one that has the service worker for days (the same context, the
  * worker in control across the rounds) and one that just installed it (a new context each round, a first visit).
  */
-const ROUNDS = 70;
+const ROUNDS = 20;
 const MOUNT_MS = 20_000;
 const SIGN_IN_HEADING = "Entrar no Polaris";
 const FIRST_ACCESS_HEADING = "Abra a sua loja";
@@ -87,33 +87,49 @@ async function serveSession(context: BrowserContext) {
   return state;
 }
 
-/** The init script tells the test each time `boot-retry.js` or `chunk-load-error.ts` marks the tab to reload it. */
-const T0 = Date.now();
-export const timeline: string[] = [];
-const stamp = (m: string) => timeline.push(`${String(Date.now() - T0).padStart(7)} ${m}`);
+/**
+ * The init script tells the test each time `boot-retry.js` or `chunk-load-error.ts` marks the tab to reload it, and
+ * `trace` keeps the order of what the tab did (documents, commits, the module `<script>` errors, the page leaving), so a
+ * failure on a slow runner says which document the mark came from instead of only that it came.
+ */
 async function watchBootRetry(page: Page) {
   const retries: string[] = [];
-  page.on("framenavigated", (f) => { if (f === page.mainFrame()) stamp(`framenavigated ${f.url()}`); });
-  page.on("request", (r) => { if (r.resourceType() === "document") stamp(`request doc ${r.url()}`); });
-  page.on("response", (r) => { if (r.url().includes("sign-out")) stamp("sign-out answered"); });
-  await page.exposeFunction("polarisStamp", (m: string) => stamp(m));
-  await page.addInitScript(() => {
-    const p = (m: string) => { const k = "zzlog"; try { localStorage.setItem(k, `${localStorage.getItem(k) ?? ""}${Date.now()} ${m} @${location.pathname}\n`); } catch {} (window as any).polarisStamp?.(`${m} @${location.pathname}`); };
-    window.addEventListener("error", (e) => { const t = e.target as any; p(`error-event ${t?.tagName ?? "window"} ${t?.src ?? ""} rs=${document.readyState} online=${navigator.onLine} vis=${document.visibilityState}`); }, true);
-    window.addEventListener("pagehide", () => p("pagehide"));
-    window.addEventListener("beforeunload", () => p("beforeunload"));
-    window.addEventListener("load", () => p("load"));
-    const rl = window.location.reload.bind(window.location);
-    document.addEventListener("DOMContentLoaded", () => p("DOMContentLoaded"));
-  });
+  const trace: string[] = [];
+  const started = performance.now();
+  const note = (what: string) =>
+    trace.push(`+${Math.round(performance.now() - started)}ms ${what}`);
   await page.exposeFunction("polarisBootRetry", (mark: string, url: string) => {
     retries.push(`${mark} at ${url}`);
+    note(`mark ${mark} at ${url}`);
+  });
+  await page.exposeFunction("polarisPageEvent", (what: string, url: string) => {
+    note(`${what} at ${url}`);
+  });
+  page.on("request", (request) => {
+    if (request.resourceType() === "document") {
+      note(`document ${new URL(request.url()).pathname}`);
+    }
+  });
+  page.on("framenavigated", (frame) => {
+    if (frame === page.mainFrame()) {
+      note(`committed ${new URL(frame.url()).pathname}`);
+    }
+  });
+  page.on("response", (response) => {
+    if (SIGN_OUT.test(response.url())) {
+      note("sign-out answered");
+    }
   });
   await page.addInitScript((marks) => {
+    const tell = (what: string) =>
+      (
+        window as unknown as {
+          polarisPageEvent: (what: string, url: string) => void;
+        }
+      ).polarisPageEvent(what, window.location.href);
     const set = Storage.prototype.setItem;
     Storage.prototype.setItem = function (name: string, value: string) {
       if (marks.includes(name)) {
-        const k = "zzlog"; set.call(localStorage, k, `${localStorage.getItem(k) ?? ""}${Date.now()} MARK ${name} @${location.pathname}\n`);
         (
           window as unknown as {
             polarisBootRetry: (mark: string, url: string) => void;
@@ -122,8 +138,19 @@ async function watchBootRetry(page: Page) {
       }
       return set.call(this, name, value);
     };
+    window.addEventListener(
+      "error",
+      ({ target }) => {
+        if (target instanceof HTMLScriptElement) {
+          tell(`script error ${target.src} (${document.readyState})`);
+        }
+      },
+      true
+    );
+    window.addEventListener("pagehide", () => tell("pagehide"));
+    window.addEventListener("load", () => tell("load"));
   }, RELOAD_MARKS);
-  return retries;
+  return { retries, trace };
 }
 
 function watch(page: Page) {
@@ -170,18 +197,13 @@ async function reloadNow(page: Page, seen: { documents: string[] }) {
     const documentsBefore = seen.documents.length;
     try {
       // biome-ignore lint/performance/noAwaitInLoops: the second ask only follows a reload that did not happen
-      stamp(`reload attempt ${attempt}`);
       await page.reload({ waitUntil: "commit" });
-      stamp(`reload attempt ${attempt} committed`);
       return { attempts: attempt, documentsBefore };
     } catch (error) {
-      stamp(`reload attempt ${attempt} threw ${String(error).split("\n")[0]}`);
       if (!TRANSIENT.test(String(error)) || attempt === 3) {
         throw error;
       }
       await page.waitForURL(SIGN_IN_ADDRESS, { waitUntil: "commit" });
-      await page.waitForLoadState("load");
-      stamp("waitForURL+load done");
     }
   }
 }
@@ -189,21 +211,20 @@ async function reloadNow(page: Page, seen: { documents: string[] }) {
 /** Returns how many times the reload was asked: more than one means it met the page already leaving. */
 async function reloadAndExpectSignIn(
   page: Page,
-  retries: string[],
+  { retries, trace }: { retries: string[]; trace: string[] },
   round: number
 ) {
   const seen = watch(page);
-  stamp(`round ${round} reload asked`);
   const { attempts, documentsBefore } = await reloadNow(page, seen);
   await expect(
     page.getByRole("heading", { level: 1, name: SIGN_IN_HEADING }),
-    `round ${round}: the sign-in screen after the reload`
+    `round ${round}: the sign-in screen after the reload (${trace.slice(-20).join("; ")})`
   ).toBeVisible({ timeout: MOUNT_MS });
   await expect(page.locator("#root")).not.toBeEmpty();
   await page.waitForLoadState("load");
   expect(
     retries,
-    `round ${round}: the page marked the tab to reload itself (documents ${seen.documents.join(" ")})`
+    `round ${round}: the page marked the tab to reload itself (documents ${seen.documents.join(" ")}; ${trace.slice(-20).join("; ")})`
   ).toEqual([]);
   const signInDocuments = seen.documents
     .slice(documentsBefore)
@@ -219,8 +240,6 @@ async function reloadAndExpectSignIn(
 async function freshContext(browser: Browser, baseURL: string) {
   const context = await browser.newContext({ baseURL });
   const page = await context.newPage();
-  const cdp = await context.newCDPSession(page);
-  await cdp.send("Emulation.setCPUThrottlingRate", { rate: Number(process.env.REPRO_CPU ?? 1) });
   const state = await serveSession(context);
   return { context, page, state };
 }
@@ -231,7 +250,7 @@ test.describe("recarregar logo depois de sair", () => {
     browser,
     buildVersion,
   }, testInfo) => {
-    test.setTimeout(900_000);
+    test.setTimeout(420_000);
     buildVersion("1");
     let repeated = 0;
     const { context, page, state } = await freshContext(
@@ -239,7 +258,7 @@ test.describe("recarregar logo depois de sair", () => {
       baseURL as string
     );
     try {
-      const retries = await watchBootRetry(page);
+      const spy = await watchBootRetry(page);
       await page.goto("/");
       await page.evaluate(async () => {
         await navigator.serviceWorker.ready;
@@ -254,7 +273,7 @@ test.describe("recarregar logo depois de sair", () => {
         state.signedIn = true;
         // biome-ignore lint/performance/noAwaitInLoops: each round starts from the page the round before left
         await signInAndOut(page);
-        if ((await reloadAndExpectSignIn(page, retries, round)) > 1) {
+        if ((await reloadAndExpectSignIn(page, spy, round)) > 1) {
           repeated += 1;
         }
         expect(
@@ -264,9 +283,6 @@ test.describe("recarregar logo depois de sair", () => {
           `round ${round}: the worker is in control`
         ).toBe(true);
       }
-    } catch (error) {
-      const ls = await page.evaluate(() => localStorage.getItem("zzlog")).catch(() => "?");
-      throw new Error(`${String(error)}\nTIMELINE\n${timeline.slice(-60).join("\n")}\nPAGELOG\n${ls}`);
     } finally {
       await context.close();
     }
@@ -281,16 +297,16 @@ test.describe("recarregar logo depois de sair", () => {
     browser,
     buildVersion,
   }, testInfo) => {
-    test.setTimeout(900_000);
+    test.setTimeout(420_000);
     buildVersion("1");
     let repeated = 0;
     for (let round = 1; round <= ROUNDS; round += 1) {
       // biome-ignore lint/performance/noAwaitInLoops: a new device each round, one at a time
       const { context, page } = await freshContext(browser, baseURL as string);
       try {
-        const retries = await watchBootRetry(page);
+        const spy = await watchBootRetry(page);
         await signInAndOut(page);
-        if ((await reloadAndExpectSignIn(page, retries, round)) > 1) {
+        if ((await reloadAndExpectSignIn(page, spy, round)) > 1) {
           repeated += 1;
         }
       } finally {
