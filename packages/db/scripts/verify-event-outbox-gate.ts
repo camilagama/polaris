@@ -553,6 +553,8 @@ async function run() {
         ["DELETE", ["polaris_purge_owner"]],
         // the notice of the billing cycle or the welcome (ADR 0104, 0101): its own policy, proved by the gate billing-notices
         ["INSERT", ["polaris_billing_runtime"]],
+        // the notice of a tip of the activation series, in the mould of the one above: proved by the gate activation-candidates
+        ["INSERT", ["polaris_billing_runtime"]],
         ["INSERT", [runtimeRole]],
         // the request of a closed organization's copy (ADR 0081), the cancellation of the renewal at the
         // closure (ADR 0074) and the notice of a closure milestone (ADR 0102), through the privacy owner's functions

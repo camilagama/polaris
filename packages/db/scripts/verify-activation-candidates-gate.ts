@@ -1894,6 +1894,228 @@ async function run() {
       "AC-8a.4 (the database's part): after the billing runtime records the opt-out of a person with two stores, activation_notice_candidates answers no step of that person in either store, also once the first store's membership is gone and the second becomes their first, while a control person with the same two stores gets the a1 in the first and then in the second; with the switch on, off when the opt-out is recorded and turned on afterwards, and turned on after the stores were created (the control's steps come back series_off, the person's not at all). Turning an already owed notice into skipped: opted_out at send time is the consumer's (7c)"
     );
 
+    // 9. the outbox of the billing role for the series (0130): an `activation.notice` of a notice of the same store, and
+    // nothing else; `billing.notice` still asks for a `billing_notices` row and `activation.notice` does not pass by it
+    await scenario(async (client) => {
+      const store = await newStore(client, { createdAt: at(ten, -3 * DAY) });
+      const other = await newStore(client, { createdAt: at(ten, -3 * DAY) });
+      await seedNotice(client, store, "a1", "owed", ten);
+      await seedNotice(client, other, "a1", "owed", ten);
+      const noticeOf = async (of: Store) =>
+        String(
+          (
+            await client.query<{ id: string }>(
+              "SELECT id FROM public.activation_notices WHERE organization_id = $1 AND user_id = $2",
+              [of.organizationId, of.userId]
+            )
+          ).rows[0]?.id
+        );
+      const noticeId = await noticeOf(store);
+      const otherNoticeId = await noticeOf(other);
+      const billingNoticeId = String(
+        (
+          await client.query<{ id: string }>(
+            `INSERT INTO public.billing_notices (organization_id, kind, dedupe_key, due_at)
+             VALUES ($1, 'trial_started', $2, now()) RETURNING id`,
+            [store.organizationId, `ref-${randomUUID()}`]
+          )
+        ).rows[0]?.id
+      );
+      const insertEvent = (
+        organizationId: string,
+        type: string,
+        event: unknown,
+        key: string,
+        extra = ""
+      ) =>
+        client.query(
+          `INSERT INTO public.event_outbox (organization_id, type, event, idempotency_key, correlation_id${extra ? `, ${extra.split("=")[0]}` : ""})
+           VALUES ($1, $2, $3::jsonb, $4, $5${extra ? `, ${extra.split("=")[1]}` : ""})`,
+          [organizationId, type, JSON.stringify(event), key, randomUUID()]
+        );
+      const refused: [string, () => Promise<unknown>][] = [
+        [
+          "a notice that does not exist",
+          () => {
+            const missing = randomUUID();
+            return insertEvent(
+              store.organizationId,
+              "activation.notice",
+              { noticeId: missing },
+              `activation.notice:${missing}`
+            );
+          },
+        ],
+        [
+          "the notice of another store",
+          () =>
+            insertEvent(
+              store.organizationId,
+              "activation.notice",
+              { noticeId: otherNoticeId },
+              `activation.notice:${otherNoticeId}`
+            ),
+        ],
+        [
+          "a body with a key beside the notice",
+          () =>
+            insertEvent(
+              store.organizationId,
+              "activation.notice",
+              { noticeId, step: "a1" },
+              `activation.notice:${noticeId}`
+            ),
+        ],
+        [
+          "a body without the notice",
+          () =>
+            insertEvent(
+              store.organizationId,
+              "activation.notice",
+              {},
+              `activation.notice:${noticeId}`
+            ),
+        ],
+        [
+          "an ID that is not a uuid",
+          () =>
+            insertEvent(
+              store.organizationId,
+              "activation.notice",
+              { noticeId: "not-a-uuid" },
+              "activation.notice:not-a-uuid"
+            ),
+        ],
+        [
+          "the ID in capitals",
+          () =>
+            insertEvent(
+              store.organizationId,
+              "activation.notice",
+              { noticeId: noticeId.toUpperCase() },
+              `activation.notice:${noticeId.toUpperCase()}`
+            ),
+        ],
+        [
+          "another key than the one of the body",
+          () =>
+            insertEvent(
+              store.organizationId,
+              "activation.notice",
+              { noticeId },
+              `activation.notice:${otherNoticeId}`
+            ),
+        ],
+        [
+          "the key of the billing type for the series' notice",
+          () =>
+            insertEvent(
+              store.organizationId,
+              "activation.notice",
+              { noticeId },
+              `billing.notice:${noticeId}`
+            ),
+        ],
+        [
+          "a status other than pending",
+          () =>
+            insertEvent(
+              store.organizationId,
+              "activation.notice",
+              { noticeId },
+              `activation.notice:${noticeId}`,
+              "status='dispatched'"
+            ),
+        ],
+        [
+          "attempts other than zero",
+          () =>
+            insertEvent(
+              store.organizationId,
+              "activation.notice",
+              { noticeId },
+              `activation.notice:${noticeId}`,
+              "attempts=3"
+            ),
+        ],
+        [
+          "a billing notice recorded as an activation notice",
+          () =>
+            insertEvent(
+              store.organizationId,
+              "activation.notice",
+              { noticeId: billingNoticeId },
+              `activation.notice:${billingNoticeId}`
+            ),
+        ],
+        [
+          "an activation notice recorded as a billing notice",
+          () =>
+            insertEvent(
+              store.organizationId,
+              "billing.notice",
+              { noticeId },
+              `billing.notice:${noticeId}`
+            ),
+        ],
+      ];
+      await withGateRole(client, BILLING_RUNTIME, async () => {
+        for (const [label, attempt] of refused) {
+          await client.query("SAVEPOINT probe");
+          await expectSqlState(attempt, "42501", `${label}: refused`);
+          await client.query("ROLLBACK TO SAVEPOINT probe");
+        }
+        await insertEvent(
+          store.organizationId,
+          "activation.notice",
+          { noticeId },
+          `activation.notice:${noticeId}`
+        );
+        await insertEvent(
+          store.organizationId,
+          "billing.notice",
+          { noticeId: billingNoticeId },
+          `billing.notice:${billingNoticeId}`
+        );
+        await client.query("SAVEPOINT probe");
+        await expectSqlState(
+          () => client.query("SELECT id FROM public.event_outbox LIMIT 1"),
+          "42501",
+          "the billing role still reads no event"
+        );
+        await client.query("ROLLBACK TO SAVEPOINT probe");
+      });
+      const written = await client.query<{
+        attempts: number;
+        event: unknown;
+        idempotency_key: string;
+        status: string;
+        type: string;
+      }>(
+        "SELECT type, event, idempotency_key, status, attempts FROM public.event_outbox WHERE organization_id = $1 AND type IN ('activation.notice', 'billing.notice') ORDER BY type",
+        [store.organizationId]
+      );
+      assert.deepEqual(written.rows, [
+        {
+          attempts: 0,
+          event: { noticeId },
+          idempotency_key: `activation.notice:${noticeId}`,
+          status: "pending",
+          type: "activation.notice",
+        },
+        {
+          attempts: 0,
+          event: { noticeId: billingNoticeId },
+          idempotency_key: `billing.notice:${billingNoticeId}`,
+          status: "pending",
+          type: "billing.notice",
+        },
+      ]);
+    });
+    tests.push(
+      "the billing runtime writes the outbox event activation.notice (pending, no attempt, the body with the notice's ID alone, the key from it) for an activation_notices row of the same store, and refuses with 42501: a notice that does not exist, one of another store, a body with a key beside the notice or without it, an ID that is not a uuid or in capitals, another key, the billing type's key, a status other than pending, attempts other than zero, a billing_notices ID as an activation notice and an activation_notices ID as billing.notice (which still asks for its billing_notices row, and records with it); it still reads no event"
+    );
+
     console.log(
       JSON.stringify(
         {
