@@ -299,6 +299,8 @@ function ChosenItemFields({
   stockWarning,
   summaryLine,
 }: ChosenItemFieldsProps) {
+  const keptNoteId =
+    priceHint === KEPT_PRICE_NOTICE ? `${prefix}-price-note` : undefined;
   return (
     <>
       {stockWarning ? (
@@ -324,11 +326,7 @@ function ChosenItemFields({
           />
           <TextField
             addon="R$"
-            describedById={
-              priceHint === KEPT_PRICE_NOTICE
-                ? `${prefix}-price-note`
-                : undefined
-            }
+            describedById={keptNoteId}
             error={errors[itemFieldKey(item.draftId, "chargedUnitPrice")]}
             id={`${prefix}-charged`}
             inputMode="decimal"
@@ -355,9 +353,7 @@ function ChosenItemFields({
       <div className="flex items-baseline justify-between gap-3">
         <FieldDescription
           className="min-w-0"
-          id={
-            priceHint === KEPT_PRICE_NOTICE ? `${prefix}-price-note` : undefined
-          }
+          id={keptNoteId}
           role={priceHint ? "note" : undefined}
         >
           {priceHint ?? "Preços por unidade."}

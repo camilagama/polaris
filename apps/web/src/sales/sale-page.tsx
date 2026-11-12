@@ -628,7 +628,9 @@ export function SalePage() {
         item !== undefined &&
         item.variantId !== "" &&
         item.variantId !== entry.variantId;
-      listPrices.current.set(entry.variantId, entry.listPrice);
+      if (item?.variantId !== entry.variantId) {
+        listPrices.current.set(entry.variantId, entry.listPrice);
+      }
       let prices: Pick<
         ItemDraft,
         "chargedUnitPrice" | "listedUnitPrice"
