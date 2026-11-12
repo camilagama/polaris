@@ -3268,7 +3268,7 @@ Origem: achado B do Diego no Pixel 6 (28/10): a venda montada em Vender sumia ao
 | Item | Status | Observação |
 | --- | --- | --- |
 | Investigação | Concluída | O relato do QA de 11/11 (duas telas brancas ao recarregar o PWA logo depois de sair, e a tentativa seguinte abriu) não reproduziu: 20 saídas seguidas de recarga com o worker já no controle e 20 primeiras visitas (`apps/web/e2e-pwa/sair-e-recarregar.e2e.ts`, sessão e servidor simulados) e, na pilha real, 20 com o worker no controle e 5 primeiras visitas (`apps/web/e2e-real/jornadas/sair-e-recarregar.e2e.ts`). Toda vez a tela de entrar apareceu e `public/boot-retry.js` não precisou recarregar. Sem causa no app; o navegador do OpenBot segue como hipótese não provada. |
-| Guarda | Concluída | Os dois testes ficam como guarda; o do `e2e-pwa` falha quando o módulo de entrada não baixa (a recarga de `boot-retry.js` é registrada). |
+| Guarda | Concluída | Os dois testes ficam como guarda e registram toda recarga que `public/boot-retry.js` fizer; com o módulo de entrada abortado de propósito (mutação local, fora do repositório), o do `e2e-pwa` reprova e aponta a recarga. |
 
 ### Este mês com um sentido só e setas de mês no Resultado (t974; L2-1b, A-01, A-02; sem migration)
 

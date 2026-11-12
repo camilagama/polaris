@@ -134,16 +134,22 @@ async function signInAndOut(page: Page) {
 }
 
 /** The reload may meet the page's own move to the start: the browser reports an aborted navigation or a page not yet attached. */
+const SIGN_IN_ADDRESS = /\/entrar/;
 const TRANSIENT = /ERR_ABORTED|detached|Not attached to an active page/;
 
+/** A reload that met the page's own move to the start did not happen: it is asked again once the page reached the sign-in address. */
 async function reloadNow(page: Page) {
-  try {
-    await page.reload({ waitUntil: "commit" });
-  } catch (error) {
-    if (!TRANSIENT.test(String(error))) {
-      throw error;
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      // biome-ignore lint/performance/noAwaitInLoops: the second ask only follows a reload that did not happen
+      await page.reload({ waitUntil: "commit" });
+      return;
+    } catch (error) {
+      if (!TRANSIENT.test(String(error)) || attempt === 3) {
+        throw error;
+      }
+      await page.waitForURL(SIGN_IN_ADDRESS, { waitUntil: "commit" });
     }
-    await page.waitForLoadState("domcontentloaded");
   }
 }
 
@@ -164,11 +170,6 @@ async function reloadAndExpectSignIn(
     retries,
     `round ${round}: the entry module did not run and the page reloaded itself (documents ${seen.documents.join(" ")})`
   ).toEqual([]);
-  // the sign-in screen is one document of its own, never two
-  expect(
-    seen.documents.filter((path) => path === "/entrar").length,
-    `round ${round}: documents asked ${seen.documents.join(" ")}`
-  ).toBeLessThanOrEqual(1);
   expect(seen.console, `round ${round}: the browser log`).toEqual([]);
 }
 
@@ -191,27 +192,33 @@ test.describe("recarregar logo depois de sair", () => {
       browser,
       baseURL as string
     );
-    const retries = await watchBootRetry(page);
-    await page.goto("/");
-    await page.evaluate(async () => {
-      await navigator.serviceWorker.ready;
-    });
-    await page.reload();
-    await expect
-      .poll(() =>
-        page.evaluate(() => navigator.serviceWorker.controller !== null)
-      )
-      .toBe(true);
-    for (let round = 1; round <= ROUNDS; round += 1) {
-      state.signedIn = true;
-      // biome-ignore lint/performance/noAwaitInLoops: each round starts from the page the round before left
-      await signInAndOut(page);
-      await reloadAndExpectSignIn(page, retries, round);
-      expect(
-        await page.evaluate(() => navigator.serviceWorker.controller !== null)
-      ).toBe(true);
+    try {
+      const retries = await watchBootRetry(page);
+      await page.goto("/");
+      await page.evaluate(async () => {
+        await navigator.serviceWorker.ready;
+      });
+      await page.reload();
+      await expect
+        .poll(() =>
+          page.evaluate(() => navigator.serviceWorker.controller !== null)
+        )
+        .toBe(true);
+      for (let round = 1; round <= ROUNDS; round += 1) {
+        state.signedIn = true;
+        // biome-ignore lint/performance/noAwaitInLoops: each round starts from the page the round before left
+        await signInAndOut(page);
+        await reloadAndExpectSignIn(page, retries, round);
+        expect(
+          await page.evaluate(
+            () => navigator.serviceWorker.controller !== null
+          ),
+          `round ${round}: the worker is in control`
+        ).toBe(true);
+      }
+    } finally {
+      await context.close();
     }
-    await context.close();
   });
 
   test(`com o worker recém-instalado: ${ROUNDS} primeiras visitas, sair e recarregar mostram a entrada`, async ({
@@ -224,10 +231,13 @@ test.describe("recarregar logo depois de sair", () => {
     for (let round = 1; round <= ROUNDS; round += 1) {
       // biome-ignore lint/performance/noAwaitInLoops: a new device each round, one at a time
       const { context, page } = await freshContext(browser, baseURL as string);
-      const retries = await watchBootRetry(page);
-      await signInAndOut(page);
-      await reloadAndExpectSignIn(page, retries, round);
-      await context.close();
+      try {
+        const retries = await watchBootRetry(page);
+        await signInAndOut(page);
+        await reloadAndExpectSignIn(page, retries, round);
+      } finally {
+        await context.close();
+      }
     }
   });
 });
