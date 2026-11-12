@@ -42,7 +42,7 @@ describe("OUTBOX_POLICIES_SQL", () => {
 });
 
 describe("sortedOutboxPolicies", () => {
-  it("shows a policy granted to public as public, not as an empty role, and refuses it", () => {
+  it("carries a row whose role is public through the sort as public and refuses it (the catalog read itself is proved by the gate)", () => {
     const [first] = expected();
     if (!first) {
       throw new Error("the expected list is empty");

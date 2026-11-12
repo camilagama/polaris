@@ -580,8 +580,11 @@ async function run() {
         "a policy TO PUBLIC fails the comparison with the expected list"
       );
     } finally {
-      await toPublic.query("ROLLBACK");
-      toPublic.release();
+      try {
+        await toPublic.query("ROLLBACK");
+      } finally {
+        toPublic.release();
+      }
     }
     const afterRollback =
       await owner.pool.query<OutboxPolicyRow>(OUTBOX_POLICIES_SQL);
