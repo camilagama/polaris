@@ -376,7 +376,7 @@ describe("swapping the variant of a line", () => {
     });
   });
 
-  it("empties the app's prices when the new variant has none, and keeps typed ones", () => {
+  it("empties the app's prices when the new variant has none, and keeps only the typed charged price", () => {
     expect(
       pricesForVariantChange(
         { chargedUnitPrice: "49,90", listedUnitPrice: "49,90" },
@@ -393,7 +393,7 @@ describe("swapping the variant of a line", () => {
     ).toEqual({
       chargedUnitPrice: "45,00",
       keptTyped: true,
-      listedUnitPrice: "49,90",
+      listedUnitPrice: "",
     });
   });
 });

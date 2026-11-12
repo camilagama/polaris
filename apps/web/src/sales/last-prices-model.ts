@@ -201,7 +201,8 @@ export interface VariantChangePrices {
  * Without typed prices both follow the new variant (last sale, else list
  * price; empty when it has neither, so the old variant's price is never
  * charged by accident). With typed prices the charged one stays, since it is
- * what was agreed, and the list price follows the new variant, which owns it.
+ * what was agreed, and the list price follows the new variant, which owns it
+ * (empty when it has none, to be filled before confirming).
  */
 export function pricesForVariantChange(
   item: { chargedUnitPrice: string; listedUnitPrice: string },
@@ -227,7 +228,7 @@ export function pricesForVariantChange(
     keptTyped:
       chargedFilled &&
       (next === null || next.chargedUnitPrice !== item.chargedUnitPrice),
-    listedUnitPrice: next?.listedUnitPrice ?? item.listedUnitPrice,
+    listedUnitPrice: next?.listedUnitPrice ?? "",
   };
 }
 
