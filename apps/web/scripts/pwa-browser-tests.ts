@@ -214,7 +214,9 @@ async function main() {
       const file = line.slice(3);
       const raw = readFileSync(`../../${file}`);
       const data = raw.toString("base64");
-      console.log(`TMPDUMP-SHA ${createHash("sha256").update(raw).digest("hex")} ${raw.length}`);
+      console.log(
+        `TMPDUMP-SHA ${createHash("sha256").update(raw).digest("hex")} ${raw.length}`
+      );
       console.log(`TMPDUMP-BEGIN ${file}`);
       for (let at = 0; at < data.length; at += 3000) {
         console.log(`TMPDUMP ${data.slice(at, at + 3000)}`);
