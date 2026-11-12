@@ -141,6 +141,55 @@ describe("Calendar, a linha do motivo", () => {
   });
 });
 
+describe("Calendar, o motivo escrito no rodapé do seletor", () => {
+  const markup = html(
+    <Calendar
+      defaultMonth={OCTOBER_24}
+      disabled={LIMIT}
+      disabledReason="Só até hoje"
+      mode="single"
+      reasonInFooter
+      today={OCTOBER_24}
+    />
+  );
+  const line = REASON_LINE.exec(markup)?.[0] ?? "";
+
+  it("a linha sai do layout (display none, sem altura reservada) e não é texto à vista", () => {
+    const classes = attribute(line, "class")?.split(" ") ?? [];
+    expect(classes).toEqual(["hidden"]);
+  });
+
+  it("segue no DOM e o dia desligado continua descrito por ela, com o mesmo motivo", () => {
+    const reasonId = attribute(
+      dayButton(markup, "2026-10-25"),
+      "aria-describedby"
+    );
+    expect(reasonId).toBeTruthy();
+    expect(attribute(line, "id")).toBe(reasonId);
+    expect(line).toContain("Só até hoje");
+    expect(attribute(dayButton(markup, "2026-10-25"), "aria-disabled")).toBe(
+      "true"
+    );
+  });
+
+  it("controle: sem reasonInFooter a linha continua como era, com a altura reservada", () => {
+    const own = html(
+      <Calendar
+        defaultMonth={OCTOBER_24}
+        disabled={LIMIT}
+        disabledReason="Só até hoje"
+        mode="single"
+        today={OCTOBER_24}
+      />
+    );
+    const ownLine = REASON_LINE.exec(own)?.[0] ?? "";
+    const classes = attribute(ownLine, "class") ?? "";
+    expect(classes).toContain("min-h-[1.375rem]");
+    expect(classes).toContain("invisible");
+    expect(classes.split(" ")).not.toContain("hidden");
+  });
+});
+
 describe("Calendar, o foco no dia", () => {
   it("os onDayFocus e onDayBlur do chamador continuam sendo chamados", () => {
     const focused = vi.fn();

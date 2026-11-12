@@ -963,6 +963,25 @@ test.describe("Hoje desligado, com o motivo à vista", () => {
     await expectTodayFooterFits(page, popup);
   });
 
+  test("o motivo aparece uma vez só, a altura não muda ao focar o dia desligado e o dia segue descrito por ele", async ({
+    page,
+  }) => {
+    const popup = await openFuturePicker(page);
+    const off = day(popup, "2026-10-24");
+    const before = (await popup.boundingBox())?.height;
+    await off.focus();
+    await expect(off).toBeFocused();
+    await expect(popup.getByText(FUTURE_REASON, { exact: true })).toHaveCount(
+      2
+    );
+    await expect(
+      popup.getByText(FUTURE_REASON, { exact: true }).locator("visible=true")
+    ).toHaveCount(1);
+    await expect(footerReason(popup)).toBeVisible();
+    await expect(off).toHaveAccessibleDescription(FUTURE_REASON);
+    expect((await popup.boundingBox())?.height).toBe(before);
+  });
+
   test("com Hoje permitido o rodapé não escreve motivo nenhum", async ({
     page,
   }) => {
