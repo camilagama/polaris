@@ -1,5 +1,6 @@
 import { localDate } from "../calendar";
 import { expect, openJourney, runT0, test } from "../fixtures";
+import { waitForOfflineShell } from "../pages/casca-offline";
 import { openMugAndSeeItsStock, stockRows } from "../pages/estoque-e-produto";
 import { seedProduct, seedStock } from "../seed";
 
@@ -45,6 +46,7 @@ test("estoque e produto se ligam: ida e volta sem conexão", async ({
   await expect(
     page.getByRole("status").filter({ hasText: "Tudo sincronizado" })
   ).toBeVisible({ timeout: 30_000 });
+  await waitForOfflineShell(page);
   await page.context().setOffline(true);
   await expect(
     page.getByRole("status").filter({ hasText: "Sem conexão" }).first()

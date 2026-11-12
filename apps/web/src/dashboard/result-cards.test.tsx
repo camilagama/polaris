@@ -87,11 +87,13 @@ const cards = (
   comparison: ComponentProps<typeof ResultCards>["comparison"] = SEPTEMBER,
   salesComparison: ComponentProps<
     typeof ResultCards
-  >["salesComparison"] = SEPTEMBER_SALES
+  >["salesComparison"] = SEPTEMBER_SALES,
+  onOpenSales: ComponentProps<typeof ResultCards>["onOpenSales"] = null
 ) =>
   renderToStaticMarkup(
     <ResultCards
       comparison={comparison}
+      onOpenSales={onOpenSales}
       salesComparison={salesComparison}
       summary={summary}
       today={TODAY}
@@ -530,5 +532,95 @@ describe("the result while a day with no cost is read (RES-1)", () => {
     const result = card(cards(october([5])), "result-kpi-result");
     expect(words(result)).not.toContain("sem custo neste dia");
     expect(words(result)).toContain("1 de 25 dias sem custo");
+  });
+});
+
+const ARROW_AFTER_WORDS = /Ver as 25 vendas<svg[^>]*aria-hidden="true"/;
+
+describe("the link of the sales card to the Histórico", () => {
+  const open = () => undefined;
+  const sales = (summary: StoredPeriodSummary, onOpen = open) =>
+    card(
+      cards(summary, SEPTEMBER, SEPTEMBER_SALES, onOpen),
+      "result-kpi-sales"
+    );
+
+  it("replaces the count with 'Ver as N vendas' and names the dates from the first day to today", () => {
+    const markup = sales(october([]));
+    expect(markup).toContain('data-kpi-sales-link=""');
+    expect(markup).toContain(
+      'aria-label="Ver as 25 vendas de 01/10 a 25/10 no Histórico"'
+    );
+    expect(words(markup)).toContain("Ver as 25 vendas");
+  });
+
+  it("says 'Ver a venda' with one sale", () => {
+    const summary = october([]);
+    summary.cards.salesCount = 1;
+    const markup = sales(summary);
+    expect(words(markup)).toContain("Ver a venda");
+    expect(markup).toContain(
+      'aria-label="Ver a venda de 01/10 a 25/10 no Histórico"'
+    );
+  });
+
+  it("stays the text of the count with no way to open it (no connection, or the device's copy)", () => {
+    const markup = card(cards(october([])), "result-kpi-sales");
+    expect(markup).not.toContain("data-kpi-sales-link");
+    expect(words(markup)).toContain("25 vendas");
+  });
+
+  it("has no link for a period that has not started: no day is counted yet", () => {
+    const summary = october([]);
+    summary.period = { from: "2026-11-01", to: "2026-11-30" };
+    expect(sales(summary)).not.toContain("data-kpi-sales-link");
+  });
+
+  it("has no link with no sale", () => {
+    const summary = october([]);
+    summary.cards.salesCount = 0;
+    expect(sales(summary)).not.toContain("data-kpi-sales-link");
+  });
+
+  it("takes a line of its own under the chip, and stays on the support line without it", () => {
+    const withChip = sales(october([]));
+    expect(withChip).toContain("data-kpi-chip-row");
+    expect(withChip.indexOf("data-kpi-chip-row")).toBeLessThan(
+      withChip.indexOf("basis-full")
+    );
+    expect(withChip.indexOf("basis-full")).toBeLessThan(
+      withChip.indexOf("data-kpi-sales-link")
+    );
+    const without = card(
+      renderToStaticMarkup(
+        <ResultCards
+          comparison={null}
+          onOpenSales={open}
+          salesComparison={null}
+          summary={october([])}
+          today={TODAY}
+        />
+      ),
+      "result-kpi-sales"
+    );
+    expect(without).not.toContain("data-kpi-chip-row");
+    expect(without).toContain("data-kpi-sales-link");
+    expect(without).not.toContain("basis-full");
+  });
+
+  it("keeps the count on the line under the chip when there is no link", () => {
+    const summary = october([]);
+    summary.cards.salesCount = 0;
+    const markup = sales(summary);
+    expect(markup).not.toContain("data-kpi-sales-link");
+    expect(markup.indexOf("data-kpi-chip-row")).toBeLessThan(
+      markup.indexOf("basis-full")
+    );
+    expect(words(markup)).toContain("Nenhuma venda ainda");
+  });
+
+  it("puts the arrow after the words", () => {
+    const markup = sales(october([]));
+    expect(markup).toMatch(ARROW_AFTER_WORDS);
   });
 });
