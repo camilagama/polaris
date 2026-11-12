@@ -148,7 +148,9 @@ export const activationNotices = pgTable(
 /**
  * Who asked not to receive the e-mails sent on legitimate interest (ADR 0106, D8): the person and when, valid in every
  * store of that person. The row leaves with the account (foreign key in cascade); deleting it turns the e-mails back on.
- * Forced row security, no policy for the tenant.
+ * Forced row security, no policy for the tenant. No runtime reads or writes it: the owner of the series reads it (the
+ * candidates) and records it through `activation_record_opt_out` (migration 0129), the only thing the billing runtime
+ * may call.
  */
 export const emailOptOuts = pgTable(
   "email_opt_outs",
@@ -174,6 +176,12 @@ export const emailOptOuts = pgTable(
       for: "select",
       to: activationNoticeOwnerRole,
       using: sql`true`,
+    }),
+    // only through activation_record_opt_out, the one way to record it
+    pgPolicy("email_opt_outs_owner_insert", {
+      for: "insert",
+      to: activationNoticeOwnerRole,
+      withCheck: sql`true`,
     }),
   ]
 ).enableRLS();
