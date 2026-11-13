@@ -217,6 +217,55 @@ test("com o rascunho restaurado e os preços iguais à sugestão, trocar leva os
   await expect(item.getByText(KEPT_NOTICE)).toHaveCount(0);
 });
 
+async function restoreRedLine(page: Page, charged?: string) {
+  const item = await openSale(page);
+  await swapToRed(page, item);
+  if (charged !== undefined) {
+    await item.getByLabel("Preço cobrado").fill(charged);
+  }
+  await page.reload();
+  await startLab(page, SALE_LAB);
+  await expect(item.getByLabel("Preço de tabela")).toHaveValue("10,00");
+  return item;
+}
+
+async function swapRedToBlue(page: Page, item: Locator) {
+  await item
+    .getByRole("button", {
+      name: "Trocar variante de Camiseta do laboratório · Vermelha",
+    })
+    .click();
+  await item
+    .getByRole("combobox", { name: "Produto ou variante" })
+    .fill("camiseta azul");
+  await page.getByRole("option", { name: AZUL }).click();
+  await expect(
+    item.getByText("Camiseta do laboratório · Azul", { exact: true })
+  ).toBeVisible();
+}
+
+test("com o rascunho restaurado de uma variante sem última venda, trocar leva os preços da nova e não avisa", async ({
+  page,
+}) => {
+  const item = await restoreRedLine(page);
+  await expect(item.getByLabel("Preço cobrado")).toHaveValue("10,00");
+  await swapRedToBlue(page, item);
+  await expect(item.getByLabel("Preço cobrado")).toHaveValue("49,90");
+  await expect(item.getByLabel("Preço de tabela")).toHaveValue("49,90");
+  await expect(item.getByText(KEPT_NOTICE)).toHaveCount(0);
+});
+
+test("com o rascunho restaurado de uma variante sem última venda e o cobrado editado, trocar mantém o cobrado e avisa", async ({
+  page,
+}) => {
+  const item = await restoreRedLine(page, "9,00");
+  await expect(item.getByLabel("Preço cobrado")).toHaveValue("9,00");
+  await swapRedToBlue(page, item);
+  await expect(item.getByLabel("Preço cobrado")).toHaveValue("9,00");
+  await expect(item.getByLabel("Preço de tabela")).toHaveValue("49,90");
+  await expect(item.getByRole("note")).toContainText(KEPT_NOTICE);
+});
+
 test("cancelar a troca deixa a linha e as dicas como estavam", async ({
   page,
 }) => {

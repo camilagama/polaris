@@ -293,6 +293,59 @@ describe("trocar a variante de uma linha do rascunho restaurado", () => {
     });
   });
 
+  it("sem última venda, a sugestão anterior é o preço de tabela lido: preços iguais a ela entram sem aviso", () => {
+    const restored = restoredLine({
+      chargedUnitPrice: "49,90",
+      listedUnitPrice: "49,90",
+    });
+
+    expect(
+      pricesForVariantChange(
+        restored,
+        suggestPrices({}, restored.variantId, "49.90"),
+        redNext
+      )
+    ).toEqual({
+      chargedUnitPrice: "10,00",
+      keptTyped: false,
+      listedUnitPrice: "10,00",
+    });
+  });
+
+  it("sem última venda e sem o preço de tabela da anterior, os preços de tabela contam como digitados", () => {
+    const restored = restoredLine({
+      chargedUnitPrice: "49,90",
+      listedUnitPrice: "49,90",
+    });
+
+    expect(
+      pricesForVariantChange(
+        restored,
+        suggestPrices({}, restored.variantId, null),
+        redNext
+      ).keptTyped
+    ).toBe(true);
+  });
+
+  it("sem última venda, o cobrado negociado fica e o aviso aparece", () => {
+    const restored = restoredLine({
+      chargedUnitPrice: "45,00",
+      listedUnitPrice: "49,90",
+    });
+
+    expect(
+      pricesForVariantChange(
+        restored,
+        suggestPrices({}, restored.variantId, "49.90"),
+        redNext
+      )
+    ).toEqual({
+      chargedUnitPrice: "45,00",
+      keptTyped: true,
+      listedUnitPrice: "10,00",
+    });
+  });
+
   it("com o cobrado negociado, o cobrado fica, a tabela é a da nova e o aviso aparece", () => {
     const restored = restoredLine({
       chargedUnitPrice: "45,00",
