@@ -208,3 +208,102 @@ describe("useSaleCatalog: releitura em blocos de 100", () => {
     expect(render().stock[ids[100] as string]?.status).toBe("ready");
   });
 });
+
+describe("useSaleCatalog: preço de tabela de cada leitura", () => {
+  const otherId = "44444444-4444-4444-8444-444444444444";
+
+  beforeEach(() => {
+    runtime.slots = [];
+    listBalances.mockReset();
+  });
+
+  function priced(
+    id: string,
+    listPrice: string | null
+  ): InventoryBalanceEntryReadModel {
+    return {
+      listPrice,
+      movingAverageCost: null,
+      quantity: 3,
+      variantId: id,
+      version: 1,
+    } as unknown as InventoryBalanceEntryReadModel;
+  }
+
+  it("a leitura online das linhas guarda o preço de tabela, inclusive o ausente", async () => {
+    listBalances.mockResolvedValueOnce({
+      entries: [priced(variantId, "19.90"), priced(otherId, null)],
+    });
+    const render = mount();
+    const { listPrices, readLines } = render();
+
+    await readLines([variantId, otherId]);
+
+    expect(listPrices.current.get(variantId)).toBe("19.90");
+    expect(listPrices.current.has(otherId)).toBe(true);
+    expect(listPrices.current.get(otherId)).toBeNull();
+  });
+
+  it("a leitura online guarda o preço do bloco que respondeu mesmo quando outro bloco falha", async () => {
+    const ids = Array.from(
+      { length: 101 },
+      (_, index) => `55555555-5555-4555-8555-${String(index).padStart(12, "0")}`
+    );
+    listBalances.mockImplementation((input: { variantIds: string[] }) =>
+      input.variantIds.length === 100
+        ? Promise.resolve({
+            entries: input.variantIds.map((id) => priced(id, "7.00")),
+          })
+        : Promise.reject(new Error("sem rede"))
+    );
+    const render = mount();
+    const { listPrices, readLines } = render();
+
+    expect(await readLines(ids)).toBeNull();
+
+    expect(listPrices.current.get(ids[0] as string)).toBe("7.00");
+    expect(listPrices.current.has(ids[100] as string)).toBe(false);
+  });
+
+  it("o refresh online guarda o preço de tabela que a releitura trouxe", async () => {
+    listBalances.mockResolvedValueOnce({
+      entries: [priced(variantId, "25.50")],
+    });
+    const render = mount();
+    const { listPrices, refresh } = render();
+
+    refresh([variantId]);
+    await vi.waitFor(() =>
+      expect(render().stock[variantId]?.status).toBe("ready")
+    );
+
+    expect(listPrices.current.get(variantId)).toBe("25.50");
+  });
+
+  it("o refresh online atualiza o preço de tabela que mudou desde a leitura anterior", async () => {
+    listBalances
+      .mockResolvedValueOnce({ entries: [priced(variantId, "10.00")] })
+      .mockResolvedValueOnce({ entries: [priced(variantId, "12.00")] });
+    const render = mount();
+    const { listPrices, readLines, refresh } = render();
+
+    await readLines([variantId]);
+    expect(listPrices.current.get(variantId)).toBe("10.00");
+    refresh([variantId]);
+    await vi.waitFor(() =>
+      expect(listPrices.current.get(variantId)).toBe("12.00")
+    );
+  });
+
+  it("o seedStock guarda o preço de tabela das entradas da busca, sem ler o servidor", () => {
+    const render = mount();
+    const { listPrices, seedStock } = render();
+
+    seedStock([priced(variantId, "42.00"), priced(otherId, null)]);
+
+    expect(listBalances).not.toHaveBeenCalled();
+    expect(listPrices.current.get(variantId)).toBe("42.00");
+    expect(listPrices.current.get(otherId)).toBeNull();
+    expect(render().stock[variantId]?.status).toBe("ready");
+  });
+});
