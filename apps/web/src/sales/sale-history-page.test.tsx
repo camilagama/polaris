@@ -1,13 +1,24 @@
 import type { SaleListEntryReadModel } from "@polaris/contracts";
+import type { EffectCallback } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { StaticOrganizationProvider } from "../lib/current-organization";
 import {
+  emptyHistoryFilters,
   type HistoryFilters,
   historyListRequest,
   saleDetailHref,
 } from "./sale-history-model";
 import { SaleHistoryPage } from "./sale-history-page";
+
+const mounted = vi.hoisted(() => ({ effects: [] as (() => unknown)[] }));
+
+vi.mock("react", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("react")>()),
+  useEffect: (effect: EffectCallback) => {
+    mounted.effects.push(effect);
+  },
+}));
 
 vi.mock("../lib/orpc", () => ({ orpcClient: {} }));
 vi.mock("../offline/runtime/use-local-workspace", () => ({
@@ -99,8 +110,21 @@ const CANCELLED_OUT = sale(4, {
 const PERIOD_PILL = /Período: [^"]*, editar/;
 const STATUS_PILL = /Situação: [^"]*, editar/;
 
+const browserHistory = { state: null as unknown };
+
 function openWith(navigationState: unknown) {
-  vi.stubGlobal("window", { history: { state: navigationState } });
+  browserHistory.state = navigationState;
+  vi.stubGlobal("window", {
+    history: {
+      replaceState: (state: unknown) => {
+        browserHistory.state = state;
+      },
+      get state() {
+        return browserHistory.state;
+      },
+    },
+  });
+  mounted.effects = [];
   return renderToStaticMarkup(
     <StaticOrganizationProvider organization={ORGANIZATION}>
       <SaleHistoryPage />
@@ -110,6 +134,23 @@ function openWith(navigationState: unknown) {
 
 const shows = (html: string, entry: SaleListEntryReadModel) =>
   html.includes(`href="${saleDetailHref(entry.id)}"`);
+
+const runMountEffects = () => {
+  for (const effect of mounted.effects) {
+    effect();
+  }
+};
+
+const INVALID_PERIODS: [string, unknown][] = [
+  ["data inicial depois da final", { from: "2026-10-14", to: "2026-10-01" }],
+  ["data que não existe", { from: "2026-02-30", to: "2026-10-14" }],
+  ["texto no lugar da data", { from: "ontem", to: "hoje" }],
+  ["só uma ponta", { from: "2026-10-01" }],
+  ["mais de um ano", { from: "2024-01-01", to: "2026-10-14" }],
+  ["datas que não são texto", { from: 20_261_001, to: 20_261_014 }],
+  ["texto no lugar do objeto", "2026-10-01"],
+  ["nulo", null],
+];
 
 beforeEach(() => {
   vi.useFakeTimers({ now: NOW, toFake: ["Date"] });
@@ -188,5 +229,82 @@ describe("o Histórico aberto com o estado de navegação do Resultado", () => {
     for (const entry of server.sales) {
       expect(shows(html, entry)).toBe(true);
     }
+  });
+
+  it.each(INVALID_PERIODS)(
+    "período inválido (%s) com Situação válida: o período fica no padrão e a Situação vale",
+    (_name, period) => {
+      const html = openWith({
+        historyPeriod: period,
+        historyStatus: "confirmed",
+      });
+
+      expect(server.requests).toEqual([
+        historyListRequest(
+          ORGANIZATION.id,
+          {
+            customer: "",
+            from: "",
+            query: "",
+            status: "confirmed",
+            to: "",
+          },
+          0
+        ),
+      ]);
+      expect(html).not.toMatch(PERIOD_PILL);
+      expect(html).toContain("Situação: Confirmadas, editar");
+      expect(shows(html, CONFIRMED_IN)).toBe(true);
+      expect(shows(html, CONFIRMED_OUT)).toBe(true);
+      expect(shows(html, CANCELLED_IN)).toBe(false);
+      expect(shows(html, CANCELLED_OUT)).toBe(false);
+    }
+  );
+});
+
+describe("depois de montar, o Histórico descarta o estado de navegação", () => {
+  it("o estado sai da entrada do histórico e uma nova abertura não reaplica os filtros", () => {
+    const html = openWith({
+      historyPeriod: PERIOD,
+      historyStatus: "confirmed",
+    });
+    expect(html).toMatch(PERIOD_PILL);
+    expect(html).toMatch(STATUS_PILL);
+    expect(browserHistory.state).toEqual({
+      historyPeriod: PERIOD,
+      historyStatus: "confirmed",
+    });
+
+    runMountEffects();
+
+    expect(browserHistory.state).toEqual({});
+
+    server.requests = [];
+    const reopened = renderToStaticMarkup(
+      <StaticOrganizationProvider organization={ORGANIZATION}>
+        <SaleHistoryPage />
+      </StaticOrganizationProvider>
+    );
+
+    expect(server.requests).toEqual([
+      historyListRequest(ORGANIZATION.id, emptyHistoryFilters, 0),
+    ]);
+    expect(reopened).not.toMatch(PERIOD_PILL);
+    expect(reopened).not.toMatch(STATUS_PILL);
+    for (const entry of server.sales) {
+      expect(shows(reopened, entry)).toBe(true);
+    }
+  });
+
+  it("o descarte tira só as chaves do Histórico e deixa o resto do estado", () => {
+    openWith({
+      historyPeriod: PERIOD,
+      historyStatus: "confirmed",
+      outraChave: 1,
+    });
+
+    runMountEffects();
+
+    expect(browserHistory.state).toEqual({ outraChave: 1 });
   });
 });
