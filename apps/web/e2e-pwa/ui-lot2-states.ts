@@ -129,20 +129,48 @@ async function register(page: Page, name: string, phone: string) {
   await page.getByRole("button", { name: "Cadastrar cliente" }).click();
 }
 
+const NOTICE_FOCUS_TIMEOUT_MS = 10_000;
+
 /**
  * A save closes the form, and only then does the page move the focus to the notice of the result. Measuring the Tab
- * order before that moves it would start the walk from the old position and skip what is above the notice.
+ * order before that moves it would start the walk from the old position and skip what is above the notice. The wait
+ * fails with what holds the focus instead of the bare timeout of the page, so a screen that stopped moving the focus
+ * to the notice reads as that, not as a hang.
  */
-const noticeHoldsFocus = (page: Page, name: string) =>
-  page.waitForFunction((customer) => {
-    const active = document.activeElement;
-    return (
-      active instanceof HTMLElement &&
-      active !== document.body &&
-      active.tabIndex === -1 &&
-      (active.textContent ?? "").includes(`Cliente “${customer}”`)
+async function noticeHoldsFocus(page: Page, name: string) {
+  const notice = `Cliente “${name}”`;
+  try {
+    await page.waitForFunction(
+      (text) => {
+        const active = document.activeElement;
+        return (
+          active instanceof HTMLElement &&
+          active !== document.body &&
+          active.tabIndex === -1 &&
+          (active.textContent ?? "").includes(text)
+        );
+      },
+      notice,
+      { timeout: NOTICE_FOCUS_TIMEOUT_MS }
     );
-  }, name);
+  } catch (error) {
+    if (!(error instanceof Error && error.name === "TimeoutError")) {
+      throw error;
+    }
+    const focused = await page.evaluate(() => {
+      const active = document.activeElement;
+      if (!(active instanceof HTMLElement) || active === document.body) {
+        return "nothing (the focus is on the body)";
+      }
+      const text = (active.textContent ?? "").replace(/\s+/g, " ").trim();
+      return `<${active.tagName.toLowerCase()}> tabindex=${active.tabIndex} "${text.slice(0, 80)}"`;
+    });
+    throw new Error(
+      `The screen did not move the focus to the notice of the result (${notice}) within ${NOTICE_FOCUS_TIMEOUT_MS} ms. Focused element: ${focused}.`,
+      { cause: error }
+    );
+  }
+}
 
 /** The customers that the server has confirmed: no row says "Aguardando envio" any more. */
 const noPendingRow = (page: Page) =>
