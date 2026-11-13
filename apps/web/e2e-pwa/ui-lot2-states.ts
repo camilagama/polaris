@@ -129,6 +129,21 @@ async function register(page: Page, name: string, phone: string) {
   await page.getByRole("button", { name: "Cadastrar cliente" }).click();
 }
 
+/**
+ * A save closes the form, and only then does the page move the focus to the notice of the result. Measuring the Tab
+ * order before that moves it would start the walk from the old position and skip what is above the notice.
+ */
+const noticeHoldsFocus = (page: Page, name: string) =>
+  page.waitForFunction((customer) => {
+    const active = document.activeElement;
+    return (
+      active instanceof HTMLElement &&
+      active !== document.body &&
+      active.tabIndex === -1 &&
+      (active.textContent ?? "").includes(`Cliente “${customer}”`)
+    );
+  }, name);
+
 /** The customers that the server has confirmed: no row says "Aguardando envio" any more. */
 const noPendingRow = (page: Page) =>
   page.waitForFunction(
@@ -158,6 +173,10 @@ export const customerStates = {
     );
     await page.getByText("Bruno Carvalho").first().waitFor();
     await noPendingRow(page);
+    await noticeHoldsFocus(
+      page,
+      "Bruno Carvalho de Albuquerque Montenegro Filho"
+    );
     await showScreenAlone(page);
   },
 
@@ -168,6 +187,7 @@ export const customerStates = {
     await page.getByText("Sem conexão.", { exact: true }).waitFor();
     await register(page, "Bia Souza", "11900000002");
     await page.getByText("Aguardando envio").waitFor();
+    await noticeHoldsFocus(page, "Bia Souza");
     await showScreenAlone(page);
   },
 };
