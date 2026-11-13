@@ -341,7 +341,9 @@ export function ScreensLab() {
     async (event: ChangeEvent<HTMLInputElement>) => {
       network.online = event.currentTarget.checked;
       setOnline(event.currentTarget.checked);
-      // what the page does on the browser's online and offline events
+      // what the page does on the browser's online and offline events: the screens are told at once, since a sync
+      // still in flight answers syncNow() and would leave them with the old state
+      runtime.connectionChanged();
       await runtime.syncNow();
     },
     [network, runtime]
