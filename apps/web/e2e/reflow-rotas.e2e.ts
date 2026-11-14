@@ -78,15 +78,6 @@ const KNOWN_FINDINGS: readonly KnownFinding[] = [];
 /** What is cut at 320 px with the font at 24 px and not at 20 px: a report to read, never a promise and never an excuse. */
 const KNOWN_FINDINGS_24: readonly KnownFinding[] = [
   {
-    clientWidth: 207,
-    reason:
-      'no formulário de Nova despesa, o campo Categoria mostra "Escolha uma categoria" cortado: o texto (219 px) não cabe na caixa do campo (207 px) e o campo não quebra a linha',
-    screens: ["despesas erros nos campos"],
-    scrollWidth: 219,
-    selector:
-      'div[data-slot="field"] > button#expense-categoryId > span[data-slot="select-value"]',
-  },
-  {
     clientWidth: 272,
     reason:
       'na aba Recorrentes, o cartão tem 272 px e o conteúdo (o texto "Cada ocorrência vira uma despesa comum…", o "Mostrar pausadas", o botão "Nova despesa recorrente" e as linhas de regra) mede 331 px: passa 59 px da borda direita do cartão',
@@ -96,15 +87,6 @@ const KNOWN_FINDINGS_24: readonly KnownFinding[] = [
       'div[data-slot="tabs"] > div[data-slot="tabs-content"] > div[data-slot="card"]',
   },
   {
-    clientWidth: 207,
-    reason:
-      'no diálogo da regra recorrente, o campo Categoria mostra "Escolha uma categoria" cortado: o texto (219 px) não cabe na caixa do campo (207 px)',
-    screens: ["despesas recorrentes e o diálogo da regra"],
-    scrollWidth: 219,
-    selector:
-      'div[data-slot="field"] > button#expense-rule-categoryId > span[data-slot="select-value"]',
-  },
-  {
     clientWidth: 272,
     reason:
       'na aba Categorias, o cartão tem 272 px e o conteúdo (o "Mostrar categorias arquivadas" e a lista de categorias, com Renomear e Arquivar) mede 291 px: passa 19 px da borda direita do cartão',
@@ -112,15 +94,6 @@ const KNOWN_FINDINGS_24: readonly KnownFinding[] = [
     scrollWidth: 291,
     selector:
       'div[data-slot="tabs"] > div[data-slot="tabs-content"] > div[data-slot="card"]',
-  },
-  {
-    clientWidth: 207,
-    reason:
-      'no diálogo da categoria, o campo Grupo mostra "Operacional/Administrativa" cortado: o texto (265 px) não cabe na caixa do campo (207 px)',
-    screens: ["despesas categorias e o diálogo da categoria"],
-    scrollWidth: 265,
-    selector:
-      'div[data-slot="field"] > button#expense-new-category-group > span[data-slot="select-value"]',
   },
   {
     clientWidth: 272,
