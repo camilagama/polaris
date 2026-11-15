@@ -5423,6 +5423,276 @@ async function openRanking(
   await expectReflowFont(page, fontPixels);
 }
 
+/**
+ * A linha do plano no fim do Início (corte aviso-limite-do-plano, item 2): "Você usa N de 50 variantes no plano Free."
+ * depois de Mais vendidos, sem cartão, lida uma vez ao abrir só para o dono com o autosserviço ligado. A leitura do
+ * plano que o shell faz sozinho fica fresca (guardada no início), para a conta ser só a do Início.
+ */
+const PLAN_LINE = "[data-near-limit]";
+const PLAN_REGIONS = [
+  "Vendas hoje",
+  "Vendas em outubro",
+  "Vendas por dia",
+  "Ritmo de vendas",
+  "Mais vendidos do mês",
+] as const;
+
+interface PlanServer {
+  gate: Promise<void> | null;
+  refuse: boolean;
+  reads: number;
+  state: string;
+  use: { images: number; variants: number };
+}
+
+const newPlanServer = (variants: number, images = 0): PlanServer => ({
+  gate: null,
+  refuse: false,
+  reads: 0,
+  state: "free",
+  use: { images, variants },
+});
+
+const planView = (plan: PlanServer) => ({
+  accessEndsAt: plan.state === "free" ? null : "2026-11-24T03:00:00.000Z",
+  cycleMonths: plan.state === "free" ? null : 1,
+  kept: { historyMonths: 3, products: 50, sales: 47 },
+  limits: { goals: 1, images: 50, variants: 50 },
+  method: plan.state === "free" ? null : "card",
+  nextCharge: null,
+  offer: { methods: ["card"], prices: [{ amount: "24.90", cycleMonths: 1 }] },
+  recovery: null,
+  refund: null,
+  refundPending: false,
+  refundWindowEndedOn: null,
+  renewalCancelled: false,
+  resubscribeFrom: null,
+  state: plan.state,
+  trialAvailable: false,
+  usage: { goals: 0, ...plan.use },
+});
+
+async function openHomeWithPlan(
+  page: Page,
+  server: FakeServer,
+  plan: PlanServer,
+  options: { role?: string; selfService?: boolean } = {}
+) {
+  const notice = JSON.stringify({
+    accessEndsAt: null,
+    nextChargeOn: null,
+    organizationId: ORGANIZATION_ID,
+    readAt: NOON,
+    state: "free",
+  });
+  await page.addInitScript((value) => {
+    window.sessionStorage.setItem("polaris.billing.planNotice", value);
+  }, notice);
+  server.now = NOON;
+  await page.clock.install({ time: new Date(NOON) });
+  await serve(page, server);
+  await page.route("**/rpc/organization/listMine", (route) =>
+    route.fulfill(
+      json({
+        billingSelfService: options.selfService ?? true,
+        organizations: [
+          { ...server.organization, role: options.role ?? "owner" },
+        ],
+      })
+    )
+  );
+  await page.route("**/rpc/billing/readPlan", async (route) => {
+    plan.reads += 1;
+    await plan.gate;
+    await (plan.refuse
+      ? route.fulfill(failure("FORBIDDEN", 403))
+      : route.fulfill(json(planView(plan))));
+  });
+  await page.goto("/");
+  await expect(
+    page.getByRole("heading", { level: 1, name: "Início" })
+  ).toBeVisible({ timeout: 20_000 });
+  if (options.role === undefined) {
+    await expect(region(page, "Mais vendidos do mês")).toBeVisible();
+  }
+}
+
+async function planRegionPlaces(page: Page) {
+  await settled(page);
+  const places: Record<string, Place> = {};
+  for (const name of PLAN_REGIONS) {
+    // biome-ignore lint/performance/noAwaitInLoops: one region at a time, in the order of the page
+    places[name] = await placeOf(region(page, name));
+  }
+  return places;
+}
+
+function expectSameRegions(
+  after: Record<string, Place>,
+  before: Record<string, Place>,
+  when: string
+) {
+  for (const name of PLAN_REGIONS) {
+    expect(after[name]?.top, `${when}: topo de ${name}`).toBeCloseTo(
+      before[name]?.top ?? Number.NaN,
+      0
+    );
+    expect(after[name]?.height, `${when}: altura de ${name}`).toBeCloseTo(
+      before[name]?.height ?? Number.NaN,
+      0
+    );
+  }
+}
+
+const PLAN_VIEWPORTS = [
+  { height: 740, width: 360 },
+  { height: 800, width: 1280 },
+] as const;
+
+test.describe("a linha do plano no fim do Início (item 2 do aviso de limite)", () => {
+  for (const viewport of PLAN_VIEWPORTS) {
+    test(`a ${viewport.width} px a linha chega depois da leitura, no fim, e nada acima dela se move`, async ({
+      page,
+    }) => {
+      await page.setViewportSize(viewport);
+      const plan = newPlanServer(47);
+      let release: () => void = () => undefined;
+      plan.gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      await openHomeWithPlan(page, new FakeServer(SOLD), plan);
+      await expect(page.locator(PLAN_LINE)).toHaveCount(0);
+      const before = await planRegionPlaces(page);
+      const pageHeight = await page.evaluate(
+        () => document.documentElement.scrollHeight
+      );
+      release();
+      const line = page.locator(PLAN_LINE);
+      await expect(line).toHaveText(
+        "Você usa 47 de 50 variantes no plano Free. Conhecer o Pro"
+      );
+      expectSameRegions(await planRegionPlaces(page), before, "depois");
+      const ranking = await placeOf(region(page, "Mais vendidos do mês"));
+      const lineBox = await placeOf(line);
+      expect(lineBox.top).toBeGreaterThanOrEqual(
+        ranking.top + ranking.height - 1
+      );
+      expect(
+        await page.evaluate(() => document.documentElement.scrollHeight)
+      ).toBeGreaterThan(pageHeight);
+      await expect(line).not.toHaveAttribute("role", "alert");
+      await expect(
+        page.getByRole("link", { exact: true, name: "Conhecer o Pro" })
+      ).toHaveAttribute("href", "/configuracoes?aba=assinatura");
+    });
+
+    test(`a ${viewport.width} px a grade é a mesma com a linha e sem ela`, async ({
+      page,
+    }) => {
+      await page.setViewportSize(viewport);
+      const plan = newPlanServer(10);
+      await openHomeWithPlan(page, new FakeServer(SOLD), plan);
+      await expect.poll(() => plan.reads).toBe(1);
+      await expect(page.locator(PLAN_LINE)).toHaveCount(0);
+      const without = await planRegionPlaces(page);
+      plan.use = { images: 0, variants: 50 };
+      await page.reload();
+      await expect(page.locator(PLAN_LINE)).toHaveText(
+        "Você chegou ao limite de 50 variantes do plano Free. Conhecer o Pro"
+      );
+      expectSameRegions(await planRegionPlaces(page), without, "no limite");
+    });
+  }
+
+  test("o Início lê o plano uma vez por abertura, nem por foco nem por intervalo", async ({
+    page,
+  }) => {
+    const plan = newPlanServer(0, 46);
+    await openHomeWithPlan(page, new FakeServer(SOLD), plan);
+    await expect(page.locator(PLAN_LINE)).toHaveText(
+      "Você usa 46 de 50 imagens no plano Free. Conhecer o Pro"
+    );
+    expect(plan.reads).toBe(1);
+    await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+    await page.evaluate(() =>
+      document.dispatchEvent(new Event("visibilitychange"))
+    );
+    await page.clock.runFor(4 * 60_000);
+    await settled(page);
+    expect(plan.reads).toBe(1);
+    await page.reload();
+    await expect(page.locator(PLAN_LINE)).toBeVisible();
+    expect(plan.reads).toBe(2);
+  });
+
+  test("sem conexão a linha some e nada é lido; a conexão de volta não lê de novo nem traz o número velho", async ({
+    page,
+  }) => {
+    const plan = newPlanServer(47);
+    await openHomeWithPlan(page, new FakeServer(SOLD), plan);
+    await expect(page.locator(PLAN_LINE)).toBeVisible();
+    await page.context().setOffline(true);
+    await expect(page.locator(PLAN_LINE)).toHaveCount(0);
+    await page.context().setOffline(false);
+    await settled(page);
+    await expect(page.locator(PLAN_LINE)).toHaveCount(0);
+    expect(plan.reads).toBe(1);
+  });
+
+  test("a recusa do plano, o lojista sem a cobrança, o autosserviço desligado e o Pro: nenhuma linha e nenhum erro", async ({
+    browser,
+  }) => {
+    const cases: Array<{
+      expectedReads: number;
+      name: string;
+      options?: { role?: string; selfService?: boolean };
+      plan: PlanServer;
+    }> = [
+      {
+        expectedReads: 1,
+        name: "recusa",
+        plan: { ...newPlanServer(50), refuse: true },
+      },
+      {
+        expectedReads: 0,
+        name: "sem a cobrança",
+        options: { role: "manager" },
+        plan: newPlanServer(50),
+      },
+      {
+        expectedReads: 0,
+        name: "autosserviço desligado",
+        options: { selfService: false },
+        plan: newPlanServer(50),
+      },
+      {
+        expectedReads: 1,
+        name: "Pro",
+        plan: { ...newPlanServer(50), state: "active" },
+      },
+    ];
+    for (const item of cases) {
+      // biome-ignore lint/performance/noAwaitInLoops: one store at a time, each in a context of its own
+      const context = await browser.newContext();
+      const page = await context.newPage();
+      await openHomeWithPlan(
+        page,
+        new FakeServer(SOLD),
+        item.plan,
+        item.options
+      );
+      await settled(page);
+      expect(item.plan.reads, item.name).toBe(item.expectedReads);
+      await expect(page.locator(PLAN_LINE), item.name).toHaveCount(0);
+      await expect(
+        page.getByText("Não foi possível", { exact: false }),
+        item.name
+      ).toHaveCount(0);
+      await context.close();
+    }
+  });
+});
+
 test.describe("Mais vendidos do mês a 320 px com a letra do navegador em 20 px", () => {
   test.skip(
     ({ browserName }) => browserName !== "chromium",
@@ -5821,274 +6091,4 @@ test.describe("Mais vendidos do mês: a linha por largura da coluna (uma linha s
     },
     { coarse: false }
   );
-});
-
-/**
- * A linha do plano no fim do Início (corte aviso-limite-do-plano, item 2): "Você usa N de 50 variantes no plano Free."
- * depois de Mais vendidos, sem cartão, lida uma vez ao abrir só para o dono com o autosserviço ligado. A leitura do
- * plano que o shell faz sozinho fica fresca (guardada no início), para a conta ser só a do Início.
- */
-const PLAN_LINE = "[data-near-limit]";
-const PLAN_REGIONS = [
-  "Vendas hoje",
-  "Vendas em outubro",
-  "Vendas por dia",
-  "Ritmo de vendas",
-  "Mais vendidos do mês",
-] as const;
-
-interface PlanServer {
-  gate: Promise<void> | null;
-  refuse: boolean;
-  reads: number;
-  state: string;
-  use: { images: number; variants: number };
-}
-
-const newPlanServer = (variants: number, images = 0): PlanServer => ({
-  gate: null,
-  refuse: false,
-  reads: 0,
-  state: "free",
-  use: { images, variants },
-});
-
-const planView = (plan: PlanServer) => ({
-  accessEndsAt: plan.state === "free" ? null : "2026-11-24T03:00:00.000Z",
-  cycleMonths: plan.state === "free" ? null : 1,
-  kept: { historyMonths: 3, products: 50, sales: 47 },
-  limits: { goals: 1, images: 50, variants: 50 },
-  method: plan.state === "free" ? null : "card",
-  nextCharge: null,
-  offer: { methods: ["card"], prices: [{ amount: "24.90", cycleMonths: 1 }] },
-  recovery: null,
-  refund: null,
-  refundPending: false,
-  refundWindowEndedOn: null,
-  renewalCancelled: false,
-  resubscribeFrom: null,
-  state: plan.state,
-  trialAvailable: false,
-  usage: { goals: 0, ...plan.use },
-});
-
-async function openHomeWithPlan(
-  page: Page,
-  server: FakeServer,
-  plan: PlanServer,
-  options: { role?: string; selfService?: boolean } = {}
-) {
-  const notice = JSON.stringify({
-    accessEndsAt: null,
-    nextChargeOn: null,
-    organizationId: ORGANIZATION_ID,
-    readAt: NOON,
-    state: "free",
-  });
-  await page.addInitScript((value) => {
-    window.sessionStorage.setItem("polaris.billing.planNotice", value);
-  }, notice);
-  server.now = NOON;
-  await page.clock.install({ time: new Date(NOON) });
-  await serve(page, server);
-  await page.route("**/rpc/organization/listMine", (route) =>
-    route.fulfill(
-      json({
-        billingSelfService: options.selfService ?? true,
-        organizations: [
-          { ...server.organization, role: options.role ?? "owner" },
-        ],
-      })
-    )
-  );
-  await page.route("**/rpc/billing/readPlan", async (route) => {
-    plan.reads += 1;
-    await plan.gate;
-    await (plan.refuse
-      ? route.fulfill(failure("FORBIDDEN", 403))
-      : route.fulfill(json(planView(plan))));
-  });
-  await page.goto("/");
-  await expect(
-    page.getByRole("heading", { level: 1, name: "Início" })
-  ).toBeVisible({ timeout: 20_000 });
-  if (options.role === undefined) {
-    await expect(region(page, "Mais vendidos do mês")).toBeVisible();
-  }
-}
-
-async function planRegionPlaces(page: Page) {
-  await settled(page);
-  const places: Record<string, Place> = {};
-  for (const name of PLAN_REGIONS) {
-    // biome-ignore lint/performance/noAwaitInLoops: one region at a time, in the order of the page
-    places[name] = await placeOf(region(page, name));
-  }
-  return places;
-}
-
-function expectSameRegions(
-  after: Record<string, Place>,
-  before: Record<string, Place>,
-  when: string
-) {
-  for (const name of PLAN_REGIONS) {
-    expect(after[name]?.top, `${when}: topo de ${name}`).toBeCloseTo(
-      before[name]?.top ?? Number.NaN,
-      0
-    );
-    expect(after[name]?.height, `${when}: altura de ${name}`).toBeCloseTo(
-      before[name]?.height ?? Number.NaN,
-      0
-    );
-  }
-}
-
-const PLAN_VIEWPORTS = [
-  { height: 740, width: 360 },
-  { height: 800, width: 1280 },
-] as const;
-
-test.describe("a linha do plano no fim do Início (item 2 do aviso de limite)", () => {
-  for (const viewport of PLAN_VIEWPORTS) {
-    test(`a ${viewport.width} px a linha chega depois da leitura, no fim, e nada acima dela se move`, async ({
-      page,
-    }) => {
-      await page.setViewportSize(viewport);
-      const plan = newPlanServer(47);
-      let release: () => void = () => undefined;
-      plan.gate = new Promise<void>((resolve) => {
-        release = resolve;
-      });
-      await openHomeWithPlan(page, new FakeServer(SOLD), plan);
-      await expect(page.locator(PLAN_LINE)).toHaveCount(0);
-      const before = await planRegionPlaces(page);
-      const pageHeight = await page.evaluate(
-        () => document.documentElement.scrollHeight
-      );
-      release();
-      const line = page.locator(PLAN_LINE);
-      await expect(line).toHaveText(
-        "Você usa 47 de 50 variantes no plano Free. Conhecer o Pro"
-      );
-      expectSameRegions(await planRegionPlaces(page), before, "depois");
-      const ranking = await placeOf(region(page, "Mais vendidos do mês"));
-      const lineBox = await placeOf(line);
-      expect(lineBox.top).toBeGreaterThanOrEqual(
-        ranking.top + ranking.height - 1
-      );
-      expect(
-        await page.evaluate(() => document.documentElement.scrollHeight)
-      ).toBeGreaterThan(pageHeight);
-      await expect(line).not.toHaveAttribute("role", "alert");
-      await expect(
-        page.getByRole("link", { exact: true, name: "Conhecer o Pro" })
-      ).toHaveAttribute("href", "/configuracoes?aba=assinatura");
-    });
-
-    test(`a ${viewport.width} px a grade é a mesma com a linha e sem ela`, async ({
-      page,
-    }) => {
-      await page.setViewportSize(viewport);
-      const plan = newPlanServer(10);
-      await openHomeWithPlan(page, new FakeServer(SOLD), plan);
-      await expect.poll(() => plan.reads).toBe(1);
-      await expect(page.locator(PLAN_LINE)).toHaveCount(0);
-      const without = await planRegionPlaces(page);
-      plan.use = { images: 0, variants: 50 };
-      await page.reload();
-      await expect(page.locator(PLAN_LINE)).toHaveText(
-        "Você chegou ao limite de 50 variantes do plano Free. Conhecer o Pro"
-      );
-      expectSameRegions(await planRegionPlaces(page), without, "no limite");
-    });
-  }
-
-  test("o Início lê o plano uma vez por abertura, nem por foco nem por intervalo", async ({
-    page,
-  }) => {
-    const plan = newPlanServer(0, 46);
-    await openHomeWithPlan(page, new FakeServer(SOLD), plan);
-    await expect(page.locator(PLAN_LINE)).toHaveText(
-      "Você usa 46 de 50 imagens no plano Free. Conhecer o Pro"
-    );
-    expect(plan.reads).toBe(1);
-    await page.evaluate(() => window.dispatchEvent(new Event("focus")));
-    await page.evaluate(() =>
-      document.dispatchEvent(new Event("visibilitychange"))
-    );
-    await page.clock.runFor(4 * 60_000);
-    await settled(page);
-    expect(plan.reads).toBe(1);
-    await page.reload();
-    await expect(page.locator(PLAN_LINE)).toBeVisible();
-    expect(plan.reads).toBe(2);
-  });
-
-  test("sem conexão a linha some e nada é lido; a conexão de volta não lê de novo nem traz o número velho", async ({
-    page,
-  }) => {
-    const plan = newPlanServer(47);
-    await openHomeWithPlan(page, new FakeServer(SOLD), plan);
-    await expect(page.locator(PLAN_LINE)).toBeVisible();
-    await page.context().setOffline(true);
-    await expect(page.locator(PLAN_LINE)).toHaveCount(0);
-    await page.context().setOffline(false);
-    await settled(page);
-    await expect(page.locator(PLAN_LINE)).toHaveCount(0);
-    expect(plan.reads).toBe(1);
-  });
-
-  test("a recusa do plano, o lojista sem a cobrança, o autosserviço desligado e o Pro: nenhuma linha e nenhum erro", async ({
-    browser,
-  }) => {
-    const cases: Array<{
-      expectedReads: number;
-      name: string;
-      options?: { role?: string; selfService?: boolean };
-      plan: PlanServer;
-    }> = [
-      {
-        expectedReads: 1,
-        name: "recusa",
-        plan: { ...newPlanServer(50), refuse: true },
-      },
-      {
-        expectedReads: 0,
-        name: "sem a cobrança",
-        options: { role: "manager" },
-        plan: newPlanServer(50),
-      },
-      {
-        expectedReads: 0,
-        name: "autosserviço desligado",
-        options: { selfService: false },
-        plan: newPlanServer(50),
-      },
-      {
-        expectedReads: 1,
-        name: "Pro",
-        plan: { ...newPlanServer(50), state: "active" },
-      },
-    ];
-    for (const item of cases) {
-      // biome-ignore lint/performance/noAwaitInLoops: one store at a time, each in a context of its own
-      const context = await browser.newContext();
-      const page = await context.newPage();
-      await openHomeWithPlan(
-        page,
-        new FakeServer(SOLD),
-        item.plan,
-        item.options
-      );
-      await settled(page);
-      expect(item.plan.reads, item.name).toBe(item.expectedReads);
-      await expect(page.locator(PLAN_LINE), item.name).toHaveCount(0);
-      await expect(
-        page.getByText("Não foi possível", { exact: false }),
-        item.name
-      ).toHaveCount(0);
-      await context.close();
-    }
-  });
 });
