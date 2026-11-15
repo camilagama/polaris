@@ -140,7 +140,19 @@ export async function getEffectiveEntitlements(
   transaction: TenantRequestTransaction,
   scope: OrganizationScope
 ): Promise<EffectiveEntitlements> {
-  const catalog = await readPlanCatalog(transaction);
+  return await resolveEffectiveEntitlements(
+    transaction,
+    scope,
+    await readPlanCatalog(transaction)
+  );
+}
+
+/** `getEffectiveEntitlements` over a catalog the caller already read in the same transaction. */
+export async function resolveEffectiveEntitlements(
+  transaction: TenantRequestTransaction,
+  scope: OrganizationScope,
+  catalog: PlanCatalog
+): Promise<EffectiveEntitlements> {
   const facts = await readBillingFacts(transaction, scope);
   const grants = await readGrants(transaction, scope);
   const clock = await transaction.execute<{ now: Date }>(

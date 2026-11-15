@@ -72,6 +72,10 @@ const PLAN_KEYS = [
   "offer.prices",
   "offer.prices.amount",
   "offer.prices.cycleMonths",
+  "proLimits",
+  "proLimits.goals",
+  "proLimits.images",
+  "proLimits.variants",
   "recovery",
   "refund",
   "refund.amount",
@@ -147,6 +151,7 @@ const tenantFacts = (
     { amount: "24.90", id: "pro-1", intervalMonths: 1, planId: "pro" },
     { amount: "249.00", id: "pro-12", intervalMonths: 12, planId: "pro" },
   ],
+  proEntitlements: INITIAL_PLAN_CATALOG.pro,
   usage: { goals: 1, images: 9, variants: 31 },
   ...overrides,
 });
@@ -395,6 +400,7 @@ describe("billing.readPlan: what it answers", () => {
           { amount: "249.00", cycleMonths: 12 },
         ],
       },
+      proLimits: { goals: 3, images: 5000, variants: 2000 },
       recovery: null,
       refund: null,
       refundPending: false,
@@ -427,6 +433,85 @@ describe("billing.readPlan: what it answers", () => {
       limits: { goals: 1, images: 50, variants: 120 },
     });
   });
+
+  it("reads the Pro limits from the stored catalog the transaction read, so a changed catalog changes the field (AC-3.1)", async () => {
+    const facts = tenantFacts({
+      proEntitlements: {
+        ...INITIAL_PLAN_CATALOG.pro,
+        "goals.active.max": 7,
+        "images.active.max": 8000,
+        "variants.active.max": 3500,
+      },
+    });
+
+    const plan = await read(setup({ facts }));
+
+    expect(plan).toMatchObject({
+      limits: { goals: 1, images: 50, variants: 50 },
+      proLimits: { goals: 7, images: 8000, variants: 3500 },
+    });
+  });
+
+  it("does not raise the Pro limits with a grant: they are the catalog's row, not the effective ones (AC-3.1)", async () => {
+    const facts = tenantFacts({
+      entitlements: resolveEntitlements({
+        catalog: INITIAL_PLAN_CATALOG,
+        facts: { accessEndsAt: null, state: "free" },
+        grants: [
+          {
+            expiresAt: sp("2026-11-01T00:00:00"),
+            key: "variants.active.max",
+            value: 9000,
+          },
+        ],
+        now: sp("2026-10-12T09:00:00"),
+      }),
+    });
+
+    await expect(read(setup({ facts }))).resolves.toMatchObject({
+      limits: { variants: 9000 },
+      proLimits: { variants: 2000 },
+    });
+  });
+
+  it.each([["free_over_limit"], ["trial_setup"]] as const)(
+    "offers the Pro limits in %s, a store not on Pro",
+    async (state) => {
+      const facts = tenantFacts({
+        entitlements: resolveEntitlements({
+          catalog: INITIAL_PLAN_CATALOG,
+          facts: { accessEndsAt: null, state },
+          now: sp("2026-10-12T09:00:00"),
+        }),
+      });
+
+      await expect(
+        read(setup({ facts, record: { ...freeRecord, state } }))
+      ).resolves.toMatchObject({
+        proLimits: { goals: 3, images: 5000, variants: 2000 },
+        state,
+      });
+    }
+  );
+
+  it.each([["trialing"], ["active"], ["grace"]] as const)(
+    "leaves the Pro limits out while the store is on Pro (%s): there is no invitation to make",
+    async (state) => {
+      const facts = tenantFacts({
+        entitlements: resolveEntitlements({
+          catalog: INITIAL_PLAN_CATALOG,
+          facts: { accessEndsAt: sp("2026-11-11T00:00:00"), state },
+          now: sp("2026-10-12T09:00:00"),
+        }),
+      });
+
+      const plan = await read(
+        setup({ facts, record: { ...activeRecord, state } })
+      );
+
+      expect(plan).not.toHaveProperty("proLimits");
+    }
+  );
 
   it("offers the prices of the catalog as they are: a changed price or a cycle turned off shows at once (AS-5)", async () => {
     const facts = tenantFacts({

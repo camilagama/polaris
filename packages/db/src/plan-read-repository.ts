@@ -1,11 +1,15 @@
-import type { EffectiveEntitlements } from "@polaris/domain/billing/entitlements";
+import type {
+  EffectiveEntitlements,
+  PlanEntitlements,
+} from "@polaris/domain/billing/entitlements";
 import { historyMonthsOf } from "@polaris/domain/billing/plan-view";
 import { localDate } from "@polaris/domain/organization/closure-deadlines";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import {
-  getEffectiveEntitlements,
   listBillingPrices,
   type OrganizationScope,
+  readPlanCatalog,
+  resolveEffectiveEntitlements,
 } from "./billing-repository";
 import { countActiveGoals } from "./goal-repository";
 import { countActiveImages } from "./media-repository";
@@ -50,6 +54,8 @@ export interface OwnerPlanTenantFacts {
   entitlements: EffectiveEntitlements;
   kept: PlanKept;
   prices: Awaited<ReturnType<typeof listBillingPrices>>;
+  /** The Pro row of the stored catalog, as the transaction read it (grants do not raise it). */
+  proEntitlements: PlanEntitlements;
   usage: PlanUsage;
 }
 
@@ -67,7 +73,12 @@ export async function readOwnerPlanTenantFacts(
 ): Promise<OwnerPlanTenantFacts> {
   const { organizationId } = scope;
   const prices = await listBillingPrices(transaction);
-  const entitlements = await getEffectiveEntitlements(transaction, scope);
+  const catalog = await readPlanCatalog(transaction);
+  const entitlements = await resolveEffectiveEntitlements(
+    transaction,
+    scope,
+    catalog
+  );
   const usage: PlanUsage = {
     goals: await countActiveGoals(transaction, organizationId),
     images: await countActiveImages(transaction, organizationId),
@@ -108,6 +119,7 @@ export async function readOwnerPlanTenantFacts(
       sales: saleCounts?.total ?? 0,
     },
     prices,
+    proEntitlements: catalog.pro,
     usage,
   };
 }

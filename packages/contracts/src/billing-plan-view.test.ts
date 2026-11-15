@@ -12,6 +12,7 @@ const plan: BillingPlanView = {
     methods: ["card", "pix_automatic"],
     prices: [{ amount: "24.90", cycleMonths: 1 }],
   },
+  proLimits: { goals: 3, images: 5000, variants: 2000 },
   recovery: null,
   refund: { amount: "24.90", until: "2026-10-18T02:59:59.000Z", via: "app" },
   refundPending: false,
@@ -26,6 +27,31 @@ const plan: BillingPlanView = {
 describe("billing.readPlan output (AS-2)", () => {
   it("takes the plan as the server builds it", () => {
     expect(billingPlanView.parse(plan)).toEqual(plan);
+  });
+
+  it("takes the answer of an older server without proLimits, and does not add the key", () => {
+    const { proLimits: _omitted, ...older } = plan;
+
+    const parsed = billingPlanView.parse(older);
+
+    expect(parsed).toEqual(older);
+    expect(parsed).not.toHaveProperty("proLimits");
+  });
+
+  it("takes a Pro limit that is null (no limit) and refuses a negative or fractional one", () => {
+    const unlimited = {
+      ...plan,
+      proLimits: { goals: null, images: null, variants: null },
+    };
+    expect(billingPlanView.parse(unlimited)).toEqual(unlimited);
+    for (const variants of [-1, 1.5]) {
+      expect(
+        billingPlanView.safeParse({
+          ...plan,
+          proLimits: { ...plan.proLimits, variants },
+        }).success
+      ).toBe(false);
+    }
   });
 
   it("takes the day the window of the right of withdrawal ended, and only a calendar day", () => {
@@ -46,6 +72,7 @@ describe("billing.readPlan output (AS-2)", () => {
     ["offer", (value: BillingPlanView) => value.offer],
     ["a price of the offer", (value: BillingPlanView) => value.offer.prices[0]],
     ["limits", (value: BillingPlanView) => value.limits],
+    ["proLimits", (value: BillingPlanView) => value.proLimits],
     ["usage", (value: BillingPlanView) => value.usage],
     ["kept", (value: BillingPlanView) => value.kept],
   ])(
