@@ -88,6 +88,9 @@ const PLAN_KEYS = [
   "state",
   "trialAvailable",
   "usage",
+  "usage.freeable",
+  "usage.freeable.products",
+  "usage.freeable.variants",
   "usage.goals",
   "usage.images",
   "usage.variants",
@@ -152,7 +155,12 @@ const tenantFacts = (
     { amount: "249.00", id: "pro-12", intervalMonths: 12, planId: "pro" },
   ],
   proEntitlements: INITIAL_PLAN_CATALOG.pro,
-  usage: { goals: 1, images: 9, variants: 31 },
+  usage: {
+    freeable: { products: 2, variants: 5 },
+    goals: 1,
+    images: 9,
+    variants: 31,
+  },
   ...overrides,
 });
 
@@ -409,7 +417,44 @@ describe("billing.readPlan: what it answers", () => {
       resubscribeFrom: null,
       state: "free",
       trialAvailable: true,
-      usage: { goals: 1, images: 9, variants: 31 },
+      usage: {
+        freeable: { products: 2, variants: 5 },
+        goals: 1,
+        images: 9,
+        variants: 31,
+      },
+    });
+  });
+
+  it("hands a Pro limit that is null (no limit) from the facts to the answer, as null and not as zero or absent", async () => {
+    const facts = tenantFacts({
+      proEntitlements: {
+        ...INITIAL_PLAN_CATALOG.pro,
+        "goals.active.max": null,
+        "images.active.max": 8000,
+        "variants.active.max": null,
+      } as unknown as OwnerPlanTenantFacts["proEntitlements"],
+    });
+
+    const plan = await read(setup({ facts }));
+
+    expect(plan).toMatchObject({
+      proLimits: { goals: null, images: 8000, variants: null },
+    });
+  });
+
+  it("passes usage.freeable through as the transaction counted it (AC-3.1)", async () => {
+    const facts = tenantFacts({
+      usage: {
+        freeable: { products: 0, variants: 0 },
+        goals: 0,
+        images: 0,
+        variants: 0,
+      },
+    });
+
+    await expect(read(setup({ facts }))).resolves.toMatchObject({
+      usage: { freeable: { products: 0, variants: 0 } },
     });
   });
 
