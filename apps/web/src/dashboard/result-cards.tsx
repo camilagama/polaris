@@ -133,10 +133,10 @@ const LINK_ARROW = "@min-[11.5rem]:block hidden size-4";
 
 /**
  * "Ver as 8 vendas" on the support line of the sales card, in the place of the count: a text button with an arrow, no
- * underline and no outline, whose name says the dates and where it goes. With the comparison chip it takes a line of its
- * own under the chip, on the left, and the tile grows by that line; without the chip it stays on the support line. The
- * box is 24 px tall in a 20 px line (negative margin), the least a target may have; the arrow goes first when the tile is
- * narrower than the words need (320 px with the letter at 20 px).
+ * underline and no outline, whose name says the dates and where it goes. With the comparison chip it takes a line of
+ * its own under the chip, on the left, and the tile grows by that line; without the chip it stays on the support line.
+ * The box is 24 px tall in a 20 px line (negative margin), the least a target may have; the arrow goes first when the
+ * tile is narrower than the words need (320 px with the letter at 20 px).
  */
 function SalesLink({
   count,
@@ -176,8 +176,8 @@ function SalesLink({
  * What the support line of the sales card says of the count: the link to the Histórico when the count is the server's
  * for the whole period (none while a day is read on the sparkline, whose count is another), the text otherwise. The
  * period is from its first day to today, since nothing is sold after it. With the comparison chip the link or the text
- * is always on the line under it, so the tile has the same height with or without sales, with or without connection, and
- * while a day is read (the date is 4 px shorter than the chip, and the text line makes it up).
+ * is always on the line under it, so the tile has the same height with or without sales, with or without connection,
+ * and while a day is read (the date is 4 px shorter than the chip, and the text line makes it up).
  */
 function salesNote({
   chip,

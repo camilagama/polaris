@@ -450,7 +450,7 @@ export function SalePage() {
       });
     };
   }, [localOutbox, localWriter]);
-  const { readLines, refresh, resetStock, seedStock } = catalog;
+  const { listPrices, readLines, refresh, resetStock, seedStock } = catalog;
   const covers = useMemo(() => coversOfStock(catalog.stock), [catalog.stock]);
 
   useEffect(
@@ -586,7 +586,6 @@ export function SalePage() {
       applySalePreset(withdrawSalePreset(current, previous, preset), preset)
     );
   }, [editForm, preset]);
-  const listPrices = useRef(new Map<string, string | null>());
   const [keptPriceNotice, setKeptPriceNotice] = useState<ReadonlySet<string>>(
     () => new Set()
   );
@@ -628,9 +627,6 @@ export function SalePage() {
         item !== undefined &&
         item.variantId !== "" &&
         item.variantId !== entry.variantId;
-      if (item?.variantId !== entry.variantId) {
-        listPrices.current.set(entry.variantId, entry.listPrice);
-      }
       let prices: Pick<
         ItemDraft,
         "chargedUnitPrice" | "listedUnitPrice"
@@ -665,7 +661,7 @@ export function SalePage() {
         document.getElementById(`sale-item-${draftId}-quantity`)?.focus()
       );
     },
-    [editForm, form.items, lastPrices, seedStock, setKeptNotice]
+    [editForm, form.items, lastPrices, listPrices, seedStock, setKeptNotice]
   );
   const handleAddItem = useCallback(
     () => editForm((current) => addItem(current, newId())),
