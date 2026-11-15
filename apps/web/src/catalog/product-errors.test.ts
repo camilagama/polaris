@@ -220,7 +220,7 @@ describe("recusa de Excluir produto", () => {
       minute: "2-digit",
     }).format(new Date("2026-11-12T15:26:00-03:00"));
     expect(refused.text).toBe(
-      `Você excluiu muitos produtos agora. Tente de novo em ${expected}.`
+      `Você excluiu muitos produtos agora. Tente de novo às ${expected}.`
     );
   });
 

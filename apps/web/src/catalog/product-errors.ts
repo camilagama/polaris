@@ -179,7 +179,7 @@ export function productDeleteRefusal(
       text:
         when === TOO_SOON
           ? "Você excluiu muitos produtos agora. Tente de novo daqui a pouco."
-          : `Você excluiu muitos produtos agora. Tente de novo em ${when}.`,
+          : `Você excluiu muitos produtos agora. Tente de novo às ${when}.`,
       toStock: false,
     };
   }

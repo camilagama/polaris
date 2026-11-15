@@ -181,7 +181,7 @@ function DeleteBody({
     describedBy = NAME_REASON_ID;
   }
   return (
-    <form className="grid gap-4" noValidate onSubmit={handleSubmit}>
+    <form className="-m-4 grid gap-4 p-4" noValidate onSubmit={handleSubmit}>
       <DialogHeader>
         <DialogTitle className="[overflow-wrap:anywhere]">
           Excluir produto “{product.name}”?

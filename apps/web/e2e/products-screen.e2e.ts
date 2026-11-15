@@ -8,6 +8,7 @@ import {
 } from "./csp-fixture";
 import { activateByKeyboard, expectFocusRing } from "./focus-ring";
 import { solidPng } from "./media-fixtures";
+import { outboxCommands } from "./outbox-commands";
 import { expectTabsKeyboard } from "./tabs-keyboard";
 import { serveLabWorker, WORKER_MARK } from "./worker-mark";
 
@@ -1230,7 +1231,7 @@ const JACKET = "Jaqueta de inverno";
 const DELETE_ITEM = /Excluir/;
 const STOCK_ADDRESS = /^\/inventory\?busca=Jaqueta.*arquivados=1/;
 const RATE_LIMITED_TEXT =
-  /^Você excluiu muitos produtos agora\. Tente de novo em \d{2}:\d{2}\.$/;
+  /^Você excluiu muitos produtos agora\. Tente de novo às \d{2}:\d{2}\.$/;
 const jacketArchived = () => product(1, JACKET, "archived");
 const refusalOf = (
   status: number,
@@ -1470,6 +1471,180 @@ test("sem resposta do servidor: não diz que excluiu, diz que não confirmou (AC
   await dialog.getByRole("button", { name: "Excluir produto" }).click();
   await expect(dialog.getByRole("alert")).not.toContainText("excluído");
   await expect(dialog.getByRole("alert")).toContainText("não foi confirmada");
+});
+
+/** The list the screen reads, changed by the test while the dialog is open (what another device did). */
+async function openArchivedJacketOnList(
+  page: Page,
+  catalog: { archived: unknown[] },
+  onDelete: (route: Route, calls: number) => Promise<void>
+) {
+  const sent: { expectedVersion: number }[] = [];
+  await openServerScreen(page, {
+    lists: [(route) => answerByStatus({ archived: catalog.archived })(route)],
+    others: {
+      "product/delete": (route) => {
+        sent.push(
+          (
+            route.request().postDataJSON() as {
+              json: { expectedVersion: number };
+            }
+          ).json
+        );
+        return onDelete(route, sent.length);
+      },
+      "product/getVariants": (route) => route.fulfill(rpc(CONFIGURATION)),
+    },
+  });
+  await page.getByRole("tab", { name: "Arquivados" }).click();
+  return sent;
+}
+
+test("o produto sai da lista com o diálogo de Excluir aberto: a recusa relê a lista e o diálogo fecha (AC-2.9)", async ({
+  page,
+}) => {
+  const catalog = { archived: [jacketArchived()] as unknown[] };
+  const sent = await openArchivedJacketOnList(page, catalog, (route) => {
+    catalog.archived = [];
+    return route.fulfill(
+      refusalOf(409, "CONFLICT", { reason: "product_lifecycle_conflict" })
+    );
+  });
+  const dialog = await askToDelete(page);
+  await dialog
+    .getByLabel("Digite o nome do produto para confirmar")
+    .fill(JACKET);
+  await dialog.getByRole("button", { name: "Excluir produto" }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(page.getByText("Nenhum produto arquivado.")).toBeVisible();
+  expect(sent).toHaveLength(1);
+});
+
+test("a lista relida traz a versão nova: a próxima tentativa de Excluir manda a versão nova (AC-2.8, AC-2.9)", async ({
+  page,
+}) => {
+  const catalog = { archived: [jacketArchived()] as unknown[] };
+  const sent = await openArchivedJacketOnList(page, catalog, (route, calls) => {
+    if (calls === 1) {
+      catalog.archived = [{ ...jacketArchived(), version: 2 }];
+      return route.fulfill(
+        refusalOf(409, "CONFLICT", { reason: "product_version_conflict" })
+      );
+    }
+    const { expectedVersion } = sent.at(-1) ?? { expectedVersion: 0 };
+    if (expectedVersion !== 2) {
+      return route.fulfill(
+        refusalOf(409, "CONFLICT", { reason: "product_version_conflict" })
+      );
+    }
+    return route.fulfill(
+      rpc({
+        changed: true,
+        product: { ...jacketArchived(), status: "deleted", version: 3 },
+      })
+    );
+  });
+  const dialog = await askToDelete(page);
+  await dialog
+    .getByLabel("Digite o nome do produto para confirmar")
+    .fill(JACKET);
+  const confirm = dialog.getByRole("button", { name: "Excluir produto" });
+  await confirm.click();
+  await expect(dialog.getByRole("alert")).toContainText(
+    "mudou em outro aparelho"
+  );
+  expect(sent.map((call) => call.expectedVersion)).toEqual([1]);
+  await expect
+    .poll(async () => {
+      await confirm.click();
+      return sent.at(-1)?.expectedVersion;
+    })
+    .toBe(2);
+  const versions = sent.map((call) => call.expectedVersion);
+  expect(versions.at(-1)).toBe(2);
+  expect(versions.slice(0, -1).every((version) => version === 1)).toBe(true);
+  await expect(page.getByText(`Produto “${JACKET}” excluído.`)).toBeVisible();
+});
+
+test("sem conexão, com o aparelho preparado: Excluir… fica desligado, o diálogo aberto não envia e a fila não ganha comando (AC-2.7)", async ({
+  page,
+}, testInfo) => {
+  onlyDesktop(testInfo.project.name);
+  let sent = 0;
+  await page.route("**/rpc/product/delete", (route) => {
+    sent += 1;
+    return route.abort("internetdisconnected");
+  });
+  await openProductsLab(page);
+  await page.getByRole("tab", { name: "Arquivados" }).click();
+  const queued = await outboxCommands(page);
+  const dialog = await askToDelete(page);
+  const field = dialog.getByLabel("Digite o nome do produto para confirmar");
+  await field.fill(JACKET);
+  const confirm = dialog.getByRole("button", { name: "Excluir produto" });
+  await expect(confirm).not.toHaveAttribute("aria-disabled", "true");
+
+  await setLabNetwork(page, false);
+  await expect(
+    dialog.getByText("Disponível quando houver conexão.")
+  ).toBeVisible();
+  await expect(confirm).toHaveAttribute("aria-disabled", "true");
+  await expect(confirm).toHaveAccessibleDescription(
+    "Disponível quando houver conexão."
+  );
+  await confirm.click({ force: true });
+  await field.press("Enter");
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole("alert")).toHaveCount(0);
+  expect(sent).toBe(0);
+  expect(await outboxCommands(page)).toEqual(queued);
+
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await menuOf(page, JACKET).click();
+  await expect(
+    page.getByRole("menuitem", { name: "Excluir…" })
+  ).toHaveAttribute("aria-disabled", "true");
+  await page.keyboard.press("Escape");
+  expect(sent).toBe(0);
+  expect(await outboxCommands(page)).toEqual(queued);
+
+  // the helper sees this device's outbox: a product kept offline is one more command
+  await page.getByRole("tab", { name: "Ativos" }).click();
+  await page.getByRole("button", { name: "Novo produto" }).first().click();
+  await page.getByLabel("Nome do produto").fill("Boné de lona");
+  await page
+    .getByRole("dialog", { name: "Novo produto" })
+    .getByRole("button", { name: "Cadastrar produto" })
+    .click();
+  await expect(
+    page.locator("[data-product-id]").filter({ hasText: "Boné de lona" })
+  ).toContainText("Aguardando envio");
+  expect(await outboxCommands(page)).toHaveLength(queued.length + 1);
+});
+
+test("com o aparelho preparado e a rede do servidor falhando: Excluir não diz que excluiu e a fila não ganha comando (AC-2.7)", async ({
+  page,
+}, testInfo) => {
+  onlyDesktop(testInfo.project.name);
+  let sent = 0;
+  await page.route("**/rpc/product/delete", (route) => {
+    sent += 1;
+    return route.abort("internetdisconnected");
+  });
+  await openProductsLab(page);
+  await page.getByRole("tab", { name: "Arquivados" }).click();
+  const queued = await outboxCommands(page);
+  const dialog = await askToDelete(page);
+  await dialog
+    .getByLabel("Digite o nome do produto para confirmar")
+    .fill(JACKET);
+  await dialog.getByRole("button", { name: "Excluir produto" }).click();
+  await expect(dialog.getByRole("alert")).toContainText("não foi confirmada");
+  expect(sent).toBe(1);
+  expect(await outboxCommands(page)).toEqual(queued);
+  await page.keyboard.press("Escape");
+  await expect(menuOf(page, JACKET)).toBeVisible();
 });
 
 test("SKU repetido: o erro aparece no campo, diz qual SKU e não se confunde com o produto que mudou (U-14)", async ({
