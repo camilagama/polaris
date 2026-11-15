@@ -1,6 +1,6 @@
 # Atendimento: pedido de vaga
 
-**Gatilho:** o dono de uma loja no limite do plano (no Free, as 50 variantes da loja) pede ao suporte que "libere uma vaga". A regra está em [platform-admin](../business-rules/platform-admin.md): o suporte nunca arquiva, exclui ou edita produto da loja para abrir vaga, e ninguém mexe no banco para isso.
+**Gatilho:** o dono de uma loja no limite do plano (no Free, 50 variantes somando a loja inteira; é o limite do plano, à parte do teto de 50 por produto de [products](../business-rules/products.md)) pede ao suporte que "libere uma vaga". A regra está em [platform-admin](../business-rules/platform-admin.md): o suporte nunca arquiva, exclui ou edita produto da loja para abrir vaga, e ninguém mexe no banco para isso.
 
 **Por quê:** arquivar e editar mudam o catálogo sem o dono saber; excluir não tem volta e deixa o SKU reservado. Feitos pelo suporte, acontecem sem o conhecimento nem o consentimento dele.
 
