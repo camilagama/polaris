@@ -34,7 +34,6 @@ import {
   voidExpense,
 } from "../src/expense-repository";
 import { createPaymentProfile } from "../src/payment-profile-repository";
-import { deleteProduct } from "../src/product-repository";
 import { cancelSale } from "../src/sale-cancellation-repository";
 import { confirmSale } from "../src/sale-repository";
 import { createSaleReturn } from "../src/sale-return-repository";
@@ -48,6 +47,7 @@ import {
 import { runClock, shiftDay, storeDay } from "./gate-clock";
 import { assertAllowedGateUrl } from "./gate-hosts";
 import { assertDisposableEnvironment, type MarkerClient } from "./gate-target";
+import { archiveThenDeleteProduct } from "./product-lifecycle-support";
 import {
   createSellableProduct,
   createTenantFixture,
@@ -1035,7 +1035,7 @@ async function seedRankingStore(scenarios: Scenarios): Promise<Store> {
     []
   );
   await scenarios.as(store.tenant, "product:update", (tx, identity) =>
-    deleteProduct(tx, identity, {
+    archiveThenDeleteProduct(tx, identity, {
       expectedVersion: deletedProduct.version,
       id: deletedProduct.productId,
       requestId: randomUUID(),
@@ -1932,7 +1932,7 @@ async function propertyStore(
     []
   );
   await scenarios.as(store.tenant, "product:update", (tx, identity) =>
-    deleteProduct(tx, identity, {
+    archiveThenDeleteProduct(tx, identity, {
       expectedVersion: doomed.version,
       id: doomed.productId,
       requestId: randomUUID(),

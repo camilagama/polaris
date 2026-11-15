@@ -17,9 +17,10 @@ import {
   readOperationalSelection,
   selectOperationalVariants,
 } from "../src/operational-selection-repository";
-import { createProduct, deleteProduct } from "../src/product-repository";
+import { createProduct } from "../src/product-repository";
 import { cancelSale } from "../src/sale-cancellation-repository";
 import { confirmSale } from "../src/sale-repository";
+import { archiveThenDeleteProduct } from "./product-lifecycle-support";
 import {
   confirmPlainSale,
   createSellableProduct,
@@ -492,7 +493,7 @@ async function run() {
     const dropped = final[0] as string;
     const droppedProduct = await productOf(o1, dropped);
     await as(o1, "product:update", (tx, identity) =>
-      deleteProduct(tx, identity, {
+      archiveThenDeleteProduct(tx, identity, {
         expectedVersion: droppedProduct.version,
         id: droppedProduct.id,
         requestId: randomUUID(),
@@ -532,7 +533,7 @@ async function run() {
     await inSequence(toDelete.length, async (index) => {
       const product = await productOf(o1, toDelete[index] as string);
       await as(o1, "product:update", (tx, identity) =>
-        deleteProduct(tx, identity, {
+        archiveThenDeleteProduct(tx, identity, {
           expectedVersion: product.version,
           id: product.id,
           requestId: randomUUID(),

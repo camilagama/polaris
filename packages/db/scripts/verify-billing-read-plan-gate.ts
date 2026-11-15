@@ -5,8 +5,9 @@ import { sql } from "drizzle-orm";
 import { type BillingStore, createBillingStore } from "../src/billing-store";
 import { createDatabase } from "../src/client";
 import { readOwnerPlanTenantFacts } from "../src/plan-read-repository";
-import { archiveProduct, deleteProduct } from "../src/product-repository";
+import { archiveProduct } from "../src/product-repository";
 import { TenantAuthorizationError } from "../src/tenant-transaction";
+import { archiveThenDeleteProduct } from "./product-lifecycle-support";
 import {
   confirmPlainSale,
   createProductFixture,
@@ -157,7 +158,7 @@ async function run() {
       })
     );
     await withTenantAs(db, shop, "product:update", (transaction, identity) =>
-      deleteProduct(transaction, identity, {
+      archiveThenDeleteProduct(transaction, identity, {
         expectedVersion: 1,
         id: deleted.productId,
       })
