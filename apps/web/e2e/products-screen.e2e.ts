@@ -1549,20 +1549,27 @@ test("a lista relida traz a versão nova: a próxima tentativa de Excluir manda 
     .getByLabel("Digite o nome do produto para confirmar")
     .fill(JACKET);
   const confirm = dialog.getByRole("button", { name: "Excluir produto" });
+  const reread = page.waitForResponse(async (response) => {
+    if (!response.url().includes("/rpc/product/list")) {
+      return false;
+    }
+    const { json } = (await response.json()) as {
+      json: { products: { name: string; version: number }[] };
+    };
+    return json.products.some(
+      (listed) => listed.name === JACKET && listed.version === 2
+    );
+  });
   await confirm.click();
   await expect(dialog.getByRole("alert")).toContainText(
     "mudou em outro aparelho"
   );
   expect(sent.map((call) => call.expectedVersion)).toEqual([1]);
-  await expect
-    .poll(async () => {
-      await confirm.click();
-      return sent.at(-1)?.expectedVersion;
-    })
-    .toBe(2);
-  const versions = sent.map((call) => call.expectedVersion);
-  expect(versions.at(-1)).toBe(2);
-  expect(versions.slice(0, -1).every((version) => version === 1)).toBe(true);
+  await reread;
+  await expect(page.getByText("Carregando produtos…")).toBeHidden();
+  await confirm.click();
+  await expect.poll(() => sent.length).toBe(2);
+  expect(sent.map((call) => call.expectedVersion)).toEqual([1, 2]);
   await expect(page.getByText(`Produto “${JACKET}” excluído.`)).toBeVisible();
 });
 
