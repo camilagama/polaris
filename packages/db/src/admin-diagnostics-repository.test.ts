@@ -31,10 +31,11 @@ describe("readActivationFunnel", () => {
     expect(query.mock.calls.map(([text]) => text)).toEqual([
       "BEGIN",
       `SET LOCAL statement_timeout = ${ACTIVATION_FUNNEL_STATEMENT_TIMEOUT_MS}`,
+      "SET LOCAL jit = off",
       expect.stringMatching(WRAPPER),
       "COMMIT",
     ]);
-    expect(query.mock.calls[2]?.[1]).toEqual([PRINCIPAL, 4]);
+    expect(query.mock.calls[3]?.[1]).toEqual([PRINCIPAL, 4]);
     // never the STABLE function itself, never a table
     for (const [text] of query.mock.calls) {
       expect(text).not.toMatch(STABLE_OR_TABLE);
