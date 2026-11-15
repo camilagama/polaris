@@ -172,7 +172,7 @@ describe("queueing a validated sale on the device", () => {
     const { outbox, stores } = await setup();
     await queueOfflineSale({ labels, request: prepared().request, stores });
     expect(await pendingSales(outbox)).toMatchObject([
-      { commandId: uuid(101), itemCount: 1, state: "pending" },
+      { commandId: uuid(101), lineCount: 1, state: "pending", unitCount: 2 },
     ]);
   });
 });

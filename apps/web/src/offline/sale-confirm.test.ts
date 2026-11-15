@@ -12,6 +12,7 @@ import {
   pendingSales,
   resubmitRejectedSale,
   UnknownLocalVariantError,
+  unitCountOf,
 } from "./sale-confirm";
 import { effectiveStock } from "./stock-commands";
 import { syncOutbox } from "./sync-runner";
@@ -120,6 +121,22 @@ async function setup() {
     });
   return { lease, outbox, sell, server, stockUp, sync, writer };
 }
+
+describe("the units of a sale the device kept", () => {
+  it("sums whole quantities and counts anything else as zero, never NaN", () => {
+    expect(unitCountOf([{ quantity: 2 }, { quantity: 3 }])).toBe(5);
+    expect(
+      unitCountOf([
+        { quantity: 2 },
+        {},
+        null,
+        { quantity: "4" },
+        { quantity: 1.5 },
+      ])
+    ).toBe(2);
+    expect(unitCountOf([])).toBe(0);
+  });
+});
 
 describe("selling offline", () => {
   it("queues one sale command with the list prices, the commercial time and the device's evidence", async () => {
@@ -261,8 +278,9 @@ describe("a sale through its states", () => {
       {
         code: null,
         commandId: command.commandId,
-        itemCount: 1,
+        lineCount: 1,
         state: "pending",
+        unitCount: 2,
       },
     ]);
     await outbox.markSending(command.commandId);

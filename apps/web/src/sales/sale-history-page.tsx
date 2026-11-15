@@ -171,7 +171,7 @@ export function SaleHistoryPage() {
     <div className="grid gap-4 font-sans text-foreground text-sm antialiased">
       <h1 className="text-title">Histórico de vendas</h1>
       {offline ? <OfflineHistoryNotice /> : null}
-      <SavedSalesCard workspace={workspace} />
+      <SavedSalesCard countStyle="items" workspace={workspace} />
       <HistoryFiltersBar
         filters={filters}
         offline={offline}

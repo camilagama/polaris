@@ -289,7 +289,9 @@ test("AC-7: Limpar venda pede confirmação com itens, e sem itens limpa em um t
   const clear = page.getByRole("button", { exact: true, name: "Limpar venda" });
   await clear.click();
   const dialog = page.getByRole("dialog", { name: "Limpar venda?" });
-  await expect(dialog).toContainText("Isso tira o item da venda.");
+  await expect(dialog).toContainText(
+    "Isso tira da venda 1 linha e 2 unidades."
+  );
   await dialog.getByRole("button", { name: "Cancelar" }).click();
   await expect(dialog).toHaveCount(0);
   await expect(
