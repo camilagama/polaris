@@ -105,12 +105,55 @@ export function savedSaleLines(
 const ROW_JUST_SAVED =
   "border-foreground/70 bg-secondary ring-1 ring-foreground/10";
 
-export function SavedSaleRow({ line }: { line: SavedSaleLine }) {
-  const attention =
-    line.state === "needs_attention" || line.state === "rejected";
+/** "lines-and-units" on the sale screen; "items" (the lines alone, as before) in the history. */
+export type SavedSaleCountStyle = "items" | "lines-and-units";
+
+function SavedSaleWhen({
+  countStyle,
+  line,
+}: {
+  countStyle: SavedSaleCountStyle;
+  line: SavedSaleLine;
+}) {
   const date = line.occurredAt
     ? pendingDateTime.format(new Date(line.occurredAt))
     : null;
+  if (countStyle === "items") {
+    const lines = line.count?.lines ?? null;
+    return (
+      <span className="tabular-nums">
+        {[
+          date,
+          lines === null ? null : `${lines} ${lines === 1 ? "item" : "itens"}`,
+        ]
+          .filter(Boolean)
+          .join(" · ")}
+      </span>
+    );
+  }
+  return (
+    <span className="tabular-nums">
+      {date}
+      {date && line.count ? (
+        <>
+          <span aria-hidden="true"> · </span>
+          <span className="sr-only">, </span>
+        </>
+      ) : null}
+      {line.count ? <SaleCountLabel count={line.count} /> : null}
+    </span>
+  );
+}
+
+export function SavedSaleRow({
+  countStyle = "lines-and-units",
+  line,
+}: {
+  countStyle?: SavedSaleCountStyle;
+  line: SavedSaleLine;
+}) {
+  const attention =
+    line.state === "needs_attention" || line.state === "rejected";
   return (
     <li
       className={`grid gap-1.5 rounded-lg border p-3 ${line.justSaved ? ROW_JUST_SAVED : "border-border"}`}
@@ -123,16 +166,7 @@ export function SavedSaleRow({ line }: { line: SavedSaleLine }) {
         </p>
       ) : null}
       <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
-        <span className="tabular-nums">
-          {date}
-          {date && line.count ? (
-            <>
-              <span aria-hidden="true"> · </span>
-              <span className="sr-only">, </span>
-            </>
-          ) : null}
-          {line.count ? <SaleCountLabel count={line.count} /> : null}
-        </span>
+        <SavedSaleWhen countStyle={countStyle} line={line} />
         {line.totalText === null ? (
           <span className="text-muted-foreground text-support">
             valor indisponível
@@ -176,14 +210,17 @@ export function SavedSaleRow({ line }: { line: SavedSaleLine }) {
 /**
  * The one card of the sales this device keeps for the server, on the sale screen and in the history. The sale kept
  * just now (`justSaved`) is its first line, highlighted, and the card takes the focus (`panelRef`) when it appears:
- * it is NOT an official sale yet. Each line says when, how many items, how much and where it stands; the texts that
- * explain it are said once, under the list.
+ * it is NOT an official sale yet. Each line says when, how many lines and units (on the sale screen) or how many
+ * items (`countStyle="items"`, the history), how much and where it stands; the texts that explain it are said once,
+ * under the list.
  */
 export function SavedSalesCard({
+  countStyle = "lines-and-units",
   justSaved = null,
   panelRef,
   workspace,
 }: {
+  countStyle?: SavedSaleCountStyle;
   justSaved?: QueuedSaleView | null;
   panelRef?: RefObject<HTMLElement | null> | undefined;
   workspace: LocalWorkspace | null;
@@ -222,7 +259,11 @@ export function SavedSalesCard({
         <CardContent className="grid justify-items-start gap-3">
           <ul className="grid w-full gap-2">
             {lines.map((line) => (
-              <SavedSaleRow key={line.commandId} line={line} />
+              <SavedSaleRow
+                countStyle={countStyle}
+                key={line.commandId}
+                line={line}
+              />
             ))}
           </ul>
           <p className="text-muted-foreground text-support">

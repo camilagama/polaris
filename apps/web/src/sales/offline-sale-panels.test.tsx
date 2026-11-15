@@ -1,5 +1,5 @@
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { PendingSale } from "../offline/sale-confirm";
 import {
   SavedSaleRow,
@@ -7,6 +7,13 @@ import {
   savedSaleLines,
 } from "./offline-sale-panels";
 import type { QueuedSaleView } from "./sale-form-model";
+
+const queue = vi.hoisted(() => ({ sales: [] as PendingSale[] }));
+
+vi.mock("./pending-sales", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./pending-sales")>()),
+  usePendingSales: () => queue.sales,
+}));
 
 const pending = (
   commandId: string,
@@ -110,6 +117,30 @@ describe("SavedSalesCard", () => {
     expect(html).toContain('<span class="sr-only">3 linhas, 8 unidades</span>');
     expect(html).not.toContain(" itens<");
     expect(html).not.toContain(" item<");
+  });
+
+  it("o mesmo cartão conta linhas e unidades na Venda e itens no Histórico", () => {
+    queue.sales = [
+      pending("a", { lineCount: 3, unitCount: 8 }),
+      pending("b", { lineCount: 1, unitCount: 4 }),
+    ];
+    try {
+      const sale = renderToStaticMarkup(<SavedSalesCard workspace={null} />);
+      expect(sale).toContain("3 linhas · 8 unidades");
+      expect(sale).toContain("1 linha · 4 unidades");
+      expect(sale).toContain("3 linhas, 8 unidades");
+
+      const history = renderToStaticMarkup(
+        <SavedSalesCard countStyle="items" workspace={null} />
+      );
+      expect(history).toContain(" · 3 itens</span>");
+      expect(history).toContain(" · 1 item</span>");
+      expect(history).not.toContain("linha");
+      expect(history).not.toContain("unidade");
+      expect(history).not.toContain('sr-only">, ');
+    } finally {
+      queue.sales = [];
+    }
   });
 
   it("a venda de 1 linha e 1 unidade fica no singular", () => {
