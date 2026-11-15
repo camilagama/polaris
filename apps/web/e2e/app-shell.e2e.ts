@@ -1121,7 +1121,7 @@ test.describe("pé do menu: primeiros passos e teste grátis", () => {
       expect(cut).toBe(false);
     }
     // one read for the foot (kept, as state only) and one for the limit notice at the end of Produtos (on the spot)
-    expect(reads.plan).toBe(2);
+    await expect.poll(() => reads.plan).toBe(2);
     await trialLink(page).click();
     await page.waitForURL("**/configuracoes?aba=assinatura");
     await expect(trialLink(page)).toBeVisible();
