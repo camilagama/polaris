@@ -126,6 +126,23 @@ Os specs de reflow (Histórico, Estoque, Clientes, "Mais vendidos" do Início, b
 - **Saída:** a tabela das medianas no terminal e em `$GITHUB_STEP_SUMMARY`; os relatórios (HTML e JSON de cada rodada) em `apps/web/.lighthouseci/`, que o job do CI guarda como artefato quando o patch dele estiver aplicado. Nada é enviado a servidor externo (`upload.target` é `filesystem`).
 - **O que não mede:** INP (é métrica de campo; o TBT é o equivalente de laboratório), desktop, páginas com sessão real, o Worker (cabeçalhos, tempo do servidor) e o peso ou o LCP de foto real de produto (a do catálogo de fixture é de 1 × 1). O job do CI (`ci.yml`) é aplicado pelo responsável, a partir do patch da tarefa.
 
+## Caçar o vermelho do sair e recarregar
+
+`e2e-pwa/sair-e-recarregar.e2e.ts` é o teste que já falhou uma vez no CI sem causa provada. Ele guarda o rastro da aba (`e2e-pwa/network-trace.ts`): os documentos e scripts que a página pediu, mais o que casa com `/assets/`, `boot-retry.js` e `sw.js`, com o `errorText`, o `canceled` e o `blockedReason` que o navegador relata; os pedidos, as respostas e o console do service worker; os `error` e `warning` do console da página; e as rotas do próprio teste. Uma linha por evento, com o tempo desde a criação da aba. As linhas de rede trazem só o caminho da URL (sem consulta), o status e os bytes recebidos; o rastro não lê cabeçalhos nem cookies. As linhas de `console` trazem o texto da mensagem sem filtro: um segredo que a página ou o worker imprimisse iria junto (as sessões do teste são fictícias).
+
+- **Quando o arquivo sai.** O `rastro-<aba>.txt` é gravado no diretório de saída do teste e anexado só quando o teste falha. Com `E2E_NETWORK_TRACE=1` ele também sai no verde, para comparar um rastro bom com um ruim.
+- **`E2E_CPU_THROTTLE=<n>`** liga `Emulation.setCPUThrottlingRate` na aba: um número maior que 1 deixa a CPU da página `n` vezes mais lenta (o runner lento, onde o vermelho raro aparece). Sem a variável, ou com 1 ou menos, não há limite. Em medida local, a partir de uns 2,5 a bancada passou a cair antes no `Page.reload: Not attached to an active page`, que já é conhecido.
+- **Laço local** (dentro de `apps/web`, com o Node no PATH; uma execução já faz 40 saídas: os dois testes do arquivo têm 20 voltas cada):
+
+  ```bash
+  E2E_NETWORK_TRACE=1 E2E_CPU_THROTTLE=2 \
+    bunx playwright test --config playwright.pwa.config.ts --project=chromium-desktop \
+    --workers=1 --repeat-each=5 sair-e-recarregar
+  ```
+
+  Os arquivos ficam em `apps/web/test-results/`. Sem `--repeat-each`, o teste roda uma vez; o número de voltas dentro dele (`ROUNDS`) não se muda para caçar.
+- **No CI.** O job `Offline browser gate (shard N/4)` sobe `apps/web/test-results/` como artefato quando falha: `offline-browser-trace-shard-N`, guardado por 7 dias. Baixe pela página do run (seção Artifacts) ou com `gh run download <id> --name offline-browser-trace-shard-N`, e procure `rastro-*.txt` na pasta do teste que falhou. O `trace.zip` do Playwright vai junto (`trace: "retain-on-failure"`) e traz os cabeçalhos das sessões de teste, que são fictícias: o job não tem segredo. A mensagem da falha já traz o resumo (`files that did not load` e as últimas linhas do rastro); o arquivo traz tudo. O passo de upload fica `skipped` no verde. O passo do `ci.yml` é aplicado pelo responsável, a partir do patch da tarefa.
+
 ## O que não cobre
 
 - A verificação 7 lê as folhas do estado em que cada tela abre (o build reparte o CSS por chunk, então uma folha pode chegar com a rota ou o estado que a carrega; por isso a lista abre cada tela e estado). Ela não vê `style` inline posto por script nem uma folha que só entre num estado não medido; a CSP já recusa `<style>` injetado (`ui-csp.e2e.ts`). As páginas "Confirme seu e-mail", `/confirmar-email` e `/desbloquear` não estão na lista (precisam de resposta do servidor); a entrada de uma delas é acrescentar o estado em `ENTRY_PAGES`.

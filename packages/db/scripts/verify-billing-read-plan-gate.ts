@@ -346,6 +346,48 @@ async function run() {
     );
     tests.push("the limits read are the effective ones, raised by a grant");
 
+    const proRowOf = async (key: string) =>
+      (
+        await owner.pool.query<{ limit_value: number }>(
+          "SELECT limit_value FROM public.plan_entitlements WHERE plan_id = 'pro' AND key = $1",
+          [key]
+        )
+      ).rows[0]?.limit_value;
+    const liveProVariants = await proRowOf("variants.active.max");
+    assert.equal(
+      granted.proEntitlements["variants.active.max"],
+      liveProVariants,
+      "the Pro limit read is the catalog row, not the effective one raised by the grant"
+    );
+    assert.equal(
+      granted.proEntitlements["images.active.max"],
+      await proRowOf("images.active.max")
+    );
+    assert.equal(
+      granted.proEntitlements["goals.active.max"],
+      await proRowOf("goals.active.max")
+    );
+    const changedProVariants = (liveProVariants ?? 0) + 1;
+    await owner.pool.query(
+      "UPDATE public.plan_entitlements SET limit_value = $1 WHERE plan_id = 'pro' AND key = 'variants.active.max'",
+      [changedProVariants]
+    );
+    try {
+      assert.equal(
+        (await read(shop)).proEntitlements["variants.active.max"],
+        changedProVariants,
+        "a changed catalog row changes the Pro limit read, with no deploy"
+      );
+    } finally {
+      await owner.pool.query(
+        "UPDATE public.plan_entitlements SET limit_value = $1 WHERE plan_id = 'pro' AND key = 'variants.active.max'",
+        [liveProVariants]
+      );
+    }
+    tests.push(
+      "the Pro limits read are the stored catalog's Pro row, and follow a change of it"
+    );
+
     // ------------------------------------------------ 2. refusals: not a member and no organization, alike
     const stranger = await newTenant("stranger");
     const refusalOf = async (organizationId: string) => {
