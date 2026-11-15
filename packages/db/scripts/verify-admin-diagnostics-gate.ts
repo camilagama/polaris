@@ -18,8 +18,8 @@ import {
 import {
   countOrganizationVariants,
   createProduct,
-  deleteProduct,
 } from "../src/product-repository";
+import { archiveThenDeleteProduct } from "./product-lifecycle-support";
 import {
   createTenantFixture,
   disposableHostPattern,
@@ -893,7 +893,7 @@ async function run() {
     const [, doomed] = products;
     assert.ok(doomed);
     await as("product:update", (tx, identity) =>
-      deleteProduct(tx, identity, {
+      archiveThenDeleteProduct(tx, identity, {
         expectedVersion: doomed.version,
         id: doomed.id,
         requestId: randomUUID(),
