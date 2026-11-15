@@ -12,7 +12,6 @@ import {
   writeOffStock,
 } from "../src/inventory-repository";
 import { createPaymentProfile } from "../src/payment-profile-repository";
-import { deleteProduct } from "../src/product-repository";
 import { cancelSale } from "../src/sale-cancellation-repository";
 import { createSaleReturn } from "../src/sale-return-repository";
 import {
@@ -22,6 +21,7 @@ import {
   withAuthorizedTenantTransaction,
 } from "../src/tenant-transaction";
 import { runClock, storeDay } from "./gate-clock";
+import { archiveThenDeleteProduct } from "./product-lifecycle-support";
 import {
   confirmPlainSale,
   createSellableProduct,
@@ -393,7 +393,7 @@ async function run() {
       tenantA,
       "product:update",
       (transaction, identity) =>
-        deleteProduct(transaction, identity, {
+        archiveThenDeleteProduct(transaction, identity, {
           expectedVersion: goneProduct.version,
           id: goneProduct.productId,
         })

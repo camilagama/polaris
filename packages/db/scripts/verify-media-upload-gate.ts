@@ -13,7 +13,6 @@ import {
 import {
   configureProductVariants,
   createProduct,
-  deleteProduct,
 } from "../src/product-repository";
 import { productVariants } from "../src/schema/product";
 import {
@@ -27,6 +26,7 @@ import {
   isLocalGateHost,
 } from "./gate-hosts";
 import { setLoginRole } from "./gate-roles";
+import { archiveThenDeleteProduct } from "./product-lifecycle-support";
 
 const gateDatabase =
   process.env.POLARIS_GATE_DATABASE ??
@@ -678,7 +678,7 @@ async function main(): Promise<void> {
       tenantA,
       "product:update",
       (transaction, identity) =>
-        deleteProduct(transaction, identity, {
+        archiveThenDeleteProduct(transaction, identity, {
           expectedVersion: productVersion,
           id: productA,
           requestId: randomUUID(),
