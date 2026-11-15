@@ -12,7 +12,9 @@
 | --- | --- |
 | Responsável (Arrascaeta) | roda o ensaio de restauração com a identidade do cofre do servidor; cria o login, o bucket, o token R2, o Environment, as variáveis e o rótulo; liga a variável `STAGING_BACKUP_ENABLED`; cria e apaga a branch Neon do ensaio ([política de perfis da CLI](./cli-profile-policy.md)); decide qualquer restauração de verdade |
 | Titular da chave (a pessoa escolhida pelo usuário; uma chave por ambiente) | gera a chave age, guarda a identidade no cofre do servidor e entrega só a chave pública |
-| Dev | mantém os scripts, o SQL e este runbook; nunca vê a chave privada (isso depende de o arquivo ser `0400` no cofre do servidor e de o usuário do processo do dev não poder lê-lo) nem a senha do login |
+| Dev | mantém os scripts, o SQL e este runbook; nunca vê a chave privada nem a senha do login; a conferência da chave está descrita logo abaixo da tabela |
+
+Quem garante que o dev não vê a chave privada é o responsável, dono do cofre do servidor: ele confere à mão, pelo modo e pelo dono do arquivo (`stat`), que a identidade é `0400` e de um usuário que não é o do processo do dev; o dev não tem como conferir isso nem ler o arquivo.
 
 A chave privada nunca vai ao GitHub nem ao R2. Por decisão do dono de 12/11/2026, ela fica no cofre do servidor OpenBot (arquivo 0400 fora do repositório), não offline, para o ensaio de restauração rodar sem o titular; o resto do desenho não muda. Perder a chave deixa todos os backups dela ilegíveis, de propósito.
 
