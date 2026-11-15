@@ -29,6 +29,7 @@ import {
   type NewProductIds,
   newProductIds,
 } from "./product-commands";
+import { ProductDeleteDialog } from "./product-delete-dialog";
 import { ProductDialog, type ProductTab } from "./product-dialog";
 import type { ProductImportDialogProps } from "./product-import/product-import-dialog";
 import {
@@ -65,6 +66,7 @@ import {
   StatusNav,
   useListPage,
 } from "./screen-parts";
+import { useProductDelete } from "./use-product-delete";
 import { useProductsData } from "./use-products-data";
 import { useProductsLink } from "./use-products-link";
 
@@ -782,6 +784,29 @@ export function ProductsPage() {
   const page = useListPage(visibleProducts, `${status}\n${query}`);
   const isOffline = workspace !== null && !workspace.online;
   const listIsShown = !(isLoading || loadError);
+  const handleDeleteStart = useCallback(() => {
+    setError(null);
+    setNotice(null);
+    setUndoProduct(null);
+  }, []);
+  const handleDeleted = useCallback((product: ProductReadModel) => {
+    setNotice(`Produto “${product.name}” excluído.`);
+    setUsageVersion((version) => version + 1);
+  }, []);
+  const productDelete = useProductDelete({
+    isLoading,
+    onDeleted: handleDeleted,
+    onStart: handleDeleteStart,
+    organizationId,
+    products,
+    refresh,
+    workspace,
+  });
+  const askDelete = productDelete.ask;
+  const handleDeleteProduct = useCallback(
+    (product: ProductReadModel) => askDelete(product, page.items),
+    [askDelete, page.items]
+  );
   const feedbackError = linkFeedbackError(
     error,
     linkFailure,
@@ -855,6 +880,18 @@ export function ProductsPage() {
           />
         </LimitLeaveScope>
 
+        <ProductDeleteDialog
+          finalFocus={productDelete.finalFocus}
+          isOffline={isOffline}
+          onCancel={productDelete.cancel}
+          onConfirm={productDelete.confirm}
+          organizationId={organizationId}
+          pending={productDelete.pending}
+          product={productDelete.target}
+          refusal={productDelete.refusal}
+          stockHref={productStockHref(productDelete.target, organization.role)}
+        />
+
         <ImportDialogSlot
           categories={categories}
           Dialog={ImportDialog}
@@ -892,6 +929,7 @@ export function ProductsPage() {
             isLoading={isLoading}
             isOffline={isOffline}
             onArchive={handleArchiveProduct}
+            onDelete={handleDeleteProduct}
             onEdit={handleEdit}
             onManageMedia={handleManageMedia}
             onManageVariants={handleManageVariants}

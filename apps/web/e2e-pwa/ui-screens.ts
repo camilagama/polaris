@@ -222,6 +222,7 @@ const saleScreen = (
 
 /** The files of the products screen on the new interface, with the images panel. */
 const PRODUCT_SOURCES = [
+  "src/catalog/product-delete-dialog.tsx",
   "src/catalog/product-dialog.tsx",
   "src/catalog/product-fields.tsx",
   "src/catalog/product-form.tsx",
@@ -971,6 +972,7 @@ export const SCREENS: UiScreen[] = [
   productScreen("produto aberto sem internet", productStates.offline),
   productScreen("variantes, opções e combinação", productStates.variantsForm),
   productScreen("imagens, remoção pedindo confirmação", productStates.media),
+  productScreen("excluir arquivado", productStates.deleteArchived),
   productScreen(
     "imagens, recorte da imagem escolhida",
     productStates.mediaCrop
