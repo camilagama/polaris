@@ -241,4 +241,20 @@ describe("useHistoryPeriodTotal", () => {
     await settle();
     expect(periodSummary).toHaveBeenCalledTimes(1);
   });
+
+  it("voltar ao mesmo período depois de sair dele lê de novo, sem mostrar a resposta antiga", async () => {
+    periodSummary.mockResolvedValueOnce(summary("10.00", 1));
+    show(OCTOBER);
+    await settle();
+    show(null);
+    periodSummary.mockResolvedValueOnce(summary("11.00", 2));
+    expect(show(OCTOBER)).toEqual({ status: "loading" });
+    await settle();
+    expect(periodSummary).toHaveBeenCalledTimes(2);
+    expect(latest).toEqual({
+      netSales: "11.00",
+      salesCount: 2,
+      status: "ready",
+    });
+  });
 });

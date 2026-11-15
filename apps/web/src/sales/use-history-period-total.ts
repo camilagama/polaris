@@ -26,6 +26,7 @@ export function useHistoryPeriodTotal(
 
   useEffect(() => {
     if (wanted === null) {
+      setAnswer(null);
       return;
     }
     let current = true;

@@ -316,6 +316,7 @@ export function ListTotalFooter({
             </p>
           </div>
           <div className="@max-[18.999rem]:whitespace-normal whitespace-nowrap text-right font-semibold text-value-md tabular-nums @max-[18.999rem]:[overflow-wrap:anywhere]">
+            {valueLoading ? <span className="sr-only">Lendo…</span> : null}
             {valueLoading ? (
               <Skeleton
                 aria-hidden="true"
