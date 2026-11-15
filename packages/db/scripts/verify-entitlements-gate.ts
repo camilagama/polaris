@@ -27,7 +27,6 @@ import {
   archiveProduct,
   configureProductVariants,
   createProduct,
-  deleteProduct,
 } from "../src/product-repository";
 import { runSyncCommand } from "../src/sync-command-repository";
 import { withAuthorizedTenantTransaction } from "../src/tenant-transaction";
@@ -38,6 +37,7 @@ import {
   raceBehindLock,
   rejections,
 } from "./concurrency-support";
+import { archiveThenDeleteProduct } from "./product-lifecycle-support";
 import {
   createTenantFixture,
   disposableHostPattern,
@@ -306,7 +306,7 @@ async function run() {
       "past the raised variant limit"
     );
     await as(free, "product:update", (tx, identity) =>
-      deleteProduct(tx, identity, {
+      archiveThenDeleteProduct(tx, identity, {
         expectedVersion: withGrant.version,
         id: withGrant.id,
         requestId: randomUUID(),

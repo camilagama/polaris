@@ -6,7 +6,6 @@ import { createDatabase } from "../src/client";
 import {
   configureProductVariants,
   createProduct,
-  deleteProduct,
 } from "../src/product-repository";
 import { productVariants } from "../src/schema/product";
 import {
@@ -14,6 +13,7 @@ import {
   type TenantRequestTransaction,
   withAuthorizedTenantTransaction,
 } from "../src/tenant-transaction";
+import { archiveThenDeleteProduct } from "./product-lifecycle-support";
 
 const gateDatabase =
   process.env.POLARIS_GATE_DATABASE ??
@@ -566,7 +566,7 @@ async function main(): Promise<void> {
     assert.equal(beforeTombstone.rows[0]?.variant_media, "3");
 
     await withTenant(db, tenantA, "product:update", (transaction, identity) =>
-      deleteProduct(transaction, identity, {
+      archiveThenDeleteProduct(transaction, identity, {
         expectedVersion: 2,
         id: productA,
         requestId: randomUUID(),
