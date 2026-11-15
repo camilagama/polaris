@@ -368,6 +368,7 @@ test.describe("Produtos", () => {
     await expect(page.getByRole("dialog").getByRole("alert")).toContainText(
       "Seu plano chegou ao limite de variantes. Nada foi alterado."
     );
+    await expect(line(page)).toHaveCount(1);
     await page.keyboard.press("Escape");
     await expect(page.getByRole("dialog")).toHaveCount(0);
     await expect(line(page)).toContainText(
@@ -641,8 +642,6 @@ test.describe("o número acompanha o que a pessoa grava", () => {
 
 test.describe("painel de imagens", () => {
   interface ImageMedia {
-    /** How many images the list holds now; a removal lowers it. */
-    stored: number;
     /** The answer to the next upload, in place of the success. */
     uploadRefusal?: { body: unknown; status: number };
   }
@@ -651,9 +650,11 @@ test.describe("painel de imagens", () => {
     page: Page,
     store: Store,
     stored: number,
-    media: ImageMedia = { stored }
+    options: ImageMedia = {}
   ) {
     let uploads = 0;
+    /** How many images the list holds now; a removal lowers it. */
+    const media = { stored, uploadRefusal: options.uploadRefusal };
     await page.route("**/api/products/*/media**", (route) => {
       const method = route.request().method();
       if (method === "POST") {
@@ -744,25 +745,61 @@ test.describe("painel de imagens", () => {
     context,
     page,
   }) => {
-    await openImages(page, { use: { images: 47, variants: 0 } }, 0);
+    const store: Store = { use: { images: 47, variants: 0 } };
+    await openImages(page, store, 0);
     await expect(dialogLine(page)).toBeVisible();
     const send = page.getByRole("button", { name: "Enviar imagem" });
-    const inTheDialog = async () =>
-      (await top(send)) - (await top(page.getByRole("dialog")));
+    const frame = page.getByRole("dialog");
+    const inTheDialog = async () => (await top(send)) - (await top(frame));
     const before = await inTheDialog();
+    const frameTop = await top(frame);
     await context.setOffline(true);
     await expect(dialogLine(page)).toHaveCount(0);
     expect(await inTheDialog()).toBe(before);
+    expect(await top(frame)).toBeCloseTo(frameTop, 1);
+    let release: () => void = () => undefined;
+    const reading = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    store.plan = async () => {
+      await reading;
+      return null;
+    };
     await context.setOffline(false);
+    await expect(dialogLine(page)).toHaveCount(0);
+    expect(await top(frame)).toBeCloseTo(frameTop, 1);
+    store.plan = undefined;
+    release();
     await expect(dialogLine(page)).toContainText("Você usa 47 de 50 imagens");
     expect(await inTheDialog()).toBe(before);
+    expect(await top(frame)).toBeCloseTo(frameTop, 1);
+  });
+
+  test("sem linha antes de ficar offline, o quadro do diálogo não ganha espaço vazio", async ({
+    context,
+    page,
+  }) => {
+    await openImages(page, { use: { images: 44, variants: 0 } }, 0);
+    const send = page.getByRole("button", { name: "Enviar imagem" });
+    await expect(send).toBeVisible();
+    await expect(dialogLine(page)).toHaveCount(0);
+    const frame = page.getByRole("dialog");
+    const before = await frame.boundingBox();
+    await context.setOffline(true);
+    await page.waitForFunction(() => !navigator.onLine);
+    await page.evaluate(
+      () =>
+        new Promise<void>((done) => {
+          requestAnimationFrame(() => requestAnimationFrame(() => done()));
+        })
+    );
+    expect(await frame.boundingBox()).toEqual(before);
   });
 
   test("a recusa do servidor ao enviar tira a linha: o aviso e a recusa não aparecem juntos", async ({
     page,
   }) => {
     const media: ImageMedia = {
-      stored: 0,
       uploadRefusal: {
         body: { error: { code: "entitlement_limit_reached" } },
         status: 409,
