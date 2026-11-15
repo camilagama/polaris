@@ -160,3 +160,34 @@ export function nearLimitText(view: NearLimitView): string {
   const [, many] = SUBJECT_WORDS[view.usage.subject];
   return `Você chegou ao limite de ${view.usage.max} ${many} do plano Free.`;
 }
+
+const HOME_SUBJECTS: readonly NearLimitSubject[] = ["variants", "images"];
+
+const shareOf = (view: NearLimitView) => view.usage.used / view.usage.max;
+
+/**
+ * The one warning line of the Início, from one read of the plan: the same rule as the cadastro screens
+ * (`nearLimitFor`) for variants and images, and the page says one line only, the most pressing: the count at its limit
+ * or over it before the one that is only close, then the larger share, variants on a tie.
+ */
+export function nearLimitForHome(input: {
+  billingSelfService: boolean;
+  canManageBilling: boolean;
+  plan: PlanRead | null;
+}): NearLimitView | null {
+  let best: NearLimitView | null = null;
+  for (const subject of HOME_SUBJECTS) {
+    const view = nearLimitFor({ ...input, subject });
+    if (view === null) {
+      continue;
+    }
+    const worse =
+      best === null ||
+      (view.kind === "reached" && best.kind === "near") ||
+      (view.kind === best.kind && shareOf(view) > shareOf(best));
+    if (worse) {
+      best = view;
+    }
+  }
+  return best;
+}

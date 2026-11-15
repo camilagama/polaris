@@ -41,6 +41,7 @@ function syncStateLabel(syncState: PendingProduct): string {
 
 interface RowActions {
   onArchive: (product: ProductReadModel) => void;
+  onDelete: (product: ProductReadModel) => void;
   onEdit: (product: ProductReadModel) => void;
   onManageMedia: (product: ProductReadModel) => void;
   onManageVariants: (product: ProductReadModel) => void;
@@ -60,6 +61,7 @@ interface ProductMenuProps extends Omit<RowActions, "onEdit"> {
 function ProductMenu({
   locked,
   onArchive,
+  onDelete,
   onManageMedia,
   onManageVariants,
   onRestore,
@@ -81,6 +83,10 @@ function ProductMenu({
   const handleRestore = useCallback(
     () => onRestore(product),
     [onRestore, product]
+  );
+  const handleDelete = useCallback(
+    () => onDelete(product),
+    [onDelete, product]
   );
   const disabled = locked || pending;
   return (
@@ -116,6 +122,18 @@ function ProductMenu({
             Restaurar
           </DropdownMenuItem>
         )}
+        {product.status === "archived" ? (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              disabled={disabled}
+              onClick={handleDelete}
+              variant="destructive"
+            >
+              Excluir…
+            </DropdownMenuItem>
+          </>
+        ) : null}
       </DropdownMenuContent>
     </DropdownMenu>
   );

@@ -82,6 +82,7 @@ const base: Props = {
   isLoading: false,
   isOffline: false,
   onArchive: noop,
+  onDelete: noop,
   onEdit: noop,
   onManageMedia: noop,
   onManageVariants: noop,
