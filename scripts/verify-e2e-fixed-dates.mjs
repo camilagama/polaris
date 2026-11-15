@@ -15,8 +15,8 @@ import { isPlaywrightFile } from "./verify-no-blind-waits.mjs";
  *
  * Counted, in every file `verify-no-blind-waits.mjs` treats as Playwright code: string and template
  * literals whose text starts with `AAAA-MM-DD`, unless the same file installs a fixed clock
- * (`page.clock.install`, `clock.setFixedTime`, `clock.setSystemTime`, `clock.pauseAt`, or Vitest's
- * `vi.useFakeTimers`). Comments and the text inside other strings or regular expressions do not count
+ * (`clock.setFixedTime`, `clock.setSystemTime`, `clock.pauseAt`, `clock.install({ time })` or Vitest's
+ * `vi.useFakeTimers({ now })`; an install with no start time keeps the real clock running). Comments and the text inside other strings or regular expressions do not count
  * (the scanner is the one of `gate-clock-scan.ts`).
  *
  * Not caught: a helper that carries dates and is imported by a spec that does not fix the clock (the
@@ -33,11 +33,16 @@ export const ADVICE =
   "Fixe o relógio do navegador (`await page.clock.setFixedTime(NOW)` antes de abrir a tela) e derive as datas " +
   "da fixture desse `NOW` (`new Date(NOW.getTime() + n * DAY).toISOString()`), com um caso perto da meia-noite de São Paulo " +
   "(docs/testing/relogio-nos-testes.md). Sem isso a data fixa vence sozinha num dia qualquer e o gate de navegador " +
-  `fica vermelho em todo PR. Se a data é histórica e nenhuma tela a compara com o relógio, acrescente o arquivo a ${LIST_FILE} com o motivo.`;
+  `fica vermelho em todo PR. Só se a data é histórica e nenhuma tela a compara com o relógio, acrescente o arquivo (ou suba a entrada) em ${LIST_FILE} com o motivo.`;
 
 const ISO_DATE_LITERAL = /["'`]\d{4}-\d{2}-\d{2}/g;
-const FIXED_CLOCK =
-  /\bclock\s*\.\s*(?:install|setFixedTime|setSystemTime|pauseAt)\s*\(|\buseFakeTimers\s*\(/;
+const FIXED_CLOCK = new RegExp(
+  [
+    String.raw`\bclock\s*\.\s*(?:setFixedTime|setSystemTime|pauseAt)\s*\(`,
+    String.raw`\bclock\s*\.\s*install\s*\(\s*\{[^}]*\btime\b`,
+    String.raw`\buseFakeTimers\s*\(\s*\{[^}]*\bnow\b`,
+  ].join("|")
+);
 
 /** Whether the source installs a fixed clock in code (a comment or a string that says so does not count). */
 export function installsFixedClock(source) {

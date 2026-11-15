@@ -45,6 +45,7 @@ export const E2E_FIXED_DATES_LIST = {
     reason: BEFORE_THE_RULE,
   },
   "apps/web/e2e-pwa/ui-stock-states.ts": { count: 3, reason: BEFORE_THE_RULE },
+  "apps/web/e2e-pwa/update.e2e.ts": { count: 1, reason: BEFORE_THE_RULE },
   "apps/web/e2e-real/calendar.test.ts": { count: 7, reason: BEFORE_THE_RULE },
   "apps/web/e2e/clientes-reflow.e2e.ts": { count: 1, reason: BEFORE_THE_RULE },
   "apps/web/e2e/closed-store-sale.e2e.ts": {
@@ -60,6 +61,7 @@ export const E2E_FIXED_DATES_LIST = {
     reason: BEFORE_THE_RULE,
   },
   "apps/web/e2e/offline-devices.e2e.ts": { count: 5, reason: BEFORE_THE_RULE },
+  "apps/web/e2e/offline-screens.e2e.ts": { count: 12, reason: BEFORE_THE_RULE },
   "apps/web/e2e/offline-sync-cadence.e2e.ts": {
     count: 2,
     reason: BEFORE_THE_RULE,
@@ -68,6 +70,7 @@ export const E2E_FIXED_DATES_LIST = {
     count: 3,
     reason: BEFORE_THE_RULE,
   },
+  "apps/web/e2e/product-import.e2e.ts": { count: 1, reason: BEFORE_THE_RULE },
   "apps/web/e2e/product-limit-plan.e2e.ts": {
     count: 1,
     reason: BEFORE_THE_RULE,

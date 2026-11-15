@@ -72,6 +72,15 @@ describe("what counts as a fixed clock", () => {
     expect(installsFixedClock(line)).toBe(true);
   });
 
+  it.each([
+    "await page.clock.install();",
+    "await page.clock.install({ timezone: 'UTC' });",
+    "vi.useFakeTimers();",
+    "vi.useFakeTimers({ toFake: ['setTimeout'] });",
+  ])("%s keeps the real clock running", (line) => {
+    expect(installsFixedClock(line)).toBe(false);
+  });
+
   it("ignores a clock named in a comment or in a string", () => {
     expect(
       installsFixedClock(
