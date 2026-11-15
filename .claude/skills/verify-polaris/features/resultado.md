@@ -15,6 +15,7 @@ Resultado (`/dashboard`) é a estimativa do período com as vendas confirmadas e
 - Desktop: link `Resultado` do menu "Principal" (grupo "Financeiro", com Despesas).
 - Celular: "Mais" e o link `Resultado`.
 - Início: o cartão "Resultado estimado" inteiro (o link dentro da região) e "Definir meta" (`/dashboard?meta=nova`; `/dashboard?meta=lista` também abre Metas).
+- Período no endereço: `/dashboard?periodo=este-mes|mes-passado|30-dias|este-ano` ou `/dashboard?de=2026-10-01&ate=2026-10-14` abre o Resultado nesse período (o padrão, Este mês, não escreve nada; inválido abre o padrão e o endereço se corrige; a aba Metas guarda o período, mas só o Resultado o lê).
 - Abas: `tablist "Resultado e metas"`; a primeira, `/dashboard?aba=resultado`, é o mesmo que `/dashboard`. `/dashboard?aba=despesas` não é aba: abre a tela [Despesas](despesas.md).
 
 ## Driving it with verify.sh (Playwright)

@@ -3816,9 +3816,14 @@ export function createBillingStore(
       });
     },
     async sweepDue(now = new Date(), limit = 50) {
+      // a trial still inside its slack (`trialAccessEndsAt`, the same day boundary at UTC-3) is not due yet and
+      // must not take, sweep after sweep, the places of the paid periods that are
       const due = await pool.query<{ organization_id: string }>(
         `SELECT organization_id FROM public.organization_billing
           WHERE state IN ('trialing', 'active', 'grace') AND access_ends_at <= $1
+            AND (state <> 'trialing'
+              OR ((access_ends_at AT TIME ZONE INTERVAL '-03:00')::date + 1 + time '06:00')
+                AT TIME ZONE INTERVAL '-03:00' <= $1)
           ORDER BY access_ends_at, organization_id
           LIMIT $2`,
         [now, limit]

@@ -181,6 +181,57 @@ export function withSuggestedPrices<
   };
 }
 
+export const KEPT_PRICE_NOTICE = "Preço cobrado mantido da variante anterior.";
+
+function hasText(value: string): boolean {
+  return value.trim() !== "";
+}
+
+export interface VariantChangePrices {
+  chargedUnitPrice: string;
+  /** True when a typed charged price stayed on a line whose variant changed. */
+  keptTyped: boolean;
+  listedUnitPrice: string;
+}
+
+/**
+ * The prices of a line whose variant was swapped for another. `previous` is
+ * what the app would have suggested for the old variant: a filled price that
+ * differs from it was typed by the operator (the rule of `suggestionHint`).
+ * Without typed prices both follow the new variant (last sale, else list
+ * price; empty when it has neither, so the old variant's price is never
+ * charged by accident). With typed prices the charged one stays, since it is
+ * what was agreed, and the list price follows the new variant, which owns it
+ * (empty when it has none, to be filled before confirming).
+ */
+export function pricesForVariantChange(
+  item: { chargedUnitPrice: string; listedUnitPrice: string },
+  previous: PriceSuggestion | null,
+  next: PriceSuggestion | null
+): VariantChangePrices {
+  const chargedFilled = hasText(item.chargedUnitPrice);
+  const typed =
+    (chargedFilled && item.chargedUnitPrice !== previous?.chargedUnitPrice) ||
+    (hasText(item.listedUnitPrice) &&
+      item.listedUnitPrice !== previous?.listedUnitPrice);
+  if (!typed) {
+    return {
+      chargedUnitPrice: next?.chargedUnitPrice ?? "",
+      keptTyped: false,
+      listedUnitPrice: next?.listedUnitPrice ?? "",
+    };
+  }
+  return {
+    chargedUnitPrice: chargedFilled
+      ? item.chargedUnitPrice
+      : (next?.chargedUnitPrice ?? ""),
+    keptTyped:
+      chargedFilled &&
+      (next === null || next.chargedUnitPrice !== item.chargedUnitPrice),
+    listedUnitPrice: next?.listedUnitPrice ?? "",
+  };
+}
+
 /**
  * The hint under the price fields while they still hold the suggested values.
  * Once either is edited the hint goes away: the operator's number rules.

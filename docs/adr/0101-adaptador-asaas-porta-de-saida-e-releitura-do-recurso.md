@@ -277,3 +277,19 @@ A troca de ciclo **exige nova autorização**. A periodicidade faz parte da auto
 - O incidente operacional na lista do Admin para a revogação não mostrada **não entrou**. A tabela `operational_incidents` aceita só a lista fixa de `kind`/`cause` (CHECK). Gravar um tipo novo pede migration e função própria. Além disso, o webhook não conhece a loja: sem fato, nada chega ao banco. Até lá, o sinal de alerta e o runbook são o caminho do operador.
 - Uma parcela `CANCELED` conta como `made` e pode manter vivo um checkout cujo QR a Woovi cancelou por erro de cobrança. É o lado que não cancela, e o log da forma mostra se acontece.
 - O desfecho do fechamento quando a aprovação cai entre o `GET` e o `PUT …/cancel` do descarte está nos [limites aceitos do ADR 0074](0074-encerramento-de-organizacao.md#limites-aceitos): o consumidor pergunta `hasSubscription` depois do descarte, o desfecho é `subscribed_cancelled` e, com a 1ª parcela paga na aprovação (Pix Automático), abre-se o incidente `billing_refund_pending` para o reembolso à mão.
+
+## Emenda de 12/11/2026: a folga do trial até a confirmação da 1ª cobrança (AC-47)
+
+**Contexto.** O trial grava `access_ends_at = início + 7 dias` exatos (por exemplo, 17/11 às 13:46 em São Paulo), e a varredura passava a loja ao Free nesse instante. O Asaas captura a 1ª cobrança do cartão durante o dia dela, por volta das 17:30. Entre o fim gravado e a confirmação, a loja ficava no Free e ganhava `over_limit_since`, o que o AC-47 proíbe.
+
+**Decisão.**
+
+1. Uma função de domínio, `trialAccessEndsAt` (`packages/domain/src/billing/trial-access.ts`), diz até quando o trial dá Pro: o fim do dia, em São Paulo (UTC-3, sem horário de verão desde 2019), da data do fim gravado, mais 6 horas (`TRIAL_SLACK_HOURS`). No exemplo, 17/11 às 13:46 vira 18/11 às 06:00.
+2. A folga vale só na **leitura** do estado `trialing`, por `accessInForceUntil` (`entitlements.ts`). Essa função é usada pelo plano em vigor e pelos entitlements (o fim que o lease offline recebe), pela transição do tempo (`dueTransition`), pela recusa de `trial_ended_without_payment` antes do fim (`requireDue`), pela renovação que o Admin mostra na janela de reembolso (`renewalOf`), pelo início do episódio do Free Over Limit (`episodeStart`, `episodeStartAfter` e o repositório da seleção) e pela próxima cobrança (`nextChargeDayOf`). A varredura horária (`sweepDue`) não seleciona um trial que ainda está na folga, pela mesma conta em SQL com deslocamento fixo de `-03:00`. Assim, trials na folga não tomam, hora após hora, as 50 vagas de cada rodada.
+3. Não mudam: `TRIAL_DAYS`, o valor gravado, a data de 1ª cobrança enviada ao provedor e as migrations.
+4. `charge_failed` continua encerrando o trial na hora. Um `charge_succeeded` que chega dentro da folga leva o trial a `active` sem passar pelo Free.
+
+**Limites.**
+
+- As leituras SQL das migrations continuam com o valor gravado: a do catálogo público (0060), a do Admin (0062) e a do purge. Na folga, essas leituras tratam o trial como vencido (no catálogo público, com o que o Free permite), enquanto o app ainda dá Pro. A diferença dura de 6 a cerca de 30 horas, conforme a hora do fim gravado (16 horas no exemplo), e some com a 1ª cobrança. Alinhar essas leituras pede migration.
+- Também ficam no valor gravado o dia mostrado ao lojista ("teste até"), o fim usado em `resubscribeFromOf` e os avisos (`access_ended`): são textos e chaves de aviso, não decidem acesso.

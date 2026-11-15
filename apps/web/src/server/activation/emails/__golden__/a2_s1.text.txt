@@ -1,0 +1,24 @@
+Assunto: Falta só a primeira venda
+
+POLARIS
+
+
+FALTA SÓ A PRIMEIRA VENDA
+
+Loja criada e primeiro produto: feitos. Agora é fazer a primeira venda: escolha o produto, a quantidade e como foi pago.
+
+Leva menos de um minuto.
+
+Fazer a primeira venda https://app.exemplo.app/sales
+
+Se o botão não funcionar, abra este endereço: https://app.exemplo.app/sales
+
+Você recebe este e-mail porque criou a loja Loja Aurora no Polaris e ainda não fez a primeira venda. São no máximo 3 e-mails nos primeiros 14 dias, só para ajudar você a começar.
+
+Parar de receber estas dicas https://app.exemplo.app/api/parar-dicas?t=dXNlcl9hdXJvcmE.c2lnbmF0dXJlLW5vdC1yZWFs
+
+Os avisos da sua conta e da cobrança continuam, porque fazem parte do serviço.
+
+Polaris, um produto de Agência Summit, CNPJ 35.584.467/0001-00.
+
+suporte@exemplo.app · Política de Privacidade https://app.exemplo.app/privacidade

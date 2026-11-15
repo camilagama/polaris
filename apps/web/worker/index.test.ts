@@ -9,7 +9,11 @@ import { logger } from "@polaris/observability/logger";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
+  activationRecipientsClose: vi.fn(),
+  activationStoreClose: vi.fn(),
   billingClose: vi.fn(),
+  createActivationNoticeRecipientClient: vi.fn(),
+  createActivationNoticeStore: vi.fn(),
   billingRecipientsClose: vi.fn(),
   createBillingNoticeRecipientClient: vi.fn(),
   createAuthLoginLockMaintenanceClient: vi.fn(),
@@ -20,6 +24,7 @@ const mocks = vi.hoisted(() => ({
   createOutboxClient: vi.fn(),
   createPrivacyMaintenanceClient: vi.fn(),
   dispatchOutbox: vi.fn(),
+  handleActivationNotice: vi.fn(),
   handleBillingNotice: vi.fn(),
   handleClosureNotice: vi.fn(),
   handOverOwedBillingNotices: vi.fn(),
@@ -92,6 +97,19 @@ vi.mock("../src/server/billing/notice-consumer", async (importOriginal) => ({
   handleBillingNotice: mocks.handleBillingNotice,
   handOverOwedBillingNotices: mocks.handOverOwedBillingNotices,
 }));
+vi.mock("@polaris/db/activation-notice-store", () => ({
+  createActivationNoticeStore: mocks.createActivationNoticeStore,
+}));
+vi.mock("@polaris/db/activation-notice-recipient", () => ({
+  createActivationNoticeRecipientClient:
+    mocks.createActivationNoticeRecipientClient,
+}));
+vi.mock("../src/server/activation/notice-consumer", async (importOriginal) => ({
+  ...(await importOriginal<
+    typeof import("../src/server/activation/notice-consumer")
+  >()),
+  handleActivationNotice: mocks.handleActivationNotice,
+}));
 vi.mock("@polaris/db/closure-notice-recipient", () => ({
   createClosureNoticeRecipientClient: mocks.createClosureNoticeRecipientClient,
 }));
@@ -126,7 +144,10 @@ const quietHandover = {
   skipped: 0,
 };
 
-vi.mock("../src/server/billing/activation-sweep", () => ({
+vi.mock("../src/server/billing/activation-sweep", async (importOriginal) => ({
+  ...(await importOriginal<
+    typeof import("../src/server/billing/activation-sweep")
+  >()),
   runActivationSweep: mocks.runActivationSweep,
 }));
 vi.mock("../src/server/billing/maintenance", () => ({
@@ -1384,33 +1405,118 @@ describe("the queue consumer", () => {
     );
   });
 
-  it("refuses an activation notice as permanent, without a retry, until its consumer exists", async () => {
-    const noticeId = "0199a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a42";
-    const sent = message({
-      attempt: 1,
-      correlationId: "req-activation",
-      event: { noticeId },
-      eventId: "0199a1b2-c3d4-7e5f-9a6b-7c8d9e0f1a43",
-      idempotencyKey: outboxIdempotencyKey("activation.notice", noticeId),
-      organizationId: "org_1",
-      type: "activation.notice",
-      version: 1,
-    });
-    await worker.queue(
-      { messages: [sent], queue: "polaris-default" } as never,
-      {} as never
-    );
+  describe("the tip of the activation series", () => {
+    const activationNotice = (noticeId: string) =>
+      message({
+        attempt: 1,
+        correlationId: "req-activation",
+        event: { noticeId },
+        eventId: noticeId.replace("-8a6b-", "-9a6b-"),
+        idempotencyKey: outboxIdempotencyKey("activation.notice", noticeId),
+        organizationId: "org_1",
+        type: "activation.notice",
+        version: 1,
+      });
+    /** Everything the tips need but the stop on a complaint, which the code does not have yet. */
+    const tipsConfigured = {
+      ACTIVATION_EMAIL_FROM: "Polaris <dicas@example.invalid>",
+      ACTIVATION_EMAILS_ENABLED: "true",
+      ACTIVATION_SUPPRESSION_HMAC_SECRET: "s".repeat(40),
+      AUTH_HYPERDRIVE: { connectionString: "postgresql://auth.invalid/db" },
+      BETTER_AUTH_BASE_URL: "https://app.example.invalid",
+      BETTER_AUTH_SECRET: "b".repeat(40),
+      BILLING_SUPPORT_EMAIL: "suporte@example.invalid",
+      RESEND_API_KEY: "re_not_a_key",
+      UNSUBSCRIBE_TOKEN_SECRET: "u".repeat(40),
+    };
 
-    expect(sent.retry).not.toHaveBeenCalled();
-    expect(sent.ack).toHaveBeenCalledTimes(1);
-    expect(console.error).toHaveBeenCalledWith(
-      expect.objectContaining({
-        errorClass: "PermanentHandlerError",
-        event: "queue_message_failed",
-        eventType: "activation.notice",
-        permanent: true,
-      })
-    );
+    beforeEach(() => {
+      mocks.createActivationNoticeStore.mockReturnValue({
+        close: mocks.activationStoreClose,
+      });
+      mocks.activationStoreClose.mockResolvedValue(undefined);
+      mocks.createActivationNoticeRecipientClient.mockReturnValue({
+        close: mocks.activationRecipientsClose,
+      });
+      mocks.activationRecipientsClose.mockResolvedValue(undefined);
+    });
+
+    it("runs on the default queue with the billing role and the switch off, reads no address, acks and closes", async () => {
+      mocks.handleActivationNotice.mockResolvedValue("skipped");
+      const sent = activationNotice("0199a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a50");
+      await worker.queue(
+        { messages: [sent], queue: "polaris-default" } as never,
+        configured as never
+      );
+
+      expect(mocks.createActivationNoticeStore).toHaveBeenCalledWith(
+        "postgresql://billing.invalid/db"
+      );
+      const [dependencies, envelope] =
+        mocks.handleActivationNotice.mock.calls[0] ?? [];
+      expect(dependencies.switchedOn).toBe(false);
+      expect(dependencies.email).toBeNull();
+      expect(envelope).toMatchObject({ organizationId: "org_1" });
+      expect(
+        mocks.createActivationNoticeRecipientClient
+      ).not.toHaveBeenCalled();
+      expect(sent.ack).toHaveBeenCalledTimes(1);
+      expect(mocks.activationStoreClose).toHaveBeenCalledTimes(1);
+    });
+
+    it("with the switch on and everything set, still gives the consumer no e-mail while the stop on a complaint is not in force", async () => {
+      mocks.handleActivationNotice.mockResolvedValue("skipped");
+      await worker.queue(
+        {
+          messages: [activationNotice("0199a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a51")],
+          queue: "polaris-default",
+        } as never,
+        { ...configured, ...tipsConfigured } as never
+      );
+
+      const [dependencies] = mocks.handleActivationNotice.mock.calls[0] ?? [];
+      expect(dependencies.switchedOn).toBe(true);
+      expect(dependencies.email).toBeNull();
+      expect(
+        mocks.createActivationNoticeRecipientClient
+      ).not.toHaveBeenCalled();
+    });
+
+    it("retries when the provider fails, and closes the connection", async () => {
+      mocks.handleActivationNotice.mockRejectedValue(
+        new Error("activation_notice_email_retry")
+      );
+      const sent = activationNotice("0199a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a52");
+      await worker.queue(
+        { messages: [sent], queue: "polaris-default" } as never,
+        configured as never
+      );
+
+      expect(sent.retry).toHaveBeenCalledTimes(1);
+      expect(sent.ack).not.toHaveBeenCalled();
+      expect(mocks.activationStoreClose).toHaveBeenCalledTimes(1);
+    });
+
+    it("refuses as permanent, without a retry, where the billing role is not provisioned", async () => {
+      const sent = activationNotice("0199a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a53");
+      await worker.queue(
+        { messages: [sent], queue: "polaris-default" } as never,
+        {} as never
+      );
+
+      expect(mocks.handleActivationNotice).not.toHaveBeenCalled();
+      expect(mocks.createActivationNoticeStore).not.toHaveBeenCalled();
+      expect(sent.retry).not.toHaveBeenCalled();
+      expect(sent.ack).toHaveBeenCalledTimes(1);
+      expect(console.error).toHaveBeenCalledWith(
+        expect.objectContaining({
+          errorClass: "PermanentHandlerError",
+          event: "queue_message_failed",
+          eventType: "activation.notice",
+          permanent: true,
+        })
+      );
+    });
   });
 
   describe("the notice of a closure milestone", () => {

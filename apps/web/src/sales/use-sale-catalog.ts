@@ -48,6 +48,8 @@ interface SaleCatalog {
   refresh: (variantIds: readonly string[]) => void;
   /** Forgets the cached balances, e.g. after a confirmed sale moved stock. */
   resetStock: () => void;
+  /** The list price each variant had in the latest read, also for lines that came back with a restored draft. */
+  listPrices: { readonly current: ReadonlyMap<string, string | null> };
   /** Keeps the balances a search already returned, so lines need no read. */
   seedStock: (entries: readonly InventoryBalanceEntryReadModel[]) => void;
   stock: LoadableMap<SaleBalance>;
@@ -98,6 +100,15 @@ export function useSaleCatalog(
   );
   const [stock, setStock] = useState<LoadableMap<SaleBalance>>({});
   const generation = useRef(0);
+  const listPrices = useRef(new Map<string, string | null>());
+  const rememberListPrices = useCallback(
+    (entries: readonly InventoryBalanceEntryReadModel[]) => {
+      for (const entry of entries) {
+        listPrices.current.set(entry.variantId, entry.listPrice);
+      }
+    },
+    []
+  );
   /** Only the latest read of the profiles may speak: an older answer arrives after the mode changed. */
   const profilesRequest = useRef(0);
 
@@ -146,6 +157,7 @@ export function useSaleCatalog(
 
   const seedStock = useCallback(
     (entries: readonly InventoryBalanceEntryReadModel[]) => {
+      rememberListPrices(entries);
       setStock((map) => {
         const next = { ...map };
         for (const entry of entries) {
@@ -157,7 +169,7 @@ export function useSaleCatalog(
         return next;
       });
     },
-    []
+    [rememberListPrices]
   );
 
   const resetStock = useCallback(() => {
@@ -178,11 +190,12 @@ export function useSaleCatalog(
         const { outbox, writer } = workspace.stores;
         readLocalCatalog(writer, outbox)
           .then((rows) => {
+            const { entries } = filterLocalStockEntries(
+              localStockEntries(rows),
+              { productStatus: "all", variantIds }
+            );
+            rememberListPrices(entries);
             if (generation.current === current) {
-              const { entries } = filterLocalStockEntries(
-                localStockEntries(rows),
-                { productStatus: "all", variantIds }
-              );
               setStock((map) => stockAfterRefresh(map, variantIds, entries));
             }
           })
@@ -216,6 +229,7 @@ export function useSaleCatalog(
           )
         )
           .then(({ entries }) => {
+            rememberListPrices(entries);
             if (generation.current === current) {
               setStock((map) => stockAfterRefresh(map, chunk, entries));
             }
@@ -252,6 +266,7 @@ export function useSaleCatalog(
             localStockEntries(await readLocalCatalog(writer, outbox)),
             { productStatus: "all", variantIds }
           );
+          rememberListPrices(entries);
           if (generation.current === current) {
             setStock((map) => stockAfterRefresh(map, variantIds, entries));
           }
@@ -279,6 +294,7 @@ export function useSaleCatalog(
             failed.push({ ids, reason: result.reason });
           }
         });
+        rememberListPrices(entries);
         if (generation.current === current) {
           setStock((map) => {
             const next = stockAfterRefresh(map, answeredIds, entries);
@@ -302,7 +318,7 @@ export function useSaleCatalog(
         return null;
       }
     },
-    [organizationId]
+    [organizationId, rememberListPrices]
   );
 
   const openVariantIdsRef = useRef(openVariantIds);
@@ -322,5 +338,13 @@ export function useSaleCatalog(
     });
   }, [usesLocal, withCover]);
 
-  return { profiles, readLines, refresh, resetStock, seedStock, stock };
+  return {
+    listPrices,
+    profiles,
+    readLines,
+    refresh,
+    resetStock,
+    seedStock,
+    stock,
+  };
 }

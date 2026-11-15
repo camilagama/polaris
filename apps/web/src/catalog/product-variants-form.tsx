@@ -27,8 +27,10 @@ import { useHoldSwap } from "../lib/unsent-work";
 import { SelectField } from "../sales/sale-fields";
 import {
   LimitHelp,
+  NearLimitNotice,
   useLimitFocus,
   useLimitHelp,
+  useNearLimit,
 } from "../subscription/limit-help";
 import {
   isLimitReached,
@@ -216,6 +218,14 @@ function AllCombinationsNotice({
   );
 }
 
+/** The warning that the limit is close and the refusal's help never go together: either one is on screen. */
+function refusalIsShown(
+  saveError: string | null,
+  notice: AllCombinationsNoticeView | null
+): boolean {
+  return saveError === VARIANT_LIMIT_REACHED || (notice?.help ?? null) !== null;
+}
+
 /** A read that hangs falls back to the product's limit, as a failed one: the form waits for it with every field off. */
 const PLAN_READ_TIMEOUT_MS = 5000;
 
@@ -366,6 +376,9 @@ export function ProductVariantConfigurationForm({
   const limitHelp = useLimitHelp();
   const saveErrorRef = useRef<HTMLDivElement>(null);
   const focusLimit = useLimitFocus(saveErrorRef);
+  // the warning that the limit is close reads the use again after each save
+  const [savedCount, setSavedCount] = useState(0);
+  const nearLimit = useNearLimit("variants", savedCount);
   // a failure of the warning's button, said under the warning
   const [clearError, setClearError] = useState<string | null>(null);
   // what the warning's button did, said after it: the SKU that was erased
@@ -520,6 +533,7 @@ export function ProductVariantConfigurationForm({
         });
         // saved: nothing typed is left to keep
         onDraftChange(product.id, null);
+        setSavedCount((count) => count + 1);
         onConfigured(result.configuration, result.product);
       } catch (error: unknown) {
         setSaveError(variantErrorMessage(error));
@@ -761,6 +775,10 @@ export function ProductVariantConfigurationForm({
           {isPending ? "Salvando…" : "Salvar variantes"}
         </Button>
       </div>
+      <NearLimitNotice
+        hidden={refusalIsShown(saveError, allCombinations.notice)}
+        view={nearLimit}
+      />
     </form>
   );
 }

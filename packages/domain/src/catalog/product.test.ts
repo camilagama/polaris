@@ -5,6 +5,9 @@ import {
   normalizeProductDescription,
   normalizeProductName,
   normalizeVariantListPrice,
+  PRODUCT_DELETE_LIMIT_PER_HOUR,
+  PRODUCT_DELETE_WINDOW_SECONDS,
+  ProductDeleteRateLimitedError,
   ProductDescriptionError,
   ProductLifecycleError,
   ProductNameError,
@@ -48,10 +51,9 @@ describe("product rules", () => {
       changed: false,
       lifecycle: "active",
     });
-    expect(transitionProductLifecycle("active", "delete")).toEqual({
-      changed: true,
-      lifecycle: "deleted",
-    });
+    expect(() => transitionProductLifecycle("active", "delete")).toThrow(
+      ProductLifecycleError
+    );
     expect(transitionProductLifecycle("archived", "delete")).toEqual({
       changed: true,
       lifecycle: "deleted",
@@ -186,5 +188,28 @@ describe("variant list price", () => {
         InvalidVariantListPriceError
       );
     }
+  });
+});
+
+describe("product deletion cap", () => {
+  it("keeps the hourly cap in one constant that the refusal carries", () => {
+    expect(PRODUCT_DELETE_LIMIT_PER_HOUR).toBe(50);
+    expect(PRODUCT_DELETE_WINDOW_SECONDS).toBe(3600);
+    const error = new ProductDeleteRateLimitedError(1234.2);
+    expect(error.code).toBe("product_delete_rate_limited");
+    expect(error.limit).toBe(PRODUCT_DELETE_LIMIT_PER_HOUR);
+    expect(error.retryAfterSeconds).toBe(1235);
+  });
+
+  it("never tells the caller to retry in less than a second", () => {
+    expect(new ProductDeleteRateLimitedError(0).retryAfterSeconds).toBe(1);
+    expect(new ProductDeleteRateLimitedError(-5).retryAfterSeconds).toBe(1);
+    expect(
+      new ProductDeleteRateLimitedError(Number.NaN).retryAfterSeconds
+    ).toBe(1);
+  });
+
+  it("keeps a deleted product as no change, so a replay never spends the cap", () => {
+    expect(transitionProductLifecycle("deleted", "delete").changed).toBe(false);
   });
 });

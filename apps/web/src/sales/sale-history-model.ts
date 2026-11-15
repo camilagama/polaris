@@ -160,6 +160,14 @@ export const HISTORY_STATUS_FILTERS: ReadonlyArray<
   ["with_returns", "Com devoluções"],
 ];
 
+/** A situation taken from a navigation state: one of the real ones that narrows the list; "" (no filter) otherwise. */
+export function statusFromState(value: unknown): HistoryStatusFilter {
+  const status = HISTORY_STATUS_FILTERS.find(
+    ([candidate]) => candidate !== "" && candidate === value
+  );
+  return status ? status[0] : "";
+}
+
 export interface HistoryFilters {
   /** Part of the current customer's name. */
   customer: string;

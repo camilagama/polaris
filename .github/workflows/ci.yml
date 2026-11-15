@@ -289,6 +289,15 @@ jobs:
         run: bun run --filter @polaris/catalog test:e2e
         env:
           POLARIS_CATALOG_E2E: "1"
+      # The whole trace of the tab (rastro-*.txt of e2e-pwa/network-trace.ts) and the Playwright traces of the
+      # failed tests: without this the files go away with the runner. Skipped when the shard is green.
+      - if: ${{ failure() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: offline-browser-trace-shard-${{ matrix.shard }}
+          path: apps/web/test-results/
+          retention-days: 7
+          if-no-files-found: ignore
 
   offline-poc-browser:
     name: Offline persistence browser gate

@@ -107,7 +107,7 @@ export const BILLING_NOTICE_EMAIL_KINDS: readonly BillingNoticeKind[] = [
  * Who supplies the Polaris, as in the Terms (AC-19). The complete corporate name is P48: it changes here and in the
  * Terms together, before the switch goes on in production.
  */
-const BILLING_EMAIL_SUPPLIER =
+export const BILLING_EMAIL_SUPPLIER =
   "Polaris, um produto de Agência Summit, CNPJ 35.584.467/0001-00.";
 
 /** The footer of every e-mail (AC-17, AC-19). */
@@ -119,18 +119,18 @@ export function billingEmailFooter(supportEmail: string): string[] {
   ];
 }
 
-const paragraphStyle = {
+export const paragraphStyle = {
   fontSize: "16px",
   lineHeight: "24px",
   overflowWrap: "anywhere",
 } as const;
-const smallStyle = {
+export const smallStyle = {
   fontSize: "14px",
   lineHeight: "21px",
   overflowWrap: "anywhere",
 } as const;
 
-function ActionButton({ link }: { link: BillingEmailLink }) {
+export function ActionButton({ link }: { link: BillingEmailLink }) {
   return (
     <>
       <Button

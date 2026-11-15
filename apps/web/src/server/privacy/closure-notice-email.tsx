@@ -300,7 +300,48 @@ export type ClosureNoticeSendResult =
   | { code: string | null; outcome: "rejected"; status: number }
   | { code: string | null; outcome: "retry"; status: number | null };
 
+/**
+ * The two headers of the one-click stop (RFC 8058, `List-Unsubscribe` and `List-Unsubscribe-Post`): the only headers a
+ * message may carry, and only the tips e-mails pass them. The account, closure and billing e-mails never do.
+ */
+export interface UnsubscribeHeaders {
+  "List-Unsubscribe": string;
+  "List-Unsubscribe-Post": string;
+}
+
+const UNSUBSCRIBE_HEADER_NAMES: readonly string[] = [
+  "List-Unsubscribe",
+  "List-Unsubscribe-Post",
+] satisfies (keyof UnsubscribeHeaders)[];
+
+// a CR or LF in a value would let it start another header of the message; a header value is visible ASCII only
+function isVisibleAscii(value: string): boolean {
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+    if (code < 0x20 || code > 0x7e) {
+      return false;
+    }
+  }
+  return value.length > 0;
+}
+
+function messageHeaders(headers: UnsubscribeHeaders): Record<string, string> {
+  const entries = Object.entries(headers as unknown as Record<string, unknown>);
+  const names = entries.map(([name]) => name).sort();
+  if (names.join("\n") !== UNSUBSCRIBE_HEADER_NAMES.join("\n")) {
+    throw new TypeError("email_header_refused");
+  }
+  for (const [, value] of entries) {
+    if (typeof value !== "string" || !isVisibleAscii(value)) {
+      throw new TypeError("email_header_refused");
+    }
+  }
+  return Object.fromEntries(entries) as Record<string, string>;
+}
+
 export type ClosureNoticeSender = (message: {
+  /** Only for the tips e-mails; left out, the body sent to the provider has no `headers` at all. */
+  headers?: UnsubscribeHeaders;
   html: string;
   /** The notice's ID: the provider takes one message per notice (24 hours of memory at Resend). */
   idempotencyKey: string;
@@ -375,11 +416,16 @@ export function createResendClosureNoticeSender(
   config: Pick<ClosureNoticeEmailConfig, "apiKey" | "from" | "replyTo">
 ): ClosureNoticeSender {
   return async (message) => {
+    const headers =
+      message.headers === undefined
+        ? undefined
+        : messageHeaders(message.headers);
     let response: Response;
     try {
       response = await fetch(RESEND_EMAILS_ENDPOINT, {
         body: JSON.stringify({
           from: config.from,
+          ...(headers ? { headers } : {}),
           ...(config.replyTo ? { reply_to: config.replyTo } : {}),
           html: message.html,
           subject: message.subject,

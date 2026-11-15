@@ -7,7 +7,10 @@ import {
 import {
   InvalidBillingTransitionError,
   RejectedBillingEventError,
+  TRIAL_DAYS,
 } from "@polaris/domain/billing/subscription-state";
+import { saoPauloDateOf } from "@polaris/domain/billing/provider-period";
+import { trialAccessEndsAt } from "@polaris/domain/billing/trial-access";
 import { Client } from "pg";
 import { createBillingStore } from "../src/billing-store";
 import { createDatabase } from "../src/client";
@@ -61,6 +64,84 @@ const succeeded = (
   periodEndsAt,
   type: "charge_succeeded",
 });
+
+// stored ends next to midnight in São Paulo, where its day and the UTC day differ, on days apart so that each
+// trial's sweeps run before the next one is due
+const UNPAID_TRIALS = [
+  { dayOffset: 10, local: "23:30:00.000" },
+  { dayOffset: 12, local: "23:59:59.999" },
+  { dayOffset: 14, local: "00:00:00.000" },
+] as const;
+
+interface UnpaidTrialDeps {
+  apply: (
+    provider: string,
+    id: string,
+    fact: BillingFact,
+    reference: { organizationId?: string; providerRef?: string },
+    now: Date
+  ) => Promise<unknown>;
+  billing: ReturnType<typeof createBillingStore>;
+  eventRows: (
+    tenant: TenantFixture
+  ) => Promise<{ fact_type: string; state_after: string | null }[]>;
+  newTenant: (label: string) => Promise<TenantFixture>;
+}
+
+async function sweepUnpaidTrial(
+  deps: UnpaidTrialDeps,
+  index: number,
+  unpaidCase: (typeof UNPAID_TRIALS)[number]
+): Promise<void> {
+  const { billing } = deps;
+  const day = saoPauloDateOf(at(unpaidCase.dayOffset));
+  const target = new Date(`${day}T${unpaidCase.local}-03:00`);
+  const slackEnd = new Date(Date.parse(`${day}T06:00:00.000-03:00`) + DAY);
+  const readyAt = new Date(target.getTime() - TRIAL_DAYS * DAY);
+  const unpaid = await deps.newTenant(`lifecycle unpaid trial ${index}`);
+  await billing.startTrial(unpaid.organizationId, unpaid.userId, at(0));
+  await billing.attachProvider(unpaid.organizationId, "fake", `sub_U${index}`);
+  await deps.apply(
+    "fake",
+    `evt-U${index}-ready`,
+    { cycleMonths: 1, occurredAt: readyAt, type: "trial_method_ready" },
+    { providerRef: `sub_U${index}` },
+    readyAt
+  );
+  const storedEnd = (await billing.readRecord(unpaid.organizationId))
+    ?.accessEndsAt;
+  assert.equal(storedEnd?.getTime(), target.getTime());
+  assert.equal(trialAccessEndsAt(target).getTime(), slackEnd.getTime());
+  await billing.sweepDue(new Date(target.getTime() + 60_000));
+  assert.equal(
+    (await billing.readRecord(unpaid.organizationId))?.state,
+    "trialing",
+    `a trial stored to end at ${unpaidCase.local} is not swept to Free a minute after that end`
+  );
+  await billing.sweepDue(new Date(slackEnd.getTime() - 1));
+  assert.equal(
+    (await billing.readRecord(unpaid.organizationId))?.state,
+    "trialing",
+    `a trial stored to end at ${unpaidCase.local} is not swept to Free just before its slack ends`
+  );
+  await billing.sweepDue(slackEnd);
+  assert.equal(
+    (await billing.readRecord(unpaid.organizationId))?.state,
+    "free",
+    `a trial stored to end at ${unpaidCase.local} is swept to Free when its slack ends`
+  );
+  assert.deepEqual(
+    (await deps.eventRows(unpaid)).map((row) => [
+      row.fact_type,
+      row.state_after,
+    ]),
+    [
+      ["command", "trial_setup"],
+      ["trial_method_ready", "trialing"],
+      ["time_elapsed", "free"],
+    ]
+  );
+}
 
 async function run() {
   const branch = requiredEnvironment("POLARIS_SALES_GATE_BRANCH");
@@ -346,6 +427,21 @@ async function run() {
     );
     tests.push(
       "a trial from opt-in to the first charge: the webhook names only the provider reference, the organization is resolved from it, a repeat is ignored, a second trial is refused, and the ledger tells each step with the state before and after"
+    );
+
+    // ------------- 3b. a trial nobody charged keeps Pro through its slack (AC-47)
+    // stored ends next to midnight in São Paulo, where its day and the UTC day differ, on days apart so that
+    // each trial's sweeps run before the next one is due
+    for (const [index, unpaidCase] of UNPAID_TRIALS.entries()) {
+      // biome-ignore lint/performance/noAwaitInLoops: each trial is swept before the next one is due
+      await sweepUnpaidTrial(
+        { apply, billing, eventRows, newTenant },
+        index,
+        unpaidCase
+      );
+    }
+    tests.push(
+      "a trial nobody charged stays a trial from its stored end through the end of its São Paulo day plus 6 hours, sweep after sweep, and the sweep ends it at that instant (stored ends at 23:30, 23:59:59.999 and 00:00 in São Paulo)"
     );
 
     // --------------- 4. renewal failure, grace, recovery and expiry

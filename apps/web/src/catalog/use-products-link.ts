@@ -21,8 +21,8 @@ interface ProductsLinkHandlers {
   onNotice: (message: string) => void;
   /** The read of the product failed (the screen says it, or leaves it to the list's own alert). */
   onReadFailed: (failure: ProductLinkFailure) => void;
-  /** `?produto=<uuid>`: open the panel of the product found. */
-  onProduct: (product: ProductReadModel) => void;
+  /** `?produto=<uuid>`: open the panel of the product found, with the variant of `&variante=` when there is one. */
+  onProduct: (product: ProductReadModel, variantId: string | null) => void;
 }
 
 /** Every product of the store, active or archived: from this device when the runtime is ready, else from the server. */
@@ -83,7 +83,7 @@ export function useProductsLink(
         handled.current = true;
         const product = findLinkedProduct(products, link.productId);
         if (product) {
-          latest.current.onProduct(product);
+          latest.current.onProduct(product, link.variantId);
         } else {
           latest.current.onNotice(PRODUCT_LINK_NOT_FOUND);
         }

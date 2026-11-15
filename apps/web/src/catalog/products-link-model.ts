@@ -1,10 +1,12 @@
 import type { ProductReadModel } from "@polaris/contracts";
+import { hasCapabilityForRole } from "@polaris/domain/authorization/capabilities";
 import { rpcErrorCode } from "../lib/rpc-error";
 import { productErrorMessage } from "./product-errors";
 
 /**
  * What `/products` opens by its address (the Início and the Venda link to it):
- * `?produto=<uuid>` the variants panel of that product, `?novo=1` the form of a
+ * `?produto=<uuid>` the variants panel of that product (with `&variante=<uuid>` the field of that variant takes
+ * the focus), `?novo=1` the form of a
  * new one, `?importar=1` the import of a spreadsheet (the checklist of the Início).
  * Anything else is the plain list, and no value of the address is ever written
  * on the screen.
@@ -13,7 +15,7 @@ export type ProductsLink =
   | { kind: "none" }
   | { kind: "new" }
   | { kind: "import" }
-  | { kind: "product"; productId: string };
+  | { kind: "product"; productId: string; variantId: string | null };
 
 const uuidPattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -23,14 +25,29 @@ export function readProductsLink(search: string): ProductsLink {
   const product = params.get("produto");
   if (product !== null) {
     const productId = product.trim();
-    return uuidPattern.test(productId)
-      ? { kind: "product", productId: productId.toLowerCase() }
-      : { kind: "none" };
+    if (!uuidPattern.test(productId)) {
+      return { kind: "none" };
+    }
+    const variant = params.get("variante")?.trim() ?? "";
+    return {
+      kind: "product",
+      productId: productId.toLowerCase(),
+      variantId: uuidPattern.test(variant) ? variant.toLowerCase() : null,
+    };
   }
   if (params.get("importar") === "1") {
     return { kind: "import" };
   }
   return params.get("novo") === "1" ? { kind: "new" } : { kind: "none" };
+}
+
+/** The address that opens the product on `/products`, on the variant when the row of the stock is one of a variant. */
+export function productHref(productId: string, variantId?: string): string {
+  const query = new URLSearchParams({ produto: productId });
+  if (variantId !== undefined) {
+    query.set("variante", variantId);
+  }
+  return `/products?${query.toString()}`;
 }
 
 /**
@@ -73,4 +90,49 @@ export function findLinkedProduct(
       (product) => product.id === productId && product.status !== "deleted"
     ) ?? null
   );
+}
+
+/** The most the server takes in a search. */
+export const STOCK_QUERY_MAX = 100;
+
+/**
+ * The two links between the screens, each only for who can read what it leads to: the name of a row of the stock opens the
+ * product (`catalog:read`), and "Ver estoque" of a product opens the stock (`inventory:read`).
+ */
+export function stockProductLinks(role: string): {
+  toProduct: boolean;
+  toStock: boolean;
+} {
+  return {
+    toProduct: hasCapabilityForRole(role, "catalog:read"),
+    toStock: hasCapabilityForRole(role, "inventory:read"),
+  };
+}
+
+/**
+ * `/inventory?busca=<nome>`: what "Ver estoque" of a product asks. The search box opens with the name, so the person
+ * sees the filter and can clear it; `arquivados=1` is added for an archived product, which the list leaves out by
+ * default. The name is cut to what the search takes.
+ */
+export function stockProductHref(
+  productName: string,
+  archived: boolean
+): string {
+  const query = new URLSearchParams({
+    busca: productName.trim().slice(0, STOCK_QUERY_MAX),
+  });
+  if (archived) {
+    query.set("arquivados", "1");
+  }
+  return `/inventory?${query.toString()}`;
+}
+
+/** "Ver estoque" of a product that exists: its link, or null when the role cannot read the stock. */
+export function productStockHref(
+  product: { name: string; status: string } | null,
+  role: string
+): string | null {
+  return product && stockProductLinks(role).toStock
+    ? stockProductHref(product.name, product.status === "archived")
+    : null;
 }

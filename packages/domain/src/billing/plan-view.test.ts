@@ -180,6 +180,17 @@ describe("nextChargeOf (AS-3)", () => {
 });
 
 describe("nextChargeDayOf", () => {
+  it("in a trial keeps the day of the first charge through the slack that waits for it (AC-47)", () => {
+    // stored to end at `2026-10-17 15:00`: the trial lasts until `2026-10-18 06:00`
+    expect(nextChargeDayOf(trialing, sp("2026-10-17T15:01:00"))).toBe(
+      "2026-10-17"
+    );
+    expect(nextChargeDayOf(trialing, sp("2026-10-18T05:59:59"))).toBe(
+      "2026-10-17"
+    );
+    expect(nextChargeDayOf(trialing, sp("2026-10-18T06:00:00"))).toBeNull();
+  });
+
   it("names the day of the renewal without an amount or a cycle (the Admin's line)", () => {
     expect(
       nextChargeDayOf(

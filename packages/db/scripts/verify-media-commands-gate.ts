@@ -23,9 +23,9 @@ import {
 import {
   configureProductVariants,
   createProduct,
-  deleteProduct,
   getProductVariants,
 } from "../src/product-repository";
+import { archiveThenDeleteProduct } from "./product-lifecycle-support";
 import {
   createTenantFixture,
   disposableHostPattern,
@@ -429,7 +429,7 @@ async function run() {
     const doomed = await newProduct(tenantA);
     const doomedImage = await upload(tenantA, doomed.id);
     await as(tenantA, (tx, identity) =>
-      deleteProduct(tx, identity, {
+      archiveThenDeleteProduct(tx, identity, {
         expectedVersion: doomed.version,
         id: doomed.id,
         requestId: randomUUID(),

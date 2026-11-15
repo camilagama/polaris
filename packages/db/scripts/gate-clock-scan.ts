@@ -157,7 +157,7 @@ function trackBraces(char: string, parts: TemplateParts): void {
 }
 
 /** The source with comments, strings, template text and regular expressions blanked (same length, same lines). */
-function codeOnly(source: string): string {
+export function codeOnly(source: string): string {
   let out = "";
   let index = 0;
   const parts: TemplateParts = [];

@@ -18,7 +18,9 @@ import { useLocalWorkspace } from "../offline/runtime/use-local-workspace";
 import {
   LimitHelp,
   LimitLeaveScope,
+  NearLimitNotice,
   useLimitHelp,
+  useNearLimit,
 } from "../subscription/limit-help";
 import { isLimitReached } from "../subscription/limit-help-model";
 import {
@@ -41,7 +43,10 @@ import { ProductList, type ProductListStatus } from "./product-list";
 import { validateOpening } from "./product-opening-model";
 import { filterByName } from "./product-search-model";
 import type { VariantConfigurationDraft } from "./product-variants-model";
-import type { ProductLinkFailure } from "./products-link-model";
+import {
+  type ProductLinkFailure,
+  productStockHref,
+} from "./products-link-model";
 import {
   ActionFeedback,
   LoadErrorNotice,
@@ -287,6 +292,7 @@ export function ProductsPage() {
     returned.dialogProductId
   );
   const [dialogTab, setDialogTab] = useState<ProductTab>("dados");
+  const [focusVariantId, setFocusVariantId] = useState<string | null>(null);
   // the draft kept when the dialog was closed by Esc, "Fechar" or the step back: "new", or the id of the product
   const keptRef = useRef<string | null>(returned.keptKey);
   // where the focus goes back to when the dialog closes without a message to read: what opened it
@@ -309,6 +315,9 @@ export function ProductsPage() {
   const [error, setError] = useState<string | null>(null);
   // what goes with the plan's limit refusal (corte 61b, corte 1.6); shown only while that error is shown
   const { help: limitHelp, show: showLimitHelp } = useLimitHelp();
+  // a product created, the variants saved in the dialog or a spreadsheet imported change the use: the warning at the end of the list reads it again
+  const [usageVersion, setUsageVersion] = useState(0);
+  const nearLimit = useNearLimit("variants", usageVersion);
   const showLimitHelpOn = useCallback(
     (cause: unknown, action: "create" | "update") => {
       if (action === "create" && isLimitReached(cause)) {
@@ -407,6 +416,7 @@ export function ProductsPage() {
   const handleImported = useCallback(() => {
     // the products live on the server: bring them to this device, then show them
     workspace?.runtime.syncNow().catch(() => undefined);
+    setUsageVersion((version) => version + 1);
     refresh();
   }, [refresh, workspace]);
 
@@ -436,6 +446,7 @@ export function ProductsPage() {
           : newButtonRef.current;
       setDialogProductId(product?.id ?? null);
       setDialogTab(tab);
+      setFocusVariantId(null);
       clearMessages();
       setDialogOpen(true);
     },
@@ -509,6 +520,7 @@ export function ProductsPage() {
             return;
           }
           setNotice(created);
+          setUsageVersion((version) => version + 1);
           newProductNames.current = null;
         }
         keptRef.current = null;
@@ -550,9 +562,10 @@ export function ProductsPage() {
       setError(message);
       focusFeedback();
     },
-    onProduct: (product) => {
+    onProduct: (product, variantId) => {
       setStatus(product.status === "archived" ? "archived" : "active");
       openDialog(product, "variantes");
+      setFocusVariantId(variantId);
     },
     onReadFailed: setLinkFailure,
   });
@@ -646,6 +659,7 @@ export function ProductsPage() {
     (_product: ProductReadModel) => {
       // The variants live on the server: bring them to this device, then show them.
       workspace?.runtime.syncNow().catch(() => undefined);
+      setUsageVersion((version) => version + 1);
       refresh();
     },
     [refresh, workspace]
@@ -727,6 +741,7 @@ export function ProductsPage() {
 
   const dialogProduct =
     products.find((product) => product.id === dialogProductId) ?? null;
+  const dialogStockHref = productStockHref(dialogProduct, organization.role);
   const dialogShown =
     dialogOpen && (dialogProductId === null || dialogProduct !== null);
   // the product left the list while its dialog was open (archived on another device and synced): the dialog closes and
@@ -818,6 +833,7 @@ export function ProductsPage() {
             errorExtra={<LimitHelp help={shownLimitHelp} />}
             feedbackRef={feedbackRef}
             finalFocus={finalFocus}
+            focusVariantId={focusVariantId}
             isOffline={isOffline}
             isPending={pendingAction === "create" || pendingAction === "update"}
             notice={dialogShown ? notice : null}
@@ -833,6 +849,7 @@ export function ProductsPage() {
             open={dialogShown}
             organizationId={organizationId}
             product={dialogProduct}
+            stockHref={dialogStockHref}
             tab={dialogTab}
             variantsDraft={keptVariantsOf(variantsDraft, dialogProductId)}
           />
@@ -900,6 +917,10 @@ export function ProductsPage() {
           isOffline={isOffline}
           onImport={handleImport}
           showNew={status === "active"}
+        />
+        <NearLimitNotice
+          hidden={feedbackError.message === PRODUCT_LIMIT_REACHED}
+          view={nearLimit}
         />
       </div>
     </div>

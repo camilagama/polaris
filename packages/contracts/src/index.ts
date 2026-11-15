@@ -1536,6 +1536,16 @@ export const billingPlanView = z
         ),
       })
       .strict(),
+    // the limits of the Pro plan as the stored catalog has them, only for a store not on Pro (the invitation to
+    // subscribe); a client that does not know the key ignores it
+    proLimits: z
+      .object({
+        goals: planCount.nullable(),
+        images: planCount.nullable(),
+        variants: planCount.nullable(),
+      })
+      .strict()
+      .optional(),
     // "provider_retries" enters by amendment, once the Gate 7 proves Woovi's calendar
     recovery: z.literal("provider_page").nullable(),
     refund: z
@@ -1565,7 +1575,16 @@ export const billingPlanView = z
     ]),
     trialAvailable: z.boolean(),
     usage: z
-      .object({ goals: planCount, images: planCount, variants: planCount })
+      .object({
+        // optional and additive: the PWA that predates it does not validate the output, so the Worker can go first
+        freeable: z
+          .object({ products: planCount, variants: planCount })
+          .strict()
+          .optional(),
+        goals: planCount,
+        images: planCount,
+        variants: planCount,
+      })
       .strict(),
   })
   .strict();

@@ -1,0 +1,136 @@
+name: Backup staging
+
+# The daily logical backup of the staging database (ADR 0099, runbook docs/runbooks/backup.md): pg_dump 18 with the
+# read-only login polaris_backup_reader, sealed with age to the public key reviewed in ops/backup/recipients-staging.txt,
+# sent to the R2 bucket polaris-backup-staging, then the retention (35 days, never fewer than the 35 newest). The same
+# job, with production names, is the production backup: staging proves it first.
+#
+# The job runs no dependency of the repository: no bun install, no node_modules. It reads two shell scripts, two SQL
+# files and the retention script (Node of the runner, no package), and the dump runs inside the postgres image pinned
+# by digest. Secrets exist only in the steps that use them, and nothing of the database is printed: the log of this
+# public repository is public (sizes, SHA-256 and check names only).
+#
+# OFF until the responsible creates the resources (docs/runbooks/backup.md, "Ligar no staging"): the job runs only when
+# the repository variable STAGING_BACKUP_ENABLED is "true".
+on:
+  schedule:
+    # 06:22 UTC (03:22 in Sao Paulo): off the full hour, when the Actions scheduler delays the most
+    - cron: "22 6 * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  backup:
+    name: Dump, seal and upload
+    if: vars.STAGING_BACKUP_ENABLED == 'true' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    # the Environment accepts only main: a dispatch from another branch is refused before any secret
+    environment: staging-backup
+    permissions:
+      contents: read
+      issues: write
+    # The deploy's group (ADR 0099): a dump never runs next to a migration. GitHub keeps one pending job per group, so a backup queued while a deploy runs and another deploy
+    # waits replaces that waiting deploy (the next merge deploys again); the runbook covers it.
+    concurrency:
+      group: deploy-staging
+      cancel-in-progress: false
+    env:
+      BACKUP_ENVIRONMENT: staging
+      BACKUP_BUCKET: polaris-backup-staging
+      RECIPIENTS: ops/backup/recipients-staging.txt
+      POSTGRES_IMAGE: postgres:18.6-trixie@sha256:3a4264520e121176619f54ff867d12774bc81e95e7b84db58d63bccdb6144b81
+    steps:
+      # variables are not masked like secrets: a connection or R2 error would print the host and the account id
+      - name: Mask the host and the endpoint
+        env:
+          BACKUP_PGHOST: ${{ vars.BACKUP_PGHOST }}
+          R2_BACKUP_ENDPOINT: ${{ vars.R2_BACKUP_ENDPOINT }}
+        run: |
+          [ -z "$BACKUP_PGHOST" ] || echo "::add-mask::$BACKUP_PGHOST"
+          [ -z "$R2_BACKUP_ENDPOINT" ] || echo "::add-mask::$R2_BACKUP_ENDPOINT"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: The recipients are the reviewed ones
+        env:
+          EXPECTED: ${{ vars.BACKUP_RECIPIENTS_SHA256 }}
+        run: |
+          set -euo pipefail
+          actual=$(sha256sum "$RECIPIENTS" | cut -d' ' -f1)
+          if [ -z "$EXPECTED" ] || [ "$actual" != "$EXPECTED" ]; then
+            echo "::error::$RECIPIENTS does not match BACKUP_RECIPIENTS_SHA256 of the Environment"
+            exit 1
+          fi
+      - name: Install age
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends age
+          age --version
+      - id: stamp
+        name: Stamp
+        run: echo "stamp=$(date -u +%Y%m%dT%H%M%SZ)" >> "$GITHUB_OUTPUT"
+      # The password exists only in this step and reaches the container by name (-e NAME copies it from the
+      # environment), never on a command line. The plaintext lives in /dev/shm, in memory, and is removed by seal.sh.
+      - name: Dump the staging database
+        env:
+          PGHOST: ${{ vars.BACKUP_PGHOST }}
+          PGDATABASE: ${{ vars.BACKUP_PGDATABASE }}
+          PGPASSWORD: ${{ secrets.BACKUP_PGPASSWORD }}
+        run: |
+          set -euo pipefail
+          work=/dev/shm/polaris-backup
+          rm -rf "$work"
+          install -d -m 700 "$work"
+          docker run --rm --user "$(id -u):$(id -g)" \
+            -e PGHOST -e PGDATABASE -e PGPASSWORD -e BACKUP_ENVIRONMENT \
+            -e PGUSER=polaris_backup_reader -e PGSSLMODE=verify-full -e PGCHANNELBINDING=require \
+            -e PGSSLROOTCERT=/etc/ssl/certs/ca-certificates.crt -e PGCONNECT_TIMEOUT=30 \
+            -e PGAPPNAME=polaris-backup -e HOME=/tmp \
+            -v /etc/ssl/certs/ca-certificates.crt:/etc/ssl/certs/ca-certificates.crt:ro \
+            -v "$GITHUB_WORKSPACE/scripts/backup:/backup:ro" \
+            -v "$work:/out" \
+            --entrypoint bash "$POSTGRES_IMAGE" /backup/dump.sh /out
+      - name: Seal
+        env:
+          STAMP: ${{ steps.stamp.outputs.stamp }}
+        run: bash scripts/backup/seal.sh /dev/shm/polaris-backup "$RECIPIENTS" "$RUNNER_TEMP/$STAMP.tar.age"
+      # The R2 token exists only in this step: Object Read & Write on this bucket only.
+      - name: Upload and retention
+        env:
+          STAMP: ${{ steps.stamp.outputs.stamp }}
+          R2_BACKUP_BUCKET: ${{ env.BACKUP_BUCKET }}
+          R2_BACKUP_ENDPOINT: ${{ vars.R2_BACKUP_ENDPOINT }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_BACKUP_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_BACKUP_SECRET_ACCESS_KEY }}
+        run: bash scripts/backup/upload.sh "$RUNNER_TEMP/$STAMP.tar.age" "$STAMP"
+      - name: Remove the plaintext and the sealed file
+        if: always()
+        run: rm -rf /dev/shm/polaris-backup "$RUNNER_TEMP"/*.tar.age
+      # One open issue while the backup fails, closed by the next success; generic text only (public repository).
+      - name: Close the failure issue
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          for number in $(gh issue list --repo "$GITHUB_REPOSITORY" --label backup-staging --state open --json number --jq '.[].number'); do
+            gh issue close "$number" --repo "$GITHUB_REPOSITORY" --comment "The staging backup succeeded again: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          done
+      - name: Open or update the failure issue
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          run_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          open=$(gh issue list --repo "$GITHUB_REPOSITORY" --label backup-staging --state open --json number --jq '.[0].number // empty')
+          if [ -n "$open" ]; then
+            gh issue comment "$open" --repo "$GITHUB_REPOSITORY" --body "Failed again on $(date -u +%Y-%m-%d): $run_url"
+          else
+            gh issue create --repo "$GITHUB_REPOSITORY" --label backup-staging \
+              --title "The staging backup failed" \
+              --body "The daily staging backup failed on $(date -u +%Y-%m-%d): $run_url. Runbook: docs/runbooks/backup.md."
+          fi
