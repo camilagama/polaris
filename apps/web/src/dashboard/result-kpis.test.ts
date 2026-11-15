@@ -4,6 +4,7 @@ import {
   comparisonPeriod,
   untilText,
   resultChipPeriod,
+  type ResultKpiCards,
   resultKpis,
 } from "./result-kpis";
 import { addDays } from "./result-period";
@@ -365,6 +366,38 @@ describe("the cards of the Resultado (v7 § 8)", () => {
 
     it("keeps 'Nenhuma venda ainda' at rest for an open period without sales", () => {
       expect(read(null, 0).sales.count).toBe("Nenhuma venda ainda");
+    });
+  });
+
+  describe("the Ticket médio at rest when the server sends no ticket for a period that has sales", () => {
+    const atRest = (cards: Partial<ResultKpiCards>) =>
+      resultKpis({
+        cards: { ...CARDS, ...cards },
+        daily: days("2026-10-01", 25),
+        period: OCTOBER,
+        previous: null,
+        previousSales: null,
+        today: "2026-10-25",
+      }).read(null).ticket;
+
+    // Known limit: the period has sales, so "no período" denies what the Vendas card counts. Pinned as it is today; the
+    // server sends no ticket only for a period with none, so the screen does not meet it
+    it("shows the dash and says 'Sem vendas no período' (the words of a period with none)", () => {
+      const ticket = atRest({ ticket: null });
+      expect(ticket.value).toBeNull();
+      expect(ticket.count).toBe("Sem vendas no período");
+    });
+
+    it("says nothing under the server's ticket when it is sent", () => {
+      const ticket = atRest({});
+      expect(ticket.value).toBe("50.00");
+      expect(ticket.count).toBe("");
+    });
+
+    it("says it for a period with no sale at all, the same words", () => {
+      const ticket = atRest({ salesCount: 0, ticket: null });
+      expect(ticket.value).toBeNull();
+      expect(ticket.count).toBe("Sem vendas no período");
     });
   });
 
