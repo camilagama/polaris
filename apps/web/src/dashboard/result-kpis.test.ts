@@ -327,6 +327,47 @@ describe("the cards of the Resultado (v7 § 8)", () => {
     });
   });
 
+  describe("a day read before the first sale of a period that has sales", () => {
+    const firstSaleOn = 5;
+    const read = (index: number | null, salesCount = 3) =>
+      resultKpis({
+        cards: { ...CARDS, salesCount },
+        daily: days("2026-10-01", 31, (day) =>
+          day < firstSaleOn || salesCount === 0
+            ? { netSales: "0.00", salesCount: 0 }
+            : { netSales: "50.00", salesCount: 1 }
+        ),
+        period: OCTOBER,
+        previous: null,
+        previousSales: null,
+        today: "2026-10-25",
+      }).read(index);
+
+    it("says only 'Sem vendas' in the sales count, not 'no período'", () => {
+      expect(read(2).sales.count).toBe("Sem vendas");
+    });
+
+    it("says only 'Sem vendas' under the ticket dash", () => {
+      const { ticket } = read(2);
+      expect(ticket.value).toBeNull();
+      expect(ticket.count).toBe("Sem vendas");
+    });
+
+    it("keeps the count of sales for a day read after the first sale", () => {
+      expect(read(7).sales.count).toBe("3 vendas");
+      expect(read(7).ticket.count).toBe("");
+    });
+
+    it("keeps 'Sem vendas no período' when the period has no sale at all", () => {
+      expect(read(2, 0).sales.count).toBe("Sem vendas no período");
+      expect(read(2, 0).ticket.count).toBe("Sem vendas no período");
+    });
+
+    it("keeps 'Nenhuma venda ainda' at rest for an open period without sales", () => {
+      expect(read(null, 0).sales.count).toBe("Nenhuma venda ainda");
+    });
+  });
+
   it("says the period before had no sale instead of a percent over nothing", () => {
     const rest = resultKpis({
       cards: CARDS,

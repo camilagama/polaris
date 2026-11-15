@@ -255,6 +255,9 @@ interface Prior {
   sum: Cumulative | undefined;
 }
 
+/** Said by the sales and ticket cards, and by the range control, when the day read has no sale yet in a period that has. */
+export const NO_SALES_UNTIL_DAY = "Sem vendas";
+
 interface ReadContext {
   /** The period the cards read, to say what its chips compare with. */
   period: Period;
@@ -275,9 +278,16 @@ interface ReadContext {
   whole: string;
 }
 
-/** "ainda" only for a period that is still open at its end; a closed one, or a day of it already gone, has none. */
-function noSalesText(open: boolean): string {
-  return open ? "Nenhuma venda ainda" : "Sem vendas no período";
+/**
+ * What a reading with no sale says. "ainda" only for a period that is still open at its end. A day read before the
+ * first sale of a period that has sales says only what is true of the day: the dates beside it give the reach, and
+ * "no período" would deny the sales the card itself counts. A closed period, or a day of a period with none, has none.
+ */
+function noSalesText(open: boolean, dayOfPeriodWithSales: boolean): string {
+  if (open) {
+    return "Nenhuma venda ainda";
+  }
+  return dayOfPeriodWithSales ? NO_SALES_UNTIL_DAY : "Sem vendas no período";
 }
 
 function salesReading({
@@ -305,7 +315,10 @@ function salesReading({
   }
   const count = atRest ? cards.salesCount : sum.count;
   return {
-    count: count === 0 ? noSalesText(open) : salesCountText(count),
+    count:
+      count === 0
+        ? noSalesText(open, !atRest && cards.salesCount > 0)
+        : salesCountText(count),
     date: range,
     delta,
     help: `Vendas líquidas de ${range}.${compare}`,
@@ -384,7 +397,8 @@ function ticketReading({
     value = ticket === null ? null : Money.fromMinorUnits(ticket).toString();
   }
   return {
-    count: value === null ? "Sem vendas no período" : "",
+    count:
+      value === null ? noSalesText(false, !atRest && cards.salesCount > 0) : "",
     date: range,
     delta,
     help: ticketHelp(range, delta ? priorSales.range : null),

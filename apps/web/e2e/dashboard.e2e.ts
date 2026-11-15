@@ -59,6 +59,8 @@ interface FixtureExpense {
 interface FixtureMonth {
   expenses: FixtureExpense[];
   sales: FixtureSale[];
+  /** Zero-based day of the period that carries the sales and what they cost; the first day when absent. */
+  saleDay?: number;
 }
 
 /** October: every cost and fee is known and an expense is recorded. */
@@ -298,7 +300,7 @@ function dailyOf(data: FixtureMonth, from: string, to: string) {
     linked;
   const dates = datesBetween(from, to);
   return dates.map((date, index) => {
-    const first = index === 0;
+    const first = index === (data.saleDay ?? 0);
     const last = index === dates.length - 1;
     const costs = (first ? salesCosts : 0) + (last ? operating : 0);
     const result = (first ? net + surcharges : 0) - costs;
@@ -3525,6 +3527,47 @@ test.describe("ler um dia no minigráfico do Resultado: a data toma o lugar do c
     await slider.blur();
     await expect(page.locator("[data-kpi-date]")).toHaveCount(0);
     await expect(sales.locator("[data-kpi-delta]")).toHaveCount(1);
+  });
+
+  test("um dia lido antes da primeira venda de um mês com vendas diz só “Sem vendas”, no texto e na fala do minigráfico, e o link do Histórico sai (KPI-2)", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 800, width: 1280 });
+    await withSideMenu(page, "recolhida");
+    const server = new FakeReportServer();
+    server.fixture = {
+      ...FIXTURE,
+      "2026-10": { ...COMPLETE_MONTH, saleDay: 4 },
+    };
+    await openDashboard(page, server);
+    await expect(kpiCards(page)).toHaveCount(4);
+    const sales = card(page, CARD.netSales);
+    const ticket = card(page, CARD.ticket);
+    const link = sales.locator("[data-kpi-sales-link]");
+    await expect(link).toHaveCount(1);
+    const before = await resultHeights(page);
+    const slider = sales.getByRole("slider");
+    await slider.focus();
+    await slider.press("Home");
+    await expect(sales.locator("[data-kpi-date]")).toHaveText("Até 01/10");
+    await expect(sales).toContainText("Sem vendas");
+    await expect(sales).not.toContainText("no período");
+    await expect(ticket).toContainText("Sem vendas");
+    await expect(ticket).not.toContainText("no período");
+    await expect(link).toHaveCount(0);
+    await expect(slider).toHaveAttribute(
+      "aria-valuetext",
+      "Até 01/10: R$ 0,00. Sem vendas"
+    );
+    await expect(ticket.getByRole("slider")).toHaveAttribute(
+      "aria-valuetext",
+      "Até 01/10: sem valor. Sem vendas"
+    );
+    expectSameHeights(await resultHeights(page), before);
+    await slider.press("End");
+    await expect(sales).not.toContainText("Sem vendas");
+    await slider.blur();
+    await expect(link).toHaveCount(1);
   });
 
   test("dois dias não desenham minigráfico em nenhum cartão; três desenham nos de valor, e a Margem nunca", async ({
