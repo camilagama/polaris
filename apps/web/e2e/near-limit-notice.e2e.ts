@@ -212,6 +212,25 @@ test.describe("Produtos", () => {
     }
   });
 
+  test("com o limite do Pro na leitura, 'No Pro: até 2.000 variantes.' vem antes do link", async ({
+    page,
+  }) => {
+    await openApp(page, "/products", {
+      answers: productAnswers(),
+      plan: () => (route) =>
+        route.fulfill(
+          rpc({
+            ...planOf("free", { images: 0, variants: 47 }),
+            proLimits: { goals: 3, images: 5000, variants: 2000 },
+          })
+        ),
+      use: { images: 0, variants: 47 },
+    });
+    await expect(line(page)).toContainText(
+      "Você usa 47 de 50 variantes no plano Free. No Pro: até 2.000 variantes. Conhecer o Pro"
+    );
+  });
+
   test("a leitura atrasada não move a lista nem o rodapé: a linha entra no fim", async ({
     page,
   }) => {

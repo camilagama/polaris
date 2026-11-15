@@ -25,6 +25,7 @@ import {
   limitHelpFor,
   limitUsageText,
   nearLimitFor,
+  nearLimitProText,
   type NearLimitSubject,
   type NearLimitView,
   nearLimitText,
@@ -282,12 +283,15 @@ export function NearLimitNotice({
   if (view === null || hidden) {
     return null;
   }
+  const sentences = [nearLimitText(view), nearLimitProText(view)]
+    .filter((sentence) => sentence !== null)
+    .join(" ");
   return (
     <p
       className="text-muted-foreground text-support"
       data-near-limit={view.kind}
     >
-      {nearLimitText(view)}{" "}
+      {sentences}{" "}
       <a
         className="focus-ring touch-hit rounded-sm text-foreground underline decoration-input underline-offset-4 hover:decoration-foreground"
         href={SUBSCRIPTION_HREF}

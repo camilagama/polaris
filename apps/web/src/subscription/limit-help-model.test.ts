@@ -7,6 +7,7 @@ import {
   limitUsageText,
   type NearLimitSubject,
   nearLimitFor,
+  nearLimitProText,
   nearLimitText,
 } from "./limit-help-model";
 
@@ -229,6 +230,31 @@ describe("o aviso de que o limite está perto", () => {
     expect(nearLimitFor({ ...base, billingSelfService: false })).toBeNull();
     expect(nearLimitFor({ ...base, canManageBilling: false })).toBeNull();
     expect(nearLimitFor({ ...base, plan: null })).toBeNull();
+  });
+
+  it("o limite do Pro entra só quando a leitura o traz, e é o da mesma contagem", () => {
+    const base = {
+      billingSelfService: true,
+      canManageBilling: true,
+      subject: "images" as const,
+    };
+    const plan = {
+      ...planWith("free", 47),
+      proLimits: { goals: 3, images: 5000, variants: 2000 },
+    };
+    const withPro = nearLimitFor({ ...base, plan });
+    expect(withPro?.proMax).toBe(5000);
+    expect(withPro && nearLimitProText(withPro)).toBe(
+      "No Pro: até 5.000 imagens."
+    );
+    const without = nearLimitFor({ ...base, plan: planWith("free", 47) });
+    expect(without?.proMax).toBeNull();
+    expect(without && nearLimitProText(without)).toBeNull();
+    const unlimited = nearLimitFor({
+      ...base,
+      plan: { ...plan, proLimits: { goals: 3, images: null, variants: 2000 } },
+    });
+    expect(unlimited && nearLimitProText(unlimited)).toBeNull();
   });
 
   it("sem limite no plano, ou limite zero, não avisa", () => {

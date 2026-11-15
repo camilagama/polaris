@@ -50,7 +50,8 @@ export function planRoom(
   return Math.max(max - plan.usage.variants, 0);
 }
 
-type PlanRead = Pick<BillingPlanView, "limits" | "state" | "usage">;
+type PlanRead = Pick<BillingPlanView, "limits" | "state" | "usage"> &
+  Partial<Pick<BillingPlanView, "proLimits">>;
 
 function usageOf(plan: PlanRead, subject: LimitSubject): LimitUsage | null {
   if (subject !== "goals" && subject !== "images" && subject !== "variants") {
@@ -111,6 +112,8 @@ export type NearLimitSubject = "images" | "variants";
 /** "near": the share was reached; "reached": the limit was (or it was passed, a Free store that left the Pro). */
 export interface NearLimitView {
   kind: "near" | "reached";
+  /** The Pro's limit for the same count, when the read carried the catalog's (`proLimits`) and the Pro has one. */
+  proMax: number | null;
   usage: LimitUsage;
 }
 
@@ -133,7 +136,20 @@ export function nearLimitFor(input: {
   if (usage.max <= 0 || usage.used < Math.ceil(usage.max * NEAR_LIMIT_SHARE)) {
     return null;
   }
-  return { kind: usage.used >= usage.max ? "reached" : "near", usage };
+  return {
+    kind: usage.used >= usage.max ? "reached" : "near",
+    proMax: input.plan?.proLimits?.[usage.subject] ?? null,
+    usage,
+  };
+}
+
+/** "No Pro: até 2.000 variantes.", only when the read brought the Pro's limit; no sentence otherwise. */
+export function nearLimitProText(view: NearLimitView): string | null {
+  if (view.proMax === null) {
+    return null;
+  }
+  const [, many] = SUBJECT_WORDS[view.usage.subject];
+  return `No Pro: até ${view.proMax.toLocaleString("pt-BR")} ${many}.`;
 }
 
 /** "Você usa 47 de 50 variantes no plano Free." or "Você chegou ao limite de 50 variantes do plano Free." */

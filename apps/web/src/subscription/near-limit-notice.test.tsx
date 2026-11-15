@@ -7,10 +7,12 @@ vi.mock("../lib/orpc", () => ({ orpcClient: {} }));
 
 const near: NearLimitView = {
   kind: "near",
+  proMax: null,
   usage: { max: 50, subject: "variants", used: 47 },
 };
 const reached: NearLimitView = {
   kind: "reached",
+  proMax: null,
   usage: { max: 50, subject: "images", used: 50 },
 };
 const draw = (view: NearLimitView | null, hidden = false) =>
@@ -25,6 +27,17 @@ describe("a linha de aviso do limite perto", () => {
       markup.indexOf("Conhecer o Pro")
     );
     expect(markup.endsWith("Conhecer o Pro</a></p>")).toBe(true);
+  });
+
+  it("com o limite do Pro na leitura, 'No Pro: até 2.000 variantes.' vem antes do link; sem ele, a frase não existe", () => {
+    const withPro = draw({ ...near, proMax: 2000 });
+    expect(withPro).toContain(
+      "Você usa 47 de 50 variantes no plano Free. No Pro: até 2.000 variantes. "
+    );
+    expect(withPro.indexOf("No Pro:")).toBeLessThan(
+      withPro.indexOf("Conhecer o Pro")
+    );
+    expect(draw(near)).not.toContain("No Pro:");
   });
 
   it("no limite: diz que chegou, sem prometer nada sobre as vendas", () => {
