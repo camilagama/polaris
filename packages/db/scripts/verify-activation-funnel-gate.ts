@@ -2268,6 +2268,9 @@ async function run() {
         const volume = await client.query<{ sales: number; stores: number }>(
           "SELECT (SELECT count(*)::int FROM public.organizations) AS stores, (SELECT count(*)::int FROM public.sales) AS sales"
         );
+        // the route reads with jit off (readActivationFunnel in admin-diagnostics-repository.ts), so the median checked
+        // against the limit and the plan are of that setting; the comparison below changes it and puts it back
+        await client.query("SET LOCAL jit = off");
         const durations: number[] = [];
         for (const _ of times(3, () => 0)) {
           const started = performance.now();
@@ -2292,7 +2295,15 @@ async function run() {
             );
           }
         }
-        await client.query("RESET jit");
+        await client.query("SET LOCAL jit = off");
+        const jitNow = await client.query<{ jit: string }>(
+          "SELECT current_setting('jit') AS jit"
+        );
+        assert.equal(
+          jitNow.rows[0]?.jit,
+          "off",
+          "the call whose plan auto_explain logs runs with jit off, as the route reads"
+        );
         notes.push(
           `activation-funnel measure of jit: available ${jit.rows[0]?.available}; 26 weeks (after one warm-up call, interleaved) with jit on ${jitOn.map((ms) => ms.toFixed(1)).join(" / ")} ms, with jit off ${jitOff.map((ms) => ms.toFixed(1)).join(" / ")} ms`
         );
@@ -2312,7 +2323,7 @@ async function run() {
         );
         const execution = EXECUTION_TIME.exec(plan)?.[1];
         notes.push(
-          `activation-funnel measure: ${volume.rows[0]?.stores} stores, ${volume.rows[0]?.sales} sales in the database; call ${durations.map((ms) => ms.toFixed(1)).join(" / ")} ms (median ${median.toFixed(1)} ms); query inside ${execution ?? "?"} ms`
+          `activation-funnel measure (jit off, as the route reads): ${volume.rows[0]?.stores} stores, ${volume.rows[0]?.sales} sales in the database; call ${durations.map((ms) => ms.toFixed(1)).join(" / ")} ms (median ${median.toFixed(1)} ms); query inside ${execution ?? "?"} ms`
         );
         for (const line of plan.split("\n")) {
           if (!line.startsWith("Query Text") && line.trim().length > 0) {
@@ -2321,10 +2332,10 @@ async function run() {
         }
         assert.ok(
           median < 5000,
-          `the funnel answers in under 5 s with 1,000 stores and 50,000 sales (${median.toFixed(1)} ms)`
+          `the funnel answers in under 5 s with jit off, as the route reads, with 1,000 stores and 50,000 sales (${median.toFixed(1)} ms)`
         );
         tests.push(
-          `with 1,000 stores more and 50,000 sales (rolled back), the call takes ${median.toFixed(1)} ms (median of 3) and auto_explain gives the plan of the query inside (gate notes)`
+          `with 1,000 stores more and 50,000 sales (rolled back), the call takes ${median.toFixed(1)} ms with jit off, as the route reads (median of 3) and auto_explain gives the plan of the query inside (gate notes)`
         );
       } finally {
         await client.query("ROLLBACK");
