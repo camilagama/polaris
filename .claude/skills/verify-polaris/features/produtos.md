@@ -9,6 +9,7 @@ Produtos (`/products`) é o catálogo: a lista de produtos (ativos e arquivados)
 - `produto-ver-estoque` no rodapé do diálogo de um produto que existe, o link "Ver estoque" (só com `inventory:read`) fecha o diálogo (o que foi digitado fica guardado, como no Esc) e abre o [Estoque](estoque.md) sem recarregar a página, com a busca já com o nome do produto. O diálogo abre também por `/products?produto=<id>`, e com `&variante=<id>` o campo "SKU · <variante>" da aba Variantes recebe o foco; é o caminho de volta do nome do produto na linha do Estoque.
 - `produto-criar` Dialog "Novo produto": nome, preço de tabela, quantidade e custo; "Mais detalhes" para categoria e descrição.
 - `produto-limite` plano Free no teto de 50 variantes: o Dialog recusa com "Seu plano chegou ao limite de variantes. Nada foi cadastrado."
+- `produto-aviso-limite` plano Free a partir de 90% do limite (45 de 50): linha de texto de apoio `[data-near-limit]` no fim da lista de Produtos, abaixo dos botões do formulário de variantes e abaixo de "Enviar imagem" ("Você usa 47 de 50 variantes no plano Free." + "Conhecer o Pro"; no limite, "Você chegou ao limite de 50 variantes do plano Free."). Só o dono, só online; nunca junto da recusa.
 - `produto-importar` Dialog "Importar planilha", em 4 passos: Arquivo, Prévia, Importando, Resultado.
 - `produtos-busca` `searchbox "Buscar produto"`; sem resultado: "Nenhum produto com “…”".
 - `categorias` aba Categorias: "Nova categoria", "Adicionar categoria", abas "Ativas", "Arquivadas" e "Removidas".

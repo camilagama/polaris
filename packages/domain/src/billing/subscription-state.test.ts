@@ -17,6 +17,7 @@ import {
   type TransitionContext,
   TRIAL_DAYS,
 } from "./subscription-state";
+import { trialAccessEndsAt } from "./trial-access";
 
 const now = new Date("2026-10-14T12:00:00.000Z");
 const DAY = 86_400_000;
@@ -257,10 +258,20 @@ describe("defence against stale, early and malformed facts", () => {
       expect(
         rejection(() => applyBillingEvent(at(state, days(2)), event, ctx()))
       ).toBe("event_not_due");
-      // at the end instant itself the access is over
+      // at the end instant itself the access is over (a trial's with its slack)
+      const end = state === "trialing" ? trialAccessEndsAt(now) : now;
+      expect(
+        rejection(() =>
+          applyBillingEvent(
+            at(state, now),
+            event,
+            ctx(false, new Date(end.getTime() - 1))
+          )
+        )
+      ).toBe("event_not_due");
       expect(
         FREE_STATE_NAMES.has(
-          applyBillingEvent(at(state, now), event, ctx()).state
+          applyBillingEvent(at(state, now), event, ctx(false, end)).state
         )
       ).toBe(true);
     }

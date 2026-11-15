@@ -182,6 +182,8 @@ const gates: Gate[] = [
   ["account-key", "verify-account-key-gate.ts"],
   // size ceilings of the catalog in code points, the domain numbers (0107): option value 80, SKU 64
   ["catalog-size-ceilings", "verify-catalog-size-ceilings-gate.ts"],
+  // deleting a product: only an archived one, the hourly cap per store, the database's clock, READ COMMITTED, the race for the last place
+  ["product-delete", "verify-product-delete-gate.ts"],
   ["offline-lease", "verify-offline-lease-gate.ts"],
   ["sync-log", "verify-sync-log-gate.ts"],
   // the cover of a product (the image of lowest position): the reads, one sync change per image command, the plan
@@ -443,6 +445,7 @@ const suites: Record<string, string[]> = {
     "auth-tables-row-security",
     "account-key",
     "catalog-size-ceilings",
+    "product-delete",
     "offline-lease",
     "sync-log",
     "product-cover",

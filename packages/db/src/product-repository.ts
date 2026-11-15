@@ -6,11 +6,14 @@ import {
   normalizeProductVariantConfiguration,
   normalizeProductVariantSku,
   normalizeVariantListPrice,
+  PRODUCT_DELETE_LIMIT_PER_HOUR,
+  PRODUCT_DELETE_WINDOW_SECONDS,
   PRODUCT_VARIANT_OPTION_NAMES,
   ProductCategoryUnavailableError,
   ProductDefaultVariantSkuConflictError,
   ProductDefaultVariantStockHistoryConflictError,
   ProductDeletedError,
+  ProductDeleteRateLimitedError,
   ProductIdConflictError,
   type ProductLifecycleAction,
   ProductNotFoundError,
@@ -27,10 +30,12 @@ import {
 import {
   and,
   asc,
+  desc,
   eq,
   gt,
   isNotNull,
   isNull,
+  notExists,
   type SQL,
   sql,
 } from "drizzle-orm";
@@ -585,6 +590,115 @@ export async function updateProduct(
   return { changed: true, product };
 }
 
+/**
+ * The zero-balance rule of a deletion, written once: a variant of the product holds stock. A product with no
+ * materialized balance row holds none. The deletion refuses on it and the plan read's `usage.freeable` counts the
+ * products where it is absent, so the number a screen shows follows what the deletion accepts on balance (the hourly cap of deletions is a separate, time-bound refusal).
+ */
+function holdsStock(
+  organizationId: string,
+  productId: SQL | string | typeof products.id
+): SQL {
+  return and(
+    eq(inventoryBalances.organizationId, organizationId),
+    eq(inventoryBalances.productId, productId),
+    gt(inventoryBalances.quantity, 0)
+  ) as SQL;
+}
+
+async function hasPositiveBalance(
+  transaction: TenantRequestTransaction,
+  identity: TenantRequestIdentity,
+  productId: string
+): Promise<boolean> {
+  const [positiveBalance] = await transaction
+    .select({ variantId: inventoryBalances.variantId })
+    .from(inventoryBalances)
+    .where(holdsStock(identity.organizationId, productId))
+    .limit(1);
+  return positiveBalance !== undefined;
+}
+
+/**
+ * What deleting would free right now: the archived products, not deleted, that the deletion accepts on the balance
+ * rule (`holdsStock`), and their variants. It is the plan read's `usage.freeable`.
+ */
+export async function countFreeableArchivedProducts(
+  transaction: TenantRequestTransaction,
+  organizationId: string
+): Promise<{ products: number; variants: number }> {
+  const [row] = await transaction
+    .select({
+      products: sql<number>`count(distinct ${products.id})::int`,
+      variants: sql<number>`count(${productVariants.id})::int`,
+    })
+    .from(products)
+    .leftJoin(
+      productVariants,
+      and(
+        eq(productVariants.organizationId, products.organizationId),
+        eq(productVariants.productId, products.id)
+      )
+    )
+    .where(
+      and(
+        eq(products.organizationId, organizationId),
+        isNotNull(products.archivedAt),
+        isNull(products.deletedAt),
+        notExists(
+          transaction
+            .select({ one: sql`1` })
+            .from(inventoryBalances)
+            .where(holdsStock(organizationId, products.id))
+        )
+      )
+    );
+  return { products: row?.products ?? 0, variants: row?.variants ?? 0 };
+}
+
+/**
+ * Caps the completed deletions of one organization in the last hour. The count runs after the organization's
+ * advisory lock, itself taken after the product row lock, so two deletions never both read 49. It needs READ
+ * COMMITTED: a snapshot taken before the lock would not see the deletion that committed while this one waited.
+ * Both the window and `deleted_at` use the database clock; a refused attempt writes nothing, so it spends no quota.
+ */
+async function assertDeleteQuotaAvailable(
+  transaction: TenantRequestTransaction,
+  identity: TenantRequestIdentity
+): Promise<void> {
+  const locked = await transaction.execute(
+    sql`SELECT pg_advisory_xact_lock(hashtextextended(${`polaris.product.delete:${identity.organizationId}`}::text, 0)), current_setting('transaction_isolation') AS level`
+  );
+  if (
+    (locked.rows[0] as { level?: string } | undefined)?.level !==
+    "read committed"
+  ) {
+    throw new Error("product_delete_requires_read_committed");
+  }
+
+  const window = sql`make_interval(secs => ${PRODUCT_DELETE_WINDOW_SECONDS}::int)`;
+  const recent = await transaction
+    .select({
+      retryAfterSeconds: sql<number>`extract(epoch from (${products.deletedAt} + ${window} - now()))::float8`,
+    })
+    .from(products)
+    .where(
+      and(
+        eq(products.organizationId, identity.organizationId),
+        gt(products.deletedAt, sql`now() - ${window}`)
+      )
+    )
+    .orderBy(desc(products.deletedAt))
+    .limit(PRODUCT_DELETE_LIMIT_PER_HOUR);
+  if (recent.length < PRODUCT_DELETE_LIMIT_PER_HOUR) {
+    return;
+  }
+  // the slot opens when the limit-th newest deletion leaves the window
+  throw new ProductDeleteRateLimitedError(
+    Number(recent.at(-1)?.retryAfterSeconds)
+  );
+}
+
 async function changeProductLifecycle(
   transaction: TenantRequestTransaction,
   identity: TenantRequestIdentity,
@@ -618,20 +732,10 @@ async function changeProductLifecycle(
   }
 
   if (action === "delete") {
-    const [positiveBalance] = await transaction
-      .select({ variantId: inventoryBalances.variantId })
-      .from(inventoryBalances)
-      .where(
-        and(
-          eq(inventoryBalances.organizationId, identity.organizationId),
-          eq(inventoryBalances.productId, input.id),
-          gt(inventoryBalances.quantity, 0)
-        )
-      )
-      .limit(1);
-    if (positiveBalance) {
+    if (await hasPositiveBalance(transaction, identity, input.id)) {
       throw new ProductStockNotEmptyError();
     }
+    await assertDeleteQuotaAvailable(transaction, identity);
   }
 
   let { archivedAt } = existing;
@@ -641,9 +745,7 @@ async function changeProductLifecycle(
     archivedAt = null;
   }
   const deletedAt =
-    transition.lifecycle === "deleted"
-      ? (existing.deletedAt ?? new Date())
-      : existing.deletedAt;
+    transition.lifecycle === "deleted" ? sql`now()` : existing.deletedAt;
   const [product] = await transaction
     .update(products)
     .set({

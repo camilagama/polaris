@@ -1,5 +1,6 @@
 import { localDate } from "../calendar";
 import { expect, openJourney, runT0, test } from "../fixtures";
+import { waitForOfflineShell } from "../pages/casca-offline";
 import { movements, queuedCommands } from "../pages/fila-e-estoque";
 import { fillSale } from "../pages/venda";
 import { seedProduct, seedStock } from "../seed";
@@ -46,6 +47,7 @@ test("venda com saldo curto sem conexão: o link abre a entrada com a quantidade
   await expect(
     page.getByRole("status").filter({ hasText: "Tudo sincronizado" })
   ).toBeVisible({ timeout: 30_000 });
+  await waitForOfflineShell(page);
   await page.context().setOffline(true);
   await expect(
     page.getByRole("status").filter({ hasText: "Sem conexão" })

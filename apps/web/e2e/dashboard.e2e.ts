@@ -59,6 +59,8 @@ interface FixtureExpense {
 interface FixtureMonth {
   expenses: FixtureExpense[];
   sales: FixtureSale[];
+  /** Zero-based day of the period that carries the sales and what they cost; the first day when absent. */
+  saleDay?: number;
 }
 
 /** October: every cost and fee is known and an expense is recorded. */
@@ -298,7 +300,7 @@ function dailyOf(data: FixtureMonth, from: string, to: string) {
     linked;
   const dates = datesBetween(from, to);
   return dates.map((date, index) => {
-    const first = index === 0;
+    const first = index === (data.saleDay ?? 0);
     const last = index === dates.length - 1;
     const costs = (first ? salesCosts : 0) + (last ? operating : 0);
     const result = (first ? net + surcharges : 0) - costs;
@@ -2199,6 +2201,262 @@ test.describe("as abas Resultado e Metas e o endereço (AC-13 a AC-15)", () => {
   });
 });
 
+/** Reloads the page the way a person does: the lab asks who is signed in again when the page loads. */
+async function reloadDashboard(page: Page, user: string) {
+  await page.reload();
+  await page.getByLabel("Usuário").fill(user);
+  await page.getByRole("button", { exact: true, name: "Iniciar" }).click();
+  await expect(
+    page.getByRole("heading", {
+      exact: true,
+      includeHidden: true,
+      name: "Resultado",
+    })
+  ).toBeVisible({ timeout: 20_000 });
+}
+
+const lastPeriod = (server: FakeReportServer) => server.periods.at(-1);
+const OCTOBER = { from: "2026-10-01", to: "2026-10-31" };
+const LAST_30 = { from: "2026-09-15", to: "2026-10-14" };
+
+test.describe("o período no endereço (L2-11 a, AC-3.1 a AC-3.7)", () => {
+  test("o padrão não escreve nada; um atalho escreve só o nome e recarregar o mantém, sem passo novo no histórico (AC-3.1, AC-3.2, AC-3.6)", async ({
+    page,
+  }) => {
+    const server = new FakeReportServer();
+    const user = await openDashboard(page, server);
+    expect(search(page).has("periodo")).toBe(false);
+    expect(search(page).has("de")).toBe(false);
+    const steps = await page.evaluate(() => window.history.length);
+
+    await choosePreset(page, "Últimos 30 dias");
+    await expect.poll(() => search(page).get("periodo")).toBe("30-dias");
+    await choosePreset(page, "Mês passado");
+    await expect.poll(() => search(page).get("periodo")).toBe("mes-passado");
+    await choosePreset(page, "Últimos 30 dias");
+    expect(await page.evaluate(() => window.history.length)).toBe(steps);
+    expect(search(page).has("de")).toBe(false);
+
+    await reloadDashboard(page, user);
+    await expect(periodButton(page)).toBeVisible();
+    await expectPreset(page, "Últimos 30 dias");
+    expect(lastPeriod(server)).toEqual(LAST_30);
+    expect(search(page).get("periodo")).toBe("30-dias");
+
+    await choosePreset(page, "Este mês");
+    await expect.poll(() => search(page).has("periodo")).toBe(false);
+    expect(await page.evaluate(() => window.history.length)).toBe(steps);
+  });
+
+  test("um intervalo escreve as duas datas, nada mais, e recarregar o mantém (AC-3.1, AC-3.6)", async ({
+    page,
+  }) => {
+    const server = new FakeReportServer();
+    const user = await openDashboard(page, server);
+    await rangeFields(page, "2026-10-05", "2026-10-12");
+    await expect.poll(() => search(page).get("de")).toBe("2026-10-05");
+    expect(search(page).get("ate")).toBe("2026-10-12");
+    expect(search(page).has("periodo")).toBe(false);
+    expect(page.url()).toContain("&de=2026-10-05&ate=2026-10-12");
+
+    await reloadDashboard(page, user);
+    await expect(periodButton(page)).toBeVisible();
+    await expectPreset(page, "Período");
+    expect(lastPeriod(server)).toEqual({
+      from: "2026-10-05",
+      to: "2026-10-12",
+    });
+    expect(search(page).get("de")).toBe("2026-10-05");
+    expect(search(page).get("ate")).toBe("2026-10-12");
+  });
+
+  test("o endereço de outra pessoa abre no período dele: atalho, intervalo, e o intervalo ganha quando vêm juntos (AC-3.1, AC-3.3)", async ({
+    page,
+  }) => {
+    const server = new FakeReportServer();
+    await openDashboard(page, server, "&periodo=30-dias");
+    await expectPreset(page, "Últimos 30 dias");
+    expect(server.periods[0]).toEqual(LAST_30);
+
+    const together = new FakeReportServer();
+    await openDashboard(
+      page,
+      together,
+      "&periodo=30-dias&de=2026-10-05&ate=2026-10-12&x=1"
+    );
+    await expectPreset(page, "Período");
+    expect(together.periods[0]).toEqual({
+      from: "2026-10-05",
+      to: "2026-10-12",
+    });
+    await expect.poll(() => search(page).has("periodo")).toBe(false);
+    expect(search(page).get("x")).toBe("1");
+  });
+
+  test("?periodo=este-ano abre Este ano, lê de 1º de janeiro até hoje por mês e o endereço guarda o atalho (AC-3.1)", async ({
+    page,
+  }) => {
+    const server = new MonthlyReportServer();
+    server.fixture = { ...FIXTURE, "2026-01": COMPLETE_MONTH };
+    await openDashboard(page, server, "&periodo=este-ano&x=1");
+    await expectPreset(page, "Este ano");
+    expect(server.periods[0]).toEqual({ from: "2026-01-01", to: TODAY });
+    await expect(
+      page.getByRole("region", { name: "Vendas × custos por mês" })
+    ).toBeVisible();
+    await expect(card(page, CARD.netSales)).toContainText("R$ 130,00");
+    await expect(
+      card(page, CARD.netSales).getByRole("slider")
+    ).toHaveAccessibleName("Vendas líquidas, acumulado por mês");
+    expect(search(page).get("periodo")).toBe("este-ano");
+    expect(search(page).get("x")).toBe("1");
+  });
+
+  test("?periodo=este-mes explícito abre o padrão e o endereço perde o atalho (AC-3.1, AC-3.2)", async ({
+    page,
+  }) => {
+    const server = new FakeReportServer();
+    await openDashboard(page, server, "&periodo=este-mes&x=1");
+    await expectPreset(page, "Este mês");
+    expect(server.periods[0]).toEqual(OCTOBER);
+    await expect(card(page, CARD.netSales)).toContainText("R$ 130,00");
+    await expect.poll(() => search(page).has("periodo")).toBe(false);
+    expect(search(page).get("x")).toBe("1");
+  });
+
+  for (const extra of [
+    "&periodo=ontem",
+    "&de=2026-10-14&ate=2026-10-01",
+    "&de=abc&ate=def",
+    "&de=2026-10-01",
+    "&de=2025-01-01&ate=2026-10-14",
+  ]) {
+    test(`endereço com período inválido (${extra}) abre o padrão, sem tela quebrada, e o endereço volta ao válido (AC-3.3)`, async ({
+      page,
+    }) => {
+      const server = new FakeReportServer();
+      await openDashboard(page, server, `${extra}&x=1`);
+      await expectPreset(page, "Este mês");
+      await expect(card(page, CARD.netSales)).toContainText("R$ 130,00");
+      expect(server.periods).toEqual([OCTOBER]);
+      await expect
+        .poll(() => [...search(page).keys()].sort())
+        .toEqual(["screen", "x"]);
+      await expect(page.getByRole("alert")).toHaveCount(0);
+    });
+  }
+
+  test("sem internet, abrir pelo endereço é escolher no seletor: o mês lido abre pela cópia, o resto só com internet (AC-3.4)", async ({
+    page,
+  }) => {
+    const server = new FakeReportServer();
+    const user = await openDashboard(page, server);
+    await choosePreset(page, "Mês passado");
+    await expect(card(page, CARD.netSales)).toContainText("R$ 100,00");
+    const reads = server.periods.length;
+
+    server.networkDown = true;
+    await signIn(page, user, "&periodo=mes-passado");
+    await expect(copyNotice(page)).toContainText(COPY_NOTICE, {
+      timeout: 15_000,
+    });
+    await expect(card(page, CARD.netSales)).toContainText("R$ 100,00");
+    await expectPreset(page, "Mês passado");
+
+    await signIn(page, user, "&periodo=30-dias");
+    await expect(page.getByRole("alert")).toContainText(
+      "Este período só abre com internet.",
+      { timeout: 15_000 }
+    );
+    await expect(kpiCards(page)).toHaveCount(0);
+    await expectPreset(page, "Últimos 30 dias");
+    expect(search(page).get("periodo")).toBe("30-dias");
+
+    await signIn(page, user, "&de=2026-08-01&ate=2026-08-31");
+    await expect(page.getByRole("alert")).toContainText(
+      "Este período só abre com internet.",
+      { timeout: 15_000 }
+    );
+    await expectPreset(page, "Período");
+    expect(server.periods).toHaveLength(reads);
+  });
+
+  test("a aba Metas guarda o período no endereço, e só o Resultado o lê (AC-3.5)", async ({
+    page,
+  }) => {
+    const server = new FakeReportServer();
+    await openDashboard(page, server, "&aba=metas&periodo=30-dias");
+    await expect(metasTab(page)).toHaveAttribute("aria-selected", "true");
+    await expect(goalsRegion(page)).toBeVisible();
+    await expect(periodChoice(page)).toHaveCount(0);
+    expect(search(page).get("aba")).toBe("metas");
+    expect(search(page).get("periodo")).toBe("30-dias");
+
+    await resultTab(page).click();
+    await expect(periodChoice(page)).toBeVisible();
+    await expectPreset(page, "Últimos 30 dias");
+    expect(lastPeriod(server)).toEqual(LAST_30);
+    expect(search(page).has("aba")).toBe(false);
+    expect(search(page).get("periodo")).toBe("30-dias");
+
+    await metasTab(page).click();
+    expect(search(page).get("aba")).toBe("metas");
+    expect(search(page).get("periodo")).toBe("30-dias");
+  });
+
+  test("o período que o Histórico leva na navegação ganha do endereço, e o endereço passa a dizê-lo (AC-3.1)", async ({
+    page,
+  }) => {
+    const server = new FakeReportServer();
+    const user = await openDashboard(page, server, "&periodo=30-dias");
+    await page.evaluate(() => {
+      window.history.replaceState(
+        {
+          ...window.history.state,
+          resultPeriod: { from: "2026-10-05", to: "2026-10-12" },
+        },
+        ""
+      );
+    });
+    const reads = server.periods.length;
+
+    await reloadDashboard(page, user);
+    await expect(periodButton(page)).toBeVisible();
+    await expectPreset(page, "Período");
+    expect(server.periods.at(reads)).toEqual({
+      from: "2026-10-05",
+      to: "2026-10-12",
+    });
+    await expect.poll(() => search(page).get("de")).toBe("2026-10-05");
+    expect(search(page).get("ate")).toBe("2026-10-12");
+    expect(search(page).has("periodo")).toBe(false);
+  });
+
+  test("?meta=nova com um período abre a aba Metas com o formulário e guarda aba e período (AC-3.5)", async ({
+    page,
+  }) => {
+    const server = new FakeReportServer();
+    await openDashboard(page, server, "&meta=nova&periodo=30-dias");
+    await expect(page.getByRole("dialog", { name: "Nova meta" })).toBeVisible();
+    await expect.poll(() => search(page).get("aba")).toBe("metas");
+    expect(search(page).get("periodo")).toBe("30-dias");
+    expect(search(page).has("meta")).toBe(false);
+  });
+
+  test("o link do Início para as Metas com um período no endereço abre Metas e guarda os dois (AC-3.5)", async ({
+    page,
+  }) => {
+    const server = new FakeReportServer();
+    await openDashboard(page, server, "&meta=lista&periodo=mes-passado");
+    await expect(metasTab(page)).toHaveAttribute("aria-selected", "true");
+    await expect.poll(() => search(page).get("aba")).toBe("metas");
+    expect(search(page).get("periodo")).toBe("mes-passado");
+    expect(search(page).has("meta")).toBe(false);
+    await resultTab(page).click();
+    await expectPreset(page, "Mês passado");
+  });
+});
+
 test.describe("a tela em um celular e o dia da loja (revisão do PR)", () => {
   test("a 360 px, o período é o seletor do projeto e a tabela dos dias é invisível, sem rolar de lado", async ({
     page,
@@ -2351,10 +2609,17 @@ const rowStep = (chart: Locator) =>
     return step;
   });
 
+/** Where the strip of KPI cards ends: the sales card is a line taller under the comparison chip, and that moves what is below. */
+async function stripBottom(page: Page): Promise<number> {
+  const strip = await placeOf(page.locator("[data-kpi-row]").first());
+  return strip.top + strip.height;
+}
+
 async function chartPlaces(page: Page) {
   await settled(page);
   const chart = chartRegion(page);
   return {
+    stripBottom: await stripBottom(page),
     card: await placeOf(chart),
     rowStep: await rowStep(chart),
     next: await placeOf(chain(page)),
@@ -2372,8 +2637,12 @@ function expectSamePlaces(after: ChartPlaces, before: ChartPlaces) {
       `altura de ${key}`
     ).toBeLessThanOrEqual(1);
     expect(
-      Math.abs(after[key].top - before[key].top),
-      `topo de ${key}`
+      Math.abs(
+        after[key].top -
+          after.stripBottom -
+          (before[key].top - before.stripBottom)
+      ),
+      `topo de ${key} a partir da faixa de KPIs`
     ).toBeLessThanOrEqual(1);
   }
 }
@@ -3068,6 +3337,16 @@ async function measureStrip(page: Page) {
       .filter((value) => value.scrollWidth > value.clientWidth)
       .map((value) => value.textContent),
     height: strip.getBoundingClientRect().height,
+    linkLine: (() => {
+      const row = strip.querySelector("[data-kpi=sales] [data-kpi-note-row]");
+      return row
+        ? Math.max(
+            0,
+            row.getBoundingClientRect().height -
+              Number.parseFloat(getComputedStyle(row).minHeight)
+          )
+        : 0;
+    })(),
     warned: strip.querySelector("[data-kpi-notice]") !== null,
   }));
 }
@@ -3116,7 +3395,10 @@ function expectSameStripHeight(measured: Measured, width: number) {
   const heights = Object.fromEntries(
     Object.entries(measured)
       .filter(([, run]) => run.states[width]?.warned === false)
-      .map(([name, run]) => [name, run.states[width]?.height ?? 0])
+      .map(([name, run]) => [
+        name,
+        (run.states[width]?.height ?? 0) - (run.states[width]?.linkLine ?? 0),
+      ])
   );
   const values = Object.values(heights);
   expect(values.length, `${width} px: estados sem aviso`).toBeGreaterThan(0);
@@ -3125,6 +3407,12 @@ function expectSameStripHeight(measured: Measured, width: number) {
     `${width} px: ${JSON.stringify(heights)}`
   ).toBeLessThanOrEqual(1);
   const rest = Math.max(...values);
+  for (const [name, run] of Object.entries(measured)) {
+    expect(
+      run.states[width]?.linkLine ?? 0,
+      `${name} a ${width} px: o cartão de vendas acrescenta no máximo uma linha de apoio sob o chip`
+    ).toBeLessThanOrEqual(17);
+  }
   for (const [name, run] of Object.entries(measured)) {
     const state = run.states[width];
     if (state?.warned) {
@@ -3270,6 +3558,47 @@ test.describe("ler um dia no minigráfico do Resultado: a data toma o lugar do c
     await slider.blur();
     await expect(page.locator("[data-kpi-date]")).toHaveCount(0);
     await expect(sales.locator("[data-kpi-delta]")).toHaveCount(1);
+  });
+
+  test("um dia lido antes da primeira venda de um mês com vendas diz só “Sem vendas”, no texto e na fala do minigráfico, e o link do Histórico sai (KPI-2)", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 800, width: 1280 });
+    await withSideMenu(page, "recolhida");
+    const server = new FakeReportServer();
+    server.fixture = {
+      ...FIXTURE,
+      "2026-10": { ...COMPLETE_MONTH, saleDay: 4 },
+    };
+    await openDashboard(page, server);
+    await expect(kpiCards(page)).toHaveCount(4);
+    const sales = card(page, CARD.netSales);
+    const ticket = card(page, CARD.ticket);
+    const link = sales.locator("[data-kpi-sales-link]");
+    await expect(link).toHaveCount(1);
+    const before = await resultHeights(page);
+    const slider = sales.getByRole("slider");
+    await slider.focus();
+    await slider.press("Home");
+    await expect(sales.locator("[data-kpi-date]")).toHaveText("Até 01/10");
+    await expect(sales).toContainText("Sem vendas");
+    await expect(sales).not.toContainText("no período");
+    await expect(ticket).toContainText("Sem vendas");
+    await expect(ticket).not.toContainText("no período");
+    await expect(link).toHaveCount(0);
+    await expect(slider).toHaveAttribute(
+      "aria-valuetext",
+      "Até 01/10: R$ 0,00. Sem vendas"
+    );
+    await expect(ticket.getByRole("slider")).toHaveAttribute(
+      "aria-valuetext",
+      "Até 01/10: sem valor. Sem vendas"
+    );
+    expectSameHeights(await resultHeights(page), before);
+    await slider.press("End");
+    await expect(sales).not.toContainText("Sem vendas");
+    await slider.blur();
+    await expect(link).toHaveCount(1);
   });
 
   test("dois dias não desenham minigráfico em nenhum cartão; três desenham nos de valor, e a Margem nunca", async ({

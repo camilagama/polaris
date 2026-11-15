@@ -68,6 +68,27 @@ export interface WorkerBindings {
   POLARIS_ENVIRONMENT?: string;
   /** The static assets of the build (`assets.binding`): the Worker answers `/assets/*` through it, 404 for a file that is not there. */
   ASSETS?: AssetsBinding;
+  /**
+   * `true` turns on the activation series (ADR 0106, D6): the hourly sweep records the tips owed and their outbox
+   * events, and the consumer of `activation.notice` may send them. Anything else (and absent) leaves it off: the sweep
+   * only clears the instant the switch was seen on, so switching it on later never sends what piled up, and the consumer
+   * records an owed notice `switched_off` without reading anything else. Off in every environment until the user turns
+   * it on.
+   */
+  ACTIVATION_EMAILS_ENABLED?: string;
+  /**
+   * The sender of the tips e-mails (ADR 0106), apart from `AUTH_EMAIL_FROM` so their reputation stays apart. Without it
+   * the tips are skipped `email_not_configured`. Not a secret.
+   */
+  ACTIVATION_EMAIL_FROM?: string;
+  /**
+   * The key of the HMAC of the suppressed addresses of the tips (ADR 0106, D8): a Worker secret of each environment, 32
+   * characters or more, different from every other secret of the Worker. Without it (or refused) the tips are skipped
+   * `email_not_configured`: a send never goes out unchecked.
+   */
+  ACTIVATION_SUPPRESSION_HMAC_SECRET?: string;
+  /** The secret before a rotation of `ACTIVATION_SUPPRESSION_HMAC_SECRET`: the suppressions under it still count. */
+  ACTIVATION_SUPPRESSION_HMAC_SECRET_PREVIOUS?: string;
   /** Asaas API key (secret): `$aact_hmlg_...` in staging, the production one only in production (ADR 0101). */
   ASAAS_API_KEY?: string;
   /** `https://api-sandbox.asaas.com/v3` in staging, `https://api.asaas.com/v3` in production. */

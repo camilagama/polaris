@@ -27,6 +27,7 @@ import {
   writeOffStock,
 } from "../src/inventory-repository";
 import {
+  archiveProduct,
   configureProductVariants,
   createProduct,
   deleteProduct,
@@ -51,6 +52,7 @@ import {
 import { runClock, storeDay, storeNoon } from "./gate-clock";
 import { assertAllowedGateUrl, disposableHostPattern } from "./gate-hosts";
 import { setLoginRole } from "./gate-roles";
+import { archiveThenDeleteProduct } from "./product-lifecycle-support";
 import {
   confirmPlainSale,
   createTenantFixture as createSalesTenantFixture,
@@ -1665,7 +1667,7 @@ async function main(): Promise<void> {
       fixtureA,
       "product:update",
       (transaction, identity) =>
-        deleteProduct(transaction, identity, {
+        archiveThenDeleteProduct(transaction, identity, {
           expectedVersion: 2,
           id: tombstoneProductId,
           requestId: randomUUID(),
@@ -1673,7 +1675,7 @@ async function main(): Promise<void> {
     );
     assert.equal(deletedProduct.changed, true);
     assert.ok(deletedProduct.product.deletedAt instanceof Date);
-    assert.equal(deletedProduct.product.version, 3);
+    assert.equal(deletedProduct.product.version, 4);
     const repeatedDelete = await withTenant(
       runtime.database,
       fixtureA,
@@ -1694,7 +1696,7 @@ async function main(): Promise<void> {
         "product:update",
         (transaction, identity) =>
           restoreProduct(transaction, identity, {
-            expectedVersion: 3,
+            expectedVersion: 4,
             id: tombstoneProductId,
             requestId: randomUUID(),
           })
@@ -1877,6 +1879,31 @@ async function main(): Promise<void> {
             requestId: randomUUID(),
           })
       ),
+      ProductLifecycleError
+    );
+    await withTenant(
+      runtime.database,
+      fixtureA,
+      "product:update",
+      (transaction, identity) =>
+        archiveProduct(transaction, identity, {
+          expectedVersion: 1,
+          id: positiveStockProductId,
+          requestId: randomUUID(),
+        })
+    );
+    await assert.rejects(
+      withTenant(
+        runtime.database,
+        fixtureA,
+        "product:update",
+        (transaction, identity) =>
+          deleteProduct(transaction, identity, {
+            expectedVersion: 2,
+            id: positiveStockProductId,
+            requestId: randomUUID(),
+          })
+      ),
       ProductStockNotEmptyError
     );
     await withRuntimeGucs(
@@ -1905,6 +1932,17 @@ async function main(): Promise<void> {
         fixtureA,
         racingProductId
       );
+      await withTenant(
+        runtime.database,
+        fixtureA,
+        "product:update",
+        (transaction, identity) =>
+          archiveProduct(transaction, identity, {
+            expectedVersion: 1,
+            id: racingProductId,
+            requestId: randomUUID(),
+          })
+      );
       const [raceDeleteSession, raceInventorySession] = await Promise.all([
         createRuntimeSession(connectionString),
         createRuntimeSession(connectionString),
@@ -1925,7 +1963,7 @@ async function main(): Promise<void> {
               },
               (transaction, identity) =>
                 deleteProduct(transaction, identity, {
-                  expectedVersion: 1,
+                  expectedVersion: 2,
                   id: racingProductId,
                   requestId: randomUUID(),
                 })
