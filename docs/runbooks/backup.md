@@ -12,7 +12,7 @@
 | --- | --- |
 | Responsável (Arrascaeta) | roda o ensaio de restauração com a identidade do cofre do servidor; cria o login, o bucket, o token R2, o Environment, as variáveis e o rótulo; liga a variável `STAGING_BACKUP_ENABLED`; cria e apaga a branch Neon do ensaio ([política de perfis da CLI](./cli-profile-policy.md)); decide qualquer restauração de verdade |
 | Titular da chave (a pessoa escolhida pelo usuário; uma chave por ambiente) | gera a chave age, guarda a identidade no cofre do servidor e entrega só a chave pública |
-| Dev | mantém os scripts, o SQL e este runbook; nunca vê a chave privada nem a senha do login |
+| Dev | mantém os scripts, o SQL e este runbook; nunca vê a chave privada (isso depende de o arquivo ser `0400` no cofre do servidor e de o usuário do processo do dev não poder lê-lo) nem a senha do login |
 
 A chave privada nunca vai ao GitHub nem ao R2. Por decisão do dono de 12/11/2026, ela fica no cofre do servidor OpenBot (arquivo 0400 fora do repositório), não offline, para o ensaio de restauração rodar sem o titular; o resto do desenho não muda. Perder a chave deixa todos os backups dela ilegíveis, de propósito.
 
@@ -59,7 +59,7 @@ O job usa o grupo `deploy-staging`, o mesmo do deploy: um `pg_dump` (que segura 
 
 ## Falha
 
-- O job abre uma issue `backup-staging` com o link do run (texto genérico) e comenta nela a cada nova falha; o próximo sucesso a fecha. O e-mail do GitHub para cron com falha vai para quem editou o cron por último: quem editou o cron por último recebe.
+- O job abre uma issue `backup-staging` com o link do run (texto genérico) e comenta nela a cada nova falha; o próximo sucesso a fecha. O e-mail do GitHub para cron com falha vai à conta do GitHub que editou o cron por último, e só a ela; o aviso que vale para todos é a issue `backup-staging`.
 - Leia o log do run. As recusas dizem a causa pelo nome: `marker: …` (banco sem o marcador de staging ou URL de outro banco), `login: …` (atributo do login), `the recipients file …`, `… does not match BACKUP_RECIPIENTS_SHA256` (chave trocada sem atualizar a variável, ou o contrário: confira o PR), `the stored object does not match …` (envio corrompido: nada foi apagado), `an object with this stamp already exists`.
 - Um job que não roda (cron desligado pelo GitHub depois de 60 dias sem atividade num repositório público, ou cancelado pelo grupo de concorrência) não abre issue. Por enquanto a conferência é manual: o objeto mais novo de `daily/` tem menos de 26 h. O vigia automático (sentinela lendo o bucket com um token só leitura) fica para o PR da produção.
 
