@@ -17,6 +17,8 @@ const ORGANIZATION = {
 };
 const id = (n: number) => `0199c2d0-0000-7000-8000-0000000000${n}`;
 const NOW = "2026-10-14T12:00:00.000Z";
+const DAY = 24 * 60 * 60 * 1000;
+const ACCESS_ENDS_AT = new Date(Date.parse(NOW) + 40 * DAY).toISOString();
 const SUBSCRIPTION = "/configuracoes?aba=assinatura";
 const SUBSCRIPTION_ADDRESS = /\/configuracoes\?aba=assinatura$/;
 const PRODUCTS_ADDRESS = /\/products$/;
@@ -45,7 +47,7 @@ interface Use {
 }
 
 const planOf = (state: string, use: Use) => ({
-  accessEndsAt: state === "free" ? null : "2026-11-24T03:00:00.000Z",
+  accessEndsAt: state === "free" ? null : ACCESS_ENDS_AT,
   cycleMonths: state === "free" ? null : 1,
   kept: { historyMonths: 3, products: 50, sales: 47 },
   limits: { goals: 1, images: 50, variants: 50 },
@@ -112,6 +114,7 @@ const UNCONFIGURED = {
 };
 
 async function openApp(page: Page, path: string, store: Store) {
+  await page.clock.setFixedTime(new Date(NOW));
   await page.route("**/api/auth/get-session", (route) =>
     route.fulfill({
       body: JSON.stringify({ session: { id: "s" }, user: { id: "u" } }),
