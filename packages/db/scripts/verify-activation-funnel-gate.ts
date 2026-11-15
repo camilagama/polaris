@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { Client } from "pg";
 import {
   ACTIVATION_FUNNEL_MAX_WEEKS,
+  ACTIVATION_FUNNEL_STATEMENT_TIMEOUT_MS,
   readActivationFunnel,
 } from "../src/admin-diagnostics-repository";
 import { TRIAL_DAYS } from "@polaris/domain/billing/subscription-state";
@@ -2268,6 +2269,9 @@ async function run() {
         const volume = await client.query<{ sales: number; stores: number }>(
           "SELECT (SELECT count(*)::int FROM public.organizations) AS stores, (SELECT count(*)::int FROM public.sales) AS sales"
         );
+        // the route reads with jit off (readActivationFunnel in admin-diagnostics-repository.ts), so the median checked
+        // against the limit and the plan are of that setting; the comparison below changes it and puts it back
+        await client.query("SET LOCAL jit = off");
         const durations: number[] = [];
         for (const _ of times(3, () => 0)) {
           const started = performance.now();
@@ -2292,7 +2296,8 @@ async function run() {
             );
           }
         }
-        await client.query("RESET jit");
+        // the comparison above left jit as its last iteration set it; the plan below is of the route's setting
+        await client.query("SET LOCAL jit = off");
         notes.push(
           `activation-funnel measure of jit: available ${jit.rows[0]?.available}; 26 weeks (after one warm-up call, interleaved) with jit on ${jitOn.map((ms) => ms.toFixed(1)).join(" / ")} ms, with jit off ${jitOff.map((ms) => ms.toFixed(1)).join(" / ")} ms`
         );
@@ -2312,7 +2317,7 @@ async function run() {
         );
         const execution = EXECUTION_TIME.exec(plan)?.[1];
         notes.push(
-          `activation-funnel measure: ${volume.rows[0]?.stores} stores, ${volume.rows[0]?.sales} sales in the database; call ${durations.map((ms) => ms.toFixed(1)).join(" / ")} ms (median ${median.toFixed(1)} ms); query inside ${execution ?? "?"} ms`
+          `activation-funnel measure (jit off, as the route reads): ${volume.rows[0]?.stores} stores, ${volume.rows[0]?.sales} sales in the database; call ${durations.map((ms) => ms.toFixed(1)).join(" / ")} ms (median ${median.toFixed(1)} ms); query inside ${execution ?? "?"} ms`
         );
         for (const line of plan.split("\n")) {
           if (!line.startsWith("Query Text") && line.trim().length > 0) {
@@ -2321,10 +2326,30 @@ async function run() {
         }
         assert.ok(
           median < 5000,
-          `the funnel answers in under 5 s with 1,000 stores and 50,000 sales (${median.toFixed(1)} ms)`
+          `the funnel answers in under 5 s with jit off, as the route reads, with 1,000 stores and 50,000 sales (${median.toFixed(1)} ms)`
+        );
+        // the route cancels at this limit (57014): the 5 s above would pass a call it cancels
+        await client.query(
+          `SET LOCAL statement_timeout = ${ACTIVATION_FUNNEL_STATEMENT_TIMEOUT_MS}`
+        );
+        const routeStarted = performance.now();
+        try {
+          await client.query("SELECT public.admin_activation_funnel(26)");
+        } catch (error: unknown) {
+          assert.notEqual(
+            (error as { code?: unknown } | null)?.code,
+            "57014",
+            `the funnel must finish inside the route's statement_timeout (${ACTIVATION_FUNNEL_STATEMENT_TIMEOUT_MS} ms, jit off), but it was cancelled after ${(performance.now() - routeStarted).toFixed(1)} ms: rewrite the activity CTE instead of raising the limit`
+          );
+          throw error;
+        }
+        const routeMs = performance.now() - routeStarted;
+        await client.query("SET LOCAL statement_timeout = 0");
+        notes.push(
+          `activation-funnel call under the route's statement_timeout of ${ACTIVATION_FUNNEL_STATEMENT_TIMEOUT_MS} ms (jit off): ${routeMs.toFixed(1)} ms`
         );
         tests.push(
-          `with 1,000 stores more and 50,000 sales (rolled back), the call takes ${median.toFixed(1)} ms (median of 3) and auto_explain gives the plan of the query inside (gate notes)`
+          `with 1,000 stores more and 50,000 sales (rolled back), the call takes ${median.toFixed(1)} ms with jit off, as the route reads (median of 3), is not cancelled under the route's ${ACTIVATION_FUNNEL_STATEMENT_TIMEOUT_MS} ms statement_timeout, and auto_explain gives the plan of the query inside (gate notes)`
         );
       } finally {
         await client.query("ROLLBACK");
