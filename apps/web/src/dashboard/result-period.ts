@@ -270,3 +270,68 @@ export function presetOfPeriod(period: Period, today: string): PeriodPreset {
 export function periodRangeLabel(period: Period, today: string): string {
   return formatRange(period, today);
 }
+
+/** What the person chose for the Resultado: a preset, or the range of "Período" (null otherwise). */
+export interface PeriodSelection {
+  custom: Period | null;
+  preset: PeriodPreset;
+}
+
+const DEFAULT_SELECTION: PeriodSelection = {
+  custom: null,
+  preset: "this-month",
+};
+
+const PRESET_PARAMETER = "periodo";
+const FROM_PARAMETER = "de";
+const TO_PARAMETER = "ate";
+
+/** The parameters this module owns in the address: the others (`aba`, `meta`...) are never read or touched here. */
+const PERIOD_PARAMETERS = [PRESET_PARAMETER, FROM_PARAMETER, TO_PARAMETER];
+
+/**
+ * The period an address asks for (`?periodo=30-dias` or `?de=2026-10-01&ate=2026-10-14`), by the rule of the picker; the
+ * default when it asks for none or for one that is not valid. With both forms, the range wins; other parameters are
+ * ignored. `?de` and `?ate` are always "Período", as when the range is typed in the picker: only a preset has the
+ * device's copy of a month. Like the picker, it sets no limit on how far back or ahead a range goes (up to 366 days): the
+ * server answers a period with nothing in it as empty.
+ */
+export function periodFromSearch(search: string): PeriodSelection {
+  const params = new URLSearchParams(search);
+  const from = params.get(FROM_PARAMETER);
+  const to = params.get(TO_PARAMETER);
+  if (from !== null && to !== null && rangeProblem(from, to) === null) {
+    return { custom: { from, to }, preset: "custom" };
+  }
+  const shortcut = params.get(PRESET_PARAMETER);
+  const preset =
+    shortcut === null ? null : presetOfShortcut(shortcut as RangePreset);
+  return preset && preset !== "custom"
+    ? { custom: null, preset }
+    : DEFAULT_SELECTION;
+}
+
+/**
+ * `href` with the selection written: the default writes nothing, a preset writes `periodo` with the shortcut's name and a
+ * range writes `de` and `ate`. Only this module's parameters change (the tab and the links keep their own).
+ */
+export function addressWithPeriod(
+  href: string,
+  selection: PeriodSelection
+): string {
+  const url = new URL(href, "https://polaris.invalid");
+  for (const name of PERIOD_PARAMETERS) {
+    if (url.searchParams.has(name)) {
+      url.searchParams.delete(name);
+    }
+  }
+  if (selection.preset === "custom") {
+    if (selection.custom) {
+      url.searchParams.set(FROM_PARAMETER, selection.custom.from);
+      url.searchParams.set(TO_PARAMETER, selection.custom.to);
+    }
+  } else if (selection.preset !== DEFAULT_SELECTION.preset) {
+    url.searchParams.set(PRESET_PARAMETER, PRESET_SHORTCUTS[selection.preset]);
+  }
+  return `${url.pathname}${url.search}${url.hash}`;
+}

@@ -45,10 +45,13 @@ import { ResultCards } from "./result-cards";
 import { ResultChain } from "./result-chain";
 import { ResultChart } from "./result-chart";
 import {
+  addressWithPeriod,
   copyMonthOf,
   historyLinkState,
   type Period,
   type PeriodPreset,
+  type PeriodSelection,
+  periodFromSearch,
   periodFromState,
   periodText,
   presetOfPeriod,
@@ -309,12 +312,6 @@ function Content({
   );
 }
 
-interface Selection {
-  /** The range of "Período", once the person gave a valid one. */
-  custom: Period | null;
-  preset: PeriodPreset;
-}
-
 /**
  * The result of a period, and the goals as a second tab (corte resultado-v2). Every figure comes from the server; when it
  * cannot answer, the last confirmed result this device kept for the month is shown as such. Work still waiting on
@@ -331,15 +328,20 @@ export function DashboardPage() {
   const [today, setToday] = useState(() =>
     calendarDayInTimezone(new Date(), organization.timezone)
   );
-  const [selection, setSelection] = useState<Selection>(() => {
+  const [selection, setSelection] = useState<PeriodSelection>(() => {
     const requested = periodFromState(readNavigationState(RESULT_PERIOD_STATE));
     if (requested === null) {
-      return { custom: null, preset: "this-month" };
+      return periodFromSearch(window.location.search);
     }
     const preset = presetOfPeriod(requested, today);
     return { custom: preset === "custom" ? requested : null, preset };
   });
   useEffect(() => dropNavigationState(RESULT_PERIOD_STATE), []);
+  // the period is part of the address like the tab: rewritten in place, so "voltar" leaves the screen instead of walking
+  // between periods, and an address that asked for a period that is not valid is corrected to the one on screen
+  useLayoutEffect(() => {
+    replaceAddress(addressWithPeriod(window.location.href, selection));
+  }, [selection]);
   const period = useMemo(
     () =>
       presetPeriod(selection.preset, today, selection.custom) ??
