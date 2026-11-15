@@ -39,8 +39,10 @@ import { useHoldSwap } from "../lib/unsent-work";
 import { endSessionHere } from "../offline/runtime/session-ended";
 import {
   LimitHelp,
+  NearLimitNotice,
   useLimitFocus,
   useLimitHelp,
+  useNearLimit,
 } from "../subscription/limit-help";
 import {
   describeMediaFailure,
@@ -242,6 +244,9 @@ export function ProductMediaPanel({
   const [loadError, setLoadError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [reloadVersion, setReloadVersion] = useState(0);
+  // each upload or removal changes the use of the plan's images: the warning reads it again
+  const [usageVersion, setUsageVersion] = useState(0);
+  const nearLimit = useNearLimit("images", usageVersion);
   const [running, setRunning] = useState<RunningCommand | null>(null);
   const [confirm, setConfirm] = useState<ConfirmRequest | null>(null);
   const [replacementPending, setReplacementPending] = useState(false);
@@ -585,6 +590,7 @@ export function ProductMediaPanel({
         setSelectedVariantIds([]);
         setUploadCommandId(null);
         setReloadVersion((version) => version + 1);
+        setUsageVersion((version) => version + 1);
       } catch (cause: unknown) {
         failCommand("upload", cause);
       } finally {
@@ -700,6 +706,7 @@ export function ProductMediaPanel({
           setNotice(removedNotice(result.removed, position + 1));
           focusRequest.current = { type: "heading" };
         }
+        setUsageVersion((version) => version + 1);
         loadAssets(true);
       } catch (cause: unknown) {
         failCommand("remove", cause);
@@ -885,6 +892,10 @@ export function ProductMediaPanel({
             {uploadButtonLabel}
           </Button>
         </div>
+        <NearLimitNotice
+          hidden={error !== null && isImageLimitText(error)}
+          view={nearLimit}
+        />
       </form>
 
       <section
