@@ -438,7 +438,6 @@ test.describe("o número acompanha o que a pessoa grava", () => {
           return route.fulfill(rpc(savedConfiguration));
         },
       },
-      reads: { plan: 0 },
       use: { images: 0, variants: 47 },
     };
     await openApp(page, "/products", store);
@@ -455,7 +454,9 @@ test.describe("o número acompanha o que a pessoa grava", () => {
       "Você usa 48 de 50 variantes"
     );
     // the form gives way to the saved variants: the dialog has no line left, the list's is the one that moved
-    await expect(page.getByText("Variantes configuradas e salvas.")).toBeVisible();
+    await expect(
+      page.getByText("Variantes configuradas e salvas.")
+    ).toBeVisible();
     await expect(dialogLine(page)).toHaveCount(0);
     expect(await stillTheSamePage(page)).toBe(true);
   });
@@ -495,7 +496,7 @@ test.describe("o número acompanha o que a pessoa grava", () => {
           const body = route.request().postDataJSON() as {
             json: { rows: { productId: string; rowNumber: number }[] };
           };
-          store.use = { images: 0, variants: 50 };
+          store.use = { images: 0, variants: store.use.variants + 1 };
           return route.fulfill(
             rpc({
               results: body.json.rows.map((row) => ({
@@ -512,7 +513,10 @@ test.describe("o número acompanha o que a pessoa grava", () => {
     };
     await openApp(page, "/products", store);
     await expect(line(page)).toContainText("Você usa 46 de 50 variantes");
-    await page.getByRole("button", { name: "Importar planilha" }).first().click();
+    await page
+      .getByRole("button", { name: "Importar planilha" })
+      .first()
+      .click();
     const dialog = page.getByRole("dialog", { name: "Importar planilha" });
     await dialog.locator('input[type="file"]').setInputFiles({
       buffer: Buffer.from(
