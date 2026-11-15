@@ -768,7 +768,6 @@ test.describe("painel de imagens", () => {
     await context.setOffline(false);
     await expect(dialogLine(page)).toHaveCount(0);
     expect(await top(frame)).toBeCloseTo(frameTop, 1);
-    store.plan = undefined;
     release();
     await expect(dialogLine(page)).toContainText("Você usa 47 de 50 imagens");
     expect(await inTheDialog()).toBe(before);
