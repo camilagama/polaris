@@ -303,7 +303,9 @@ for (const pixels of [16, 20]) {
     const refresh = await page
       .getByRole("button", { name: "Atualizar estoque e perfis" })
       .boundingBox();
-    const count = await page.getByText("1 item", { exact: true }).boundingBox();
+    const count = await page
+      .getByText("1 linha · 1 unidade", { exact: true })
+      .boundingBox();
     expect(refresh).not.toBeNull();
     expect(count).not.toBeNull();
     expect(overlap(refresh as Box, count as Box)).toBe(false);

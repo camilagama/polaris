@@ -19,7 +19,7 @@ const render = () =>
   renderToStaticMarkup(
     <SaleDraftBar
       canClear
-      itemCount={1}
+      count={{ lines: 1, units: 1 }}
       notice={NOTICE}
       onClear={clear}
       open={false}

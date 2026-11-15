@@ -246,11 +246,14 @@ export async function createOfflineSale(
 export interface PendingSale {
   code: string | null;
   commandId: string;
-  itemCount: number;
+  /** Lines of the sale. */
+  lineCount: number;
   occurredAt: string;
   state: Exclude<OfflineSaleState, "confirmed">;
   /** What the customer owes, as the server computes it from the same lines and adjustments; null if it cannot be computed. */
   totalDue: string | null;
+  /** Sum of the quantities of the lines. */
+  unitCount: number;
 }
 
 function isSalePayload(value: unknown): value is OfflineSalePayload {
@@ -259,6 +262,20 @@ function isSalePayload(value: unknown): value is OfflineSalePayload {
   }
   const row = value as Record<string, unknown>;
   return Array.isArray(row.items) && typeof row.occurredAt === "string";
+}
+
+/** The units of a payload the device kept: a line whose quantity is not a whole number counts as zero, never as NaN. */
+export function unitCountOf(
+  items: readonly ({ quantity?: unknown } | null)[]
+): number {
+  let units = 0;
+  for (const item of items) {
+    const quantity = item?.quantity;
+    if (typeof quantity === "number" && Number.isInteger(quantity)) {
+      units += quantity;
+    }
+  }
+  return units;
 }
 
 function totalDueOf(payload: OfflineSalePayload): string | null {
@@ -307,10 +324,11 @@ export async function pendingSales(outbox: Outbox): Promise<PendingSale[]> {
           {
             code: command.rejection?.code ?? null,
             commandId: command.commandId,
-            itemCount: command.payload.items.length,
+            lineCount: command.payload.items.length,
             occurredAt: command.payload.occurredAt,
             state: stateOf(command),
             totalDue: totalDueOf(command.payload),
+            unitCount: unitCountOf(command.payload.items),
           },
         ]
       : []
