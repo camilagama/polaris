@@ -3,6 +3,7 @@ import type {
   SaleDetailReadModel,
   SaleListEntryReadModel,
 } from "@polaris/contracts";
+import { type Period, rangeProblem } from "../dashboard/result-period";
 import {
   formatBrlAmount,
   formatCalendarDate,
@@ -314,6 +315,90 @@ export function historyTotal(
         ? ""
         : `${left} ${left === 1 ? "cancelada fica fora" : "canceladas ficam fora"} da soma.`,
     totalText: sum === null ? null : formatBrlAmount(sum),
+  };
+}
+
+/** Null unless the list filters by the period alone: the window the Resultado reads. */
+export function periodTotalPeriod(filters: HistoryFilters): Period | null {
+  const alone =
+    filters.status === "" &&
+    filters.customer.trim() === "" &&
+    filters.query.trim() === "";
+  return alone &&
+    filters.from !== "" &&
+    filters.to !== "" &&
+    rangeProblem(filters.from, filters.to) === null
+    ? { from: filters.from, to: filters.to }
+    : null;
+}
+
+/** What the read of the period's net sales is doing; `idle` is a filter that has no period total. */
+export type PeriodTotalRead =
+  | { status: "idle" }
+  | { status: "loading" }
+  | { netSales: string; salesCount: number; status: "ready" }
+  | { status: "failed" };
+
+export const PERIOD_TOTAL_LABEL = "Vendas líquidas do período";
+export const SCREEN_TOTAL_LABEL = "Total na tela";
+export const PERIOD_TOTAL_HELP =
+  "Vendas confirmadas do período, menos descontos e devoluções; é o mesmo número do Resultado. Não é a soma da lista: acréscimos e frete não entram, e canceladas não contam.";
+export const PERIOD_TOTAL_OFFLINE_NOTICE =
+  "Sem conexão: total das vendas guardadas neste aparelho.";
+export const PERIOD_TOTAL_FAILED_NOTICE =
+  "Não foi possível ler o total do período agora.";
+
+export interface HistoryFooterView {
+  count: string;
+  hasHelp: boolean;
+  label: string;
+  note: string;
+  notice: string;
+  value: string | null;
+  valueLoading: boolean;
+}
+
+/** Never pairs "Vendas líquidas do período" with the sum of the rows, nor "Total na tela" with the server figure. */
+export function historyFooterView(input: {
+  filters: HistoryFilters;
+  hasMore: boolean;
+  listLoading: boolean;
+  offline: boolean;
+  read: PeriodTotalRead;
+  sales: readonly SaleListEntryReadModel[];
+}): HistoryFooterView {
+  const { filters, hasMore, listLoading, offline, read, sales } = input;
+  if (read.status === "loading" || read.status === "ready") {
+    return {
+      count:
+        read.status === "ready"
+          ? `${read.salesCount} ${read.salesCount === 1 ? "venda" : "vendas"}`
+          : "",
+      hasHelp: true,
+      label: PERIOD_TOTAL_LABEL,
+      note: "",
+      notice: "",
+      value: read.status === "ready" ? formatBrlAmount(read.netSales) : null,
+      valueLoading: read.status === "loading",
+    };
+  }
+  const total = historyTotal(sales, hasMore);
+  let notice = "";
+  if (!listLoading) {
+    if (read.status === "failed") {
+      notice = PERIOD_TOTAL_FAILED_NOTICE;
+    } else if (offline && filters.from !== "" && filters.to !== "") {
+      notice = PERIOD_TOTAL_OFFLINE_NOTICE;
+    }
+  }
+  return {
+    count: listLoading ? "" : total.countText,
+    hasHelp: false,
+    label: SCREEN_TOTAL_LABEL,
+    note: listLoading ? "" : total.noteText,
+    notice,
+    value: listLoading ? "…" : (total.totalText ?? "—"),
+    valueLoading: false,
   };
 }
 
