@@ -371,6 +371,20 @@ export interface HistoryFooterView {
   valueLoading: boolean;
 }
 
+function footerNotice(
+  filters: HistoryFilters,
+  offline: boolean,
+  read: PeriodTotalRead
+): string {
+  if (read.status === "failed") {
+    return PERIOD_TOTAL_FAILED_NOTICE;
+  }
+  if (offline && filters.from !== "" && filters.to !== "") {
+    return PERIOD_TOTAL_OFFLINE_NOTICE;
+  }
+  return periodTooLong(filters) ? PERIOD_TOTAL_TOO_LONG_NOTICE : "";
+}
+
 /** Never pairs "Vendas líquidas do período" with the sum of the rows, nor "Total na tela" with the server figure. */
 export function historyFooterView(input: {
   filters: HistoryFilters;
@@ -396,16 +410,7 @@ export function historyFooterView(input: {
     };
   }
   const total = historyTotal(sales, hasMore);
-  let notice = "";
-  if (!listLoading) {
-    if (read.status === "failed") {
-      notice = PERIOD_TOTAL_FAILED_NOTICE;
-    } else if (offline && filters.from !== "" && filters.to !== "") {
-      notice = PERIOD_TOTAL_OFFLINE_NOTICE;
-    } else if (periodTooLong(filters)) {
-      notice = PERIOD_TOTAL_TOO_LONG_NOTICE;
-    }
-  }
+  const notice = listLoading ? "" : footerNotice(filters, offline, read);
   return {
     count: listLoading ? "" : total.countText,
     hasHelp: false,
