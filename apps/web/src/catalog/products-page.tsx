@@ -315,7 +315,7 @@ export function ProductsPage() {
   const [error, setError] = useState<string | null>(null);
   // what goes with the plan's limit refusal (corte 61b, corte 1.6); shown only while that error is shown
   const { help: limitHelp, show: showLimitHelp } = useLimitHelp();
-  // a product created or the variants saved in the dialog change the use: the warning at the end of the list reads it again
+  // a product created, the variants saved in the dialog or a spreadsheet imported change the use: the warning at the end of the list reads it again
   const [usageVersion, setUsageVersion] = useState(0);
   const nearLimit = useNearLimit("variants", usageVersion);
   const showLimitHelpOn = useCallback(
@@ -416,6 +416,7 @@ export function ProductsPage() {
   const handleImported = useCallback(() => {
     // the products live on the server: bring them to this device, then show them
     workspace?.runtime.syncNow().catch(() => undefined);
+    setUsageVersion((version) => version + 1);
     refresh();
   }, [refresh, workspace]);
 

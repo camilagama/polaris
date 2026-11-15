@@ -404,6 +404,136 @@ test.describe("formulário de variantes", () => {
   });
 });
 
+const savedConfiguration = {
+  configuration: {
+    ...UNCONFIGURED,
+    configured: true,
+    productVersion: 2,
+    variants: [
+      {
+        id: id(32),
+        isDefault: false,
+        listPrice: null,
+        sku: null,
+        values: [{ optionName: "Cor", optionValueName: "Azul" }],
+        version: 1,
+      },
+    ],
+  },
+  product: { ...shirt, version: 2 },
+};
+
+test.describe("o número acompanha o que a pessoa grava", () => {
+  /** The page behind the product dialog comes first in the document; the dialog's own line is the last. */
+  const behindTheDialog = (page: Page) => line(page).first();
+
+  test("salvar variantes lê o uso de novo no diálogo e na lista de Produtos, sem recarregar", async ({
+    page,
+  }) => {
+    const store: Store = {
+      answers: {
+        ...productAnswers(),
+        "product/configureVariants": (route) => {
+          store.use = { images: 0, variants: 48 };
+          return route.fulfill(rpc(savedConfiguration));
+        },
+      },
+      reads: { plan: 0 },
+      use: { images: 0, variants: 47 },
+    };
+    await openApp(page, "/products", store);
+    await openVariants(page);
+    await expect(dialogLine(page)).toContainText("Você usa 47 de 50 variantes");
+    await expect(behindTheDialog(page)).toContainText(
+      "Você usa 47 de 50 variantes"
+    );
+    await page.getByRole("button", { name: "Adicionar combinação" }).click();
+    await page.getByRole("combobox", { exact: true, name: "Cor" }).click();
+    await page.getByRole("option", { exact: true, name: "Azul" }).click();
+    await page.getByRole("button", { name: "Salvar variantes" }).click();
+    await expect(behindTheDialog(page)).toContainText(
+      "Você usa 48 de 50 variantes"
+    );
+    // the form gives way to the saved variants: the dialog has no line left, the list's is the one that moved
+    await expect(page.getByText("Variantes configuradas e salvas.")).toBeVisible();
+    await expect(dialogLine(page)).toHaveCount(0);
+    expect(await stillTheSamePage(page)).toBe(true);
+  });
+
+  test("cadastrar um produto lê o uso de novo na linha de Produtos", async ({
+    page,
+  }) => {
+    const store: Store = {
+      answers: {
+        ...productAnswers(),
+        "product/create": (route) => {
+          store.use = { images: 0, variants: 48 };
+          return route.fulfill(rpc(shirt));
+        },
+      },
+      use: { images: 0, variants: 47 },
+    };
+    await openApp(page, "/products", store);
+    await expect(line(page)).toContainText("Você usa 47 de 50 variantes");
+    await page.getByRole("button", { name: "Novo produto" }).first().click();
+    await page.getByLabel("Nome do produto").fill("Camiseta do teste");
+    await page.getByRole("button", { name: "Cadastrar produto" }).click();
+    await expect(
+      page.getByText("Produto “Camiseta do teste” cadastrado.")
+    ).toBeVisible();
+    await expect(line(page)).toContainText("Você usa 48 de 50 variantes");
+    expect(await stillTheSamePage(page)).toBe(true);
+  });
+
+  test("importar uma planilha lê o uso de novo: de 46 a 50 a linha passa a dizer que chegou ao limite", async ({
+    page,
+  }) => {
+    const store: Store = {
+      answers: {
+        ...productAnswers(),
+        "product/importBatch": (route) => {
+          const body = route.request().postDataJSON() as {
+            json: { rows: { productId: string; rowNumber: number }[] };
+          };
+          store.use = { images: 0, variants: 50 };
+          return route.fulfill(
+            rpc({
+              results: body.json.rows.map((row) => ({
+                productId: row.productId,
+                rowNumber: row.rowNumber,
+                status: "created",
+              })),
+            })
+          );
+        },
+        "product/namesExisting": reply({ names: [] }),
+      },
+      use: { images: 0, variants: 46 },
+    };
+    await openApp(page, "/products", store);
+    await expect(line(page)).toContainText("Você usa 46 de 50 variantes");
+    await page.getByRole("button", { name: "Importar planilha" }).first().click();
+    const dialog = page.getByRole("dialog", { name: "Importar planilha" });
+    await dialog.locator('input[type="file"]').setInputFiles({
+      buffer: Buffer.from(
+        "Nome;Preço de tabela\r\nBoné;10\r\nMeia;12\r\nCinto;30\r\nBolsa;80\r\n",
+        "utf8"
+      ),
+      mimeType: "text/csv",
+      name: "produtos.csv",
+    });
+    await dialog.getByRole("button", { name: "Ver a prévia" }).click();
+    await dialog.getByRole("button", { name: "Importar 4 produtos" }).click();
+    await expect(
+      dialog.getByRole("status").filter({ hasText: "Importamos 4 produtos." })
+    ).toBeVisible({ timeout: 30_000 });
+    await expect(line(page)).toContainText(
+      "Você chegou ao limite de 50 variantes do plano Free."
+    );
+    expect(await stillTheSamePage(page)).toBe(true);
+  });
+});
+
 test.describe("painel de imagens", () => {
   async function openImages(page: Page, store: Store, stored: number) {
     let uploads = 0;
