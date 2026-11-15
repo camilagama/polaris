@@ -281,8 +281,9 @@ export function useNearLimitRead(
 
 /**
  * The warning line, at the end of a block (never above what the person touches): supporting text, no icon, no
- * background, no alert role, with "Conhecer o Pro" ending the sentence. `hidden` is for when the refusal is on screen:
- * the line and the refusal's help never go together. `holdSpace` is for a block whose box is centred (the dialog from
+ * background, no alert role, with "Conhecer o Pro" ending the sentence. `hidden` is for when the line must not show
+ * although there is a view: the refusal's help is on screen (the two never go together), or the screen is still
+ * loading what sits above it or has no session. `holdSpace` is for a block whose box is centred (the dialog from
  * 760 px): while it is true and the line is gone (the connection went, or the next read is on the way), the line's space
  * stays, unseen and out of the reading order, so the box does not move; the space goes when it turns false with no
  * line, and it is never there for a line that was not shown.

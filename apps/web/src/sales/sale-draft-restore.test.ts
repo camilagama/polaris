@@ -6,7 +6,7 @@ import {
   suggestPrices,
 } from "./last-prices-model";
 import {
-  chosenItemCount,
+  chosenSaleCount,
   clearSaleConsequence,
   draftVariantIds,
   refreshedDraftMessage,
@@ -212,10 +212,20 @@ describe("a cart that came back from the tab, read again", () => {
 
 describe("Limpar venda", () => {
   it("counts only the lines with a variant chosen, and says the consequence", () => {
-    expect(chosenItemCount(cartOfThree())).toBe(3);
-    expect(chosenItemCount(createBlankSaleForm(ids()))).toBe(0);
-    expect(clearSaleConsequence(3)).toBe("Isso tira os 3 itens da venda.");
-    expect(clearSaleConsequence(1)).toBe("Isso tira o item da venda.");
+    expect(chosenSaleCount(cartOfThree())).toEqual({ lines: 3, units: 3 });
+    expect(chosenSaleCount(createBlankSaleForm(ids()))).toEqual({
+      lines: 0,
+      units: 0,
+    });
+    expect(clearSaleConsequence({ lines: 3, units: 8 })).toBe(
+      "Isso tira da venda 3 linhas e 8 unidades."
+    );
+    expect(clearSaleConsequence({ lines: 1, units: 1 })).toBe(
+      "Isso tira da venda 1 linha e 1 unidade."
+    );
+    expect(clearSaleConsequence({ lines: 1, units: 5 })).toBe(
+      "Isso tira da venda 1 linha e 5 unidades."
+    );
   });
 });
 

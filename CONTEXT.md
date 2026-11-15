@@ -67,6 +67,8 @@ Este glossário é a fonte de verdade para os termos do produto e do domínio. E
 
 **Venda:** transação comercial registrada pelo revendedor, com seus próprios itens e fatos econômicos.
 
+**Linha da venda e unidade:** a linha é cada produto ou variante escolhido na venda; a unidade é cada peça, a soma das quantidades das linhas. A Venda mostra as duas contagens ("3 linhas · 8 unidades"), nunca "N itens"; o Histórico segue com "N itens" nas vendas guardadas.
+
 **Negociação por item:** preço cobrado registrado no próprio item em relação ao preço de tabela; não cria um segundo desconto para a mesma diferença.
 **Subtotal da venda:** soma dos valores dos itens pelo preço cobrado, antes dos ajustes da venda.
 **Ajuste de venda:** desconto, acréscimo, frete cobrado ou sobretaxa de pagamento aplicada à venda.
