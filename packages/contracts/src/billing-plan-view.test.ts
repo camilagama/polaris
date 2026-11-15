@@ -21,7 +21,12 @@ const plan: BillingPlanView = {
   resubscribeFrom: null,
   state: "active",
   trialAvailable: false,
-  usage: { goals: 1, images: 9, variants: 31 },
+  usage: {
+    freeable: { products: 2, variants: 5 },
+    goals: 1,
+    images: 9,
+    variants: 31,
+  },
 };
 
 describe("billing.readPlan output (AS-2)", () => {
@@ -36,6 +41,32 @@ describe("billing.readPlan output (AS-2)", () => {
 
     expect(parsed).toEqual(older);
     expect(parsed).not.toHaveProperty("proLimits");
+  });
+
+  it("takes the answer of an older server without usage.freeable, and does not add the key", () => {
+    const { freeable: _omitted, ...usage } = plan.usage;
+    const older = { ...plan, usage };
+
+    const parsed = billingPlanView.parse(older);
+
+    expect(parsed).toEqual(older);
+    expect(parsed.usage).not.toHaveProperty("freeable");
+  });
+
+  it("refuses a usage.freeable that is negative, fractional or carries another key", () => {
+    for (const freeable of [
+      { products: -1, variants: 0 },
+      { products: 1.5, variants: 0 },
+      { products: 1 },
+      { products: 1, variants: 1, providerRef: "sub_123" },
+    ]) {
+      expect(
+        billingPlanView.safeParse({
+          ...plan,
+          usage: { ...plan.usage, freeable },
+        }).success
+      ).toBe(false);
+    }
   });
 
   it("takes a Pro limit that is null (no limit) and refuses a negative or fractional one", () => {
@@ -74,6 +105,7 @@ describe("billing.readPlan output (AS-2)", () => {
     ["limits", (value: BillingPlanView) => value.limits],
     ["proLimits", (value: BillingPlanView) => value.proLimits],
     ["usage", (value: BillingPlanView) => value.usage],
+    ["freeable", (value: BillingPlanView) => value.usage.freeable],
     ["kept", (value: BillingPlanView) => value.kept],
   ])(
     "refuses a key the list does not have in %s: a provider reference never leaves",
