@@ -1224,6 +1224,254 @@ test("o menu de um produto arquivado tem Restaurar e não tem Imagens nem Arquiv
   await expect(page.getByRole("menuitem", { name: "Arquivar" })).toHaveCount(0);
 });
 
+// ---- Excluir produto arquivado (corte excluir-produto-arquivado, item 2) --------------------------------------
+
+const JACKET = "Jaqueta de inverno";
+const DELETE_ITEM = /Excluir/;
+const STOCK_ADDRESS = /^\/inventory\?busca=Jaqueta.*arquivados=1/;
+const RATE_LIMITED_TEXT =
+  /^Você excluiu muitos produtos agora\. Tente de novo em \d{2}:\d{2}\.$/;
+const jacketArchived = () => product(1, JACKET, "archived");
+const refusalOf = (
+  status: number,
+  code: string,
+  data: Record<string, unknown>
+) => rpc({ code, data, defined: true, message: code, status }, status);
+
+/** The server mode with one archived product, `product/delete` answered by `onDelete`, and the calls it got recorded. */
+async function openArchivedJacket(
+  page: Page,
+  onDelete: (route: Route) => Promise<void>,
+  extra: Record<string, (route: Route) => Promise<void>> = {}
+) {
+  const sent: unknown[] = [];
+  await openServerScreen(page, {
+    lists: [answerByStatus({ archived: [jacketArchived()] })],
+    others: {
+      "product/delete": (route) => {
+        sent.push((route.request().postDataJSON() as { json: unknown }).json);
+        return onDelete(route);
+      },
+      "product/getVariants": (route) =>
+        route.fulfill(
+          rpc({
+            ...CONFIGURATION,
+            variants: [
+              CONFIGURATION.variants[0],
+              { ...CONFIGURATION.variants[0], id: id(32), isDefault: false },
+            ],
+          })
+        ),
+      ...extra,
+    },
+  });
+  await page.getByRole("tab", { name: "Arquivados" }).click();
+  return sent;
+}
+
+const askToDelete = async (page: Page) => {
+  await menuOf(page, JACKET).click();
+  await page.getByRole("menuitem", { name: "Excluir…" }).click();
+  return page.getByRole("dialog", { name: `Excluir produto “${JACKET}”?` });
+};
+
+test("Excluir… só existe no menu de produto arquivado, depois de Restaurar e separado dele (AC-2.1)", async ({
+  page,
+}) => {
+  await openServerScreen(page, {
+    lists: [
+      answerByStatus({
+        active: [product(2, "Camiseta do teste")],
+        archived: [jacketArchived()],
+      }),
+    ],
+  });
+  await menuOf(page, "Camiseta do teste").click();
+  await expect(page.getByRole("menuitem", { name: "Arquivar" })).toBeVisible();
+  await expect(page.getByRole("menuitem", { name: DELETE_ITEM })).toHaveCount(
+    0
+  );
+  await page.keyboard.press("Escape");
+  await page.getByRole("tab", { name: "Arquivados" }).click();
+  await menuOf(page, JACKET).click();
+  const items = page
+    .getByRole("menu")
+    .locator('[role="menuitem"],[role="separator"]');
+  await expect(items).toHaveText([
+    "Variantes",
+    "",
+    "Restaurar",
+    "",
+    "Excluir…",
+  ]);
+  await expect(page.getByRole("menuitem", { name: "Arquivar" })).toHaveCount(0);
+});
+
+test("o diálogo de Excluir diz o que acontece, pede o nome e só habilita com o nome igual (AC-2.2, AC-2.3)", async ({
+  page,
+}) => {
+  const sent = await openArchivedJacket(page, (route) =>
+    route.fulfill(
+      rpc({
+        changed: true,
+        product: { ...jacketArchived(), status: "deleted", version: 2 },
+      })
+    )
+  );
+  const dialog = await askToDelete(page);
+  await expect(dialog).toContainText("Não tem volta.");
+  await expect(dialog).toContainText(
+    "As vendas antigas continuam no histórico, com o nome que o item tinha."
+  );
+  await expect(dialog).toContainText(
+    "Este produto libera 2 variantes do seu plano."
+  );
+  await expect(dialog).toContainText("O SKU não poderá ser usado de novo.");
+  const field = dialog.getByLabel("Digite o nome do produto para confirmar");
+  await expect(field).toBeFocused();
+  await expect(field).toHaveValue("");
+  await expect(
+    dialog.getByText(`Escreva “${JACKET}” exatamente como aparece aqui.`)
+  ).toBeVisible();
+  const confirm = dialog.getByRole("button", { name: "Excluir produto" });
+  await expect(confirm).toHaveAttribute("aria-disabled", "true");
+  await expect(confirm).toHaveAccessibleDescription(
+    "Digite o nome do produto para habilitar."
+  );
+  await field.fill("Jaqueta");
+  await expect(dialog.getByRole("alert")).toHaveCount(0);
+  await field.press("Enter");
+  await expect(dialog.getByRole("alert")).toHaveText(
+    "Digite o nome do produto para habilitar."
+  );
+  expect(sent).toHaveLength(0);
+  await field.fill("  jaqueta   DE  inverno ");
+  await expect(confirm).not.toHaveAttribute("aria-disabled", "true");
+  await field.press("Enter");
+  await expect(page.getByText(`Produto “${JACKET}” excluído.`)).toBeVisible();
+  expect(sent).toEqual([
+    { expectedVersion: 1, id: id(21), organizationId: ORGANIZATION.id },
+  ]);
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+});
+
+for (const how of ["Esc", "Manter arquivado"] as const) {
+  test(`${how} fecha o diálogo de Excluir sem excluir e devolve o foco ao menu do produto (AC-2.2, AC-2.10)`, async ({
+    page,
+  }) => {
+    const sent = await openArchivedJacket(page, (route) =>
+      route.abort("failed")
+    );
+    const dialog = await askToDelete(page);
+    await dialog
+      .getByLabel("Digite o nome do produto para confirmar")
+      .fill(JACKET);
+    if (how === "Esc") {
+      await page.keyboard.press("Escape");
+    } else {
+      await dialog.getByRole("button", { name: how }).click();
+    }
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await expect(menuOf(page, JACKET)).toBeFocused();
+    await expect(rowOf(page, JACKET)).toBeVisible();
+    expect(sent).toHaveLength(0);
+  });
+}
+
+test("saldo diferente de zero: a mensagem diz quanto há e leva ao Estoque, e o produto continua na lista (AC-2.4)", async ({
+  page,
+}) => {
+  await openArchivedJacket(
+    page,
+    (route) =>
+      route.fulfill(
+        refusalOf(409, "CONFLICT", { reason: "product_stock_not_empty" })
+      ),
+    {
+      "inventory/listBalances": (route) =>
+        route.fulfill(
+          rpc({
+            entries: [{ quantity: 1 }, { quantity: 2 }],
+            nextCursor: null,
+          })
+        ),
+    }
+  );
+  const dialog = await askToDelete(page);
+  await dialog
+    .getByLabel("Digite o nome do produto para confirmar")
+    .fill(JACKET);
+  await dialog.getByRole("button", { name: "Excluir produto" }).click();
+  await expect(dialog.getByRole("alert")).toContainText(
+    `Não dá para excluir “${JACKET}” porque ele ainda tem 3 em estoque. Zere o estoque na baixa ou na contagem e tente de novo.`
+  );
+  const toStock = dialog.getByRole("link", { name: "Ir ao Estoque" });
+  await expect(toStock).toHaveAttribute("href", STOCK_ADDRESS);
+  await expect(
+    dialog.getByLabel("Digite o nome do produto para confirmar")
+  ).toHaveValue(JACKET);
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("heading", { name: JACKET })).toHaveCount(0);
+  await expect(menuOf(page, JACKET)).toBeVisible();
+  await expect(page.getByText("excluído.")).toHaveCount(0);
+});
+
+test("passou do teto por hora: a mensagem diz quando tentar de novo e o produto continua na lista (AC-2.8)", async ({
+  page,
+}) => {
+  await openArchivedJacket(page, (route) =>
+    route.fulfill(
+      refusalOf(429, "TOO_MANY_REQUESTS", {
+        limit: 50,
+        reason: "product_delete_rate_limited",
+        retryAfterSeconds: 1500,
+      })
+    )
+  );
+  const dialog = await askToDelete(page);
+  await dialog
+    .getByLabel("Digite o nome do produto para confirmar")
+    .fill(JACKET);
+  await dialog.getByRole("button", { name: "Excluir produto" }).click();
+  await expect(dialog.getByRole("alert")).toHaveText(RATE_LIMITED_TEXT);
+  await expect(dialog.getByRole("alert")).not.toContainText("excluído.");
+  await page.keyboard.press("Escape");
+  await expect(menuOf(page, JACKET)).toBeVisible();
+});
+
+test("produto que mudou em outro aparelho: diz que mudou e relê a lista (AC-2.8)", async ({
+  page,
+}) => {
+  await openArchivedJacket(page, (route) =>
+    route.fulfill(
+      refusalOf(409, "CONFLICT", { reason: "product_version_conflict" })
+    )
+  );
+  const dialog = await askToDelete(page);
+  await dialog
+    .getByLabel("Digite o nome do produto para confirmar")
+    .fill(JACKET);
+  await dialog.getByRole("button", { name: "Excluir produto" }).click();
+  await expect(dialog.getByRole("alert")).toHaveText(
+    `“${JACKET}” mudou em outro aparelho. Atualize a lista e tente de novo.`
+  );
+});
+
+test("sem resposta do servidor: não diz que excluiu, diz que não confirmou (AC-2.7)", async ({
+  page,
+}) => {
+  await openArchivedJacket(page, (route) =>
+    route.abort("internetdisconnected")
+  );
+  const dialog = await askToDelete(page);
+  await dialog
+    .getByLabel("Digite o nome do produto para confirmar")
+    .fill(JACKET);
+  await dialog.getByRole("button", { name: "Excluir produto" }).click();
+  await expect(dialog.getByRole("alert")).not.toContainText("excluído");
+  await expect(dialog.getByRole("alert")).toContainText("não foi confirmada");
+});
+
 test("SKU repetido: o erro aparece no campo, diz qual SKU e não se confunde com o produto que mudou (U-14)", async ({
   page,
 }) => {

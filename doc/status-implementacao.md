@@ -3483,3 +3483,12 @@ Origem: achado B do Diego no Pixel 6 (28/10): a venda montada em Vender sumia ao
 | Mesma caixa | Em revisão | Mais vendidos de um período sem venda fica na caixa e diz "Sem vendas no período." (antes o bloco sumia). |
 | Provas | Em revisão | e2e-real `jornadas/inicio-grade.e2e.ts` (1280, com e sem meta, 3 e 5 itens: pares da mesma altura, nenhuma faixa vazia de mais de 24 px no pé, Ritmo com 480 px, ordem do DOM igual à da tela, layout shift 0 nos blocos); `e2e/home.e2e.ts` (larguras do Mais vendidos, Ritmo de 480 px e da altura do par, período sem venda); testes de `home-lower-blocks`, `home-goal` e `home-top-products`; baselines do Início a 360, 760, 1024 e 1280, com e sem meta. |
 | Fora | Pendente | O anel de 132 px da Meta em pé (o SVG do Bklit não tem `viewBox`: fica o de 112 px) e o "Ver metas" no pé da Meta. |
+
+### UI de 15/11: excluir produto arquivado (t1124; sem migration)
+
+| Item | Status | Observação |
+| --- | --- | --- |
+| Menu | Em revisão | `catalog/product-list.tsx`: "Excluir…" só no menu de produto arquivado, depois de "Restaurar" e de um separador; produto ativo continua com "Arquivar" e sem Excluir. |
+| Diálogo | Em revisão | `catalog/product-delete-dialog.tsx`: nome digitado (regra do nome único), "Excluir produto" / "Manter arquivado", variantes que libera (`product.getVariants`), recusas dentro do diálogo. `catalog/use-product-delete.ts`: chamada direta a `product.delete` com a versão vista, sem fila; a linha local muda só depois da confirmação. `catalog/product-errors.ts`: saldo (lido do estoque na recusa), teto por hora (hora da liberação), produto mudado, sem resposta. |
+| Provas | Em revisão | `e2e/products-screen.e2e.ts` (menu, diálogo, nome, Esc e "Manter arquivado", saldo, teto, produto mudado, sem resposta); e2e-real `jornadas/excluir-produto-arquivado.e2e.ts` (a vaga volta, a venda antiga abre e aceita devolução, o de saldo é recusado); testes de `product-errors` e `product-search-model`. |
+| Fora | Pendente | Exclusão em lote (se vier, exige login recente); a linha "N arquivados" no aviso de limite (item 3 do corte). |
