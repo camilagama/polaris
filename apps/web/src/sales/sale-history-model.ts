@@ -318,18 +318,29 @@ export function historyTotal(
   };
 }
 
-/** Null unless the list filters by the period alone: the window the Resultado reads. */
-export function periodTotalPeriod(filters: HistoryFilters): Period | null {
-  const alone =
+function periodAlone(filters: HistoryFilters): boolean {
+  return (
     filters.status === "" &&
     filters.customer.trim() === "" &&
-    filters.query.trim() === "";
-  return alone &&
+    filters.query.trim() === "" &&
     filters.from !== "" &&
-    filters.to !== "" &&
-    rangeProblem(filters.from, filters.to) === null
+    filters.to !== ""
+  );
+}
+
+/** Null unless the list filters by the period alone: the window the Resultado reads. */
+export function periodTotalPeriod(filters: HistoryFilters): Period | null {
+  return periodAlone(filters) && rangeProblem(filters.from, filters.to) === null
     ? { from: filters.from, to: filters.to }
     : null;
+}
+
+/** The period alone, but longer than the year the summary reads: the screen total stays and says why. */
+function periodTooLong(filters: HistoryFilters): boolean {
+  return (
+    periodAlone(filters) &&
+    rangeProblem(filters.from, filters.to) === "too_long"
+  );
 }
 
 /** What the read of the period's net sales is doing; `idle` is a filter that has no period total. */
@@ -342,9 +353,11 @@ export type PeriodTotalRead =
 export const PERIOD_TOTAL_LABEL = "Vendas líquidas do período";
 export const SCREEN_TOTAL_LABEL = "Total na tela";
 export const PERIOD_TOTAL_HELP =
-  "Vendas confirmadas do período, menos descontos e devoluções; é o mesmo número do Resultado. Não é a soma da lista: acréscimos e frete não entram, e canceladas não contam.";
+  "Vendas confirmadas do período, menos descontos e devoluções, até as feitas depois; igual ao Resultado. Não é a soma da lista: sem acréscimo, frete e canceladas.";
 export const PERIOD_TOTAL_OFFLINE_NOTICE =
   "Sem conexão: total das vendas guardadas neste aparelho.";
+export const PERIOD_TOTAL_TOO_LONG_NOTICE =
+  "O total líquido do período vale para até 1 ano.";
 export const PERIOD_TOTAL_FAILED_NOTICE =
   "Não foi possível ler o total do período agora.";
 
@@ -389,6 +402,8 @@ export function historyFooterView(input: {
       notice = PERIOD_TOTAL_FAILED_NOTICE;
     } else if (offline && filters.from !== "" && filters.to !== "") {
       notice = PERIOD_TOTAL_OFFLINE_NOTICE;
+    } else if (periodTooLong(filters)) {
+      notice = PERIOD_TOTAL_TOO_LONG_NOTICE;
     }
   }
   return {

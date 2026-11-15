@@ -8,6 +8,7 @@ import {
   PERIOD_TOTAL_HELP,
   PERIOD_TOTAL_LABEL,
   PERIOD_TOTAL_OFFLINE_NOTICE,
+  PERIOD_TOTAL_TOO_LONG_NOTICE,
   type PeriodTotalRead,
   periodTotalPeriod,
   SCREEN_TOTAL_LABEL,
@@ -197,6 +198,39 @@ describe("historyFooterView", () => {
     );
   });
 
+  it("366 dias lê o líquido sem aviso; 367 fica em 'Total na tela' com a frase do ano", () => {
+    const year = { ...PERIOD, from: "2025-10-14", to: "2026-10-14" };
+    expect(view({ filters: year })).toMatchObject({ notice: "" });
+    expect(view({ filters: year, read: { status: "loading" } })).toMatchObject({
+      label: PERIOD_TOTAL_LABEL,
+      notice: "",
+    });
+    const longer = { ...PERIOD, from: "2025-10-13", to: "2026-10-14" };
+    expect(view({ filters: longer })).toMatchObject({
+      hasHelp: false,
+      label: SCREEN_TOTAL_LABEL,
+      notice: PERIOD_TOTAL_TOO_LONG_NOTICE,
+      valueLoading: false,
+    });
+    expect(PERIOD_TOTAL_TOO_LONG_NOTICE).toBe(
+      "O total líquido do período vale para até 1 ano."
+    );
+  });
+
+  it("a frase do ano só vale com o período sozinho, com conexão e sem a primeira página carregando", () => {
+    const longer = { ...PERIOD, from: "2025-10-13", to: "2026-10-14" };
+    expect(view({ filters: { ...longer, status: "confirmed" } }).notice).toBe(
+      ""
+    );
+    expect(view({ filters: { ...longer, customer: "Ana" } }).notice).toBe("");
+    expect(view({ filters: { ...longer, query: "camisa" } }).notice).toBe("");
+    expect(view({ filters: { ...longer, to: "" } }).notice).toBe("");
+    expect(view({ filters: longer, offline: true }).notice).toBe(
+      PERIOD_TOTAL_OFFLINE_NOTICE
+    );
+    expect(view({ filters: longer, listLoading: true }).notice).toBe("");
+  });
+
   it("enquanto a primeira página carrega, o total na tela é o traço de sempre", () => {
     expect(
       view({ filters: emptyHistoryFilters, listLoading: true })
@@ -253,5 +287,9 @@ describe("o texto do (i)", () => {
   it("tem duas frases, a regra do (i) do projeto", () => {
     const sentences = PERIOD_TOTAL_HELP.match(/[.!?](?=\s|$)/g) ?? [];
     expect(sentences).toHaveLength(2);
+  });
+
+  it("cabe nos 160 caracteres do (i) no DESIGN.md", () => {
+    expect(PERIOD_TOTAL_HELP.length).toBeLessThanOrEqual(160);
   });
 });

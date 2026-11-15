@@ -86,6 +86,21 @@ async function openHistory(page: Page, summary: Summary) {
   await expect(page.locator("[data-list-total]")).toContainText(SUM_OF_ROWS);
 }
 
+async function chooseTypedPeriod(page: Page, from: string, to: string) {
+  const bar = page.getByRole("search", { exact: true, name: "Filtrar vendas" });
+  await bar.getByRole("button", { exact: true, name: "Filtrar" }).click();
+  await page
+    .getByRole("menu", { name: "Filtrar por" })
+    .getByRole("menuitem", { name: PERIOD_ITEM })
+    .click();
+  const popup = page.getByRole("dialog", { name: "Período" });
+  await popup.getByRole("button", { name: "Digitar as datas" }).click();
+  await popup.getByRole("textbox", { name: "Início" }).pressSequentially(from);
+  await popup.getByRole("textbox", { name: "Fim" }).pressSequentially(to);
+  await popup.getByRole("button", { exact: true, name: "Aplicar" }).click();
+  await expect(popup).toBeHidden();
+}
+
 async function chooseSevenDays(page: Page) {
   const bar = page.getByRole("search", { exact: true, name: "Filtrar vendas" });
   await bar.getByRole("button", { exact: true, name: "Filtrar" }).click();
@@ -175,10 +190,10 @@ for (const viewport of FORM_VIEWPORTS) {
         name: "Vendas líquidas do período",
       });
       await expect(popup).toContainText(
-        "Vendas confirmadas do período, menos descontos e devoluções; é o mesmo número do Resultado."
+        "Vendas confirmadas do período, menos descontos e devoluções, até as feitas depois; igual ao Resultado."
       );
       await expect(popup).toContainText(
-        "Não é a soma da lista: acréscimos e frete não entram, e canceladas não contam."
+        "Não é a soma da lista: sem acréscimo, frete e canceladas."
       );
       await page.keyboard.press("Escape");
 
@@ -191,6 +206,25 @@ for (const viewport of FORM_VIEWPORTS) {
       await expect(footer).toContainText(MASKED);
       await expect(footer).not.toContainText(NET);
       await expect(footer).toContainText(PERIOD_LABEL);
+    });
+
+    test("com mais de um ano o rodapé fica em 'Total na tela' com a frase do ano e sem chamada ao resumo", async ({
+      page,
+    }) => {
+      const summary: Summary = { asked: [], fail: false };
+      await openHistory(page, summary);
+      await chooseTypedPeriod(page, "13102025", "14102026");
+      const footer = footerOf(page);
+      await expect(footer).toContainText(SCREEN_LABEL);
+      await expect(footer).toContainText(SUM_OF_ROWS);
+      await expect(footer.locator("[data-list-total-note]")).toContainText(
+        "O total líquido do período vale para até 1 ano."
+      );
+      await expect(footer).not.toContainText(PERIOD_LABEL);
+      await expect(
+        footer.getByRole("button", { name: "Sobre Vendas líquidas do período" })
+      ).toHaveCount(0);
+      expect(summary.asked).toEqual([]);
     });
 
     test("quando a leitura falha o rodapé volta ao total na tela com a frase calma e sem vermelho", async ({
