@@ -198,8 +198,19 @@ async function run() {
       products: number;
       sales: number;
       variants: number;
+      freeable_products: number;
+      freeable_variants: number;
     }>(
       `SELECT
+           (SELECT count(*)::int FROM public.products p
+             WHERE p.organization_id = $1 AND p.archived_at IS NOT NULL AND p.deleted_at IS NULL
+               AND NOT EXISTS (SELECT 1 FROM public.inventory_balances b
+                                WHERE b.organization_id = p.organization_id AND b.product_id = p.id AND b.quantity > 0)) AS freeable_products,
+           (SELECT count(*)::int FROM public.product_variants v
+              JOIN public.products p ON p.organization_id = v.organization_id AND p.id = v.product_id
+             WHERE v.organization_id = $1 AND p.archived_at IS NOT NULL AND p.deleted_at IS NULL
+               AND NOT EXISTS (SELECT 1 FROM public.inventory_balances b
+                                WHERE b.organization_id = p.organization_id AND b.product_id = p.id AND b.quantity > 0)) AS freeable_variants,
            (SELECT count(*)::int FROM public.product_variants v
               JOIN public.products p ON p.organization_id = v.organization_id AND p.id = v.product_id
              WHERE v.organization_id = $1 AND p.deleted_at IS NULL) AS variants,
@@ -219,7 +230,10 @@ async function run() {
     );
     assert.ok(counted);
     assert.deepEqual(facts.usage, {
-      freeable: facts.usage.freeable,
+      freeable: {
+        products: counted.freeable_products,
+        variants: counted.freeable_variants,
+      },
       goals: counted.goals,
       images: counted.images,
       variants: counted.variants,
@@ -434,9 +448,107 @@ async function run() {
       products: 0,
       variants: 0,
     });
-    assert.ok(freeActive.productId);
+    const stillThere = await owner.pool.query<{
+      archived: boolean;
+      id: string;
+    }>(
+      `SELECT id, archived_at IS NOT NULL AS archived
+         FROM public.products WHERE organization_id = $1 AND deleted_at IS NULL`,
+      [freeShop.organizationId]
+    );
+    assert.deepEqual(
+      stillThere.rows.map((row) => row.id).sort(),
+      [freeActive.productId, freeStocked.productId].sort(),
+      "after the deletions only the active product and the one with stock remain"
+    );
+    assert.equal(
+      stillThere.rows.find((row) => row.id === freeActive.productId)?.archived,
+      false,
+      "the active product was never archived, so it never counted as freeable"
+    );
     tests.push(
       "usage.freeable equals what product.delete accepts on the same products, and is zero once they are deleted"
+    );
+
+    // ------------------------------------------------ 1a'. what does not count: a deleted product and an archived one with stock
+    const exclusionShop = await newTenant("freeable exclusions");
+    const tombstone = await createProductFixture(
+      db,
+      exclusionShop,
+      `tombstone com variantes ${suffix}`
+    );
+    await withTenantAs(
+      db,
+      exclusionShop,
+      "product:update",
+      (transaction, identity) =>
+        configureProductVariants(transaction, identity, {
+          expectedVersion: 1,
+          id: tombstone.productId,
+          options: [{ name: "color", values: ["Azul", "Preto"] }],
+          requestId: randomUUID(),
+          variants: [
+            { values: { color: "Azul" } },
+            { values: { color: "Preto" } },
+          ],
+        })
+    );
+    const tombstoneVersion = (
+      await owner.pool.query<{ version: number }>(
+        "SELECT version FROM public.products WHERE id = $1",
+        [tombstone.productId]
+      )
+    ).rows[0]?.version as number;
+    await withTenantAs(
+      db,
+      exclusionShop,
+      "product:update",
+      (transaction, identity) =>
+        archiveThenDeleteProduct(transaction, identity, {
+          expectedVersion: tombstoneVersion,
+          id: tombstone.productId,
+        })
+    );
+    const withBalance = await createSellableProduct(
+      { adminPool: owner.pool, db },
+      exclusionShop,
+      `arquivado com saldo isolado ${suffix}`,
+      { cost: "10.00", quantity: 3 }
+    );
+    await archiveOf(exclusionShop, withBalance.productId);
+    const tombstoneRow = await owner.pool.query<{
+      deleted: boolean;
+      variants: number;
+    }>(
+      `SELECT p.deleted_at IS NOT NULL AS deleted,
+              (SELECT count(*)::int FROM public.product_variants v WHERE v.product_id = p.id) AS variants
+         FROM public.products p WHERE p.id = $1`,
+      [tombstone.productId]
+    );
+    assert.deepEqual(tombstoneRow.rows[0], { deleted: true, variants: 2 });
+    const balanceRow = await owner.pool.query<{ quantity: number }>(
+      "SELECT quantity FROM public.inventory_balances WHERE product_id = $1",
+      [withBalance.productId]
+    );
+    assert.ok(Number(balanceRow.rows[0]?.quantity) > 0);
+    assert.deepEqual(
+      (await read(exclusionShop)).usage.freeable,
+      { products: 0, variants: 0 },
+      "a deleted product (with its variants still stored) and an archived one with a positive balance free nothing"
+    );
+    const zeroStock = await createProductFixture(
+      db,
+      exclusionShop,
+      `arquivado sem saldo isolado ${suffix}`
+    );
+    await archiveOf(exclusionShop, zeroStock.productId);
+    assert.deepEqual(
+      (await read(exclusionShop)).usage.freeable,
+      { products: 1, variants: 1 },
+      "only the archived product with no stock counts, next to the two that do not"
+    );
+    tests.push(
+      "usage.freeable ignores a deleted product and an archived one with a positive balance, and counts the one with no stock beside them"
     );
 
     // ------------------------------------------------ 1b. the months of history (AS-24, D1): from the first sale to now

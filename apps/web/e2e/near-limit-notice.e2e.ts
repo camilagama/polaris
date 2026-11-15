@@ -23,6 +23,9 @@ const SUBSCRIPTION = "/configuracoes?aba=assinatura";
 const SUBSCRIPTION_ADDRESS = /\/configuracoes\?aba=assinatura$/;
 const PRODUCTS_ADDRESS = /\/products$/;
 const NEAR_LIMIT = "[data-near-limit]";
+/** The import sends one call per row, spaced by `IMPORT_CALL_INTERVAL_MS`; four rows took ~21 s in the run, so the wait and the test keep room over that. */
+const IMPORT_ANSWER_TIMEOUT = 60_000;
+const IMPORT_TEST_TIMEOUT = 100_000;
 
 const rpc = (json: unknown, status = 200) => ({
   body: JSON.stringify({ json, meta: [] }),
@@ -299,6 +302,80 @@ test.describe("Produtos", () => {
     await expect(line(page)).toContainText("47 de 50 variantes");
   });
 
+  test("sem conexão a página fica do mesmo tamanho que a de uma loja sem linha: não sobra vão onde ela estava", async ({
+    context,
+    page,
+  }) => {
+    const offlinePage = async (variants: number) => {
+      await page.unrouteAll({ behavior: "ignoreErrors" });
+      await context.setOffline(false);
+      await openApp(page, "/products", {
+        answers: productAnswers(),
+        use: { images: 0, variants },
+      });
+      await expect(page.getByText("Camiseta do teste").first()).toBeVisible();
+      const root = page.locator(".products-page");
+      const online = await root.boundingBox();
+      await context.setOffline(true);
+      await expect(
+        page.getByText("Importar planilha precisa de conexão.")
+      ).toBeVisible();
+      await expect(line(page)).toHaveCount(0);
+      return { offline: await root.boundingBox(), online };
+    };
+    const withoutLine = await offlinePage(44);
+    const withLine = await offlinePage(47);
+    expect(withLine.online?.height).toBeGreaterThan(
+      withoutLine.online?.height ?? Number.NaN
+    );
+    expect(withLine.offline).toEqual(withoutLine.offline);
+  });
+
+  test("a recusa do servidor ao cadastrar tira a linha: o aviso e a recusa não aparecem juntos", async ({
+    page,
+  }) => {
+    await openApp(page, "/products", {
+      answers: {
+        ...productAnswers(),
+        "product/create": (route) => route.fulfill(limitRefusal),
+      },
+      use: { images: 0, variants: 50 },
+    });
+    await expect(line(page)).toContainText(
+      "Você chegou ao limite de 50 variantes do plano Free."
+    );
+    await page.getByRole("button", { name: "Novo produto" }).first().click();
+    await page.getByLabel("Nome do produto").fill("Bolsa de couro");
+    await page.getByRole("button", { name: "Cadastrar produto" }).click();
+    await expect(page.getByRole("dialog").getByRole("alert")).toContainText(
+      "Seu plano chegou ao limite de variantes. Nada foi cadastrado."
+    );
+    await expect(line(page)).toHaveCount(0);
+  });
+
+  test("a recusa das variantes fica no formulário: a página de Produtos não ganha erro e mantém a sua linha", async ({
+    page,
+  }) => {
+    await openApp(page, "/products", {
+      answers: productAnswers(),
+      use: { images: 0, variants: 50 },
+    });
+    await openVariants(page);
+    await page.getByRole("button", { name: "Adicionar combinação" }).click();
+    await page.getByRole("combobox", { exact: true, name: "Cor" }).click();
+    await page.getByRole("option", { exact: true, name: "Azul" }).click();
+    await page.getByRole("button", { name: "Salvar variantes" }).click();
+    await expect(page.getByRole("dialog").getByRole("alert")).toContainText(
+      "Seu plano chegou ao limite de variantes. Nada foi alterado."
+    );
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await expect(line(page)).toContainText(
+      "Você chegou ao limite de 50 variantes do plano Free."
+    );
+    await expect(page.getByRole("alert")).toHaveCount(0);
+  });
+
   test("'Conhecer o Pro' leva à Assinatura sem recarregar e o rascunho do produto está lá na volta", async ({
     page,
   }) => {
@@ -383,6 +460,26 @@ test.describe("formulário de variantes", () => {
     await expect(alert).toContainText("Você usa 50 de 50 variantes");
     await expect(dialogLine(page)).toHaveCount(0);
     await expect(page.getByLabel("Valores de Cor")).toHaveValue("Azul\nPreta");
+  });
+
+  test("sem conexão não há linha no formulário, e o quadro do diálogo não muda", async ({
+    context,
+    page,
+  }) => {
+    await openApp(page, "/products", {
+      answers: productAnswers(),
+      use: { images: 0, variants: 47 },
+    });
+    await openVariants(page);
+    await expect(dialogLine(page)).toContainText("Você usa 47 de 50 variantes");
+    const frame = page.getByRole("dialog");
+    const before = await frame.boundingBox();
+    await context.setOffline(true);
+    await expect(dialogLine(page)).toHaveCount(0);
+    expect(await frame.boundingBox()).toEqual(before);
+    await context.setOffline(false);
+    await expect(dialogLine(page)).toContainText("Você usa 47 de 50 variantes");
+    expect(await frame.boundingBox()).toEqual(before);
   });
 
   test("'Conhecer o Pro' fecha o diálogo guardando as variantes, sem recarregar", async ({
@@ -492,6 +589,7 @@ test.describe("o número acompanha o que a pessoa grava", () => {
   test("importar uma planilha lê o uso de novo: de 46 a 50 a linha passa a dizer que chegou ao limite", async ({
     page,
   }) => {
+    test.setTimeout(IMPORT_TEST_TIMEOUT);
     const store: Store = {
       answers: {
         ...productAnswers(),
@@ -533,7 +631,7 @@ test.describe("o número acompanha o que a pessoa grava", () => {
     await dialog.getByRole("button", { name: "Importar 4 produtos" }).click();
     await expect(
       dialog.getByRole("status").filter({ hasText: "Importamos 4 produtos." })
-    ).toBeVisible({ timeout: 30_000 });
+    ).toBeVisible({ timeout: IMPORT_ANSWER_TIMEOUT });
     await expect(line(page)).toContainText(
       "Você chegou ao limite de 50 variantes do plano Free."
     );
@@ -542,11 +640,32 @@ test.describe("o número acompanha o que a pessoa grava", () => {
 });
 
 test.describe("painel de imagens", () => {
-  async function openImages(page: Page, store: Store, stored: number) {
+  interface ImageMedia {
+    /** How many images the list holds now; a removal lowers it. */
+    stored: number;
+    /** The answer to the next upload, in place of the success. */
+    uploadRefusal?: { body: unknown; status: number };
+  }
+
+  async function openImages(
+    page: Page,
+    store: Store,
+    stored: number,
+    media: ImageMedia = { stored }
+  ) {
     let uploads = 0;
     await page.route("**/api/products/*/media**", (route) => {
-      if (route.request().method() === "POST") {
+      const method = route.request().method();
+      if (method === "POST") {
         uploads += 1;
+        if (media.uploadRefusal) {
+          return route.fulfill({
+            body: JSON.stringify(media.uploadRefusal.body),
+            contentType: "application/json",
+            headers: { ...WORKER_MARK },
+            status: media.uploadRefusal.status,
+          });
+        }
         return route.fulfill({
           body: JSON.stringify({
             asset: mediaAsset(0),
@@ -557,8 +676,17 @@ test.describe("painel de imagens", () => {
           headers: { ...WORKER_MARK },
         });
       }
+      if (method === "DELETE") {
+        media.stored -= 1;
+        store.use = { ...store.use, images: store.use.images - 1 };
+        return route.fulfill({
+          body: JSON.stringify({ removed: true, requestId: id(91) }),
+          contentType: "application/json",
+          headers: { ...WORKER_MARK },
+        });
+      }
       return route.fulfill({
-        body: mediaListBody(stored),
+        body: mediaListBody(media.stored),
         contentType: "application/json",
         headers: { ...WORKER_MARK },
       });
@@ -612,13 +740,63 @@ test.describe("painel de imagens", () => {
     );
   });
 
-  test("sem conexão não há linha no painel de imagens", async ({
+  test("sem conexão não há linha no painel de imagens, e o botão não muda de lugar no diálogo", async ({
     context,
     page,
   }) => {
     await openImages(page, { use: { images: 47, variants: 0 } }, 0);
     await expect(dialogLine(page)).toBeVisible();
+    const send = page.getByRole("button", { name: "Enviar imagem" });
+    const inTheDialog = async () =>
+      (await top(send)) - (await top(page.getByRole("dialog")));
+    const before = await inTheDialog();
     await context.setOffline(true);
     await expect(dialogLine(page)).toHaveCount(0);
+    expect(await inTheDialog()).toBe(before);
+    await context.setOffline(false);
+    await expect(dialogLine(page)).toContainText("Você usa 47 de 50 imagens");
+    expect(await inTheDialog()).toBe(before);
+  });
+
+  test("a recusa do servidor ao enviar tira a linha: o aviso e a recusa não aparecem juntos", async ({
+    page,
+  }) => {
+    const media: ImageMedia = {
+      stored: 0,
+      uploadRefusal: {
+        body: { error: { code: "entitlement_limit_reached" } },
+        status: 409,
+      },
+    };
+    await openImages(page, { use: { images: 50, variants: 0 } }, 0, media);
+    await expect(dialogLine(page)).toContainText(
+      "Você chegou ao limite de 50 imagens do plano Free."
+    );
+    await upload(page);
+    const alert = page.getByRole("dialog").getByRole("alert");
+    await expect(alert).toContainText(
+      "Seu plano chegou ao limite de imagens da loja."
+    );
+    await expect(dialogLine(page)).toHaveCount(0);
+  });
+
+  test("remover uma imagem lê o uso de novo: de 48 a 47, sem recarregar", async ({
+    page,
+  }) => {
+    const store: Store = { use: { images: 48, variants: 0 } };
+    await openImages(page, store, 2);
+    await expect(dialogLine(page)).toContainText("Você usa 48 de 50 imagens");
+    await page.getByRole("button", { name: "Remover imagem 2" }).click();
+    await page
+      .getByRole("alertdialog")
+      .getByRole("button", { name: "Remover imagem" })
+      .click();
+    await expect(
+      page.getByText(
+        "Imagem 2 removida do produto. Um lugar foi liberado no plano."
+      )
+    ).toBeVisible();
+    await expect(dialogLine(page)).toContainText("Você usa 47 de 50 imagens");
+    expect(await stillTheSamePage(page)).toBe(true);
   });
 });
