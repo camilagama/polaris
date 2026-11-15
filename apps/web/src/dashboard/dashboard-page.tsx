@@ -331,7 +331,7 @@ export function DashboardPage() {
   const [selection, setSelection] = useState<PeriodSelection>(() => {
     const requested = periodFromState(readNavigationState(RESULT_PERIOD_STATE));
     if (requested === null) {
-      return periodFromSearch(window.location.search, today);
+      return periodFromSearch(window.location.search);
     }
     const preset = presetOfPeriod(requested, today);
     return { custom: preset === "custom" ? requested : null, preset };

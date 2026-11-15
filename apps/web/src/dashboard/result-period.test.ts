@@ -319,31 +319,30 @@ describe("the period that travels in the navigation state", () => {
 });
 
 describe("o período no endereço (L2-11 a)", () => {
-  const today = "2026-10-14";
   const thisMonth = { custom: null, preset: "this-month" } as const;
 
   it("lê os quatro atalhos pelo nome do seletor", () => {
-    expect(periodFromSearch("?periodo=este-mes", today)).toEqual(thisMonth);
-    expect(periodFromSearch("?periodo=mes-passado", today)).toEqual({
+    expect(periodFromSearch("?periodo=este-mes")).toEqual(thisMonth);
+    expect(periodFromSearch("?periodo=mes-passado")).toEqual({
       custom: null,
       preset: "last-month",
     });
-    expect(periodFromSearch("?periodo=30-dias", today)).toEqual({
+    expect(periodFromSearch("?periodo=30-dias")).toEqual({
       custom: null,
       preset: "last-30",
     });
-    expect(periodFromSearch("?periodo=este-ano", today)).toEqual({
+    expect(periodFromSearch("?periodo=este-ano")).toEqual({
       custom: null,
       preset: "year",
     });
   });
 
   it("lê um intervalo como Período, mesmo quando as datas são as de um atalho", () => {
-    expect(periodFromSearch("?de=2026-10-01&ate=2026-10-14", today)).toEqual({
+    expect(periodFromSearch("?de=2026-10-01&ate=2026-10-14")).toEqual({
       custom: { from: "2026-10-01", to: "2026-10-14" },
       preset: "custom",
     });
-    expect(periodFromSearch("?de=2026-10-01&ate=2026-10-31", today)).toEqual({
+    expect(periodFromSearch("?de=2026-10-01&ate=2026-10-31")).toEqual({
       custom: { from: "2026-10-01", to: "2026-10-31" },
       preset: "custom",
     });
@@ -360,7 +359,7 @@ describe("o período no endereço (L2-11 a)", () => {
       "?periodo=Este-Mes ",
       "?periodo=<script>",
     ]) {
-      expect(periodFromSearch(search, today), search).toEqual(thisMonth);
+      expect(periodFromSearch(search), search).toEqual(thisMonth);
     }
   });
 
@@ -375,55 +374,45 @@ describe("o período no endereço (L2-11 a)", () => {
       "?de=2026-1-1&ate=2026-10-14",
       "?de=2026-10-01T00:00:00Z&ate=2026-10-14",
     ]) {
-      expect(periodFromSearch(search, today), search).toEqual(thisMonth);
+      expect(periodFromSearch(search), search).toEqual(thisMonth);
     }
   });
 
-  it("recusa o que passa de 366 dias, antes de 2000 e depois de hoje mais 366 dias; aceita o limite exato", () => {
-    expect(periodFromSearch("?de=2025-01-01&ate=2026-10-14", today)).toEqual(
+  it("recusa o que passa de 366 dias, aceita o limite exato e não limita o passado nem o futuro, como o seletor", () => {
+    expect(periodFromSearch("?de=2025-01-01&ate=2026-10-14")).toEqual(
       thisMonth
     );
-    expect(periodFromSearch("?de=1999-12-01&ate=1999-12-31", today)).toEqual(
-      thisMonth
-    );
-    expect(periodFromSearch("?de=2099-01-01&ate=2099-01-31", today)).toEqual(
-      thisMonth
-    );
-    const limit = addDays(today, 366);
-    expect(periodFromSearch(`?de=${limit}&ate=${limit}`, today).preset).toBe(
+    expect(periodFromSearch("?de=2025-10-14&ate=2026-10-14").preset).toBe(
       "custom"
     );
-    expect(
-      periodFromSearch(
-        `?de=${addDays(limit, 1)}&ate=${addDays(limit, 1)}`,
-        today
-      )
-    ).toEqual(thisMonth);
-    expect(
-      periodFromSearch("?de=2000-01-01&ate=2000-01-31", today).preset
-    ).toBe("custom");
-    expect(
-      periodFromSearch("?de=2025-10-14&ate=2026-10-14", today).preset
-    ).toBe("custom");
+    expect(periodFromSearch("?de=2025-10-13&ate=2026-10-14")).toEqual(
+      thisMonth
+    );
+    expect(periodFromSearch("?de=1999-12-01&ate=1999-12-31").preset).toBe(
+      "custom"
+    );
+    expect(periodFromSearch("?de=2099-01-01&ate=2099-01-31").preset).toBe(
+      "custom"
+    );
   });
 
   it("com atalho e intervalo juntos vale o intervalo; com intervalo inválido, vale o atalho", () => {
     expect(
-      periodFromSearch("?periodo=30-dias&de=2026-09-01&ate=2026-09-10", today)
+      periodFromSearch("?periodo=30-dias&de=2026-09-01&ate=2026-09-10")
     ).toEqual({
       custom: { from: "2026-09-01", to: "2026-09-10" },
       preset: "custom",
     });
     expect(
-      periodFromSearch("?periodo=30-dias&de=2026-09-10&ate=2026-09-01", today)
+      periodFromSearch("?periodo=30-dias&de=2026-09-10&ate=2026-09-01")
     ).toEqual({ custom: null, preset: "last-30" });
   });
 
   it("ignora parâmetro que não conhece, inclusive os de outras telas", () => {
     expect(
-      periodFromSearch("?x=1&aba=metas&meta=nova&periodo=30-dias&y=2", today)
+      periodFromSearch("?x=1&aba=metas&meta=nova&periodo=30-dias&y=2")
     ).toEqual({ custom: null, preset: "last-30" });
-    expect(periodFromSearch("?x=1&periodo=xyz", today)).toEqual(thisMonth);
+    expect(periodFromSearch("?x=1&periodo=xyz")).toEqual(thisMonth);
   });
 
   it("escreve só o nome do atalho ou as duas datas; o padrão não escreve nada", () => {
@@ -468,17 +457,21 @@ describe("o período no endereço (L2-11 a)", () => {
     for (const preset of ["last-30", "last-month", "year"] as const) {
       const selection = { custom: null, preset };
       const href = addressWithPeriod("/dashboard", selection);
-      expect(
-        periodFromSearch(new URL(href, "https://x").search, today)
-      ).toEqual(selection);
+      expect(periodFromSearch(new URL(href, "https://x").search)).toEqual(
+        selection
+      );
     }
     const range = {
       custom: { from: "2026-09-03", to: "2026-10-09" },
       preset: "custom",
     } as const;
     const href = addressWithPeriod("/dashboard", range);
-    expect(periodFromSearch(new URL(href, "https://x").search, today)).toEqual(
-      range
+    expect(periodFromSearch(new URL(href, "https://x").search)).toEqual(range);
+  });
+
+  it("com o período padrão não reescreve o resto do endereço (codificação e parâmetro sem valor)", () => {
+    expect(addressWithPeriod("/dashboard?x=a%20b&y", thisMonth)).toBe(
+      "/dashboard?x=a%20b&y"
     );
   });
 

@@ -1,7 +1,3 @@
-import {
-  EARLIEST_EXPENSE_COMPETENCE,
-  MAX_EXPENSE_COMPETENCE_DAYS_AHEAD,
-} from "@polaris/domain/expenses/expense";
 import { monthBounds, monthOfDay } from "../expenses/expense-model";
 import { isCalendarDate } from "../lib/dates";
 import { shortcutLabel } from "../ui/date-range-shortcuts";
@@ -293,33 +289,19 @@ const TO_PARAMETER = "ate";
 /** The parameters this module owns in the address: the others (`aba`, `meta`...) are never read or touched here. */
 const PERIOD_PARAMETERS = [PRESET_PARAMETER, FROM_PARAMETER, TO_PARAMETER];
 
-/** A range from the address: a valid range (`rangeProblem`) that the expenses of the store could also reach (nothing before 2000, nor more than a year after `today`). */
-function addressRange(from: string, to: string, today: string): Period | null {
-  return rangeProblem(from, to) === null &&
-    from >= EARLIEST_EXPENSE_COMPETENCE &&
-    to <= addDays(today, MAX_EXPENSE_COMPETENCE_DAYS_AHEAD)
-    ? { from, to }
-    : null;
-}
-
 /**
  * The period an address asks for (`?periodo=30-dias` or `?de=2026-10-01&ate=2026-10-14`), by the rule of the picker; the
  * default when it asks for none or for one that is not valid. With both forms, the range wins; other parameters are
  * ignored. `?de` and `?ate` are always "Período", as when the range is typed in the picker: only a preset has the
- * device's copy of a month.
+ * device's copy of a month. Like the picker, it sets no limit on how far back or ahead a range goes (up to 366 days): the
+ * server answers a period with nothing in it as empty.
  */
-export function periodFromSearch(
-  search: string,
-  today: string
-): PeriodSelection {
+export function periodFromSearch(search: string): PeriodSelection {
   const params = new URLSearchParams(search);
   const from = params.get(FROM_PARAMETER);
   const to = params.get(TO_PARAMETER);
-  if (from !== null && to !== null) {
-    const custom = addressRange(from, to, today);
-    if (custom) {
-      return { custom, preset: "custom" };
-    }
+  if (from !== null && to !== null && rangeProblem(from, to) === null) {
+    return { custom: { from, to }, preset: "custom" };
   }
   const shortcut = params.get(PRESET_PARAMETER);
   const preset =
@@ -339,7 +321,9 @@ export function addressWithPeriod(
 ): string {
   const url = new URL(href, "https://polaris.invalid");
   for (const name of PERIOD_PARAMETERS) {
-    url.searchParams.delete(name);
+    if (url.searchParams.has(name)) {
+      url.searchParams.delete(name);
+    }
   }
   if (selection.preset === "custom") {
     if (selection.custom) {

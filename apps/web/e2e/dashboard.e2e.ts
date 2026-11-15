@@ -2296,7 +2296,6 @@ test.describe("o período no endereço (L2-11 a, AC-3.1 a AC-3.7)", () => {
     "&de=2026-10-14&ate=2026-10-01",
     "&de=abc&ate=def",
     "&de=2026-10-01",
-    "&de=2099-01-01&ate=2099-01-31",
     "&de=2025-01-01&ate=2026-10-14",
   ]) {
     test(`endereço com período inválido (${extra}) abre o padrão, sem tela quebrada, e o endereço volta ao válido (AC-3.3)`, async ({
@@ -2370,6 +2369,45 @@ test.describe("o período no endereço (L2-11 a, AC-3.1 a AC-3.7)", () => {
     await metasTab(page).click();
     expect(search(page).get("aba")).toBe("metas");
     expect(search(page).get("periodo")).toBe("30-dias");
+  });
+
+  test("o período que o Histórico leva na navegação ganha do endereço, e o endereço passa a dizê-lo (AC-3.1)", async ({
+    page,
+  }) => {
+    const server = new FakeReportServer();
+    const user = await openDashboard(page, server, "&periodo=30-dias");
+    await page.evaluate(() => {
+      window.history.replaceState(
+        {
+          ...window.history.state,
+          resultPeriod: { from: "2026-10-05", to: "2026-10-12" },
+        },
+        ""
+      );
+    });
+    const reads = server.periods.length;
+
+    await reloadDashboard(page, user);
+    await expect(periodButton(page)).toBeVisible();
+    await expectPreset(page, "Período");
+    expect(server.periods.at(reads)).toEqual({
+      from: "2026-10-05",
+      to: "2026-10-12",
+    });
+    await expect.poll(() => search(page).get("de")).toBe("2026-10-05");
+    expect(search(page).get("ate")).toBe("2026-10-12");
+    expect(search(page).has("periodo")).toBe(false);
+  });
+
+  test("?meta=nova com um período abre a aba Metas com o formulário e guarda aba e período (AC-3.5)", async ({
+    page,
+  }) => {
+    const server = new FakeReportServer();
+    await openDashboard(page, server, "&meta=nova&periodo=30-dias");
+    await expect(page.getByRole("dialog", { name: "Nova meta" })).toBeVisible();
+    await expect.poll(() => search(page).get("aba")).toBe("metas");
+    expect(search(page).get("periodo")).toBe("30-dias");
+    expect(search(page).has("meta")).toBe(false);
   });
 
   test("o link do Início para as Metas com um período no endereço abre Metas e guarda os dois (AC-3.5)", async ({
