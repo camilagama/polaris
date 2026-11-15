@@ -28,6 +28,8 @@ const LIMIT_CHECK =
 const isScreenSource = (name: string) =>
   (name.endsWith(".ts") || name.endsWith(".tsx")) && !name.includes(".test.");
 
+const HOME_FORBIDDEN =
+  /Conhecer o Pro|entitlement_limit_reached|chegou ao limite|LimitHelp\b|useLimitHelp/;
 const HOME_NEAR_LIMIT_LINE = ["home-page.tsx", "use-home-plan-limit.ts"];
 
 describe("a venda não muda com os limites do plano (corte 1.6, AC-8)", () => {
@@ -50,9 +52,7 @@ describe("a venda não muda com os limites do plano (corte 1.6, AC-8)", () => {
     expect(naming).toEqual(HOME_NEAR_LIMIT_LINE);
     for (const file of files) {
       const text = readFileSync(file, "utf8");
-      expect(text, file).not.toMatch(
-        /Conhecer o Pro|entitlement_limit_reached|chegou ao limite|LimitHelp\b|useLimitHelp/
-      );
+      expect(text, file).not.toMatch(HOME_FORBIDDEN);
     }
   });
 
