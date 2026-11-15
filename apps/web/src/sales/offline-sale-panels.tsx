@@ -12,6 +12,8 @@ import {
   pendingStateLabels,
   usePendingSales,
 } from "./pending-sales";
+import { SaleCountLabel } from "./sale-count-label";
+import type { SaleCount } from "./sale-count-text";
 import type { QueuedSaleView } from "./sale-form-model";
 import { Money } from "./sale-summary-panel";
 
@@ -42,8 +44,8 @@ export function OfflineSaleNotice() {
 /** One line of the card of saved sales, from the queue or (the sale kept just now) from what the form knew. */
 export interface SavedSaleLine {
   commandId: string;
-  /** Null only for the sale kept just now, before the queue was read again. */
-  itemCount: number | null;
+  /** Lines and units of the sale; null only for the sale kept just now, before the queue was read again. */
+  count: SaleCount | null;
   justSaved: boolean;
   /** Null when there is no date to show yet. */
   occurredAt: string | null;
@@ -57,7 +59,7 @@ export interface SavedSaleLine {
 function lineOf(sale: PendingSale): SavedSaleLine {
   return {
     commandId: sale.commandId,
-    itemCount: sale.itemCount,
+    count: { lines: sale.lineCount, units: sale.unitCount },
     justSaved: false,
     occurredAt: sale.occurredAt,
     state: sale.state,
@@ -89,7 +91,7 @@ export function savedSaleLines(
       }
     : {
         commandId: justSaved.commandId,
-        itemCount: null,
+        count: null,
         justSaved: true,
         occurredAt: null,
         state: "pending",
@@ -103,15 +105,55 @@ export function savedSaleLines(
 const ROW_JUST_SAVED =
   "border-foreground/70 bg-secondary ring-1 ring-foreground/10";
 
-function SavedSaleRow({ line }: { line: SavedSaleLine }) {
+/** "lines-and-units" on the sale screen; "items" (the lines alone, as before) in the history. */
+export type SavedSaleCountStyle = "items" | "lines-and-units";
+
+function SavedSaleWhen({
+  countStyle,
+  line,
+}: {
+  countStyle: SavedSaleCountStyle;
+  line: SavedSaleLine;
+}) {
+  const date = line.occurredAt
+    ? pendingDateTime.format(new Date(line.occurredAt))
+    : null;
+  if (countStyle === "items") {
+    const lines = line.count?.lines ?? null;
+    return (
+      <span className="tabular-nums">
+        {[
+          date,
+          lines === null ? null : `${lines} ${lines === 1 ? "item" : "itens"}`,
+        ]
+          .filter(Boolean)
+          .join(" · ")}
+      </span>
+    );
+  }
+  return (
+    <span className="tabular-nums">
+      {date}
+      {date && line.count ? (
+        <>
+          <span aria-hidden="true"> · </span>
+          <span className="sr-only">, </span>
+        </>
+      ) : null}
+      {line.count ? <SaleCountLabel count={line.count} /> : null}
+    </span>
+  );
+}
+
+export function SavedSaleRow({
+  countStyle = "lines-and-units",
+  line,
+}: {
+  countStyle?: SavedSaleCountStyle;
+  line: SavedSaleLine;
+}) {
   const attention =
     line.state === "needs_attention" || line.state === "rejected";
-  const when = [
-    line.occurredAt ? pendingDateTime.format(new Date(line.occurredAt)) : null,
-    line.itemCount === null
-      ? null
-      : `${line.itemCount} ${line.itemCount === 1 ? "item" : "itens"}`,
-  ].filter(Boolean);
   return (
     <li
       className={`grid gap-1.5 rounded-lg border p-3 ${line.justSaved ? ROW_JUST_SAVED : "border-border"}`}
@@ -124,7 +166,7 @@ function SavedSaleRow({ line }: { line: SavedSaleLine }) {
         </p>
       ) : null}
       <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
-        <span className="tabular-nums">{when.join(" · ")}</span>
+        <SavedSaleWhen countStyle={countStyle} line={line} />
         {line.totalText === null ? (
           <span className="text-muted-foreground text-support">
             valor indisponível
@@ -168,14 +210,17 @@ function SavedSaleRow({ line }: { line: SavedSaleLine }) {
 /**
  * The one card of the sales this device keeps for the server, on the sale screen and in the history. The sale kept
  * just now (`justSaved`) is its first line, highlighted, and the card takes the focus (`panelRef`) when it appears:
- * it is NOT an official sale yet. Each line says when, how many items, how much and where it stands; the texts that
- * explain it are said once, under the list.
+ * it is NOT an official sale yet. Each line says when, how many lines and units (on the sale screen) or how many
+ * items (`countStyle="items"`, the history), how much and where it stands; the texts that explain it are said once,
+ * under the list.
  */
 export function SavedSalesCard({
+  countStyle = "lines-and-units",
   justSaved = null,
   panelRef,
   workspace,
 }: {
+  countStyle?: SavedSaleCountStyle;
   justSaved?: QueuedSaleView | null;
   panelRef?: RefObject<HTMLElement | null> | undefined;
   workspace: LocalWorkspace | null;
@@ -214,7 +259,11 @@ export function SavedSalesCard({
         <CardContent className="grid justify-items-start gap-3">
           <ul className="grid w-full gap-2">
             {lines.map((line) => (
-              <SavedSaleRow key={line.commandId} line={line} />
+              <SavedSaleRow
+                countStyle={countStyle}
+                key={line.commandId}
+                line={line}
+              />
             ))}
           </ul>
           <p className="text-muted-foreground text-support">
