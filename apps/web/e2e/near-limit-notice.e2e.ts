@@ -1,0 +1,468 @@
+/// <reference lib="dom" />
+import type { Page, Route } from "@playwright/test";
+import { expect, test } from "@playwright/test";
+import { mediaAsset, mediaListBody, solidPng } from "./media-fixtures";
+import { serveHealth, WORKER_MARK } from "./worker-mark";
+
+/**
+ * The warning that the Free plan's limit is close, where a store registers: the end of Produtos, under the buttons of
+ * the variants form and under "Enviar imagem". The real route, with the API answered by the test: the numbers are the
+ * plan read's, the line goes with the owner of a Free store only, and it is never next to the refusal.
+ */
+const ORGANIZATION = {
+  id: "0199c2d0-0000-7000-8000-00000000a001",
+  name: "Loja do teste",
+  role: "owner",
+  timezone: "America/Sao_Paulo",
+};
+const id = (n: number) => `0199c2d0-0000-7000-8000-0000000000${n}`;
+const NOW = "2026-10-14T12:00:00.000Z";
+const SUBSCRIPTION = "/configuracoes?aba=assinatura";
+const SUBSCRIPTION_ADDRESS = /\/configuracoes\?aba=assinatura$/;
+const PRODUCTS_ADDRESS = /\/products$/;
+const NEAR_LIMIT = "[data-near-limit]";
+
+const rpc = (json: unknown, status = 200) => ({
+  body: JSON.stringify({ json, meta: [] }),
+  contentType: "application/json",
+  headers: { ...WORKER_MARK },
+  status,
+});
+const limitRefusal = rpc(
+  {
+    code: "CONFLICT",
+    data: { reason: "entitlement_limit_reached" },
+    defined: false,
+    message: "Conflict",
+    status: 409,
+  },
+  409
+);
+
+interface Use {
+  images: number;
+  variants: number;
+}
+
+const planOf = (state: string, use: Use) => ({
+  accessEndsAt: state === "free" ? null : "2026-11-24T03:00:00.000Z",
+  cycleMonths: state === "free" ? null : 1,
+  kept: { historyMonths: 3, products: 50, sales: 47 },
+  limits: { goals: 1, images: 50, variants: 50 },
+  method: state === "free" ? null : "card",
+  nextCharge: null,
+  offer: { methods: ["card"], prices: [{ amount: "24.90", cycleMonths: 1 }] },
+  recovery: null,
+  refund: null,
+  refundPending: false,
+  refundWindowEndedOn: null,
+  renewalCancelled: false,
+  resubscribeFrom: null,
+  state,
+  trialAvailable: false,
+  usage: { goals: 0, ...use },
+});
+
+type Handler = (route: Route) => Promise<void>;
+
+interface Store {
+  answers?: Record<string, Handler>;
+  /** What the plan read answers now; read at each call, so a test changes it between two reads. */
+  plan?: () => Promise<Handler | null> | Handler | null;
+  reads?: { plan: number };
+  role?: string;
+  state?: string;
+  use: Use;
+}
+
+const reply =
+  (json: unknown): Handler =>
+  (route) =>
+    route.fulfill(rpc(json));
+
+const shirt = {
+  archivedAt: null,
+  categoryId: null,
+  createdAt: NOW,
+  deletedAt: null,
+  description: null,
+  id: id(21),
+  name: "Camiseta do teste",
+  organizationId: ORGANIZATION.id,
+  status: "active",
+  updatedAt: NOW,
+  version: 1,
+};
+
+const UNCONFIGURED = {
+  configured: false,
+  optionValues: [],
+  productId: id(21),
+  productVersion: 1,
+  variants: [
+    {
+      id: id(31),
+      isDefault: true,
+      listPrice: null,
+      sku: null,
+      values: [],
+      version: 1,
+    },
+  ],
+};
+
+async function openApp(page: Page, path: string, store: Store) {
+  await page.route("**/api/auth/get-session", (route) =>
+    route.fulfill({
+      body: JSON.stringify({ session: { id: "s" }, user: { id: "u" } }),
+      contentType: "application/json",
+      headers: { ...WORKER_MARK },
+    })
+  );
+  await serveHealth(page);
+  await page.route("**/rpc/**", async (route) => {
+    const procedure = new URL(route.request().url()).pathname.replace(
+      "/rpc/",
+      ""
+    );
+    if (procedure === "organization/listMine") {
+      return route.fulfill(
+        rpc({
+          billingSelfService: true,
+          organizations: [{ ...ORGANIZATION, role: store.role ?? "owner" }],
+        })
+      );
+    }
+    if (procedure === "billing/readPlan") {
+      if (store.reads) {
+        store.reads.plan += 1;
+      }
+      if (store.state === "unread") {
+        return route.abort("internetdisconnected");
+      }
+      const custom = await store.plan?.();
+      return custom
+        ? custom(route)
+        : route.fulfill(rpc(planOf(store.state ?? "free", store.use)));
+    }
+    const handler = store.answers?.[procedure];
+    return handler ? handler(route) : route.abort("internetdisconnected");
+  });
+  await page.goto(path);
+  await page.evaluate(() => {
+    (window as unknown as { polarisNoLoad: boolean }).polarisNoLoad = true;
+  });
+}
+
+const stillTheSamePage = (page: Page) =>
+  page.evaluate(
+    () =>
+      (window as unknown as { polarisNoLoad?: boolean }).polarisNoLoad === true
+  );
+
+const productAnswers = (): Record<string, Handler> => ({
+  "category/list": reply({ categories: [] }),
+  "product/configureVariants": (route) => route.fulfill(limitRefusal),
+  "product/getVariants": reply(UNCONFIGURED),
+  "product/list": reply({ products: [shirt] }),
+});
+
+const menuOf = (page: Page) =>
+  page.getByRole("button", { name: "Mais ações para Camiseta do teste" });
+const line = (page: Page) => page.locator(NEAR_LIMIT);
+/** Inside the product dialog: the page behind it keeps its own line, out of the accessibility tree. */
+const dialogLine = (page: Page) => page.getByRole("dialog").locator(NEAR_LIMIT);
+
+async function openVariants(page: Page) {
+  await menuOf(page).click();
+  await page.getByRole("menuitem", { name: "Variantes" }).click();
+  await page.getByRole("checkbox", { name: "Cor" }).click();
+  await page.getByLabel("Valores de Cor").fill("Azul\nPreta");
+}
+
+const top = async (locator: ReturnType<Page["locator"]>) =>
+  (await locator.boundingBox())?.y ?? Number.NaN;
+
+test.describe("Produtos", () => {
+  test("44 de 50 não mostra nada; 45 e 49 dizem o uso; 50 diz que chegou; a linha fica depois do último produto", async ({
+    page,
+  }) => {
+    const store: Store = {
+      answers: productAnswers(),
+      use: { images: 0, variants: 44 },
+    };
+    await openApp(page, "/products", store);
+    await expect(page.getByText("Camiseta do teste").first()).toBeVisible();
+    await expect(line(page)).toHaveCount(0);
+
+    for (const [used, text] of [
+      [45, "Você usa 45 de 50 variantes no plano Free."],
+      [49, "Você usa 49 de 50 variantes no plano Free."],
+      [50, "Você chegou ao limite de 50 variantes do plano Free."],
+      [51, "Você chegou ao limite de 50 variantes do plano Free."],
+    ] as const) {
+      store.use = { images: 0, variants: used };
+      // biome-ignore lint/performance/noAwaitInLoops: one reading after the other, on the same page
+      await page.reload();
+      await expect(line(page)).toContainText(text);
+      await expect(line(page)).toContainText("Conhecer o Pro");
+      expect(await line(page).getAttribute("role")).toBeNull();
+      const row = page.getByText("Camiseta do teste").first();
+      expect(await top(line(page))).toBeGreaterThan(await top(row));
+    }
+  });
+
+  test("a leitura atrasada não move a lista nem o rodapé: a linha entra no fim", async ({
+    page,
+  }) => {
+    let release: () => void = () => undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await openApp(page, "/products", {
+      answers: productAnswers(),
+      plan: async () => {
+        await held;
+        return null;
+      },
+      use: { images: 0, variants: 47 },
+    });
+    const row = page.getByText("Camiseta do teste").first();
+    const imports = page.getByRole("button", { name: "Importar planilha" });
+    await expect(row).toBeVisible();
+    await expect(line(page)).toHaveCount(0);
+    const before = [await top(row), await top(imports.last())];
+    release();
+    await expect(line(page)).toBeVisible();
+    expect([await top(row), await top(imports.last())]).toEqual(before);
+  });
+
+  test("só o dono de loja Free: Pro, quem não gerencia a cobrança e plano não lido não veem a linha", async ({
+    page,
+  }) => {
+    for (const store of [
+      { role: "owner", state: "active" },
+      { role: "cashier", state: "free" },
+      { role: "owner", state: "unread" },
+    ]) {
+      // biome-ignore lint/performance/noAwaitInLoops: one store after the other, on the same page
+      await page.unrouteAll({ behavior: "ignoreErrors" });
+      const reads = { plan: 0 };
+      await openApp(page, "/products", {
+        ...store,
+        answers: productAnswers(),
+        reads,
+        use: { images: 50, variants: 50 },
+      });
+      await expect(page.getByText("Camiseta do teste").first()).toBeVisible();
+      await expect(line(page)).toHaveCount(0);
+      if (store.role === "cashier") {
+        expect(reads.plan).toBe(0);
+      }
+    }
+  });
+
+  test("sem conexão a linha some, sem número velho, e volta com a conexão", async ({
+    context,
+    page,
+  }) => {
+    await openApp(page, "/products", {
+      answers: productAnswers(),
+      use: { images: 0, variants: 47 },
+    });
+    await expect(line(page)).toBeVisible();
+    await context.setOffline(true);
+    await expect(line(page)).toHaveCount(0);
+    await context.setOffline(false);
+    await expect(line(page)).toContainText("47 de 50 variantes");
+  });
+
+  test("'Conhecer o Pro' leva à Assinatura sem recarregar e o rascunho do produto está lá na volta", async ({
+    page,
+  }) => {
+    await openApp(page, "/products", {
+      answers: productAnswers(),
+      use: { images: 0, variants: 47 },
+    });
+    await page.getByRole("button", { name: "Novo produto" }).first().click();
+    await page.getByLabel("Nome do produto").fill("Bolsa de couro");
+    await page.keyboard.press("Escape");
+    await page.getByRole("link", { name: "Conhecer o Pro" }).click();
+    await expect(page).toHaveURL(SUBSCRIPTION_ADDRESS);
+    expect(await stillTheSamePage(page)).toBe(true);
+    await page.goBack();
+    await expect(page).toHaveURL(PRODUCTS_ADDRESS);
+    await page.getByRole("button", { name: "Novo produto" }).first().click();
+    await expect(page.getByLabel("Nome do produto")).toHaveValue(
+      "Bolsa de couro"
+    );
+  });
+});
+
+test.describe("formulário de variantes", () => {
+  test("a linha vem abaixo dos botões do formulário", async ({ page }) => {
+    await openApp(page, "/products", {
+      answers: productAnswers(),
+      use: { images: 0, variants: 47 },
+    });
+    await openVariants(page);
+    await expect(dialogLine(page)).toContainText("Você usa 47 de 50 variantes");
+    const save = page.getByRole("button", { name: "Salvar variantes" });
+    expect(await top(dialogLine(page))).toBeGreaterThan(await top(save));
+  });
+
+  test("a leitura atrasada não move o botão nem o campo que a pessoa toca", async ({
+    page,
+  }) => {
+    let release: () => void = () => undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await openApp(page, "/products", {
+      answers: productAnswers(),
+      plan: async () => {
+        await held;
+        return null;
+      },
+      use: { images: 0, variants: 47 },
+    });
+    await menuOf(page).click();
+    await page.getByRole("menuitem", { name: "Variantes" }).click();
+    await page.getByRole("checkbox", { name: "Cor" }).click();
+    const values = page.getByLabel("Valores de Cor");
+    const save = page.getByRole("button", { name: "Salvar variantes" });
+    await expect(values).toBeVisible();
+    await expect(dialogLine(page)).toHaveCount(0);
+    const before = [await top(values), await top(save)];
+    release();
+    await expect(dialogLine(page)).toBeVisible();
+    expect([await top(values), await top(save)]).toEqual(before);
+  });
+
+  test("a recusa do servidor tira a linha: o aviso e a recusa não aparecem juntos", async ({
+    page,
+  }) => {
+    await openApp(page, "/products", {
+      answers: productAnswers(),
+      use: { images: 0, variants: 50 },
+    });
+    await openVariants(page);
+    await page.getByRole("button", { name: "Adicionar combinação" }).click();
+    await page.getByRole("combobox", { exact: true, name: "Cor" }).click();
+    await page.getByRole("option", { exact: true, name: "Azul" }).click();
+    await expect(dialogLine(page)).toContainText(
+      "chegou ao limite de 50 variantes"
+    );
+    await page.getByRole("button", { name: "Salvar variantes" }).click();
+    const alert = page.getByRole("dialog").getByRole("alert");
+    await expect(alert).toContainText(
+      "Seu plano chegou ao limite de variantes. Nada foi alterado."
+    );
+    await expect(alert).toContainText("Você usa 50 de 50 variantes");
+    await expect(dialogLine(page)).toHaveCount(0);
+    await expect(page.getByLabel("Valores de Cor")).toHaveValue("Azul\nPreta");
+  });
+
+  test("'Conhecer o Pro' fecha o diálogo guardando as variantes, sem recarregar", async ({
+    page,
+  }) => {
+    await openApp(page, "/products", {
+      answers: productAnswers(),
+      use: { images: 0, variants: 47 },
+    });
+    await openVariants(page);
+    await page.getByRole("link", { name: "Conhecer o Pro" }).click();
+    await expect(page).toHaveURL(SUBSCRIPTION_ADDRESS);
+    expect(await stillTheSamePage(page)).toBe(true);
+    await page.goBack();
+    await expect(page).toHaveURL(PRODUCTS_ADDRESS);
+    await menuOf(page).click();
+    await page.getByRole("menuitem", { name: "Variantes" }).click();
+    await expect(page.getByLabel("Valores de Cor")).toHaveValue("Azul\nPreta");
+    await expect(
+      page.getByRole("link", { name: "Conhecer o Pro" })
+    ).toHaveAttribute("href", SUBSCRIPTION);
+  });
+});
+
+test.describe("painel de imagens", () => {
+  async function openImages(page: Page, store: Store, stored: number) {
+    let uploads = 0;
+    await page.route("**/api/products/*/media**", (route) => {
+      if (route.request().method() === "POST") {
+        uploads += 1;
+        return route.fulfill({
+          body: JSON.stringify({
+            asset: mediaAsset(0),
+            replayed: false,
+            requestId: id(90),
+          }),
+          contentType: "application/json",
+          headers: { ...WORKER_MARK },
+        });
+      }
+      return route.fulfill({
+        body: mediaListBody(stored),
+        contentType: "application/json",
+        headers: { ...WORKER_MARK },
+      });
+    });
+    // the same object: a test changes `use` between two reads
+    store.answers = {
+      ...productAnswers(),
+      "product/getVariants": reply({ ...UNCONFIGURED, configured: true }),
+    };
+    await openApp(page, "/products", store);
+    await menuOf(page).click();
+    await page.getByRole("menuitem", { name: "Imagens" }).click();
+    return { uploads: () => uploads };
+  }
+
+  const upload = async (page: Page) => {
+    await page.getByLabel("Escolher imagem").setInputFiles({
+      buffer: solidPng(480, 320),
+      mimeType: "image/png",
+      name: "foto.png",
+    });
+    await page.getByRole("button", { name: "Enviar imagem" }).click();
+  };
+
+  test("a linha de imagens vem abaixo de 'Enviar imagem' e o uso novo aparece depois de enviar, sem recarregar", async ({
+    page,
+  }) => {
+    const store: Store = { use: { images: 47, variants: 0 } };
+    const sent = await openImages(page, store, 0);
+    await expect(dialogLine(page)).toContainText("Você usa 47 de 50 imagens");
+    const send = page.getByRole("button", { name: "Enviar imagem" });
+    expect(await top(dialogLine(page))).toBeGreaterThan(await top(send));
+    store.use = { images: 48, variants: 0 };
+    await upload(page);
+    await expect(page.getByText("Imagem adicionada ao produto.")).toBeVisible();
+    await expect(dialogLine(page)).toContainText("Você usa 48 de 50 imagens");
+    expect(sent.uploads()).toBe(1);
+    expect(await stillTheSamePage(page)).toBe(true);
+  });
+
+  test("a 50 de 50 diz que chegou; a 44 nada", async ({ page }) => {
+    await openImages(page, { use: { images: 44, variants: 0 } }, 0);
+    await expect(
+      page.getByRole("button", { name: "Enviar imagem" })
+    ).toBeVisible();
+    await expect(dialogLine(page)).toHaveCount(0);
+    await page.unrouteAll({ behavior: "ignoreErrors" });
+    await openImages(page, { use: { images: 50, variants: 0 } }, 0);
+    await expect(dialogLine(page)).toContainText(
+      "Você chegou ao limite de 50 imagens do plano Free."
+    );
+  });
+
+  test("sem conexão não há linha no painel de imagens", async ({
+    context,
+    page,
+  }) => {
+    await openImages(page, { use: { images: 47, variants: 0 } }, 0);
+    await expect(dialogLine(page)).toBeVisible();
+    await context.setOffline(true);
+    await expect(dialogLine(page)).toHaveCount(0);
+  });
+});

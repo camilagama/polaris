@@ -5,6 +5,9 @@ import {
   type LimitSubject,
   limitHelpFor,
   limitUsageText,
+  type NearLimitSubject,
+  nearLimitFor,
+  nearLimitText,
 } from "./limit-help-model";
 
 const STATES = [
@@ -148,5 +151,96 @@ describe("a recusa por limite", () => {
       false
     );
     expect(isLimitReached(refusal("CONFLICT"))).toBe(false);
+  });
+});
+
+describe("o aviso de que o limite está perto", () => {
+  const planWith = (
+    state: (typeof STATES)[number],
+    used: number,
+    max: number | null = 50
+  ) => ({
+    limits: { goals: 1, images: max, variants: max },
+    state,
+    usage: { goals: 0, images: used, variants: used },
+  });
+  const near = (
+    subject: NearLimitSubject,
+    used: number,
+    state: (typeof STATES)[number] = "free"
+  ) =>
+    nearLimitFor({
+      billingSelfService: true,
+      canManageBilling: true,
+      plan: planWith(state, used),
+      subject,
+    });
+
+  it.each([
+    ["variants", "variantes"],
+    ["images", "imagens"],
+  ] as const)("nas bordas 44, 45, 49, 50 e 51 de %s", (subject, word) => {
+    expect(near(subject, 44)).toBeNull();
+    const at45 = near(subject, 45);
+    expect(at45?.kind).toBe("near");
+    expect(at45 && nearLimitText(at45)).toBe(
+      `Você usa 45 de 50 ${word} no plano Free.`
+    );
+    expect(near(subject, 49)?.kind).toBe("near");
+    const at50 = near(subject, 50);
+    expect(at50?.kind).toBe("reached");
+    expect(at50 && nearLimitText(at50)).toBe(
+      `Você chegou ao limite de 50 ${word} do plano Free.`
+    );
+    const over = near(subject, 51, "free_over_limit");
+    expect(over?.kind).toBe("reached");
+    expect(over && nearLimitText(over)).toBe(
+      `Você chegou ao limite de 50 ${word} do plano Free.`
+    );
+  });
+
+  it("arredonda os 90% para cima, com o número do servidor", () => {
+    const at = (used: number, max: number) =>
+      nearLimitFor({
+        billingSelfService: true,
+        canManageBilling: true,
+        plan: planWith("free", used, max),
+        subject: "variants",
+      });
+    expect(at(8, 10)).toBeNull();
+    expect(at(9, 10)?.kind).toBe("near");
+    expect(at(9, 11)).toBeNull();
+    expect(at(10, 11)?.kind).toBe("near");
+    expect(at(2, 3)).toBeNull();
+    expect(at(3, 3)?.kind).toBe("reached");
+  });
+
+  it("só o dono, em Free ou Free acima do limite, com a assinatura ligada e o plano lido", () => {
+    for (const state of STATES) {
+      const shown = state === "free" || state === "free_over_limit";
+      expect(near("variants", 50, state) !== null).toBe(shown);
+    }
+    const base = {
+      billingSelfService: true,
+      canManageBilling: true,
+      plan: planWith("free", 50),
+      subject: "variants" as const,
+    };
+    expect(nearLimitFor({ ...base, billingSelfService: false })).toBeNull();
+    expect(nearLimitFor({ ...base, canManageBilling: false })).toBeNull();
+    expect(nearLimitFor({ ...base, plan: null })).toBeNull();
+  });
+
+  it("sem limite no plano, ou limite zero, não avisa", () => {
+    for (const max of [null, 0]) {
+      expect(
+        nearLimitFor({
+          billingSelfService: true,
+          canManageBilling: true,
+          plan: planWith("free", 5, max),
+          subject: "images",
+        })
+      ).toBeNull();
+    }
   });
 });

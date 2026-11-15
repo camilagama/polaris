@@ -102,3 +102,45 @@ export function limitUsageText(usage: LimitUsage): string {
   const word = usage.max === 1 && usage.used <= 1 ? one : many;
   return `Você usa ${usage.used} de ${usage.max} ${word} no plano Free.`;
 }
+
+/** The warning starts at this share of the limit, rounded up (45 of 50), and goes on at the limit and above it. */
+const NEAR_LIMIT_SHARE = 0.9;
+
+export type NearLimitSubject = "images" | "variants";
+
+/** "near": the share was reached; "reached": the limit was (or it was passed, a Free store that left the Pro). */
+export interface NearLimitView {
+  kind: "near" | "reached";
+  usage: LimitUsage;
+}
+
+/**
+ * Whether a cadastro screen warns that the Free plan's limit is close, and how: the same table of who sees it as
+ * `limitHelpFor` (only the owner, Free or Free over the limit, the self-service on), and only with both numbers of the
+ * server's read. Never the refusal's place: the screen shows one or the other.
+ */
+export function nearLimitFor(input: {
+  billingSelfService: boolean;
+  canManageBilling: boolean;
+  plan: PlanRead | null;
+  subject: NearLimitSubject;
+}): NearLimitView | null {
+  const help = limitHelpFor(input);
+  if (help === null || help.action !== "upgrade" || help.usage === null) {
+    return null;
+  }
+  const { usage } = help;
+  if (usage.max <= 0 || usage.used < Math.ceil(usage.max * NEAR_LIMIT_SHARE)) {
+    return null;
+  }
+  return { kind: usage.used >= usage.max ? "reached" : "near", usage };
+}
+
+/** "Você usa 47 de 50 variantes no plano Free." or "Você chegou ao limite de 50 variantes do plano Free." */
+export function nearLimitText(view: NearLimitView): string {
+  if (view.kind === "near") {
+    return limitUsageText(view.usage);
+  }
+  const [, many] = SUBJECT_WORDS[view.usage.subject];
+  return `Você chegou ao limite de ${view.usage.max} ${many} do plano Free.`;
+}
