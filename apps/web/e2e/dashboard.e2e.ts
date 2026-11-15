@@ -2293,6 +2293,37 @@ test.describe("o período no endereço (L2-11 a, AC-3.1 a AC-3.7)", () => {
     expect(search(page).get("x")).toBe("1");
   });
 
+  test("?periodo=este-ano abre Este ano, lê de 1º de janeiro até hoje por mês e o endereço guarda o atalho (AC-3.1)", async ({
+    page,
+  }) => {
+    const server = new MonthlyReportServer();
+    server.fixture = { ...FIXTURE, "2026-01": COMPLETE_MONTH };
+    await openDashboard(page, server, "&periodo=este-ano&x=1");
+    await expectPreset(page, "Este ano");
+    expect(server.periods[0]).toEqual({ from: "2026-01-01", to: TODAY });
+    await expect(
+      page.getByRole("region", { name: "Vendas × custos por mês" })
+    ).toBeVisible();
+    await expect(card(page, CARD.netSales)).toContainText("R$ 130,00");
+    await expect(
+      card(page, CARD.netSales).getByRole("slider")
+    ).toHaveAccessibleName("Vendas líquidas, acumulado por mês");
+    expect(search(page).get("periodo")).toBe("este-ano");
+    expect(search(page).get("x")).toBe("1");
+  });
+
+  test("?periodo=este-mes explícito abre o padrão e o endereço perde o atalho (AC-3.1, AC-3.2)", async ({
+    page,
+  }) => {
+    const server = new FakeReportServer();
+    await openDashboard(page, server, "&periodo=este-mes&x=1");
+    await expectPreset(page, "Este mês");
+    expect(server.periods[0]).toEqual(OCTOBER);
+    await expect(card(page, CARD.netSales)).toContainText("R$ 130,00");
+    await expect.poll(() => search(page).has("periodo")).toBe(false);
+    expect(search(page).get("x")).toBe("1");
+  });
+
   for (const extra of [
     "&periodo=ontem",
     "&de=2026-10-14&ate=2026-10-01",
