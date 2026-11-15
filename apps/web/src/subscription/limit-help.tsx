@@ -14,6 +14,7 @@ import { dialogEntries } from "@/ui/dialog-history";
 import { navigateInApp } from "../app-shell/address";
 import { tabHref } from "../app-shell/navigation-model";
 import { canManageBilling } from "../lib/billing-access";
+import { useConnectionOnline } from "../lib/browser-connection";
 import { leaveForReturn } from "../lib/kept-for-return";
 import { useCurrentOrganization } from "../lib/current-organization";
 import { orpcClient } from "../lib/orpc";
@@ -23,6 +24,11 @@ import {
   type LimitSubject,
   limitHelpFor,
   limitUsageText,
+  nearLimitFor,
+  nearLimitProText,
+  type NearLimitSubject,
+  type NearLimitView,
+  nearLimitText,
 } from "./limit-help-model";
 
 const SUBSCRIPTION_HREF = tabHref("settings", "assinatura");
@@ -136,24 +142,13 @@ export function isPlainClick(event: MouseEvent<HTMLAnchorElement>): boolean {
 }
 
 /**
- * Under the limit text, only while it shows: "Você usa N de M…" when the plan gave them, then "Conhecer o Pro" (to the
- * Assinatura, inside the app: nothing typed is lost) or the way to the owner. One column at any width.
+ * The click of "Conhecer o Pro": inside the app, so nothing typed is lost; a dialog closes first and keeps its draft.
+ * A second tap while the first one is on its way does not open the Assinatura twice.
  */
-export function LimitHelp({
-  help,
-  pending = false,
-  shown = true,
-}: {
-  help: LimitHelpView | null;
-  /** The plan is being read: the place of "Conhecer o Pro" is kept, empty, so the notice does not grow when it comes. */
-  pending?: boolean;
-  /** Whether the limit's text is the one on screen: the help goes only with it. */
-  shown?: boolean;
-}) {
+function useProLinkClick(): (event: MouseEvent<HTMLAnchorElement>) => void {
   const leave = useContext(LimitLeaveContext);
-  // a second tap while the first one is on its way does not open the Assinatura twice
   const going = useRef<boolean>(false);
-  const handleClick = useCallback(
+  return useCallback(
     (event: MouseEvent<HTMLAnchorElement>) => {
       if (!isPlainClick(event)) {
         return;
@@ -175,6 +170,24 @@ export function LimitHelp({
     },
     [leave]
   );
+}
+
+/**
+ * Under the limit text, only while it shows: "Você usa N de M…" when the plan gave them, then "Conhecer o Pro" (to the
+ * Assinatura, inside the app: nothing typed is lost) or the way to the owner. One column at any width.
+ */
+export function LimitHelp({
+  help,
+  pending = false,
+  shown = true,
+}: {
+  help: LimitHelpView | null;
+  /** The plan is being read: the place of "Conhecer o Pro" is kept, empty, so the notice does not grow when it comes. */
+  pending?: boolean;
+  /** Whether the limit's text is the one on screen: the help goes only with it. */
+  shown?: boolean;
+}) {
+  const handleClick = useProLinkClick();
   if (help === null && pending && shown) {
     return (
       <span aria-hidden="true" className="mt-1 grid justify-items-start gap-2">
@@ -200,5 +213,92 @@ export function LimitHelp({
         <span>{LIMIT_ASK_OWNER}</span>
       )}
     </span>
+  );
+}
+
+/**
+ * The plan's warning of a cadastro screen (nearLimitFor): read when the screen opens and again when `version` changes
+ * (after the person saved something that changes the use). No read offline, and none is kept: a read that fails, or the
+ * connection going, takes the line away instead of leaving an old number. The latest read wins.
+ */
+export function useNearLimit(
+  subject: NearLimitSubject,
+  version = 0
+): NearLimitView | null {
+  const { billingSelfService, organization, organizationId } =
+    useCurrentOrganization();
+  const online = useConnectionOnline();
+  const [read, setRead] = useState<{
+    organizationId: string;
+    view: NearLimitView | null;
+  } | null>(null);
+  const { role } = organization;
+  useEffect(() => {
+    if (!(online && canManageBilling(billingSelfService, role))) {
+      setRead(null);
+      return;
+    }
+    let current = true;
+    orpcClient.billing
+      .readPlan({ organizationId })
+      .then((plan) => {
+        if (current) {
+          setRead({
+            organizationId,
+            view: nearLimitFor({
+              billingSelfService,
+              canManageBilling: true,
+              plan,
+              subject,
+            }),
+          });
+        }
+      })
+      .catch(() => {
+        if (current) {
+          setRead(null);
+        }
+      });
+    return () => {
+      current = false;
+    };
+  }, [billingSelfService, online, organizationId, role, subject, version]);
+  // a number read for another store is never shown for this one while its own read is on the way
+  return online && read?.organizationId === organizationId ? read.view : null;
+}
+
+/**
+ * The warning line, at the end of a block (never above what the person touches): supporting text, no icon, no
+ * background, no alert role, with "Conhecer o Pro" ending the sentence. `hidden` is for when the refusal is on screen:
+ * the line and the refusal's help never go together.
+ */
+export function NearLimitNotice({
+  hidden = false,
+  view,
+}: {
+  hidden?: boolean;
+  view: NearLimitView | null;
+}) {
+  const handleClick = useProLinkClick();
+  if (view === null || hidden) {
+    return null;
+  }
+  const sentences = [nearLimitText(view), nearLimitProText(view)]
+    .filter((sentence) => sentence !== null)
+    .join(" ");
+  return (
+    <p
+      className="text-muted-foreground text-support"
+      data-near-limit={view.kind}
+    >
+      {sentences}{" "}
+      <a
+        className="focus-ring touch-hit rounded-sm text-foreground underline decoration-input underline-offset-4 hover:decoration-foreground"
+        href={SUBSCRIPTION_HREF}
+        onClick={handleClick}
+      >
+        Conhecer o Pro
+      </a>
+    </p>
   );
 }
