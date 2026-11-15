@@ -1,3 +1,7 @@
+import {
+  EARLIEST_EXPENSE_COMPETENCE,
+  MAX_EXPENSE_COMPETENCE_DAYS_AHEAD,
+} from "@polaris/domain/expenses/expense";
 import { monthBounds, monthOfDay } from "../expenses/expense-model";
 import { isCalendarDate } from "../lib/dates";
 import { shortcutLabel } from "../ui/date-range-shortcuts";
@@ -269,4 +273,81 @@ export function presetOfPeriod(period: Period, today: string): PeriodPreset {
 /** The ends of a period as the Histórico's pill says them ("01/10 a 14/10"), with the year when they are not both in the year of `today`. */
 export function periodRangeLabel(period: Period, today: string): string {
   return formatRange(period, today);
+}
+
+/** What the person chose for the Resultado: a preset, or the range of "Período" (null otherwise). */
+export interface PeriodSelection {
+  custom: Period | null;
+  preset: PeriodPreset;
+}
+
+const DEFAULT_SELECTION: PeriodSelection = {
+  custom: null,
+  preset: "this-month",
+};
+
+const PRESET_PARAMETER = "periodo";
+const FROM_PARAMETER = "de";
+const TO_PARAMETER = "ate";
+
+/** The parameters this module owns in the address: the others (`aba`, `meta`...) are never read or touched here. */
+const PERIOD_PARAMETERS = [PRESET_PARAMETER, FROM_PARAMETER, TO_PARAMETER];
+
+/** A range from the address: a valid range (`rangeProblem`) that the expenses of the store could also reach (nothing before 2000, nor more than a year after `today`). */
+function addressRange(from: string, to: string, today: string): Period | null {
+  return rangeProblem(from, to) === null &&
+    from >= EARLIEST_EXPENSE_COMPETENCE &&
+    to <= addDays(today, MAX_EXPENSE_COMPETENCE_DAYS_AHEAD)
+    ? { from, to }
+    : null;
+}
+
+/**
+ * The period an address asks for (`?periodo=30-dias` or `?de=2026-10-01&ate=2026-10-14`), by the rule of the picker; the
+ * default when it asks for none or for one that is not valid. With both forms, the range wins; other parameters are
+ * ignored. `?de` and `?ate` are always "Período", as when the range is typed in the picker: only a preset has the
+ * device's copy of a month.
+ */
+export function periodFromSearch(
+  search: string,
+  today: string
+): PeriodSelection {
+  const params = new URLSearchParams(search);
+  const from = params.get(FROM_PARAMETER);
+  const to = params.get(TO_PARAMETER);
+  if (from !== null && to !== null) {
+    const custom = addressRange(from, to, today);
+    if (custom) {
+      return { custom, preset: "custom" };
+    }
+  }
+  const shortcut = params.get(PRESET_PARAMETER);
+  const preset =
+    shortcut === null ? null : presetOfShortcut(shortcut as RangePreset);
+  return preset && preset !== "custom"
+    ? { custom: null, preset }
+    : DEFAULT_SELECTION;
+}
+
+/**
+ * `href` with the selection written: the default writes nothing, a preset writes `periodo` with the shortcut's name and a
+ * range writes `de` and `ate`. Only this module's parameters change (the tab and the links keep their own).
+ */
+export function addressWithPeriod(
+  href: string,
+  selection: PeriodSelection
+): string {
+  const url = new URL(href, "https://polaris.invalid");
+  for (const name of PERIOD_PARAMETERS) {
+    url.searchParams.delete(name);
+  }
+  if (selection.preset === "custom") {
+    if (selection.custom) {
+      url.searchParams.set(FROM_PARAMETER, selection.custom.from);
+      url.searchParams.set(TO_PARAMETER, selection.custom.to);
+    }
+  } else if (selection.preset !== DEFAULT_SELECTION.preset) {
+    url.searchParams.set(PRESET_PARAMETER, PRESET_SHORTCUTS[selection.preset]);
+  }
+  return `${url.pathname}${url.search}${url.hash}`;
 }
