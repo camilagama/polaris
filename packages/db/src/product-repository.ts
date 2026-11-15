@@ -593,7 +593,7 @@ export async function updateProduct(
 /**
  * The zero-balance rule of a deletion, written once: a variant of the product holds stock. A product with no
  * materialized balance row holds none. The deletion refuses on it and the plan read's `usage.freeable` counts the
- * products where it is absent, so the number a screen shows is what the deletion accepts.
+ * products where it is absent, so the number a screen shows follows what the deletion accepts on balance (the hourly cap of deletions is a separate, time-bound refusal).
  */
 function holdsStock(
   organizationId: string,

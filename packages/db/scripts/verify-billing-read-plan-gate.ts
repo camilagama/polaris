@@ -399,7 +399,7 @@ async function run() {
       "usage.freeable counts the archived, not deleted products with no stock (a balance row at zero or none at all) and their variants, per store"
     );
 
-    // the number is what the deletion accepts: delete every archived product, the count is the deletions that pass
+    // the number is what the deletion accepts on balance (far below the hourly cap here): delete every archived product, the count is the deletions that pass
     const accepted = { products: 0, variants: 0 };
     for (const [productId, version] of archivedVersion) {
       const variantCount = Number(
