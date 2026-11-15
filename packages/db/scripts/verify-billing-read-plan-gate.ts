@@ -5,7 +5,12 @@ import { sql } from "drizzle-orm";
 import { type BillingStore, createBillingStore } from "../src/billing-store";
 import { createDatabase } from "../src/client";
 import { readOwnerPlanTenantFacts } from "../src/plan-read-repository";
-import { archiveProduct } from "../src/product-repository";
+import {
+  archiveProduct,
+  configureProductVariants,
+  deleteProduct,
+} from "../src/product-repository";
+import { ProductStockNotEmptyError } from "@polaris/domain/catalog/product";
 import { TenantAuthorizationError } from "../src/tenant-transaction";
 import { archiveThenDeleteProduct } from "./product-lifecycle-support";
 import {
@@ -214,11 +219,17 @@ async function run() {
     );
     assert.ok(counted);
     assert.deepEqual(facts.usage, {
+      freeable: facts.usage.freeable,
       goals: counted.goals,
       images: counted.images,
       variants: counted.variants,
     });
-    assert.deepEqual(facts.usage, { goals: 1, images: 3, variants: 2 });
+    assert.deepEqual(facts.usage, {
+      freeable: { products: 1, variants: 1 },
+      goals: 1,
+      images: 3,
+      variants: 2,
+    });
     assert.deepEqual(facts.kept, {
       historyMonths: counted.history_months,
       products: counted.products,
@@ -258,6 +269,174 @@ async function run() {
     );
     tests.push(
       "the usage is counted as assertRoomFor counts it (archived counts, deleted does not) and what the store keeps matches SQL of its own"
+    );
+
+    // ------------------------------------------------ 1a. usage.freeable: what deleting frees now (AC-3.1)
+    const freeShop = await newTenant("freeable");
+    const otherShop = await newTenant("freeable other store");
+    const archiveOf = (tenant: TenantFixture, productId: string) =>
+      withTenantAs(
+        db,
+        tenant,
+        "product:update",
+        async (transaction, identity) =>
+          (
+            await archiveProduct(transaction, identity, {
+              expectedVersion: 1,
+              id: productId,
+            })
+          ).product
+      );
+    const freeActive = await createProductFixture(
+      db,
+      freeShop,
+      `ativo ${suffix}`
+    );
+    const freeDeleted = await createProductFixture(
+      db,
+      freeShop,
+      `excluído ${suffix}`
+    );
+    await withTenantAs(
+      db,
+      freeShop,
+      "product:update",
+      (transaction, identity) =>
+        archiveThenDeleteProduct(transaction, identity, {
+          expectedVersion: 1,
+          id: freeDeleted.productId,
+        })
+    );
+    const freeStocked = await createSellableProduct(
+      { adminPool: owner.pool, db },
+      freeShop,
+      `arquivado com saldo ${suffix}`,
+      { cost: "10.00", quantity: 4 }
+    );
+    const freeNeverStocked = await createProductFixture(
+      db,
+      freeShop,
+      `arquivado sem saldo nunca registrado ${suffix}`
+    );
+    const freeSoldOut = await createSellableProduct(
+      { adminPool: owner.pool, db },
+      freeShop,
+      `arquivado esgotado ${suffix}`,
+      { cost: "10.00", quantity: 2 }
+    );
+    await confirmPlainSale({ adminPool: owner.pool, db }, freeShop, [
+      { quantity: 2, variantId: freeSoldOut.variantId },
+    ]);
+    const freeMulti = await createProductFixture(
+      db,
+      freeShop,
+      `arquivado com variantes ${suffix}`
+    );
+    await withTenantAs(
+      db,
+      freeShop,
+      "product:update",
+      (transaction, identity) =>
+        configureProductVariants(transaction, identity, {
+          expectedVersion: 1,
+          id: freeMulti.productId,
+          options: [{ name: "color", values: ["Azul", "Preto", "Verde"] }],
+          requestId: randomUUID(),
+          variants: [
+            { values: { color: "Azul" } },
+            { values: { color: "Preto" } },
+            { values: { color: "Verde" } },
+          ],
+        })
+    );
+    const otherArchived = await createProductFixture(
+      db,
+      otherShop,
+      `arquivado de outra loja ${suffix}`
+    );
+    await archiveOf(otherShop, otherArchived.productId);
+    const archivedVersion = new Map<string, number>();
+    for (const productId of [
+      freeStocked.productId,
+      freeNeverStocked.productId,
+      freeSoldOut.productId,
+    ]) {
+      archivedVersion.set(
+        productId,
+        (await archiveOf(freeShop, productId)).version
+      );
+    }
+    const multiVersion = await withTenantAs(
+      db,
+      freeShop,
+      "product:update",
+      async (transaction, identity) =>
+        (
+          await archiveProduct(transaction, identity, {
+            expectedVersion: (
+              await transaction.execute<{ version: number }>(
+                sql`SELECT version FROM public.products WHERE id = ${freeMulti.productId}`
+              )
+            ).rows[0]?.version as number,
+            id: freeMulti.productId,
+          })
+        ).product.version
+    );
+    archivedVersion.set(freeMulti.productId, multiVersion);
+    const {
+      usage: { freeable },
+    } = await read(freeShop);
+    assert.deepEqual(
+      freeable,
+      { products: 3, variants: 5 },
+      "the one that never had stock, the one sold out (a balance row at zero) and the one with three variants; not the active, the deleted, the stocked, nor another store's"
+    );
+    assert.deepEqual((await read(otherShop)).usage.freeable, {
+      products: 1,
+      variants: 1,
+    });
+    tests.push(
+      "usage.freeable counts the archived, not deleted products with no stock (a balance row at zero or none at all) and their variants, per store"
+    );
+
+    // the number is what the deletion accepts: delete every archived product, the count is the deletions that pass
+    const accepted = { products: 0, variants: 0 };
+    for (const [productId, version] of archivedVersion) {
+      const variantCount = Number(
+        (
+          await owner.pool.query<{ total: string }>(
+            "SELECT count(*)::text AS total FROM public.product_variants WHERE product_id = $1",
+            [productId]
+          )
+        ).rows[0]?.total
+      );
+      try {
+        await withTenantAs(
+          db,
+          freeShop,
+          "product:update",
+          (transaction, identity) =>
+            deleteProduct(transaction, identity, {
+              expectedVersion: version,
+              id: productId,
+              requestId: randomUUID(),
+            })
+        );
+        accepted.products += 1;
+        accepted.variants += variantCount;
+      } catch (error) {
+        assert.ok(error instanceof ProductStockNotEmptyError);
+        assert.equal(productId, freeStocked.productId);
+      }
+    }
+    assert.deepEqual(accepted, freeable);
+    assert.deepEqual((await read(freeShop)).usage.freeable, {
+      products: 0,
+      variants: 0,
+    });
+    assert.ok(freeActive.productId);
+    tests.push(
+      "usage.freeable equals what product.delete accepts on the same products, and is zero once they are deleted"
     );
 
     // ------------------------------------------------ 1b. the months of history (AS-24, D1): from the first sale to now

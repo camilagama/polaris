@@ -1575,7 +1575,16 @@ export const billingPlanView = z
     ]),
     trialAvailable: z.boolean(),
     usage: z
-      .object({ goals: planCount, images: planCount, variants: planCount })
+      .object({
+        // optional and additive: the PWA that predates it does not validate the output, so the Worker can go first
+        freeable: z
+          .object({ products: planCount, variants: planCount })
+          .strict()
+          .optional(),
+        goals: planCount,
+        images: planCount,
+        variants: planCount,
+      })
       .strict(),
   })
   .strict();
