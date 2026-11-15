@@ -10,7 +10,6 @@ import { listUserOrganizations } from "../src/organization-membership-query";
 import {
   archiveProduct,
   createProduct,
-  deleteProduct,
   listProducts,
 } from "../src/product-repository";
 import { cancelSale } from "../src/sale-cancellation-repository";
@@ -18,6 +17,7 @@ import { changeSaleCustomerLink } from "../src/sale-customer-link-repository";
 import { listSales } from "../src/sale-query-repository";
 import { createSaleReturn } from "../src/sale-return-repository";
 import { runClock, storeDay, storeNoon } from "./gate-clock";
+import { archiveThenDeleteProduct } from "./product-lifecycle-support";
 import {
   confirmPlainSale,
   createSellableProduct,
@@ -184,7 +184,7 @@ async function run() {
       tenantA,
       "product:update",
       (transaction, identity) =>
-        deleteProduct(transaction, identity, {
+        archiveThenDeleteProduct(transaction, identity, {
           expectedVersion: echo.version,
           id: echo.productId,
         })

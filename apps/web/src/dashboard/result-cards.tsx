@@ -33,7 +33,7 @@ import {
   isIncompleteEstimate,
   NO_KNOWN_COST_RESULT,
 } from "./dashboard-model";
-import { resultKpis, untilText } from "./result-kpis";
+import { NO_SALES_UNTIL_DAY, resultKpis, untilText } from "./result-kpis";
 import { type Period, periodRangeLabel } from "./result-period";
 import type { ComparisonDays, ComparisonSales } from "./use-period-summary";
 
@@ -104,11 +104,16 @@ export function resultWarning({
 /** No day: the same array on every render, so a copy without the series does not redo the memoized cards. */
 const NO_DAYS: readonly never[] = [];
 
-/** What the keyboard control says of a reading: "Até 17/10: R$ 1.926,30", with the amount hidden when asked. */
+/**
+ * What the keyboard control says of a reading: "Até 17/10: R$ 1.926,30", with the amount hidden when asked. A day with
+ * no sale yet in a period that has sales says so after the amount, in the words of the support line.
+ */
 function spoken(prefix: string, reading: KpiReading, hidden: boolean): string {
   const amount =
     reading.value === null ? "sem valor" : formatBrlAmount(reading.value);
-  const text = `${prefix}: ${amount}`;
+  const noSales =
+    reading.count === NO_SALES_UNTIL_DAY ? `. ${NO_SALES_UNTIL_DAY}` : "";
+  const text = `${prefix}: ${amount}${noSales}`;
   return hidden ? maskMoney(text, MASKED_SPOKEN) : text;
 }
 
