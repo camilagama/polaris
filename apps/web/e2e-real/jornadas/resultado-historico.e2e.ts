@@ -16,7 +16,6 @@ import { nextCommandId, seedCashSale, seedProduct, seedStock } from "../seed";
 
 const ANY_PERIOD_BUTTON = /^Período: .+, editar$/;
 const HISTORY_URL = /\/sales\/history$/;
-const DASHBOARD_URL = /\/dashboard$/;
 const ANY_PERIOD_PILL = /^Período: /;
 const ONE_SALE_LINK = /^Ver a venda de /;
 const STATUS_PILL = "Situação: Confirmadas, editar";
@@ -299,7 +298,7 @@ test("o Histórico com o período leva ao Resultado no mesmo período, e recarre
   );
   await seedSales(journey, 3);
   const { page } = journey;
-  const { label } = monthToToday();
+  const { from, label, to } = monthToToday();
 
   await page.goto("/dashboard");
   await salesCard(page).getByRole("button", { name: SALES_LINK }).click();
@@ -311,7 +310,12 @@ test("o Histórico com o período leva ao Resultado no mesmo período, e recarre
   });
   await expect(back).toHaveText("Ver o resultado deste período");
   await back.click();
-  await expect(page).toHaveURL(DASHBOARD_URL);
+  await expect(page).toHaveURL(
+    (url) =>
+      url.pathname === "/dashboard" &&
+      url.searchParams.get("de") === from &&
+      url.searchParams.get("ate") === to
+  );
   await expect(
     page.getByRole("button", { exact: true, name: `Período: ${label}, editar` })
   ).toBeVisible();
