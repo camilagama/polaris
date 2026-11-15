@@ -35,6 +35,7 @@ import {
   gt,
   isNotNull,
   isNull,
+  notExists,
   type SQL,
   sql,
 } from "drizzle-orm";
@@ -590,10 +591,21 @@ export async function updateProduct(
 }
 
 /**
- * The zero-balance rule of a deletion: a product with any variant holding stock cannot be deleted, and a product
- * with no materialized balance row has none. The plan read's `usage.freeable` has to count with this same
- * predicate, so the number a screen shows is what the deletion accepts.
+ * The zero-balance rule of a deletion, written once: a variant of the product holds stock. A product with no
+ * materialized balance row holds none. The deletion refuses on it and the plan read's `usage.freeable` counts the
+ * products where it is absent, so the number a screen shows follows what the deletion accepts on balance (the hourly cap of deletions is a separate, time-bound refusal).
  */
+function holdsStock(
+  organizationId: string,
+  productId: SQL | string | typeof products.id
+): SQL {
+  return and(
+    eq(inventoryBalances.organizationId, organizationId),
+    eq(inventoryBalances.productId, productId),
+    gt(inventoryBalances.quantity, 0)
+  ) as SQL;
+}
+
 async function hasPositiveBalance(
   transaction: TenantRequestTransaction,
   identity: TenantRequestIdentity,
@@ -602,15 +614,46 @@ async function hasPositiveBalance(
   const [positiveBalance] = await transaction
     .select({ variantId: inventoryBalances.variantId })
     .from(inventoryBalances)
-    .where(
-      and(
-        eq(inventoryBalances.organizationId, identity.organizationId),
-        eq(inventoryBalances.productId, productId),
-        gt(inventoryBalances.quantity, 0)
-      )
-    )
+    .where(holdsStock(identity.organizationId, productId))
     .limit(1);
   return positiveBalance !== undefined;
+}
+
+/**
+ * What deleting would free right now: the archived products, not deleted, that the deletion accepts on the balance
+ * rule (`holdsStock`), and their variants. It is the plan read's `usage.freeable`.
+ */
+export async function countFreeableArchivedProducts(
+  transaction: TenantRequestTransaction,
+  organizationId: string
+): Promise<{ products: number; variants: number }> {
+  const [row] = await transaction
+    .select({
+      products: sql<number>`count(distinct ${products.id})::int`,
+      variants: sql<number>`count(${productVariants.id})::int`,
+    })
+    .from(products)
+    .leftJoin(
+      productVariants,
+      and(
+        eq(productVariants.organizationId, products.organizationId),
+        eq(productVariants.productId, products.id)
+      )
+    )
+    .where(
+      and(
+        eq(products.organizationId, organizationId),
+        isNotNull(products.archivedAt),
+        isNull(products.deletedAt),
+        notExists(
+          transaction
+            .select({ one: sql`1` })
+            .from(inventoryBalances)
+            .where(holdsStock(organizationId, products.id))
+        )
+      )
+    );
+  return { products: row?.products ?? 0, variants: row?.variants ?? 0 };
 }
 
 /**
