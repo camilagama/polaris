@@ -4,11 +4,13 @@ import { readFileSync } from "node:fs";
 import { Client } from "pg";
 import {
   ACTIVATION_FUNNEL_MAX_WEEKS,
+  ACTIVATION_FUNNEL_STATEMENT_TIMEOUT_MS,
   readActivationFunnel,
 } from "../src/admin-diagnostics-repository";
 import { TRIAL_DAYS } from "@polaris/domain/billing/subscription-state";
 import { classifyOrganization } from "../src/admin-support-repository";
 import { createDatabase } from "../src/client";
+import { withGateRole } from "./gate-roles";
 import {
   disposableHostPattern,
   expectSqlState,
@@ -43,8 +45,10 @@ import {
  *      complement is the stores that existed and did not sell (a case built so that only the complement is small),
  *      and whose difference with the retention cells it contains (of the cohorts 1, 2 and 4 weeks older) is under
  *      5 in no answer;
- *   6. the cost with 1,000 stores and 50,000 sales (a rolled-back transaction): the time of the call and the plan of
- *      the query inside (auto_explain), printed as gate notes.
+ *   6. the cost with 1,000 stores and 50,000 sales (a rolled-back transaction): the first call, as the route makes
+ *      it (the audited wrapper as the Admin runtime, under the route's statement_timeout, jit off, auto_explain
+ *      logging nothing), which must not be cancelled and whose audit event rolls back; then the time of the call and
+ *      the plan of the query inside (auto_explain), printed as gate notes.
  * The fixtures write sale headers without items (`session_replication_role = replica`) and load auto_explain, so the
  * owner must be a superuser: the gate runs on the job's PostgreSQL only (`localOnly`).
  */
@@ -2215,6 +2219,13 @@ async function run() {
     );
 
     // ------------------------------------------------- 6. the cost with 1,000 stores and 50,000 sales
+    const readEventsKept = async () =>
+      (
+        await owner.pool.query<{ count: number }>(
+          "SELECT count(*)::int AS count FROM public.platform_audit_events WHERE event_type = 'activation_funnel.read'"
+        )
+      ).rows[0]?.count;
+    const readEventsBeforeMeasure = await readEventsKept();
     {
       const client = await owner.pool.connect();
       const plans: string[] = [];
@@ -2268,6 +2279,58 @@ async function run() {
         const volume = await client.query<{ sales: number; stores: number }>(
           "SELECT (SELECT count(*)::int FROM public.organizations) AS stores, (SELECT count(*)::int FROM public.sales) AS sales"
         );
+        // the first call of the measure, as the route makes it (readActivationFunnel in admin-diagnostics-repository.ts):
+        // the audited wrapper as the Admin runtime, under the route's statement_timeout, jit off, before any timed
+        // call and before auto_explain logs anything (it is loaded further down). The rows are not committed, so a
+        // login of the Admin runtime could not see them: this connection takes the role for the call (withGateRole).
+        // DISCARD PLANS drops the plans cached by the statements before it; the connection and the buffers stay warm,
+        // and the event it writes is in this transaction, which the ROLLBACK ends
+        assert.equal(
+          (
+            await client.query<{ value: string | null }>(
+              "SELECT current_setting('auto_explain.log_min_duration', true) AS value"
+            )
+          ).rows[0]?.value ?? "-1",
+          "-1",
+          "auto_explain logs nothing in this session before the call that imitates the route"
+        );
+        const eventsBeforeRoute = await client.query<{ count: number }>(
+          "SELECT count(*)::int AS count FROM public.platform_audit_events WHERE event_type = 'activation_funnel.read'"
+        );
+        await client.query("DISCARD PLANS");
+        await client.query("SET LOCAL jit = off");
+        await client.query(
+          `SET LOCAL statement_timeout = ${ACTIVATION_FUNNEL_STATEMENT_TIMEOUT_MS}`
+        );
+        const routeStarted = performance.now();
+        try {
+          await withGateRole(client, "polaris_admin_runtime", () =>
+            client.query("SELECT public.admin_read_activation_funnel($1, $2)", [
+              operator,
+              ACTIVATION_FUNNEL_MAX_WEEKS,
+            ])
+          );
+        } catch (error: unknown) {
+          assert.notEqual(
+            (error as { code?: unknown } | null)?.code,
+            "57014",
+            `the audited funnel read must finish inside the route's statement_timeout (${ACTIVATION_FUNNEL_STATEMENT_TIMEOUT_MS} ms, jit off, first call of the measure), but it was cancelled after ${(performance.now() - routeStarted).toFixed(1)} ms: rewrite the activity CTE instead of raising the limit`
+          );
+          throw error;
+        }
+        const routeMs = performance.now() - routeStarted;
+        await client.query("SET LOCAL statement_timeout = 0");
+        const eventsAfterRoute = await client.query<{ count: number }>(
+          "SELECT count(*)::int AS count FROM public.platform_audit_events WHERE event_type = 'activation_funnel.read'"
+        );
+        assert.equal(
+          eventsAfterRoute.rows[0]?.count,
+          (eventsBeforeRoute.rows[0]?.count as number) + 1,
+          "the audited read wrote its event in the transaction that the gate rolls back"
+        );
+        notes.push(
+          `activation-funnel first call of the measure, through admin_read_activation_funnel (audit event included, plans discarded, auto_explain logging nothing, jit off) under the route's statement_timeout of ${ACTIVATION_FUNNEL_STATEMENT_TIMEOUT_MS} ms: ${routeMs.toFixed(1)} ms`
+        );
         const durations: number[] = [];
         for (const _ of times(3, () => 0)) {
           const started = performance.now();
@@ -2292,7 +2355,8 @@ async function run() {
             );
           }
         }
-        await client.query("RESET jit");
+        // the comparison above left jit as its last iteration set it; the plan below is of the route's setting
+        await client.query("SET LOCAL jit = off");
         notes.push(
           `activation-funnel measure of jit: available ${jit.rows[0]?.available}; 26 weeks (after one warm-up call, interleaved) with jit on ${jitOn.map((ms) => ms.toFixed(1)).join(" / ")} ms, with jit off ${jitOff.map((ms) => ms.toFixed(1)).join(" / ")} ms`
         );
@@ -2312,7 +2376,7 @@ async function run() {
         );
         const execution = EXECUTION_TIME.exec(plan)?.[1];
         notes.push(
-          `activation-funnel measure: ${volume.rows[0]?.stores} stores, ${volume.rows[0]?.sales} sales in the database; call ${durations.map((ms) => ms.toFixed(1)).join(" / ")} ms (median ${median.toFixed(1)} ms); query inside ${execution ?? "?"} ms`
+          `activation-funnel measure (jit off, as the route reads): ${volume.rows[0]?.stores} stores, ${volume.rows[0]?.sales} sales in the database; call ${durations.map((ms) => ms.toFixed(1)).join(" / ")} ms (median ${median.toFixed(1)} ms); query inside ${execution ?? "?"} ms`
         );
         for (const line of plan.split("\n")) {
           if (!line.startsWith("Query Text") && line.trim().length > 0) {
@@ -2321,16 +2385,21 @@ async function run() {
         }
         assert.ok(
           median < 5000,
-          `the funnel answers in under 5 s with 1,000 stores and 50,000 sales (${median.toFixed(1)} ms)`
+          `the funnel answers in under 5 s with jit off, as the route reads, with 1,000 stores and 50,000 sales (${median.toFixed(1)} ms)`
         );
         tests.push(
-          `with 1,000 stores more and 50,000 sales (rolled back), the call takes ${median.toFixed(1)} ms (median of 3) and auto_explain gives the plan of the query inside (gate notes)`
+          `with 1,000 stores more and 50,000 sales (rolled back), the first call of the measure (plans discarded), through the audited wrapper as the Admin runtime with jit off and auto_explain logging nothing, is not cancelled under the route's ${ACTIVATION_FUNNEL_STATEMENT_TIMEOUT_MS} ms statement_timeout (${routeMs.toFixed(1)} ms) and its audit event is rolled back; the aggregate call then takes ${median.toFixed(1)} ms with jit off (median of 3), and auto_explain gives the plan of the query inside (gate notes)`
         );
       } finally {
         await client.query("ROLLBACK");
         client.release();
       }
     }
+    assert.equal(
+      await readEventsKept(),
+      readEventsBeforeMeasure,
+      "the event of the audited read of the measure was rolled back with it"
+    );
 
     for (const note of notes) {
       console.log(`gate-note: ${note}`);
