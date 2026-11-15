@@ -2591,7 +2591,7 @@ Origem: o item 3 das melhorias de qualidade aprovadas pelo usuário em 28/10 (de
 | Item | Estado | Detalhe |
 | --- | --- | --- |
 | Lighthouse CI | Concluído (PR 389, b173d173) | `apps/web/lighthouserc.json` e `bun run --filter @polaris/web test:lighthouse`: `/entrar`, a loja do catálogo de fixture e o Início (login falso por `puppeteerScript` sobre as leituras do `e2e-pwa`), contra o cliente de produção, em celular simulado (`simulate`), 3 rodadas e a mediana; rodada com a CPU disputada é repetida. CLS 0,1 em `error`; LCP 2,5 s, TBT 200 ms e bytes de JS (medido + 44 000 B do precache) em `warn`; sem INP, sem servidor LHCI, sem desktop. Runbook: `docs/runbooks/testes-de-tela.md`. |
-| Pendências | Registrado | O job do `ci.yml` é patch do responsável (`~/tasks/t473-lighthouse.patch.md`, aplicado depois do merge). O CLS já é `error`; a troca do LCP, do TBT e dos bytes de JS de `warn` para `error` é tarefa à parte, com os números do CI. |
+| Pendências | Registrado | O job `lighthouse` já está no `.github/workflows/ci.yml` (linhas 202-238, `continue-on-error`, fora do `needs` do gate de navegador). O CLS já é `error`; a troca do LCP, do TBT e dos bytes de JS de `warn` para `error` é tarefa à parte, com os números do CI. |
 
 ### Regressão visual na suíte e2e-pwa (Q1 do desenho de qualidade de 28/10; sem migration)
 
