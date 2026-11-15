@@ -349,7 +349,8 @@ const COVERED: Readonly<Record<string, readonly Case[]>> = {
     "produtos lista",
     "produtos novo produto num passo só",
     "produtos variantes, opções e combinação",
-    "produtos imagens, remoção pedindo confirmação"
+    "produtos imagens, remoção pedindo confirmação",
+    "produtos excluir arquivado"
   ),
   "sale-detail": states(
     "detalhe da venda aberto",
