@@ -2275,6 +2275,27 @@ async function run() {
           await client.query("SELECT public.admin_activation_funnel(26)");
           durations.push(performance.now() - started);
         }
+        const jit = await client.query<{ available: boolean }>(
+          "SELECT pg_catalog.pg_jit_available() AS available"
+        );
+        await client.query("SELECT public.admin_activation_funnel(26)");
+        const jitOn: number[] = [];
+        const jitOff: number[] = [];
+        for (const _ of times(3, () => 0)) {
+          for (const setting of ["on", "off"] as const) {
+            // biome-ignore lint/performance/noAwaitInLoops: Timed one after another, interleaved so that the cache is as warm for one as for the other.
+            await client.query(`SET LOCAL jit = ${setting}`);
+            const started = performance.now();
+            await client.query("SELECT public.admin_activation_funnel(26)");
+            (setting === "on" ? jitOn : jitOff).push(
+              performance.now() - started
+            );
+          }
+        }
+        await client.query("RESET jit");
+        notes.push(
+          `activation-funnel measure of jit: available ${jit.rows[0]?.available}; 26 weeks (after one warm-up call, interleaved) with jit on ${jitOn.map((ms) => ms.toFixed(1)).join(" / ")} ms, with jit off ${jitOff.map((ms) => ms.toFixed(1)).join(" / ")} ms`
+        );
         await client.query("LOAD 'auto_explain'");
         await client.query("SET LOCAL auto_explain.log_min_duration = 0");
         await client.query("SET LOCAL auto_explain.log_analyze = on");
