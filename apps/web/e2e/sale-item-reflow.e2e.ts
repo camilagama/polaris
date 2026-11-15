@@ -1,7 +1,7 @@
 /// <reference lib="dom" />
 import type { Locator, Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
-import { reflowTest } from "./reflow";
+import { assertNoPageScroll, assertNothingClipped, reflowTest } from "./reflow";
 import {
   type ItemGeometry,
   layoutOf,
@@ -30,6 +30,7 @@ const LONGEST_VALUE = "99.999,99";
 const SHIRT_OPTION = /Camiseta do laboratório · Azul/;
 const ORGANIZATION = "0199c2d0-0000-7000-8000-00000000a001";
 const SHIRT = "0199c2d0-0000-7000-8000-0000000000b1";
+const REFRESH_BUTTON = /^Atualizar/;
 const WIDTHS = [320, 360, 390, 640, 768, 900, 1024, 1280];
 
 const rpc = (body: unknown) => ({
@@ -197,6 +198,43 @@ for (const pixels of [16, 20]) {
         await item.getByLabel("Preço de tabela").fill("abc");
         await expect(item.locator("[id$=-error]:not(:empty)")).toHaveCount(3);
         await sweep(4);
+      }
+    );
+
+    reflowTest(
+      "o contador 'N linhas · M unidades' sob Itens, com 9.999 unidades, cabe a 320 e 360 px: nada cortado, sem rolagem de lado e sem tocar o Atualizar",
+      async ({ page }) => {
+        const item = await openItem(page, pixels);
+        await item.getByLabel("Quantidade").fill("9999");
+        const counter = page.getByText("1 linha · 9.999 unidades", {
+          exact: true,
+        });
+        const spoken = page.getByText("1 linha, 9.999 unidades", {
+          exact: true,
+        });
+        const header = page.locator("#sale-items-title").locator("..");
+        const refresh = header.getByRole("button", { name: REFRESH_BUTTON });
+        for (const width of [320, 360]) {
+          // biome-ignore lint/performance/noAwaitInLoops: the widths are applied to the same page, one after the other
+          await page.setViewportSize({ height: 800, width });
+          await expect(counter, `${width} px`).toBeVisible();
+          await expect(spoken, `${width} px`).toHaveCount(1);
+          await assertNothingClipped(header);
+          await assertNoPageScroll(page);
+          const [text, button] = await Promise.all([
+            counter.boundingBox(),
+            refresh.boundingBox(),
+          ]);
+          expect(text && button, `${width} px`).toBeTruthy();
+          if (text && button) {
+            const apart =
+              text.x + text.width <= button.x + 0.5 ||
+              button.x + button.width <= text.x + 0.5 ||
+              text.y + text.height <= button.y + 0.5 ||
+              button.y + button.height <= text.y + 0.5;
+            expect(apart, `${width} px`).toBe(true);
+          }
+        }
       }
     );
   });

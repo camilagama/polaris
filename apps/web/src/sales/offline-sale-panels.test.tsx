@@ -1,7 +1,11 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import type { PendingSale } from "../offline/sale-confirm";
-import { SavedSalesCard, savedSaleLines } from "./offline-sale-panels";
+import {
+  SavedSaleRow,
+  SavedSalesCard,
+  savedSaleLines,
+} from "./offline-sale-panels";
 import type { QueuedSaleView } from "./sale-form-model";
 
 const pending = (
@@ -10,10 +14,11 @@ const pending = (
 ): PendingSale => ({
   code: null,
   commandId,
-  itemCount: 2,
+  lineCount: 2,
   occurredAt: "2026-10-23T15:30:00.000Z",
   state: "pending",
   totalDue: "130.00",
+  unitCount: 5,
   ...overrides,
 });
 
@@ -39,12 +44,15 @@ describe("savedSaleLines (P-3)", () => {
 
   it("a venda recém-guardada vem primeiro, destacada, e não aparece duas vezes", () => {
     const lines = savedSaleLines(
-      [pending("a"), pending("b", { itemCount: 1, totalDue: "45.00" })],
+      [
+        pending("a"),
+        pending("b", { lineCount: 1, totalDue: "45.00", unitCount: 1 }),
+      ],
       { ...justSaved, stockWarnings: ["Camiseta: o aparelho mostra 1."] }
     );
     expect(lines.map((line) => line.commandId)).toEqual(["b", "a"]);
     expect(lines[0]).toMatchObject({
-      itemCount: 1,
+      count: { lines: 1, units: 1 },
       justSaved: true,
       stockWarnings: ["Camiseta: o aparelho mostra 1."],
       totalText: "R$ 45,00",
@@ -56,7 +64,7 @@ describe("savedSaleLines (P-3)", () => {
     const lines = savedSaleLines([pending("a")], justSaved);
     expect(lines[0]).toMatchObject({
       commandId: "b",
-      itemCount: null,
+      count: null,
       justSaved: true,
       occurredAt: null,
       state: "pending",
@@ -85,6 +93,34 @@ describe("SavedSalesCard", () => {
     expect(html.match(/Acompanhar em Pendências/g)).toHaveLength(1);
     expect(html.match(/O formulário abaixo foi reiniciado/g)).toHaveLength(1);
     expect(html.match(/Só viram vendas confirmadas/g)).toHaveLength(1);
+  });
+
+  it("a linha da fila diz as linhas e as unidades, e o leitor ouve o mesmo", () => {
+    const [line] = savedSaleLines(
+      [pending("a", { lineCount: 3, unitCount: 8 })],
+      null
+    );
+    expect(line?.count).toEqual({ lines: 3, units: 8 });
+    const html = renderToStaticMarkup(
+      <ul>{line ? <SavedSaleRow line={line} /> : null}</ul>
+    );
+    expect(html).toContain(
+      '<span aria-hidden="true">3 linhas · 8 unidades</span>'
+    );
+    expect(html).toContain('<span class="sr-only">3 linhas, 8 unidades</span>');
+    expect(html).not.toContain(" itens<");
+    expect(html).not.toContain(" item<");
+  });
+
+  it("a venda de 1 linha e 1 unidade fica no singular", () => {
+    const [line] = savedSaleLines(
+      [pending("a", { lineCount: 1, unitCount: 1 })],
+      null
+    );
+    const html = renderToStaticMarkup(
+      <ul>{line ? <SavedSaleRow line={line} /> : null}</ul>
+    );
+    expect(html).toContain("1 linha · 1 unidade");
   });
 
   it("sem nenhuma venda guardada não desenha nada", () => {
