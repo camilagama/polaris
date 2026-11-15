@@ -5,6 +5,7 @@ import { expect, test } from "@playwright/test";
 import { buildOfflineLeaseClaims } from "@polaris/domain/offline/offline-lease";
 import { signOfflineLease } from "../src/lib/offline-lease-token";
 import { SaleLabServer } from "../src/offline-poc/sale-lab-server";
+import { outboxCommands } from "./outbox-commands";
 import { serveHealth, WORKER_MARK } from "./worker-mark";
 
 /**
@@ -308,39 +309,6 @@ async function queueTwoSales(page: Page) {
   await keepOneSale(page);
   await keepOneSale(page);
   await expect(chip(page)).toContainText("Sem conexão · 2 operações guardadas");
-}
-
-async function outboxCommands(page: Page) {
-  return await page.evaluate(async () => {
-    const found: string[] = [];
-    for (const { name } of await indexedDB.databases()) {
-      if (!name) {
-        continue;
-      }
-      // biome-ignore lint/performance/noAwaitInLoops: a handful of tiny databases
-      const database = await new Promise<IDBDatabase>((resolve, reject) => {
-        const request = indexedDB.open(name);
-        request.onerror = () => reject(request.error);
-        request.onsuccess = () => resolve(request.result);
-      });
-      if (database.objectStoreNames.contains("commands")) {
-        const rows = await new Promise<{ commandId: string; seq: number }[]>(
-          (resolve, reject) => {
-            const request = database
-              .transaction("commands", "readonly")
-              .objectStore("commands")
-              .getAll();
-            request.onerror = () => reject(request.error);
-            request.onsuccess = () => resolve(request.result);
-          }
-        );
-        rows.sort((a, b) => a.seq - b.seq);
-        found.push(...rows.map(({ commandId }) => commandId));
-      }
-      database.close();
-    }
-    return found;
-  });
 }
 
 const stored = (page: Page, key: string) =>
