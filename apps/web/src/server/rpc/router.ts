@@ -121,6 +121,7 @@ import {
   ProductDefaultVariantSkuConflictError,
   ProductDefaultVariantStockHistoryConflictError,
   ProductDeletedError,
+  ProductDeleteRateLimitedError,
   ProductDescriptionError,
   ProductIdConflictError,
   ProductLifecycleError,
@@ -974,6 +975,19 @@ const notFoundRpcErrors = [
   [DeviceNotFoundError, OfflineGrantNotFoundError],
 ] as const;
 
+function productDeleteRateLimitedRpcError(
+  error: ProductDeleteRateLimitedError
+) {
+  return new ORPCError("TOO_MANY_REQUESTS", {
+    cause: error,
+    data: {
+      limit: error.limit,
+      reason: error.code,
+      retryAfterSeconds: error.retryAfterSeconds,
+    },
+  });
+}
+
 async function productLifecycleCommand(
   context: PolarisRpcContext,
   input: ProductLifecycleInput,
@@ -999,6 +1013,9 @@ async function productLifecycleCommand(
       product: productReadModel(result.product),
     };
   } catch (error) {
+    if (error instanceof ProductDeleteRateLimitedError) {
+      throw productDeleteRateLimitedRpcError(error);
+    }
     return toRpcError(error);
   }
 }

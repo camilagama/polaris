@@ -23,7 +23,6 @@ import {
   archiveProduct,
   configureProductVariants,
   createProduct,
-  deleteProduct,
 } from "../src/product-repository";
 import { publicCatalogReaderOver } from "../src/public-catalog-reader";
 import {
@@ -34,6 +33,7 @@ import {
   unpublishProducts,
 } from "../src/public-catalog-repository";
 import { TenantAuthorizationError } from "../src/tenant-transaction";
+import { archiveThenDeleteProduct } from "./product-lifecycle-support";
 import {
   createTenantFixture,
   disposableHostPattern,
@@ -611,7 +611,7 @@ async function run() {
       })
     );
     await as(orgA, "product:update", (tx, identity) =>
-      deleteProduct(tx, identity, {
+      archiveThenDeleteProduct(tx, identity, {
         expectedVersion: p4.version,
         id: p4.id,
         requestId: randomUUID(),

@@ -3,6 +3,10 @@ export type ProductLifecycle = "active" | "archived" | "deleted";
 
 export type ProductLifecycleAction = "archive" | "delete" | "restore";
 
+/** Exclusões concluídas por loja na última hora; o servidor e o texto da recusa leem este valor. */
+export const PRODUCT_DELETE_LIMIT_PER_HOUR = 50;
+export const PRODUCT_DELETE_WINDOW_SECONDS = 60 * 60;
+
 export const PRODUCT_VARIANT_OPTION_NAMES = ["model", "color", "size"] as const;
 export const MAX_PRODUCT_VARIANTS = 50;
 /** In code points, after the trim: a value is "GG", "Azul-marinho", "iPhone 15 Pro Max". */
@@ -143,6 +147,20 @@ export class ProductLifecycleError extends Error {
 
   readonly action: ProductLifecycleAction;
   readonly lifecycle: ProductLifecycle;
+}
+
+export class ProductDeleteRateLimitedError extends Error {
+  readonly code = "product_delete_rate_limited";
+  readonly limit = PRODUCT_DELETE_LIMIT_PER_HOUR;
+  readonly retryAfterSeconds: number;
+
+  constructor(retryAfterSeconds: number) {
+    super("product_delete_rate_limited");
+    this.retryAfterSeconds = Number.isFinite(retryAfterSeconds)
+      ? Math.max(1, Math.ceil(retryAfterSeconds))
+      : 1;
+    this.name = "ProductDeleteRateLimitedError";
+  }
 }
 
 export class ProductVersionConflictError extends Error {
@@ -421,6 +439,9 @@ export function transitionProductLifecycle(
   }
 
   if (action === "delete") {
+    if (current !== "archived") {
+      throw new ProductLifecycleError(action, current);
+    }
     return { changed: true, lifecycle: "deleted" };
   }
 
