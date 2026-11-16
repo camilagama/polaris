@@ -683,16 +683,16 @@ function growthLine(size: PrecacheSize, baseline: number): string {
 const PRECACHE_SIZE_FILE = "precache-size.json";
 
 /**
- * Where the build leaves the measures: beside the `client` directory of the Cloudflare build (`dist/`), not inside
- * it, since what is inside is served and the file is for the CI only; any other output directory keeps it inside.
+ * Where the build leaves the measures, never inside the output directory: what is inside is served and the file is
+ * for the CI only. The Cloudflare build (`dist/client`) gets `dist/precache-size.json`; any other directory gets a
+ * file named after it in its parent, so two builds side by side do not share one.
  */
 export function precacheSizePath(outputDirectory: string): string {
-  return join(
-    basename(outputDirectory) === "client"
-      ? dirname(outputDirectory)
-      : outputDirectory,
-    PRECACHE_SIZE_FILE
-  );
+  const parent = dirname(outputDirectory);
+  const name = basename(outputDirectory);
+  return name === "client"
+    ? join(parent, PRECACHE_SIZE_FILE)
+    : join(parent, `${name}.${PRECACHE_SIZE_FILE}`);
 }
 
 /** The measures of one build as `PRECACHE_SIZE_FILE` keeps them: the lines of `measurePrecache` and their sum. */
