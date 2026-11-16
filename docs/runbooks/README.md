@@ -28,6 +28,7 @@ Gates e provas por fase:
 - Observabilidade (Fase 12, [ADR 0095](../adr/0095-onde-os-alertas-operacionais-vao-rodar.md)): [Alertas operacionais](./alertas.md), com o significado de cada sinal, como confirmar nos Workers Logs ou no banco e o que fazer.
 - Observabilidade (Fase 12, [ADR 0098](../adr/0098-sentry-no-navegador-so-erros-e-sanitizado.md), emenda de 28/10/2026): [Erros do app no navegador](./erros-do-navegador.md), com as duas chaves, a ordem das recusas, as linhas do log e o orçamento, como ler e como conter uma enxurrada.
 - Ambientes (Fase 14, [ADR 0097](../adr/0097-staging-fixo-e-producao-em-conta-separada.md)): [Staging fixo](./staging.md), com os recursos e segredos que o responsável cria, o cliente OAuth do Google em modo Testing, a verificação de isolamento e os itens do release-checklist provados no staging.
+- Ambientes (Fase 14, [ADR 0097](../adr/0097-staging-fixo-e-producao-em-conta-separada.md)): [Produção](./production.md), espelho do staging na conta de produção, com o que depende do responsável e o que é automático, os placeholders do `wrangler.jsonc`, o Access do Admin, a ordem do deploy, o rollback ou forward-fix e as flags da liberação em etapas. Nada nele foi executado.
 
 Atendimento: [Pedido de vaga](./atendimento-pedido-de-vaga.md), com o que o suporte diz ao dono que pede vaga no limite do plano, quando dar a liberação temporária e o que o suporte nunca faz (arquivar, excluir ou editar produto da loja).
 

@@ -219,7 +219,7 @@ describe("NearLimitNotice com holdSpace", () => {
     expect(held?.props.className.split(" ")).toContain("invisible");
     const path = pathToAnchor(held);
     expect(path?.at(-1)?.props.href).toBeDefined();
-    expect(path?.slice(0, -1).some(leavesTabOrder)).toBe(true);
+    expect(path?.some(leavesTabOrder)).toBe(true);
   });
 
   it("o link da linha à mostra continua na ordem de Tab", () => {

@@ -2,7 +2,7 @@
 
 Status: configuração preenchida no repositório (IDs reais, seção 3); os recursos de staging existem desde 22/10, falta o que a seção 5 em diante lista. Os recursos, os segredos e o primeiro deploy são do responsável (Arrascaeta ou o usuário). Decisões e motivos: [ADR 0097](../adr/0097-staging-fixo-e-producao-em-conta-separada.md).
 
-O staging é um ambiente fixo na conta Cloudflare atual, com dados **só sintéticos**. A exceção são o nome e o e-mail das pessoas de teste que entram pelo Google: são dados pessoais de quem testa, e saem do banco quando a pessoa deixa de testar (seção 4). Com a senha ligada, o e-mail digitado no cadastro também é dado pessoal, às vezes de quem não é a pessoa que o digitou; o pedido de remoção desse terceiro segue o mesmo passo de apagamento do item 9 da seção 4 (conta e sessões no banco de staging). A produção vai para outra conta Cloudflare e outra organização ou projeto Neon, no go-live (Fase 15).
+O staging é um ambiente fixo na conta Cloudflare atual, com dados **só sintéticos**. A exceção são o nome e o e-mail das pessoas de teste que entram pelo Google: são dados pessoais de quem testa, e saem do banco quando a pessoa deixa de testar (seção 4). Com a senha ligada, o e-mail digitado no cadastro também é dado pessoal, às vezes de quem não é a pessoa que o digitou; o pedido de remoção desse terceiro segue o mesmo passo de apagamento do item 9 da seção 4 (conta e sessões no banco de staging). A produção vai para outra conta Cloudflare e outra organização ou projeto Neon, no go-live (Fase 15). O procedimento espelho para a produção está no [runbook de produção](./production.md).
 
 ## Gatilho
 

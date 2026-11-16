@@ -3997,7 +3997,8 @@ test.describe("o aviso dos dias sem custo com o mês nomeado tem teto: a contage
   /**
    * Same rule as `unknownDaysText` and `unknownDaysFit` (`home/home-kpis.ts`), written here because importing the app's
    * modules from `e2e/` pulls the `@/` alias in, which the `tsconfig.node.json` that type-checks this folder does not have.
-   * It is a copy with no guard against drift: if the app changes the limit or the text, change it here too.
+   * It is a copy, held to the app by `src/home/dashboard-unknown-days-guard.test.ts`: that test fails when the limit or the
+   * text written here differs from the app's.
    */
   const UNKNOWN_DAYS_MAX_CHARS = 34;
   const unknownDaysLine = (
