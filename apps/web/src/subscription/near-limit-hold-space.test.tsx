@@ -105,16 +105,21 @@ interface NoticeProps {
   "data-near-limit"?: string;
 }
 
-interface AnchorProps {
+interface ElementProps {
   children?: unknown;
+  className?: string;
   href?: string;
+  inert?: boolean;
   tabIndex?: number;
 }
 
-function findAnchor(node: unknown): ReactElement<AnchorProps> | null {
+function pathToAnchor(
+  node: unknown,
+  trail: ReactElement<ElementProps>[] = []
+): ReactElement<ElementProps>[] | null {
   if (Array.isArray(node)) {
     for (const child of node) {
-      const found = findAnchor(child);
+      const found = pathToAnchor(child, trail);
       if (found) {
         return found;
       }
@@ -124,8 +129,20 @@ function findAnchor(node: unknown): ReactElement<AnchorProps> | null {
   if (typeof node !== "object" || node === null || !("props" in node)) {
     return null;
   }
-  const element = node as ReactElement<AnchorProps>;
-  return element.type === "a" ? element : findAnchor(element.props.children);
+  const element = node as ReactElement<ElementProps>;
+  const next = [...trail, element];
+  return element.type === "a"
+    ? next
+    : pathToAnchor(element.props.children, next);
+}
+
+function leavesTabOrder(element: ReactElement<ElementProps>): boolean {
+  const { className, inert, tabIndex } = element.props;
+  return (
+    className?.split(" ").includes("invisible") === true ||
+    inert === true ||
+    tabIndex === -1
+  );
 }
 
 let noticeOf: ReactElement<NoticeProps> | null = null;
@@ -197,14 +214,18 @@ describe("NearLimitNotice com holdSpace", () => {
     expect(held?.props["data-near-limit"]).toBeUndefined();
   });
 
-  it("o link sai da tabulação só pela classe invisible do parágrafo que o contém: nem ele nem o parágrafo levam tabIndex ou inert", () => {
+  it("o link do parágrafo retido fica fora da ordem de Tab e o parágrafo leva invisible", () => {
     const held = renderNotice(null, true);
-    const anchor = findAnchor(held?.props.children);
-    expect(anchor?.props.href).toBeDefined();
-    expect(anchor?.props).not.toHaveProperty("tabIndex");
     expect(held?.props.className.split(" ")).toContain("invisible");
-    expect(held?.props).not.toHaveProperty("tabIndex");
-    expect(held?.props).not.toHaveProperty("inert");
+    const path = pathToAnchor(held);
+    expect(path?.at(-1)?.props.href).toBeDefined();
+    expect(path?.slice(0, -1).some(leavesTabOrder)).toBe(true);
+  });
+
+  it("o link da linha à mostra continua na ordem de Tab", () => {
+    const path = pathToAnchor(renderNotice(near, true));
+    expect(path?.at(-1)?.props.href).toBeDefined();
+    expect(path?.some(leavesTabOrder)).toBe(false);
   });
 
   it("sem o vão, nada é renderizado", () => {
