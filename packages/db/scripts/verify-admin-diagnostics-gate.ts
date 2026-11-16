@@ -1032,9 +1032,8 @@ async function run() {
     if (runtime) {
       await runtime.pool.end();
     }
-    for (const [role, group] of logins) {
+    for (const [role] of logins) {
       // biome-ignore lint/performance/noAwaitInLoops: Cleanups, in order.
-      await owner.pool.query(`REVOKE "${group}" FROM "${role}"`);
       await owner.pool.query(`DROP ROLE IF EXISTS "${role}"`);
     }
     await owner.pool.end();

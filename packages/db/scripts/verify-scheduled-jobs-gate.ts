@@ -518,9 +518,8 @@ async function run() {
         "DELETE FROM public.scheduled_job_state WHERE job_id LIKE 'gate.job\\_%'"
       )
       .catch(() => undefined);
-    for (const [role, group] of logins) {
+    for (const [role] of logins) {
       // biome-ignore lint/performance/noAwaitInLoops: Cleanups, in order.
-      await owner.pool.query(`REVOKE "${group}" FROM "${role}"`);
       await owner.pool.query(`DROP ROLE IF EXISTS "${role}"`);
     }
     await owner.pool.end();

@@ -39,10 +39,9 @@ export function temporaryLogins(
   const made: [string, string][] = [];
   return {
     async drop() {
-      for (const [role, group] of made) {
+      for (const [role] of made) {
         try {
           // biome-ignore lint/performance/noAwaitInLoops: Cleanups, in order.
-          await owner.pool.query(`REVOKE "${group}" FROM "${role}"`);
           await owner.pool.query(`DROP ROLE IF EXISTS "${role}"`);
         } catch {
           // the login has a random password and the database is disposable, but a leftover is said, never silent
