@@ -3256,6 +3256,13 @@ Origem: achado B do Diego no Pixel 6 (28/10): a venda montada em Vender sumia ao
 | Rota (menor do Léo) | Em revisão | `trialStarted` maior que as lojas da coorte vira `activation_funnel_inconsistent`; o contrato não mudou. |
 | Ordem de deploy (AC-3.1) | Em revisão | SHA mínimo do Admin `0ddc9698`; o runbook de staging diz que reverter antes dele depois da migration dá 500 no Funil. |
 
+### Funil de ativação: `soldInTrial` só aparece com `withFirstSale` mostrado (t1188; migration 0132, número provisório)
+
+| Item | Estado | Detalhe |
+| --- | --- | --- |
+| Função | Em revisão | Migration 0132 recria `admin_activation_funnel` (mesma assinatura, mesmos grants): `soldInTrial` exige o corte 1 a 5 (o mesmo de `withFirstSale`) além das condições de k que já tinha. Antes, coorte de 10 lojas ou mais que venderam e com menos de 5 sem venda (corte 7) escondia `withFirstSale` e mostrava `soldInTrial`, subconjunto da célula escondida. |
+| Gate `activation-funnel` | Em revisão | Coorte fixa na semana 19 (2 sem venda, 10 com teste, 5 venderam no teste, 5 depois, 5 sem teste) com `soldInTrial` suprimido e `trialStarted` 10; falhava antes da migration. A contagem direta (`expectedCohort`) exige o corte 1 a 5; nenhuma asserção nem o k foram afrouxados. Só roda no CI e no PostgreSQL local. |
+
 ### Rota aberta pelo endereço com a raiz vazia: a página cujo módulo de entrada não rodou recarrega uma vez (t937; emenda de 08/11/2026 do ADR 0040; sem migration)
 
 | Item | Status | Observação |
