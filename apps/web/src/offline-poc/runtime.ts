@@ -13,6 +13,7 @@ import {
   type OnlineDetector,
   startOfflineExecutor,
 } from "@tanstack/offline-transactions";
+import { withLocalFileLock } from "../offline/local-store-lock";
 
 export const OFFLINE_POC_DATABASE_FILE = "polaris-pr12-offline-poc.sqlite";
 export const SHARED_RECORD_ID = "polaris-pr12-shared-concurrent-record";
@@ -28,7 +29,6 @@ const RESET_JOURNAL_STORE_NAME = "journal";
 const RESET_JOURNAL_RECORD_KEY = "reset";
 const RESET_JOURNAL_LOCK_NAME = "polaris-pr12-offline-poc-reset-recovery";
 const RESET_JOURNAL_PENDING_VALUE = "pending";
-const DATABASE_OPEN_LOCK_NAME = "polaris-pr12-offline-poc-database-open";
 
 export type OfflinePocRelease = 1 | 2;
 
@@ -192,18 +192,27 @@ function createNotesV2Collection(
   );
 }
 
-// Two tabs creating the same OPFS file at once (right after a reset removed it) make one of them fail with
-// NotFoundError inside the SQLite worker. Opening one tab at a time leaves the second a file that already exists,
-// the same path as any later tab.
 function openDatabaseSerialized() {
-  const open = () =>
+  return withLocalFileLock(OFFLINE_POC_DATABASE_FILE, () =>
     openBrowserWASQLiteOPFSDatabase({
       databaseName: OFFLINE_POC_DATABASE_FILE,
-    });
-  if (typeof navigator.locks?.request !== "function") {
-    return open();
-  }
-  return navigator.locks.request(DATABASE_OPEN_LOCK_NAME, open);
+    })
+  );
+}
+
+function removeDatabaseFileSerialized() {
+  return withLocalFileLock(OFFLINE_POC_DATABASE_FILE, async () => {
+    const root = await navigator.storage.getDirectory();
+    try {
+      await root.removeEntry(OFFLINE_POC_DATABASE_FILE);
+      return true;
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "NotFoundError") {
+        return false;
+      }
+      throw error;
+    }
+  });
 }
 
 export async function createOfflinePocRuntime(
@@ -693,18 +702,7 @@ async function clearOfflinePocStorageData(): Promise<OfflinePocResetResult> {
     clearIndexedDbStore(MOCK_SERVER_DATABASE_NAME, MOCK_SERVER_STORE_NAME),
   ]);
 
-  const root = await navigator.storage.getDirectory();
-  let removedDatabaseFile = false;
-  try {
-    await root.removeEntry(OFFLINE_POC_DATABASE_FILE);
-    removedDatabaseFile = true;
-  } catch (error) {
-    if (!(error instanceof DOMException) || error.name !== "NotFoundError") {
-      throw error;
-    }
-  }
-
-  return { removedDatabaseFile };
+  return { removedDatabaseFile: await removeDatabaseFileSerialized() };
 }
 
 export async function clearOfflinePocStorage(
@@ -729,15 +727,5 @@ export async function removeOfflinePocDatabaseFile(
   runtime: OfflinePocRuntime
 ): Promise<boolean> {
   await runtime.close();
-
-  const root = await navigator.storage.getDirectory();
-  try {
-    await root.removeEntry(OFFLINE_POC_DATABASE_FILE);
-    return true;
-  } catch (error) {
-    if (error instanceof DOMException && error.name === "NotFoundError") {
-      return false;
-    }
-    throw error;
-  }
+  return removeDatabaseFileSerialized();
 }

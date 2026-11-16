@@ -223,6 +223,19 @@ describe("followSystemTheme (U-40)", () => {
     expect(light.classes.has("dark")).toBe(false);
   });
 
+  it("puts the stored theme at the start, for a page where theme-init.js did not run", () => {
+    const dark = fakeSystem(false);
+    followSystemTheme(dark.query, memoryStorage("escuro"), dark.root);
+    expect(dark.classes.has("dark")).toBe(true);
+    const system = fakeSystem(false);
+    system.query.matches = true;
+    followSystemTheme(system.query, memoryStorage(), system.root);
+    expect(system.classes.has("dark")).toBe(true);
+    const light = fakeSystem(true);
+    followSystemTheme(light.query, memoryStorage("claro"), light.root);
+    expect(light.classes.has("dark")).toBe(false);
+  });
+
   it("stops listening when asked", () => {
     const system = fakeSystem(false);
     const stop = followSystemTheme(system.query, memoryStorage(), system.root);

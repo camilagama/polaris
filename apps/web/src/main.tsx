@@ -34,7 +34,7 @@ if (import.meta.env.VITE_SENTRY_DSN) {
 // The errors no boundary catches, reported as the boundary's are (lib/client-errors.ts): off unless the build says so.
 installClientErrorListeners(window);
 
-// The system can go from dark to light with the page open: the `dark` class follows it (U-40).
+// The `dark` class as chosen, again (theme-init.js may not have run), and following the system with the page open (U-40).
 followSystemTheme();
 // How much the interface moves (ADR 0103, "Níveis de movimento"): `data-motion` on <html> before the first render, and
 // again when the window crosses the line of the phone or the system asks for no motion.

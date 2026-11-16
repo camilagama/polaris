@@ -289,7 +289,7 @@ describe("o texto do (i)", () => {
     expect(sentences).toHaveLength(2);
   });
 
-  it("cabe nos 160 caracteres do (i) no DESIGN.md", () => {
+  it("cabe nos 160 caracteres (PERIOD_TOTAL_HELP)", () => {
     expect(PERIOD_TOTAL_HELP.length).toBeLessThanOrEqual(160);
   });
 });
