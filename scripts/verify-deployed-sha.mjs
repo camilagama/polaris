@@ -13,6 +13,35 @@ export const STAGING_WORKERS = [
   { app: "catalog", worker: "polaris-catalog-staging" },
 ];
 
+// the names of env.production in apps/web and apps/catalog (the test reads them back from the wrangler.jsonc)
+export const PRODUCTION_WORKERS = [
+  { app: "web", worker: "polaris-web" },
+  { app: "catalog", worker: "polaris-catalog" },
+];
+
+export const WORKERS_BY_ENVIRONMENT = {
+  production: PRODUCTION_WORKERS,
+  staging: STAGING_WORKERS,
+};
+
+/**
+ * The Workers of `--env <environment>` (staging without the option, as the staging deploy calls it), or null for
+ * anything else: an unknown environment or a stray argument never falls back to a default list.
+ */
+export function workersFromArgs(args) {
+  if (args.length === 0) {
+    return STAGING_WORKERS;
+  }
+  if (
+    args.length === 2 &&
+    args[0] === "--env" &&
+    Object.hasOwn(WORKERS_BY_ENVIRONMENT, args[1])
+  ) {
+    return WORKERS_BY_ENVIRONMENT[args[1]];
+  }
+  return null;
+}
+
 const SHA = /^[0-9a-f]{40}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 export const ATTEMPTS = 3;
@@ -87,15 +116,20 @@ function reasonOf(error) {
 }
 
 /**
- * Checks every staging Worker (none stops the others) and returns the failures, one line each. Each check is
+ * Checks every Worker of `workers` (none stops the others) and returns the failures, one line each. Each check is
  * tried up to ATTEMPTS times: the deployment is read through the API that just accepted it and may not show it yet.
  */
-export async function verifyDeployedSha(expectedSha, wranglerJson, pause) {
+export async function verifyDeployedSha(
+  expectedSha,
+  wranglerJson,
+  pause,
+  workers = STAGING_WORKERS
+) {
   if (typeof expectedSha !== "string" || !SHA.test(expectedSha)) {
     return ["HEAD_SHA is not a full commit SHA (40 lowercase hex characters)"];
   }
   const failures = [];
-  for (const target of STAGING_WORKERS) {
+  for (const target of workers) {
     let reason = "";
     for (let tries = 1; tries <= ATTEMPTS; tries += 1) {
       try {
@@ -177,10 +211,19 @@ export function runWrangler(
 const wait = () => new Promise((resolve) => setTimeout(resolve, PAUSE_MS));
 
 async function main() {
+  const workers = workersFromArgs(process.argv.slice(2));
+  if (workers === null) {
+    console.error(
+      "usage: verify-deployed-sha.mjs [--env staging|production] (HEAD_SHA in the environment)"
+    );
+    process.exitCode = 1;
+    return;
+  }
   const failures = await verifyDeployedSha(
     process.env.HEAD_SHA,
     runWrangler,
-    wait
+    wait,
+    workers
   );
   if (failures.length > 0) {
     console.error(`Deployed version check failed (${failures.length}).`);

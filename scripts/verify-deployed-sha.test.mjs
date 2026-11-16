@@ -14,11 +14,14 @@ import {
   ATTEMPTS,
   checkWorker,
   PAUSE_MS,
+  PRODUCTION_WORKERS,
   runWrangler,
   STAGING_WORKERS,
   verifyDeployedSha,
   WRANGLER_TIMEOUT_MS,
+  workersFromArgs,
 } from "./verify-deployed-sha.mjs";
+import { parseJsonc } from "./verify-staging-isolation.mjs";
 
 const SHA = "0123456789abcdef0123456789abcdef01234567";
 const OTHER = "fedcba9876543210fedcba9876543210fedcba98";
@@ -88,6 +91,40 @@ describe("the deployed version check", () => {
       { app: "web", worker: "polaris-web-staging" },
       { app: "catalog", worker: "polaris-catalog-staging" },
     ]);
+  });
+
+  it("asks about the production Workers by the names of env.production in their wrangler.jsonc", () => {
+    const productionName = (app) =>
+      parseJsonc(
+        readFileSync(
+          new URL(`../apps/${app}/wrangler.jsonc`, import.meta.url),
+          "utf8"
+        )
+      ).env.production.name;
+    expect(PRODUCTION_WORKERS).toEqual([
+      { app: "web", worker: productionName("web") },
+      { app: "catalog", worker: productionName("catalog") },
+    ]);
+    expect(PRODUCTION_WORKERS.map(({ worker }) => worker)).toEqual([
+      "polaris-web",
+      "polaris-catalog",
+    ]);
+  });
+
+  it("picks the Workers by --env and refuses anything else instead of falling back", () => {
+    expect(workersFromArgs([])).toBe(STAGING_WORKERS);
+    expect(workersFromArgs(["--env", "staging"])).toBe(STAGING_WORKERS);
+    expect(workersFromArgs(["--env", "production"])).toBe(PRODUCTION_WORKERS);
+    for (const args of [
+      ["--env"],
+      ["--env", "Production"],
+      ["--env", "constructor"],
+      ["--env", "production", "--env", "staging"],
+      ["production"],
+      ["--env=production"],
+    ]) {
+      expect(workersFromArgs(args)).toBeNull();
+    }
   });
 
   it("fails naming the Worker when its version carries another commit, and still checks the other", async () => {
@@ -263,6 +300,8 @@ echo "::error::stderr of wrangler" >&2
 case "$*" in
   *polaris-web-staging*) id=${WEB_VERSION} ;;
   *polaris-catalog-staging*) id=${CATALOG_VERSION} ;;
+  *"--name polaris-web") id=${WEB_VERSION} ;;
+  *"--name polaris-catalog") id=${CATALOG_VERSION} ;;
   *) echo "unexpected worker" >&2; exit 2 ;;
 esac
 case "$*" in
@@ -280,8 +319,8 @@ esac
     rmSync(bin, { force: true, recursive: true });
   });
 
-  const run = (headSha) =>
-    spawnSync(process.execPath, ["scripts/verify-deployed-sha.mjs"], {
+  const run = (headSha, args = []) =>
+    spawnSync(process.execPath, ["scripts/verify-deployed-sha.mjs", ...args], {
       cwd: root,
       encoding: "utf8",
       env: {
@@ -309,6 +348,29 @@ esac
     expect(calls[0]).toBe(
       "apps/web --no-install wrangler deployments status --json --name polaris-web-staging"
     );
+  });
+
+  it("with --env production reads only the production Workers", () => {
+    const result = run(SHA, ["--env", "production"]);
+    expect(result.stdout).toBe(
+      "ok polaris-web: active version is 0123456789ab\nok polaris-catalog: active version is 0123456789ab\n"
+    );
+    expect(result.status).toBe(0);
+    const calls = readFileSync(join(bin, "calls.log"), "utf8")
+      .trim()
+      .split("\n");
+    expect(calls).toHaveLength(4);
+    expect(calls.every((call) => !call.includes("staging"))).toBe(true);
+    expect(calls[2]).toBe(
+      "apps/catalog --no-install wrangler deployments status --json --name polaris-catalog"
+    );
+  });
+
+  it("exits 1 for an unknown environment without calling wrangler", () => {
+    const result = run(SHA, ["--env", "prod"]);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("usage: verify-deployed-sha.mjs");
+    expect(existsSync(join(bin, "calls.log"))).toBe(false);
   });
 
   it("stops a wrangler that hangs, together with the process it started", async () => {

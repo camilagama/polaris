@@ -15,13 +15,18 @@ import {
   markerComment,
 } from "./environment-marker";
 import { assertOwnerRolesClean } from "./owner-role-attributes";
+import {
+  type DeployEnvironment,
+  deployDatabaseTarget,
+} from "./deploy-database-target";
 import { poolerPattern, sqlState } from "./sales-gate-support";
 
 /**
- * The staging database check (ADR 0097), read-only: it changes nothing. It runs with the owner's direct URL
- * (`STAGING_MIGRATOR_DATABASE_URL`), never through the pooler, and refuses any database whose marker
- * (the database comment `polaris.environment=staging`, written once by the owner: Neon gives no superuser, see
- * `environment-marker.ts`) is not `staging`,
+ * The deploy database check (ADR 0097), read-only: it changes nothing. It runs for staging (the default) or, with
+ * `--env production`, for production, with the owner's direct URL of that environment (`STAGING_MIGRATOR_DATABASE_URL`
+ * or `PRODUCTION_MIGRATOR_DATABASE_URL`, see `deploy-database-target.ts`), never through the pooler, and refuses any
+ * database whose marker (the database comment `polaris.environment=<environment>`, written once by the owner: Neon
+ * gives no superuser, see `environment-marker.ts`) is not the one of that environment,
  * so a wrong URL never migrates or reads another environment.
  *
  * - `before-migrate`: the marker, and the migrator is the owner of the database and of schema public
@@ -44,22 +49,19 @@ import { poolerPattern, sqlState } from "./sales-gate-support";
  *
  * The output lists names only: no URL, password or data.
  */
-const STAGING = "staging";
 // roles Neon creates and manages itself: not logins of the app
 const PLATFORM_ROLE = /^(cloud_admin|neon_superuser|neon_service|pg_.*)$/;
 
-type Phase = "after-migrate" | "before-migrate";
-
 // The marker is the exact database comment (or the old stored form, for a superuser's database), never
 // current_setting() alone: a connection option could fake that one.
-async function checkMarker(client: Client) {
+async function checkMarker(client: Client, environment: DeployEnvironment) {
   const { rows } = await client.query<EnvironmentReadings>(
     ENVIRONMENT_MARKER_SQL
   );
   assert.equal(
     rows[0] ? declaredEnvironment(rows[0]) : null,
-    STAGING,
-    `the database marker ${markerComment(STAGING)} is missing or different: refusing to touch this database`
+    environment,
+    `the database marker ${markerComment(environment)} is missing or different: refusing to touch this database`
   );
 }
 
@@ -168,13 +170,10 @@ async function checkHardening(client: Client) {
 }
 
 async function run() {
-  const phase = process.argv[2] as Phase | undefined;
-  assert.ok(
-    phase === "before-migrate" || phase === "after-migrate",
-    "usage: verify-staging-database.ts before-migrate|after-migrate"
+  const { environment, phase, url } = deployDatabaseTarget(
+    process.argv.slice(2),
+    process.env
   );
-  const url = process.env.STAGING_MIGRATOR_DATABASE_URL;
-  assert.ok(url, "STAGING_MIGRATOR_DATABASE_URL is not set");
   const parsed = new URL(url);
   assert.doesNotMatch(
     parsed.hostname,
@@ -185,21 +184,21 @@ async function run() {
     !parsed.searchParams.has("options"),
     "the URL must not carry connection options"
   );
-  // read-only from the start of the session: a stray write fails instead of changing staging
+  // read-only from the start of the session: a stray write fails instead of changing the environment
   const client = new Client({
     connectionString: url,
     options: "-c default_transaction_read_only=on",
   });
   await client.connect();
   try {
-    await checkMarker(client);
-    const results = [`marker ${markerComment(STAGING)}`];
+    await checkMarker(client, environment);
+    const results = [`marker ${markerComment(environment)}`];
     results.push(
       ...(phase === "before-migrate"
         ? await checkOwner(client)
         : await checkHardening(client))
     );
-    console.log(JSON.stringify({ phase, results }, null, 2));
+    console.log(JSON.stringify({ environment, phase, results }, null, 2));
   } finally {
     await client.end();
   }
@@ -212,6 +211,6 @@ run().catch((error: unknown) => {
     error instanceof Error
       ? `${error.name}${code ? `, ${code}` : ""}: ${error.message.replace(/postgres(?:ql)?:\/\/\S+/gi, "[redacted]")}`
       : "unknown failure";
-  console.error(`Staging database check failed (${message})`);
+  console.error(`Deploy database check failed (${message})`);
   process.exitCode = 1;
 });

@@ -197,7 +197,7 @@ function bindingNames(config) {
   ];
 }
 
-function stringsOf(value, path = "") {
+export function stringsOf(value, path = "") {
   if (typeof value === "string") {
     return [[path, value]];
   }
@@ -1048,7 +1048,7 @@ function checkBuilt(app, staging, production, built, problems) {
   }
 }
 
-function bindingsSnapshot(config) {
+export function bindingsSnapshot(config) {
   const b = bindingsOf(config);
   return {
     account: config.account_id,
@@ -1111,7 +1111,7 @@ function hyperdriveDetails(id, cwd, accountId) {
   }
 }
 
-function readBuilt(appDir) {
+export function readBuilt(appDir) {
   // the deploy follows .wrangler/deploy/config.json to the generated wrangler.json; so does this check
   const redirect = resolve(appDir, ".wrangler/deploy/config.json");
   if (!existsSync(redirect)) {
