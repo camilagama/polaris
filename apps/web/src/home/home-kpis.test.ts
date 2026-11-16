@@ -43,7 +43,12 @@ const cards = {
 };
 
 /** Every item line sold with a known cost: the cost coverage of the goods is "full". */
-const costs = { itemLines: 25, itemLinesWithUnknownCost: 0 };
+const costs = {
+  anticipationFeesUnknown: 0,
+  itemLines: 25,
+  itemLinesWithUnknownCost: 0,
+  processingFeesUnknown: 0,
+};
 
 /** September: 10.00 and one sale a day (and the given result, when there is one). */
 const september = (extra: Pick = () => undefined, result?: string | null) =>
@@ -577,7 +582,7 @@ describe("monthKpis: result (AC-9)", () => {
         ...cards,
         operatingResult: "500.00",
       },
-      { itemLines: 25, itemLinesWithUnknownCost: 25 }
+      { ...costs, itemLines: 25, itemLinesWithUnknownCost: 25 }
     );
     expect(kpis.result).toEqual({ kind: "noCost" });
     expect(kpis.series.result).toBeNull();
@@ -608,12 +613,15 @@ describe("monthKpis: result (AC-9)", () => {
       TODAY,
       cards,
       {
+        ...costs,
         itemLines: 25,
         itemLinesWithUnknownCost: 3,
       }
     );
     expect(partial.result).toEqual({
+      input: "cost",
       kind: "incomplete",
+      month: null,
       total: 25,
       unknown: 1,
     });
@@ -636,6 +644,7 @@ describe("monthKpis: result (AC-9)", () => {
       TODAY,
       cards,
       {
+        ...costs,
         itemLines: 0,
         itemLinesWithUnknownCost: 0,
       }
@@ -655,7 +664,13 @@ describe("monthKpis: result (AC-9)", () => {
       cards,
       costs
     );
-    expect(kpis.result).toEqual({ kind: "incomplete", total: 25, unknown: 1 });
+    expect(kpis.result).toEqual({
+      input: "cost",
+      kind: "incomplete",
+      month: null,
+      total: 25,
+      unknown: 1,
+    });
     expect(kpis.series.result).toBeNull();
     for (const index of [null, 3, 9, 20]) {
       expect(kpis.read(index).result.delta).toBeNull();
@@ -827,8 +842,73 @@ describe("monthKpis: result (AC-9)", () => {
 
 describe("unknownDaysText", () => {
   it("says how many days lack a cost", () => {
-    expect(unknownDaysText(1, 23)).toBe("1 de 23 dias sem custo");
-    expect(unknownDaysText(5, 23)).toBe("5 de 23 dias sem custo");
+    expect(
+      unknownDaysText({ input: "cost", month: null, total: 23, unknown: 1 })
+    ).toBe("1 de 23 dias sem custo");
+    expect(
+      unknownDaysText({ input: "cost", month: null, total: 23, unknown: 5 })
+    ).toBe("5 de 23 dias sem custo");
+  });
+});
+
+describe("what the days with no result lack: the fee when only the fee is missing (RES-T2)", () => {
+  it("says the fee, short, and the month before the days of one month", () => {
+    expect(
+      unknownDaysText({ input: "fee", month: null, total: 23, unknown: 5 })
+    ).toBe("5 de 23 dias sem taxa");
+    expect(
+      unknownDaysText({ input: "fee", month: "novembro", total: 7, unknown: 1 })
+    ).toBe("novembro: 1 de 7 dias sem taxa");
+    expect(
+      unknownDaysText({
+        input: "cost",
+        month: "novembro",
+        total: 7,
+        unknown: 1,
+      })
+    ).toBe("novembro: 1 de 7 dias sem custo");
+  });
+
+  it("says the fee in the (i), in words", () => {
+    expect(
+      resultHelp(
+        "de 1 a 23/10",
+        null,
+        { input: "fee", month: null, total: 23, unknown: 5 },
+        true
+      )
+    ).toBe(
+      "Vendas menos custos, taxas e despesas de 1 a 23/10; não é lucro líquido nem caixa. 5 de 23 dias ainda sem taxa informada."
+    );
+  });
+
+  it("marks the month as lacking the fee only when no item line lacks a cost and a fee is unknown", () => {
+    const unknownDay = (date: string) =>
+      days("2026-10-01", "2026-10-23", (day) => ({
+        netSales: "10.00",
+        salesCount: 1,
+        ...(day === date
+          ? { operatingResult: null }
+          : { operatingResult: "2.00" }),
+      }));
+    const result = (quality: typeof costs) =>
+      monthKpis(september(), unknownDay("2026-10-05"), TODAY, cards, quality)
+        .result;
+    expect(result({ ...costs, processingFeesUnknown: 1 })).toMatchObject({
+      input: "fee",
+      kind: "incomplete",
+    });
+    expect(result({ ...costs, anticipationFeesUnknown: 1 })).toMatchObject({
+      input: "fee",
+    });
+    expect(result(costs)).toMatchObject({ input: "cost" });
+    expect(
+      result({
+        ...costs,
+        itemLinesWithUnknownCost: 2,
+        processingFeesUnknown: 1,
+      })
+    ).toMatchObject({ input: "cost" });
   });
 });
 
@@ -845,11 +925,18 @@ describe("the days with no cost, on the line or in the (i)", () => {
 
   it("are said in words by the help when they do not fit, in place of the comparison", () => {
     expect(
-      resultHelp("de 1 a 23/10", "1 a 23/09", { total: 23, unknown: 5 })
+      resultHelp("de 1 a 23/10", "1 a 23/09", {
+        input: "cost",
+        month: null,
+        total: 23,
+        unknown: 5,
+      })
     ).toBe(
       "Vendas menos custos, taxas e despesas de 1 a 23/10. Compara com 1 a 23/09."
     );
     const long = resultHelp("de 01/06 a 28/10", "1 a 23/09", {
+      input: "cost",
+      month: null,
       total: 120,
       unknown: 5,
     });
@@ -861,13 +948,23 @@ describe("the days with no cost, on the line or in the (i)", () => {
 
   it("say the count of days with no cost in the (i) of the home tile even when it fits the card", () => {
     expect(
-      resultHelp("de 1 a 23/10", null, { total: 23, unknown: 5 }, true)
+      resultHelp(
+        "de 1 a 23/10",
+        null,
+        { input: "cost", month: null, total: 23, unknown: 5 },
+        true
+      )
     ).toBe(
       "Vendas menos custos, taxas e despesas de 1 a 23/10; não é lucro líquido nem caixa. 5 de 23 dias ainda sem custo informado."
     );
-    expect(resultHelp("de 1 a 23/10", null, { total: 23, unknown: 5 })).toBe(
-      "Vendas menos custos, taxas e despesas de 1 a 23/10."
-    );
+    expect(
+      resultHelp("de 1 a 23/10", null, {
+        input: "cost",
+        month: null,
+        total: 23,
+        unknown: 5,
+      })
+    ).toBe("Vendas menos custos, taxas e despesas de 1 a 23/10.");
   });
 
   it("fold the 'not net profit nor cash' sentence into the first one, so the (i) keeps two sentences", () => {
@@ -875,7 +972,12 @@ describe("the days with no cost, on the line or in the (i)", () => {
       "Vendas menos custos, taxas e despesas do mês inteiro; não é lucro líquido nem caixa."
     );
     expect(
-      resultHelp("de 1 a 23/10", "1 a 23/09", { total: 120, unknown: 5 }, true)
+      resultHelp(
+        "de 1 a 23/10",
+        "1 a 23/09",
+        { input: "cost", month: null, total: 120, unknown: 5 },
+        true
+      )
     ).toBe(
       "Vendas menos custos, taxas e despesas de 1 a 23/10; não é lucro líquido nem caixa. 5 de 120 dias ainda sem custo informado."
     );
@@ -905,8 +1007,18 @@ describe("the texts of the (i) of the cards", () => {
       ...["do mês inteiro", "de 01/06 a 28/10"].flatMap((span) => [
         resultHelp(span, null, null, true),
         resultHelp(span, "1 a 23/09", null, true),
-        resultHelp(span, "1 a 23/09", { total: 23, unknown: 5 }, true),
-        resultHelp(span, "1 a 23/09", { total: 120, unknown: 105 }, true),
+        resultHelp(
+          span,
+          "1 a 23/09",
+          { input: "cost", month: null, total: 23, unknown: 5 },
+          true
+        ),
+        resultHelp(
+          span,
+          "1 a 23/09",
+          { input: "cost", month: null, total: 120, unknown: 105 },
+          true
+        ),
       ]),
     ];
     for (const text of texts) {

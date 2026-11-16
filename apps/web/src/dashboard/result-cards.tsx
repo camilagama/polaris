@@ -33,7 +33,17 @@ import {
   isIncompleteEstimate,
   NO_KNOWN_COST_RESULT,
 } from "./dashboard-model";
-import { NO_SALES_UNTIL_DAY, resultKpis, untilText } from "./result-kpis";
+import {
+  type MissingDays,
+  type MissingInput,
+  missingShort,
+} from "./missing-input";
+import {
+  NO_SALES_UNTIL_DAY,
+  type ResultKpis,
+  resultKpis,
+  untilText,
+} from "./result-kpis";
 import { type Period, periodRangeLabel } from "./result-period";
 import type { ComparisonDays, ComparisonSales } from "./use-period-summary";
 
@@ -53,7 +63,7 @@ export function IncompleteBadge() {
 const NO_COST_MARGIN = "Sem custo informado";
 
 /** What the result says while a day with no cost is read, in place of the dash: the cause, not "sem valor". */
-const NO_COST_DAY = "sem custo neste dia";
+const NO_COST_DAY = (input: MissingInput) => `${missingShort(input)} neste dia`;
 
 /**
  * What the result says in place of the dash when the day under the pointer is itself a day with no cost (undefined
@@ -61,10 +71,7 @@ const NO_COST_DAY = "sem custo neste dia";
  * running total is unknown, but its cost is not what is missing).
  */
 export function noCostDayText(
-  kpis: {
-    days: readonly { operatingResult?: string | null }[];
-    monthly: boolean;
-  },
+  kpis: Pick<ResultKpis, "days" | "monthly" | "result">,
   index: number | null,
   noCost: boolean
 ): string | undefined {
@@ -72,7 +79,11 @@ export function noCostDayText(
     return undefined;
   }
   const day = kpis.days[Math.min(index, kpis.days.length - 1)];
-  return day?.operatingResult === null ? NO_COST_DAY : undefined;
+  return day?.operatingResult === null
+    ? NO_COST_DAY(
+        kpis.result.kind === "incomplete" ? kpis.result.input : "cost"
+      )
+    : undefined;
 }
 
 /**
@@ -85,7 +96,7 @@ export function resultWarning({
   noCost,
 }: {
   incomplete: boolean;
-  missing: { total: number; unknown: number } | null;
+  missing: MissingDays | null;
   noCost: boolean;
 }) {
   return incomplete ? (
@@ -93,9 +104,7 @@ export function resultWarning({
       <IncompleteBadge />
       {noCost ? <span data-kpi-no-cost="">{NO_KNOWN_COST_RESULT}</span> : null}
       {!noCost && missing && unknownDaysFit(missing.unknown, missing.total) ? (
-        <span data-kpi-unknown="">
-          {unknownDaysText(missing.unknown, missing.total)}
-        </span>
+        <span data-kpi-unknown="">{unknownDaysText(missing)}</span>
       ) : null}
     </>
   ) : null;
@@ -258,9 +267,10 @@ export function ResultCards({
         period: summary.period,
         previous: comparison,
         previousSales: salesComparison,
+        quality,
         today,
       }),
-    [cards, comparison, daily, salesComparison, summary.period, today]
+    [cards, comparison, daily, quality, salesComparison, summary.period, today]
   );
   const [index, setIndex] = useState<number | null>(null);
   const clear = useCallback(() => setIndex(null), []);

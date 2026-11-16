@@ -25,6 +25,12 @@ function days(
   }));
 }
 
+const COST_QUALITY = {
+  anticipationFeesUnknown: 0,
+  itemLinesWithUnknownCost: 0,
+  processingFeesUnknown: 0,
+};
+
 const CARDS = {
   marginPercent: "41.2",
   netSales: "1250.00",
@@ -79,6 +85,7 @@ describe("the cards of the Resultado (v7 § 8)", () => {
 
   it("reads the period up to today at rest, and compares with the same days of the month before", () => {
     const kpis = resultKpis({
+      quality: COST_QUALITY,
       cards: CARDS,
       daily: days("2026-10-01", 31),
       period: OCTOBER,
@@ -128,6 +135,7 @@ describe("the cards of the Resultado (v7 § 8)", () => {
       period: SEPTEMBER,
     };
     const kpis = resultKpis({
+      quality: COST_QUALITY,
       cards: CARDS,
       daily: days("2026-10-01", 31),
       period: OCTOBER,
@@ -161,6 +169,7 @@ describe("the cards of the Resultado (v7 § 8)", () => {
 
   it("loses only the chips of sales and ticket when the sales read failed", () => {
     const rest = resultKpis({
+      quality: COST_QUALITY,
       cards: CARDS,
       daily: days("2026-10-01", 31),
       period: OCTOBER,
@@ -178,6 +187,7 @@ describe("the cards of the Resultado (v7 § 8)", () => {
 
   it("loses only the chip of the result when the summary's read failed", () => {
     const rest = resultKpis({
+      quality: COST_QUALITY,
       cards: CARDS,
       daily: days("2026-10-01", 31),
       period: OCTOBER,
@@ -192,6 +202,7 @@ describe("the cards of the Resultado (v7 § 8)", () => {
 
   it("reads a day of the sparkline, the three cards together", () => {
     const kpis = resultKpis({
+      quality: COST_QUALITY,
       cards: CARDS,
       daily: days("2026-10-01", 31),
       period: OCTOBER,
@@ -211,6 +222,7 @@ describe("the cards of the Resultado (v7 § 8)", () => {
 
   it("with a day of unknown cost: the server's card, the count of days, and no sparkline nor chip of the result (AC-9)", () => {
     const kpis = resultKpis({
+      quality: COST_QUALITY,
       cards: CARDS,
       daily: days("2026-10-01", 31, (index) =>
         [2, 11, 20].includes(index)
@@ -222,7 +234,13 @@ describe("the cards of the Resultado (v7 § 8)", () => {
       previousSales: previous,
       today: "2026-10-25",
     });
-    expect(kpis.result).toEqual({ kind: "incomplete", total: 25, unknown: 3 });
+    expect(kpis.result).toEqual({
+      input: "cost",
+      kind: "incomplete",
+      month: null,
+      total: 25,
+      unknown: 3,
+    });
     expect(kpis.series.result).toBeNull();
     const rest = kpis.read(null);
     expect(rest.result).toMatchObject({
@@ -238,6 +256,7 @@ describe("the cards of the Resultado (v7 § 8)", () => {
 
   it("at rest is the server's card of the whole period, with no chip, when an expense is dated after today", () => {
     const kpis = resultKpis({
+      quality: COST_QUALITY,
       cards: { ...CARDS, operatingResult: "700.00" },
       daily: days("2026-10-01", 31, (index) =>
         index === 30
@@ -269,6 +288,7 @@ describe("the cards of the Resultado (v7 § 8)", () => {
 
   it("has no chip without the period before, and no chip of the result when the period before had an unknown day", () => {
     const alone = resultKpis({
+      quality: COST_QUALITY,
       cards: CARDS,
       daily: days("2026-10-01", 31),
       period: OCTOBER,
@@ -281,6 +301,7 @@ describe("the cards of the Resultado (v7 § 8)", () => {
     );
     expect(alone.sales.help).toBe("Vendas líquidas de 1 a 25/10.");
     const unknownBefore = resultKpis({
+      quality: COST_QUALITY,
       cards: CARDS,
       daily: days("2026-10-01", 31),
       period: OCTOBER,
@@ -300,6 +321,7 @@ describe("the cards of the Resultado (v7 § 8)", () => {
   describe("without any sale", () => {
     const read = (period: { from: string; to: string }, today: string) =>
       resultKpis({
+        quality: COST_QUALITY,
         cards: { ...CARDS, netSales: "0.00", salesCount: 0 },
         daily: days(period.from, 31, () => ({
           netSales: "0.00",
@@ -332,6 +354,7 @@ describe("the cards of the Resultado (v7 § 8)", () => {
     const firstSaleOn = 5;
     const read = (index: number | null, salesCount = 3) =>
       resultKpis({
+        quality: COST_QUALITY,
         cards: { ...CARDS, salesCount },
         daily: days("2026-10-01", 31, (day) =>
           day < firstSaleOn || salesCount === 0
@@ -372,6 +395,7 @@ describe("the cards of the Resultado (v7 § 8)", () => {
   describe("the Ticket médio at rest when the server sends no ticket for a period that has sales", () => {
     const atRest = (cards: Partial<ResultKpiCards>) =>
       resultKpis({
+        quality: COST_QUALITY,
         cards: { ...CARDS, ...cards },
         daily: days("2026-10-01", 25),
         period: OCTOBER,
@@ -403,6 +427,7 @@ describe("the cards of the Resultado (v7 § 8)", () => {
 
   it("says the period before had no sale instead of a percent over nothing", () => {
     const rest = resultKpis({
+      quality: COST_QUALITY,
       cards: CARDS,
       daily: days("2026-10-01", 31),
       period: OCTOBER,
@@ -426,6 +451,7 @@ describe("the cards of the Resultado (v7 § 8)", () => {
     const period = { from: "2026-09-26", to: "2026-10-25" };
     const before = comparisonPeriod(period, "2026-10-25");
     const kpis = resultKpis({
+      quality: COST_QUALITY,
       cards: CARDS,
       daily: days("2026-09-26", 30),
       period,
@@ -451,6 +477,7 @@ describe("the cards of the Resultado (v7 § 8)", () => {
       ? { days: days(before.from, 28), period: before }
       : null;
     const kpis = resultKpis({
+      quality: COST_QUALITY,
       cards: CARDS,
       daily: days("2026-03-01", 31),
       period: march,
@@ -468,6 +495,7 @@ describe("the cards of the Resultado (v7 § 8)", () => {
       ? { days: days(before.from, 10), period: before }
       : null;
     const kpis = resultKpis({
+      quality: COST_QUALITY,
       cards: CARDS,
       daily: days("2026-01-05", 10),
       period,
@@ -485,6 +513,7 @@ describe("the cards of the Resultado (v7 § 8)", () => {
     const before = { from: "2025-12-01", to: "2025-12-31" };
     const prior = { days: days(before.from, 31), period: before };
     const kpis = resultKpis({
+      quality: COST_QUALITY,
       cards: CARDS,
       daily: days("2026-01-01", 10),
       period: { from: "2026-01-01", to: "2026-01-31" },
@@ -499,6 +528,7 @@ describe("the cards of the Resultado (v7 § 8)", () => {
 
   it("names the whole period, never a range backwards, for a period that has not started", () => {
     const kpis = resultKpis({
+      quality: COST_QUALITY,
       cards: { ...CARDS, netSales: "0.00", salesCount: 0, ticket: null },
       daily: days("2026-11-01", 30, () => ({
         netSales: "0.00",
@@ -517,6 +547,7 @@ describe("the cards of the Resultado (v7 § 8)", () => {
 
   it("reads the last day when the index read is beyond the series (the period changed under the pointer)", () => {
     const kpis = resultKpis({
+      quality: COST_QUALITY,
       cards: CARDS,
       daily: days("2026-10-01", 31),
       period: OCTOBER,
@@ -532,6 +563,7 @@ describe("the cards of the Resultado (v7 § 8)", () => {
 
   it("has no result series for a copy that never sent the results of the days", () => {
     const kpis = resultKpis({
+      quality: COST_QUALITY,
       cards: CARDS,
       daily: days("2026-10-01", 31).map(({ date, netSales, salesCount }) => ({
         date,
@@ -685,6 +717,7 @@ describe("the cards of a long period, by month as the server adds it up (D1-1 to
 
   it("has one point per month, the month without sales at the height of the one before", () => {
     const kpis = resultKpis({
+      quality: COST_QUALITY,
       cards: CARDS,
       daily: months,
       period: YEAR,
@@ -701,6 +734,7 @@ describe("the cards of a long period, by month as the server adds it up (D1-1 to
 
   it("reads a month up to its last day, the first one from the first day of the period, with no chip (D1-2, D1-7)", () => {
     const kpis = resultKpis({
+      quality: COST_QUALITY,
       cards: CARDS,
       daily: months,
       period: YEAR,
@@ -721,6 +755,7 @@ describe("the cards of a long period, by month as the server adds it up (D1-1 to
 
   it("counts the days of the months with an unknown cost: no sparkline nor chip of the result, sales and ticket keep theirs (D1-4)", () => {
     const kpis = resultKpis({
+      quality: COST_QUALITY,
       cards: CARDS,
       daily: months.map((entry, index) =>
         index === 4
@@ -733,16 +768,90 @@ describe("the cards of a long period, by month as the server adds it up (D1-1 to
       today: TODAY,
     });
     expect(kpis.result).toEqual({
+      input: "cost",
       kind: "incomplete",
-      total: 17 + 28 + 31 + 30 + 31 + 30 + 31 + 31 + 30 + 31 + 4,
+      month: "maio",
+      total: 31,
       unknown: 2,
     });
     expect(kpis.series.result).toBeNull();
     expect(kpis.series.sales).toHaveLength(11);
   });
 
+  it("counts the days of the whole period, with no month named, when two months have an unknown day", () => {
+    const kpis = resultKpis({
+      quality: COST_QUALITY,
+      cards: CARDS,
+      daily: months.map((entry, index) =>
+        index === 4 || index === 5
+          ? { ...entry, costs: null, operatingResult: null, unknownDays: 2 }
+          : entry
+      ),
+      period: YEAR,
+      previous: null,
+      previousSales: null,
+      today: TODAY,
+    });
+    expect(kpis.result).toEqual({
+      input: "cost",
+      kind: "incomplete",
+      month: null,
+      total: 17 + 28 + 31 + 30 + 31 + 30 + 31 + 31 + 30 + 31 + 4,
+      unknown: 4,
+    });
+  });
+
+  it("names the month with its year when it is not of the year of today", () => {
+    const kpis = resultKpis({
+      quality: COST_QUALITY,
+      cards: CARDS,
+      daily: months.map((entry, index) =>
+        index === 4
+          ? { ...entry, costs: null, operatingResult: null, unknownDays: 2 }
+          : entry
+      ),
+      period: YEAR,
+      previous: null,
+      previousSales: null,
+      today: "2027-01-03",
+    });
+    expect(kpis.result).toMatchObject({ month: "maio de 2026" });
+  });
+
+  it("says that only the fee is missing when no item line lacks a cost and a fee is unknown", () => {
+    const daily = months.map((entry, index) =>
+      index === 4
+        ? { ...entry, costs: null, operatingResult: null, unknownDays: 2 }
+        : entry
+    );
+    const read = (quality: typeof COST_QUALITY) =>
+      resultKpis({
+        quality,
+        cards: CARDS,
+        daily,
+        period: YEAR,
+        previous: null,
+        previousSales: null,
+        today: TODAY,
+      }).read(null).result.help;
+    expect(read({ ...COST_QUALITY, processingFeesUnknown: 3 })).toBe(
+      "Vendas menos custos, taxas e despesas do período inteiro; não é lucro líquido nem caixa. maio: 2 de 31 dias ainda sem taxa informada."
+    );
+    expect(read(COST_QUALITY)).toBe(
+      "Vendas menos custos, taxas e despesas do período inteiro; não é lucro líquido nem caixa. maio: 2 de 31 dias ainda sem custo informado."
+    );
+    expect(
+      read({
+        ...COST_QUALITY,
+        itemLinesWithUnknownCost: 1,
+        processingFeesUnknown: 3,
+      })
+    ).toContain("sem custo informado");
+  });
+
   it("draws no month that starts after today (D1-5)", () => {
     const kpis = resultKpis({
+      quality: COST_QUALITY,
       cards: CARDS,
       daily: months.slice(0, 10),
       period: { from: YEAR.from, to: "2026-12-31" },
@@ -756,6 +865,7 @@ describe("the cards of a long period, by month as the server adds it up (D1-1 to
 
   it("is a straight line of two points for a long period across two months (D1-8)", () => {
     const kpis = resultKpis({
+      quality: COST_QUALITY,
       cards: CARDS,
       daily: [
         month("2026-09-01", "2026-09-30"),

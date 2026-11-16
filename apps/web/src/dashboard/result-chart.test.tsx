@@ -174,6 +174,49 @@ describe("the sentence of support of the chart, in its five cases (AC-11)", () =
   });
 });
 
+/** October with the days of `unknown` lacking only the fee: no item line has an unknown cost, some fee is unknown. */
+function onlyFee(unknown: readonly number[]): StoredPeriodSummary {
+  const summary = october(unknown);
+  return {
+    ...summary,
+    quality: {
+      ...summary.quality,
+      itemLinesWithUnknownCost: 0,
+      processingFeesUnknown: 2,
+    },
+  };
+}
+
+describe("when only the fee is missing, the chart says the fee and not the cost (RES-T2)", () => {
+  const said = (summary: StoredPeriodSummary) =>
+    text(chart(summary).match(THIRD_ROW)?.[0] ?? "");
+
+  it("says it in the table, in the cost and in the result of an unknown day", () => {
+    const row = said(onlyFee([3]));
+    expect(row.match(/sem taxa informada/g)).toHaveLength(2);
+    expect(row).not.toContain("sem custo informado");
+  });
+
+  it("keeps the cost when an item line has no cost, even if a fee is unknown too", () => {
+    const both = onlyFee([3]);
+    const row = said({
+      ...both,
+      quality: { ...both.quality, itemLinesWithUnknownCost: 1 },
+    });
+    expect(row.match(/sem custo informado/g)).toHaveLength(2);
+    expect(row).not.toContain("sem taxa informada");
+  });
+
+  it("keeps the cost when no count explains the unknown day", () => {
+    const none = october([3]);
+    const row = said({
+      ...none,
+      quality: { ...none.quality, itemLinesWithUnknownCost: 0 },
+    });
+    expect(row.match(/sem custo informado/g)).toHaveLength(2);
+  });
+});
+
 describe("the chart with unknown days (AC-9, emenda de 25/10)", () => {
   it("keeps the badge and writes no total of the costs: never a partial sum", () => {
     const markup = chart(october([3, 12, 21]));

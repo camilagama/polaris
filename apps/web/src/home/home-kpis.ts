@@ -1,5 +1,11 @@
 import { Money } from "@polaris/domain/money/money";
 import { NO_KNOWN_COST_RESULT } from "../dashboard/dashboard-model";
+import {
+  type MissingDays,
+  type MissingQuality,
+  missingDaysText,
+  missingInputOf,
+} from "../dashboard/missing-input";
 import { formatBrlAmount } from "../lib/format";
 import {
   cogsCoverageOf,
@@ -356,7 +362,7 @@ type ResultSeries =
   /** No cost of the goods of the month is known: the dash and "Sem custo conhecido: o resultado não dá para estimar." */
   | { kind: "noCost" }
   /** Some day from the 1st to today has no known cost: "N de M dias sem custo informado". */
-  | { kind: "incomplete"; total: number; unknown: number }
+  | ({ kind: "incomplete" } & MissingDays)
   /** A copy kept before the results of the day existed: nothing of the series is drawn, nothing is said. */
   | { kind: "unsent" };
 
@@ -546,7 +552,8 @@ export function monthKpis(
     salesCount: number;
     ticket: string | null;
   },
-  quality: Pick<StoredQuality, "itemLines" | "itemLinesWithUnknownCost">
+  quality: Pick<StoredQuality, "itemLines" | "itemLinesWithUnknownCost"> &
+    MissingQuality
 ): MonthKpis {
   const days = month.filter(
     (day) => day.date >= firstOfMonth(today) && day.date <= today
@@ -575,7 +582,13 @@ export function monthKpis(
     // before the days: every day with a sale has a null result then, and "N de N dias" would say less than the dash
     result = { kind: "noCost" };
   } else if (unknown > 0) {
-    result = { kind: "incomplete", total: days.length, unknown };
+    result = {
+      input: missingInputOf(quality),
+      kind: "incomplete",
+      month: null,
+      total: days.length,
+      unknown,
+    };
   } else if (
     days.length === 0 ||
     days.some((day) => day.operatingResult === undefined)
@@ -635,9 +648,12 @@ export function monthKpis(
 /** The warning of the result card that is never hidden: what the number is not. */
 const NOT_PROFIT_NOR_CASH = "Não é lucro líquido nem caixa";
 
-/** "5 de 23 dias sem custo": the days of the period that still have no cost informed (AC-6, AC-9). */
-export function unknownDaysText(unknown: number, total: number): string {
-  return `${unknown} de ${total} ${total === 1 ? "dia" : "dias"} sem custo`;
+/**
+ * "5 de 23 dias sem custo": the days of the period that still have no cost informed (AC-6, AC-9); "sem taxa" when only
+ * the fee is missing, and the month's name before it for the days of one month of a period by month.
+ */
+export function unknownDaysText(missing: MissingDays): string {
+  return missingDaysText(missing, "short");
 }
 
 /**
@@ -660,7 +676,7 @@ export function unknownDaysFit(unknown: number, total: number): boolean {
 export function resultHelp(
   span: string,
   compare: string | null,
-  missing: { total: number; unknown: number } | null,
+  missing: MissingDays | null,
   notProfit = false
 ): string {
   const first = `Vendas menos custos, taxas e despesas ${span}${
@@ -670,7 +686,7 @@ export function resultHelp(
     missing &&
     (notProfit || !unknownDaysFit(missing.unknown, missing.total))
   ) {
-    return `${first} ${missing.unknown} de ${missing.total} dias ainda sem custo informado.`;
+    return `${first} ${missingDaysText(missing, "informed").replace(" sem ", " ainda sem ")}.`;
   }
   return compare ? `${first} Compara com ${compare}.` : first;
 }

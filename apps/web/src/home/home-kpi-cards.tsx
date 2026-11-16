@@ -25,6 +25,7 @@ import {
   cogsCoverageOf,
   type StoredPeriodSummary,
 } from "../lib/period-summary-cache";
+import type { MissingDays } from "../dashboard/missing-input";
 import { useIsMobile } from "../lib/use-mobile";
 import {
   dayReading,
@@ -155,7 +156,7 @@ function incompleteDetail({
   missing,
   noCost,
 }: {
-  missing: { total: number; unknown: number } | null;
+  missing: MissingDays | null;
   noCost: boolean;
 }) {
   if (noCost) {
@@ -172,9 +173,7 @@ function incompleteDetail({
   return missing && unknownDaysFit(missing.unknown, missing.total) ? (
     <>
       <span aria-hidden="true">· </span>
-      <span data-kpi-unknown="">
-        {unknownDaysText(missing.unknown, missing.total)}
-      </span>
+      <span data-kpi-unknown="">{unknownDaysText(missing)}</span>
     </>
   ) : null;
 }
@@ -237,6 +236,7 @@ function periodModel(source: PeriodSource): MonthModel {
     period: summary.period,
     previous: comparison,
     previousSales: salesComparison,
+    quality,
     today,
   });
   const unit = kpis.monthly ? "mês" : "dia";
