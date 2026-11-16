@@ -117,12 +117,15 @@ export function classifyChanges(files) {
 
 /**
  * What the sentinel of reloads with the worker in control (`apps/web/e2e-pwa/recarga-com-worker.e2e.ts`, 300 reloads,
- * more than 3 minutes) can catch: the worker and what registers it, the boot-retry, and the spec itself. The browser
- * gate runs it only then (`POLARIS_RECARGA_COM_WORKER`); `null` (the paths unknown) runs it.
+ * more than 3 minutes) can catch: the worker, what builds and registers it, the scripts of the page it serves first
+ * (`index.html`, the boot-retry, `theme-init.js`), and the spec itself. The browser gate runs it only then
+ * (`POLARIS_RECARGA_COM_WORKER`); `null` (the paths unknown) runs it.
  */
 const RELOAD_SENTINEL_FILES = [
   /^apps\/web\/src\/pwa\//,
-  /^apps\/web\/public\/boot-retry\.js$/,
+  /^apps\/web\/pwa\//,
+  /^apps\/web\/index\.html$/,
+  /^apps\/web\/public\/(boot-retry|theme-init)\.js$/,
   /^apps\/web\/e2e-pwa\/recarga-com-worker\.e2e\.ts$/,
 ];
 

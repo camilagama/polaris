@@ -936,6 +936,25 @@ describe("the worker as the browser runs it", () => {
     expect(seesAnew(10, 11)).toBe(true);
   });
 
+  it("asks the network for a file whose copy cannot be read", async () => {
+    const worker = await runWorker(build);
+    await worker.run("install", {});
+    const kept = worker.stores
+      .get(shellCacheName(build))
+      ?.get("/assets/index-BBB.js") as FakeResponse;
+    vi.spyOn(kept, "blob").mockRejectedValue(new TypeError("evicted"));
+    worker.fetched.length = 0;
+    const asset = {
+      method: "GET",
+      mode: "cors",
+      url: `${origin}/assets/index-BBB.js`,
+    };
+    expect(await worker.run("fetch", { request: asset })).toMatchObject({
+      body: "net:/assets/index-BBB.js",
+    });
+    expect(worker.fetched).toEqual(["/assets/index-BBB.js"]);
+  });
+
   it("does not serve a page kept in place of a chunk by an older worker: it asks the network", async () => {
     const worker = await runWorker(build);
     await worker.run("install", {});

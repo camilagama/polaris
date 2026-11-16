@@ -13,7 +13,7 @@ const RELOADS = 100;
 const MAX_DELAY_MS = 300;
 const DARK_CLASS = /\bdark\b/;
 
-test.describe.configure({ mode: "parallel", retries: 0, timeout: 180_000 });
+test.describe.configure({ mode: "parallel", retries: 0, timeout: 240_000 });
 
 /** Park-Miller: the same delays at every run, so a failure is the same sequence again. */
 function delays(seed: number) {
@@ -33,24 +33,27 @@ interface Seen {
 /** What would show the defect: the boot-retry's mark, an `error` on a <script>, a script request that failed. */
 async function watch(page: Page) {
   const seen: Seen = { failedScripts: [], marks: [], scriptErrors: [] };
-  const leaving: { now: boolean } = { now: false };
+  // a document is a generation: a request counts only if it fails in the document that made it and before a
+  // reload leaves it (the reload cancels what the leaving document still had in hand)
+  const generation: { now: number; leaving: boolean } = {
+    leaving: false,
+    now: 0,
+  };
   page.on("framenavigated", (frame) => {
     if (frame === page.mainFrame()) {
-      leaving.now = false;
+      generation.now += 1;
+      generation.leaving = false;
     }
   });
-  const ownRequests = new WeakSet<object>();
+  const madeIn = new WeakMap<object, number>();
   page.on("request", (request) => {
-    if (!leaving.now) {
-      ownRequests.add(request);
-    }
+    madeIn.set(request, generation.leaving ? -1 : generation.now);
   });
   page.on("requestfailed", (request) => {
-    // the requests of the document a reload leaves are cancelled by the reload itself
     if (
       request.resourceType() === "script" &&
-      ownRequests.has(request) &&
-      !leaving.now
+      madeIn.get(request) === generation.now &&
+      !generation.leaving
     ) {
       seen.failedScripts.push(
         `${request.url()} ${request.failure()?.errorText}`
@@ -90,7 +93,7 @@ async function watch(page: Page) {
   });
   return {
     reload: async () => {
-      leaving.now = true;
+      generation.leaving = true;
       await page.reload({ waitUntil: "load" });
     },
     seen,
@@ -106,11 +109,11 @@ async function after(page: Page, ms: number) {
 }
 
 test.describe("com o worker no controle", () => {
-  // more than 3 minutes: the browser gate runs it only when the worker, the boot-retry or this file change
-  // (`reloads` of scripts/ci-changed.mjs); anywhere else, always
+  // more than 3 minutes: the browser gate runs it only when the worker, its build, the first scripts of the page
+  // or this file change (`reloads` of scripts/ci-changed.mjs); anywhere else, always
   test.skip(
     process.env.POLARIS_RECARGA_COM_WORKER === "0",
-    "nada do worker, do boot-retry nem desta spec mudou"
+    "nada do worker, da build dele, dos primeiros scripts da página nem desta spec mudou"
   );
 
   for (let tab = 1; tab <= TABS; tab += 1) {

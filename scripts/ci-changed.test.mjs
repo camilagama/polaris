@@ -566,11 +566,14 @@ describe("the operation scripts are outside the browser gate's import graph", ()
 });
 
 describe("the sentinel of reloads with the worker", () => {
-  it("runs when the worker, the boot-retry or the spec change, and when the paths are unknown", () => {
+  it("runs when the worker, its build, the first scripts of the page or the spec change, and when the paths are unknown", () => {
     for (const file of [
       "apps/web/src/pwa/sw.ts",
       "apps/web/src/pwa/register.ts",
+      "apps/web/pwa/service-worker-plugin.ts",
+      "apps/web/index.html",
       "apps/web/public/boot-retry.js",
+      "apps/web/public/theme-init.js",
       "apps/web/e2e-pwa/recarga-com-worker.e2e.ts",
     ]) {
       expect(reloadSentinelRuns(["docs/a.md", file]), file).toBe(true);
@@ -582,7 +585,7 @@ describe("the sentinel of reloads with the worker", () => {
     expect(
       reloadSentinelRuns([
         "apps/web/src/lib/theme.ts",
-        "apps/web/public/theme-init.js",
+        "apps/web/public/manifest.webmanifest",
         "apps/web/e2e-pwa/boot-retry.e2e.ts",
         "apps/web/src/pwa-other/x.ts",
       ])
