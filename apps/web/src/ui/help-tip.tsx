@@ -49,6 +49,7 @@ export function HelpTip({
       </PopoverTrigger>
       <PopoverContent
         align="start"
+        className="max-w-[calc(100vw-1rem)]"
         initialFocus={popupRef}
         ref={popupRef}
         side="bottom"
