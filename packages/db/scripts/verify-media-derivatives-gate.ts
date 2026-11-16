@@ -542,9 +542,7 @@ async function main(): Promise<void> {
     } finally {
       try {
         if (cleanupLoginCreated) {
-          await admin.pool.query(
-            `REVOKE ${cleanupRuntimeRole} FROM "${cleanupLoginRole}"`
-          );
+          // DROP ROLE already removes the membership in the runtime role, so no REVOKE comes first
           await admin.pool.query(`DROP ROLE IF EXISTS "${cleanupLoginRole}"`);
         }
       } finally {
