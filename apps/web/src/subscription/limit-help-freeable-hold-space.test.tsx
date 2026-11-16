@@ -82,8 +82,9 @@ describe("o segundo parágrafo fora do vão do holdSpace", () => {
     expect(heldMarkup.match(/<p /g)).toHaveLength(1);
   });
 
-  it("controle: sem holdSpace, view null depois de uma view à mostra não renderiza nada", () => {
-    draw(withFreeable, false);
+  it("controle: com a view antes à mostra, sem holdSpace a view null não deixa nada, e o vão não volta depois", () => {
+    expect(draw(withFreeable, true)).not.toBeNull();
     expect(draw(null, false)).toBeNull();
+    expect(draw(null, true)).toBeNull();
   });
 });
