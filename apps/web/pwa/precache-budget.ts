@@ -1,5 +1,5 @@
 import { readFileSync, writeFileSync } from "node:fs";
-import { basename, dirname, join } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { gzipSync } from "node:zlib";
 import type { Plugin } from "vite";
 import {
@@ -688,8 +688,12 @@ const PRECACHE_SIZE_FILE = "precache-size.json";
  * file named after it in its parent, so two builds side by side do not share one.
  */
 export function precacheSizePath(outputDirectory: string): string {
-  const parent = dirname(outputDirectory);
-  const name = basename(outputDirectory);
+  const directory = resolve(outputDirectory);
+  const parent = dirname(directory);
+  if (parent === directory) {
+    throw new Error("The root directory cannot be a build output directory");
+  }
+  const name = basename(directory);
   return name === "client"
     ? join(parent, PRECACHE_SIZE_FILE)
     : join(parent, `${name}.${PRECACHE_SIZE_FILE}`);

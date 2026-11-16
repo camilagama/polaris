@@ -9,7 +9,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { basename, join, relative as relativePath, resolve } from "node:path";
+import { join, relative as relativePath, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import {
@@ -1602,12 +1602,19 @@ describe("PRECACHE-DELTA (the change of the precache against the base of the pul
   });
 
   it("never leaves the file inside an output directory that is not named client", () => {
-    for (const out of ["/tmp/out", "/tmp/out/", "/repo/dist/client-test"]) {
+    for (const out of [
+      "/tmp/out",
+      "/tmp/out/",
+      "/repo/dist/client-test",
+      ".",
+      "dist",
+      "client",
+    ]) {
       const path = precacheSizePath(out);
-      const relative = relativePath(resolve(out), resolve(path));
-      expect(relative.startsWith("..")).toBe(true);
-      expect(basename(path).endsWith("precache-size.json")).toBe(true);
+      const relative = relativePath(resolve(out), path);
+      expect(relative.startsWith(`..${sep}`)).toBe(true);
     }
+    expect(() => precacheSizePath("/")).toThrow("root directory");
     expect(precacheSizePath("/tmp/out")).toBe("/tmp/out.precache-size.json");
     expect(precacheSizePath("/tmp/other")).not.toBe(
       precacheSizePath("/tmp/out")
