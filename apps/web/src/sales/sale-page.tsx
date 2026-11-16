@@ -69,7 +69,7 @@ import {
 import { ConfirmedSalePanel } from "./sale-confirmed-panel";
 import { SaleDraftBar } from "./sale-draft-bar";
 import {
-  chosenItemCount,
+  chosenSaleCount,
   DRAFT_EXPIRED_MESSAGE,
   DRAFT_RECORDED_MESSAGE,
   DRAFT_UNREADABLE_MESSAGE,
@@ -1015,13 +1015,13 @@ export function SalePage() {
     (summary?.lines ?? []).map((line) => [line.draftId, line])
   );
   const itemCount = form.items.length;
-  const chosenCount = chosenItemCount(form);
+  const chosen = chosenSaleCount(form);
   return (
     <div className="@container/sale grid gap-4 font-sans text-foreground text-sm antialiased">
       <h1 className="text-title">Nova venda</h1>
       <SaleDraftBar
         canClear={!locked}
-        itemCount={chosenCount}
+        count={chosen}
         notice={draftNotice}
         onClear={handleClearSale}
         open={isSaleFormDirty(form, preset)}
@@ -1064,7 +1064,7 @@ export function SalePage() {
                   object="estoque e perfis"
                   onClick={handleRefresh}
                 />
-                <ItemsCount chosen={chosenCount} />
+                <ItemsCount count={chosen} />
               </CardHeader>
               <CardContent className="grid gap-4">
                 {form.items.map((item, index) => (
@@ -1093,7 +1093,7 @@ export function SalePage() {
                   />
                 ))}
                 <AddItemButton
-                  chosen={chosenCount}
+                  chosen={chosen.lines}
                   onAdd={handleAddItem}
                   total={itemCount}
                 />

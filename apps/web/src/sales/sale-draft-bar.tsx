@@ -10,13 +10,14 @@ import {
   DialogTitle,
 } from "@/ui/dialog";
 import { MoneyText } from "@/ui/hidden-values";
+import type { SaleCount } from "./sale-count-text";
 import { clearSaleConsequence } from "./sale-draft-restore";
 
 interface SaleDraftBarProps {
   /** False while the sale is sent or its outcome is unknown: that cart is not the person's to clear. */
   canClear: boolean;
-  /** Lines with a variant chosen; with none, "Limpar venda" clears at once. */
-  itemCount: number;
+  /** Lines with a variant chosen and their units; with no line, "Limpar venda" clears at once. */
+  count: SaleCount;
   /** What happened to the cart kept in the tab (dropped, lines taken out), announced. */
   notice: string | null;
   onClear: () => void;
@@ -31,7 +32,7 @@ interface SaleDraftBarProps {
  */
 export function SaleDraftBar({
   canClear,
-  itemCount,
+  count,
   notice,
   onClear,
   open,
@@ -40,12 +41,12 @@ export function SaleDraftBar({
   useEffect(() => setMounted(true), []);
   const [asking, setAsking] = useState(false);
   const handleClear = useCallback(() => {
-    if (itemCount > 0) {
+    if (count.lines > 0) {
       setAsking(true);
     } else {
       onClear();
     }
-  }, [itemCount, onClear]);
+  }, [count, onClear]);
   const handleOpenChange = useCallback((next: boolean) => setAsking(next), []);
   const handleCancel = useCallback(() => setAsking(false), []);
   const handleConfirm = useCallback(() => {
@@ -89,9 +90,7 @@ export function SaleDraftBar({
         <DialogContent showCloseButton={false}>
           <DialogHeader>
             <DialogTitle>Limpar venda?</DialogTitle>
-            <DialogDescription>
-              {clearSaleConsequence(itemCount)}
-            </DialogDescription>
+            <DialogDescription>{clearSaleConsequence(count)}</DialogDescription>
           </DialogHeader>
           <DialogFooter className="gap-3">
             <Button onClick={handleCancel} type="button" variant="outline">

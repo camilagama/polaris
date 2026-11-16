@@ -227,6 +227,12 @@ test("C-1: o campo da quantidade tem 64 px e deixa 48 px ou mais livres entre as
   ).toBeDisabled();
 });
 
+/** The counter has the text on screen and the text a reader says: two spans, so each is checked on its own. */
+async function expectCount(count: Locator, visible: string, spoken: string) {
+  await expect(count.locator('[aria-hidden="true"]')).toHaveText(visible);
+  await expect(count.locator(".sr-only")).toHaveText(spoken);
+}
+
 test("a venda vazia não mostra o contador nem Adicionar item, e escolher o 1º produto não empurra o item", async ({
   page,
 }) => {
@@ -252,7 +258,7 @@ test("a venda vazia não mostra o contador nem Adicionar item, e escolher o 1º 
   await pickShirt(page);
   const quantity = items.getByLabel("Quantidade");
   await expect(quantity).toBeVisible();
-  await expect(count).toHaveText("1 item");
+  await expectCount(count, "1 linha · 1 unidade", "1 linha, 1 unidade");
   await expect(addItem).toBeVisible();
   expect(Math.abs((await top()) - before)).toBeLessThanOrEqual(1);
   expect(
@@ -263,7 +269,7 @@ test("a venda vazia não mostra o contador nem Adicionar item, e escolher o 1º 
   await expect(
     page.getByRole("group", { exact: true, name: "Item 2" })
   ).toBeVisible();
-  await expect(count).toHaveText("1 item");
+  await expectCount(count, "1 linha · 1 unidade", "1 linha, 1 unidade");
 });
 
 async function chooseNoProfile(page: Page) {

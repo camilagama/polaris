@@ -269,8 +269,9 @@ export function useNearLimit(
 
 /**
  * The warning line, at the end of a block (never above what the person touches): supporting text, no icon, no
- * background, no alert role, with "Conhecer o Pro" ending the sentence. `hidden` is for when the refusal is on screen:
- * the line and the refusal's help never go together.
+ * background, no alert role, with "Conhecer o Pro" ending the sentence. `hidden` is for when the line must not show
+ * although there is a view: the refusal's help is on screen (the two never go together), or the screen is still
+ * loading what sits above it or has no session.
  */
 export function NearLimitNotice({
   hidden = false,

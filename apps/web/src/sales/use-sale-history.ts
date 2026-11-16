@@ -24,6 +24,8 @@ interface SaleHistory {
   filters: HistoryFilters;
   loadMore: () => void;
   reload: () => void;
+  /** Changes whenever the list is read again on purpose, so what is read beside it can follow. */
+  reloadVersion: number;
   setFilters: (changes: Partial<HistoryFilters>) => void;
   state: HistoryState;
 }
@@ -127,5 +129,5 @@ export function useSaleHistory(
     []
   );
 
-  return { filters, loadMore, reload, setFilters, state };
+  return { filters, loadMore, reload, reloadVersion, setFilters, state };
 }

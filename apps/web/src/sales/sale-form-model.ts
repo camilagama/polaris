@@ -211,6 +211,12 @@ function parsePositiveInteger(text: string): FieldParse<number> {
   return value > MAX_QUANTITY ? { kind: "too_large" } : { kind: "ok", value };
 }
 
+/** The units a quantity field counts for: the whole number it holds, zero while it is empty or not a valid quantity. */
+export function quantityUnits(text: string): number {
+  const parse = parsePositiveInteger(text);
+  return parse.kind === "ok" ? parse.value : 0;
+}
+
 /**
  * The quantity after one tap of the − or + of the stepper, or null when that tap
  * is not possible (below 1, above the maximum, or a text that is not a whole
