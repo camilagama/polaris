@@ -294,10 +294,8 @@ describe("the production workflow check", () => {
       "job deploy: the step of the web deploy, the catalog deploy, the deployed version check, the Admin deploy must not swallow a failure (|| or &)",
     ]);
     const after =
-      "          bun run --filter @polaris/db production:verify-database after-migrate\n";
-    expect(
-      problemsOf(once(production, after, after.replace("\n", " &\n")))
-    ).toEqual([
+      "          bun run --filter @polaris/db production:verify-database after-migrate";
+    expect(problemsOf(once(production, `${after}\n`, `${after} &\n`))).toEqual([
       "job deploy: the step of the marker and owner check, the migrate step, the read-only check must not swallow a failure (|| or &)",
     ]);
     expect(
