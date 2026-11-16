@@ -3,6 +3,7 @@ import type { EffectCallback } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { StaticOrganizationProvider } from "../lib/current-organization";
+import type { PendingSale } from "../offline/sale-confirm";
 import {
   emptyHistoryFilters,
   type HistoryFilters,
@@ -18,6 +19,13 @@ vi.mock("react", async (importOriginal) => ({
   useEffect: (effect: EffectCallback) => {
     mounted.effects.push(effect);
   },
+}));
+
+const queue = vi.hoisted(() => ({ sales: [] as PendingSale[] }));
+
+vi.mock("./pending-sales", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./pending-sales")>()),
+  usePendingSales: () => queue.sales,
 }));
 
 vi.mock("../lib/orpc", () => ({ orpcClient: {} }));
@@ -155,6 +163,7 @@ const INVALID_PERIODS: [string, unknown][] = [
 beforeEach(() => {
   vi.useFakeTimers({ now: NOW, toFake: ["Date"] });
   server.requests = [];
+  queue.sales = [];
   server.sales = [CONFIRMED_IN, CANCELLED_IN, CONFIRMED_OUT, CANCELLED_OUT];
 });
 
@@ -306,5 +315,27 @@ describe("depois de montar, o Histórico descarta o estado de navegação", () =
     runMountEffects();
 
     expect(browserHistory.state).toEqual({ outraChave: 1 });
+  });
+});
+
+describe("as vendas guardadas no Histórico", () => {
+  it("contam itens como antes, sem linhas e unidades", () => {
+    queue.sales = [
+      {
+        code: null,
+        commandId: "a",
+        lineCount: 3,
+        occurredAt: "2026-10-14T15:30:00.000Z",
+        state: "pending",
+        totalDue: "130.00",
+        unitCount: 8,
+      },
+    ];
+    const html = openWith(null);
+
+    expect(html).toContain("Vendas guardadas neste aparelho");
+    expect(html).toContain(" · 3 itens</span>");
+    expect(html).not.toContain("3 linhas");
+    expect(html).not.toContain("unidades");
   });
 });

@@ -42,7 +42,7 @@ import {
   NearLimitNotice,
   useLimitFocus,
   useLimitHelp,
-  useNearLimit,
+  useNearLimitRead,
 } from "../subscription/limit-help";
 import {
   describeMediaFailure,
@@ -246,7 +246,7 @@ export function ProductMediaPanel({
   const [reloadVersion, setReloadVersion] = useState(0);
   // each upload or removal changes the use of the plan's images: the warning reads it again
   const [usageVersion, setUsageVersion] = useState(0);
-  const nearLimit = useNearLimit("images", usageVersion);
+  const nearLimit = useNearLimitRead("images", usageVersion);
   const [running, setRunning] = useState<RunningCommand | null>(null);
   const [confirm, setConfirm] = useState<ConfirmRequest | null>(null);
   const [replacementPending, setReplacementPending] = useState(false);
@@ -894,7 +894,8 @@ export function ProductMediaPanel({
         </div>
         <NearLimitNotice
           hidden={error !== null && isImageLimitText(error)}
-          view={nearLimit}
+          holdSpace={!nearLimit.settled}
+          view={nearLimit.view}
         />
       </form>
 

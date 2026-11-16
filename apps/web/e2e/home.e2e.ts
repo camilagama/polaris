@@ -5466,6 +5466,7 @@ const PLAN_REGIONS = [
 ] as const;
 
 interface PlanServer {
+  answered: number;
   gate: Promise<void> | null;
   refuse: boolean;
   reads: number;
@@ -5474,6 +5475,7 @@ interface PlanServer {
 }
 
 const newPlanServer = (variants: number, images = 0): PlanServer => ({
+  answered: 0,
   gate: null,
   refuse: false,
   reads: 0,
@@ -5504,8 +5506,25 @@ async function openHomeWithPlan(
   page: Page,
   server: FakeServer,
   plan: PlanServer,
-  options: { role?: string; selfService?: boolean } = {}
+  options: {
+    offlineAtOpen?: boolean;
+    role?: string;
+    selfService?: boolean;
+    waitForBlocks?: boolean;
+  } = {}
 ) {
+  if (options.offlineAtOpen) {
+    await page.addInitScript(() => {
+      Object.defineProperty(window, "polarisOffline", {
+        configurable: true,
+        value: true,
+      });
+      Object.defineProperty(navigator, "onLine", {
+        configurable: true,
+        get: () => !("polarisOffline" in window),
+      });
+    });
+  }
   const notice = JSON.stringify({
     accessEndsAt: null,
     nextChargeOn: null,
@@ -5535,12 +5554,13 @@ async function openHomeWithPlan(
     await (plan.refuse
       ? route.fulfill(failure("FORBIDDEN", 403))
       : route.fulfill(json(planView(plan))));
+    plan.answered += 1;
   });
   await page.goto("/");
   await expect(
     page.getByRole("heading", { level: 1, name: "Início" })
   ).toBeVisible({ timeout: 20_000 });
-  if (options.role === undefined) {
+  if (options.role === undefined && options.waitForBlocks !== false) {
     await expect(region(page, "Mais vendidos do mês")).toBeVisible();
   }
 }
@@ -5666,6 +5686,55 @@ test.describe("a linha do plano no fim do Início (item 2 do aviso de limite)", 
     await expect(page.locator(PLAN_LINE)).toHaveCount(0);
     expect(plan.reads).toBe(1);
   });
+
+  test("aberto já sem conexão: sem linha e sem leitura do plano; a conexão que chega lê e traz a linha", async ({
+    page,
+  }) => {
+    const plan = newPlanServer(47);
+    await openHomeWithPlan(page, new FakeServer(SOLD), plan, {
+      offlineAtOpen: true,
+      waitForBlocks: false,
+    });
+    expect(await page.evaluate(() => navigator.onLine)).toBe(false);
+    await settled(page);
+    await expect(page.locator(PLAN_LINE)).toHaveCount(0);
+    expect(plan.reads).toBe(0);
+    await page.evaluate(() => {
+      Reflect.deleteProperty(window, "polarisOffline");
+      window.dispatchEvent(new Event("online"));
+    });
+    await expect(page.locator(PLAN_LINE)).toHaveText(
+      "Você usa 47 de 50 variantes no plano Free. Conhecer o Pro",
+      { timeout: 15_000 }
+    );
+    expect(plan.reads).toBe(1);
+  });
+
+  for (const held of ["report/periodSummary", "goal/list"] as const) {
+    test(`o plano responde antes ${held === "goal/list" ? "da meta" : "dos cartões"}: a linha só aparece depois que eles carregam`, async ({
+      page,
+    }) => {
+      const server = new FakeServer(SOLD);
+      let release: () => void = () => undefined;
+      server.held.set(
+        held,
+        new Promise<void>((resolve) => {
+          release = resolve;
+        })
+      );
+      const plan = newPlanServer(47);
+      await openHomeWithPlan(page, server, plan, { waitForBlocks: false });
+      await expect.poll(() => plan.answered).toBe(1);
+      await settled(page);
+      await expect(page.locator(PLAN_LINE)).toHaveCount(0);
+      release();
+      await expect(region(page, "Mais vendidos do mês")).toBeVisible();
+      await expect(page.locator(PLAN_LINE)).toHaveText(
+        "Você usa 47 de 50 variantes no plano Free. Conhecer o Pro"
+      );
+      expect(plan.reads).toBe(1);
+    });
+  }
 
   test("a recusa do plano, o lojista sem a cobrança, o autosserviço desligado e o Pro: nenhuma linha e nenhum erro", async ({
     browser,
