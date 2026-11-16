@@ -1,5 +1,8 @@
 /// <reference lib="dom" />
 
+// Prova de integração de uma corrida entre abas: o tempo decide e, sem o lock, ela pode passar.
+// A guarda determinística do lock é src/offline/local-store.test.ts.
+
 import type { Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 

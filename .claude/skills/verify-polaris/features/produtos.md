@@ -10,7 +10,7 @@ Produtos (`/products`) é o catálogo: a lista de produtos (ativos e arquivados)
 - `produto-excluir` aba "Arquivados", menu "Mais ações para <nome>" → "Excluir…" (só no arquivado; sem conexão fica desligado): o diálogo "Excluir produto “<nome>”?" pede o nome em "Digite o nome do produto para confirmar" (sem diferenciar maiúsculas nem espaços repetidos) e só então "Excluir produto" age; "Manter arquivado", Esc e clicar fora fecham sem excluir. Recusas dentro do diálogo: saldo ("ainda tem N em estoque", link "Ir ao Estoque"), teto de 50 por hora (a hora de tentar de novo; o drive o simula com `page.route` porque 50 exclusões não cabem na pilha local) e produto mudado. Sucesso: aviso "Produto “<nome>” excluído." e a vaga volta. Prova: `apps/web/e2e-real/jornadas/excluir-produto-arquivado.e2e.ts`.
 - `produto-criar` Dialog "Novo produto": nome, preço de tabela, quantidade e custo; "Mais detalhes" para categoria e descrição.
 - `produto-limite` plano Free no teto de 50 variantes: o Dialog recusa com "Seu plano chegou ao limite de variantes. Nada foi cadastrado."
-- `produto-aviso-limite` plano Free a partir de 90% do limite (45 de 50): linha de texto de apoio `[data-near-limit]` no fim da lista de Produtos, abaixo dos botões do formulário de variantes e abaixo de "Enviar imagem" ("Você usa 47 de 50 variantes no plano Free." + "Conhecer o Pro"; no limite, "Você chegou ao limite de 50 variantes do plano Free."). Só o dono, só online; nunca junto da recusa.
+- `produto-aviso-limite` plano Free a partir de 90% do limite (45 de 50): linha de texto de apoio `[data-near-limit]` no fim da lista de Produtos, abaixo dos botões do formulário de variantes e abaixo de "Enviar imagem" ("Você usa 47 de 50 variantes no plano Free." + "Conhecer o Pro"; no limite, "Você chegou ao limite de 50 variantes do plano Free."). Só o dono, só online; nunca junto da recusa. Com arquivados sem estoque (`usage.freeable.products > 0`), um segundo parágrafo `[data-near-limit-freeable]` no aviso de variantes: "Você tem N produtos arquivados sem estoque. Excluir libera vaga." com o link "Ver arquivados" (`/products?arquivados=1`: abre Produtos já em Arquivados, com o foco na aba, sem recarregar; dentro do diálogo de variantes ele fecha o diálogo antes); em Arquivados a linha vem sem o link.
 - `produto-importar` Dialog "Importar planilha", em 4 passos: Arquivo, Prévia, Importando, Resultado.
 - `produtos-busca` `searchbox "Buscar produto"`; sem resultado: "Nenhum produto com “…”".
 - `categorias` aba Categorias: "Nova categoria", "Adicionar categoria", abas "Ativas", "Arquivadas" e "Removidas".
@@ -21,6 +21,7 @@ Produtos (`/products`) é o catálogo: a lista de produtos (ativos e arquivados)
 - Celular: botão "Mais" da barra "Destinos", depois o link `Produtos` dentro do Dialog "Mais".
 - Início da loja vazia: "Cadastrar à mão" (`/products?novo=1`, abre o Dialog) e "Importar planilha" (`/products?importar=1`).
 - Aba Categorias: `tab "Categorias"` ou `/products?aba=categorias` (a primeira aba, `/products?aba=produtos`, é o mesmo que `/products`).
+- Pelo link "Ver arquivados" do aviso de limite (`/products?arquivados=1`, a lista já na aba "Arquivados").
 - Pelo nome do produto na linha do Estoque (`/products?produto=<id>`, e `&variante=<id>` para a linha de uma variante).
 - O endereço antigo `/categories` abre a aba Categorias.
 
