@@ -113,6 +113,46 @@ describe("local store file lock", () => {
     expect(probe.maxRunning).toBe(1);
   });
 
+  it.each([
+    { first: "wipe", second: "open" },
+    { first: "open", second: "wipe" },
+  ] as const)(
+    "$second waits for $first on the same file",
+    async ({ first, second }) => {
+      const events: string[] = [];
+      const step = async (label: string) => {
+        events.push(`${label}:start`);
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        events.push(`${label}:end`);
+      };
+      openDatabase.mockImplementation(async () => {
+        await step("open");
+        throw new Error("stop after open");
+      });
+      const removeEntry = vi.fn(async (name: string) => {
+        if (name.endsWith(".sqlite")) {
+          await step("wipe");
+          return;
+        }
+        throw new DOMException("missing", "NotFoundError");
+      });
+      vi.stubGlobal("navigator", {
+        locks: createLockManager(),
+        storage: { getDirectory: async () => ({ removeEntry }) },
+      });
+      const namespace = await localNamespace("user-1", "org-1");
+      const run = (kind: "open" | "wipe") =>
+        kind === "open" ? openLocalStore(namespace) : wipeLocalStore(namespace);
+      await Promise.allSettled([run(first), run(second)]);
+      expect(events).toEqual([
+        `${first}:start`,
+        `${first}:end`,
+        `${second}:start`,
+        `${second}:end`,
+      ]);
+    }
+  );
+
   it("still removes the files without Web Locks", async () => {
     const removeEntry = vi.fn(() => Promise.resolve());
     vi.stubGlobal("navigator", {
