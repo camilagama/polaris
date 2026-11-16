@@ -52,6 +52,7 @@ vi.mock("../ui/charts/on-demand", async (importOriginal) => {
         <original.OnDemandAreaChart {...props} />
         <i
           data-drawing-label={props.label}
+          data-first-note={props.readingNote?.(0) ?? ""}
           data-hatch-legend={props.secondary?.unknown?.legend ?? ""}
           data-hatch-text={props.secondary?.unknown?.text ?? ""}
         />
@@ -154,8 +155,7 @@ function support(summary: StoredPeriodSummary): string {
   return [count, tail].filter((part) => part !== null).join(" ");
 }
 const DRAWING_LABEL = /data-drawing-label="([^"]*)"/;
-const drawingLabel = (markup: string) =>
-  markup.match(DRAWING_LABEL)?.[1] ?? "";
+const drawingLabel = (markup: string) => markup.match(DRAWING_LABEL)?.[1] ?? "";
 const COSTS_TOTAL = /<dt[^>]*>Custos<\/dt>/;
 const THIRD_ROW = /<tr[^>]*>(?:(?!<\/tr>).)*03\/10\/2026.*?<\/tr>/s;
 const EQUALITY = "A diferença entre as duas linhas";
@@ -234,6 +234,32 @@ describe("when only the fee is missing, the chart says the fee and not the cost 
     const markup = chart(october([3, 12, 21]));
     expect(drawingLabel(markup)).toContain("3 de 25 dias sem custo informado");
     expect(markup).toContain('data-hatch-legend="dia sem custo informado"');
+  });
+
+  it("writes the year in the reading of a month of last year", () => {
+    const base = onlyFee([]);
+    const markup = chart({
+      ...base,
+      daily: [
+        {
+          costs: null,
+          date: "2025-12-01",
+          days: 31,
+          netSales: "50.00",
+          operatingExpenses: "0.00",
+          operatingResult: null,
+          salesCount: 1,
+          to: "2025-12-31",
+          unknownDays: 31,
+        },
+      ],
+      generatedAt: "2026-02-10T15:00:00.000Z",
+      granularity: "month",
+      period: { from: "2025-12-01", to: "2025-12-31" },
+    } as StoredPeriodSummary);
+    expect(markup).toContain(
+      'data-first-note="dezembro de 2025: 31 de 31 dias sem taxa informada"'
+    );
   });
 
   it("names the month in the summary of the drawing of a period by month", () => {
