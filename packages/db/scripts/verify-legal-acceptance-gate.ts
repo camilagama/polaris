@@ -257,7 +257,7 @@ async function run() {
   assert.doesNotMatch(parsedAdminUrl.hostname, poolerPattern);
 
   const owner = createDatabase(adminUrl, { maxConnections: 2 });
-  const logins: [string, string][] = [];
+  const logins: string[] = [];
   const tests: string[] = [];
   const closers: (() => Promise<unknown>)[] = [];
   const cleanupFailures: string[] = [];
@@ -298,7 +298,7 @@ async function run() {
         `CREATE ROLE "${role}" WITH LOGIN INHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS PASSWORD '${password}'`
       );
       await owner.pool.query(`GRANT "${group}" TO "${role}"`);
-      logins.push([role, group]);
+      logins.push(role);
       const url = temporaryRuntimeUrl(adminUrl, role, password);
       const connect = async () => {
         const client = new Client({
@@ -1052,16 +1052,11 @@ async function run() {
       await close().catch(() => undefined);
     }
     // the rows of the run stay: the table only grows, and the database is disposable
-    for (const [role, group] of logins) {
-      for (const [label, text] of [
-        ["revoke", `REVOKE "${group}" FROM "${role}"`],
-        ["role", `DROP ROLE IF EXISTS "${role}"`],
-      ] as const) {
-        try {
-          await owner.pool.query(text);
-        } catch (error) {
-          cleanupFailures.push(`${label} (${redactedFailure(error)})`);
-        }
+    for (const role of logins) {
+      try {
+        await owner.pool.query(`DROP ROLE IF EXISTS "${role}"`);
+      } catch (error) {
+        cleanupFailures.push(`role (${redactedFailure(error)})`);
       }
     }
     await owner.pool.end();

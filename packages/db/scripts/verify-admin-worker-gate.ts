@@ -115,7 +115,7 @@ async function run() {
   );
 
   const owner = createDatabase(adminUrl, { maxConnections: 2 });
-  const logins: [string, string][] = [];
+  const logins: string[] = [];
   const tests: string[] = [];
 
   try {
@@ -141,7 +141,7 @@ async function run() {
       await owner.pool.query(
         `CREATE ROLE "${role}" WITH LOGIN INHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS PASSWORD '${password}'`
       );
-      logins.push([role, group]);
+      logins.push(role);
       await owner.pool.query(`GRANT "${group}" TO "${role}"`);
       return temporaryRuntimeUrl(adminUrl, role, password);
     };
@@ -548,12 +548,9 @@ async function run() {
     );
   } finally {
     try {
-      for (const [role, group] of logins) {
+      for (const role of logins) {
         // one role that fails to go must not leave the others, or the pool open
         // biome-ignore lint/performance/noAwaitInLoops: Cleanups, in order.
-        await owner.pool
-          .query(`REVOKE "${group}" FROM "${role}"`)
-          .catch(() => undefined);
         await owner.pool
           .query(`DROP ROLE IF EXISTS "${role}"`)
           .catch(() => undefined);

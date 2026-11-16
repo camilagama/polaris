@@ -24,7 +24,6 @@ interface TestAuthHelpers {
 }
 
 interface TemporaryLogin {
-  baseRole: string;
   connectionString: string;
   name: string;
   password: string;
@@ -265,7 +264,7 @@ async function createTemporaryLogin(
     throw roleProbeError;
   }
 
-  return { baseRole, connectionString: roleConnectionString, name, password };
+  return { connectionString: roleConnectionString, name, password };
 }
 
 async function availablePort(): Promise<number> {

@@ -103,7 +103,7 @@ async function run() {
   // GRANT and REVOKE on the function are its owner role's, whatever the gate user is
   const asRecordOwner = (statement: string) =>
     queryAsFunctionOwner(owner.pool, RECORD, statement);
-  const logins: [string, string][] = [];
+  const logins: string[] = [];
   const tests: string[] = [];
   const closers: (() => Promise<unknown>)[] = [];
   const cleanupFailures: string[] = [];
@@ -139,7 +139,7 @@ async function run() {
       `CREATE ROLE "${role}" WITH LOGIN INHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS PASSWORD '${password}'`
     );
     await owner.pool.query(`GRANT polaris_auth_runtime TO "${role}"`);
-    logins.push([role, "polaris_auth_runtime"]);
+    logins.push(role);
     const authUrl = temporaryRuntimeUrl(adminUrl, role, password);
 
     const verificationEmails: { token: string; url: string }[] = [];
@@ -560,8 +560,7 @@ async function run() {
     for (const id of userIds) {
       await cleanup("user", 'DELETE FROM public."user" WHERE id = $1', [id]);
     }
-    for (const [role, group] of logins) {
-      await cleanup("revoke", `REVOKE "${group}" FROM "${role}"`);
+    for (const role of logins) {
       await cleanup("role", `DROP ROLE IF EXISTS "${role}"`);
     }
     await owner.pool.end();

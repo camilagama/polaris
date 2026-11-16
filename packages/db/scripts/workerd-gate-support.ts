@@ -36,10 +36,10 @@ export function temporaryLogins(
   owner: { pool: AdminPool },
   adminUrl: string
 ): TemporaryLogins {
-  const made: [string, string][] = [];
+  const made: string[] = [];
   return {
     async drop() {
-      for (const [role] of made) {
+      for (const role of made) {
         try {
           // biome-ignore lint/performance/noAwaitInLoops: Cleanups, in order.
           await owner.pool.query(`DROP ROLE IF EXISTS "${role}"`);
@@ -55,7 +55,7 @@ export function temporaryLogins(
       await owner.pool.query(
         `CREATE ROLE "${role}" WITH LOGIN INHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS PASSWORD '${password}'`
       );
-      made.push([role, group]);
+      made.push(role);
       await owner.pool.query(`GRANT "${group}" TO "${role}"`);
       return temporaryRuntimeUrl(adminUrl, role, password);
     },
