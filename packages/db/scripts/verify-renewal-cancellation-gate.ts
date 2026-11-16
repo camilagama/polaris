@@ -875,8 +875,7 @@ async function run() {
   } finally {
     await billing?.close().catch(() => undefined);
     await runtime?.pool.end().catch(() => undefined);
-    for (const [role, group] of logins) {
-      await owner.pool.query(`REVOKE "${group}" FROM "${role}"`);
+    for (const [role] of logins) {
       await owner.pool.query(`DROP ROLE IF EXISTS "${role}"`);
     }
     await owner.pool.end();

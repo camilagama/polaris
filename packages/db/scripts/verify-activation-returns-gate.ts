@@ -920,8 +920,7 @@ async function run() {
       )
     );
   } finally {
-    for (const [loginRole, group] of logins) {
-      await owner.pool.query(`REVOKE "${group}" FROM "${loginRole}"`);
+    for (const [loginRole] of logins) {
       await owner.pool.query(`DROP ROLE IF EXISTS "${loginRole}"`);
     }
     await owner.pool.end();
