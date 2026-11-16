@@ -263,6 +263,17 @@ export function useNearLimit(
   subject: NearLimitSubject,
   version = 0
 ): NearLimitView | null {
+  return useNearLimitRead(subject, version).view;
+}
+
+/**
+ * `useNearLimit` plus whether the read of this store has answered (`settled`): not while offline, nor while the first
+ * read is on the way. A screen that keeps the line's space reads it to know when it can let the space go.
+ */
+export function useNearLimitRead(
+  subject: NearLimitSubject,
+  version = 0
+): { settled: boolean; view: NearLimitView | null } {
   const { billingSelfService, organization, organizationId } =
     useCurrentOrganization();
   const online = useConnectionOnline();
@@ -294,7 +305,7 @@ export function useNearLimit(
       })
       .catch(() => {
         if (current) {
-          setRead(null);
+          setRead({ organizationId, view: null });
         }
       });
     return () => {
@@ -302,7 +313,8 @@ export function useNearLimit(
     };
   }, [billingSelfService, online, organizationId, role, subject, version]);
   // a number read for another store is never shown for this one while its own read is on the way
-  return online && read?.organizationId === organizationId ? read.view : null;
+  const settled = online && read?.organizationId === organizationId;
+  return { settled, view: settled ? read.view : null };
 }
 
 const TEXT_LINK =
@@ -355,29 +367,49 @@ function FreeableNotice({
  * background, no alert role, with "Conhecer o Pro" ending the sentence. A second paragraph, below, tells how many
  * archived products with no stock deleting would free (`freeable`: where the person can act on it, never the Início).
  * `hidden` is for when the line must not show although there is a view: the refusal's help is on screen (the two never
- * go together), or the screen is still loading what sits above it or has no session.
+ * go together), or the screen is still loading what sits above it or has no session. `holdSpace` is for a block whose
+ * box is centred (the dialog from 760 px): while it is true and the line is gone (the connection went, or the next read
+ * is on the way), the line's space stays, unseen and out of the reading order, so the box does not move; the space goes
+ * when it turns false with no line, and it is never there for a line that was not shown. The second paragraph is not
+ * held: a block that holds space does not ask for it.
  */
 export function NearLimitNotice({
   freeable = "hidden",
   hidden = false,
+  holdSpace = false,
   view,
 }: {
   freeable?: FreeableLine;
   hidden?: boolean;
+  holdSpace?: boolean;
   view: NearLimitView | null;
 }) {
   const handleClick = useProLinkClick();
-  if (view === null || hidden) {
+  const [lastView, setLastView] = useState<NearLimitView | null>(view);
+  if (view !== null && view !== lastView) {
+    setLastView(view);
+  } else if (view === null && !holdSpace && lastView !== null) {
+    setLastView(null);
+  }
+  const held = holdSpace && view === null && !hidden;
+  const shown = held ? lastView : view;
+  if (shown === null || hidden) {
     return null;
   }
-  const sentences = [nearLimitText(view), nearLimitProText(view)]
+  const sentences = [nearLimitText(shown), nearLimitProText(shown)]
     .filter((sentence) => sentence !== null)
     .join(" ");
-  const freeableText = freeable === "hidden" ? null : freeableLineText(view);
+  const freeableText =
+    freeable === "hidden" || view === null ? null : freeableLineText(view);
   const proLine = (
     <p
-      className="text-muted-foreground text-support"
-      data-near-limit={view.kind}
+      aria-hidden={held ? true : undefined}
+      className={
+        held
+          ? "invisible text-muted-foreground text-support"
+          : "text-muted-foreground text-support"
+      }
+      data-near-limit={held ? undefined : shown.kind}
     >
       {sentences}{" "}
       <a className={TEXT_LINK} href={SUBSCRIPTION_HREF} onClick={handleClick}>
