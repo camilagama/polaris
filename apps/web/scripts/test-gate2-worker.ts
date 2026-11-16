@@ -261,7 +261,6 @@ async function createTemporaryLogin(
     await rolePool.end();
   }
   if (roleProbeFailed) {
-    await pool.query(`REVOKE ${baseRole} FROM ${identifier}`);
     await pool.query(`DROP ROLE IF EXISTS ${identifier}`);
     throw roleProbeError;
   }
@@ -451,7 +450,6 @@ async function dropTemporaryLogin(
   role: TemporaryLogin
 ): Promise<void> {
   const identifier = quoteTemporaryRole(role.name);
-  await pool.query(`REVOKE ${role.baseRole} FROM ${identifier}`);
   await pool.query(`DROP ROLE IF EXISTS ${identifier}`);
 }
 

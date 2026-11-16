@@ -414,9 +414,8 @@ async function run() {
     for (const close of closers.reverse()) {
       await close().catch(() => undefined);
     }
-    for (const [role, group] of logins) {
+    for (const [role] of logins) {
       try {
-        await owner.pool.query(`REVOKE "${group}" FROM "${role}"`);
         await owner.pool.query(`DROP ROLE IF EXISTS "${role}"`);
       } catch (error) {
         cleanupFailures.push(`role (${redactedFailure(error)})`);

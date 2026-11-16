@@ -1364,9 +1364,8 @@ async function run() {
         .query(`REVOKE ${owned} FROM CURRENT_USER`)
         .catch(() => undefined);
     }
-    for (const [loginRole, group] of logins) {
+    for (const [loginRole] of logins) {
       // biome-ignore lint/performance/noAwaitInLoops: Cleanups, in order.
-      await owner.pool.query(`REVOKE "${group}" FROM "${loginRole}"`);
       await owner.pool.query(`DROP ROLE IF EXISTS "${loginRole}"`);
     }
     await owner.pool.end();
