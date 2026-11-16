@@ -320,8 +320,9 @@ async function chooseOption(page: Page, trigger: Locator, option: Locator) {
 /**
  * Adds the first adjustment and returns its group. The panel of date and adjustments opens with a height animation on
  * the desktop, and a click that lands while it runs can focus the button without activating it: the click waits for
- * the animation to end, and the animation is read only once the panel carries `data-open`, which is what starts it. It is made once: a second click while the group is slow would add "Ajuste 2" and fail the
- * state, and one the app ignored must show as a failure, not be repeated away.
+ * the animation to end. The animation is read only once the panel carries `data-open`, which is what starts it. The
+ * click is made once: a second one while the group is slow would add "Ajuste 2" and fail the state, and one the app
+ * ignored must show as a failure, not be repeated away.
  */
 async function addFirstAdjustment(page: Page) {
   const group = page.getByRole("group", { exact: true, name: "Ajuste 1" });
