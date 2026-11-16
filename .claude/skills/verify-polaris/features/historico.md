@@ -7,6 +7,7 @@ O Histórico (`/sales/history`) lista as vendas da loja com filtros por período
 - `historico-lista` a lista `list "Vendas"`, cada venda um link com data, situação, cliente, método e total.
 - `historico-vazio` loja sem venda: "Nenhuma venda ainda. Registre a primeira venda para vê-la aqui."
 - `historico-filtros` o `search "Filtrar vendas"` com o botão "Filtrar"; sem resultado: "Nenhuma venda encontrada com estes filtros." e o botão "Limpar filtros"
+- `historico-total-periodo` com o período escolhido sozinho (as duas pontas, sem Situação, Cliente nem busca, com conexão, até 366 dias) o rodapé da lista é "Vendas líquidas do período" (o `netSales` do Resultado, com o (i) "Sobre Vendas líquidas do período"); em qualquer outro caso é "Total na tela". Sem conexão ou com a leitura falha, "Total na tela" com a frase calma na linha de nota.
 - `historico-detalhe` o detalhe com as regiões "Venda", "Itens", "Devolução", "Cancelar venda" e "Cliente da venda".
 - `historico-linha-do-tempo` no detalhe, o `region "Linha do tempo"` (lista de eventos, do mais novo ao mais velho) só existe com 2 eventos ou mais: uma devolução, o cancelamento ou "Confirmada no servidor" (venda com dia retroativo, confirmada 60 s ou mais depois). Venda feita agora e sem devolução não tem a seção.
 - `venda-devolver` devolução parcial, com o que volta ao estoque.

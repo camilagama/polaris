@@ -32,11 +32,17 @@ import { HistoryFiltersBar } from "./sale-history-filters";
 import { SaleHistoryList } from "./sale-history-list";
 import {
   emptyHistoryFilters,
-  historyTotal,
+  type HistoryFilters,
+  historyFooterView,
   historyView,
   loadMoreView,
+  PERIOD_TOTAL_HELP,
+  PERIOD_TOTAL_LABEL,
+  type PeriodTotalRead,
+  periodTotalPeriod,
   statusFromState,
 } from "./sale-history-model";
+import { useHistoryPeriodTotal } from "./use-history-period-total";
 import { useSaleHistory } from "./use-sale-history";
 
 function OfflineHistoryNotice() {
@@ -103,25 +109,35 @@ function LoadingCard({ message }: { message: string }) {
 const TOTAL_UNDER_VALUES =
   "border-t pr-[calc(0.625rem+1.5rem)] md:pr-[calc(1rem+1.75rem)]";
 
-/** The total of the sales on the screen; while the first page loads it is a dash, in a box of the same height. */
+/** What the foot of the history needs to say its total: see `historyFooterView`. */
+interface HistoryFooterInput {
+  filters: HistoryFilters;
+  hasMore: boolean;
+  listLoading: boolean;
+  offline: boolean;
+  read: PeriodTotalRead;
+  sales: readonly SaleListEntryReadModel[];
+}
+
 function HistoryTotalFooter({
   className,
-  hasMore,
-  loading,
-  sales,
-}: {
-  className?: string | undefined;
-  loading: boolean;
-  hasMore: boolean;
-  sales: readonly SaleListEntryReadModel[];
-}) {
-  const total = historyTotal(sales, hasMore);
+  ...input
+}: HistoryFooterInput & { className?: string | undefined }) {
+  const view = historyFooterView(input);
   return (
     <ListTotalFooter
       className={className}
-      count={loading ? "" : total.countText}
-      note={loading ? "" : total.noteText}
-      value={loading ? "…" : (total.totalText ?? "—")}
+      count={view.count}
+      help={
+        view.hasHelp
+          ? { about: PERIOD_TOTAL_LABEL, text: PERIOD_TOTAL_HELP }
+          : undefined
+      }
+      label={view.label}
+      note={view.note}
+      notice={view.notice}
+      value={view.value}
+      valueLoading={view.valueLoading}
     />
   );
 }
@@ -145,21 +161,24 @@ export function SaleHistoryPage() {
     dropNavigationState(HISTORY_PERIOD_STATE);
     dropNavigationState(HISTORY_STATUS_STATE);
   }, []);
-  const { filters, loadMore, reload, setFilters, state } = useSaleHistory(
-    organizationId,
-    offlineWorkspace,
-    {
+  const { filters, loadMore, reload, reloadVersion, setFilters, state } =
+    useSaleHistory(organizationId, offlineWorkspace, {
       ...emptyHistoryFilters,
       ...(initialPeriod
         ? { from: initialPeriod.from, to: initialPeriod.to }
         : {}),
       status: initialStatus,
-    }
-  );
+    });
   const resultPeriod =
     offline || !hasCapabilityForRole(organization.role, "report:read")
       ? null
       : resultPeriodOf(filters);
+  const periodRead = useHistoryPeriodTotal(
+    organizationId,
+    offline ? null : periodTotalPeriod(filters),
+    reloadVersion
+  );
+  const footerInput = { filters, offline, read: periodRead };
   const view = historyView(state, filters);
   const handleClearFilters = useCallback(
     () => setFilters(emptyHistoryFilters),
@@ -171,7 +190,7 @@ export function SaleHistoryPage() {
     <div className="grid gap-4 font-sans text-foreground text-sm antialiased">
       <h1 className="text-title">Histórico de vendas</h1>
       {offline ? <OfflineHistoryNotice /> : null}
-      <SavedSalesCard workspace={workspace} />
+      <SavedSalesCard countStyle="items" workspace={workspace} />
       <HistoryFiltersBar
         filters={filters}
         offline={offline}
@@ -182,7 +201,12 @@ export function SaleHistoryPage() {
         <>
           <LoadingCard message={view.message} />
           <Card className="gap-0 overflow-hidden py-0">
-            <HistoryTotalFooter hasMore={false} loading sales={state.sales} />
+            <HistoryTotalFooter
+              {...footerInput}
+              hasMore={false}
+              listLoading
+              sales={state.sales}
+            />
           </Card>
         </>
       ) : null}
@@ -202,8 +226,9 @@ export function SaleHistoryPage() {
           <HistoryEmptyCard onClearFilters={handleClearFilters} view={view} />
           <Card className="gap-0 overflow-hidden py-0">
             <HistoryTotalFooter
+              {...footerInput}
               hasMore={false}
-              loading={false}
+              listLoading={false}
               sales={state.sales}
             />
           </Card>
@@ -213,9 +238,10 @@ export function SaleHistoryPage() {
         <SaleHistoryList
           footer={
             <HistoryTotalFooter
+              {...footerInput}
               className={offline ? "border-t" : TOTAL_UNDER_VALUES}
               hasMore={state.hasMore}
-              loading={false}
+              listLoading={false}
               sales={state.sales}
             />
           }
