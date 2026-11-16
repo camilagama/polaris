@@ -586,7 +586,11 @@ describe("secrets stay out of install and build steps (condition 6)", () => {
     expect(workflows).toContain("deploy-staging.yml");
   });
 
-  const withoutInstallOrBuild = ["backup-staging.yml"];
+  // The backup workflow is renamed by a patch applied apart from the code, so the list holds exactly the name that
+  // exists; the staging-only name goes away with the patch.
+  const withoutInstallOrBuild = [
+    workflows.includes("backup.yml") ? "backup.yml" : "backup-staging.yml",
+  ];
 
   it("lists exactly the workflows that run no install or build step", () => {
     const found = workflows
