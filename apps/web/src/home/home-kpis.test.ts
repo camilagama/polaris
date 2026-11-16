@@ -919,14 +919,46 @@ describe("what the days with no result lack: the fee when only the fee is missin
 });
 
 describe("the days with no cost, on the line or in the (i)", () => {
+  const daysOf = (
+    unknown: number,
+    total: number,
+    month: string | null = null,
+    input: "cost" | "fee" = "cost"
+  ) => ({ input, month, total, unknown });
+
   it("stay on the line of the badge while two digits fit on each side, and go to the (i) after", () => {
-    expect(unknownDaysFit(5, 23)).toBe(true);
+    expect(unknownDaysFit(daysOf(5, 23))).toBe(true);
     // the widest a month can be, and the widest the line has room for
-    expect(unknownDaysFit(31, 31)).toBe(true);
-    expect(unknownDaysFit(99, 99)).toBe(true);
+    expect(unknownDaysFit(daysOf(31, 31))).toBe(true);
+    expect(unknownDaysFit(daysOf(99, 99))).toBe(true);
     // a long period of the Resultado
-    expect(unknownDaysFit(5, 120)).toBe(false);
-    expect(unknownDaysFit(100, 100)).toBe(false);
+    expect(unknownDaysFit(daysOf(5, 120))).toBe(false);
+    expect(unknownDaysFit(daysOf(100, 100))).toBe(false);
+  });
+
+  it("measure the whole text of the line, with the month named, not only the digits", () => {
+    // a month of this year: short enough
+    expect(unknownDaysFit(daysOf(1, 7, "novembro", "fee"))).toBe(true);
+    expect(unknownDaysFit(daysOf(31, 31, "setembro", "fee"))).toBe(true);
+    // the widest month of this year with the widest count: it is the limit of the line
+    expect(unknownDaysFit(daysOf(28, 28, "fevereiro"))).toBe(true);
+    // the same digits with a month of another year: "setembro de 2025: 31 de 31 dias sem taxa" is wider than the line
+    expect(unknownDaysFit(daysOf(31, 31, "setembro de 2025", "fee"))).toBe(
+      false
+    );
+    expect(unknownDaysFit(daysOf(28, 28, "fevereiro de 2025"))).toBe(false);
+    // one character over the limit
+    expect(unknownDaysFit(daysOf(1, 5, "maio de 2025"))).toBe(false);
+    // and the digits that fit alone, without the month, do fit
+    expect(unknownDaysFit(daysOf(31, 31, null, "fee"))).toBe(true);
+  });
+
+  it("says the count and the month in the (i) when the month named does not fit the line", () => {
+    const named = daysOf(31, 31, "setembro de 2025", "fee");
+    expect(unknownDaysFit(named)).toBe(false);
+    expect(resultHelp("do mês inteiro", "1 a 23/09", named)).toBe(
+      "Vendas menos custos, taxas e despesas do mês inteiro. Setembro de 2025: 31 de 31 dias ainda sem taxa informada."
+    );
   });
 
   it("are said in words by the help when they do not fit, in place of the comparison", () => {

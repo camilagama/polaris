@@ -99,7 +99,7 @@ export function resultWarning({
     <>
       <IncompleteBadge />
       {noCost ? <span data-kpi-no-cost="">{NO_KNOWN_COST_RESULT}</span> : null}
-      {!noCost && missing && unknownDaysFit(missing.unknown, missing.total) ? (
+      {!noCost && missing && unknownDaysFit(missing) ? (
         <span data-kpi-unknown="">{unknownDaysText(missing)}</span>
       ) : null}
     </>
@@ -238,19 +238,30 @@ interface ResultCardsProps {
   today: string;
 }
 
+/** The cards of the Resultado, with the day under the pointer kept here. */
+export function ResultCards(props: ResultCardsProps) {
+  const [index, setIndex] = useState<number | null>(null);
+  return <ResultCardsView {...props} index={index} onIndex={setIndex} />;
+}
+
 /**
  * The sparklines of sales, ticket and result read the same day together, and the date of the day read takes the place of
  * the chip. The result has its sparkline and chip only when every day up to today has a known cost (AC-9). With no cost
  * of the goods known (`cogsCoverageOf` is "none") the server's figures are the sales, never an estimate, so the result
  * and the margin show a dash and the badge.
  */
-export function ResultCards({
+export function ResultCardsView({
   comparison,
+  index,
+  onIndex,
   onOpenSales,
   salesComparison,
   summary,
   today,
-}: ResultCardsProps) {
+}: ResultCardsProps & {
+  index: number | null;
+  onIndex: (index: number | null) => void;
+}) {
   const still = useIsMobile();
   const [hidden] = useHiddenValues();
   const { cards, quality } = summary;
@@ -268,8 +279,7 @@ export function ResultCards({
       }),
     [cards, comparison, daily, quality, salesComparison, summary.period, today]
   );
-  const [index, setIndex] = useState<number | null>(null);
-  const clear = useCallback(() => setIndex(null), []);
+  const clear = useCallback(() => onIndex(null), [onIndex]);
   const last = kpis.days.length - 1;
   const read = kpis.read(index);
   const until = untilText(kpis.days[Math.min(index ?? last, last)], today);
@@ -280,7 +290,7 @@ export function ResultCards({
     label,
     max: last,
     onBlur: clear,
-    onChange: setIndex,
+    onChange: onIndex,
     value: index ?? last,
     valueText: spoken(until, reading, hidden),
   });
@@ -293,7 +303,7 @@ export function ResultCards({
       color={color}
       domain={domain}
       height={SPARK_HEIGHT}
-      onRead={setIndex}
+      onRead={onIndex}
       readIndex={index}
       still={still}
       values={values}

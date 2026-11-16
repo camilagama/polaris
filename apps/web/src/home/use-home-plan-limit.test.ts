@@ -182,6 +182,32 @@ describe("useHomePlanLimit: a linha por loja", () => {
     expect(shown?.usage.used).toBe(46);
   });
 
+  it("limite conhecido, não requisito: A → B → A com a 1ª resposta de A atrasada, ela chega por último e é aceita no lugar da 2ª", async () => {
+    const answersA: Array<(plan: unknown) => void> = [];
+    readPlan.mockImplementation(
+      ({ organizationId }: { organizationId: string }) =>
+        organizationId === "org-a"
+          ? new Promise((resolve) => {
+              answersA.push(resolve);
+            })
+          : new Promise(() => undefined)
+    );
+    render();
+    switchTo("org-b");
+    switchTo("org-a");
+    expect(answersA).toHaveLength(2);
+
+    answersA[1]?.(planWith(46));
+    await flush();
+    render();
+    expect(shown?.usage.used).toBe(46);
+
+    answersA[0]?.(planWith(47));
+    await flush();
+    render();
+    expect(shown?.usage.used).toBe(47);
+  });
+
   it("A lida, a conexão cai, A → B → A sem conexão e ela volta: não relê A e a linha some, sem o número de outra loja em nenhum passo", async () => {
     readPlan.mockImplementation(
       ({ organizationId }: { organizationId: string }) =>
