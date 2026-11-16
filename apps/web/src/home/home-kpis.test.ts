@@ -953,6 +953,61 @@ describe("the days with no cost, on the line or in the (i)", () => {
     expect(unknownDaysFit(daysOf(31, 31, null, "fee"))).toBe(true);
   });
 
+  it("fit the line exactly when the whole text is within 34 characters, for every month, year, input and count up to 31 days", () => {
+    const months = [
+      "janeiro",
+      "fevereiro",
+      "março",
+      "abril",
+      "maio",
+      "junho",
+      "julho",
+      "agosto",
+      "setembro",
+      "outubro",
+      "novembro",
+      "dezembro",
+    ];
+    const lengths = new Set<number>();
+    let fitting = 0;
+    let moved = 0;
+    for (const name of months) {
+      for (const month of [name, `${name} de 2025`]) {
+        for (const input of ["cost", "fee"] as const) {
+          for (let total = 1; total <= 31; total += 1) {
+            for (let unknown = 1; unknown <= total; unknown += 1) {
+              const missing = daysOf(unknown, total, month, input);
+              const text = unknownDaysText(missing);
+              const expected =
+                text.length <= 34 && unknown <= 99 && total <= 99;
+              expect(unknownDaysFit(missing), text).toBe(expected);
+              lengths.add(text.length);
+              if (expected) {
+                fitting += 1;
+              } else {
+                moved += 1;
+              }
+            }
+          }
+        }
+      }
+    }
+    expect(fitting).toBeGreaterThan(0);
+    expect(moved).toBeGreaterThan(0);
+    // the cases that tell a limit of 33 or 35 from this one: a text of 33, of 34 and of 35 characters
+    expect([33, 34, 35].filter((length) => !lengths.has(length))).toEqual([]);
+  });
+
+  it("keeps 'maio de 2025: 1 de 1 dia sem custo' on the line, at the 34 characters of the limit", () => {
+    const missing = daysOf(1, 1, "maio de 2025");
+    expect(unknownDaysText(missing)).toBe("maio de 2025: 1 de 1 dia sem custo");
+    expect(unknownDaysText(missing)).toHaveLength(34);
+    expect(unknownDaysFit(missing)).toBe(true);
+    // one more day in the month is one character over
+    expect(unknownDaysText(daysOf(1, 5, "maio de 2025"))).toHaveLength(35);
+    expect(unknownDaysFit(daysOf(1, 5, "maio de 2025"))).toBe(false);
+  });
+
   it("says the count and the month in the (i) when the month named does not fit the line", () => {
     const named = daysOf(31, 31, "setembro de 2025", "fee");
     expect(unknownDaysFit(named)).toBe(false);
