@@ -1693,5 +1693,12 @@ describe("PRECACHE-DELTA (the change of the precache against the base of the pul
     } finally {
       rmSync(directory, { force: true, recursive: true });
     }
+  }, 30_000);
+
+  it("rejects a record with a negative count and names an empty SHA", () => {
+    expect(
+      parsePrecacheSizeRecord(JSON.stringify({ ...BASE, rest: -1 }))
+    ).toBeNull();
+    expect(deltaLine(HEAD, BASE, "")).toContain("vs base desconhecida");
   });
 });

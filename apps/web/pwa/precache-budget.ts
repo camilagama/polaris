@@ -737,7 +737,9 @@ export function parsePrecacheSizeRecord(
   if (
     !fields.every(
       (field) =>
-        typeof record[field] === "number" && Number.isSafeInteger(record[field])
+        typeof record[field] === "number" &&
+        Number.isSafeInteger(record[field]) &&
+        (record[field] as number) >= 0
     )
   ) {
     return null;
@@ -759,7 +761,7 @@ export function deltaLine(
   const lines = RECORD_LINES.map(
     (line) => `${line} ${signedBytes(head[line] - base[line])}`
   ).join(", ");
-  return `PRECACHE-DELTA total ${signedBytes(head.total - base.total)} B (${lines}) vs base ${baseSha.slice(0, 8)}`;
+  return `PRECACHE-DELTA total ${signedBytes(head.total - base.total)} B (${lines}) vs base ${baseSha.slice(0, 8) || "desconhecida"}`;
 }
 
 /**

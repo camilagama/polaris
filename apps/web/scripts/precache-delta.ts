@@ -1,5 +1,4 @@
 import { readFileSync } from "node:fs";
-import { deltaReport } from "../pwa/precache-budget";
 
 function readOrNull(path: string | undefined): string | null {
   if (!path) {
@@ -16,6 +15,7 @@ const [headPath, basePath, baseSha = "", baseBuild = "ok"] =
   process.argv.slice(2);
 
 try {
+  const { deltaReport } = await import("../pwa/precache-budget");
   console.log(
     deltaReport({
       baseBuild: baseBuild === "failed" ? "failed" : "ok",
