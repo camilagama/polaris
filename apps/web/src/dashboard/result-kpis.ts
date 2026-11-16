@@ -19,6 +19,7 @@ import {
   type StoredDay,
   type StoredPeriodSummary,
 } from "../lib/period-summary-cache";
+import { NO_SALES_UNTIL_DAY } from "./dashboard-model";
 import {
   type MissingDays,
   type MissingInput,
@@ -268,9 +269,6 @@ interface Prior {
   range: string;
   sum: Cumulative | undefined;
 }
-
-/** Said by the sales and ticket cards, and by the range control, when the day read has no sale yet in a period that has. */
-export const NO_SALES_UNTIL_DAY = "Sem vendas";
 
 interface ReadContext {
   /** The period the cards read, to say what its chips compare with. */

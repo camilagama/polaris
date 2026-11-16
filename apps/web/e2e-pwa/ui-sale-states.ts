@@ -262,11 +262,49 @@ async function payPix(page: Page) {
   );
 }
 
-/** Opens a select, picks the option and waits for the popup to leave: a slow machine still shows it fading out. */
+const ASKS = 3;
+
+/**
+ * Opens a select, picks the option and waits for the popup to leave: a slow machine still shows it fading out. The
+ * popup opens under a trigger that the page may still be scrolling out from behind the bar of the total, and a click
+ * that lands while it moves closes it without choosing: the choice is read back from the trigger, and asked again
+ * when it did not take.
+ */
 async function chooseOption(page: Page, trigger: Locator, option: Locator) {
-  await trigger.click();
-  await option.click();
-  await page.getByRole("listbox").waitFor({ state: "detached" });
+  const listbox = page.getByRole("listbox");
+  for (let ask = 1; ; ask += 1) {
+    // biome-ignore lint/performance/noAwaitInLoops: the next ask only follows a choice that did not take
+    await trigger.click();
+    const label = (await option.innerText()).trim();
+    await option.click();
+    await listbox.waitFor({ state: "detached" });
+    if ((await trigger.innerText()).includes(label)) {
+      return;
+    }
+    if (ask === ASKS) {
+      throw new Error(
+        `the select kept "${await trigger.innerText()}" after ${ASKS} asks for "${label}"`
+      );
+    }
+  }
+}
+
+/** Adds the first adjustment and returns its group: a click that did not open it (the panel was still settling) is repeated. */
+async function addFirstAdjustment(page: Page) {
+  const group = page.getByRole("group", { exact: true, name: "Ajuste 1" });
+  const add = page.getByRole("button", { name: "Adicionar ajuste" });
+  for (let ask = 1; ; ask += 1) {
+    // biome-ignore lint/performance/noAwaitInLoops: the next click only follows one that added nothing
+    await add.click();
+    try {
+      await group.waitFor({ timeout: 3000 });
+      return group;
+    } catch (error) {
+      if (ask === ASKS) {
+        throw error;
+      }
+    }
+  }
 }
 
 const submit = (page: Page) =>
@@ -335,11 +373,7 @@ export const saleStates = {
       page.getByRole("option", { name: PROFILE_OPTION })
     );
     await page.getByRole("button", { name: "Alterar data e ajustes" }).click();
-    await page.getByRole("button", { name: "Adicionar ajuste" }).click();
-    const adjustment = page.getByRole("group", {
-      exact: true,
-      name: "Ajuste 1",
-    });
+    const adjustment = await addFirstAdjustment(page);
     await chooseOption(
       page,
       adjustment.getByRole("combobox", { exact: true, name: "Tipo de ajuste" }),

@@ -32,18 +32,14 @@ import {
   formatPercentOrDash,
   isIncompleteEstimate,
   NO_KNOWN_COST_RESULT,
+  NO_SALES_UNTIL_DAY,
 } from "./dashboard-model";
 import {
   type MissingDays,
   type MissingInput,
   missingShort,
 } from "./missing-input";
-import {
-  NO_SALES_UNTIL_DAY,
-  type ResultKpis,
-  resultKpis,
-  untilText,
-} from "./result-kpis";
+import { type ResultKpis, resultKpis, untilText } from "./result-kpis";
 import { type Period, periodRangeLabel } from "./result-period";
 import type { ComparisonDays, ComparisonSales } from "./use-period-summary";
 
