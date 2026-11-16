@@ -112,6 +112,8 @@ export type NearLimitSubject = "images" | "variants";
 /** "near": the share was reached; "reached": the limit was (or it was passed, a Free store that left the Pro). */
 export interface NearLimitView {
   kind: "near" | "reached";
+  /** Archived products with no stock that deleting would free (`usage.freeable`): only for variants, zero otherwise or without the field. */
+  freeableProducts: number;
   /** The Pro's limit for the same count, when the read carried the catalog's (`proLimits`) and the Pro has one. */
   proMax: number | null;
   usage: LimitUsage;
@@ -137,6 +139,10 @@ export function nearLimitFor(input: {
     return null;
   }
   return {
+    freeableProducts:
+      usage.subject === "variants"
+        ? (input.plan?.usage.freeable?.products ?? 0)
+        : 0,
     kind: usage.used >= usage.max ? "reached" : "near",
     proMax: input.plan?.proLimits?.[usage.subject] ?? null,
     usage,
@@ -159,6 +165,19 @@ export function nearLimitText(view: NearLimitView): string {
   }
   const [, many] = SUBJECT_WORDS[view.usage.subject];
   return `Você chegou ao limite de ${view.usage.max} ${many} do plano Free.`;
+}
+
+/**
+ * "Você tem 3 produtos arquivados sem estoque. Excluir libera vaga.": a count, not a limit, so the singular follows the
+ * number alone. `null` when there is nothing to free: the line exists only with the warning and `freeableProducts > 0`.
+ */
+export function freeableLineText(view: NearLimitView): string | null {
+  const count = view.freeableProducts;
+  if (count <= 0) {
+    return null;
+  }
+  const what = count === 1 ? "produto arquivado" : "produtos arquivados";
+  return `Você tem ${count} ${what} sem estoque. Excluir libera vaga.`;
 }
 
 const HOME_SUBJECTS: readonly NearLimitSubject[] = ["variants", "images"];

@@ -2,7 +2,11 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { classifyChanges, OPERATIONS_FILES } from "./ci-changed.mjs";
+import {
+  classifyChanges,
+  OPERATIONS_FILES,
+  reloadSentinelRuns,
+} from "./ci-changed.mjs";
 
 const root = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
 const SOURCE_FILE = /\.(?:[cm]?[jt]sx?)$/;
@@ -558,5 +562,34 @@ describe("the operation scripts are outside the browser gate's import graph", ()
         "scripts/gate5-real-devices.sh"
       )
     ).toBe(false);
+  });
+});
+
+describe("the sentinel of reloads with the worker", () => {
+  it("runs when the worker, its build, the first scripts of the page or the spec change, and when the paths are unknown", () => {
+    for (const file of [
+      "apps/web/src/pwa/sw.ts",
+      "apps/web/src/pwa/register.ts",
+      "apps/web/pwa/service-worker-plugin.ts",
+      "apps/web/index.html",
+      "apps/web/public/boot-retry.js",
+      "apps/web/public/theme-init.js",
+      "apps/web/e2e-pwa/recarga-com-worker.e2e.ts",
+    ]) {
+      expect(reloadSentinelRuns(["docs/a.md", file]), file).toBe(true);
+    }
+    expect(reloadSentinelRuns(null)).toBe(true);
+  });
+
+  it("does not run for the rest of the app", () => {
+    expect(
+      reloadSentinelRuns([
+        "apps/web/src/lib/theme.ts",
+        "apps/web/public/manifest.webmanifest",
+        "apps/web/e2e-pwa/boot-retry.e2e.ts",
+        "apps/web/src/pwa-other/x.ts",
+      ])
+    ).toBe(false);
+    expect(reloadSentinelRuns([])).toBe(false);
   });
 });
