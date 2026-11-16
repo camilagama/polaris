@@ -379,6 +379,7 @@ O domínio de produção ainda não foi decidido, então nenhum host está escri
 | `PRODUCTION_WEB_URL`, `PRODUCTION_CATALOG_URL`, `PRODUCTION_ADMIN_URL` | origem https de cada Worker, sem caminho, porta nem credencial | ausente ou vazia; não https; com caminho, porta ou credencial; IP, `localhost`, `.workers.dev`, `.invalid`; um host do staging; dois Workers no mesmo host |
 | `PRODUCTION_ACCESS_TEAM` | `<time>.cloudflareaccess.com` do Access de produção, para onde o Admin sem login deve ser redirecionado (o caminho do login é `/cdn-cgi/access/login/<host do Admin>`) | ausente, mal formado ou o time do staging |
 | `PRODUCTION_EXPECT_PASSWORD_SIGN_IN` | `true` ou `false`: o `auth-methods` de produção declara o login por senha (fica atrás de flag, desligada até o domínio de e-mail) | qualquer outro valor |
+| `PRODUCTION_EXPECT_RELEASE_HEADER` | `true` ou `false`: os Workers de produção declaram `X-Polaris-Release` (`RELEASE_HEADER_ENABLED`, hoje `"false"` no `env.production`). Com `false`, as verificações 1 e 12 continuam rodando e exigem o cabeçalho **ausente** (presente com a flag desligada falha) | qualquer outro valor |
 
 Faltando ou malformada qualquer uma, o script imprime uma linha por variável (nome e motivo, nunca o valor), termina com código 1 e **não faz nenhuma requisição**. Com todas válidas, só os três hosts declarados recebem requisição (o `send` recusa qualquer outro, e um host do staging nunca vale em produção), com `User-Agent: polaris-production-smoke/1`. `HEAD_SHA` e a pasta `apps/web/dist/client` valem como no staging.
 

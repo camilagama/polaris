@@ -1037,6 +1037,7 @@ const productionEnv = {
   PRODUCTION_ADMIN_URL: "https://admin.exemplo.com.br",
   PRODUCTION_CATALOG_URL: "https://catalogo.exemplo.com.br",
   PRODUCTION_EXPECT_PASSWORD_SIGN_IN: "false",
+  PRODUCTION_EXPECT_RELEASE_HEADER: "true",
   PRODUCTION_WEB_URL: "https://app.exemplo.com.br",
 };
 const productionOrigins = {
@@ -1090,7 +1091,7 @@ describe("the production smoke", () => {
   it("refuses to run with no variable, naming each one, and asks for no host", () => {
     const { refusals, target } = productionTarget({});
     expect(target).toBeNull();
-    expect(refusals).toHaveLength(5);
+    expect(refusals).toHaveLength(6);
     for (const variable of Object.values(PRODUCTION_VARIABLES)) {
       expect(
         refusals.filter((line) => line.startsWith(`${variable}:`))
@@ -1168,12 +1169,17 @@ describe("the production smoke", () => {
       });
       expect(target, team).toBeNull();
     }
-    for (const value of ["1", "TRUE", "yes", "on"]) {
-      const { refusals } = productionTarget({
-        ...productionEnv,
-        PRODUCTION_EXPECT_PASSWORD_SIGN_IN: value,
-      });
-      expect(refusals).toHaveLength(1);
+    for (const variable of [
+      "PRODUCTION_EXPECT_PASSWORD_SIGN_IN",
+      "PRODUCTION_EXPECT_RELEASE_HEADER",
+    ]) {
+      for (const value of ["1", "TRUE", "yes", "on"]) {
+        const { refusals } = productionTarget({
+          ...productionEnv,
+          [variable]: value,
+        });
+        expect(refusals, `${variable}=${value}`).toHaveLength(1);
+      }
     }
   });
 
@@ -1231,6 +1237,40 @@ describe("the production smoke", () => {
     expect(failures).toEqual([
       "web /api/auth-methods (Google, password and Turnstile configured): 200 sign-in methods different",
     ]);
+  });
+
+  it("expects no release header while the flag is off, and fails if one is sent", async () => {
+    const flagOff = {
+      ...productionEnv,
+      PRODUCTION_EXPECT_RELEASE_HEADER: "false",
+    };
+    const { target } = productionTarget(flagOff);
+    const silent = (url, init) => {
+      const response = productionAnswer(url, init);
+      response.headers.delete("x-polaris-release");
+      return Promise.resolve(response);
+    };
+    expect(
+      await runSmoke(productionOrigins, { ...options, target }, silent, noPause)
+    ).toEqual([]);
+    const failures = await runSmoke(
+      productionOrigins,
+      { ...options, target },
+      (url, init) => Promise.resolve(productionAnswer(url, init)),
+      noPause
+    );
+    expect(failures).toEqual([
+      "web /health (release of the Worker): 200 release header present (flag is off)",
+      "catalog /robots.txt (release of the Worker): 200 release header present (flag is off)",
+    ]);
+    const missing = await runSmoke(
+      productionOrigins,
+      productionOptions(),
+      silent,
+      noPause
+    );
+    expect(missing).toHaveLength(2);
+    expect(missing[0]).toContain("release absent");
   });
 
   it("sends the Admin to the production Access team, not to the staging one", async () => {

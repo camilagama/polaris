@@ -17,7 +17,7 @@ import { pathToFileURL } from "node:url";
  * or a header.
  *
  * `--env production` runs the same checks against the production Workers. The production domain is not decided yet,
- * so no host is written in this file: the hosts, the Access team of the Admin and the expected sign-in methods come
+ * so no host is written in this file: the hosts, the Access team of the Admin, the expected sign-in methods and release header come
  * from `PRODUCTION_*` variables, and the smoke refuses to run (before any request) while one is missing or malformed.
  * Without `--env`, the environment is staging, exactly as the deploy workflow of staging runs it.
  */
@@ -64,8 +64,11 @@ function parsed(body) {
   }
 }
 
-function releaseReason(response, release) {
+function releaseReason(response, release, declares = true) {
   const declared = response.headers.get(RELEASE_HEADER);
+  if (!declares) {
+    return declared === null || "release header present (flag is off)";
+  }
   if (declared === null) {
     return "release absent";
   }
@@ -152,12 +155,14 @@ export function smokeChecks(
 ) {
   const appOrigin = new URL(web).origin;
   const toAccess = sentToAccess(target);
-  const { authMethods } = target;
+  const { authMethods, declaresRelease } = target;
   const sameOrigin = { origin: appOrigin };
   return [
     {
       expect: (response) =>
-        response.status === 200 ? releaseReason(response, release) : "not 200",
+        response.status === 200
+          ? releaseReason(response, release, declaresRelease)
+          : "not 200",
       name: "web /health (release of the Worker)",
       url: `${web}/health`,
       worker: true,
@@ -272,7 +277,9 @@ export function smokeChecks(
     },
     {
       expect: (response) =>
-        response.status === 200 ? releaseReason(response, release) : "not 200",
+        response.status === 200
+          ? releaseReason(response, release, declaresRelease)
+          : "not 200",
       name: "catalog /robots.txt (release of the Worker)",
       url: `${catalog}/robots.txt`,
     },
@@ -368,12 +375,13 @@ export function refusalOf(key) {
 /**
  * What the smoke needs to know about an environment: the host each Worker is served at (the only hosts a request
  * may leave for), the Access team and login path the Admin is redirected to, the sign-in methods `/api/auth-methods`
- * must declare, the refusal of a key and the user agent.
+ * must declare, whether the Workers declare their release, the refusal of a key and the user agent.
  */
 export const STAGING_TARGET = {
   accessLoginPath: `${ACCESS_LOGIN_PREFIX}${STAGING_FIXED_HOST.admin}`,
   accessTeam: STAGING_ACCESS_TEAM,
   authMethods: EXPECTED_AUTH_METHODS,
+  declaresRelease: true,
   hosts: STAGING_FIXED_HOST,
   name: "staging",
   refusalOf,
@@ -386,6 +394,7 @@ export const PRODUCTION_VARIABLES = {
   admin: "PRODUCTION_ADMIN_URL",
   catalog: "PRODUCTION_CATALOG_URL",
   passwordSignIn: "PRODUCTION_EXPECT_PASSWORD_SIGN_IN",
+  releaseHeader: "PRODUCTION_EXPECT_RELEASE_HEADER",
   web: "PRODUCTION_WEB_URL",
 };
 
@@ -462,6 +471,12 @@ export function productionTarget(env) {
       `${PRODUCTION_VARIABLES.passwordSignIn}: must be "true" or "false" (the password sign-in is behind a flag in production)`
     );
   }
+  const release = env[PRODUCTION_VARIABLES.releaseHeader];
+  if (release !== "true" && release !== "false") {
+    refusals.push(
+      `${PRODUCTION_VARIABLES.releaseHeader}: must be "true" or "false" (RELEASE_HEADER_ENABLED of the production Workers)`
+    );
+  }
   if (refusals.length > 0) {
     return { refusals, target: null };
   }
@@ -471,6 +486,7 @@ export function productionTarget(env) {
       accessLoginPath: `${ACCESS_LOGIN_PREFIX}${hosts.admin}`,
       accessTeam: team,
       authMethods: { emailPassword: password === "true", google: true },
+      declaresRelease: release === "true",
       hosts,
       name: "production",
       refusalOf: (key) =>
