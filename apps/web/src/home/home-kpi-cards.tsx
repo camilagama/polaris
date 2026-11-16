@@ -9,7 +9,10 @@ import {
   KpiTile,
   KpiTileSkeleton,
 } from "@/ui/kpi-card";
-import { isIncompleteEstimate } from "../dashboard/dashboard-model";
+import {
+  isIncompleteEstimate,
+  NO_SALES_UNTIL_DAY,
+} from "../dashboard/dashboard-model";
 import { resultKpis, untilText } from "../dashboard/result-kpis";
 import type {
   ComparisonDays,
@@ -57,11 +60,16 @@ const SPARK_HEIGHT = 36;
 const START_SALE_LINK =
   "touch-hit focus-ring w-fit rounded-sm text-xs underline decoration-input underline-offset-4 hover:decoration-foreground";
 
-/** What the keyboard control says of a reading: "Até 17/10: R$ 1.926,30", with the amount hidden when asked. */
+/**
+ * What the keyboard control says of a reading: "Até 17/10: R$ 1.926,30", with the amount hidden when asked. A day with
+ * no sale yet in a month that has sales says so after the amount, in the words of the support line.
+ */
 function spoken(prefix: string, reading: KpiReading, hidden: boolean): string {
   const amount =
     reading.value === null ? "sem valor" : formatBrlAmount(reading.value);
-  const text = `${prefix}: ${amount}`;
+  const noSales =
+    reading.count === NO_SALES_UNTIL_DAY ? `. ${NO_SALES_UNTIL_DAY}` : "";
+  const text = `${prefix}: ${amount}${noSales}`;
   return hidden ? maskMoney(text, MASKED_SPOKEN) : text;
 }
 
