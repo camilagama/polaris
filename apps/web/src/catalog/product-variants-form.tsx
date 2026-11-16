@@ -28,6 +28,7 @@ import { SelectField } from "../sales/sale-fields";
 import {
   LimitHelp,
   NearLimitNotice,
+  useFreeableLine,
   useLimitFocus,
   useLimitHelp,
   useNearLimit,
@@ -379,6 +380,7 @@ export function ProductVariantConfigurationForm({
   // the warning that the limit is close reads the use again after each save
   const [savedCount, setSavedCount] = useState(0);
   const nearLimit = useNearLimit("variants", savedCount);
+  const freeableLine = useFreeableLine();
   // a failure of the warning's button, said under the warning
   const [clearError, setClearError] = useState<string | null>(null);
   // what the warning's button did, said after it: the SKU that was erased
@@ -776,6 +778,7 @@ export function ProductVariantConfigurationForm({
         </Button>
       </div>
       <NearLimitNotice
+        freeable={freeableLine}
         hidden={refusalIsShown(saveError, allCombinations.notice)}
         view={nearLimit}
       />
