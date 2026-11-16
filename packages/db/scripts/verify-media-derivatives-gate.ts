@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { createHash, randomUUID } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { Client } from "pg";
 import { createDatabase } from "../src/client";
 import { createMediaCleanupClient } from "../src/media-cleanup";
@@ -9,22 +9,23 @@ import {
   type TenantRequestTransaction,
   withAuthorizedTenantTransaction,
 } from "../src/tenant-transaction";
+import {
+  assertAllowedGateUrl,
+  disposableHostPattern,
+  isLocalGateHost,
+} from "./gate-hosts";
+import { setLoginRole } from "./gate-roles";
+import { gateBranchPattern, temporaryRuntimeUrl } from "./sales-gate-support";
 
 const gateDatabase =
   process.env.POLARIS_GATE_DATABASE ??
   process.env.POLARIS_SALES_GATE_DATABASE ??
   "neondb";
 
-const allowedGateBranches = new Set([
-  "pr35-media-derivatives-gate",
-  "pr36-customers-gate",
-]);
 const tenantRole = "polaris_pr11_runtime";
-const cleanupLoginRole = "polaris_media_cleanup_gate_login";
+const migrationOwnerRole = "neondb_owner";
 const cleanupRuntimeRole = "polaris_media_cleanup_runtime";
 const cleanupOwnerRole = "polaris_media_cleanup_owner";
-const disposableHostPattern =
-  /^ep-[a-z0-9-]+\.c-2\.sa-east-1\.aws\.neon\.tech$/;
 const poolerPattern = /pooler/i;
 
 type Database = ReturnType<typeof createDatabase>["db"];
@@ -51,21 +52,37 @@ function sqlState(error: unknown): string | undefined {
   return typeof code === "string" ? code : undefined;
 }
 
+function sqlConstraint(error: unknown): string | undefined {
+  if (typeof error !== "object" || error === null || !("constraint" in error)) {
+    return undefined;
+  }
+  const { constraint } = error as { constraint?: unknown };
+  return typeof constraint === "string" ? constraint : undefined;
+}
+
+// 23514 is shared by CHECKs and guard triggers, so a refusal names its constraint as well as its message.
 async function expectSqlState(
   operation: () => Promise<unknown>,
   expected: string,
   label: string,
-  expectedMessage?: string
+  expectation: { constraint?: string; message?: string } = {}
 ): Promise<void> {
   await assert.rejects(
     operation,
     (error: unknown) => {
       assert.equal(sqlState(error), expected, label);
-      if (expectedMessage !== undefined) {
+      if (expectation.message !== undefined) {
         assert.equal(
           (error as { message?: unknown }).message,
-          expectedMessage,
+          expectation.message,
           label
+        );
+      }
+      if (expectation.constraint !== undefined) {
+        assert.equal(
+          sqlConstraint(error),
+          expectation.constraint,
+          `${label} (constraint)`
         );
       }
       return true;
@@ -76,15 +93,19 @@ async function expectSqlState(
 
 function validateGateConnection(
   connectionString: string,
-  expectedRole: string
+  expected: { hostname: string; role: string }
 ): URL {
-  const connection = new URL(connectionString);
+  const connection = assertAllowedGateUrl(connectionString);
   assert.equal(connection.protocol, "postgresql:");
+  assert.equal(connection.hostname, expected.hostname);
   assert.match(connection.hostname, disposableHostPattern);
   assert.equal(connection.pathname, `/${gateDatabase}`);
-  assert.equal(connection.searchParams.get("sslmode"), "verify-full");
+  // the job's own Postgres has no TLS; every Neon endpoint is verified
+  if (!isLocalGateHost(connection.hostname)) {
+    assert.equal(connection.searchParams.get("sslmode"), "verify-full");
+  }
   assert.doesNotMatch(connection.hostname, poolerPattern);
-  assert.equal(decodeURIComponent(connection.username), expectedRole);
+  assert.equal(decodeURIComponent(connection.username), expected.role);
   return connection;
 }
 
@@ -233,43 +254,41 @@ async function main(): Promise<void> {
   const branchName = requiredEnvironment(
     "POLARIS_MEDIA_DERIVATIVES_GATE_BRANCH"
   );
-  assert.ok(allowedGateBranches.has(branchName));
+  assert.match(branchName, gateBranchPattern);
   const adminConnectionString = requiredEnvironment(
     "POLARIS_MEDIA_DERIVATIVES_GATE_DATABASE_URL"
   );
   const tenantConnectionString = requiredEnvironment(
     "POLARIS_MEDIA_DERIVATIVES_GATE_TENANT_DATABASE_URL"
   );
-  const cleanupConnectionString = requiredEnvironment(
-    "POLARIS_MEDIA_DERIVATIVES_GATE_CLEANUP_DATABASE_URL"
+  const expectedHostname = requiredEnvironment(
+    "POLARIS_MEDIA_DERIVATIVES_GATE_EXPECTED_HOSTNAME"
   );
-  const adminConnection = validateGateConnection(
-    adminConnectionString,
-    "neondb_owner"
-  );
-  const tenantConnection = validateGateConnection(
-    tenantConnectionString,
-    tenantRole
-  );
-  const cleanupConnection = validateGateConnection(
-    cleanupConnectionString,
-    cleanupLoginRole
-  );
-  assert.equal(adminConnection.hostname, tenantConnection.hostname);
-  assert.equal(adminConnection.hostname, cleanupConnection.hostname);
+  const adminConnection = validateGateConnection(adminConnectionString, {
+    hostname: expectedHostname,
+    role: migrationOwnerRole,
+  });
+  validateGateConnection(tenantConnectionString, {
+    hostname: expectedHostname,
+    role: process.env.POLARIS_GATE_RUNTIME_LOGIN ?? tenantRole,
+  });
 
   const admin = createDatabase(adminConnectionString, { maxConnections: 8 });
-  const tenantDatabase = createDatabase(tenantConnectionString, {
-    maxConnections: 4,
-  });
   const tenantClient = new Client({
     connectionString: tenantConnectionString,
     connectionTimeoutMillis: 5000,
   });
-  const cleanup = createMediaCleanupClient(cleanupConnectionString);
+  const cleanupLoginRole = `polaris_media_cleanup_gate_${randomUUID().replaceAll("-", "")}`;
+  const cleanupPassword = randomBytes(24).toString("hex");
+  let cleanup: ReturnType<typeof createMediaCleanupClient> | undefined;
+  let cleanupLoginCreated = false;
 
   try {
     await tenantClient.connect();
+    if (process.env.POLARIS_GATE_RUNTIME_LOGIN) {
+      // The unified gate runner connects through a temporary login that is a member of the runtime role.
+      await setLoginRole(tenantClient, tenantRole, "session");
+    }
     const server = await admin.pool.query<{
       server_version: string;
       server_version_num: number;
@@ -299,7 +318,18 @@ async function main(): Promise<void> {
     ]);
 
     await admin.pool.query(
-      "GRANT polaris_media_cleanup_runtime TO polaris_media_cleanup_gate_login"
+      `CREATE ROLE "${cleanupLoginRole}" WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS PASSWORD '${cleanupPassword}'`
+    );
+    cleanupLoginCreated = true;
+    await admin.pool.query(
+      `GRANT ${cleanupRuntimeRole} TO "${cleanupLoginRole}"`
+    );
+    cleanup = createMediaCleanupClient(
+      temporaryRuntimeUrl(
+        adminConnectionString,
+        cleanupLoginRole,
+        cleanupPassword
+      )
     );
     const functionInfo = await admin.pool.query<{
       function_owner: string;
@@ -327,19 +357,25 @@ async function main(): Promise<void> {
         "(SELECT rolsuper FROM pg_roles WHERE rolname = $1) AS cleanup_login_superuser, " +
         "(SELECT rolbypassrls FROM pg_roles WHERE rolname = $1) AS cleanup_login_bypass_rls, " +
         "(SELECT rolcreaterole FROM pg_roles WHERE rolname = $1) AS cleanup_login_can_create_roles, " +
-        "pg_has_role('neondb_owner', $4, 'MEMBER') AS migration_owner_is_cleanup_member, " +
+        "pg_has_role($5, $4, 'MEMBER') AS migration_owner_is_cleanup_member, " +
         "(SELECT membership.inherit_option FROM pg_auth_members AS membership " +
         "JOIN pg_roles AS member ON member.oid = membership.member " +
         "JOIN pg_roles AS granted ON granted.oid = membership.roleid " +
-        "WHERE member.rolname = 'neondb_owner' AND granted.rolname = $4) AS migration_owner_inherits_cleanup, " +
+        "WHERE member.rolname = $5 AND granted.rolname = $4) AS migration_owner_inherits_cleanup, " +
         "(SELECT membership.set_option FROM pg_auth_members AS membership " +
         "JOIN pg_roles AS member ON member.oid = membership.member " +
         "JOIN pg_roles AS granted ON granted.oid = membership.roleid " +
-        "WHERE member.rolname = 'neondb_owner' AND granted.rolname = $4) AS migration_owner_can_set_cleanup " +
+        "WHERE member.rolname = $5 AND granted.rolname = $4) AS migration_owner_can_set_cleanup " +
         "FROM pg_proc AS function " +
         "JOIN pg_roles AS owner ON owner.oid = function.proowner " +
         "WHERE function.oid = 'public.claim_media_storage_key_for_cleanup(text)'::regprocedure",
-      [cleanupLoginRole, tenantRole, cleanupRuntimeRole, cleanupOwnerRole]
+      [
+        cleanupLoginRole,
+        tenantRole,
+        cleanupRuntimeRole,
+        cleanupOwnerRole,
+        adminConnection.username,
+      ]
     );
     const [functionRow] = functionInfo.rows;
     assert.ok(functionRow);
@@ -404,7 +440,10 @@ async function main(): Promise<void> {
         () => insertMediaAsset(tenantClient, fixture, orphanKey),
         "23514",
         "cleanup-claimed media key cannot be inserted",
-        "media storage key is already claimed for cleanup"
+        {
+          constraint: "media_assets_storage_key_cleanup_claimed",
+          message: "media storage key is already claimed for cleanup",
+        }
       );
     } finally {
       await tenantClient.query("ROLLBACK");
@@ -497,10 +536,21 @@ async function main(): Promise<void> {
       })
     );
   } finally {
-    await cleanup.close();
-    await tenantClient.end();
-    await tenantDatabase.pool.end();
-    await admin.pool.end();
+    try {
+      await cleanup?.close();
+      await tenantClient.end();
+    } finally {
+      try {
+        if (cleanupLoginCreated) {
+          await admin.pool.query(
+            `REVOKE ${cleanupRuntimeRole} FROM "${cleanupLoginRole}"`
+          );
+          await admin.pool.query(`DROP ROLE IF EXISTS "${cleanupLoginRole}"`);
+        }
+      } finally {
+        await admin.pool.end();
+      }
+    }
   }
 }
 
