@@ -686,12 +686,23 @@ export function unknownDaysText(missing: MissingDays): string {
 }
 
 /**
- * Whether "N de M dias sem custo" is worth writing on the support line of a card (two digits on each side: a month never
- * has more). A longer count, which a long period of the Resultado
- * can have, goes to the (i), which says it in words (`resultHelp`).
+ * The most characters the support line of a card holds for "N de M dias sem custo" with the month named ("setembro de
+ * 2025: 31 de 31 dias sem taxa" is 40). Counted in text, not in digits: the line is one text of the card's column at 320
+ * px with the letter at 20 px, and a month named in full is what makes it wider than the digits say.
  */
-export function unknownDaysFit(unknown: number, total: number): boolean {
-  return unknown <= 99 && total <= 99;
+const UNKNOWN_DAYS_MAX_CHARS = 34;
+
+/**
+ * Whether the days with no cost are worth writing on the support line of a card: at most two digits on each side (a month
+ * never has more) and the whole text, month included, within `UNKNOWN_DAYS_MAX_CHARS`. What does not fit goes to the (i),
+ * which says it in words with the month (`resultHelp`), so no figure is lost.
+ */
+export function unknownDaysFit(missing: MissingDays): boolean {
+  return (
+    missing.unknown <= 99 &&
+    missing.total <= 99 &&
+    unknownDaysText(missing).length <= UNKNOWN_DAYS_MAX_CHARS
+  );
 }
 
 /**
@@ -711,10 +722,7 @@ export function resultHelp(
   const first = `Vendas menos custos, taxas e despesas ${span}${
     notProfit ? `; ${NOT_PROFIT_NOR_CASH.toLowerCase()}` : ""
   }.`;
-  if (
-    missing &&
-    (notProfit || !unknownDaysFit(missing.unknown, missing.total))
-  ) {
+  if (missing && (notProfit || !unknownDaysFit(missing))) {
     return `${first} ${missingDaysText(missing, "informed", true).replace(" sem ", " ainda sem ")}.`;
   }
   return compare ? `${first} Compara com ${compare}.` : first;

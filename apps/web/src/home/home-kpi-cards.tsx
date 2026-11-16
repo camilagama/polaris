@@ -178,7 +178,7 @@ function incompleteDetail({
       </>
     );
   }
-  return missing && unknownDaysFit(missing.unknown, missing.total) ? (
+  return missing && unknownDaysFit(missing) ? (
     <>
       <span aria-hidden="true">· </span>
       <span data-kpi-unknown="">{unknownDaysText(missing)}</span>
