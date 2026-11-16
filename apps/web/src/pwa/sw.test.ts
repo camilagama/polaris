@@ -393,6 +393,7 @@ interface FakeResponse {
   clone: () => FakeResponse;
   headers: { get: (name: string) => string | null };
   status: number;
+  statusText: string;
 }
 
 const EXTENSION_TYPES: Record<string, string> = {
@@ -420,6 +421,7 @@ function fileOf(path: string): FakeResponse {
     body: `net:${path}`,
     headers: { get: () => type },
     status: 200,
+    statusText: "OK",
   });
 }
 
@@ -429,6 +431,7 @@ function htmlOf(path: string): FakeResponse {
     body: `<html>shell instead of ${path}</html>`,
     headers: { get: () => "text/html; charset=utf-8" },
     status: 200,
+    statusText: "OK",
   });
 }
 
@@ -532,13 +535,19 @@ async function runWorker(build: {
       readonly body: string;
       readonly headers: FakeResponse["headers"] | undefined;
       readonly status: number;
+      readonly statusText: string;
       constructor(
         body: string,
-        init?: { headers?: FakeResponse["headers"]; status?: number }
+        init?: {
+          headers?: FakeResponse["headers"];
+          status?: number;
+          statusText?: string;
+        }
       ) {
         this.body = body;
         this.headers = init?.headers;
         this.status = init?.status ?? 200;
+        this.statusText = init?.statusText ?? "";
       }
       text() {
         return Promise.resolve(this.body);
@@ -655,9 +664,15 @@ describe("the worker as the browser runs it", () => {
     expect(worker.fetched).toEqual([]); // came from the cache, not the network
     // a new response over the body read whole, with the copy's status and headers: neither the object
     // `cache.match` returned nor a clone of it (Chrome cancels some of those on a reload right after `load`)
-    const kept = worker.stores
-      .get(shellCacheName(build))
-      ?.get("/assets/index-BBB.js");
+    const shell = worker.stores.get(shellCacheName(build));
+    shell?.set(
+      "/assets/index-BBB.js",
+      withClone({
+        ...fileOf("/assets/index-BBB.js"),
+        statusText: "Kept by the test",
+      })
+    );
+    const kept = shell?.get("/assets/index-BBB.js");
     const read = vi.spyOn(kept as FakeResponse, "blob");
     const clone = vi.spyOn(kept as FakeResponse, "clone");
     const served = await worker.run("fetch", { request: asset });
@@ -666,6 +681,7 @@ describe("the worker as the browser runs it", () => {
       body: "net:/assets/index-BBB.js",
       headers: kept?.headers,
       status: 200,
+      statusText: "Kept by the test",
     });
     expect(read).toHaveBeenCalledTimes(1);
     expect(clone).not.toHaveBeenCalled();
@@ -753,6 +769,25 @@ describe("the worker as the browser runs it", () => {
     expect(await chunk("/assets/sale-page-AAA.js")).toMatchObject({
       body: "net:/assets/sale-page-AAA.js",
     });
+    expect(worker.fetched).toEqual([]);
+    // the `kept` route answers with a new response over the body read whole too, with the copy's status text
+    const olderCopy = withClone({
+      ...fileOf("/assets/sale-page-AAA.js"),
+      statusText: "Kept by an older build",
+    });
+    worker.stores.get(older)?.set("/assets/sale-page-AAA.js", olderCopy);
+    const olderRead = vi.spyOn(olderCopy, "blob");
+    const olderClone = vi.spyOn(olderCopy, "clone");
+    const keptServed = await chunk("/assets/sale-page-AAA.js");
+    expect(keptServed).not.toBe(olderCopy);
+    expect(keptServed).toMatchObject({
+      body: "net:/assets/sale-page-AAA.js",
+      headers: olderCopy.headers,
+      status: 200,
+      statusText: "Kept by an older build",
+    });
+    expect(olderRead).toHaveBeenCalledTimes(1);
+    expect(olderClone).not.toHaveBeenCalled();
     expect(worker.fetched).toEqual([]);
     // one no build kept goes to the network, as before
     expect(await chunk("/assets/product-import-dialog-ZZZ.js")).toMatchObject({

@@ -118,13 +118,16 @@ export function classifyChanges(files) {
 /**
  * What the sentinel of reloads with the worker in control (`apps/web/e2e-pwa/recarga-com-worker.e2e.ts`, 300 reloads,
  * more than 3 minutes) can catch: the worker, what builds and registers it, the scripts of the page it serves first
- * (`index.html`, the boot-retry, `theme-init.js`), and the spec itself. The browser gate runs it only then
+ * (`index.html`, the boot-retry, `theme-init.js`), and the spec itself. The configs that mount the chunks and the
+ * precache the worker serves are in too: `vite.pwa.config.ts` builds what the sentinel runs, `vite.config.ts` is the
+ * production build it must stay equal to, and `vite.ui.ts` is shared by both. The browser gate runs it only then
  * (`POLARIS_RECARGA_COM_WORKER`); `null` (the paths unknown) runs it.
  */
 const RELOAD_SENTINEL_FILES = [
   /^apps\/web\/src\/pwa\//,
   /^apps\/web\/pwa\//,
   /^apps\/web\/index\.html$/,
+  /^apps\/web\/vite\.(config|pwa\.config|ui)\.ts$/,
   /^apps\/web\/public\/(boot-retry|theme-init)\.js$/,
   /^apps\/web\/e2e-pwa\/recarga-com-worker\.e2e\.ts$/,
 ];

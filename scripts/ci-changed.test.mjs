@@ -572,6 +572,9 @@ describe("the sentinel of reloads with the worker", () => {
       "apps/web/src/pwa/register.ts",
       "apps/web/pwa/service-worker-plugin.ts",
       "apps/web/index.html",
+      "apps/web/vite.config.ts",
+      "apps/web/vite.pwa.config.ts",
+      "apps/web/vite.ui.ts",
       "apps/web/public/boot-retry.js",
       "apps/web/public/theme-init.js",
       "apps/web/e2e-pwa/recarga-com-worker.e2e.ts",
@@ -588,6 +591,9 @@ describe("the sentinel of reloads with the worker", () => {
         "apps/web/public/manifest.webmanifest",
         "apps/web/e2e-pwa/boot-retry.e2e.ts",
         "apps/web/src/pwa-other/x.ts",
+        "apps/web/vite.config.ts.bak",
+        "apps/web/vite.offline.config.ts",
+        "apps/web/vite.ui.tsx",
       ])
     ).toBe(false);
     expect(reloadSentinelRuns([])).toBe(false);

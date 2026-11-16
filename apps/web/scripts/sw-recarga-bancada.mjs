@@ -1,7 +1,8 @@
 // Recarga com o service worker no controle: abre PAGES abas, espera o worker controlar cada uma e recarrega
 // ROUNDS vezes, cada recarga entre 0 e MAXDELAY ms depois do `load`. Conta a marca do boot-retry
 // (`polaris:entry-reload`), o `error` em <script>, os scripts com `requestfailed`, os pedidos de script e os
-// avisos "cross-world service worker resource mismatch". Serve o build com scripts/serve-static.mjs (a CSP real).
+// avisos "cross-world service worker resource mismatch", só das recargas medidas: a preparação da aba (primeiro
+// carregamento e recarga até o worker controlar) não conta. Serve o build com scripts/serve-static.mjs (a CSP real).
 //
 // Uso, a partir de apps/web, com Node 24 no PATH e o build do e2e PWA feito
 // (bunx vite build --config vite.pwa.config.ts --mode pwa-e2e):
@@ -78,7 +79,7 @@ const totals = {
   scriptRequests: 0,
 };
 const examples = [];
-/** The tabs past their setup: only their reloads are counted. */
+/** The tabs past their setup: only their reloads are counted (marks, `error` of scripts, requests and warnings alike). */
 const counting = new WeakSet();
 
 async function one(owner, index) {
@@ -119,6 +120,9 @@ async function one(owner, index) {
     await session.send("Network.enable");
   }
   page.on("console", (message) => {
+    if (!counting.has(page)) {
+      return;
+    }
     const text = message.text();
     if (text.startsWith("BANCADA mark")) {
       totals.marks += 1;
@@ -126,10 +130,7 @@ async function one(owner, index) {
     } else if (text.startsWith("BANCADA script-error")) {
       totals.scriptErrors += 1;
       examples.push(`p${index} ${text}`);
-    } else if (
-      counting.has(page) &&
-      text.includes("cross-world service worker resource mismatch")
-    ) {
+    } else if (text.includes("cross-world service worker resource mismatch")) {
       totals.crossWorld += 1;
     }
   });
