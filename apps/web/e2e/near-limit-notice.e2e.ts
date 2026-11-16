@@ -1139,7 +1139,8 @@ test.describe("a segunda linha: arquivados sem estoque", () => {
     expect(await stillTheSamePage(page)).toBe(true);
   });
 
-  test("sem conexão a segunda linha some junto com o aviso, sem vão: a página fica do tamanho da de uma loja sem a segunda linha", async ({
+  // A página sem conexão fica do tamanho da de uma loja que nunca teve a segunda linha.
+  test("sem conexão a segunda linha some com o aviso, sem deixar vão", async ({
     context,
     page,
   }) => {
