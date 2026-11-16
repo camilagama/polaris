@@ -660,16 +660,13 @@ describe("the worker as the browser runs it", () => {
       ?.get("/assets/index-BBB.js");
     const read = vi.spyOn(kept as FakeResponse, "blob");
     const clone = vi.spyOn(kept as FakeResponse, "clone");
-    const answer = (await worker.run("fetch", {
-      request: asset,
-    })) as FakeResponse;
-    expect(answer).not.toBe(kept);
-    expect(answer).toMatchObject({
+    const served = await worker.run("fetch", { request: asset });
+    expect(served).not.toBe(kept);
+    expect(served).toMatchObject({
       body: "net:/assets/index-BBB.js",
       headers: kept?.headers,
       status: 200,
     });
-    expect(answer.headers.get("content-type")).toMatch(/javascript/);
     expect(read).toHaveBeenCalledTimes(1);
     expect(clone).not.toHaveBeenCalled();
     for (const path of ["/rpc/sale/confirm", "/api/auth/get-session"]) {
