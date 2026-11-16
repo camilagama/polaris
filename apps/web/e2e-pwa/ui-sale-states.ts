@@ -268,25 +268,24 @@ const ADJUSTMENT_WAIT_MS = 15_000;
 const ADJUSTMENT_GROUP = /^Ajuste \d+$/;
 
 /**
- * Opens the popup of a select. A click that left it closed is repeated once, only after the wait for the option ran
- * out with the listbox still not shown (never while it may be opening, because a second click would close it); a
- * second miss fails with the trigger's name instead of waiting out the action limit on the option.
+ * Opens the popup of a select. A click that left the listbox hidden for `POPUP_WAIT_MS` is repeated once (never while
+ * it may be opening, because a second click would close it); a second miss fails with the trigger's name. The short
+ * limit only decides whether the popup opened: once the listbox shows, the option is waited for by the action limit.
  */
 async function openPopup(trigger: Locator, option: Locator, listbox: Locator) {
   for (let click = 1; click <= 2; click += 1) {
     // biome-ignore lint/performance/noAwaitInLoops: the second click only follows one that opened nothing
     await trigger.click();
     try {
-      await option.waitFor({ timeout: POPUP_WAIT_MS });
-      return;
+      await listbox.waitFor({ timeout: POPUP_WAIT_MS });
     } catch (error) {
-      if (
-        !(error instanceof Error && error.name === "TimeoutError") ||
-        (await listbox.isVisible())
-      ) {
+      if (!(error instanceof Error && error.name === "TimeoutError")) {
         throw error;
       }
+      continue;
     }
+    await option.waitFor();
+    return;
   }
   throw new Error(
     `the click on the select "${await trigger.innerText()}" did not open its popup after 2 clicks`
@@ -321,14 +320,15 @@ async function chooseOption(page: Page, trigger: Locator, option: Locator) {
 /**
  * Adds the first adjustment and returns its group. The panel of date and adjustments opens with a height animation on
  * the desktop, and a click that lands while it runs can focus the button without activating it: the click waits for
- * the animation to end. It is made once: a second click while the group is slow would add "Ajuste 2" and fail the
- * state, and one the app ignored must show as a failure, not be repeated away.
+ * the animation to end. The animation is read only once the panel carries `data-open`, which is what starts it. The
+ * click is made once: a second one while the group is slow would add "Ajuste 2" and fail the state, and one the app
+ * ignored must show as a failure, not be repeated away.
  */
 async function addFirstAdjustment(page: Page) {
   const group = page.getByRole("group", { exact: true, name: "Ajuste 1" });
   const add = page.getByRole("button", { name: "Adicionar ajuste" });
   const panel = page
-    .locator('[data-slot="collapsible-content"]')
+    .locator('[data-slot="collapsible-content"][data-open]')
     .filter({ has: add });
   await panel.waitFor();
   await panel.evaluate((element) =>
