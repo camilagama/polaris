@@ -1400,7 +1400,8 @@ async function run() {
 
     // week 19, cut 7 with the sales hidden (2 stores with a product and none without it leave under k stores that did
     // not sell): 17 stores, 10 with a trial, 5 sold in it, 5 sold after it and 5 sold with no trial at all, so every
-    // cell the sold-in-trial rule reads holds k and only the cut hides the cell
+    // cell the sold-in-trial rule reads holds k and only the cut hides the cell. The random cohorts of section 5 add
+    // their stores to this week afterwards; this cohort is read before that
     await groupsOf(TRIAL_WEEKS.suppressedSale, [
       { count: 2 },
       { count: 5, sold: 5 * MINUTES, trial: { after: 0, state: "free" } },
@@ -1782,7 +1783,8 @@ async function run() {
     //  10 (cut 3): 5 of the cut itself and the 5 of cut 2 that sold later than 7 days = 10
     //   9 (cut 4): 5 of the cut itself, the 5 later ones sell in the next week = 5
     //   8 (cut 6): 2 of the cut itself and cut 4's 5 later ones = 7; hidden (see below)
-    //  18 (F's week): 1 store sold: hidden; 17 (E's week): nobody sold: hidden, never 0
+    //  18 (F's week): F's 1 and the 5 of week 19 that sell 8 days after their creation = 6, hidden because the retention
+    //     of week 2 of that cohort (5, shown) takes 5 of them out and leaves 1; 17 (E's week): nobody sold: hidden, never 0
     const activeOf = (weeksAgo: number) =>
       byWeek(fixture.funnel, weeksAgo, fixture.clock).active.stores;
     for (const [weeksAgo, value] of [
