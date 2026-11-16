@@ -477,7 +477,13 @@ describe("monthKpis: sales without any sale", () => {
   });
 
   it("does not say 'ainda' for a day of the month already gone", () => {
-    const kpis = monthKpis(september(), noSales(), TODAY, cards, costs);
+    const kpis = monthKpis(
+      september(),
+      noSales(),
+      TODAY,
+      { ...cards, netSales: "0.00", salesCount: 0, ticket: null },
+      costs
+    );
     expect(kpis.read(5).sales.count).toBe("Sem vendas no período");
   });
 });
@@ -541,7 +547,7 @@ describe("monthKpis: ticket", () => {
     const kpis = monthKpis(september(), month, TODAY, cards, costs);
     const { ticket } = kpis.read(1);
     expect(ticket.value).toBeNull();
-    expect(ticket.count).toBe("Sem vendas no período");
+    expect(ticket.count).toBe("Sem vendas");
     expect(ticket.delta).toBeNull();
     // the drawing starts flat at the first ticket
     expect(kpis.series.ticket.slice(0, 3)).toEqual([20, 20, 20]);
@@ -976,7 +982,7 @@ describe("a period still open with no sale draws no chip", () => {
     );
     expect(kpis.read(null).sales.delta?.trend).toBe("down");
     expect(kpis.read(0).sales.delta?.text).toBe("-100,0%");
-    expect(kpis.read(0).sales.count).toBe("Sem vendas no período");
+    expect(kpis.read(0).sales.count).toBe("Sem vendas");
   });
 });
 
@@ -1083,5 +1089,68 @@ describe("Ticket médio never denies sales that were made", () => {
       costs
     ).read(null);
     expect(ticket.count).toBe("Sem vendas no período");
+  });
+});
+
+describe("a day read before the first sale of a month that has sales", () => {
+  const firstSaleOn = "2026-10-05";
+  const sold = () =>
+    october((date) =>
+      date < firstSaleOn
+        ? { netSales: "0.00", salesCount: 0 }
+        : { netSales: "20.00", salesCount: 1 }
+    );
+  const noSale = { ...cards, netSales: "0.00", salesCount: 0, ticket: null };
+  const returnsOnly = { ...noSale, netSales: "-10.00" };
+  const read = (index: number | null, summary = cards) =>
+    monthKpis(september(), sold(), TODAY, summary, costs).read(index);
+
+  it("says only 'Sem vendas' in the sales count, not 'no período'", () => {
+    expect(read(2).sales.count).toBe("Sem vendas");
+  });
+
+  it("says only 'Sem vendas' under the ticket dash", () => {
+    const { ticket } = read(2);
+    expect(ticket.value).toBeNull();
+    expect(ticket.count).toBe("Sem vendas");
+  });
+
+  it("keeps the count of sales for a day read after the first sale", () => {
+    expect(read(7).sales.count).toBe("4 vendas");
+    expect(read(7).ticket.count).toBe("");
+  });
+
+  it("keeps 'Sem vendas no período' when the month has no sale at all", () => {
+    const none = monthKpis(
+      september(),
+      october(() => ({ netSales: "0.00", salesCount: 0 })),
+      TODAY,
+      noSale,
+      costs
+    );
+    expect(none.read(2).sales.count).toBe("Sem vendas no período");
+    expect(none.read(2).ticket.count).toBe("Sem vendas no período");
+    expect(none.read(null).ticket.count).toBe("Sem vendas no período");
+  });
+
+  it("keeps 'Nenhuma venda ainda' at rest for the month still open without sales", () => {
+    const none = monthKpis(
+      september(),
+      october(() => ({ netSales: "0.00", salesCount: 0 })),
+      TODAY,
+      noSale,
+      costs
+    );
+    expect(none.read(null).sales.count).toBe("Nenhuma venda ainda");
+  });
+
+  it("keeps 'Só devoluções no período' when the day read nets returns of earlier sales", () => {
+    const month = october((date) =>
+      date === "2026-10-03"
+        ? { netSales: "-10.00", salesCount: 0 }
+        : { netSales: "0.00", salesCount: 0 }
+    );
+    const kpis = monthKpis(september(), month, TODAY, returnsOnly, costs);
+    expect(kpis.read(3).sales.count).toBe("Só devoluções no período");
   });
 });
