@@ -7,9 +7,10 @@ import { keepLocalRow } from "./product-commands";
 
 const HOOK = new URL("./use-product-delete.ts", import.meta.url);
 
-const COMMENTS = /\/\*[\s\S]*?\*\/|\/\/.*$/gm;
+const STRING_OR_COMMENT =
+  /("(?:\\.|[^"\\\n])*"|'(?:\\.|[^'\\\n])*')|\/\*[\s\S]*?\*\/|\/\/[^\n]*/g;
 const IMPORT = /^import\s+([^;]*?)\s+from\s+"([^"]+)";/gm;
-// Textual: a queue reached through a name outside these words and outside the static imports is not seen.
+// Textual: a queue reached through a name outside these words and outside the static imports is not seen, nor is one named only inside a string (`stores["outbox"]`).
 const OFFLINE_WORDS = /outbox|enqueue|createOffline|stores\b/gi;
 const QUOTED_OR_COMMENT =
   /"(?:\\.|[^"\\\n])*"|'(?:\\.|[^'\\\n])*'|\/\*[\s\S]*?\*\/|\/\/[^\n]*|[\s\S]/y;
@@ -18,13 +19,17 @@ const DYNAMIC_IMPORT = /(?<!\btypeof\s+)\bimport\s*\(/g;
 const TYPE_KEYWORD = /\btype\s+/g;
 const BRACES = /[{}]/g;
 
-function code(source: string): string {
-  return source.replace(COMMENTS, "");
+/** Source without comments; quoted strings stay whole, so a `//` inside one does not cut the line. */
+function withoutComments(source: string): string {
+  return source.replace(
+    STRING_OR_COMMENT,
+    (_all, quoted?: string) => quoted ?? ""
+  );
 }
 
 /** Each name the file imports, as `source: name` (a default or namespace import counts by its local name). */
 function importedNames(source: string): string[] {
-  return [...code(source).matchAll(IMPORT)].flatMap((match) =>
+  return [...withoutComments(source).matchAll(IMPORT)].flatMap((match) =>
     (match[1] ?? "")
       .replace(TYPE_KEYWORD, "")
       .replace(BRACES, "")
@@ -76,7 +81,7 @@ function dynamicImports(source: string): string[] {
 }
 
 function offlineWords(source: string): string[] {
-  return code(source).match(OFFLINE_WORDS) ?? [];
+  return liveCode(source).match(OFFLINE_WORDS) ?? [];
 }
 
 /** Everything the delete hook may import: the server's client, the one local write after the server answered, and the refusal texts. */
@@ -117,6 +122,33 @@ workspace.stores.outbox.enqueue(command);`;
         'import type { A } from "x";\nimport { b, type c } from "y";'
       )
     ).toEqual(["x: A", "y: b", "y: c"]);
+  });
+
+  it("um // dentro de string não esconde o que vem depois na mesma linha", () => {
+    const planted = 'const u = "https://x"; stores.outbox.enqueue(c)';
+    expect(offlineWords(planted)).toEqual(["stores", "outbox", "enqueue"]);
+    expect(
+      offlineWords("const u = 'https://x'; stores.outbox.enqueue(c)")
+    ).toEqual(["stores", "outbox", "enqueue"]);
+    expect(
+      offlineWords('const u = "a\\"//b"; stores.outbox.enqueue(c)')
+    ).toEqual(["stores", "outbox", "enqueue"]);
+  });
+
+  it("import seguido de comentário continua lido, e comentário de linha e de bloco é ignorado", () => {
+    expect(
+      importedNames('import { a } from "x"; // comentário com "y"')
+    ).toEqual(["x: a"]);
+    expect(
+      importedNames('import { a } from "x"; /* import { b } from "z"; */')
+    ).toEqual(["x: a"]);
+    expect(
+      importedNames('// import { b } from "z";\nimport { a } from "x";')
+    ).toEqual(["x: a"]);
+    expect(importedNames('import { a } from "https://x/y"; // fim')).toEqual([
+      "https://x/y: a",
+    ]);
+    expect(offlineWords("/* outbox */ const a = 1; // enqueue")).toEqual([]);
   });
 
   it("um nome novo de um módulo já permitido muda a lista", () => {
