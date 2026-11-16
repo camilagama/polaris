@@ -3492,3 +3492,12 @@ Origem: achado B do Diego no Pixel 6 (28/10): a venda montada em Vender sumia ao
 | Diálogo | Em revisão | `catalog/product-delete-dialog.tsx`: nome digitado (regra do nome único), "Excluir produto" / "Manter arquivado", variantes que libera (`product.getVariants`), recusas dentro do diálogo. `catalog/use-product-delete.ts`: chamada direta a `product.delete` com a versão vista, sem fila; a linha local muda só depois da confirmação. `catalog/product-errors.ts`: saldo (lido do estoque na recusa), teto por hora (hora da liberação), produto mudado, sem resposta. |
 | Provas | Em revisão | `e2e/products-screen.e2e.ts` (menu, diálogo, nome, Esc e "Manter arquivado", saldo, teto, produto mudado, sem resposta); e2e-real `jornadas/excluir-produto-arquivado.e2e.ts` (a vaga volta, a venda antiga abre e aceita devolução, o de saldo é recusado); testes de `product-errors` e `product-search-model`. |
 | Fora | Pendente | Exclusão em lote (se vier, exige login recente); a linha "N arquivados" no aviso de limite (item 3 do corte). |
+
+### UI de 15/11: o Resultado diz o mês e quando só falta a taxa (t1135-r2, RES-T2; sem migration)
+
+| Parte | Estado | O que há |
+| --- | --- | --- |
+| Causa do dia desconhecido | Em revisão | `dashboard/missing-input.ts`: `missingInputOf(quality)` diz "taxa" quando nenhuma linha de item tem custo desconhecido e alguma taxa é desconhecida; senão "custo" (inclui a cópia sem contagem). Sem mudança de servidor nem de contrato. |
+| Frases | Em revisão | "sem taxa informada" / "sem taxa" no lugar de "sem custo informado" / "sem custo": tabela, hachura, leitura, resumo do `role="img"`, frase de apoio, aviso dos cartões do Resultado e do Início, "sem taxa neste dia" e o (i). |
+| Mês nomeado | Em revisão | Em período por mês com os dias desconhecidos num só mês: "novembro: 1 de 7 dias sem custo informado" (cartões, (i), frase de apoio e leitura do mês); dois meses ou mais mantêm a contagem do período. |
+| Provas | Em revisão | Testes de `result-series`, `result-kpis`, `result-chart`, `result-cards` e `home-kpis`. Fora: voltar/avançar entre períodos (a regra do `replaceAddress` fica). |

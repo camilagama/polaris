@@ -1,6 +1,7 @@
 import type { ProductReadModel } from "@polaris/contracts";
 import { describe, expect, it } from "vitest";
 import {
+  ARCHIVED_PRODUCTS_HREF,
   findLinkedProduct,
   PRODUCT_LINK_NOT_FOUND,
   productHref,
@@ -52,6 +53,22 @@ describe("readProductsLink", () => {
     ]) {
       expect(readProductsLink(search)).toEqual({ kind: "none" });
     }
+  });
+
+  it("reads the archived address only as arquivados=1, and never shows its value", () => {
+    expect(readProductsLink("?arquivados=1")).toEqual({ kind: "archived" });
+    for (const search of [
+      "?arquivados=",
+      "?arquivados=0",
+      "?arquivados=sim",
+      "?arquivados",
+      "?arquivados=11",
+      "",
+    ]) {
+      expect(readProductsLink(search)).toEqual({ kind: "none" });
+    }
+    expect(readProductsLink("?arquivados=1&novo=1")).toEqual({ kind: "new" });
+    expect(ARCHIVED_PRODUCTS_HREF).toBe("/products?arquivados=1");
   });
 
   it("reads the import address only as importar=1, and never as another value", () => {

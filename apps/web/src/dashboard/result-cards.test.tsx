@@ -401,13 +401,29 @@ describe("the days with no cost: on the badge line while they fit, in the (i) wh
   const warning = (props: Parameters<typeof resultWarning>[0]) =>
     renderToStaticMarkup(<div>{resultWarning(props)}</div>);
   const missing = (unknown: number, total: number) =>
-    warning({ incomplete: true, missing: { total, unknown }, noCost: false });
+    warning({
+      incomplete: true,
+      missing: { input: "cost", month: null, total, unknown },
+      noCost: false,
+    });
 
   it("fits two digits on each side", () => {
     const fits = missing(5, 23);
     expect(words(fits)).toContain("estimativa incompleta");
     expect(fits).toContain('data-kpi-unknown="">5 de 23 dias sem custo<');
     expect(missing(99, 99)).toContain("99 de 99 dias sem custo");
+  });
+
+  it("says the fee when only the fee is missing, and the month when the days are of one month (RES-T2)", () => {
+    const fee = warning({
+      incomplete: true,
+      missing: { input: "fee", month: "novembro", total: 7, unknown: 1 },
+      noCost: false,
+    });
+    expect(fee).toContain(
+      'data-kpi-unknown="">novembro: 1 de 7 dias sem taxa<'
+    );
+    expect(fee).not.toContain("sem custo");
   });
 
   it("leaves the badge alone when the count is wider", () => {
@@ -419,7 +435,7 @@ describe("the days with no cost: on the badge line while they fit, in the (i) wh
   it("leaves the days out when no cost is known: the cause is the whole warning", () => {
     const none = warning({
       incomplete: true,
-      missing: { total: 25, unknown: 25 },
+      missing: { input: "cost", month: null, total: 25, unknown: 25 },
       noCost: true,
     });
     expect(words(none)).toContain("Sem custo informado: não dá para estimar.");
@@ -497,6 +513,7 @@ describe("the result while a day with no cost is read (RES-1)", () => {
       period: summary.period,
       previous: null,
       previousSales: null,
+      quality: summary.quality,
       today: TODAY,
     });
   };
@@ -507,6 +524,27 @@ describe("the result while a day with no cost is read (RES-1)", () => {
     expect(noCostDayText(kpis, 11, false)).toBe("sem custo neste dia");
     expect(noCostDayText(kpis, 3, false)).toBeUndefined();
     expect(noCostDayText(kpis, 5, false)).toBeUndefined();
+  });
+
+  it("says the fee when only the fee is missing (RES-T2)", () => {
+    const summary = october([5]);
+    const kpis = resultKpis({
+      cards: summary.cards,
+      daily: summary.daily ?? [],
+      period: summary.period,
+      previous: null,
+      previousSales: null,
+      quality: {
+        ...summary.quality,
+        itemLinesWithUnknownCost: 0,
+        processingFeesUnknown: 1,
+      },
+      today: TODAY,
+    });
+    expect(noCostDayText(kpis, 4, false)).toBe("sem taxa neste dia");
+    expect(kpis.read(null).result.help).toContain(
+      "dias ainda sem taxa informada"
+    );
   });
 
   it("is not due at rest, with no cost of the goods known, or on a month of a long period", () => {
