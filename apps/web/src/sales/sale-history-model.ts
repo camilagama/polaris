@@ -3,6 +3,7 @@ import type {
   SaleDetailReadModel,
   SaleListEntryReadModel,
 } from "@polaris/contracts";
+import { type Period, rangeProblem } from "../dashboard/result-period";
 import {
   formatBrlAmount,
   formatCalendarDate,
@@ -314,6 +315,110 @@ export function historyTotal(
         ? ""
         : `${left} ${left === 1 ? "cancelada fica fora" : "canceladas ficam fora"} da soma.`,
     totalText: sum === null ? null : formatBrlAmount(sum),
+  };
+}
+
+function periodAlone(filters: HistoryFilters): boolean {
+  return (
+    filters.status === "" &&
+    filters.customer.trim() === "" &&
+    filters.query.trim() === "" &&
+    filters.from !== "" &&
+    filters.to !== ""
+  );
+}
+
+/** Null unless the list filters by the period alone: the window the Resultado reads. */
+export function periodTotalPeriod(filters: HistoryFilters): Period | null {
+  return periodAlone(filters) && rangeProblem(filters.from, filters.to) === null
+    ? { from: filters.from, to: filters.to }
+    : null;
+}
+
+/** The period alone, but longer than the year the summary reads: the screen total stays and says why. */
+function periodTooLong(filters: HistoryFilters): boolean {
+  return (
+    periodAlone(filters) &&
+    rangeProblem(filters.from, filters.to) === "too_long"
+  );
+}
+
+/** What the read of the period's net sales is doing; `idle` is a filter that has no period total. */
+export type PeriodTotalRead =
+  | { status: "idle" }
+  | { status: "loading" }
+  | { netSales: string; salesCount: number; status: "ready" }
+  | { status: "failed" };
+
+export const PERIOD_TOTAL_LABEL = "Vendas líquidas do período";
+export const SCREEN_TOTAL_LABEL = "Total na tela";
+export const PERIOD_TOTAL_HELP =
+  "Vendas confirmadas do período, menos descontos e devoluções, até as feitas depois; igual ao Resultado. Não é a soma da lista: sem acréscimo, frete e canceladas.";
+export const PERIOD_TOTAL_OFFLINE_NOTICE =
+  "Sem conexão: total das vendas guardadas neste aparelho.";
+export const PERIOD_TOTAL_TOO_LONG_NOTICE =
+  "O total líquido do período vale para até 1 ano.";
+export const PERIOD_TOTAL_FAILED_NOTICE =
+  "Não foi possível ler o total do período agora.";
+
+export interface HistoryFooterView {
+  count: string;
+  hasHelp: boolean;
+  label: string;
+  note: string;
+  notice: string;
+  value: string | null;
+  valueLoading: boolean;
+}
+
+function footerNotice(
+  filters: HistoryFilters,
+  offline: boolean,
+  read: PeriodTotalRead
+): string {
+  if (read.status === "failed") {
+    return PERIOD_TOTAL_FAILED_NOTICE;
+  }
+  if (offline && filters.from !== "" && filters.to !== "") {
+    return PERIOD_TOTAL_OFFLINE_NOTICE;
+  }
+  return periodTooLong(filters) ? PERIOD_TOTAL_TOO_LONG_NOTICE : "";
+}
+
+/** Never pairs "Vendas líquidas do período" with the sum of the rows, nor "Total na tela" with the server figure. */
+export function historyFooterView(input: {
+  filters: HistoryFilters;
+  hasMore: boolean;
+  listLoading: boolean;
+  offline: boolean;
+  read: PeriodTotalRead;
+  sales: readonly SaleListEntryReadModel[];
+}): HistoryFooterView {
+  const { filters, hasMore, listLoading, offline, read, sales } = input;
+  if (read.status === "loading" || read.status === "ready") {
+    return {
+      count:
+        read.status === "ready"
+          ? `${read.salesCount} ${read.salesCount === 1 ? "venda" : "vendas"}`
+          : "",
+      hasHelp: true,
+      label: PERIOD_TOTAL_LABEL,
+      note: "",
+      notice: "",
+      value: read.status === "ready" ? formatBrlAmount(read.netSales) : null,
+      valueLoading: read.status === "loading",
+    };
+  }
+  const total = historyTotal(sales, hasMore);
+  const notice = listLoading ? "" : footerNotice(filters, offline, read);
+  return {
+    count: listLoading ? "" : total.countText,
+    hasHelp: false,
+    label: SCREEN_TOTAL_LABEL,
+    note: listLoading ? "" : total.noteText,
+    notice,
+    value: listLoading ? "…" : (total.totalText ?? "—"),
+    valueLoading: false,
   };
 }
 
