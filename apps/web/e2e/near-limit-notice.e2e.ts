@@ -1139,57 +1139,92 @@ test.describe("a segunda linha: arquivados sem estoque", () => {
     expect(await stillTheSamePage(page)).toBe(true);
   });
 
-  test("sem conexão a segunda linha some junto com o aviso, sem vão", async ({
+  test("sem conexão a segunda linha some junto com o aviso, sem vão: a página fica do tamanho da de uma loja sem a segunda linha", async ({
     context,
     page,
   }) => {
-    await openApp(page, "/products", freeableStore(3));
-    await expect(freeableLine(page)).toBeVisible();
-    await context.setOffline(true);
-    await expect(freeableLine(page)).toHaveCount(0);
-    await expect(line(page)).toHaveCount(0);
+    const offlinePage = async (freeable: number) => {
+      await page.unrouteAll({ behavior: "ignoreErrors" });
+      await context.setOffline(false);
+      await openApp(page, "/products", freeableStore(freeable));
+      await expect(line(page)).toContainText("Você usa 47 de 50 variantes");
+      if (freeable > 0) {
+        await expect(freeableLine(page)).toBeVisible();
+      }
+      const root = page.locator(".products-page");
+      const online = await root.boundingBox();
+      await context.setOffline(true);
+      await expect(
+        page.getByText("Importar planilha precisa de conexão.")
+      ).toBeVisible();
+      await expect(freeableLine(page)).toHaveCount(0);
+      await expect(line(page)).toHaveCount(0);
+      return { offline: await root.boundingBox(), online };
+    };
+    const withoutSecond = await offlinePage(0);
+    const withSecond = await offlinePage(3);
+    expect(withSecond.online?.height).toBeGreaterThan(
+      withoutSecond.online?.height ?? Number.NaN
+    );
+    expect(withSecond.offline).toEqual(withoutSecond.offline);
     await context.setOffline(false);
     await expect(freeableLine(page)).toBeVisible();
   });
 
-  for (const width of [360, 320]) {
-    test(`no toque, a 20 px de letra e ${width} px, as áreas de 44 px dos dois links não se sobrepõem e nada passa da janela`, async ({
-      browser,
-    }) => {
-      const context = await browser.newContext({
-        hasTouch: true,
-        viewport: { height: 740, width },
-      });
-      const page = await context.newPage();
-      await page.addInitScript(() => {
-        document.addEventListener("DOMContentLoaded", () => {
-          document.documentElement.style.fontSize = "20px";
+  for (const surface of [
+    "na lista de Produtos",
+    "no formulário de variantes",
+  ]) {
+    for (const width of [360, 320]) {
+      test(`no toque, a 20 px de letra e ${width} px, ${surface}, as áreas de 44 px dos dois links não se sobrepõem e nada passa da janela`, async ({
+        browser,
+      }) => {
+        const context = await browser.newContext({
+          hasTouch: true,
+          viewport: { height: 740, width },
         });
-      });
-      await openApp(page, "/products", freeableStore(3));
-      await expect(freeableLine(page)).toBeVisible();
-      const area = async (name: string) => {
-        const box = await page
-          .getByRole("link", { name })
-          .first()
-          .boundingBox();
-        if (!box) {
-          throw new Error(`sem caixa para ${name}`);
+        const page = await context.newPage();
+        await page.addInitScript(() => {
+          document.addEventListener("DOMContentLoaded", () => {
+            document.documentElement.style.fontSize = "20px";
+          });
+        });
+        await openApp(page, "/products", freeableStore(3));
+        const inDialog = surface === "no formulário de variantes";
+        if (inDialog) {
+          await openVariants(page);
         }
-        const height = Math.max(box.height, 44);
-        const center = box.y + box.height / 2;
-        return { bottom: center + height / 2, top: center - height / 2 };
-      };
-      const pro = await area("Conhecer o Pro");
-      const archived = await area("Ver arquivados");
-      expect(archived.top).toBeGreaterThanOrEqual(pro.bottom);
-      const overflow = await page.evaluate(
-        () =>
-          document.documentElement.scrollWidth -
-          document.documentElement.clientWidth
-      );
-      expect(overflow).toBeLessThanOrEqual(0);
-      await context.close();
-    });
+        const scope = inDialog ? page.getByRole("dialog") : page;
+        await expect(scope.locator(FREEABLE)).toBeVisible();
+        const area = async (name: string) => {
+          const box = await scope
+            .getByRole("link", { name })
+            .first()
+            .boundingBox();
+          if (!box) {
+            throw new Error(`sem caixa para ${name}`);
+          }
+          const height = Math.max(box.height, 44);
+          const center = box.y + box.height / 2;
+          return { bottom: center + height / 2, top: center - height / 2 };
+        };
+        const pro = await area("Conhecer o Pro");
+        const archived = await area("Ver arquivados");
+        expect(archived.top).toBeGreaterThanOrEqual(pro.bottom);
+        const overflow = await page.evaluate(
+          () =>
+            document.documentElement.scrollWidth -
+            document.documentElement.clientWidth
+        );
+        expect(overflow).toBeLessThanOrEqual(0);
+        if (inDialog) {
+          const dialogOverflow = await scope.evaluate(
+            (node) => node.scrollWidth - node.clientWidth
+          );
+          expect(dialogOverflow).toBeLessThanOrEqual(0);
+        }
+        await context.close();
+      });
+    }
   }
 });
