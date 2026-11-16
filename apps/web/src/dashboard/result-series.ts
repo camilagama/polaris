@@ -11,6 +11,7 @@ import {
   type MissingInput,
   missingDaysText,
   missingInformed,
+  monthLabel,
   singleUnknownMonth,
 } from "./missing-input";
 import { lastOfMonth, monthAbbreviation, monthName } from "./result-period";
@@ -327,8 +328,11 @@ export function costSeries(rows: readonly ResultRow[]): (number | null)[] {
 }
 
 /** "3 de 25 dias sem custo informado" (AC-11); "novembro: 1 de 7 dias sem taxa informada" for the days of one month. */
-export function unknownDaysCount(missing: MissingDays): string {
-  return missingDaysText(missing, "informed");
+export function unknownDaysCount(
+  missing: MissingDays,
+  opensSentence = false
+): string {
+  return missingDaysText(missing, "informed", opensSentence);
 }
 
 /** The row with the highest net sales (the first when two tie), or null when no row sold anything (AC-5). */
@@ -361,13 +365,14 @@ export function bestRowText(series: ResultSeries): string | null {
  */
 export function readingNote(
   row: ResultRow | undefined,
-  missing: MissingInput
+  missing: MissingInput,
+  thisYear: string
 ): string | null {
   const parts = [
     row?.unknownDays && row.unknownDays.unknown > 0
       ? unknownDaysCount({
           input: missing,
-          month: monthName(row.key),
+          month: monthLabel(row.key, thisYear),
           ...row.unknownDays,
         })
       : null,
@@ -427,7 +432,7 @@ export function supportParts(
     return { count: null, tail: series.costsDrawn ? tail : null };
   }
   return {
-    count: `${unknownDaysCount({ ...series.days, input: series.missing })}.`,
+    count: `${unknownDaysCount({ ...series.days, input: series.missing }, true)}.`,
     tail: series.costsDrawn ? tail : COMPETENCE,
   };
 }

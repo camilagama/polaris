@@ -835,10 +835,10 @@ describe("the cards of a long period, by month as the server adds it up (D1-1 to
         today: TODAY,
       }).read(null).result.help;
     expect(read({ ...COST_QUALITY, processingFeesUnknown: 3 })).toBe(
-      "Vendas menos custos, taxas e despesas do período inteiro; não é lucro líquido nem caixa. maio: 2 de 31 dias ainda sem taxa informada."
+      "Vendas menos custos, taxas e despesas do período inteiro; não é lucro líquido nem caixa. Maio: 2 de 31 dias ainda sem taxa informada."
     );
     expect(read(COST_QUALITY)).toBe(
-      "Vendas menos custos, taxas e despesas do período inteiro; não é lucro líquido nem caixa. maio: 2 de 31 dias ainda sem custo informado."
+      "Vendas menos custos, taxas e despesas do período inteiro; não é lucro líquido nem caixa. Maio: 2 de 31 dias ainda sem custo informado."
     );
     expect(
       read({

@@ -363,7 +363,7 @@ describe("a day with no sale carries its cost as an expense without a sale (AC-8
     );
     const row = series.rows.at(-1);
     expect(row?.expenses).toBe("1800.00");
-    expect(readingNote(row, "cost")).toBe(
+    expect(readingNote(row, "cost", "2026")).toBe(
       "inclui R$ 1.800,00 de despesas do período"
     );
   });
@@ -383,8 +383,8 @@ describe("a day with no sale carries its cost as an expense without a sale (AC-8
       "2026-10-31"
     );
     expect(series.rows.at(-1)?.expenses).toBeNull();
-    expect(readingNote(series.rows.at(-1), "cost")).toBeNull();
-    expect(readingNote(undefined, "cost")).toBeNull();
+    expect(readingNote(series.rows.at(-1), "cost", "2026")).toBeNull();
+    expect(readingNote(undefined, "cost", "2026")).toBeNull();
   });
 
   it("has no expense on a day with no sale and no cost", () => {
@@ -411,7 +411,7 @@ describe("the expenses of the day come from the server when it sends them (opera
     );
     const row = series.rows.at(-1);
     expect(row?.expenses).toBe("1800.00");
-    expect(readingNote(row, "cost")).toBe(
+    expect(readingNote(row, "cost", "2026")).toBe(
       "inclui R$ 1.800,00 de despesas do período"
     );
     // a day with no expense says nothing
@@ -508,10 +508,10 @@ describe("long periods come by month from the server, used as they come (AC-7)",
       "2026-03-31"
     );
     expect(series.days).toEqual({ month: "fevereiro", total: 28, unknown: 2 });
-    expect(readingNote(series.rows[1], "cost")).toBe(
+    expect(readingNote(series.rows[1], "cost", "2026")).toBe(
       "fevereiro: 2 de 28 dias sem custo informado · inclui R$ 1,00 de despesas do período"
     );
-    expect(readingNote(series.rows[0], "cost")).toBeNull();
+    expect(readingNote(series.rows[0], "cost", "2026")).toBeNull();
   });
 
   it("keeps the line after today from the server's days after today, and none when a month is unknown (AC-9, AC-10)", () => {
@@ -922,6 +922,27 @@ describe("what an unknown day lacks: the cost, or only the fee (RES-T2)", () => 
     ).toBe("novembro: 1 de 7 dias sem taxa informada");
   });
 
+  it("starts the month with a capital only when the count opens its sentence", () => {
+    const november = {
+      input: "cost",
+      month: "novembro",
+      total: 7,
+      unknown: 1,
+    } as const;
+    expect(unknownDaysCount(november, true)).toBe(
+      "Novembro: 1 de 7 dias sem custo informado"
+    );
+    expect(unknownDaysCount(november)).toBe(
+      "novembro: 1 de 7 dias sem custo informado"
+    );
+    expect(
+      unknownDaysCount({ ...november, month: "setembro de 2025" }, true)
+    ).toBe("Setembro de 2025: 1 de 7 dias sem custo informado");
+    expect(unknownDaysCount({ ...november, month: null }, true)).toBe(
+      "1 de 7 dias sem custo informado"
+    );
+  });
+
   it("carries what is missing in the series, the cost when nothing says otherwise", () => {
     const daily = [known("2026-10-01"), unknownDay("2026-10-02")];
     expect(resultSeries(daily, "2026-10-31").missing).toBe("cost");
@@ -965,7 +986,7 @@ describe("what an unknown day lacks: the cost, or only the fee (RES-T2)", () => 
     );
     expect(one.days).toEqual({ month: "novembro", total: 7, unknown: 1 });
     expect(supportParts(one, chain).count).toBe(
-      "novembro: 1 de 7 dias sem taxa informada."
+      "Novembro: 1 de 7 dias sem taxa informada."
     );
     const two = resultSeries(
       [
@@ -992,8 +1013,52 @@ describe("what an unknown day lacks: the cost, or only the fee (RES-T2)", () => 
       "2026-11-07",
       { granularity: "month", missing: "fee" }
     );
-    expect(readingNote(series.rows[0], "fee")).toBe(
+    expect(readingNote(series.rows[0], "fee", "2026")).toBe(
       "novembro: 1 de 7 dias sem taxa informada"
+    );
+  });
+});
+
+describe("the reading of a month of another year carries the year", () => {
+  const month = (date: string, to: string, unknownDays: number): StoredDay => ({
+    costs: unknownDays > 0 ? null : "10.00",
+    date,
+    days: Number(to.slice(8, 10)),
+    netSales: "50.00",
+    operatingExpenses: "0.00",
+    operatingResult: unknownDays > 0 ? null : "40.00",
+    salesCount: 1,
+    to,
+    unknownDays,
+  });
+  const series = resultSeries(
+    [
+      month("2025-12-01", "2025-12-31", 31),
+      month("2026-01-01", "2026-01-31", 0),
+      month("2026-02-01", "2026-02-10", 0),
+    ],
+    "2026-02-10",
+    { granularity: "month" }
+  );
+
+  it("says dezembro de 2025 for the month of last year, like the count of the cards", () => {
+    expect(readingNote(series.rows[0], "cost", "2026")).toBe(
+      "dezembro de 2025: 31 de 31 dias sem custo informado"
+    );
+    expect(series.days.month).toBe("dezembro de 2025");
+  });
+
+  it("says only the month name for a month of this year", () => {
+    const thisYear = resultSeries(
+      [month("2026-02-01", "2026-02-10", 2)],
+      "2026-02-10",
+      { granularity: "month" }
+    );
+    expect(readingNote(thisYear.rows[0], "cost", "2026")).toBe(
+      "fevereiro: 2 de 10 dias sem custo informado"
+    );
+    expect(readingNote(thisYear.rows[0], "cost", "2027")).toBe(
+      "fevereiro de 2026: 2 de 10 dias sem custo informado"
     );
   });
 });

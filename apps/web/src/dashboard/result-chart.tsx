@@ -253,7 +253,10 @@ function Totals({
  * The numbers a drawing is given: the sales, the costs when they are sent (`null` on a day whose cost is unknown:
  * hatched, never a zero) and the note of a day. Memoized, so the layout is not redone.
  */
-function useDrawingData({ costsSent, grouped, missing, rows }: ResultSeries) {
+function useDrawingData(
+  { costsSent, grouped, missing, rows }: ResultSeries,
+  thisYear: string
+) {
   const data = useMemo(
     () =>
       rows.map((row) => ({
@@ -284,17 +287,17 @@ function useDrawingData({ costsSent, grouped, missing, rows }: ResultSeries) {
   const [hidden] = useHiddenValues();
   const note = useCallback(
     (index: number) => {
-      const text = readingNote(rows[index], missing);
+      const text = readingNote(rows[index], missing, thisYear);
       return text && hidden ? maskMoney(text) : text;
     },
-    [hidden, missing, rows]
+    [hidden, missing, rows, thisYear]
   );
   const spoken = useCallback(
     (index: number) => {
-      const text = readingNote(rows[index], missing);
+      const text = readingNote(rows[index], missing, thisYear);
       return text && hidden ? maskMoney(text, MASKED_SPOKEN) : text;
     },
-    [hidden, missing, rows]
+    [hidden, missing, rows, thisYear]
   );
   return { data, note, secondary, spoken };
 }
@@ -315,13 +318,15 @@ function Drawing({
   empty,
   label,
   series,
+  thisYear,
 }: {
   details: string;
   empty: boolean;
   label: string;
   series: ResultSeries;
+  thisYear: string;
 }) {
-  const { data, note, secondary, spoken } = useDrawingData(series);
+  const { data, note, secondary, spoken } = useDrawingData(series, thisYear);
   const [hidden] = useHiddenValues();
   return (
     <OnDemandAreaChart
@@ -352,10 +357,12 @@ function Body({
   details,
   label,
   series,
+  thisYear,
 }: {
   details: string;
   label: string;
   series: ResultSeries;
+  thisYear: string;
 }) {
   if (series.rows.length === 0) {
     return (
@@ -369,6 +376,7 @@ function Body({
       empty={!hasAnyValue(series.rows, series.costsDrawn)}
       label={label}
       series={series}
+      thisYear={thisYear}
     />
   );
 }
@@ -438,7 +446,12 @@ export function ResultChart({ source, summary, timezone }: ResultChartProps) {
             {best ? <MoneyText text={best} /> : null}
           </p>
         ) : null}
-        <Body details={numbersId} label={label} series={series} />
+        <Body
+          details={numbersId}
+          label={label}
+          series={series}
+          thisYear={today.slice(0, 4)}
+        />
         {rows.length > 0 ? (
           <NumbersTable
             hasCosts={sent}

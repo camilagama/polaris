@@ -686,7 +686,7 @@ export function resultHelp(
     missing &&
     (notProfit || !unknownDaysFit(missing.unknown, missing.total))
   ) {
-    return `${first} ${missingDaysText(missing, "informed").replace(" sem ", " ainda sem ")}.`;
+    return `${first} ${missingDaysText(missing, "informed", true).replace(" sem ", " ainda sem ")}.`;
   }
   return compare ? `${first} Compara com ${compare}.` : first;
 }

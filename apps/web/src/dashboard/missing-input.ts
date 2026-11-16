@@ -46,14 +46,28 @@ export function missingShort(input: MissingInput): string {
   return WORDS[input].short;
 }
 
-/** "novembro: 3 de 25 dias sem custo informado", the month only when the days are those of one. */
+/**
+ * "novembro: 3 de 25 dias sem custo informado", the month only when the days are those of one. `opensSentence` starts
+ * the month with a capital ("Novembro: ..."), for a count that begins a sentence of its own.
+ */
 export function missingDaysText(
   { input, month, total, unknown }: MissingDays,
-  words: "informed" | "short"
+  words: "informed" | "short",
+  opensSentence = false
 ): string {
   const tail =
     words === "informed" ? missingInformed(input) : missingShort(input);
-  return `${month === null ? "" : `${month}: `}${unknown} de ${total} ${total === 1 ? "dia" : "dias"} ${tail}`;
+  const named =
+    month !== null && opensSentence
+      ? `${month.charAt(0).toUpperCase()}${month.slice(1)}`
+      : month;
+  return `${named === null ? "" : `${named}: `}${unknown} de ${total} ${total === 1 ? "dia" : "dias"} ${tail}`;
+}
+
+/** "novembro" for a month of `thisYear`, "novembro de 2025" for one of another year, so it is never taken for this one. */
+export function monthLabel(date: string, thisYear: string): string {
+  const name = monthName(date);
+  return date.startsWith(thisYear) ? name : `${name} de ${date.slice(0, 4)}`;
 }
 
 interface MonthEntry {
@@ -81,11 +95,8 @@ export function singleUnknownMonth(
   ) {
     return null;
   }
-  const name = monthName(only.date);
   return {
-    month: only.date.startsWith(thisYear)
-      ? name
-      : `${name} de ${only.date.slice(0, 4)}`,
+    month: monthLabel(only.date, thisYear),
     total: only.days,
     unknown: only.unknownDays,
   };
