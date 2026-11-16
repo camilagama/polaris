@@ -368,6 +368,22 @@ Ordem e o que cada falha quer dizer:
 - **Fora do smoke:** escrita com sessão (não há sessão no CI sem guardar um cookie como segredo), leitura de dado de tenant, login real, e-mail e Google. A escrita se prova no e2e-real de cada PR e, no item 6 do checklist, por um passo manual com conta Google de teste numa loja `smoke-<data>` (venda confirmada e cancelada).
 - **Versão ativa conferida no plano de controle:** depois dos `wrangler deploy`, o passo `Deploy the staging Workers` roda `node scripts/verify-deployed-sha.mjs` (o Admin ainda não entra nesta conferência; a versão dele não tem como ser lida pelo smoke, que para no Access), que lê, só em leitura, o deployment ativo de `polaris-web-staging` e `polaris-catalog-staging` (`wrangler deployments status --json` e `wrangler versions view <id> --json`, com o nome do Worker fixo no código) e reprova se a versão ativa não for uma só, não tiver 100% do tráfego ou tiver `message` diferente de `HEAD_SHA`. O log diz só o Worker e um motivo fixo, nunca a resposta da API nem o stderr do wrangler. São 3 tentativas por Worker, com 5 s de pausa e 20 s por chamada do wrangler (duas chamadas por tentativa). Pior caso por Worker: 3 × 2 × 20 + 2 × 5 = 130 s; teto: 2 × 130 s = 260 s, cerca de 4,5 min. Se reprovar: outro deploy ou um rollout parcial ficou por cima do commit; olhe `wrangler deployments list --name <Worker>` com o perfil autorizado ([política de perfis de CLI](./cli-profile-policy.md)) e refaça o deploy do commit certo. O smoke não roda enquanto este passo estiver vermelho.
 
+### Smoke de produção
+
+`node scripts/smoke-staging.mjs --env production` roda as mesmas 19 verificações, na mesma ordem e só de leitura, contra os Workers de produção. Sem `--env` (ou com `--env staging`) nada muda: é o que o `deploy-staging.yml` roda. Outro valor de `--env` é recusado.
+
+O domínio de produção ainda não foi decidido, então nenhum host está escrito no script. Tudo vem de variáveis, sem valor padrão:
+
+| Variável | O que é | Recusa |
+| --- | --- | --- |
+| `PRODUCTION_WEB_URL`, `PRODUCTION_CATALOG_URL`, `PRODUCTION_ADMIN_URL` | origem https de cada Worker, sem caminho, porta nem credencial | ausente ou vazia; não https; com caminho, porta ou credencial; IP, `localhost`, `.workers.dev`, `.invalid`; um host do staging; dois Workers no mesmo host |
+| `PRODUCTION_ACCESS_TEAM` | `<time>.cloudflareaccess.com` do Access de produção, para onde o Admin sem login deve ser redirecionado (o caminho do login é `/cdn-cgi/access/login/<host do Admin>`) | ausente, mal formado ou o time do staging |
+| `PRODUCTION_EXPECT_PASSWORD_SIGN_IN` | `true` ou `false`: o `auth-methods` de produção declara o login por senha (fica atrás de flag, desligada até o domínio de e-mail) | qualquer outro valor |
+
+Faltando ou malformada qualquer uma, o script imprime uma linha por variável (nome e motivo, nunca o valor), termina com código 1 e **não faz nenhuma requisição**. Com todas válidas, só os três hosts declarados recebem requisição (o `send` recusa qualquer outro, e um host do staging nunca vale em produção), com `User-Agent: polaris-production-smoke/1`. `HEAD_SHA` e a pasta `apps/web/dist/client` valem como no staging.
+
+Quando o deploy de produção existir, o passo de smoke dele chama o script com `--env production` e as variáveis do Environment `production` do GitHub; até lá o script só é rodado à mão.
+
 ## 9. Itens do release-checklist no staging
 
 - **Itens 3 e 15 (ensaio):** a saída de `before-migrate` (dono do banco e de `public`), a migration 0077 passando o bloco `DO` e a lista de logins de `after-migrate`. É ensaio: a prova vale de novo no go-live, contra a produção.

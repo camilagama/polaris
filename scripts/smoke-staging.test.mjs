@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
@@ -18,9 +19,15 @@ import {
   BILLING_WEBHOOK_PROVIDERS,
   COMMIT_REFUSAL,
   CREATE_INITIAL_INPUT,
+  environmentOf,
+  PRODUCTION_USER_AGENT,
+  PRODUCTION_VARIABLES,
+  planOf,
+  productionTarget,
   REFUSAL,
   refusalOf,
   runSmoke,
+  STAGING_TARGET,
   STAGING_FIXED_HOST,
   STRANGE_ORIGIN,
   send,
@@ -1022,5 +1029,370 @@ describe("the requests of the smoke over the real fetch of Node", () => {
       ({ url }) => url === "/rpc/organization/createInitial"
     );
     expect(JSON.parse(created.body)).toEqual({ json: CREATE_INITIAL_INPUT });
+  });
+});
+
+const productionEnv = {
+  PRODUCTION_ACCESS_TEAM: "polaris-prod.cloudflareaccess.com",
+  PRODUCTION_ADMIN_URL: "https://admin.exemplo.com.br",
+  PRODUCTION_CATALOG_URL: "https://catalogo.exemplo.com.br",
+  PRODUCTION_EXPECT_PASSWORD_SIGN_IN: "false",
+  PRODUCTION_WEB_URL: "https://app.exemplo.com.br",
+};
+const productionOrigins = {
+  admin: productionEnv.PRODUCTION_ADMIN_URL,
+  catalog: productionEnv.PRODUCTION_CATALOG_URL,
+  web: productionEnv.PRODUCTION_WEB_URL,
+};
+const { PRODUCTION_ACCESS_TEAM } = productionEnv;
+
+const toStagingUrl = (url) =>
+  url
+    .replace(productionOrigins.web, origins.web)
+    .replace(productionOrigins.catalog, origins.catalog)
+    .replace(productionOrigins.admin, origins.admin);
+
+/** A production that answers like the staging fake, with its own hosts, its own Access team and no password sign-in. */
+function productionAnswer(url, init = {}) {
+  const headers = new Headers(init.headers);
+  if (headers.get("origin") === productionOrigins.web) {
+    headers.set("origin", origins.web);
+  }
+  const stagingUrl = toStagingUrl(url);
+  if (stagingUrl === `${origins.web}/api/auth-methods`) {
+    return fromWorker(200, {}, json({ ...AUTH_METHODS, emailPassword: false }));
+  }
+  const response = stagingAnswer(stagingUrl, { ...init, headers });
+  if (response.status === 302) {
+    const path = new URL(url).pathname;
+    return answer(302, {
+      location: `https://${PRODUCTION_ACCESS_TEAM}/cdn-cgi/access/login/admin.exemplo.com.br?kid=x&redirect_url=${encodeURIComponent(path)}`,
+    });
+  }
+  return response;
+}
+
+const production = () => {
+  const { target } = productionTarget(productionEnv);
+  return target;
+};
+
+const productionOptions = () => ({ ...options, target: production() });
+
+describe("the production smoke", () => {
+  beforeEach(() => {
+    vi.spyOn(console, "log").mockImplementation(() => undefined);
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("refuses to run with no variable, naming each one, and asks for no host", () => {
+    const { refusals, target } = productionTarget({});
+    expect(target).toBeNull();
+    expect(refusals).toHaveLength(5);
+    for (const variable of Object.values(PRODUCTION_VARIABLES)) {
+      expect(
+        refusals.filter((line) => line.startsWith(`${variable}:`))
+      ).toHaveLength(1);
+    }
+    expect(refusals.join("\n")).toContain("production domain not decided");
+    expect(planOf("production", {}).refusals).toEqual(refusals);
+  });
+
+  it("refuses when one variable is missing, empty or blank", () => {
+    for (const variable of Object.values(PRODUCTION_VARIABLES)) {
+      for (const value of [undefined, "", "   "]) {
+        const { refusals, target } = productionTarget({
+          ...productionEnv,
+          [variable]: value,
+        });
+        expect(target, `${variable}=${String(value)}`).toBeNull();
+        expect(refusals).toHaveLength(1);
+        expect(refusals[0].startsWith(`${variable}:`)).toBe(true);
+      }
+    }
+  });
+
+  it("refuses an origin that is not a custom https host without path, port or credentials", () => {
+    for (const web of [
+      "http://app.exemplo.com.br",
+      "https://app.exemplo.com.br/path",
+      "https://app.exemplo.com.br/",
+      "https://app.exemplo.com.br:8443",
+      "https://user:pw@app.exemplo.com.br",
+      "https://APP.exemplo.com.br",
+      "https://app.exemplo.com.br?x=1",
+      "app.exemplo.com.br",
+      "https://localhost",
+      "https://127.0.0.1",
+      "https://[::1]",
+      "https://app.invalid",
+      "https://polaris-web.exemplo.workers.dev",
+      "https://dash.araute.app",
+      "https://admin.araute.app",
+      "https://catalogo.araute.app",
+    ]) {
+      const { refusals, target } = productionTarget({
+        ...productionEnv,
+        PRODUCTION_WEB_URL: web,
+      });
+      expect(target, web).toBeNull();
+      expect(refusals, web).toHaveLength(1);
+      expect(refusals[0].startsWith("PRODUCTION_WEB_URL:")).toBe(true);
+    }
+  });
+
+  it("refuses two Workers at the same host", () => {
+    const { refusals, target } = productionTarget({
+      ...productionEnv,
+      PRODUCTION_CATALOG_URL: productionEnv.PRODUCTION_WEB_URL,
+    });
+    expect(target).toBeNull();
+    expect(refusals).toEqual([
+      "production hosts: web, catalog and admin must be distinct",
+    ]);
+  });
+
+  it("refuses the staging Access team, a malformed team and a password flag that is not true or false", () => {
+    for (const team of [
+      "polaris-staging.cloudflareaccess.com",
+      "polaris-prod.cloudflareaccess.com.evil.example",
+      "https://polaris-prod.cloudflareaccess.com",
+      "POLARIS.cloudflareaccess.com",
+      "polaris-prod",
+    ]) {
+      const { target } = productionTarget({
+        ...productionEnv,
+        PRODUCTION_ACCESS_TEAM: team,
+      });
+      expect(target, team).toBeNull();
+    }
+    for (const value of ["1", "TRUE", "yes", "on"]) {
+      const { refusals } = productionTarget({
+        ...productionEnv,
+        PRODUCTION_EXPECT_PASSWORD_SIGN_IN: value,
+      });
+      expect(refusals).toHaveLength(1);
+    }
+  });
+
+  it("passes with nineteen checks, only at the production hosts and with its own user agent", async () => {
+    const fetchImpl = vi.fn((url, init) =>
+      Promise.resolve(productionAnswer(url, init))
+    );
+    expect(
+      await runSmoke(productionOrigins, productionOptions(), fetchImpl, noPause)
+    ).toEqual([]);
+    expect(fetchImpl).toHaveBeenCalledTimes(19);
+    const productionHosts = Object.values(productionOrigins).map(
+      (origin) => new URL(origin).host
+    );
+    for (const [url, init] of fetchImpl.mock.calls) {
+      expect(productionHosts).toContain(new URL(url).host);
+      expect(init.headers["user-agent"]).toBe(PRODUCTION_USER_AGENT);
+    }
+  });
+
+  it("runs the same nineteen checks as staging, in the same order, with the host swapped", () => {
+    const shell = { index: "", serviceWorker: "" };
+    const stagingChecks = smokeChecks(origins, { release: RELEASE, shell });
+    const productionChecks = smokeChecks(
+      productionOrigins,
+      { release: RELEASE, shell },
+      production()
+    );
+    expect(productionChecks.map(({ name, method }) => [name, method])).toEqual(
+      stagingChecks.map(({ name, method }) => [name, method])
+    );
+    expect(productionChecks.map(({ url }) => url)).toEqual(
+      stagingChecks.map(({ url }) =>
+        url
+          .replace(origins.web, productionOrigins.web)
+          .replace(origins.catalog, productionOrigins.catalog)
+          .replace(origins.admin, productionOrigins.admin)
+      )
+    );
+  });
+
+  it("expects the password sign-in the variable declares", async () => {
+    const withPassword = {
+      ...productionEnv,
+      PRODUCTION_EXPECT_PASSWORD_SIGN_IN: "true",
+    };
+    const fetchImpl = (url, init) =>
+      Promise.resolve(productionAnswer(url, init));
+    const failures = await runSmoke(
+      productionOrigins,
+      { ...options, target: productionTarget(withPassword).target },
+      fetchImpl,
+      noPause
+    );
+    expect(failures).toEqual([
+      "web /api/auth-methods (Google, password and Turnstile configured): 200 sign-in methods different",
+    ]);
+  });
+
+  it("sends the Admin to the production Access team, not to the staging one", async () => {
+    const stagingLogin = answer(302, {
+      location: `https://${STAGING_ACCESS_TEAM}/cdn-cgi/access/login/admin.exemplo.com.br`,
+    });
+    const wrongPath = answer(302, {
+      location: `https://${PRODUCTION_ACCESS_TEAM}/cdn-cgi/access/login/admin.araute.app`,
+    });
+    const replaced = {
+      [`${productionOrigins.admin}/health`]: stagingLogin,
+      [`${productionOrigins.admin}/api/whoami`]: wrongPath,
+    };
+    const fetchImpl = (url, init) =>
+      Promise.resolve(replaced[url] ?? productionAnswer(url, init));
+    expect(
+      await runSmoke(productionOrigins, productionOptions(), fetchImpl, noPause)
+    ).toEqual([
+      "admin /health without sign-in (redirected to Access): 302 redirect outside the Access team",
+      "admin /api/whoami without sign-in (redirected to Access): 302 redirect to another Access page",
+    ]);
+  });
+
+  it("refuses an origin that is not the declared host, before any request", async () => {
+    const fetchImpl = vi.fn();
+    for (const web of [
+      undefined,
+      origins.web,
+      "https://outro.exemplo.com.br",
+      `${productionOrigins.web}/path`,
+    ]) {
+      // biome-ignore lint/performance/noAwaitInLoops: each case on its own, for a clear failure
+      const failures = await runSmoke(
+        { ...productionOrigins, web },
+        productionOptions(),
+        fetchImpl,
+        noPause
+      );
+      expect(failures).toEqual([
+        "web: the production web only accepts https://app.exemplo.com.br, without a path",
+      ]);
+    }
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("never sends a request across environments", async () => {
+    const [check] = smokeChecks(
+      origins,
+      { release: RELEASE, shell: { index: "", serviceWorker: "" } },
+      STAGING_TARGET
+    );
+    const fetchImpl = vi.fn();
+    await expect(send(check, fetchImpl, production())).rejects.toThrow(
+      "host_refused"
+    );
+    const [productionCheck] = smokeChecks(
+      productionOrigins,
+      { release: RELEASE, shell: { index: "", serviceWorker: "" } },
+      production()
+    );
+    await expect(send(productionCheck, fetchImpl)).rejects.toThrow(
+      "host_refused"
+    );
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+});
+
+describe("the choice of the environment", () => {
+  it("is staging without --env, and the two spellings of --env are read", () => {
+    expect(environmentOf([])).toBe("staging");
+    expect(environmentOf(["--env", "staging"])).toBe("staging");
+    expect(environmentOf(["--env", "production"])).toBe("production");
+    expect(environmentOf(["--env=production"])).toBe("production");
+  });
+
+  it("refuses an unknown or missing environment", () => {
+    for (const argv of [
+      ["--env"],
+      ["--env", "prod"],
+      ["--env="],
+      ["--env=Production"],
+      ["--env", "--other"],
+    ]) {
+      expect(environmentOf(argv), argv.join(" ")).toBeNull();
+    }
+  });
+
+  it("keeps staging reading its own three variables, with its fixed hosts", () => {
+    const plan = planOf("staging", {
+      PRODUCTION_WEB_URL: "https://app.exemplo.com.br",
+      STAGING_ADMIN_URL: "a",
+      STAGING_CATALOG_URL: "c",
+      STAGING_WEB_URL: "w",
+    });
+    expect(plan.refusals).toEqual([]);
+    expect(plan.origins).toEqual({ admin: "a", catalog: "c", web: "w" });
+    expect(plan.target).toBe(STAGING_TARGET);
+    expect(STAGING_TARGET.hosts).toBe(STAGING_FIXED_HOST);
+    expect(STAGING_TARGET.userAgent).toBe(USER_AGENT);
+    expect(STAGING_TARGET.accessTeam).toBe(STAGING_ACCESS_TEAM);
+    expect(STAGING_TARGET.accessLoginPath).toBe(
+      "/cdn-cgi/access/login/admin.araute.app"
+    );
+  });
+
+  it("plans production from its own variables only, never from the staging ones", () => {
+    const plan = planOf("production", {
+      ...productionEnv,
+      STAGING_WEB_URL: origins.web,
+    });
+    expect(plan.refusals).toEqual([]);
+    expect(plan.origins).toEqual(productionOrigins);
+    expect(plan.target.name).toBe("production");
+  });
+});
+
+describe("the command line of the smoke", () => {
+  const run = (args, env) =>
+    spawnSync(process.execPath, ["scripts/smoke-staging.mjs", ...args], {
+      encoding: "utf8",
+      env: { PATH: process.env.PATH, ...env },
+      timeout: 20_000,
+    });
+
+  it("refuses --env production with no variable: exit 1, a clear message, no request", () => {
+    const result = run(["--env", "production"], {});
+    expect(result.status).toBe(1);
+    expect(result.stdout).toBe("");
+    expect(result.stderr).toContain("PRODUCTION_WEB_URL: missing");
+    expect(result.stderr).toContain("production domain not decided");
+    expect(result.stderr).toContain(
+      "Smoke refused (production): nothing was requested."
+    );
+  });
+
+  it("refuses --env production even with the staging variables set", () => {
+    const result = run(["--env=production"], {
+      HEAD_SHA: COMMIT,
+      STAGING_ADMIN_URL: origins.admin,
+      STAGING_CATALOG_URL: origins.catalog,
+      STAGING_WEB_URL: origins.web,
+    });
+    expect(result.status).toBe(1);
+    expect(result.stdout).toBe("");
+    expect(result.stderr).toContain("Smoke refused (production)");
+  });
+
+  it("refuses an unknown environment", () => {
+    const result = run(["--env", "prod"], {});
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("--env must be one of staging, production");
+  });
+
+  it("runs staging, with no option, as the deploy workflow does: it refuses a staging host that is not fixed", () => {
+    const result = run([], {
+      HEAD_SHA: COMMIT,
+      STAGING_ADMIN_URL: origins.admin,
+      STAGING_CATALOG_URL: origins.catalog,
+      STAGING_WEB_URL: "https://outro.exemplo.com.br",
+    });
+    expect(result.status).toBe(1);
+    expect(result.stdout).toBe("");
+    expect(result.stderr).toBe("Staging smoke failed (1).\n");
   });
 });
