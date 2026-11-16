@@ -9,8 +9,12 @@ const HOOK = new URL("./use-product-delete.ts", import.meta.url);
 
 const COMMENTS = /\/\*[\s\S]*?\*\/|\/\/.*$/gm;
 const IMPORT = /^import\s+([^;]*?)\s+from\s+"([^"]+)";/gm;
+// Textual: a queue reached through a name outside these words and outside the static imports is not seen.
 const OFFLINE_WORDS = /outbox|enqueue|createOffline|stores\b/gi;
-const DYNAMIC_IMPORT = /\bimport\s*\(/g;
+const QUOTED_OR_COMMENT =
+  /"(?:\\.|[^"\\\n])*"|'(?:\\.|[^'\\\n])*'|\/\*[\s\S]*?\*\/|\/\/[^\n]*|[\s\S]/y;
+const TEMPLATE_TEXT = /(?:\\[\s\S]|[^`\\$]|\$(?!\{))*/y;
+const DYNAMIC_IMPORT = /(?<!\btypeof\s+)\bimport\s*\(/g;
 const TYPE_KEYWORD = /\btype\s+/g;
 const BRACES = /[{}]/g;
 
@@ -31,9 +35,44 @@ function importedNames(source: string): string[] {
   );
 }
 
-/** Textual limit: a queue reached through a name outside these words and outside the static imports is not seen. */
+/** Source with comments, quoted strings and template text blanked; the code inside `${}` stays. Regex literals are not understood. */
+function liveCode(source: string): string {
+  const stack: string[] = [];
+  let live = "";
+  let inTemplate = false;
+  let at = 0;
+  while (at < source.length) {
+    if (inTemplate) {
+      TEMPLATE_TEXT.lastIndex = at;
+      at += (TEMPLATE_TEXT.exec(source)?.[0] ?? "").length;
+      inTemplate = false;
+      if (source.startsWith("${", at)) {
+        stack.push("template");
+        at += 2;
+      } else {
+        at += 1;
+      }
+      live += " ";
+      continue;
+    }
+    QUOTED_OR_COMMENT.lastIndex = at;
+    const token = QUOTED_OR_COMMENT.exec(source)?.[0] ?? "";
+    at += token.length;
+    if (token === "`") {
+      inTemplate = true;
+    } else if (token === "{") {
+      stack.push("brace");
+    } else if (token === "}") {
+      inTemplate = stack.pop() === "template";
+    }
+    live += token.length > 1 ? " " : token;
+  }
+  return live;
+}
+
+/** `import()` calls: `typeof import("x")` is read as the type form (a runtime `typeof import(...)` would pass), and quoted or commented text does not count. */
 function dynamicImports(source: string): string[] {
-  return code(source).match(DYNAMIC_IMPORT) ?? [];
+  return liveCode(source).match(DYNAMIC_IMPORT) ?? [];
 }
 
 function offlineWords(source: string): string[] {
@@ -86,6 +125,30 @@ workspace.stores.outbox.enqueue(command);`;
     expect(importedNames(widened).sort()).not.toEqual(
       ALLOWED_IMPORTS.filter((name) => name.startsWith("./product-commands"))
     );
+  });
+});
+
+describe("o detector de import dinâmico do hook de Excluir", () => {
+  it("reprova import() e deixa passar o que não é chamada", () => {
+    expect(dynamicImports('const m = await import("x");')).toHaveLength(1);
+    expect(dynamicImports('type T = typeof import("x");')).toEqual([]);
+    expect(dynamicImports('type T = typeof   import ("x");')).toEqual([]);
+    expect(dynamicImports('const s = "import(";')).toEqual([]);
+    expect(dynamicImports("const s = 'import(';")).toEqual([]);
+    expect(dynamicImports('/* import("x") */ const a = 1;')).toEqual([]);
+    expect(
+      dynamicImports('const u = "https://x"; await import("y");')
+    ).toHaveLength(1);
+    const inTemplate = `const a = \`\${await import("y")}\`;`;
+    expect(dynamicImports(inTemplate)).toHaveLength(1);
+    const quotedInTemplate = `const a = \`say "\${await import("y")}"\`;`;
+    expect(dynamicImports(quotedInTemplate)).toHaveLength(1);
+    const slashesInTemplate = `const a = \`http://x\${await import("y")}\`;`;
+    expect(dynamicImports(slashesInTemplate)).toHaveLength(1);
+    const textInTemplate = 'const a = `import("y")`;';
+    expect(dynamicImports(textInTemplate)).toEqual([]);
+    const nestedBraces = `const a = \`\${{ k: 1 }.k}\`; await import("y");`;
+    expect(dynamicImports(nestedBraces)).toHaveLength(1);
   });
 });
 
