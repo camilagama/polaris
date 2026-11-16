@@ -1233,6 +1233,7 @@ const STOCK_ADDRESS = /^\/inventory\?busca=Jaqueta.*arquivados=1/;
 const RATE_LIMITED_TEXT =
   /^Você excluiu muitos produtos agora\. Tente de novo às \d{2}:\d{2}\.$/;
 const jacketArchived = () => product(1, JACKET, "archived");
+const REREAD_MARK = "Atualizada em outro aparelho";
 const refusalOf = (
   status: number,
   code: string,
@@ -1526,7 +1527,9 @@ test("a lista relida traz a versão nova: a próxima tentativa de Excluir manda 
   const catalog = { archived: [jacketArchived()] as unknown[] };
   const sent = await openArchivedJacketOnList(page, catalog, (route, calls) => {
     if (calls === 1) {
-      catalog.archived = [{ ...jacketArchived(), version: 2 }];
+      catalog.archived = [
+        { ...jacketArchived(), description: REREAD_MARK, version: 2 },
+      ];
       return route.fulfill(
         refusalOf(409, "CONFLICT", { reason: "product_version_conflict" })
       );
@@ -1550,14 +1553,18 @@ test("a lista relida traz a versão nova: a próxima tentativa de Excluir manda 
     .fill(JACKET);
   const confirm = dialog.getByRole("button", { name: "Excluir produto" });
   const reread = page.waitForResponse(async (response) => {
-    if (!response.url().includes("/rpc/product/list")) {
+    if (new URL(response.url()).pathname !== "/rpc/product/list") {
       return false;
     }
-    const { json } = (await response.json()) as {
-      json: { products: { name: string; version: number }[] };
-    };
-    return json.products.some(
-      (listed) => listed.name === JACKET && listed.version === 2
+    const body: unknown = await response.json().catch(() => null);
+    const products = (body as { json?: { products?: unknown } } | null)?.json
+      ?.products;
+    return (
+      Array.isArray(products) &&
+      products.some(
+        (listed: { name?: unknown; version?: unknown } | null) =>
+          listed?.name === JACKET && listed.version === 2
+      )
     );
   });
   await confirm.click();
@@ -1567,6 +1574,8 @@ test("a lista relida traz a versão nova: a próxima tentativa de Excluir manda 
   expect(sent.map((call) => call.expectedVersion)).toEqual([1]);
   await reread;
   await expect(page.getByText("Carregando produtos…")).toBeHidden();
+  // the hook retargets once the list shows the new version; nothing in the dialog changes, so the row's new description is the signal
+  await expect(page.getByText(REREAD_MARK)).toBeVisible();
   await confirm.click();
   await expect.poll(() => sent.length).toBe(2);
   expect(sent.map((call) => call.expectedVersion)).toEqual([1, 2]);
