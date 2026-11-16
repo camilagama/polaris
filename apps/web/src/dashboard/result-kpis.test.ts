@@ -404,12 +404,10 @@ describe("the cards of the Resultado (v7 § 8)", () => {
         today: "2026-10-25",
       }).read(null).ticket;
 
-    // Known limit: the period has sales, so "no período" denies what the Vendas card counts. Pinned as it is today; the
-    // server sends no ticket only for a period with none, so the screen does not meet it
-    it("shows the dash and says 'Sem vendas no período' (the words of a period with none)", () => {
+    it("shows the dash and says the ticket is unavailable, not 'Sem vendas no período'", () => {
       const ticket = atRest({ ticket: null });
       expect(ticket.value).toBeNull();
-      expect(ticket.count).toBe("Sem vendas no período");
+      expect(ticket.count).toBe("Ticket indisponível agora");
     });
 
     it("says nothing under the server's ticket when it is sent", () => {

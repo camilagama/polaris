@@ -2,6 +2,7 @@ import { Money } from "@polaris/domain/money/money";
 import {
   NO_KNOWN_COST_RESULT,
   NO_SALES_UNTIL_DAY,
+  TICKET_UNAVAILABLE,
 } from "../dashboard/dashboard-model";
 import {
   type MissingDays,
@@ -523,7 +524,7 @@ function resultReading({
  */
 function noTicketText(count: number, dayOfPeriodWithSales: boolean): string {
   if (count > 0) {
-    return "Ticket indisponível agora";
+    return TICKET_UNAVAILABLE;
   }
   return dayOfPeriodWithSales ? NO_SALES_UNTIL_DAY : "Sem vendas no período";
 }

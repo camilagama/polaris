@@ -19,7 +19,7 @@ import {
   type StoredDay,
   type StoredPeriodSummary,
 } from "../lib/period-summary-cache";
-import { NO_SALES_UNTIL_DAY } from "./dashboard-model";
+import { NO_SALES_UNTIL_DAY, TICKET_UNAVAILABLE } from "./dashboard-model";
 import {
   type MissingDays,
   type MissingInput,
@@ -386,6 +386,17 @@ function resultReading({
 const ticketOf = (sum: Cumulative | undefined): bigint | null =>
   sum && sum.count > 0 ? divideHalfUp(sum.net, BigInt(sum.count)) : null;
 
+/**
+ * No ticket: with sales and none sent at rest the card says it is unavailable instead of denying the sales the Vendas
+ * card counts; a day read before the first sale of a period that has sales says only "Sem vendas".
+ */
+function noTicketText(atRest: boolean, salesCount: number): string {
+  if (atRest && salesCount > 0) {
+    return TICKET_UNAVAILABLE;
+  }
+  return noSalesText(false, !atRest && salesCount > 0);
+}
+
 function ticketReading({
   atRest,
   cards,
@@ -409,8 +420,7 @@ function ticketReading({
     value = ticket === null ? null : Money.fromMinorUnits(ticket).toString();
   }
   return {
-    count:
-      value === null ? noSalesText(false, !atRest && cards.salesCount > 0) : "",
+    count: value === null ? noTicketText(atRest, cards.salesCount) : "",
     date: range,
     delta,
     help: ticketHelp(range, delta ? priorSales.range : null),
