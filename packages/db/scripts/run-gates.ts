@@ -840,7 +840,7 @@ async function main() {
     },
     async () => {
       try {
-        await admin.query(`REVOKE polaris_pr11_runtime FROM "${login}"`);
+        // DROP ROLE already removes the membership in the runtime role, so no REVOKE comes first
         await admin.query(`DROP ROLE IF EXISTS "${login}"`);
       } finally {
         await admin.end();
