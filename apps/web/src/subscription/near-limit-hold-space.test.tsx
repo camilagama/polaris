@@ -92,6 +92,7 @@ const planWith = (images: number) => ({
 });
 
 const near: NearLimitView = {
+  freeableProducts: 0,
   kind: "near",
   proMax: null,
   usage: { max: 50, subject: "images", used: 47 },
