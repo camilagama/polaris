@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   ENVIRONMENTS,
   findBackupWorkflowProblems,
+  REQUIRED_LINES,
   WORKFLOW_PATH,
 } from "./verify-backup-workflow.mjs";
 
@@ -21,8 +22,27 @@ const jobOf = (env) => {
       BACKUP_BUCKET: ${config.bucket}
       RECIPIENTS: ${config.recipients}
     steps:
+      - uses: actions/checkout@pinned
+        with:
+          persist-credentials: false
+      - name: The recipients are the reviewed ones
+        run: |
+          set -euo pipefail
+          if ! grep -Eq '^age1[02-9ac-hj-np-z]{58}$' "$RECIPIENTS"; then
+            exit 1
+          fi
+          actual=$(sha256sum "$RECIPIENTS" | cut -d' ' -f1)
+          if [ -z "$EXPECTED" ] || [ "$actual" != "$EXPECTED" ]; then
+            exit 1
+          fi
       - name: Dump the ${env} database
-        run: bash scripts/backup/seal.sh /dev/shm/polaris-backup "$RECIPIENTS" out
+        run: bash scripts/backup/dump.sh /dev/shm/polaris-backup
+      - name: Seal
+        run: bash scripts/backup/seal.sh /dev/shm/polaris-backup "$RECIPIENTS" "$RUNNER_TEMP/$STAMP.tar.age"
+      - name: Upload and retention
+        env:
+          R2_BACKUP_BUCKET: \${{ env.BACKUP_BUCKET }}
+        run: bash scripts/backup/upload.sh
       - name: Open the failure issue
         run: gh issue create --label ${config.label} --title "The ${env} backup failed"
 `;
@@ -144,8 +164,8 @@ describe("the backup workflow check", () => {
   it("refuses a step that exists in one job only", () => {
     const production = replaceIn(
       jobOf("production"),
-      "        run: bash scripts/backup/seal.sh",
-      "        run: echo skipped && bash scripts/backup/seal.sh"
+      "        run: bash scripts/backup/dump.sh",
+      "        run: echo skipped && bash scripts/backup/dump.sh"
     );
     expect(
       findBackupWorkflowProblems(workflow({ production })).some((problem) =>
@@ -161,6 +181,31 @@ describe("the backup workflow check", () => {
         problem.startsWith("the steps of staging and production differ at line")
       )
     ).toBe(true);
+  });
+
+  it.each(REQUIRED_LINES)(
+    "refuses both jobs losing the line `%s`, which comparing them would not see",
+    (line) => {
+      const without = (text) => replaceIn(text, `${line}\n`, "");
+      const problems = findBackupWorkflowProblems(
+        workflow({
+          staging: without(jobOf("staging")),
+          production: without(jobOf("production")),
+        })
+      );
+      expect(problems).toEqual([
+        `staging: missing the line \`${line.trim()}\``,
+        `production: missing the line \`${line.trim()}\``,
+      ]);
+    }
+  );
+
+  it("does not trip on a job that ends without the blank line before the next one", () => {
+    expect(
+      findBackupWorkflowProblems(
+        workflow({ production: jobOf("production").trimEnd() })
+      )
+    ).toEqual([]);
   });
 
   it("refuses a third job, a missing job and a reversed order", () => {

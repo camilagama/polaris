@@ -10,6 +10,8 @@ import { fileURLToPath, pathToFileURL } from "node:url";
  *   `workflow_dispatch` (the jobs hold secrets);
  * - a job's switch, Environment, concurrency group, database marker, bucket, key file or issue label is not its own
  *   environment's;
+ * - a job lacks a line that keeps the dump from reading the database or leaving the runner wrongly (the key and hash
+ *   checks of the recipients, the seal, the bucket the upload uses, no credentials left in the checkout);
  * - a job names the other environment anywhere;
  * - the steps of the two jobs differ in anything but those names.
  */
@@ -85,6 +87,17 @@ function normalized(text, config) {
     .join("\n");
 }
 
+// Identical in both jobs, so comparing the jobs with each other would not notice both losing one of them.
+export const REQUIRED_LINES = [
+  "          persist-credentials: false",
+  `          if ! grep -Eq '^age1[02-9ac-hj-np-z]{58}$' "$RECIPIENTS"; then`,
+  "          actual=$(sha256sum \"$RECIPIENTS\" | cut -d' ' -f1)",
+  '          if [ -z "$EXPECTED" ] || [ "$actual" != "$EXPECTED" ]; then',
+  '        run: bash scripts/backup/seal.sh /dev/shm/polaris-backup "$RECIPIENTS" "$RUNNER_TEMP/$STAMP.tar.age"',
+  // biome-ignore lint/suspicious/noTemplateCurlyInString: the line is workflow text, an Actions expression, not a template
+  "          R2_BACKUP_BUCKET: ${{ env.BACKUP_BUCKET }}",
+];
+
 function expectedLines(env, config) {
   return [
     `    if: vars.${config.enabled} == 'true' && github.ref == 'refs/heads/main' && (github.event_name == 'schedule' || inputs.environment == '${env}')`,
@@ -93,6 +106,7 @@ function expectedLines(env, config) {
     `      BACKUP_ENVIRONMENT: ${env}`,
     `      BACKUP_BUCKET: ${config.bucket}`,
     `      RECIPIENTS: ${config.recipients}`,
+    ...REQUIRED_LINES,
   ];
 }
 
@@ -135,8 +149,10 @@ function triggerProblems(lines) {
 }
 
 function driftProblem(staging, production) {
-  const left = normalized(staging, ENVIRONMENTS.staging).split("\n");
-  const right = normalized(production, ENVIRONMENTS.production).split("\n");
+  const left = normalized(staging.trimEnd(), ENVIRONMENTS.staging).split("\n");
+  const right = normalized(production.trimEnd(), ENVIRONMENTS.production).split(
+    "\n"
+  );
   const at = left.findIndex((text, index) => text !== right[index]);
   if (at === -1 && left.length === right.length) {
     return [];
