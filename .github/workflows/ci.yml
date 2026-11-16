@@ -242,8 +242,9 @@ jobs:
   # and on demand; it does not repeat on main what the pull request already proved.
   # 24/10: the same suites and projects as before, split into four Playwright shards that
   # run in parallel (each shard runs its share of test:offline-poc and test:pwa, both
-  # browser projects); the catalog CSP test rides with shard 1. Splitting by browser
-  # project left 21 min on desktop and 6 on mobile (run 40078910891), so shards it is.
+  # browser projects). Splitting by browser project left 21 min on desktop and 6 on
+  # mobile (run 40078910891), so shards it is. The catalog CSP test runs in its own job
+  # (offline-catalog-csp-browser) so it no longer adds to the longest shard.
   # The job named "Offline persistence browser gate" stays as the single result that
   # branch rules, the automerge and the bots read.
   offline-poc-browser-part:
@@ -279,16 +280,6 @@ jobs:
         working-directory: apps/web
       - run: bun run test:pwa --shard=${{ matrix.shard }}/4
         working-directory: apps/web
-      # The public catalog under its production CSP (ADR 0090): nonce on every inline
-      # script, no inline style, hydration without violations, catalog_nonce_missing.
-      - if: ${{ matrix.shard == 1 }}
-        run: bunx playwright install chromium
-        working-directory: apps/catalog
-      - if: ${{ matrix.shard == 1 }}
-        name: Catalog CSP browser test
-        run: bun run --filter @polaris/catalog test:e2e
-        env:
-          POLARIS_CATALOG_E2E: "1"
       # The whole trace of the tab (rastro-*.txt of e2e-pwa/network-trace.ts) and the Playwright traces of the
       # failed tests: without this the files go away with the runner. Skipped when the shard is green.
       - if: ${{ failure() }}
@@ -299,24 +290,64 @@ jobs:
           retention-days: 7
           if-no-files-found: ignore
 
+  # The public catalog under its production CSP (ADR 0090): nonce on every inline
+  # script, no inline style, hydration without violations, catalog_nonce_missing.
+  # Same conditions as the shards; the aggregate below reads its result too.
+  offline-catalog-csp-browser:
+    name: Catalog CSP browser test
+    needs: changes
+    if: ${{ !cancelled() && github.event_name != 'push' && (needs.changes.result != 'success' || needs.changes.outputs.browser == 'true') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: .bun-version
+      - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+          restore-keys: bun-${{ runner.os }}-
+      - run: bun install --frozen-lockfile
+      - run: bunx playwright install --with-deps chromium
+        working-directory: apps/catalog
+      - run: bun run --filter @polaris/catalog test:e2e
+        env:
+          POLARIS_CATALOG_E2E: "1"
+      - if: ${{ failure() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: offline-catalog-csp-trace
+          path: apps/catalog/test-results/
+          retention-days: 7
+          if-no-files-found: ignore
+
   offline-poc-browser:
     name: Offline persistence browser gate
-    needs: [changes, offline-poc-browser-part]
+    needs: [changes, offline-poc-browser-part, offline-catalog-csp-browser]
     if: ${{ !cancelled() && github.event_name != 'push' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions: {}
     steps:
-      # green when every shard passed, or when the change detection skipped them on purpose
-      # (browser explicitly false); red on any failure, cancellation or any other skip
+      # green when every shard and the catalog CSP test passed, or when the change detection
+      # skipped them on purpose (browser explicitly false); red on any failure, cancellation
+      # or any other skip
       - env:
           PARTS: ${{ needs.offline-poc-browser-part.result }}
+          CATALOG: ${{ needs.offline-catalog-csp-browser.result }}
           CHANGES: ${{ needs.changes.result }}
           BROWSER: ${{ needs.changes.outputs.browser }}
         run: |
-          echo "parts=$PARTS changes=$CHANGES browser=$BROWSER"
-          if [ "$PARTS" = success ]; then exit 0; fi
-          if [ "$PARTS" = skipped ] && [ "$CHANGES" = success ] && [ "$BROWSER" = false ]; then exit 0; fi
+          echo "parts=$PARTS catalog=$CATALOG changes=$CHANGES browser=$BROWSER"
+          if [ "$PARTS" = success ] && [ "$CATALOG" = success ]; then exit 0; fi
+          if [ "$PARTS" = skipped ] && [ "$CATALOG" = skipped ] && [ "$CHANGES" = success ] && [ "$BROWSER" = false ]; then exit 0; fi
           exit 1
 
   e2e-real:
