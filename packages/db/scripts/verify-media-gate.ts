@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { and, asc, eq } from "drizzle-orm";
-import { Client } from "pg";
+import { Client, type PoolClient } from "pg";
 import { createDatabase } from "../src/client";
 import {
   configureProductVariants,
@@ -67,6 +67,76 @@ async function expectSqlState(
     },
     label
   );
+}
+
+async function insertMediaAsset(
+  client: Pick<PoolClient, "query">,
+  organizationId: string,
+  id: string = randomUUID()
+): Promise<string> {
+  const uploadCommandId = randomUUID();
+  const fingerprint = createHash("sha256").update(id).digest("hex");
+  await client.query(
+    "INSERT INTO public.media_assets " +
+      "(id, organization_id, byte_size, content_type, height, input_fingerprint, storage_key, upload_command_id, width) " +
+      "VALUES ($1, $2, 2048, 'image/webp', 480, $3, $4, $5, 640)",
+    [
+      id,
+      organizationId,
+      fingerprint,
+      `media/v2/${organizationId}/${randomUUID()}/${uploadCommandId}/${fingerprint}/${randomUUID()}.webp`,
+      uploadCommandId,
+    ]
+  );
+  return id;
+}
+
+async function expectSqlStateWithUnlinkedAsset(
+  pool: AdminPool,
+  organizationId: string,
+  statement: string,
+  parameters: (assetId: string) => unknown[],
+  expected: string,
+  label: string
+): Promise<void> {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const assetId = await insertMediaAsset(client, organizationId);
+    await expectSqlState(
+      client.query(statement, parameters(assetId)),
+      expected,
+      label
+    );
+  } finally {
+    try {
+      await client.query("ROLLBACK");
+    } finally {
+      client.release();
+    }
+  }
+}
+
+async function expectUnlinkedAssetRefusedAtCommit(
+  pool: AdminPool,
+  organizationId: string
+): Promise<void> {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    await insertMediaAsset(client, organizationId);
+    await expectSqlState(
+      client.query("COMMIT"),
+      "23514",
+      "an asset without a product link is refused at commit"
+    );
+  } finally {
+    try {
+      await client.query("ROLLBACK");
+    } finally {
+      client.release();
+    }
+  }
 }
 
 async function createTenantFixture(
@@ -306,11 +376,19 @@ async function main(): Promise<void> {
       [runtimeRole, expectedTables]
     );
     assert.equal(grants.rowCount, expectedTables.length);
+    const expectedGrants: Record<string, { insert: boolean; delete: boolean }> =
+      {
+        media_assets: { insert: true, delete: false },
+        product_media: { insert: true, delete: true },
+        variant_media: { insert: true, delete: true },
+      };
     for (const grant of grants.rows) {
+      const expectedGrant = expectedGrants[grant.table_name];
+      assert.ok(expectedGrant, `${grant.table_name} is a media table`);
       assert.equal(grant.can_select, true, `${grant.table_name} SELECT grant`);
       assert.equal(
         grant.can_insert,
-        false,
+        expectedGrant.insert,
         `${grant.table_name} runtime INSERT`
       );
       assert.equal(
@@ -320,7 +398,7 @@ async function main(): Promise<void> {
       );
       assert.equal(
         grant.can_delete,
-        false,
+        expectedGrant.delete,
         `${grant.table_name} runtime DELETE`
       );
     }
@@ -351,33 +429,45 @@ async function main(): Promise<void> {
     const assetA = randomUUID();
     const assetB = randomUUID();
     const assetC = randomUUID();
-    const assetOrphan = randomUUID();
-    await pool.query(
-      "INSERT INTO public.media_assets (id, organization_id) VALUES " +
-        "($1, $3), ($2, $3), ($4, $3), ($5, $6)",
-      [
-        assetA,
-        assetB,
+    const linkingTransaction = await pool.connect();
+    try {
+      await linkingTransaction.query("BEGIN");
+      await insertMediaAsset(
+        linkingTransaction,
         tenantA.organizationId,
-        assetOrphan,
-        assetC,
-        tenantB.organizationId,
-      ]
-    );
-    await pool.query(
-      "INSERT INTO public.product_media " +
-        "(organization_id, product_id, media_asset_id, position) " +
-        "VALUES ($1, $2, $3, 0), ($1, $2, $4, 1), ($5, $6, $7, 0)",
-      [
+        assetA
+      );
+      await insertMediaAsset(
+        linkingTransaction,
         tenantA.organizationId,
-        productA,
-        assetA,
-        assetB,
+        assetB
+      );
+      await insertMediaAsset(
+        linkingTransaction,
         tenantB.organizationId,
-        productB,
-        assetC,
-      ]
-    );
+        assetC
+      );
+      await linkingTransaction.query(
+        "INSERT INTO public.product_media " +
+          "(organization_id, product_id, media_asset_id, position) " +
+          "VALUES ($1, $2, $3, 0), ($1, $2, $4, 1), ($5, $6, $7, 0)",
+        [
+          tenantA.organizationId,
+          productA,
+          assetA,
+          assetB,
+          tenantB.organizationId,
+          productB,
+          assetC,
+        ]
+      );
+      await linkingTransaction.query("COMMIT");
+    } catch (error) {
+      await linkingTransaction.query("ROLLBACK");
+      throw error;
+    } finally {
+      linkingTransaction.release();
+    }
 
     await pool.query(
       "INSERT INTO public.variant_media " +
@@ -398,23 +488,23 @@ async function main(): Promise<void> {
       ]
     );
 
-    await expectSqlState(
-      pool.query(
-        "INSERT INTO public.product_media " +
-          "(organization_id, product_id, media_asset_id, position) " +
-          "VALUES ($1, $2, $3, 0)",
-        [tenantA.organizationId, productA, assetOrphan]
-      ),
+    await expectSqlStateWithUnlinkedAsset(
+      pool,
+      tenantA.organizationId,
+      "INSERT INTO public.product_media " +
+        "(organization_id, product_id, media_asset_id, position) " +
+        "VALUES ($1, $2, $3, 0)",
+      (assetId) => [tenantA.organizationId, productA, assetId],
       "23505",
       "product media position must be unique"
     );
-    await expectSqlState(
-      pool.query(
-        "INSERT INTO public.product_media " +
-          "(organization_id, product_id, media_asset_id, position) " +
-          "VALUES ($1, $2, $3, -1)",
-        [tenantA.organizationId, productA, assetOrphan]
-      ),
+    await expectSqlStateWithUnlinkedAsset(
+      pool,
+      tenantA.organizationId,
+      "INSERT INTO public.product_media " +
+        "(organization_id, product_id, media_asset_id, position) " +
+        "VALUES ($1, $2, $3, -1)",
+      (assetId) => [tenantA.organizationId, productA, assetId],
       "23514",
       "product media position must be nonnegative"
     );
@@ -458,6 +548,7 @@ async function main(): Promise<void> {
       "23505",
       "variant media position must be unique per variant"
     );
+    await expectUnlinkedAssetRefusedAtCommit(pool, tenantA.organizationId);
     await expectSqlState(
       pool.query(
         "DELETE FROM public.media_assets WHERE organization_id = $1 AND id = $2",
@@ -491,7 +582,7 @@ async function main(): Promise<void> {
     );
     assert.deepEqual(
       visibleA.rows.map((row) => row.id).sort(),
-      [assetA, assetB, assetOrphan].sort()
+      [assetA, assetB].sort()
     );
     const visibleProductMediaA = await withTenantContext(
       runtimeA,
@@ -599,13 +690,13 @@ async function main(): Promise<void> {
       historicalVariantMedia.rows.map((row) => row.media_asset_id),
       [assetA, assetA, assetB]
     );
-    await expectSqlState(
-      pool.query(
-        "INSERT INTO public.product_media " +
-          "(organization_id, product_id, media_asset_id, position) " +
-          "VALUES ($1, $2, $3, 2)",
-        [tenantA.organizationId, productA, assetOrphan]
-      ),
+    await expectSqlStateWithUnlinkedAsset(
+      pool,
+      tenantA.organizationId,
+      "INSERT INTO public.product_media " +
+        "(organization_id, product_id, media_asset_id, position) " +
+        "VALUES ($1, $2, $3, 2)",
+      (assetId) => [tenantA.organizationId, productA, assetId],
       "23514",
       "database blocks new product media links after tombstone"
     );
@@ -634,12 +725,13 @@ async function main(): Promise<void> {
       serverVersion: serverInfo.server_version,
       status: "passed",
       tests: [
-        "media tables are protected by FORCE RLS and runtime grants are read-only",
+        "media tables are protected by FORCE RLS and the runtime has only the grants the media commands need (no UPDATE; media_assets has no DELETE)",
         "asset can be reused across variants of its owning product without duplication",
         "product and variant media positions are nonnegative and unique per parent",
         "an asset cannot link to another product or organization",
         "variant media must reference the same product's media asset",
         "tenant-scoped reads hide assets and associations belonging to other organizations",
+        "an asset without a product link is refused at commit",
         "linked assets cannot be hard-deleted",
         "tombstone preserves readable media links and blocks direct SQL mutations",
       ],
