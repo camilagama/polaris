@@ -248,6 +248,28 @@ gates.push(
     name: "media-upload",
     script: "verify-media-upload-gate.ts",
   },
+  // the media tables' schema: FORCE RLS, the runtime's column grants, the link triggers and the tombstone guard
+  {
+    env: (context) => ({
+      POLARIS_MEDIA_GATE_CONFIRM_DISPOSABLE: "polaris-pr33-media-schema-gate",
+      POLARIS_MEDIA_GATE_DATABASE_URL: context.url,
+      POLARIS_MEDIA_GATE_EXPECTED_HOSTNAME: context.host,
+      POLARIS_MEDIA_GATE_RUNTIME_DATABASE_URL: context.runtimeUrl,
+    }),
+    name: "media-schema",
+    script: "verify-media-gate.ts",
+  },
+  // the cleanup claim of the stored objects: the definer's owner and grants, and the lock against a concurrent insert
+  {
+    env: (context) => ({
+      POLARIS_MEDIA_DERIVATIVES_GATE_BRANCH: context.branch,
+      POLARIS_MEDIA_DERIVATIVES_GATE_DATABASE_URL: context.url,
+      POLARIS_MEDIA_DERIVATIVES_GATE_EXPECTED_HOSTNAME: context.host,
+      POLARIS_MEDIA_DERIVATIVES_GATE_TENANT_DATABASE_URL: context.runtimeUrl,
+    }),
+    name: "media-derivatives",
+    script: "verify-media-derivatives-gate.ts",
+  },
   {
     env: (context) => ({
       POLARIS_TENANT_CONTEXT_TEST_CONFIRM_DISPOSABLE:
@@ -462,6 +484,8 @@ const suites: Record<string, string[]> = {
     "inventory",
     "customers",
     "media-upload",
+    "media-schema",
+    "media-derivatives",
     "tenant-context",
     "rls",
     "migrations-without-superuser",
@@ -491,6 +515,8 @@ const suites: Record<string, string[]> = {
     "gate2-runtime",
     "inventory",
     "media-upload",
+    "media-schema",
+    "media-derivatives",
     "media-commands",
     "review-hardening",
   ],
