@@ -169,16 +169,40 @@ function byMonth(
     const key = String(day.date).slice(0, 7);
     months.set(key, [...(months.get(key) ?? []), day]);
   }
-  return [...months.values()].map((days) => ({
-    date: days[0]?.date,
-    days: days.length,
-    netSales: money(
-      days.reduce((sum, day) => sum + Math.round(Number(day.netSales) * 100), 0)
-    ),
-    salesCount: days.reduce((sum, day) => sum + Number(day.salesCount), 0),
-    to: days.at(-1)?.date,
-    unknownDays: 0,
-  }));
+  return [...months.values()].map((days) => {
+    const unknownDays = days.filter(
+      (day) => day.operatingResult === null
+    ).length;
+    return {
+      date: days[0]?.date,
+      days: days.length,
+      netSales: money(
+        days.reduce(
+          (sum, day) => sum + Math.round(Number(day.netSales) * 100),
+          0
+        )
+      ),
+      salesCount: days.reduce((sum, day) => sum + Number(day.salesCount), 0),
+      to: days.at(-1)?.date,
+      unknownDays,
+      ...("operatingResult" in (days[0] ?? {})
+        ? {
+            costs: unknownDays > 0 ? null : "0.00",
+            operatingExpenses: "0.00",
+            operatingResult:
+              unknownDays > 0
+                ? null
+                : money(
+                    days.reduce(
+                      (sum, day) =>
+                        sum + Math.round(Number(day.operatingResult) * 100),
+                      0
+                    )
+                  ),
+          }
+        : {}),
+    };
+  });
 }
 
 class FakeServer {
@@ -6188,4 +6212,66 @@ test.describe("Mais vendidos do mês: a linha por largura da coluna (uma linha s
     },
     { coarse: false }
   );
+});
+
+test.describe("os dias sem custo de um mês de outro ano, no período digitado do Início", () => {
+  const SALE = "2025-05-31";
+  const SOLD_IN_MAY: Scenario = {
+    ...SOLD,
+    days: { ...SOLD.days, [SALE]: [5000, 1], "2025-06-10": [7000, 1] },
+    results: { "2025-05-30": 0, [SALE]: null },
+  };
+  const typeAndApply = async (page: Page, from: string, to: string) => {
+    await periodButton(page).click();
+    await page.getByRole("button", { name: TYPE_DATES }).click();
+    await page.getByRole("textbox", { exact: true, name: "Início" }).fill(from);
+    await page.getByRole("textbox", { exact: true, name: "Fim" }).fill(to);
+    await page.getByRole("button", { name: "Aplicar" }).click();
+  };
+
+  for (const size of [
+    { fontPixels: 20, height: 740, width: 320 },
+    { fontPixels: 16, height: 740, width: 360 },
+  ]) {
+    test(`a ${size.width} px com a letra em ${size.fontPixels} px: a contagem no teto está na linha (inteira a 360 px), e a acima do teto só está no (i)`, async ({
+      page,
+    }) => {
+      await openReflowViewport(page, size);
+      await openHome(page, new FakeServer(SOLD_IN_MAY));
+      await expectReflowFont(page, size.fontPixels);
+
+      await typeAndApply(page, "31/05/2025", "31/08/2025");
+      const result = region(page, "Resultado estimado");
+      const unknown = result.locator("[data-kpi-unknown]");
+      await expect(unknown).toHaveText("maio de 2025: 1 de 1 dia sem custo");
+      if (size.width === 360) {
+        // at 320 px with the letter at 20 px the detail of the tile truncates by design: the (i) says the whole count
+        expect(
+          await unknown.evaluate((node) => {
+            const row = node.closest("[data-kpi-warning-detail]");
+            return row ? row.scrollWidth > row.clientWidth : null;
+          }),
+          "a contagem no teto não é cortada pelo reticências"
+        ).toBe(false);
+      }
+      await result.getByRole("button", { name: SOBRE }).click();
+      await expect(
+        page.getByRole("dialog").or(page.getByRole("tooltip")).first()
+      ).toContainText("Maio de 2025: 1 de 1 dia ainda sem custo informado.");
+      await page.keyboard.press("Escape");
+      await assertNoPageScroll(page);
+
+      await typeAndApply(page, "30/05/2025", "31/08/2025");
+      await expect(periodButton(page)).toContainText("30/05/2025");
+      await expect(result.locator("[data-kpi-incomplete]")).toContainText(
+        "Incompleta"
+      );
+      await expect(unknown).toHaveCount(0);
+      await result.getByRole("button", { name: SOBRE }).click();
+      await expect(
+        page.getByRole("dialog").or(page.getByRole("tooltip")).first()
+      ).toContainText("Maio de 2025: 1 de 2 dias ainda sem custo informado.");
+      await assertNoPageScroll(page);
+    });
+  }
 });
