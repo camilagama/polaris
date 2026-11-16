@@ -17,8 +17,8 @@ import { calendarDayInTimezone } from "../lib/dates";
 import { formatBrlAmount } from "../lib/format";
 import type { StoredPeriodSummary } from "../lib/period-summary-cache";
 import { isIncompleteEstimate } from "./dashboard-model";
-import { IncompleteBadge } from "./result-cards";
 import { missingInformed, missingInputOf } from "./missing-input";
+import { IncompleteBadge } from "./result-cards";
 import { periodText } from "./result-period";
 import {
   axisMoney,

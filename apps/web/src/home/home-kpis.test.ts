@@ -1019,6 +1019,12 @@ describe("the texts of the (i) of the cards", () => {
           { input: "cost", month: null, total: 120, unknown: 105 },
           true
         ),
+        resultHelp(
+          span,
+          "1 a 23/09",
+          { input: "fee", month: "setembro de 2025", total: 31, unknown: 31 },
+          true
+        ),
       ]),
     ];
     for (const text of texts) {

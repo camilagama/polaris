@@ -455,10 +455,17 @@ describe("the (i) of the title and the caveat said once (AC-7.2 to AC-7.4)", () 
             resultSeries(summary.daily ?? [], "2026-10-25"),
             summary.chain
           );
-          const count =
-            unknown > 0 ? "366 de 366 dias sem custo informado." : null;
-          for (const help of [periodHelp({ count, range, source }), tail]) {
-            expect(help?.length ?? 0).toBeLessThanOrEqual(160);
+          const counts =
+            unknown > 0
+              ? [
+                  "366 de 366 dias sem custo informado.",
+                  "setembro de 2025: 31 de 31 dias sem taxa informada.",
+                ]
+              : [null];
+          for (const count of counts) {
+            for (const help of [periodHelp({ count, range, source }), tail]) {
+              expect(help?.length ?? 0).toBeLessThanOrEqual(160);
+            }
           }
         }
       }

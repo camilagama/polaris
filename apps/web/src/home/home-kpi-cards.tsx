@@ -9,6 +9,7 @@ import {
   KpiTile,
   KpiTileSkeleton,
 } from "@/ui/kpi-card";
+import type { MissingDays } from "../dashboard/missing-input";
 import { isIncompleteEstimate } from "../dashboard/dashboard-model";
 import { resultKpis, untilText } from "../dashboard/result-kpis";
 import type {
@@ -25,7 +26,6 @@ import {
   cogsCoverageOf,
   type StoredPeriodSummary,
 } from "../lib/period-summary-cache";
-import type { MissingDays } from "../dashboard/missing-input";
 import { useIsMobile } from "../lib/use-mobile";
 import {
   dayReading,
