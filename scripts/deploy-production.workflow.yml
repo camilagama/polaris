@@ -288,5 +288,6 @@ jobs:
           # the Admin last, from its source block (the build check proved env.production has no placeholder); a
           # failure here leaves the web and the catalog already published and confirmed
           (cd apps/admin && bunx --no-install wrangler deploy --env production --message "$HEAD_SHA")
-      # The smoke of production is not wired yet: it needs the production hosts, which wait for the choice of the
-      # domain (release checklist, decision 4). Until then the run ends at the version check above.
+      # The smoke of production is not wired yet: its script already takes `--env production` with the hosts from
+      # variables, but its file name names the other environment, which this workflow may not, and the hosts wait for
+      # the choice of the domain (release checklist, decision 4). Until then the run ends at the version check above.
