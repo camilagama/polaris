@@ -174,13 +174,11 @@ async function run() {
     process.argv.slice(2),
     process.env
   );
-  let parsed: URL;
-  try {
-    parsed = new URL(url);
-  } catch {
-    // the parser's message may quote the input, and the input is the owner's URL
+  // checked first: the parser's error may quote its input, and the input is the owner's URL
+  if (!URL.canParse(url)) {
     throw new Error("the owner's URL is not a valid URL");
   }
+  const parsed = new URL(url);
   assert.doesNotMatch(
     parsed.hostname,
     poolerPattern,
