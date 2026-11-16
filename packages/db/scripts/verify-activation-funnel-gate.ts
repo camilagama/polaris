@@ -215,10 +215,11 @@ function expectedCohort(
       ? shown(a7 + t.d)
       : SUPPRESSED;
   };
-  // a subset of the trial stores, of the stores that sold and of the cohort: each of those and each complement holds k
+  // a subset of the trial stores, of the stores that sold and of the cohort: each of those and each complement holds k,
+  // and it shows only where the sales do: with the sales hidden, the cell would give their count away
   const trialShown = Math.min(t.t, t.n - t.t) >= K;
   const soldInTrialShown =
-    Math.min(t.t, t.n - t.t, t.s, t.t - t.s, t.b - t.s) >= K;
+    tier <= 5 && Math.min(t.t, t.n - t.t, t.s, t.t - t.s, t.b - t.s) >= K;
   return {
     activatedIn7Days: window([1, 2, 4].includes(tier) ? shown(a7) : SUPPRESSED),
     activatedWithin14Days: activatedWithin14Days(),
@@ -924,7 +925,7 @@ async function run() {
     );
 
     // ------------------------------------------------- 3. the fixture written by hand
-    // weeks far enough back for every week of retention to be closed, where no other gate creates stores or users
+    // weeks far enough back (up to 19) for every week of retention to be closed, where no other gate creates stores or users
     // and the cuts 2, 3, 4 and 6 and the borders of the bands each in a week of its own; one cohort in the last week,
     // whose 7 days are not over yet
     const WEEKS = {
@@ -946,7 +947,7 @@ async function run() {
       users: number;
     }>(
       `WITH bounds AS (
-         SELECT (date_trunc('week', now() AT TIME ZONE '${ZONE}') - interval '18 weeks') AT TIME ZONE '${ZONE}' AS since,
+         SELECT (date_trunc('week', now() AT TIME ZONE '${ZONE}') - interval '19 weeks') AT TIME ZONE '${ZONE}' AS since,
                 (date_trunc('week', now() AT TIME ZONE '${ZONE}') - interval '7 weeks') AT TIME ZONE '${ZONE}' AS users_until,
                 date_trunc('week', now() AT TIME ZONE '${ZONE}') AT TIME ZONE '${ZONE}' AS stores_until
        )
@@ -1260,10 +1261,11 @@ async function run() {
     // the last week: 5 with nothing, 5 with a product only, 5 sold; the 7 days of its stores are not over
     await cohortOf(WEEKS.open, { bands: [5, 0, 0, 0, 0], p0: 5, p1: 5 });
 
-    // the "up to 14 days" cell and the Pro trial: weeks 2 to 7 hold one cohort each. Their sales stay out of last week
+    // the "up to 14 days" cell and the Pro trial: weeks 2 to 7 and week 19 hold one cohort each. Their sales stay out of last week
     // (a store of week 3 or older sells later than 14 days only from week 4), whose active stores are counted by hand
     const TRIAL_WEEKS = {
       closedBare: 3,
+      suppressedSale: 19,
       secondWeek: 5,
       d6e6: 4,
       borders: 6,
@@ -1394,6 +1396,16 @@ async function run() {
       },
       { count: 2, sold: 10 * DAYS },
       { count: 1, sold: 20 * DAYS },
+    ]);
+
+    // week 19, cut 7 with the sales hidden (2 stores with a product and none without it leave under k stores that did
+    // not sell): 17 stores, 10 with a trial, 5 sold in it, 5 sold after it and 5 sold with no trial at all, so every
+    // cell the sold-in-trial rule reads holds k and only the cut hides the cell
+    await groupsOf(TRIAL_WEEKS.suppressedSale, [
+      { count: 2 },
+      { count: 5, sold: 5 * MINUTES, trial: { after: 0, state: "free" } },
+      { count: 5, sold: 8 * DAYS, trial: { after: 0, state: "free" } },
+      { count: 5, sold: 5 * MINUTES },
     ]);
 
     const byWeek = (
@@ -1651,6 +1663,22 @@ async function run() {
         trialStarted: shown(10),
       },
       "week 6: a sale at 14 days exactly is up to 14 days (5 + 5), one 1 second later is not; 10 with a trial, 5 sold in it (a sale exactly 7 days after the start is out, 1 second before is in)"
+    );
+    assert.deepEqual(
+      fourteenOf(TRIAL_WEEKS.suppressedSale),
+      {
+        activatedIn7Days: SUPPRESSED,
+        activatedWithin14Days: SUPPRESSED,
+        soldInTrial: SUPPRESSED,
+        trialStarted: shown(10),
+      },
+      "week 19: the sales are hidden (2 without a sale), so the 5 that sold in the trial stay hidden too, though that cell and each of its complements hold k"
+    );
+    assert.deepEqual(
+      byWeek(fixture.funnel, TRIAL_WEEKS.suppressedSale, fixture.clock).cohort
+        .withFirstSale,
+      SUPPRESSED,
+      "week 19: the sales are hidden"
     );
     const weekSeven = {
       activatedIn7Days: shown(10),
