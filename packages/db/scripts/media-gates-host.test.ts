@@ -25,11 +25,14 @@ const refusedHosts: Array<{ ci: string; host: string; label: string }> = [
   { ci: "false", host: "localhost", label: "the local Postgres outside CI" },
 ];
 
+const allowedUrl =
+  "postgresql://neondb_owner:secret@localhost:5432/neondb?sslmode=verify-full";
+
 const gates = [
   {
-    environment: (url: string, host: string) => ({
+    environment: (url: string, host: string, adminUrl: string) => ({
       POLARIS_MEDIA_GATE_CONFIRM_DISPOSABLE: "polaris-pr33-media-schema-gate",
-      POLARIS_MEDIA_GATE_DATABASE_URL: url,
+      POLARIS_MEDIA_GATE_DATABASE_URL: adminUrl,
       POLARIS_MEDIA_GATE_EXPECTED_HOSTNAME: host,
       POLARIS_MEDIA_GATE_RUNTIME_DATABASE_URL: url,
     }),
@@ -37,9 +40,9 @@ const gates = [
     script: "scripts/verify-media-gate.ts",
   },
   {
-    environment: (url: string, host: string) => ({
+    environment: (url: string, host: string, adminUrl: string) => ({
       POLARIS_MEDIA_DERIVATIVES_GATE_BRANCH: "pr0-ci-gate",
-      POLARIS_MEDIA_DERIVATIVES_GATE_DATABASE_URL: url,
+      POLARIS_MEDIA_DERIVATIVES_GATE_DATABASE_URL: adminUrl,
       POLARIS_MEDIA_DERIVATIVES_GATE_EXPECTED_HOSTNAME: host,
       POLARIS_MEDIA_DERIVATIVES_GATE_TENANT_DATABASE_URL: url,
     }),
@@ -48,28 +51,57 @@ const gates = [
   },
 ];
 
+function runGate(
+  script: string,
+  environment: Record<string, string>,
+  ci: string
+) {
+  const result = spawnSync("bun", [script], {
+    cwd: packageDirectory,
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      ...environment,
+      CI: ci,
+      POLARIS_GATE_DATABASE: "neondb",
+    },
+    timeout: 60_000,
+  });
+  return { output: `${result.stdout}${result.stderr}`, status: result.status };
+}
+
+function expectRefusedBeforeConnecting(run: ReturnType<typeof runGate>) {
+  expect(run.status).not.toBe(0);
+  expect(run.output).toMatch(refusal);
+  expect(run.output).not.toMatch(connectionFailure);
+  expect(run.output).not.toContain("secret");
+}
+
 describe("the media gates keep the host list of gate-hosts.ts", () => {
   for (const gate of gates) {
     for (const target of refusedHosts) {
       it(`${gate.name} refuses ${target.label} before it connects`, () => {
         const url = `postgresql://neondb_owner:secret@${target.host}:5432/neondb?sslmode=verify-full`;
-        const result = spawnSync("bun", [gate.script], {
-          cwd: packageDirectory,
-          encoding: "utf8",
-          env: {
-            ...process.env,
-            ...gate.environment(url, target.host),
-            CI: target.ci,
-            POLARIS_GATE_DATABASE: "neondb",
-          },
-          timeout: 60_000,
-        });
-        const output = `${result.stdout}${result.stderr}`;
-        expect(result.status).not.toBe(0);
-        expect(output).toMatch(refusal);
-        expect(output).not.toMatch(connectionFailure);
-        expect(output).not.toContain("secret");
+        expectRefusedBeforeConnecting(
+          runGate(
+            gate.script,
+            gate.environment(url, target.host, url),
+            target.ci
+          )
+        );
       });
     }
+
+    it(`${gate.name} also checks the second URL, with the first one on the allowed local host`, () => {
+      const refusedUrl =
+        "postgresql://neondb_owner:secret@db.internal.example:5432/neondb?sslmode=verify-full";
+      expectRefusedBeforeConnecting(
+        runGate(
+          gate.script,
+          gate.environment(refusedUrl, "localhost", allowedUrl),
+          "true"
+        )
+      );
+    });
   }
 });

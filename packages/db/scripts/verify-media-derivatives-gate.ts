@@ -536,17 +536,20 @@ async function main(): Promise<void> {
       })
     );
   } finally {
-    await cleanup?.close();
-    await tenantClient.end();
     try {
-      if (cleanupLoginCreated) {
-        await admin.pool.query(
-          `REVOKE ${cleanupRuntimeRole} FROM "${cleanupLoginRole}"`
-        );
-        await admin.pool.query(`DROP ROLE IF EXISTS "${cleanupLoginRole}"`);
-      }
+      await cleanup?.close();
+      await tenantClient.end();
     } finally {
-      await admin.pool.end();
+      try {
+        if (cleanupLoginCreated) {
+          await admin.pool.query(
+            `REVOKE ${cleanupRuntimeRole} FROM "${cleanupLoginRole}"`
+          );
+          await admin.pool.query(`DROP ROLE IF EXISTS "${cleanupLoginRole}"`);
+        }
+      } finally {
+        await admin.pool.end();
+      }
     }
   }
 }
