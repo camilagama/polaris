@@ -200,6 +200,21 @@ function openDatabaseSerialized() {
   );
 }
 
+function removeDatabaseFileSerialized() {
+  return withLocalFileLock(OFFLINE_POC_DATABASE_FILE, async () => {
+    const root = await navigator.storage.getDirectory();
+    try {
+      await root.removeEntry(OFFLINE_POC_DATABASE_FILE);
+      return true;
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "NotFoundError") {
+        return false;
+      }
+      throw error;
+    }
+  });
+}
+
 export async function createOfflinePocRuntime(
   release: OfflinePocRelease
 ): Promise<OfflinePocRuntime> {
@@ -687,18 +702,7 @@ async function clearOfflinePocStorageData(): Promise<OfflinePocResetResult> {
     clearIndexedDbStore(MOCK_SERVER_DATABASE_NAME, MOCK_SERVER_STORE_NAME),
   ]);
 
-  const root = await navigator.storage.getDirectory();
-  let removedDatabaseFile = false;
-  try {
-    await root.removeEntry(OFFLINE_POC_DATABASE_FILE);
-    removedDatabaseFile = true;
-  } catch (error) {
-    if (!(error instanceof DOMException) || error.name !== "NotFoundError") {
-      throw error;
-    }
-  }
-
-  return { removedDatabaseFile };
+  return { removedDatabaseFile: await removeDatabaseFileSerialized() };
 }
 
 export async function clearOfflinePocStorage(
@@ -723,15 +727,5 @@ export async function removeOfflinePocDatabaseFile(
   runtime: OfflinePocRuntime
 ): Promise<boolean> {
   await runtime.close();
-
-  const root = await navigator.storage.getDirectory();
-  try {
-    await root.removeEntry(OFFLINE_POC_DATABASE_FILE);
-    return true;
-  } catch (error) {
-    if (error instanceof DOMException && error.name === "NotFoundError") {
-      return false;
-    }
-    throw error;
-  }
+  return removeDatabaseFileSerialized();
 }
