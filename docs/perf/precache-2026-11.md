@@ -197,7 +197,9 @@ Por que ela deixou de servir:
 
 ## 5. Proposta (não aplicada aqui)
 
-1. **Imprimir o delta contra a base do PR no build, além de contra a baseline**: o PR leria "+5 011 B sobre a `main` em que se apoia" em vez de "+213 911 B sobre o piso", e o revisor julgaria o que o PR de fato custa. **Caminho preferido: construir o SHA-base no mesmo job do CI** (o SHA-base do PR, por `github.event.pull_request.base.sha` ou pelo primeiro pai da ref de merge, um build do `apps/web` com o mesmo Node, de 7 a 15 s, e o delta impresso por linha ao lado do `PRECACHE-GROWTH`). Ele não envelhece, não deixa arquivo para atualizar e mede o código real da base, com o mesmo Node e o mesmo lockfile do build do PR. **Alternativa não preferida: um `precache-main.json` versionado** com os tamanhos por linha da `main`, atualizado pelo job `Push on main`. Envelhece a cada PR que entra e fica errado enquanto o job não roda, gera conflito entre PRs abertos que o regeneram, e fica atrás da `main` enquanto o job não roda. Só valeria se o segundo build custasse mais caro que o arquivo, o que 7 a 15 s não indicam. Mudar o CI não é desta medida.
+1. **Feito em parte (t1167): `PRECACHE-DELTA`; falta o passo no `ci.yml`.** O plugin grava as medidas por linha em `apps/web/dist/precache-size.json` (ao lado de `dist/client`, fora do que se serve; num diretório de saída que não se chama `client` vai para `<nome>.precache-size.json` no diretório pai, nunca dentro dele), a mesma `measurePrecache` que imprime as linhas; `apps/web/scripts/precache-delta.ts` lê o JSON do PR e o da base (o SHA-base do evento, construído num segundo checkout, que é o que o passo do `Checks` fará quando entrar no `ci.yml`; esse passo está pendente, porque quem implementa não altera workflows) e imprime `PRECACHE-DELTA total +N B (rest +a, interface +b, …) vs base <sha8>`. O `total` do delta soma as oito linhas (fontes, primitivos, interface, resto e os quatro chunks), diferente do `total` do `PRECACHE-GROWTH`, que é só a linha do resto. Só imprime e sempre sai com 0: base que não compila, ou de antes do arquivo existir, dá `PRECACHE-DELTA indisponível (…)` e o job segue verde. Não reprova por delta nem mexe em baseline ou `BUDGET_MODE`. A proposta original, mantida abaixo como registro, era:
+
+   **Imprimir o delta contra a base do PR no build, além de contra a baseline**: o PR leria "+5 011 B sobre a `main` em que se apoia" em vez de "+213 911 B sobre o piso", e o revisor julgaria o que o PR de fato custa. **Caminho preferido: construir o SHA-base no mesmo job do CI** (o SHA-base do PR, por `github.event.pull_request.base.sha` ou pelo primeiro pai da ref de merge, um build do `apps/web` com o mesmo Node, de 7 a 15 s, e o delta impresso por linha ao lado do `PRECACHE-GROWTH`). Ele não envelhece, não deixa arquivo para atualizar e mede o código real da base, com o mesmo Node e o mesmo lockfile do build do PR. **Alternativa não preferida: um `precache-main.json` versionado** com os tamanhos por linha da `main`, atualizado pelo job `Push on main`. Envelhece a cada PR que entra e fica errado enquanto o job não roda, gera conflito entre PRs abertos que o regeneram, e fica atrás da `main` enquanto o job não roda. Só valeria se o segundo build custasse mais caro que o arquivo, o que 7 a 15 s não indicam. Mudar o CI não é desta medida.
 2. **Somar a linha do resto, as fontes, os primitivos e os quatro chunks (gráficos, movimento, calendário e mapa) numa linha "total do precache"** no `PRECACHE-GROWTH` (hoje +499 412 B), para que o número do aviso não esconda 285 KB que moraram em outra linha.
 3. **Na etapa de corte antes do go-live, partir de um teto novo e firme**, medido em cima dos 1 232 549 B (ou do total de 1 517 739 B), em vez de perseguir +44 000 B; o alvo realista de corte já conhecido (tirar `tailwind-merge`, cerca de −8 KB) não chega perto de 170 KB. O maior bloco sozinho é o `opfs-worker` (699 309 B, 46 % do precache), que não mudou desde o piso; tirá-lo do precache ou carregá-lo sob demanda mexe no offline e é decisão de produto, não desta medida.
 4. **Para o PR 611**: nada a corrigir por tamanho. Ligar `MEDIA_THUMBS_ENABLED` não altera o precache (seção "Resposta curta", item 4); o chunk de entrada cresce +5 031 B de gzip (a linha do resto, +5 011 B), e o perfil por módulo (seção 3) o liga ao carregador de miniaturas que o `app-shell.tsx` importa. O `import()` desse provedor tiraria os bytes da primeira carga, mas o chunk novo continuaria no precache (o precache é tudo menos a lista de exclusões da seção 6) e o `PRECACHE-GROWTH` não encolheria, a menos que o chunk saísse do precache, o que mexe no offline e é decisão de produto. Não foi testado aqui.
@@ -304,3 +306,116 @@ O `PRECACHE-GROWTH` impresso pelos dois builds (+208 900 B e +213 911 B) confere
 - O perfil por módulo (seção 3) é em bytes renderizados do Rolldown, não em gzip: não separei o +5 031 B de gzip por módulo. Não usei `rollup-plugin-visualizer`, que seria dependência nova; o plugin de medida ficou fora do repositório.
 - Não medi o `bun run build` completo nem o e2e-real; só o `vite build` do `apps/web`, que é onde o verificador roda.
 - A medida é de bytes de download (gzip nível 9), não de tempo de instalação do service worker nem de uso de armazenamento.
+
+## 8. Atualização de 16/11/2026: a linha de base está velha?
+
+Medida, sem corte e sem mudar código: o PR 943 relatou `PRECACHE-GROWTH +244245 B` sem acrescentar ativo, e a seção 4 tinha parado em +214 222 B (05/11). Mesmo método das seções 2 e 6: Node 24, sem `SENTRY_DSN`, gzip nível 9 arquivo a arquivo, `vite build` do `apps/web`. Não toquei em código, na baseline, na referência de +44 000 B nem em `BUDGET_MODE`.
+
+### Resposta curta
+
+1. **A `main` atual mede +243 736 B** (build desligado, `48a621ec`) e **+240 537 B** com o runtime offline ligado (`27d47199`, que depois de `48a621ec` só mudou `packages/db/scripts/verify-media-gate.ts`, então o web é o mesmo). O +244 245 B do PR 943 é +440 B sobre a base dele (`b3f92548`, que mede +243 805 B), e +509 B sobre a `main` de hoje. O PR não foi construído aqui; o +440 B é o relato dele menos a minha medida da base. O número não é do PR: é a herança do piso de 20/10.
+2. **A baseline é de 20/10 e nunca foi regravada.** `REST_BASELINE_GZIP_BYTES` (1 018 327 B desligado, 1 096 252 B ligado) entrou no commit `633903f8` (20/10/2026, ADR 0103, PR 215), com a medida da `main` em `8c2ef580`; `git log -S` por cada um dos dois valores em `apps/web/pwa/precache-budget.ts` devolve só esse commit. Desde então são 27 dias e 708 commits na `main`.
+3. **"Velha" no sentido de que não mede mais o custo de um PR: sim. Esquecida: não.** O ADR 0103 (seção 4, "Baseline do resto") diz que a baseline só sobe por crescimento que não é de interface, e que o PR que o causa a sobe no mesmo PR; telas migradas, CSS, primitivos e infraestrutura de interface "nunca sobem a baseline". Quase todo o crescimento é desse tipo, então nenhum PR a subiu, como a regra manda. O resultado é um número que só cresce e que já era inútil para revisão na seção 4 (+214 222 B); hoje está +29 514 B pior.
+4. **Desde a medida da seção 2 (`4ee22b40`, 05/11) a linha do resto subiu +29 514 B em 11 dias** (de +214 222 B para +243 736 B), cerca de 2,7 KB por dia, contra cerca de 13 KB por dia de 20/10 a 05/11 (+214 222 B em 16 dias). O ritmo caiu, mas a conta continua só subindo. O maior passo isolado que medi por commit (só o dia 08/11) foi um PR só: o contador animado dos cartões (PR 761), **+7 099 B**; o PR 838 tirou depois o chunk `figure-counter`.
+5. **Proposta (não aplicada):** a baseline não deve ser regravada agora por quem mede, e sim, se for o caso, num PR à parte, por decisão do Arrascaeta com o usuário (detalhe no fim desta seção).
+
+### Linha por linha, `main` atual contra a medida da seção 2 (runtime offline desligado)
+
+| Linha | `4ee22b40` (05/11) | `48a621ec` (16/11) | Diferença |
+| --- | ---: | ---: | ---: |
+| Fontes | 52 528 | 52 528 | 0 |
+| Primitivos do Base UI | 92 617 | 94 135 | +1 518 |
+| Infraestrutura de interface | 35 155 | 40 025 | +4 870 |
+| Tela e o resto | 1 197 394 | 1 222 038 | +24 644 |
+| **Linha do resto** (infraestrutura mais tela e o resto) | 1 232 549 | 1 262 063 | **+29 514** |
+| Chunk dos gráficos | 57 236 | 57 445 | +209 |
+| Chunk do movimento | 49 639 | 49 639 | 0 |
+| Chunk do calendário | 22 988 | 23 192 | +204 |
+| Chunk do mapa | 10 182 | 10 472 | +290 |
+| Total do precache (102 arquivos contra 96) | 1 517 739 | 1 549 474 | +31 735 |
+
+Crescimento real do precache sobre o piso de 20/10: 1 549 474 − 1 018 327 = **+531 147 B**, contra os +243 736 B que o build imprime; os 287 411 B de diferença são as seis linhas que o verificador conta à parte (fontes 52 528, primitivos 94 135, gráficos 57 445, movimento 49 639, calendário 23 192 e mapa 10 472), a mesma conta da seção 1.
+
+Runtime offline ligado, `27d47199`: baseline 1 096 252 B, linha do resto 1 336 789 B, `PRECACHE-GROWTH` +240 537 B (primitivos 99 467 B, infraestrutura 42 139 B, tela e o resto 1 294 650 B, que são +198 398 B sobre a baseline do build ligado).
+
+### Série da `main`, último commit de cada dia, desligado
+
+| Dia | Commit | `PRECACHE-GROWTH` | Passo |
+| --- | --- | ---: | ---: |
+| 05/11 | `4ee22b40` (seção 2) | +214 222 | |
+| 05/11 | `49abdda4` | +214 905 | +683 |
+| 06/11 | `d2be6c4a` | +220 940 | +6 035 |
+| 07/11 | `d61ba62f` | +221 367 | +427 |
+| 08/11 | `9c613d1f` | +235 967 | **+14 600** |
+| 09/11 | `d4cda5b7` | +238 799 | +2 832 |
+| 10/11 | `d5effa64` | +240 941 | +2 142 |
+| 11/11 | `5ba54df2` | +235 302 | **−5 639** |
+| 12/11 | `309a2f49` | +238 913 | +3 611 |
+| 13/11 | `a0a4b6e9` | +238 913 | 0 |
+| 15/11 | `b3f92548` | +243 805 | +4 892 |
+| 16/11 | `48a621ec` | +243 736 | −69 |
+
+O dia 14/11 não teve commit na `main`. A linha de 16/11 é o `48a621ec`; o `27d47199`, que veio depois, só mexe num script de banco e mede igual. A coluna é o mesmo `PRECACHE-GROWTH` que o CI imprime; o `4ee22b40` reproduz byte a byte o +214 222 B da seção 2.
+
+### O que mais somou desde a medida da seção 2
+
+Os números por arquivo comparam os dois builds pelo nome lógico do chunk (seção 6), e um chunk que some ou aparece só muda o total quando a soma muda. Os pedaços de código trocam de chunk entre builds, então a soma de um grupo é uma leitura, não uma atribuição por PR.
+
+| Grupo | Arquivos (gzip, `4ee22b40` → `48a621ec`) | Soma |
+| --- | --- | ---: |
+| Resultado e Histórico | `sale-summary-panel` +10 850, `use-period-summary` +9 855, `filter-bar` +4 634, `result-period` +1 479, `sale-history-model` −9 724, `result-cards` −8 601, `dashboard-page` −3 003, `sale-history-page` −2 626 | +2 864 |
+| Produtos, Estoque e aviso de limite | `products-link-model` +7 704, `products-page` +1 813, `limit-help-model` +857, `inventory-page` +566, `stock-command-model` −6 131 | +4 809 |
+| Chunk compartilhado do catálogo | `catalog-shared` 81 141 → 87 372 | +6 231 |
+| Início | `home-page` 14 443 → 17 324 | +2 881 |
+| CSS | `index.css` 23 122 → 25 828 | +2 706 |
+| Termos e aviso legal | `legal-page` 10 390 → 12 333 | +1 943 |
+| Entrada | `index` 143 877 → 145 631, `boot-retry` +890 | +2 644 |
+| Despesas e Configurações | `expenses-page` +887, `expense-fields` +1 407, `settings-screen` +968 | +3 262 |
+
+(Fora da tabela ficam 72 arquivos, a maioria de menos de 500 B, que somam +4 395 B, e os oito grupos acima somam +27 340 B: juntos fecham os +31 735 B do total, que incluem as linhas à parte.)
+
+Por PR, onde a série por commit isolou um passo (um build por commit do dia 08/11, de `d61ba62f` até `9c613d1f`, 23 commits que tocam `apps/web`):
+
+| PR | Commit | Passo na linha do resto |
+| --- | --- | ---: |
+| 761, contador animado dos cartões (L1-8) | `7da4cd2f` | **+7 099** |
+| 754, recarga única da página cujo módulo de entrada não rodou | `547cc1a8` | +953 |
+| 753, lista agrupada de Configurações no celular | `6fe2659f` | +1 294 |
+| 747, digitar as datas no seletor de período | `8fc823d7` | +1 267 |
+| 757, Money e máscara no Histórico e nas Despesas | `926031fa` | −835 |
+| os demais 18 commits do dia que tocam `apps/web` | | cada um entre −28 e +548, exceto `5f6a26ca` (+2 006): o texto novo da Política de privacidade, em `apps/web/src/legal/content/`, que vai no chunk `legal-page` (+1 947 B) |
+
+O chunk `figure-counter` (6 759 B de gzip) existia em 10/11 e não existe mais em 11/11: o PR 838 (`c686fe90`, "o número principal entra com um fade curto, sem dígitos rolando") está entre os commits desse dia, que fecha em −5 639 B. Não separei o passo do PR 838 dos demais PRs do dia. O resto do período (09/11 em diante) soma entre +2 e +5 KB por dia e é de telas: período do Início (PR 819), Esconder valores no cabeçalho (PR 818), Despesas como destino (PR 795), aviso de limite, excluir produto arquivado (PRs 906 e 916). A atribuição PR a PR só foi feita no dia 08/11; para os outros dias vale a leitura por arquivo da tabela acima.
+
+### O que a medida diz sobre a baseline
+
+- **O número impresso cresce por herança.** Os +243 736 B de hoje são 27 dias de produto; um PR de tela custa de −800 B a +7 KB, dezenas de vezes menos que a herança. Quem revisa pelo excedente de 199 736 B sobre a referência de +44 000 B não consegue dizer se o PR está bem.
+- **Regravar a baseline não é só atualizar dois números.** Zeraria o histórico e tornaria a referência de +44 000 B comparável de novo, mas contradiz a regra do ADR 0103 de que interface nunca sobe a baseline: pede uma emenda ao ADR, com quem decide por escrito (o Arrascaeta e o usuário, que também decidem `BUDGET_MODE`). Valores candidatos, medidos hoje e não aplicados: **1 262 063 B** (desligado, `rest line` de `48a621ec`) e **1 336 789 B** (ligado, `27d47199`); como as outras linhas só contam a parte nova delas, os dois números precisariam de nova medida no commit em que o PR de atualização entrar.
+- **O jeito que não envelhece é o da seção 5, item 1:** imprimir o delta contra o SHA-base do PR, no mesmo job do CI, ao lado do `PRECACHE-GROWTH`. O PR 943 leria "+440 B sobre a base" em vez de "+244 245 B sobre o piso". Script feito na t1167; o passo no `ci.yml` está pendente (seção 5, item 1).
+- **A etapa de corte antes do go-live é onde a baseline e o teto devem ser fixados juntos**, como diz a seção 5, item 3; fixá-los antes, num PR à parte, só vale se a revisão está sendo prejudicada agora, e isso é decisão do Arrascaeta.
+
+### Como reproduzir (16/11/2026)
+
+Mesmos pré-requisitos da seção 6 (Node 24, `bun install --frozen-lockfile`, sem `SENTRY_DSN`) e o mesmo `medir-precache.mjs`. Para a `main` atual:
+
+```bash
+export PATH=<caminho do Node 24>/bin:$PATH
+git checkout --detach origin/main && bun install --frozen-lockfile
+cd apps/web
+unset SENTRY_DSN VITE_OFFLINE_RUNTIME_ENABLED
+rm -rf dist
+LEGAL_DRAFT_BUILD=1 node node_modules/vite/bin/vite.js build 2>&1 | grep -E "PRECACHE-GROWTH|precache \(offline"
+node medir-precache.mjs dist/client > arquivos-off.json
+export VITE_OFFLINE_RUNTIME_ENABLED=true
+rm -rf dist
+LEGAL_DRAFT_BUILD=1 node node_modules/vite/bin/vite.js build 2>&1 | grep -E "PRECACHE-GROWTH|precache \(offline"
+```
+
+A série diária e a do dia 08/11 repetem o primeiro bloco por commit (`git log --first-parent --format='%ad %h' --date=short origin/main`, o último de cada data; para o dia 08/11, `git log --first-parent --reverse --format=%h d61ba62f..9c613d1f`, só os commits em que `git diff --quiet <commit>^1 <commit> -- apps/web/src apps/web/index.html apps/web/package.json bun.lock apps/web/vite.config.ts` falha). Cada build levou de 7 a 20 s em Node 24, com a máquina carregada; sob Bun o gzip sai maior (seção 6). A tabela por arquivo vem da diferença por nome lógico de dois `arquivos-*.json`, como na seção 6. A data de cada commit é a do commit (`%cd`, fuso de Brasília).
+
+### O que esta seção não fez
+
+- Não construí o PR 943: o +440 B vem da conta do relato dele contra a medida da base.
+- Não atribuí PR a PR fora do dia 08/11.
+- Não medi o runtime offline ligado nos commits intermediários, só no atual.
+- Não mudei `precache-budget.ts`, a baseline, a referência nem `BUDGET_MODE`.
