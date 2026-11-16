@@ -16,7 +16,7 @@ import { pathToFileURL } from "node:url";
  * anything (a 503 says a provider secret is missing). Prints the check, the status and a fixed reason, never a body
  * or a header.
  *
- * `--env production` runs the same checks against the production Workers. The production domain is not decided yet,
+ * `--env production` runs the same checks against the production Workers. The production domain is not defined in the repository,
  * so no host is written in this file: the hosts, the Access team of the Admin, the expected sign-in methods and release header come
  * from `PRODUCTION_*` variables, and the smoke refuses to run (before any request) while one is missing or malformed.
  * Without `--env`, the environment is staging, exactly as the deploy workflow of staging runs it.
@@ -388,7 +388,7 @@ export const STAGING_TARGET = {
   userAgent: USER_AGENT,
 };
 
-/** The variables that give the production smoke its hosts; none has a default, because the domain is not decided. */
+/** The variables that give the production smoke its hosts; none has a default, so the domain is never guessed. */
 export const PRODUCTION_VARIABLES = {
   accessTeam: "PRODUCTION_ACCESS_TEAM",
   admin: "PRODUCTION_ADMIN_URL",
@@ -401,15 +401,35 @@ export const PRODUCTION_VARIABLES = {
 const ACCESS_TEAM_HOST = /^[a-z0-9][a-z0-9-]*\.cloudflareaccess\.com$/;
 const DNS_HOST =
   /^(?=.{4,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/;
-const PROTECTED_SUFFIXES = [".workers.dev", ".invalid", ".localhost", ".local"];
+const PROTECTED_SUFFIXES = [
+  ".workers.dev",
+  ".cloudflareaccess.com",
+  ".invalid",
+  ".localhost",
+  ".local",
+  ".test",
+  ".example",
+  ".internal",
+  ".home.arpa",
+];
 
 const originRefusal = (variable, why) =>
-  `${variable}: ${why} (production domain not decided: set it to the https origin of the Worker, without a path)`;
+  `${variable}: ${why} (set it to the lowercase https origin of the production Worker, without a path)`;
 
 /** The host of a production origin variable, or the fixed reason it is refused. */
 function productionHost(variable, origin) {
   if (typeof origin !== "string" || origin.trim() === "") {
-    return { refusal: originRefusal(variable, "missing") };
+    return {
+      refusal: originRefusal(
+        variable,
+        "missing: the production domain is not configured"
+      ),
+    };
+  }
+  if (origin !== origin.trim()) {
+    return {
+      refusal: originRefusal(variable, "has whitespace around the value"),
+    };
   }
   let url;
   try {
@@ -417,9 +437,18 @@ function productionHost(variable, origin) {
   } catch {
     return { refusal: originRefusal(variable, "not a URL") };
   }
-  if (url.protocol !== "https:" || url.origin !== origin) {
+  if (url.protocol !== "https:") {
+    return { refusal: originRefusal(variable, "must be https") };
+  }
+  if (url.port !== "") {
+    return { refusal: originRefusal(variable, "must not have a port") };
+  }
+  if (url.origin !== origin) {
     return {
-      refusal: originRefusal(variable, "must be https with no path or port"),
+      refusal: originRefusal(
+        variable,
+        "must be the origin only: lowercase, with no path, query or credentials"
+      ),
     };
   }
   const stagingHosts = Object.values(STAGING_FIXED_HOST);
@@ -438,7 +467,7 @@ function productionHost(variable, origin) {
 /**
  * The production target from the environment variables, or the refusals (each naming its variable) when the
  * domain, the Access team or the expected password sign-in are missing, malformed or collide. Nothing is
- * guessed: with the domain undecided, every variable is empty and the smoke refuses to run.
+ * guessed: with no domain configured, every variable is empty and the smoke refuses to run.
  */
 export function productionTarget(env) {
   const refusals = [];
@@ -491,7 +520,7 @@ export function productionTarget(env) {
       name: "production",
       refusalOf: (key) =>
         Object.hasOwn(hosts, key)
-          ? `${key}: the production ${key} only accepts https://${hosts[key]}, without a path`
+          ? `${key}: the origin is not the one declared for the production ${key}`
           : `${key}: no production host is accepted for this key`,
       userAgent: PRODUCTION_USER_AGENT,
     },
@@ -645,15 +674,21 @@ export async function runSmoke(
 
 const ENVIRONMENTS = ["staging", "production"];
 
-/** The environment of `--env <name>` or `--env=<name>`; staging without the option, and null for an unknown one. */
+/**
+ * The environment of the arguments: staging with none, `--env <name>` or `--env=<name>` with a known name. Anything
+ * else (an unknown name, a repeated or misspelled option, a stray argument) is null, so a mistyped production step
+ * never falls back to staging.
+ */
 export function environmentOf(argv) {
-  const at = argv.findIndex(
-    (arg) => arg === "--env" || arg.startsWith("--env=")
-  );
-  if (at === -1) {
+  if (argv.length === 0) {
     return "staging";
   }
-  const value = argv[at] === "--env" ? argv[at + 1] : argv[at].slice(6);
+  let value = null;
+  if (argv.length === 2 && argv[0] === "--env") {
+    [, value] = argv;
+  } else if (argv.length === 1 && argv[0].startsWith("--env=")) {
+    value = argv[0].slice("--env=".length);
+  }
   return ENVIRONMENTS.includes(value) ? value : null;
 }
 
@@ -689,7 +724,7 @@ async function main() {
   const environment = environmentOf(process.argv.slice(2));
   if (environment === null) {
     console.error(
-      `Smoke refused: --env must be one of ${ENVIRONMENTS.join(", ")}.`
+      `Smoke refused: --env must be one of ${ENVIRONMENTS.join(", ")}, given once as --env <name> or --env=<name>, with no other argument.`
     );
     process.exitCode = 1;
     return;

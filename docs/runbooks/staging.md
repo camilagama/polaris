@@ -370,13 +370,13 @@ Ordem e o que cada falha quer dizer:
 
 ### Smoke de produção
 
-`node scripts/smoke-staging.mjs --env production` roda as mesmas 19 verificações, na mesma ordem e só de leitura, contra os Workers de produção. Sem `--env` (ou com `--env staging`) nada muda: é o que o `deploy-staging.yml` roda. Outro valor de `--env` é recusado.
+`node scripts/smoke-staging.mjs --env production` roda as mesmas 19 verificações, na mesma ordem e só de leitura, contra os Workers de produção. Sem `--env` (ou com `--env staging`) nada muda: é o que o `deploy-staging.yml` roda. Outro valor de `--env`, a opção repetida, escrita errada ou com argumento sobrando é recusada (nunca cai em staging).
 
 O domínio de produção ainda não foi decidido, então nenhum host está escrito no script. Tudo vem de variáveis, sem valor padrão:
 
 | Variável | O que é | Recusa |
 | --- | --- | --- |
-| `PRODUCTION_WEB_URL`, `PRODUCTION_CATALOG_URL`, `PRODUCTION_ADMIN_URL` | origem https de cada Worker, sem caminho, porta nem credencial | ausente ou vazia; não https; com caminho, porta ou credencial; IP, `localhost`, `.workers.dev`, `.invalid`; um host do staging; dois Workers no mesmo host |
+| `PRODUCTION_WEB_URL`, `PRODUCTION_CATALOG_URL`, `PRODUCTION_ADMIN_URL` | origem https de cada Worker, sem caminho, porta nem credencial | ausente, vazia ou com espaço em volta; não https; com porta, caminho, query, credencial ou maiúscula; IP, `localhost` e sufixos reservados (`.workers.dev`, `.cloudflareaccess.com`, `.invalid`, `.local`, `.test`, `.example`, `.internal`, `.home.arpa`); um dos três hosts do staging; dois Workers no mesmo host |
 | `PRODUCTION_ACCESS_TEAM` | `<time>.cloudflareaccess.com` do Access de produção, para onde o Admin sem login deve ser redirecionado (o caminho do login é `/cdn-cgi/access/login/<host do Admin>`) | ausente, mal formado ou o time do staging |
 | `PRODUCTION_EXPECT_PASSWORD_SIGN_IN` | `true` ou `false`: o `auth-methods` de produção declara o login por senha (fica atrás de flag, desligada até o domínio de e-mail) | qualquer outro valor |
 | `PRODUCTION_EXPECT_RELEASE_HEADER` | `true` ou `false`: os Workers de produção declaram `X-Polaris-Release` (`RELEASE_HEADER_ENABLED`, hoje `"false"` no `env.production`). Com `false`, as verificações 1 e 12 continuam rodando e exigem o cabeçalho **ausente** (presente com a flag desligada falha) | qualquer outro valor |

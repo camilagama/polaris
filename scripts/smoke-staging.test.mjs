@@ -1097,7 +1097,9 @@ describe("the production smoke", () => {
         refusals.filter((line) => line.startsWith(`${variable}:`))
       ).toHaveLength(1);
     }
-    expect(refusals.join("\n")).toContain("production domain not decided");
+    expect(refusals.join("\n")).toContain(
+      "production domain is not configured"
+    );
     expect(planOf("production", {}).refusals).toEqual(refusals);
   });
 
@@ -1141,6 +1143,35 @@ describe("the production smoke", () => {
       expect(target, web).toBeNull();
       expect(refusals, web).toHaveLength(1);
       expect(refusals[0].startsWith("PRODUCTION_WEB_URL:")).toBe(true);
+    }
+  });
+
+  it("says why an origin is refused, without echoing it", () => {
+    const reasonOf = (value) =>
+      productionTarget({ ...productionEnv, PRODUCTION_WEB_URL: value })
+        .refusals[0];
+    const cases = [
+      ["https://app.exemplo.com.br:8443", "must not have a port"],
+      ["http://app.exemplo.com.br", "must be https"],
+      ["https://APP.exemplo.com.br", "must be the origin only"],
+      ["https://app.exemplo.com.br/path", "must be the origin only"],
+      ["https://u:p@app.exemplo.com.br", "must be the origin only"],
+      ["https://app.exemplo.com.br\n", "has whitespace around the value"],
+      [" https://app.exemplo.com.br", "has whitespace around the value"],
+      ["https://dash.araute.app", "is a staging host"],
+      ["https://app.exemplo.test", "not a custom domain host"],
+      ["https://app.exemplo.example", "not a custom domain host"],
+      ["https://app.local", "not a custom domain host"],
+      ["https://app.casa.internal", "not a custom domain host"],
+      ["https://app.home.arpa", "not a custom domain host"],
+      ["https://polaris.cloudflareaccess.com", "not a custom domain host"],
+      ["https://app.exemplo.com.br.", "not a custom domain host"],
+      ["not a url", "not a URL"],
+    ];
+    for (const [value, why] of cases) {
+      const refusal = reasonOf(value);
+      expect(refusal, value).toContain(`PRODUCTION_WEB_URL: ${why}`);
+      expect(refusal, value).not.toContain("exemplo.com.br");
     }
   });
 
@@ -1310,7 +1341,7 @@ describe("the production smoke", () => {
         noPause
       );
       expect(failures).toEqual([
-        "web: the production web only accepts https://app.exemplo.com.br, without a path",
+        "web: the origin is not the one declared for the production web",
       ]);
     }
     expect(fetchImpl).not.toHaveBeenCalled();
@@ -1353,6 +1384,15 @@ describe("the choice of the environment", () => {
       ["--env="],
       ["--env=Production"],
       ["--env", "--other"],
+      ["--environment", "production"],
+      ["--env-production"],
+      ["-env", "production"],
+      ["production"],
+      ["--env", "staging", "--env", "production"],
+      ["--env", "production", "--env", "staging"],
+      ["--env=production", "extra"],
+      ["--env", "production", "extra"],
+      ["extra", "--env", "production"],
     ]) {
       expect(environmentOf(argv), argv.join(" ")).toBeNull();
     }
@@ -1400,7 +1440,7 @@ describe("the command line of the smoke", () => {
     expect(result.status).toBe(1);
     expect(result.stdout).toBe("");
     expect(result.stderr).toContain("PRODUCTION_WEB_URL: missing");
-    expect(result.stderr).toContain("production domain not decided");
+    expect(result.stderr).toContain("production domain is not configured");
     expect(result.stderr).toContain(
       "Smoke refused (production): nothing was requested."
     );
