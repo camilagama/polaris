@@ -388,6 +388,7 @@ describe("the build manifest", () => {
 });
 
 interface FakeResponse {
+  blob: () => Promise<string>;
   body: string;
   clone: () => FakeResponse;
   headers: { get: (name: string) => string | null };
@@ -400,9 +401,12 @@ const EXTENSION_TYPES: Record<string, string> = {
   webmanifest: "application/manifest+json",
 };
 
-function withClone(response: Omit<FakeResponse, "clone">): FakeResponse {
+function withClone(
+  response: Omit<FakeResponse, "blob" | "clone">
+): FakeResponse {
   const copy: FakeResponse = {
     ...response,
+    blob: () => Promise.resolve(response.body),
     clone: () => withClone(response),
   };
   return copy;
@@ -526,8 +530,15 @@ async function runWorker(build: {
         return { body: "error" };
       }
       readonly body: string;
-      constructor(body: string) {
+      readonly headers: FakeResponse["headers"] | undefined;
+      readonly status: number;
+      constructor(
+        body: string,
+        init?: { headers?: FakeResponse["headers"]; status?: number }
+      ) {
         this.body = body;
+        this.headers = init?.headers;
+        this.status = init?.status ?? 200;
       }
       text() {
         return Promise.resolve(this.body);
@@ -642,11 +653,25 @@ describe("the worker as the browser runs it", () => {
       body: "net:/assets/index-BBB.js",
     });
     expect(worker.fetched).toEqual([]); // came from the cache, not the network
-    // a clone, not the object `cache.match` returned (Chrome refuses the page's preload of the latter)
+    // a new response over the body read whole, with the copy's status and headers: neither the object
+    // `cache.match` returned nor a clone of it (Chrome cancels some of those on a reload right after `load`)
     const kept = worker.stores
       .get(shellCacheName(build))
       ?.get("/assets/index-BBB.js");
-    expect(await worker.run("fetch", { request: asset })).not.toBe(kept);
+    const read = vi.spyOn(kept as FakeResponse, "blob");
+    const clone = vi.spyOn(kept as FakeResponse, "clone");
+    const answer = (await worker.run("fetch", {
+      request: asset,
+    })) as FakeResponse;
+    expect(answer).not.toBe(kept);
+    expect(answer).toMatchObject({
+      body: "net:/assets/index-BBB.js",
+      headers: kept?.headers,
+      status: 200,
+    });
+    expect(answer.headers.get("content-type")).toMatch(/javascript/);
+    expect(read).toHaveBeenCalledTimes(1);
+    expect(clone).not.toHaveBeenCalled();
     for (const path of ["/rpc/sale/confirm", "/api/auth/get-session"]) {
       // biome-ignore lint/performance/noAwaitInLoops: each probe is verified on its own
       const answer = await worker.run("fetch", {
@@ -917,9 +942,9 @@ describe("the worker as the browser runs it", () => {
   it("does not serve a page kept in place of a chunk by an older worker: it asks the network", async () => {
     const worker = await runWorker(build);
     await worker.run("install", {});
-    worker.stores
-      .get(shellCacheName(build))
-      ?.set("/assets/index-BBB.js", htmlOf("/assets/index-BBB.js"));
+    const page = htmlOf("/assets/index-BBB.js");
+    const read = vi.spyOn(page, "blob");
+    worker.stores.get(shellCacheName(build))?.set("/assets/index-BBB.js", page);
     worker.fetched.length = 0;
     const asset = {
       method: "GET",
@@ -930,6 +955,8 @@ describe("the worker as the browser runs it", () => {
       body: "net:/assets/index-BBB.js",
     });
     expect(worker.fetched).toEqual(["/assets/index-BBB.js"]);
+    // checked before its body is read: the page is never read into an answer
+    expect(read).not.toHaveBeenCalled();
     // and what the network answers is not stored either
     expect(
       worker.stores.get(shellCacheName(build))?.get("/assets/index-BBB.js")

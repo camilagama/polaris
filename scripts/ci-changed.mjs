@@ -115,6 +115,26 @@ export function classifyChanges(files) {
   };
 }
 
+/**
+ * What the sentinel of reloads with the worker in control (`apps/web/e2e-pwa/recarga-com-worker.e2e.ts`, 300 reloads,
+ * more than 3 minutes) can catch: the worker and what registers it, the boot-retry, and the spec itself. The browser
+ * gate runs it only then (`POLARIS_RECARGA_COM_WORKER`); `null` (the paths unknown) runs it.
+ */
+const RELOAD_SENTINEL_FILES = [
+  /^apps\/web\/src\/pwa\//,
+  /^apps\/web\/public\/boot-retry\.js$/,
+  /^apps\/web\/e2e-pwa\/recarga-com-worker\.e2e\.ts$/,
+];
+
+export function reloadSentinelRuns(files) {
+  return (
+    files === null ||
+    files.some((file) =>
+      RELOAD_SENTINEL_FILES.some((pattern) => pattern.test(file))
+    )
+  );
+}
+
 /** The paths changed by the commit under test against its first parent (the base of a pull request merge). */
 function changedFiles() {
   const result = spawnSync(
@@ -133,9 +153,11 @@ function changedFiles() {
 
 function main() {
   const manual = process.env.GITHUB_EVENT_NAME === "workflow_dispatch";
-  const result = manual
-    ? { browser: true, dependencies: true, e2e: true }
-    : classifyChanges(changedFiles());
+  const files = manual ? null : changedFiles();
+  const result = {
+    ...classifyChanges(files),
+    reloads: reloadSentinelRuns(files),
+  };
   const lines = Object.entries(result).map(
     ([name, value]) => `${name}=${value}`
   );

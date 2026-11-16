@@ -396,11 +396,22 @@ function startWorker(scope: WorkerScope, build: BuildManifest) {
     event.respondWith(
       find(event.request).then((cached) =>
         // a copy that is not the file (a page kept in place of a chunk by an older worker) is not served.
-        // The copy is cloned: the `Response` straight from `cache.match` made Chrome refuse the page's
-        // `modulepreload` of a chunk ("a preload ... is not used because it is a cross-world service worker
-        // resource mismatch") and fetch it a second time; a clone is taken as the preload's (measured).
+        // The copy is answered as a new `Response` over its body read whole, not as the `Response` of
+        // `cache.match` nor a clone of it: with those, Chrome cancelled about one script in a hundred of a page
+        // reloaded right after its `load` (`net::ERR_ABORTED`, the entry module or `theme-init.js`), and the page
+        // reloaded itself or lost its theme; with the body read first, none in 1800 reloads, and fewer of the
+        // page's `modulepreload` refused as a "cross-world service worker resource mismatch"
+        // (`scripts/sw-recarga-bancada.mjs`, ADR 0040). The cost is the file in the worker's memory until it is
+        // answered.
         cached && isExpectedResponse(pathname, cached)
-          ? cached.clone()
+          ? cached.blob().then(
+              (body) =>
+                new Response(body, {
+                  headers: cached.headers,
+                  status: cached.status,
+                  statusText: cached.statusText,
+                })
+            )
           : fetch(event.request)
       )
     );
