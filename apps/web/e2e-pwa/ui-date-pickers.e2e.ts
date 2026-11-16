@@ -62,6 +62,43 @@ async function expectDisabledDay(off: Locator) {
   await expect(off).toHaveAccessibleDescription("Só até hoje");
 }
 
+/**
+ * Waits until the button has the same place for several frames in a row (the popover has finished its entrance and
+ * its placement). A mouse held at a point computed earlier lands outside a popover that moves or flips to the other
+ * side of the field, and that is an outside press that closes it.
+ */
+async function expectStill(button: Locator) {
+  const place = () =>
+    button.evaluate(
+      (element) =>
+        new Promise<string>((resolve) => {
+          const read = () => {
+            const box = element.getBoundingClientRect();
+            return `${box.x},${box.y},${scrollY}`;
+          };
+          const before = read();
+          requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+              resolve(before === read() ? before : "moving");
+            });
+          });
+        })
+    );
+  let previous = "";
+  let still = 0;
+  await expect
+    .poll(
+      async () => {
+        const now = await place();
+        still = now === previous && now !== "moving" ? still + 1 : 0;
+        previous = now;
+        return still >= 5;
+      },
+      { intervals: [50], timeout: 10_000 }
+    )
+    .toBe(true);
+}
+
 /** The reason of the turned-off days, as the text under the month (hidden, with its height kept, until one has the focus). */
 const reasonLine = (popup: Locator) =>
   popup.getByText("Só até hoje", { exact: true });
@@ -709,6 +746,10 @@ test.describe("dia desligado, com o mouse a 1280 px", () => {
     page,
   }) => {
     await openGallery(page);
+    await trigger(page, "Data do pagamento,").evaluate((element) => {
+      element.scrollIntoView({ block: "start" });
+      window.scrollBy(0, -100);
+    });
     const popup = await openPicker(
       page,
       "Data do pagamento,",
@@ -717,6 +758,7 @@ test.describe("dia desligado, com o mouse a 1280 px", () => {
     const off = day(popup, "2026-10-25");
     const reason = reasonLine(popup);
     await expect(reason).toBeHidden();
+    await expectStill(off);
     await off.hover();
     expect(await paint(off)).toEqual({
       background: "rgba(0, 0, 0, 0)",
