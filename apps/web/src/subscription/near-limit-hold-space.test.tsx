@@ -100,8 +100,32 @@ const near: NearLimitView = {
 
 interface NoticeProps {
   "aria-hidden"?: boolean;
+  children?: unknown;
   className: string;
   "data-near-limit"?: string;
+}
+
+interface AnchorProps {
+  children?: unknown;
+  href?: string;
+  tabIndex?: number;
+}
+
+function findAnchor(node: unknown): ReactElement<AnchorProps> | null {
+  if (Array.isArray(node)) {
+    for (const child of node) {
+      const found = findAnchor(child);
+      if (found) {
+        return found;
+      }
+    }
+    return null;
+  }
+  if (typeof node !== "object" || node === null || !("props" in node)) {
+    return null;
+  }
+  const element = node as ReactElement<AnchorProps>;
+  return element.type === "a" ? element : findAnchor(element.props.children);
 }
 
 let noticeOf: ReactElement<NoticeProps> | null = null;
@@ -173,6 +197,16 @@ describe("NearLimitNotice com holdSpace", () => {
     expect(held?.props["data-near-limit"]).toBeUndefined();
   });
 
+  it("o link sai da tabulação só pela classe invisible do parágrafo que o contém: nem ele nem o parágrafo levam tabIndex ou inert", () => {
+    const held = renderNotice(null, true);
+    const anchor = findAnchor(held?.props.children);
+    expect(anchor?.props.href).toBeDefined();
+    expect(anchor?.props).not.toHaveProperty("tabIndex");
+    expect(held?.props.className.split(" ")).toContain("invisible");
+    expect(held?.props).not.toHaveProperty("tabIndex");
+    expect(held?.props).not.toHaveProperty("inert");
+  });
+
   it("sem o vão, nada é renderizado", () => {
     expect(renderNotice(null, false)).toBeNull();
   });
@@ -215,6 +249,28 @@ describe("a linha que sai por leitura não volta como vão", () => {
     renderScreen();
     expect(noticeOf?.props["aria-hidden"]).toBe(true);
     expect(noticeOf?.props["data-near-limit"]).toBeUndefined();
+  });
+
+  it("a conexão que volta e a leitura que responde sem linha soltam o vão", async () => {
+    readPlan.mockResolvedValue(planWith(47));
+    await settle();
+    expect(noticeOf?.props["data-near-limit"]).toBe("near");
+
+    connection.online = false;
+    renderScreen();
+    expect(settledNow).toBe(false);
+    expect(noticeOf?.props["aria-hidden"]).toBe(true);
+
+    connection.online = true;
+    readPlan.mockResolvedValue(planWith(44));
+    renderScreen();
+    expect(settledNow).toBe(false);
+    expect(noticeOf?.props["aria-hidden"]).toBe(true);
+    await flush();
+    renderScreen();
+    expect(settledNow).toBe(true);
+    expect(noticeOf).toBeNull();
+    expect(readPlan).toHaveBeenCalledTimes(2);
   });
 });
 
