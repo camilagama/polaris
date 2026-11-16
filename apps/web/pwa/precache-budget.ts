@@ -1,5 +1,5 @@
 import { readFileSync, writeFileSync } from "node:fs";
-import { basename, dirname, join } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { gzipSync } from "node:zlib";
 import type { Plugin } from "vite";
 import {
@@ -683,16 +683,20 @@ function growthLine(size: PrecacheSize, baseline: number): string {
 const PRECACHE_SIZE_FILE = "precache-size.json";
 
 /**
- * Where the build leaves the measures: beside the `client` directory of the Cloudflare build (`dist/`), not inside
- * it, since what is inside is served and the file is for the CI only; any other output directory keeps it inside.
+ * Where the build leaves the measures, never inside the output directory: what is inside is served and the file is
+ * for the CI only. The Cloudflare build (`dist/client`) gets `dist/precache-size.json`; any other directory gets a
+ * file named after it in its parent, so two builds side by side do not share one.
  */
 export function precacheSizePath(outputDirectory: string): string {
-  return join(
-    basename(outputDirectory) === "client"
-      ? dirname(outputDirectory)
-      : outputDirectory,
-    PRECACHE_SIZE_FILE
-  );
+  const directory = resolve(outputDirectory);
+  const parent = dirname(directory);
+  if (parent === directory) {
+    throw new Error("The root directory cannot be a build output directory");
+  }
+  const name = basename(directory);
+  return name === "client"
+    ? join(parent, PRECACHE_SIZE_FILE)
+    : join(parent, `${name}.${PRECACHE_SIZE_FILE}`);
 }
 
 /** The measures of one build as `PRECACHE_SIZE_FILE` keeps them: the lines of `measurePrecache` and their sum. */

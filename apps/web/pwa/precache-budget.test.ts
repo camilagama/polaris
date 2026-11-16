@@ -9,9 +9,9 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, relative as relativePath, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import {
   BUDGET_MODE,
   CALENDAR_BUDGET_GZIP_BYTES,
@@ -63,6 +63,16 @@ const SOURCE_FILE = /\.tsx?$/;
 const TEST_FILE = /\.test\.tsx?$/;
 
 const bytes = (length: number, fill = 0) => new Uint8Array(length).fill(fill);
+
+const LEFTOVER_SIZE_FILE = /^precache-budget-.*\.precache-size\.json$/;
+
+afterEach(() => {
+  for (const file of readdirSync(tmpdir())) {
+    if (LEFTOVER_SIZE_FILE.test(file)) {
+      rmSync(join(tmpdir(), file), { force: true });
+    }
+  }
+});
 
 describe("precache budget (ADR 0103, section 4)", () => {
   it("counts fonts by their bytes and the rest gzipped, leaving the Sentry chunk out", () => {
@@ -1586,7 +1596,56 @@ describe("PRECACHE-DELTA (the change of the precache against the base of the pul
     expect(precacheSizePath("/repo/apps/web/dist/client")).toBe(
       "/repo/apps/web/dist/precache-size.json"
     );
-    expect(precacheSizePath("/tmp/out")).toBe("/tmp/out/precache-size.json");
+    expect(precacheSizePath("/repo/apps/web/dist/client/")).toBe(
+      "/repo/apps/web/dist/precache-size.json"
+    );
+  });
+
+  it("never leaves the file inside an output directory that is not named client", () => {
+    for (const out of [
+      "/tmp/out",
+      "/tmp/out/",
+      "/repo/dist/client-test",
+      ".",
+      "dist",
+      "client",
+    ]) {
+      const path = precacheSizePath(out);
+      const relative = relativePath(resolve(out), path);
+      expect(relative.startsWith(`..${sep}`)).toBe(true);
+    }
+    expect(() => precacheSizePath("/")).toThrow("root directory");
+    expect(precacheSizePath("/tmp/out")).toBe("/tmp/out.precache-size.json");
+    expect(precacheSizePath("/tmp/other")).not.toBe(
+      precacheSizePath("/tmp/out")
+    );
+  });
+
+  it("the build of a directory that is not named client writes the measures outside it", () => {
+    const directory = mkdtempSync(join(tmpdir(), "precache-budget-"));
+    writeFileSync(join(directory, "index.html"), "<!doctype html>");
+    const plugin = precacheBudgetPlugin();
+    (plugin.configResolved as (config: unknown) => void)({ env: {} });
+    try {
+      (
+        plugin.writeBundle as (this: unknown, output: { dir: string }) => void
+      ).call(
+        {
+          error: () => undefined,
+          info: () => undefined,
+          warn: () => undefined,
+        },
+        { dir: directory }
+      );
+      expect(readdirSync(directory)).toEqual(["index.html"]);
+      expect(
+        parsePrecacheSizeRecord(
+          readFileSync(precacheSizePath(directory), "utf8")
+        )
+      ).not.toBeNull();
+    } finally {
+      rmSync(directory, { force: true, recursive: true });
+    }
   });
 
   it("sums every line into the total, fonts included", () => {
@@ -1658,7 +1717,9 @@ describe("PRECACHE-DELTA (the change of the precache against the base of the pul
           baseText: JSON.stringify(BASE),
           headText,
         })
-      ).toContain("PRECACHE-DELTA indisponível");
+      ).toBe(
+        "PRECACHE-DELTA indisponível (o build do PR não gravou precache-size.json)"
+      );
     }
   });
 
