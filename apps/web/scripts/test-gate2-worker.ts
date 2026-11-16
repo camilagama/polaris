@@ -24,7 +24,6 @@ interface TestAuthHelpers {
 }
 
 interface TemporaryLogin {
-  baseRole: string;
   connectionString: string;
   name: string;
   password: string;
@@ -261,12 +260,11 @@ async function createTemporaryLogin(
     await rolePool.end();
   }
   if (roleProbeFailed) {
-    await pool.query(`REVOKE ${baseRole} FROM ${identifier}`);
     await pool.query(`DROP ROLE IF EXISTS ${identifier}`);
     throw roleProbeError;
   }
 
-  return { baseRole, connectionString: roleConnectionString, name, password };
+  return { connectionString: roleConnectionString, name, password };
 }
 
 async function availablePort(): Promise<number> {
@@ -451,7 +449,6 @@ async function dropTemporaryLogin(
   role: TemporaryLogin
 ): Promise<void> {
   const identifier = quoteTemporaryRole(role.name);
-  await pool.query(`REVOKE ${role.baseRole} FROM ${identifier}`);
   await pool.query(`DROP ROLE IF EXISTS ${identifier}`);
 }
 

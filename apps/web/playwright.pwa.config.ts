@@ -12,6 +12,8 @@ const inCI = Boolean(process.env.CI);
 const PHONE_ONLY = ["**/motion-level.e2e.ts", "**/dialog-voltar.e2e.ts"];
 /** The visual regression: only in its project, with the browser of the pinned image (`scripts/visual-browser.ts`). */
 const VISUAL = ["**/ui-visual.e2e.ts"];
+/** The reloads with the worker in control: the worker is the same on a phone, and 300 reloads cost too much twice. */
+const DESKTOP_ONLY = ["**/recarga-com-worker.e2e.ts"];
 
 export default defineConfig({
   forbidOnly: inCI,
@@ -24,7 +26,7 @@ export default defineConfig({
     },
     {
       name: "chromium-mobile-emulated",
-      testIgnore: [...PHONE_ONLY, ...VISUAL],
+      testIgnore: [...PHONE_ONLY, ...VISUAL, ...DESKTOP_ONLY],
       use: { ...devices["Pixel 5"], browserName: "chromium" },
     },
     // The levels of motion on a phone: a touch screen of 360×740, the phone of the design. The file proves

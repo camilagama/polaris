@@ -8,7 +8,7 @@ O Gate 4 prova seis propriedades: venda atômica, estoque correto, dinheiro corr
 
 O Gate 4 roda como os demais gates de banco: num PostgreSQL 18 que não é o Neon. No pull request, quem roda é o job "PostgreSQL 18 gates" do CI (`bun run --filter @polaris/db gates:ci`); não há passo manual nem acesso a Neon. Para reproduzir ou depurar antes do push, rode o mesmo numa instância local.
 
-**O que a suíte `ci` cobre e o que só roda em Neon.** A suíte `ci` inclui `inventory`, `customers`, `media-upload`, `tenant-context` e `rls`, que antes ficavam de fora pela trava de hostname. As propriedades de venda do Gate 4 (venda, cancelamento, devolução, vínculo de cliente, datas e o cenário ponta a ponta `gate4`) e o `customers` do executor rodam no CI. O que continua só em Neon está em [O que só roda em Neon](#o-que-só-roda-em-neon).
+**O que a suíte `ci` cobre e o que só roda em Neon.** A suíte `ci` inclui `inventory`, `customers`, `media-upload`, `media-schema`, `media-derivatives`, `tenant-context` e `rls`, que antes ficavam de fora pela trava de hostname. As propriedades de venda do Gate 4 (venda, cancelamento, devolução, vínculo de cliente, datas e o cenário ponta a ponta `gate4`) e o `customers` do executor rodam no CI. O que continua só em Neon está em [O que só roda em Neon](#o-que-só-roda-em-neon).
 
 ### Pré-requisitos
 
