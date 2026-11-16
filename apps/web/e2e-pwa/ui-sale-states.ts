@@ -263,6 +263,35 @@ async function payPix(page: Page) {
 }
 
 const ASKS = 3;
+const POPUP_WAIT_MS = 5000;
+const ADJUSTMENT_WAIT_MS = 15_000;
+const ADJUSTMENT_GROUP = /^Ajuste \d+$/;
+
+/**
+ * Opens the popup of a select. A click that left it closed is repeated once, only after the wait for the option ran
+ * out with the listbox still not shown (never while it may be opening, because a second click would close it); a
+ * second miss fails with the trigger's name instead of waiting out the action limit on the option.
+ */
+async function openPopup(trigger: Locator, option: Locator, listbox: Locator) {
+  for (let click = 1; click <= 2; click += 1) {
+    // biome-ignore lint/performance/noAwaitInLoops: the second click only follows one that opened nothing
+    await trigger.click();
+    try {
+      await option.waitFor({ timeout: POPUP_WAIT_MS });
+      return;
+    } catch (error) {
+      if (
+        !(error instanceof Error && error.name === "TimeoutError") ||
+        (await listbox.isVisible())
+      ) {
+        throw error;
+      }
+    }
+  }
+  throw new Error(
+    `the click on the select "${await trigger.innerText()}" did not open its popup after 2 clicks`
+  );
+}
 
 /**
  * Opens a select, picks the option and waits for the popup to leave: a slow machine still shows it fading out. The
@@ -274,7 +303,7 @@ async function chooseOption(page: Page, trigger: Locator, option: Locator) {
   const listbox = page.getByRole("listbox");
   for (let ask = 1; ; ask += 1) {
     // biome-ignore lint/performance/noAwaitInLoops: the next ask only follows a choice that did not take
-    await trigger.click();
+    await openPopup(trigger, option, listbox);
     const label = (await option.innerText()).trim();
     await option.click();
     await listbox.waitFor({ state: "detached" });
@@ -289,22 +318,37 @@ async function chooseOption(page: Page, trigger: Locator, option: Locator) {
   }
 }
 
-/** Adds the first adjustment and returns its group: a click that did not open it (the panel was still settling) is repeated. */
+/**
+ * Adds the first adjustment and returns its group. The panel of date and adjustments opens with a height animation on
+ * the desktop, and a click that lands while it runs can focus the button without activating it: the click waits for
+ * the animation to end. It is made once: a second click while the group is slow would add "Ajuste 2" and fail the
+ * state, and one the app ignored must show as a failure, not be repeated away.
+ */
 async function addFirstAdjustment(page: Page) {
   const group = page.getByRole("group", { exact: true, name: "Ajuste 1" });
   const add = page.getByRole("button", { name: "Adicionar ajuste" });
-  for (let ask = 1; ; ask += 1) {
-    // biome-ignore lint/performance/noAwaitInLoops: the next click only follows one that added nothing
-    await add.click();
-    try {
-      await group.waitFor({ timeout: 3000 });
-      return group;
-    } catch (error) {
-      if (ask === ASKS) {
-        throw error;
-      }
-    }
+  const panel = page
+    .locator('[data-slot="collapsible-content"]')
+    .filter({ has: add });
+  await panel.waitFor();
+  await panel.evaluate((element) =>
+    Promise.allSettled(
+      element.getAnimations().map((animation) => animation.finished)
+    )
+  );
+  await add.click();
+  try {
+    await group.waitFor({ timeout: ADJUSTMENT_WAIT_MS });
+  } catch (error) {
+    const groups = await page
+      .getByRole("group", { name: ADJUSTMENT_GROUP })
+      .count();
+    throw new Error(
+      `o clique em adicionar ajuste não teve efeito: "Ajuste 1" não apareceu em ${ADJUSTMENT_WAIT_MS} ms (${groups} grupos de ajuste na tela)`,
+      { cause: error }
+    );
   }
+  return group;
 }
 
 const submit = (page: Page) =>
