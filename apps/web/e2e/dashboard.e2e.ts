@@ -2312,7 +2312,7 @@ test.describe("o período no endereço (L2-11 a, AC-3.1 a AC-3.7)", () => {
     expect(search(page).get("x")).toBe("1");
   });
 
-  test("?periodo=este-mes explícito abre o padrão e o endereço perde o atalho (AC-3.1, AC-3.2)", async ({
+  test("?periodo=este-mes explícito abre o padrão e o endereço perde o atalho, sem acrescentar passo ao histórico (AC-3.1, AC-3.2)", async ({
     page,
   }) => {
     const server = new FakeReportServer();
@@ -2322,6 +2322,12 @@ test.describe("o período no endereço (L2-11 a, AC-3.1 a AC-3.7)", () => {
     await expect(card(page, CARD.netSales)).toContainText("R$ 130,00");
     await expect.poll(() => search(page).has("periodo")).toBe(false);
     expect(search(page).get("x")).toBe("1");
+    const steps = await page.evaluate(() => window.history.length);
+
+    const plain = await page.context().newPage();
+    await openDashboard(plain, new FakeReportServer(), "&x=1");
+    await expectPreset(plain, "Este mês");
+    expect(await plain.evaluate(() => window.history.length)).toBe(steps);
   });
 
   for (const extra of [

@@ -2,43 +2,18 @@ import type { ComponentProps } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { StoredPeriodSummary } from "../lib/period-summary-cache";
-import { ResultCards } from "./result-cards";
+import { ResultCardsView } from "./result-cards";
 import { addDays } from "./result-period";
 
-const harness = vi.hoisted(() => ({
-  hidden: false,
-  index: null as number | null,
-  pending: false,
-  seeded: 0,
-}));
+const harness = vi.hoisted(() => ({ hidden: false }));
 
 vi.mock("@/lib/hidden-values", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/hidden-values")>()),
   useHiddenValues: () => [harness.hidden, () => undefined],
 }));
 
-/**
- * A string render keeps no state, so the day under the pointer is seeded at the first `useState(null)` of the render,
- * the index of the cards: the markup is then what the cards say while that day is read.
- */
-vi.mock("react", async (importOriginal) => {
-  const original = await importOriginal<typeof import("react")>();
-  const useState = ((initial: unknown) => {
-    const seed = harness.pending && initial === null;
-    if (seed) {
-      harness.pending = false;
-      harness.seeded += 1;
-    }
-    return original.useState(seed ? harness.index : initial);
-  }) as typeof original.useState;
-  return { ...original, default: { ...original, useState }, useState };
-});
-
 afterEach(() => {
   harness.hidden = false;
-  harness.index = null;
-  harness.pending = false;
-  harness.seeded = 0;
 });
 
 const SPOKEN = /aria-valuetext="([^"]*)"/;
@@ -140,15 +115,17 @@ function yearFromTheFourthMonth(): StoredPeriodSummary {
   } as unknown as StoredPeriodSummary;
 }
 
-function render(summary: StoredPeriodSummary): string {
-  const props: ComponentProps<typeof ResultCards> = {
+function render(summary: StoredPeriodSummary, index: number | null): string {
+  const props: ComponentProps<typeof ResultCardsView> = {
     comparison: null,
+    index,
+    onIndex: () => undefined,
     onOpenSales: null,
     salesComparison: null,
     summary,
     today: TODAY,
   };
-  return renderToStaticMarkup(<ResultCards {...props} />);
+  return renderToStaticMarkup(<ResultCardsView {...props} />);
 }
 
 /** What the keyboard control of a card says (its `aria-valuetext`), from the card's id to the next one. */
@@ -162,18 +139,9 @@ function spokenBy(markup: string, id: string): string {
   return (found as RegExpExecArray)[1] as string;
 }
 
-function readDay(summary: StoredPeriodSummary, index: number | null) {
-  harness.index = index;
-  harness.pending = index !== null;
-  const markup = render(summary);
-  expect(harness.seeded).toBe(index === null ? 0 : 1);
-  harness.seeded = 0;
-  return markup;
-}
-
 describe("what the keyboard control of the cards says of a day read before the first sale", () => {
   it("names the amount and then 'Sem vendas' on Vendas, and 'sem valor' on Ticket médio", () => {
-    const markup = readDay(octoberFromTheFifth(), 0);
+    const markup = render(octoberFromTheFifth(), 0);
     expect(spokenBy(markup, "result-kpi-sales")).toBe(
       "Até 01/10: R$ 0,00. Sem vendas"
     );
@@ -183,14 +151,14 @@ describe("what the keyboard control of the cards says of a day read before the f
   });
 
   it("says only the amount once the first sale is read, and the ticket from then on", () => {
-    const markup = readDay(octoberFromTheFifth(), FIRST_SALE_ON - 1);
+    const markup = render(octoberFromTheFifth(), FIRST_SALE_ON - 1);
     expect(spokenBy(markup, "result-kpi-sales")).toBe("Até 05/10: R$ 50,00");
     expect(spokenBy(markup, "result-kpi-ticket")).toBe("Até 05/10: R$ 50,00");
   });
 
   it("hides the amount with 'Esconder valores' and keeps the words of the day", () => {
     harness.hidden = true;
-    const before = readDay(octoberFromTheFifth(), 0);
+    const before = render(octoberFromTheFifth(), 0);
     expect(spokenBy(before, "result-kpi-sales")).toBe(
       "Até 01/10: valor escondido. Sem vendas"
     );
@@ -200,7 +168,7 @@ describe("what the keyboard control of the cards says of a day read before the f
     expect(spokenBy(before, "result-kpi-result")).toBe(
       "Até 01/10: valor escondido"
     );
-    const after = readDay(octoberFromTheFifth(), 9);
+    const after = render(octoberFromTheFifth(), 9);
     expect(spokenBy(after, "result-kpi-sales")).toBe(
       "Até 10/10: valor escondido"
     );
@@ -211,21 +179,21 @@ describe("what the keyboard control of the cards says of a day read before the f
 
   it("hides the amount at rest too, with no 'Sem vendas'", () => {
     harness.hidden = true;
-    const markup = readDay(octoberFromTheFifth(), null);
+    const markup = render(octoberFromTheFifth(), null);
     expect(spokenBy(markup, "result-kpi-sales")).toBe(
       "Até 25/10: valor escondido"
     );
   });
 
   it("says the amounts when the values are not hidden", () => {
-    const markup = readDay(octoberFromTheFifth(), null);
+    const markup = render(octoberFromTheFifth(), null);
     expect(spokenBy(markup, "result-kpi-sales")).toBe("Até 25/10: R$ 1.050,00");
   });
 });
 
 describe("the same, in the reading by month of a period above 62 days", () => {
   it("says 'Sem vendas' of a month before the first sale, to the last day of that month", () => {
-    const markup = readDay(yearFromTheFourthMonth(), 1);
+    const markup = render(yearFromTheFourthMonth(), 1);
     expect(spokenBy(markup, "result-kpi-sales")).toBe(
       "Até 28/02: R$ 0,00. Sem vendas"
     );
@@ -236,7 +204,7 @@ describe("the same, in the reading by month of a period above 62 days", () => {
 
   it("hides the amount of that month and keeps 'Sem vendas'", () => {
     harness.hidden = true;
-    const markup = readDay(yearFromTheFourthMonth(), 0);
+    const markup = render(yearFromTheFourthMonth(), 0);
     expect(spokenBy(markup, "result-kpi-sales")).toBe(
       "Até 31/01: valor escondido. Sem vendas"
     );
@@ -246,8 +214,64 @@ describe("the same, in the reading by month of a period above 62 days", () => {
   });
 
   it("drops 'Sem vendas' from the month of the first sale on", () => {
-    const markup = readDay(yearFromTheFourthMonth(), 3);
+    const markup = render(yearFromTheFourthMonth(), 3);
     expect(spokenBy(markup, "result-kpi-sales")).toBe("Até 30/04: R$ 1.500,00");
     expect(spokenBy(markup, "result-kpi-ticket")).toBe("Até 30/04: R$ 50,00");
+  });
+});
+
+describe("the cards of the month read at rest and the card of the result", () => {
+  const monthsAtRest = (): StoredPeriodSummary => {
+    const base = yearFromTheFourthMonth();
+    return {
+      ...base,
+      cards: { ...base.cards, operatingResult: "8320.00" },
+    } as StoredPeriodSummary;
+  };
+
+  it("says the result of the months up to the one read, to its last day", () => {
+    const summary = monthsAtRest();
+    expect(spokenBy(render(summary, 1), "result-kpi-result")).toBe(
+      "Até 28/02: R$ 0,00"
+    );
+    expect(spokenBy(render(summary, 3), "result-kpi-result")).toBe(
+      "Até 30/04: R$ 1.200,00"
+    );
+  });
+
+  it("hides the result of a month read and keeps its date", () => {
+    harness.hidden = true;
+    expect(spokenBy(render(monthsAtRest(), 3), "result-kpi-result")).toBe(
+      "Até 30/04: valor escondido"
+    );
+  });
+
+  it("reads the whole period at rest, up to today, with no 'Sem vendas'", () => {
+    const markup = render(monthsAtRest(), null);
+    expect(spokenBy(markup, "result-kpi-result")).toBe(
+      "Até 25/10: R$ 8.320,00"
+    );
+    expect(spokenBy(markup, "result-kpi-sales")).toBe(
+      "Até 25/10: R$ 10.400,00"
+    );
+    expect(spokenBy(markup, "result-kpi-ticket")).toBe("Até 25/10: R$ 50,00");
+  });
+});
+
+describe("the Ticket médio at rest when the server sends none for a period that has sales", () => {
+  it("says it is unavailable, never 'Sem vendas no período', and still counts the sales", () => {
+    const base = octoberFromTheFifth();
+    const markup = render(
+      { ...base, cards: { ...base.cards, ticket: null } },
+      null
+    );
+    const start = markup.indexOf('id="result-kpi-ticket"');
+    const ticket = markup.slice(
+      start,
+      markup.indexOf('id="result-kpi-margin"', start)
+    );
+    expect(ticket).toContain("Ticket indisponível agora");
+    expect(ticket).not.toContain("Sem vendas no período");
+    expect(spokenBy(markup, "result-kpi-ticket")).toBe("Até 25/10: sem valor");
   });
 });
