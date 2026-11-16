@@ -18,6 +18,8 @@ export default defineConfig({
     },
     {
       name: "chromium-mobile-emulated",
+      // skips this project in `beforeEach` (one run with touch is enough); ignored here so the skipped tests do not count in `--shard`
+      testIgnore: ["**/reflow-rotas.e2e.ts"],
       use: { ...devices["Pixel 5"], browserName: "chromium" },
     },
     // Windows Playwright WebKit exposes OPFS but cannot open the sync access handle.

@@ -65,7 +65,7 @@ async function run() {
   assert.doesNotMatch(parsedAdminUrl.hostname, poolerPattern);
 
   const owner = createDatabase(adminUrl, { maxConnections: 2 });
-  const logins: [string, string][] = [];
+  const logins: string[] = [];
   const tests: string[] = [];
   let runtime: ReturnType<typeof createDatabase> | undefined;
 
@@ -95,7 +95,7 @@ async function run() {
       `CREATE ROLE "${role}" WITH LOGIN INHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS PASSWORD '${password}'`
     );
     await owner.pool.query(`GRANT "${runtimeRole}" TO "${role}"`);
-    logins.push([role, runtimeRole]);
+    logins.push(role);
     const tenantUrl = temporaryRuntimeUrl(adminUrl, role, password);
     runtime = createDatabase(tenantUrl, { maxConnections: 2 });
     const { db } = runtime;
@@ -594,9 +594,8 @@ async function run() {
     );
   } finally {
     await runtime?.pool.end().catch(() => undefined);
-    for (const [role, group] of logins) {
+    for (const role of logins) {
       // biome-ignore lint/performance/noAwaitInLoops: Cleanups, in order.
-      await owner.pool.query(`REVOKE "${group}" FROM "${role}"`);
       await owner.pool.query(`DROP ROLE IF EXISTS "${role}"`);
     }
     await owner.pool.end();

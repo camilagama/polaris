@@ -834,16 +834,12 @@ async function run() {
     );
   } finally {
     if (cleanupLoginRole) {
-      await admin.pool.query(
-        `REVOKE polaris_media_cleanup_runtime FROM "${cleanupLoginRole}"`
-      );
       await admin.pool.query(`DROP ROLE IF EXISTS "${cleanupLoginRole}"`);
     }
     if (runtime) {
       await runtime.pool.end();
     }
     if (loginRole) {
-      await admin.pool.query(`REVOKE "${runtimeRole}" FROM "${loginRole}"`);
       await admin.pool.query(`DROP ROLE IF EXISTS "${loginRole}"`);
     }
     await admin.pool.end();

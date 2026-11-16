@@ -3951,3 +3951,144 @@ test.describe("o passo a passo do Resultado a 320 px com a letra do navegador em
     );
   }
 });
+
+const HELP_OF_THE_OPEN_MONTH =
+  /Vendas menos custos, taxas e despesas .*\. 1 de 5 dias ainda sem custo informado\./;
+const HELP_OF_THIS_YEAR = /Janeiro: 1 de 31 dias ainda sem custo informado\./;
+const HELP_OF_ANOTHER_YEAR =
+  /Novembro de 2025: 1 de 26 dias ainda sem custo informado\./;
+const ABOUT_BUTTON = /^Sobre /;
+
+test.describe("o aviso dos dias sem custo com o mês nomeado tem teto: a contagem fica numa linha só e o que não cabe vai para o (i)", () => {
+  skipOutsideChromium();
+
+  const ONLY = (month: string): Record<string, FixtureMonth> => ({
+    "2025-11": COMPLETE_MONTH,
+    "2026-01": COMPLETE_MONTH,
+    "2026-10": COMPLETE_MONTH,
+    "2026-11": COMPLETE_MONTH,
+    [month]: PARTIAL_MONTH,
+  });
+
+  const CASES = [
+    {
+      fixture: ONLY("2026-11"),
+      help: HELP_OF_THE_OPEN_MONTH,
+      line: "1 de 5 dias sem custo",
+      name: "sem mês nomeado (mês aberto)",
+      period: async () => undefined,
+    },
+    {
+      fixture: ONLY("2026-01"),
+      help: HELP_OF_THIS_YEAR,
+      line: "janeiro: 1 de 31 dias sem custo",
+      name: "mês do ano de hoje",
+      period: (page: Page) => choosePreset(page, "Este ano"),
+    },
+    {
+      fixture: ONLY("2025-11"),
+      help: HELP_OF_ANOTHER_YEAR,
+      line: null,
+      name: "mês de outro ano",
+      period: (page: Page) => rangeFields(page, ...YEAR_AGO_TO_TODAY),
+    },
+  ] as const;
+
+  /** The widest counts the limit of 34 characters lets stay on the line (`unknownDaysFit`): each one must fit in one line. */
+  const AT_THE_LIMIT = [
+    "dezembro: 28 de 28 dias sem custo",
+    "dezembro: 29 de 29 dias sem custo",
+    "dezembro: 30 de 30 dias sem custo",
+    "dezembro: 31 de 31 dias sem custo",
+    "fevereiro: 1 de 28 dias sem custo",
+    "fevereiro: 1 de 29 dias sem custo",
+    "fevereiro: 1 de 30 dias sem custo",
+    "fevereiro: 1 de 31 dias sem custo",
+    "fevereiro: 28 de 28 dias sem custo",
+    "fevereiro: 28 de 28 dias sem taxa",
+    "fevereiro: 29 de 29 dias sem custo",
+    "fevereiro: 29 de 29 dias sem taxa",
+    "fevereiro: 30 de 30 dias sem custo",
+    "fevereiro: 30 de 30 dias sem taxa",
+    "fevereiro: 31 de 31 dias sem custo",
+    "fevereiro: 31 de 31 dias sem taxa",
+    "maio de 2025: 1 de 5 dias sem taxa",
+    "maio de 2025: 1 de 9 dias sem taxa",
+    "maio de 2025: 5 de 5 dias sem taxa",
+    "maio de 2025: 9 de 9 dias sem taxa",
+    "novembro: 28 de 28 dias sem custo",
+    "novembro: 29 de 29 dias sem custo",
+    "novembro: 30 de 30 dias sem custo",
+    "novembro: 31 de 31 dias sem custo",
+    "setembro: 28 de 28 dias sem custo",
+    "setembro: 29 de 29 dias sem custo",
+    "setembro: 30 de 30 dias sem custo",
+    "setembro: 31 de 31 dias sem custo",
+  ];
+
+  for (const size of [
+    { fontPixels: 20, height: 740, width: 320 },
+    { fontPixels: 16, height: 740, width: 360 },
+  ]) {
+    reflowTest(
+      `a ${size.width} px com a letra em ${size.fontPixels} px`,
+      async ({ page }) => {
+        const lines: Record<string, number> = {};
+        for (const scenario of CASES) {
+          // biome-ignore lint/performance/noAwaitInLoops: one store at a time, on the same page
+          await openReflowViewport(page, size);
+          const server = new MonthlyReportServer();
+          server.now = NOVEMBER_5;
+          server.fixture = scenario.fixture;
+          await openDashboard(page, server);
+          await expectReflowFont(page, size.fontPixels);
+          await expect(kpiCards(page)).toHaveCount(4);
+          await scenario.period(page);
+          const result = card(page, CARD.result);
+          const notice = result.locator("[data-kpi-notice]");
+          await expect(notice).toContainText("estimativa incompleta");
+          const unknown = notice.locator("[data-kpi-unknown]");
+          if (scenario.line === null) {
+            await expect(
+              unknown,
+              `${scenario.name}: vai para o (i)`
+            ).toHaveCount(0);
+          } else {
+            await expect(unknown).toHaveText(scenario.line);
+          }
+          lines[scenario.name] = await notice.evaluate((element) =>
+            Math.round(
+              element.getBoundingClientRect().height /
+                Number.parseFloat(getComputedStyle(element).lineHeight)
+            )
+          );
+          await result.getByRole("button", { name: ABOUT_BUTTON }).click();
+          await expect(
+            page.getByRole("dialog").or(page.getByRole("tooltip")).first()
+          ).toContainText(scenario.help);
+          await page.keyboard.press("Escape");
+          await assertNoPageScroll(page);
+          if (scenario.line !== null && scenario === CASES[0]) {
+            const wrapped = await unknown.evaluate((span, texts) => {
+              const line = Number.parseFloat(getComputedStyle(span).lineHeight);
+              return texts.filter((text) => {
+                span.textContent = text;
+                return span.getBoundingClientRect().height > line * 1.5;
+              });
+            }, AT_THE_LIMIT);
+            expect(
+              wrapped,
+              "toda contagem que cabe no teto de caracteres cabe numa linha"
+            ).toEqual([]);
+          }
+        }
+        for (const [name, count] of Object.entries(lines)) {
+          expect(
+            count,
+            `${name}: o selo numa linha e a contagem em outra, no máximo`
+          ).toBeLessThanOrEqual(2);
+        }
+      }
+    );
+  }
+});

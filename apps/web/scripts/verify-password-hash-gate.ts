@@ -213,7 +213,7 @@ async function run() {
   assert.doesNotMatch(parsedAdminUrl.hostname, poolerPattern);
 
   const owner = createDatabase(adminUrl, { maxConnections: 2 });
-  const logins: [string, string][] = [];
+  const logins: string[] = [];
   const tests: string[] = [];
   const closers: (() => Promise<unknown>)[] = [];
   const cleanupFailures: string[] = [];
@@ -247,7 +247,7 @@ async function run() {
         `CREATE ROLE "${role}" WITH LOGIN INHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS PASSWORD '${password}'`
       );
       await owner.pool.query(`GRANT "${group}" TO "${role}"`);
-      logins.push([role, group]);
+      logins.push(role);
       const database = createDatabase(
         temporaryRuntimeUrl(adminUrl, role, password),
         { maxConnections: 1 }
@@ -414,9 +414,8 @@ async function run() {
     for (const close of closers.reverse()) {
       await close().catch(() => undefined);
     }
-    for (const [role, group] of logins) {
+    for (const role of logins) {
       try {
-        await owner.pool.query(`REVOKE "${group}" FROM "${role}"`);
         await owner.pool.query(`DROP ROLE IF EXISTS "${role}"`);
       } catch (error) {
         cleanupFailures.push(`role (${redactedFailure(error)})`);

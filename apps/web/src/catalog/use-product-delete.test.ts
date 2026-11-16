@@ -10,6 +10,7 @@ const HOOK = new URL("./use-product-delete.ts", import.meta.url);
 const COMMENTS = /\/\*[\s\S]*?\*\/|\/\/.*$/gm;
 const IMPORT = /^import\s+([^;]*?)\s+from\s+"([^"]+)";/gm;
 const OFFLINE_WORDS = /outbox|enqueue|createOffline|stores\b/gi;
+const DYNAMIC_IMPORT = /\bimport\s*\(/g;
 const TYPE_KEYWORD = /\btype\s+/g;
 const BRACES = /[{}]/g;
 
@@ -28,6 +29,11 @@ function importedNames(source: string): string[] {
       .filter(Boolean)
       .map((name) => `${match[2]}: ${name}`)
   );
+}
+
+/** Textual limit: a queue reached through a name outside these words and outside the static imports is not seen. */
+function dynamicImports(source: string): string[] {
+  return code(source).match(DYNAMIC_IMPORT) ?? [];
 }
 
 function offlineWords(source: string): string[] {
@@ -61,6 +67,13 @@ workspace.stores.outbox.enqueue(command);`;
       []
     );
     expect(
+      dynamicImports('const m = await import("../offline/outbox");').length
+    ).toBe(1);
+    expect(
+      dynamicImports('const m = await import ( "../offline/outbox" );').length
+    ).toBe(1);
+    expect(dynamicImports('// import("x")\nconst a = 1;')).toEqual([]);
+    expect(
       importedNames(
         'import type { A } from "x";\nimport { b, type c } from "y";'
       )
@@ -85,6 +98,10 @@ describe("Excluir produto nunca vira comando guardado no aparelho (AC-2.7)", () 
 
   it("o hook não toca a fila nem a loja local", () => {
     expect(offlineWords(source)).toEqual([]);
+  });
+
+  it("o hook não carrega módulo nenhum com import() dinâmico", () => {
+    expect(dynamicImports(source)).toEqual([]);
   });
 
   it("a linha local que o hook grava depois da resposta do servidor não passa pela fila", async () => {
