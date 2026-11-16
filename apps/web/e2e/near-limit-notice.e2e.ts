@@ -23,6 +23,7 @@ const SUBSCRIPTION = "/configuracoes?aba=assinatura";
 const SUBSCRIPTION_ADDRESS = /\/configuracoes\?aba=assinatura$/;
 const PRODUCTS_ADDRESS = /\/products$/;
 const NEAR_LIMIT = "[data-near-limit]";
+const FREEABLE = "[data-near-limit-freeable]";
 /** The import sends one call per row, spaced by `IMPORT_CALL_INTERVAL_MS`; four rows took ~21 s in the run, so the wait and the test keep room over that. */
 const IMPORT_ANSWER_TIMEOUT = 60_000;
 const IMPORT_TEST_TIMEOUT = 100_000;
@@ -45,6 +46,7 @@ const limitRefusal = rpc(
 );
 
 interface Use {
+  freeable?: { products: number; variants: number };
   images: number;
   variants: number;
 }
@@ -835,4 +837,359 @@ test.describe("painel de imagens", () => {
     await expect(dialogLine(page)).toContainText("Você usa 47 de 50 imagens");
     expect(await stillTheSamePage(page)).toBe(true);
   });
+});
+
+const jacket = {
+  ...shirt,
+  archivedAt: NOW,
+  id: id(22),
+  name: "Jaqueta de inverno",
+  status: "archived",
+  version: 2,
+};
+
+/** The list by status as the server answers it, from what `catalog` holds now. */
+const listByStatus =
+  (catalog: { active: unknown[]; archived: unknown[] }): Handler =>
+  (route) => {
+    const { status } = (
+      route.request().postDataJSON() as {
+        json: { status: string };
+      }
+    ).json;
+    return route.fulfill(
+      rpc({
+        products: status === "archived" ? catalog.archived : catalog.active,
+      })
+    );
+  };
+
+const freeableLine = (page: Page) => page.locator(FREEABLE);
+const dialogFreeable = (page: Page) =>
+  page.getByRole("dialog").locator(FREEABLE);
+const archivedTab = (page: Page) =>
+  page.getByRole("tab", { name: "Arquivados" });
+
+const freeableStore = (
+  products: number,
+  variants = 47
+): Store & { catalog: { active: unknown[]; archived: unknown[] } } => {
+  const catalog = { active: [shirt], archived: [jacket] };
+  return {
+    answers: { ...productAnswers(), "product/list": listByStatus(catalog) },
+    catalog,
+    use: { freeable: { products, variants: products }, images: 0, variants },
+  };
+};
+
+test.describe("a segunda linha: arquivados sem estoque", () => {
+  test("com 3 arquivados sem estoque: um parágrafo à parte, depois do aviso, com o link 'Ver arquivados'", async ({
+    page,
+  }) => {
+    await openApp(page, "/products", freeableStore(3));
+    await expect(line(page)).toContainText("Você usa 47 de 50 variantes");
+    await expect(freeableLine(page)).toHaveText(
+      "Você tem 3 produtos arquivados sem estoque. Excluir libera vaga. Ver arquivados"
+    );
+    expect(await freeableLine(page).getAttribute("role")).toBeNull();
+    expect(await top(freeableLine(page))).toBeGreaterThan(
+      await top(line(page))
+    );
+    await expect(
+      freeableLine(page).getByRole("link", { name: "Ver arquivados" })
+    ).toHaveAttribute("href", "/products?arquivados=1");
+  });
+
+  test("com 1 o texto vai ao singular; com 0 ou sem o campo, nenhuma segunda linha; abaixo de 90%, nada", async ({
+    page,
+  }) => {
+    await openApp(page, "/products", freeableStore(1));
+    await expect(freeableLine(page)).toContainText(
+      "Você tem 1 produto arquivado sem estoque. Excluir libera vaga."
+    );
+    for (const use of [
+      { freeable: { products: 0, variants: 0 }, images: 0, variants: 47 },
+      { images: 0, variants: 47 },
+    ]) {
+      // biome-ignore lint/performance/noAwaitInLoops: one store after the other, on the same page
+      await page.unrouteAll({ behavior: "ignoreErrors" });
+      const store = freeableStore(1);
+      await openApp(page, "/products", { ...store, use });
+      await expect(line(page)).toContainText("Você usa 47 de 50 variantes");
+      await expect(freeableLine(page)).toHaveCount(0);
+    }
+    await page.unrouteAll({ behavior: "ignoreErrors" });
+    await openApp(page, "/products", {
+      ...freeableStore(3),
+      use: { freeable: { products: 3, variants: 3 }, images: 0, variants: 44 },
+    });
+    await expect(page.getByText("Camiseta do teste").first()).toBeVisible();
+    await expect(line(page)).toHaveCount(0);
+    await expect(freeableLine(page)).toHaveCount(0);
+  });
+
+  test("só o dono de loja Free: Pro e quem não gerencia a cobrança não veem a segunda linha", async ({
+    page,
+  }) => {
+    for (const store of [
+      { role: "owner", state: "active" },
+      { role: "cashier", state: "free" },
+    ]) {
+      // biome-ignore lint/performance/noAwaitInLoops: one store after the other, on the same page
+      await page.unrouteAll({ behavior: "ignoreErrors" });
+      await openApp(page, "/products", { ...freeableStore(3), ...store });
+      await expect(page.getByText("Camiseta do teste").first()).toBeVisible();
+      await expect(freeableLine(page)).toHaveCount(0);
+    }
+  });
+
+  test("'Ver arquivados' abre a aba Arquivados sem recarregar, com o foco na aba, e a linha fica sem o link", async ({
+    page,
+  }) => {
+    await openApp(page, "/products", freeableStore(3));
+    await page.getByRole("link", { name: "Ver arquivados" }).click();
+    await expect(archivedTab(page)).toHaveAttribute("aria-selected", "true");
+    await expect(archivedTab(page)).toBeFocused();
+    await expect(page.getByText("Jaqueta de inverno").first()).toBeVisible();
+    expect(await stillTheSamePage(page)).toBe(true);
+    await expect(page).toHaveURL(PRODUCTS_ADDRESS);
+    await expect(freeableLine(page)).toContainText(
+      "Você tem 3 produtos arquivados sem estoque. Excluir libera vaga."
+    );
+    await expect(freeableLine(page).getByRole("link")).toHaveCount(0);
+    await expect(
+      page.getByRole("link", { name: "Ver arquivados" })
+    ).toHaveCount(0);
+    await expect(line(page)).toContainText("Conhecer o Pro");
+  });
+
+  test("o endereço ?arquivados=1 abre Produtos já em Arquivados, com o foco na aba, e o valor não aparece na tela", async ({
+    page,
+  }) => {
+    await openApp(page, "/products?arquivados=1", freeableStore(3));
+    await expect(archivedTab(page)).toHaveAttribute("aria-selected", "true");
+    await expect(archivedTab(page)).toBeFocused();
+    await expect(page.getByText("Jaqueta de inverno").first()).toBeVisible();
+    await expect(page.locator("body")).not.toContainText("arquivados=1");
+  });
+
+  test("um valor inválido do endereço deixa a lista de Ativos", async ({
+    page,
+  }) => {
+    await openApp(page, "/products?arquivados=sim", freeableStore(3));
+    await expect(page.getByText("Camiseta do teste").first()).toBeVisible();
+    await expect(page.getByRole("tab", { name: "Ativos" })).toHaveAttribute(
+      "aria-selected",
+      "true"
+    );
+  });
+
+  test("no formulário de variantes a linha também tem o link, que fecha o diálogo e abre Arquivados", async ({
+    page,
+  }) => {
+    await openApp(page, "/products", freeableStore(3));
+    await openVariants(page);
+    await expect(dialogFreeable(page)).toContainText(
+      "Você tem 3 produtos arquivados sem estoque. Excluir libera vaga."
+    );
+    const save = page.getByRole("button", { name: "Salvar variantes" });
+    expect(await top(dialogFreeable(page))).toBeGreaterThan(await top(save));
+    await dialogFreeable(page)
+      .getByRole("link", { name: "Ver arquivados" })
+      .click();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await expect(archivedTab(page)).toHaveAttribute("aria-selected", "true");
+    expect(await stillTheSamePage(page)).toBe(true);
+  });
+
+  test("'Ver arquivados' dentro do diálogo leva o foco à aba e guarda as variantes digitadas para a volta a Ativos", async ({
+    page,
+  }) => {
+    await openApp(page, "/products", freeableStore(3));
+    await openVariants(page);
+    await dialogFreeable(page)
+      .getByRole("link", { name: "Ver arquivados" })
+      .click();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await expect(archivedTab(page)).toHaveAttribute("aria-selected", "true");
+    await expect(archivedTab(page)).toBeFocused();
+    await page.getByRole("tab", { name: "Ativos" }).click();
+    await menuOf(page).click();
+    await page.getByRole("menuitem", { name: "Variantes" }).click();
+    await expect(page.getByLabel("Valores de Cor")).toHaveValue("Azul\nPreta");
+  });
+
+  test("o diálogo de variantes de um produto arquivado traz a linha sem o link", async ({
+    page,
+  }) => {
+    await openApp(page, "/products?arquivados=1", freeableStore(3));
+    await page
+      .getByRole("button", { name: "Mais ações para Jaqueta de inverno" })
+      .click();
+    await page.getByRole("menuitem", { name: "Variantes" }).click();
+    await expect(page.getByRole("dialog")).toBeVisible();
+    await expect(page.getByRole("dialog").locator(NEAR_LIMIT)).toBeVisible();
+    await expect(dialogFreeable(page)).toContainText(
+      "Você tem 3 produtos arquivados sem estoque."
+    );
+    await expect(dialogFreeable(page).getByRole("link")).toHaveCount(0);
+  });
+
+  test("arquivar e restaurar leem o plano de novo: a linha acompanha, sem recarregar", async ({
+    page,
+  }) => {
+    const store = freeableStore(0);
+    store.catalog.archived = [];
+    store.use = { ...store.use, freeable: { products: 0, variants: 0 } };
+    store.answers = {
+      ...store.answers,
+      "product/archive": (route) => {
+        store.catalog.active = [];
+        store.catalog.archived = [{ ...shirt, status: "archived", version: 2 }];
+        store.use = { ...store.use, freeable: { products: 1, variants: 1 } };
+        return route.fulfill(
+          rpc({
+            changed: true,
+            product: { ...shirt, status: "archived", version: 2 },
+          })
+        );
+      },
+      "product/restore": (route) => {
+        store.catalog.active = [shirt];
+        store.catalog.archived = [];
+        store.use = { ...store.use, freeable: { products: 0, variants: 0 } };
+        return route.fulfill(
+          rpc({ changed: true, product: { ...shirt, version: 3 } })
+        );
+      },
+    };
+    await openApp(page, "/products", store);
+    await expect(line(page)).toContainText("Você usa 47 de 50 variantes");
+    await expect(freeableLine(page)).toHaveCount(0);
+    await menuOf(page).click();
+    await page.getByRole("menuitem", { name: "Arquivar" }).click();
+    await expect(freeableLine(page)).toContainText(
+      "Você tem 1 produto arquivado sem estoque."
+    );
+    await archivedTab(page).click();
+    await menuOf(page).click();
+    await page.getByRole("menuitem", { name: "Restaurar" }).click();
+    await expect(freeableLine(page)).toHaveCount(0);
+    expect(await stillTheSamePage(page)).toBe(true);
+  });
+
+  test("depois de excluir pela tela a linha lê o plano de novo: o número cai e some em zero, sem recarregar", async ({
+    page,
+  }) => {
+    const parka = { ...jacket, id: id(23), name: "Parka de inverno" };
+    const store = freeableStore(2);
+    store.catalog.archived = [jacket, parka];
+    store.answers = {
+      ...store.answers,
+      "product/delete": (route) => {
+        const sent = (
+          route.request().postDataJSON() as {
+            json: { id: string };
+          }
+        ).json;
+        const gone = store.catalog.archived.find(
+          (item) => (item as { id: string }).id === sent.id
+        );
+        store.catalog.archived = store.catalog.archived.filter(
+          (item) => item !== gone
+        );
+        const left = store.catalog.archived.length;
+        store.use = {
+          ...store.use,
+          freeable: { products: left, variants: left },
+        };
+        return route.fulfill(
+          rpc({
+            changed: true,
+            product: { ...(gone as object), status: "deleted", version: 3 },
+          })
+        );
+      },
+    };
+    await openApp(page, "/products", store);
+    await expect(freeableLine(page)).toContainText("2 produtos arquivados");
+    await page.getByRole("link", { name: "Ver arquivados" }).click();
+    for (const name of ["Jaqueta de inverno", "Parka de inverno"]) {
+      // biome-ignore lint/performance/noAwaitInLoops: one deletion after the other, on the same page
+      await page
+        .getByRole("button", { name: `Mais ações para ${name}` })
+        .click();
+      await page.getByRole("menuitem", { name: "Excluir…" }).click();
+      const dialog = page.getByRole("dialog", {
+        name: `Excluir produto “${name}”?`,
+      });
+      await dialog
+        .getByLabel("Digite o nome do produto para confirmar")
+        .fill(name);
+      await dialog.getByRole("button", { name: "Excluir produto" }).click();
+      await expect(page.getByText(`Produto “${name}” excluído.`)).toBeVisible();
+      if (name === "Jaqueta de inverno") {
+        await expect(freeableLine(page)).toContainText(
+          "Você tem 1 produto arquivado sem estoque."
+        );
+      }
+    }
+    await expect(freeableLine(page)).toHaveCount(0);
+    await expect(line(page)).toContainText("Você usa 47 de 50 variantes");
+    expect(await stillTheSamePage(page)).toBe(true);
+  });
+
+  test("sem conexão a segunda linha some junto com o aviso, sem vão", async ({
+    context,
+    page,
+  }) => {
+    await openApp(page, "/products", freeableStore(3));
+    await expect(freeableLine(page)).toBeVisible();
+    await context.setOffline(true);
+    await expect(freeableLine(page)).toHaveCount(0);
+    await expect(line(page)).toHaveCount(0);
+    await context.setOffline(false);
+    await expect(freeableLine(page)).toBeVisible();
+  });
+
+  for (const width of [360, 320]) {
+    test(`no toque, a 20 px de letra e ${width} px, as áreas de 44 px dos dois links não se sobrepõem e nada passa da janela`, async ({
+      browser,
+    }) => {
+      const context = await browser.newContext({
+        hasTouch: true,
+        viewport: { height: 740, width },
+      });
+      const page = await context.newPage();
+      await page.addInitScript(() => {
+        document.addEventListener("DOMContentLoaded", () => {
+          document.documentElement.style.fontSize = "20px";
+        });
+      });
+      await openApp(page, "/products", freeableStore(3));
+      await expect(freeableLine(page)).toBeVisible();
+      const area = async (name: string) => {
+        const box = await page
+          .getByRole("link", { name })
+          .first()
+          .boundingBox();
+        if (!box) {
+          throw new Error(`sem caixa para ${name}`);
+        }
+        const height = Math.max(box.height, 44);
+        const center = box.y + box.height / 2;
+        return { bottom: center + height / 2, top: center - height / 2 };
+      };
+      const pro = await area("Conhecer o Pro");
+      const archived = await area("Ver arquivados");
+      expect(archived.top).toBeGreaterThanOrEqual(pro.bottom);
+      const overflow = await page.evaluate(
+        () =>
+          document.documentElement.scrollWidth -
+          document.documentElement.clientWidth
+      );
+      expect(overflow).toBeLessThanOrEqual(0);
+      await context.close();
+    });
+  }
 });

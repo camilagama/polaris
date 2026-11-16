@@ -1,5 +1,5 @@
 /// <reference lib="dom" />
-import type { Browser, BrowserContext, Page } from "@playwright/test";
+import type { Browser, BrowserContext, Page, Request } from "@playwright/test";
 import { expect } from "@playwright/test";
 import {
   attachTraces,
@@ -31,6 +31,8 @@ const RELOAD_MARKS = ["polaris:entry-reload", "polaris:chunk-reload-at"];
 /** The browser logs the 401 the signed-out server answers: expected, and not an error of the page. */
 const REFUSED_SESSION = /status of 401/;
 const SIGN_OUT = /\/api\/auth\/sign-out$/;
+/** What the browser reports for a request it dropped because the document that asked for it was replaced. */
+const CANCELLED = "net::ERR_ABORTED";
 const REPEATED_RELOAD =
   "rounds where the reload was asked again on the sign-in page";
 const RPC_PREFIX = /^.*\/rpc\//;
@@ -181,11 +183,38 @@ async function watchBootRetry(page: Page, trace: Trace) {
     window.addEventListener("pagehide", () => tell("pagehide"));
     window.addEventListener("load", () => tell("load"));
   }, RELOAD_MARKS);
-  return { retries, trace };
+  const scripts = new Set<Request>();
+  page.on("request", (request) => {
+    if (request.resourceType() === "script") {
+      scripts.add(request);
+    }
+  });
+  return { retries, scripts, trace };
 }
 
-function watch(page: Page) {
-  const seen = { console: [] as string[], documents: [] as string[] };
+/**
+ * What the page did since the test began to watch it. A script request that the page's own reload cancelled is the
+ * reload working, not a file that failed: the scripts requested before the reload was asked (`scripts` is kept from the
+ * page's first load, so the ones asked while the page was still leaving count) and the ones the old document still
+ * asked until the new one committed are `leaving`, and only a cancelled script outside them is a failure of the page
+ * the reload opened.
+ */
+function watch(page: Page, started: ReadonlySet<Request>) {
+  let leaving = new Set<Request>();
+  let committing = false;
+  const seen = {
+    askedReload() {
+      leaving = new Set(started);
+      committing = true;
+    },
+    console: [] as string[],
+    documents: [] as string[],
+  };
+  page.on("framenavigated", (frame) => {
+    if (frame === page.mainFrame()) {
+      committing = false;
+    }
+  });
   page.on("console", (message) => {
     if (message.type() === "error" && !REFUSED_SESSION.test(message.text())) {
       seen.console.push(message.text());
@@ -193,11 +222,18 @@ function watch(page: Page) {
   });
   page.on("pageerror", (error) => seen.console.push(String(error)));
   page.on("requestfailed", (request) => {
-    if (request.resourceType() === "script") {
+    if (request.resourceType() !== "script") {
+      return;
+    }
+    const cancelled = request.failure()?.errorText === CANCELLED;
+    if (!(cancelled && leaving.has(request))) {
       seen.console.push(`script failed: ${request.url()}`);
     }
   });
   page.on("request", (request) => {
+    if (request.resourceType() === "script" && committing) {
+      leaving.add(request);
+    }
     if (request.resourceType() === "document") {
       seen.documents.push(new URL(request.url()).pathname);
     }
@@ -205,12 +241,24 @@ function watch(page: Page) {
   return seen;
 }
 
-async function signInAndOut(page: Page) {
+/**
+ * A first-access screen that does not come up is a failure with the trace of what the tab did: without a limit the wait
+ * ends only with the 7 minutes of the test, and says nothing.
+ */
+async function signInAndOut(page: Page, trace: Trace, round: number) {
+  const from = trace.lines.length;
   await page.goto("/");
-  await page
-    .getByRole("heading", { level: 1, name: FIRST_ACCESS_HEADING })
-    .waitFor();
-  const answered = page.waitForResponse(SIGN_OUT);
+  try {
+    await page
+      .getByRole("heading", { level: 1, name: FIRST_ACCESS_HEADING })
+      .waitFor({ timeout: MOUNT_MS });
+  } catch (error) {
+    throw new Error(
+      `round ${round}: the first-access screen after the sign-in page (files that did not load: ${failedFiles(trace, from)}; ${since(trace, from, 40)})`,
+      { cause: error }
+    );
+  }
+  const answered = page.waitForResponse(SIGN_OUT, { timeout: MOUNT_MS });
   await page.getByRole("button", { exact: true, name: "Sair" }).click();
   await answered;
 }
@@ -218,23 +266,43 @@ async function signInAndOut(page: Page) {
 /** The reload may meet the page's own move to the start: the browser reports an aborted navigation or a page not yet attached. */
 const SIGN_IN_ADDRESS = /\/entrar/;
 const TRANSIENT = /ERR_ABORTED|detached|Not attached to an active page/;
+const MAX_ASKS = 5;
+const SETTLED_ON_SIGN_IN = /^\/entrar complete$/;
 
 /**
- * A reload that met the page's own move to the start did not happen: it is asked again once the page reached the
+ * The page's own move to the start is over when a document of the sign-in address answers and says it is complete: the
+ * address alone is true as soon as the move commits, while the page is still being attached and a reload asked then
+ * is refused the same way. A call that finds the page not attached fails, and the poll asks again.
+ */
+async function waitForSignInDocument(page: Page) {
+  await expect
+    .poll(
+      () =>
+        page
+          .evaluate(() => `${window.location.pathname} ${document.readyState}`)
+          .catch(() => "not attached"),
+      { message: "the page settled on the sign-in address", timeout: MOUNT_MS }
+    )
+    .toMatch(SETTLED_ON_SIGN_IN);
+}
+
+/**
+ * A reload that met the page's own move to the start did not happen: it is asked again once the page settled on the
  * sign-in address. Returns how many times it was asked and the documents requested before the last ask.
  */
-async function reloadNow(page: Page, seen: { documents: string[] }) {
+async function reloadNow(page: Page, seen: ReturnType<typeof watch>) {
   for (let attempt = 1; ; attempt += 1) {
     const documentsBefore = seen.documents.length;
+    seen.askedReload();
     try {
       // biome-ignore lint/performance/noAwaitInLoops: the second ask only follows a reload that did not happen
       await page.reload({ waitUntil: "commit" });
       return { attempts: attempt, documentsBefore };
     } catch (error) {
-      if (!TRANSIENT.test(String(error)) || attempt === 3) {
+      if (!TRANSIENT.test(String(error)) || attempt === MAX_ASKS) {
         throw error;
       }
-      await page.waitForURL(SIGN_IN_ADDRESS, { waitUntil: "commit" });
+      await waitForSignInDocument(page);
     }
   }
 }
@@ -242,10 +310,14 @@ async function reloadNow(page: Page, seen: { documents: string[] }) {
 /** Returns how many times the reload was asked: more than one means it met the page already leaving. */
 async function reloadAndExpectSignIn(
   page: Page,
-  { retries, trace }: { retries: string[]; trace: Trace },
+  {
+    retries,
+    scripts,
+    trace,
+  }: { retries: string[]; scripts: ReadonlySet<Request>; trace: Trace },
   round: number
 ) {
-  const seen = watch(page);
+  const seen = watch(page, scripts);
   const from = trace.lines.length;
   const { attempts, documentsBefore } = await reloadNow(page, seen);
   const happened = () =>
@@ -322,7 +394,7 @@ test.describe("recarregar logo depois de sair", () => {
       for (let round = 1; round <= ROUNDS; round += 1) {
         state.signedIn = true;
         // biome-ignore lint/performance/noAwaitInLoops: each round starts from the page the round before left
-        await signInAndOut(page);
+        await signInAndOut(page, trace, round);
         if ((await reloadAndExpectSignIn(page, spy, round)) > 1) {
           repeated += 1;
         }
@@ -361,7 +433,7 @@ test.describe("recarregar logo depois de sair", () => {
       );
       try {
         const spy = await watchBootRetry(page, trace);
-        await signInAndOut(page);
+        await signInAndOut(page, trace, round);
         if ((await reloadAndExpectSignIn(page, spy, round)) > 1) {
           repeated += 1;
         }

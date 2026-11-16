@@ -1,5 +1,8 @@
 import { Money } from "@polaris/domain/money/money";
-import { NO_KNOWN_COST_RESULT } from "../dashboard/dashboard-model";
+import {
+  NO_KNOWN_COST_RESULT,
+  NO_SALES_UNTIL_DAY,
+} from "../dashboard/dashboard-model";
 import { formatBrlAmount } from "../lib/format";
 import {
   cogsCoverageOf,
@@ -401,12 +404,23 @@ interface ReadContext {
   wholeMonth: string;
 }
 
-/** "ainda" only for the period still open at its end (today at rest); a reading on a day already gone is of a closed one. */
-function noSalesText(open: boolean, onlyReturns: boolean): string {
+/**
+ * What a reading with no sale says. "ainda" only for the period still open at its end (today at rest); a reading on a
+ * day already gone is of a closed one. A day read before the first sale of a month that has sales says only what is
+ * true of the day: the dates beside it give the reach, and "no período" would deny the sales the card itself counts.
+ */
+function noSalesText(
+  open: boolean,
+  onlyReturns: boolean,
+  dayOfPeriodWithSales: boolean
+): string {
   if (onlyReturns) {
     return open ? ONLY_RETURNS_OPEN : "Só devoluções no período";
   }
-  return open ? "Nenhuma venda ainda" : "Sem vendas no período";
+  if (open) {
+    return "Nenhuma venda ainda";
+  }
+  return dayOfPeriodWithSales ? NO_SALES_UNTIL_DAY : "Sem vendas no período";
 }
 
 function salesReading({
@@ -435,7 +449,11 @@ function salesReading({
   return {
     count:
       count === 0
-        ? noSalesText(atRest, cents(value) !== 0n)
+        ? noSalesText(
+            atRest,
+            cents(value) !== 0n,
+            !atRest && cards.salesCount > 0
+          )
         : salesCountText(count),
     date: range,
     delta,
@@ -493,9 +511,15 @@ function resultReading({
   };
 }
 
-/** "Sem vendas no período" only when none was made: with sales and no ticket sent, the card does not deny them. */
-function noTicketText(count: number): string {
-  return count === 0 ? "Sem vendas no período" : "Ticket indisponível agora";
+/**
+ * "Sem vendas no período" only when none was made: with sales and no ticket sent, the card does not deny them, and a
+ * day read before the first sale of a month that has sales says only "Sem vendas".
+ */
+function noTicketText(count: number, dayOfPeriodWithSales: boolean): string {
+  if (count > 0) {
+    return "Ticket indisponível agora";
+  }
+  return dayOfPeriodWithSales ? NO_SALES_UNTIL_DAY : "Sem vendas no período";
 }
 
 const ticketOf = (sum: Cumulative | undefined): bigint | null =>
@@ -522,7 +546,12 @@ function ticketReading({
   return {
     // nothing under the number at rest: what it is and what it compares with are in the (i)
     count:
-      value === null ? noTicketText(atRest ? cards.salesCount : sum.count) : "",
+      value === null
+        ? noTicketText(
+            atRest ? cards.salesCount : sum.count,
+            !atRest && cards.salesCount > 0
+          )
+        : "",
     date: range,
     delta,
     help: ticketHelp(range, delta ? previousRange : null),
