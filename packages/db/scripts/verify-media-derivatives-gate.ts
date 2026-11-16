@@ -54,12 +54,20 @@ function sqlState(error: unknown): string | undefined {
 async function expectSqlState(
   operation: () => Promise<unknown>,
   expected: string,
-  label: string
+  label: string,
+  expectedMessage?: string
 ): Promise<void> {
   await assert.rejects(
     operation,
     (error: unknown) => {
       assert.equal(sqlState(error), expected, label);
+      if (expectedMessage !== undefined) {
+        assert.equal(
+          (error as { message?: unknown }).message,
+          expectedMessage,
+          label
+        );
+      }
       return true;
     },
     label
@@ -161,26 +169,43 @@ function mediaStorageKey(input: {
   return `media/v2/${encodeURIComponent(input.organizationId)}/${input.productId}/${uploadCommandId}/${fingerprint}/${attemptId}.webp`;
 }
 
+function storageKeyIdentity(storageKey: string): {
+  inputFingerprint: string;
+  uploadCommandId: string;
+} {
+  const [, , , , uploadCommandId, inputFingerprint] = storageKey.split("/");
+  assert.ok(uploadCommandId && inputFingerprint);
+  return { inputFingerprint, uploadCommandId };
+}
+
+async function insertMediaAsset(
+  client: Client,
+  fixture: TenantFixture,
+  storageKey: string
+): Promise<string> {
+  const { inputFingerprint, uploadCommandId } = storageKeyIdentity(storageKey);
+  const result = await client.query<{ id: string }>(
+    "INSERT INTO public.media_assets " +
+      "(organization_id, byte_size, content_type, height, input_fingerprint, storage_key, upload_command_id, width) " +
+      "VALUES ($1, 4, 'image/webp', 2, $2, $3, $4, 2) RETURNING id",
+    [fixture.organizationId, inputFingerprint, storageKey, uploadCommandId]
+  );
+  const assetId = result.rows[0]?.id;
+  assert.ok(assetId);
+  return assetId;
+}
+
 async function insertAndLinkAsset(input: {
   client: Client;
   fixture: TenantFixture;
   productId: string;
   storageKey: string;
 }): Promise<string> {
-  const uploadCommandId = randomUUID();
-  const result = await input.client.query<{ id: string }>(
-    "INSERT INTO public.media_assets " +
-      "(organization_id, byte_size, content_type, height, input_fingerprint, storage_key, upload_command_id, width) " +
-      "VALUES ($1, 4, 'image/webp', 2, $2, $3, $4, 2) RETURNING id",
-    [
-      input.fixture.organizationId,
-      createHash("sha256").update(randomUUID()).digest("hex"),
-      input.storageKey,
-      uploadCommandId,
-    ]
+  const assetId = await insertMediaAsset(
+    input.client,
+    input.fixture,
+    input.storageKey
   );
-  const assetId = result.rows[0]?.id;
-  assert.ok(assetId);
   await input.client.query(
     "INSERT INTO public.product_media " +
       "(organization_id, product_id, media_asset_id, position) VALUES ($1, $2, $3, 0)",
@@ -376,20 +401,10 @@ async function main(): Promise<void> {
     try {
       await setTenantContext(tenantClient, fixture);
       await expectSqlState(
-        () =>
-          tenantClient.query(
-            "INSERT INTO public.media_assets " +
-              "(organization_id, byte_size, content_type, height, input_fingerprint, storage_key, upload_command_id, width) " +
-              "VALUES ($1, 4, 'image/webp', 2, $2, $3, $4, 2)",
-            [
-              fixture.organizationId,
-              createHash("sha256").update(randomUUID()).digest("hex"),
-              orphanKey,
-              randomUUID(),
-            ]
-          ),
+        () => insertMediaAsset(tenantClient, fixture, orphanKey),
         "23514",
-        "cleanup-claimed media key cannot be inserted"
+        "cleanup-claimed media key cannot be inserted",
+        "media storage key is already claimed for cleanup"
       );
     } finally {
       await tenantClient.query("ROLLBACK");
