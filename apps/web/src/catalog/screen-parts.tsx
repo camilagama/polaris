@@ -2,7 +2,9 @@ import { type ReactNode, useCallback, useState } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/ui/button";
 import { Card } from "@/ui/card";
+import { HelpTip } from "@/ui/help-tip";
 import { MoneyText } from "@/ui/hidden-values";
+import { Skeleton } from "@/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger } from "@/ui/tabs";
 import { focusLater } from "../lib/focus";
 import { LIST_PAGE_SIZE, type ListPage, listPage } from "./list-page-model";
@@ -212,10 +214,67 @@ interface ListTotalFooterProps {
   className?: string | undefined;
   /** "14 vendas": what the total counts. Empty while it is unknown. */
   count: string;
-  /** What the total leaves out, always in the DOM (empty) when the screen can have it, so the height does not move. */
+  help?: { about: string; text: string } | undefined;
+  label?: string | undefined;
+  /** Empty keeps the line in the DOM, so the height does not move. */
   note?: string;
-  /** The total, already written ("R$ 1.454,41", or a dash or an ellipsis while it is unknown); it is masked with the other values. */
+  notice?: string | undefined;
+  /** "R$ 1.454,41", or a dash or an ellipsis while it is unknown; masked with the other values. */
   value: string | null;
+  valueLoading?: boolean | undefined;
+}
+
+function FooterNotes({
+  note,
+  notice,
+}: {
+  note: string | undefined;
+  notice: string | undefined;
+}) {
+  if (notice === undefined) {
+    return note === undefined ? null : (
+      <p
+        className="min-h-5 text-muted-foreground text-support"
+        data-list-total-note=""
+      >
+        {note}
+      </p>
+    );
+  }
+  return (
+    <div
+      className="grid min-h-5 text-muted-foreground text-support"
+      data-list-total-note=""
+    >
+      <p role="status">{notice}</p>
+      {note === undefined ? null : <p>{note}</p>}
+    </div>
+  );
+}
+
+/** Holds the last word and the (i) together, so a broken label never leaves the (i) alone on a line. */
+function FooterLabel({
+  help,
+  label,
+}: {
+  help: ListTotalFooterProps["help"];
+  label: string;
+}) {
+  if (help === undefined) {
+    return label;
+  }
+  const cut = label.lastIndexOf(" ");
+  return (
+    <>
+      {cut < 0 ? "" : `${label.slice(0, cut)} `}
+      <span className="whitespace-nowrap">
+        {cut < 0 ? label : label.slice(cut + 1)}
+        <HelpTip about={help.about} className="ml-1 align-middle">
+          {help.text}
+        </HelpTip>
+      </span>
+    </>
+  );
 }
 
 /**
@@ -231,8 +290,12 @@ interface ListTotalFooterProps {
 export function ListTotalFooter({
   className,
   count,
+  help,
+  label = "Total na tela",
   note,
+  notice,
   value,
+  valueLoading = false,
 }: ListTotalFooterProps) {
   return (
     <div className="@container">
@@ -246,24 +309,25 @@ export function ListTotalFooter({
         <div className="flex @max-[18.999rem]:grid @max-[18.999rem]:grid-cols-[minmax(0,1fr)] items-end justify-between gap-x-4 @max-[18.999rem]:gap-y-1">
           <div className="grid min-w-0 gap-0.5">
             <p className="font-medium text-muted-foreground text-support">
-              Total na tela
+              <FooterLabel help={help} label={label} />
             </p>
             <p className="min-h-5 @max-[18.999rem]:whitespace-normal whitespace-nowrap text-muted-foreground text-support">
               {count}
             </p>
           </div>
-          <p className="@max-[18.999rem]:whitespace-normal whitespace-nowrap text-right font-semibold text-value-md tabular-nums @max-[18.999rem]:[overflow-wrap:anywhere]">
-            {value === null ? null : <MoneyText text={value} />}
-          </p>
+          <div className="@max-[18.999rem]:whitespace-normal whitespace-nowrap text-right font-semibold text-value-md tabular-nums @max-[18.999rem]:[overflow-wrap:anywhere]">
+            {valueLoading ? <span className="sr-only">Lendo…</span> : null}
+            {valueLoading ? (
+              <Skeleton
+                aria-hidden="true"
+                className="ml-auto h-6 w-28 max-w-full"
+                data-list-total-skeleton=""
+              />
+            ) : null}
+            {value === null || valueLoading ? null : <MoneyText text={value} />}
+          </div>
         </div>
-        {note === undefined ? null : (
-          <p
-            className="min-h-5 text-muted-foreground text-support"
-            data-list-total-note=""
-          >
-            {note}
-          </p>
-        )}
+        <FooterNotes note={note} notice={notice} />
       </div>
     </div>
   );
