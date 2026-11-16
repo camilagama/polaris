@@ -2,6 +2,7 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   findWorkflowProblems,
+  JOB_CONDITION,
   PRODUCTION_CANDIDATE,
   PRODUCTION_WORKFLOW,
   parseJobs,
@@ -101,13 +102,73 @@ describe("the production workflow check", () => {
       "    if: >-\n"
     );
     expect(problemsOf(withoutVariable)).toEqual([
-      "job decide: its if must require vars.PRODUCTION_DEPLOY_ENABLED == 'true' and github.ref == 'refs/heads/main'",
+      `job decide: its if must be exactly ${JOB_CONDITION}`,
     ]);
     const anyBranch = production.replaceAll(
       " &&\n      github.ref == 'refs/heads/main'",
       ""
     );
-    expect(problemsOf(anyBranch)).toHaveLength(3);
+    expect(problemsOf(anyBranch)).toEqual(
+      ["decide", "build", "deploy"].map(
+        (job) => `job ${job}: its if must be exactly ${JOB_CONDITION}`
+      )
+    );
+    const widened = once(
+      production,
+      "      github.event_name == 'workflow_dispatch' &&\n      github.ref == 'refs/heads/main'\n    runs-on: ubuntu-24.04\n    timeout-minutes: 15\n",
+      "      github.event_name == 'workflow_dispatch' ||\n      github.ref == 'refs/heads/main'\n    runs-on: ubuntu-24.04\n    timeout-minutes: 15\n"
+    );
+    expect(problemsOf(widened)).toEqual([
+      `job build: its if must be exactly ${JOB_CONDITION}`,
+    ]);
+  });
+
+  it("refuses a secret read in a job without the environment, however it is written", () => {
+    const indexed = once(
+      production,
+      "          CLOUDFLARE_ENV: production\n",
+      `          CLOUDFLARE_ENV: production\n          TOKEN: ${expression("secrets['PRODUCTION_CLOUDFLARE_API_TOKEN']")}\n`
+    );
+    expect(problemsOf(indexed)).toEqual([
+      "job build: reads a secret outside the production environment",
+    ]);
+    const commented = once(
+      production,
+      "          CLOUDFLARE_ENV: production\n",
+      "          CLOUDFLARE_ENV: production\n          # never secrets here\n"
+    );
+    expect(problemsOf(commented)).toEqual([]);
+  });
+
+  it("refuses a CI run that is not the one of this commit pushed to main", () => {
+    const anyRun = once(
+      production,
+      "runs?head_sha=$HEAD_SHA&event=push&branch=main&status=success&per_page=1",
+      "runs?status=success&per_page=1"
+    );
+    expect(problemsOf(anyRun)).toEqual([
+      "the CI run must be looked up for this commit (RUN_ID query lacks head_sha=$HEAD_SHA, event=push, branch=main)",
+    ]);
+  });
+
+  it("refuses a build without CLOUDFLARE_ENV: production or with a flag that stays off", () => {
+    expect(
+      problemsOf(once(production, "          CLOUDFLARE_ENV: production\n", ""))
+    ).toEqual(["the build must set CLOUDFLARE_ENV: production"]);
+    for (const flag of [
+      "VITE_OFFLINE_RUNTIME_ENABLED",
+      "VITE_CLIENT_ERRORS_ENABLED",
+    ]) {
+      expect(
+        problemsOf(
+          once(
+            production,
+            "          CLOUDFLARE_ENV: production\n",
+            `          CLOUDFLARE_ENV: production\n          ${flag}: "true"\n`
+          )
+        )
+      ).toEqual([`the build must not set ${flag} (off in production)`]);
+    }
   });
 
   it("refuses the word staging, a staging host and a staging id", () => {
@@ -204,6 +265,77 @@ describe("the production workflow check", () => {
       )
     ).toEqual([
       "job deploy: the deployed version check is missing (node scripts/verify-deployed-sha.mjs --env production)",
+    ]);
+  });
+
+  it("refuses a step of the sequence that is commented out, swallowed, conditional or not under set -e", () => {
+    const sha =
+      "          node scripts/verify-deployed-sha.mjs --env production\n";
+    expect(
+      problemsOf(
+        once(
+          production,
+          sha,
+          "          # node scripts/verify-deployed-sha.mjs --env production\n"
+        )
+      )
+    ).toEqual([
+      "job deploy: the deployed version check is missing (node scripts/verify-deployed-sha.mjs --env production)",
+    ]);
+    expect(
+      problemsOf(
+        once(
+          production,
+          sha,
+          "          node scripts/verify-deployed-sha.mjs --env production || true\n"
+        )
+      )
+    ).toEqual([
+      "job deploy: the step of the web deploy, the catalog deploy, the deployed version check, the Admin deploy must not swallow a failure (|| or &)",
+    ]);
+    const after =
+      "          bun run --filter @polaris/db production:verify-database after-migrate\n";
+    expect(
+      problemsOf(once(production, after, after.replace("\n", " &\n")))
+    ).toEqual([
+      "job deploy: the step of the marker and owner check, the migrate step, the read-only check must not swallow a failure (|| or &)",
+    ]);
+    expect(
+      problemsOf(
+        once(
+          production,
+          "      - name: Migrate the production database\n",
+          "      - name: Migrate the production database\n        continue-on-error: true\n"
+        )
+      )
+    ).toEqual([
+      "job deploy: the step of the marker and owner check, the migrate step, the read-only check must have no if and no continue-on-error",
+    ]);
+    expect(
+      problemsOf(
+        once(
+          production,
+          "      - name: Deploy the production Workers\n",
+          "      - name: Deploy the production Workers\n        if: false\n"
+        )
+      )
+    ).toEqual([
+      "job deploy: the step of the web deploy, the catalog deploy, the deployed version check, the Admin deploy must have no if and no continue-on-error",
+    ]);
+    const migrate = parseJobs(production)
+      .flatMap((job) => job.steps)
+      .find((step) => step.name === "Migrate the production database")
+      .lines.join("\n");
+    expect(
+      problemsOf(
+        once(
+          production,
+          migrate,
+          migrate.replace("          set -euo pipefail\n", "")
+        )
+      )
+    ).toEqual([
+      "job deploy: the step of the marker and owner check, the migrate step, the read-only check must start with set -euo pipefail",
     ]);
   });
 

@@ -17,7 +17,8 @@ import {
  * - the static isolation check of the three `wrangler.jsonc` fails (it covers production reaching a host of
  *   staging, the billing hosts of production, flags that stay off and shared resources);
  * - the web or the catalog has no build for production (`CLOUDFLARE_ENV=production`), or the generated
- *   `wrangler.json` targets another environment, has another name or other bindings than `env.production`;
+ *   `wrangler.json` targets another environment, has another name, other bindings or other vars than
+ *   `env.production` (so a host the static check refused in the source cannot come back through the build);
  * - what is published (the generated config of the web and the catalog, `env.production` of the Admin, which
  *   `wrangler deploy --env production` reads from its source) still has a PLACEHOLDER anywhere, an account or a
  *   Hyperdrive id that is not a Cloudflare id, a name, bucket or queue of staging or local, POLARIS_ENVIRONMENT
@@ -94,6 +95,11 @@ function checkBuilt(app, production, built, problems) {
     JSON.stringify(bindingsSnapshot(production))
   ) {
     problems.push(`${where} bindings differ from env.production`);
+  }
+  const sortedVars = (config) =>
+    JSON.stringify(Object.entries(config.vars ?? {}).sort());
+  if (sortedVars(built) !== sortedVars(production)) {
+    problems.push(`${where} vars differ from env.production`);
   }
   return built;
 }

@@ -13,13 +13,16 @@ import {
 /**
  * Static check of the production deploy workflow, read as text against the staging one. It fails when the
  * production workflow:
- * - runs on anything but `workflow_dispatch`, has workflow-wide permissions, or a job runs without the variable
- *   `PRODUCTION_DEPLOY_ENABLED` being "true" or outside main;
+ * - runs on anything but `workflow_dispatch`, has workflow-wide permissions, or a job has another `if` than exactly
+ *   the variable `PRODUCTION_DEPLOY_ENABLED` being "true", a dispatch and main;
  * - names staging (the word, a staging host or an id of `env.staging` in a `wrangler.jsonc`);
  * - reads a secret in a job without `environment: production`, or has no such job;
  * - loses the order: the build (`build:ui` last) before the deploy job, which needs it; in that job the build check,
  *   the marker and owner check, the migrations and the read-only check before the first `wrangler deploy`, and the
- *   deployed version check after the web and the catalog are published;
+ *   deployed version check after the web and the catalog are published, each in code (not a comment), in a step
+ *   with no `if` or `continue-on-error`, under `set -euo pipefail` and without `||` or `&` on its line;
+ * - looks up the CI run by anything but this commit pushed to main, builds without `CLOUDFLARE_ENV: production` or
+ *   sets a flag that stays off in production;
  * - drifts from staging in what both must do the same way: the pinned actions, `persist-credentials: false`, the
  *   install, the build commands and the legal variables, the CI jobs required, the artifact paths and the steps
  *   that take the artifact and look for the offline labs.
@@ -39,8 +42,24 @@ export const SHARED_STEPS = [
   "No offline lab in the build",
 ];
 
-const ENABLED = "vars.PRODUCTION_DEPLOY_ENABLED == 'true'";
-const ON_MAIN = "github.ref == 'refs/heads/main'";
+/** The exact `if` of every job: nothing may widen it (`||`, `always()`) or drop a part. */
+export const JOB_CONDITION =
+  "vars.PRODUCTION_DEPLOY_ENABLED == 'true' && github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'";
+// the CI run the deploy trusts is one of a push of this very commit to main
+const CI_RUN_QUERY = [
+  "head_sha=$HEAD_SHA",
+  "event=push",
+  "branch=main",
+  "status=success",
+];
+// a failure of a step of the sequence must stop the job: no `||` fallback on its line, no line sent to the background
+const SWALLOWED = /\|\||&\s*$/;
+const SECRETS = /\bsecrets\b/;
+// flags that stay off in production: the offline runtime (ADR 0043) and the browser error reports (ADR 0098)
+const OFF_IN_PRODUCTION = [
+  "VITE_OFFLINE_RUNTIME_ENABLED",
+  "VITE_CLIENT_ERRORS_ENABLED",
+];
 const CLOUDFLARE_ID = /^(?:[0-9a-f]{32}|[0-9a-f]{64})$/;
 const TOP_KEY = /^([A-Za-z_][\w-]*):/;
 const JOB_KEY = /^ {2}([A-Za-z_][\w-]*):\s*$/;
@@ -101,6 +120,9 @@ function parseSteps(lines) {
     }
     current.lines.push(line);
     const field = STEP_FIELD.exec(line);
+    if (field) {
+      current.fields = [...(current.fields ?? []), field[1]];
+    }
     if (field?.[1] === "name") {
       current.name = field[2].trim();
     }
@@ -195,11 +217,8 @@ function checkShape(text, jobs, problems) {
     problems.push("the workflow has no job");
   }
   for (const job of jobs) {
-    const condition = jobIf(job);
-    if (!(condition.includes(ENABLED) && condition.includes(ON_MAIN))) {
-      problems.push(
-        `job ${job.id}: its if must require ${ENABLED} and ${ON_MAIN}`
-      );
+    if (jobIf(job) !== JOB_CONDITION) {
+      problems.push(`job ${job.id}: its if must be exactly ${JOB_CONDITION}`);
     }
   }
 }
@@ -227,7 +246,7 @@ function checkEnvironment(jobs, problems) {
     if (environment !== null && environment !== "production") {
       problems.push(`job ${job.id}: environment must be production`);
     }
-    if (job.text.includes("secrets.") && environment !== "production") {
+    if (SECRETS.test(codeLines(job.text)) && environment !== "production") {
       problems.push(
         `job ${job.id}: reads a secret outside the production environment`
       );
@@ -258,7 +277,7 @@ function checkOrder(jobs, problems) {
       `the order build:ui -> deploy is lost: job ${deployer.id} must come after and need job ${builder.id}`
     );
   }
-  const { text } = deployer;
+  const text = deployer.steps.map((step) => codeLines(step.run)).join("\n");
   const sequence = [
     ["node scripts/verify-production-build.mjs", "the production build check"],
     ["production:verify-database before-migrate", "the marker and owner check"],
@@ -278,6 +297,7 @@ function checkOrder(jobs, problems) {
       "the Admin deploy",
     ],
   ];
+  checkSequenceSteps(deployer, sequence, problems);
   let previous = -1;
   for (const [needle, label] of sequence) {
     const index = indexIn(text, needle);
@@ -296,6 +316,64 @@ function checkOrder(jobs, problems) {
   ) {
     problems.push(
       `job ${deployer.id}: a wrangler deploy runs before the migrations`
+    );
+  }
+}
+
+/** Each step of the sequence runs unconditionally and stops the job when any of its commands fails. */
+function checkSequenceSteps(job, sequence, problems) {
+  for (const step of job.steps) {
+    const code = codeLines(step.run);
+    const labels = sequence
+      .filter(([needle]) => code.includes(needle))
+      .map(([, label]) => label);
+    if (labels.length === 0) {
+      continue;
+    }
+    const where = `job ${job.id}: the step of ${labels.join(", ")}`;
+    const fields = step.fields ?? [];
+    if (fields.includes("if") || fields.includes("continue-on-error")) {
+      problems.push(`${where} must have no if and no continue-on-error`);
+    }
+    const lines = code.split("\n");
+    if (lines.length > 1 && lines[0].trim() !== "set -euo pipefail") {
+      problems.push(`${where} must start with set -euo pipefail`);
+    }
+    if (
+      lines.some(
+        (line) =>
+          sequence.some(([needle]) => line.includes(needle)) &&
+          SWALLOWED.test(line)
+      )
+    ) {
+      problems.push(`${where} must not swallow a failure (|| or &)`);
+    }
+  }
+}
+
+function checkBuildEnvironment(jobs, problems) {
+  const step = buildStep(jobs);
+  const lines = (step?.lines ?? []).filter((line) => !COMMENT_LINE.test(line));
+  if (!lines.some((line) => line.trim() === "CLOUDFLARE_ENV: production")) {
+    problems.push("the build must set CLOUDFLARE_ENV: production");
+  }
+  for (const flag of OFF_IN_PRODUCTION) {
+    if (lines.some((line) => line.includes(flag))) {
+      problems.push(`the build must not set ${flag} (off in production)`);
+    }
+  }
+}
+
+function checkCiRunQuery(text, problems) {
+  const query = text
+    .split("\n")
+    .find(
+      (line) => line.includes("RUN_ID=$(gh api") && !COMMENT_LINE.test(line)
+    );
+  const missing = CI_RUN_QUERY.filter((part) => !query?.includes(part));
+  if (missing.length > 0) {
+    problems.push(
+      `the CI run must be looked up for this commit (RUN_ID query lacks ${missing.join(", ")})`
     );
   }
 }
@@ -454,6 +532,8 @@ export function findWorkflowProblems(production, staging, markers) {
   checkNoStaging(production, markers, problems);
   checkEnvironment(jobs, problems);
   checkOrder(jobs, problems);
+  checkBuildEnvironment(jobs, problems);
+  checkCiRunQuery(production, problems);
   checkDrift(production, staging, problems);
   return problems;
 }

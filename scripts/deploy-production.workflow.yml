@@ -66,6 +66,17 @@ jobs:
               exit 1
             fi
           done
+      # what the reviewers of the Environment see before approving: the build below already carries the choice
+      - name: Urgent swap choice
+        env:
+          URGENT: ${{ inputs.urgent }}
+        run: |
+          set -euo pipefail
+          if [ "$URGENT" = "true" ]; then
+            echo "**Urgent swap: yes.** This build skips the 2 h settling on the devices (ADR 0041)." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Urgent swap: no." >> "$GITHUB_STEP_SUMMARY"
+          fi
 
   # The build runs the repository's code and dependencies: no Environment and no secret here.
   build:

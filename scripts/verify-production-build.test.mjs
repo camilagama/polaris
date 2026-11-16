@@ -179,6 +179,17 @@ describe("the production build check", () => {
     ).toBe(true);
   });
 
+  it("refuses a build whose vars differ from env.production, such as a host of staging", () => {
+    const list = entries({ fillProduction: true });
+    entryOf(list, "web").built.vars.CATALOG_ORIGIN =
+      "https://catalogo.araute.app";
+    entryOf(list, "catalog").built.vars.ROUTE_TIMING_ALL = "true";
+    expect(findProductionBuildProblems(list)).toEqual([
+      "web: built wrangler.json vars differ from env.production",
+      "catalog: built wrangler.json vars differ from env.production",
+    ]);
+  });
+
   it("refuses a Worker without env.production", () => {
     const list = entries({ fillProduction: true });
     entryOf(list, "admin").config.env.production = undefined;
