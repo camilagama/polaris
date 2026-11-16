@@ -3994,37 +3994,54 @@ test.describe("o aviso dos dias sem custo com o mês nomeado tem teto: a contage
     },
   ] as const;
 
-  /** The widest counts the limit of 34 characters lets stay on the line (`unknownDaysFit`): each one must fit in one line. */
-  const AT_THE_LIMIT = [
-    "dezembro: 28 de 28 dias sem custo",
-    "dezembro: 29 de 29 dias sem custo",
-    "dezembro: 30 de 30 dias sem custo",
-    "dezembro: 31 de 31 dias sem custo",
-    "fevereiro: 1 de 28 dias sem custo",
-    "fevereiro: 1 de 29 dias sem custo",
-    "fevereiro: 1 de 30 dias sem custo",
-    "fevereiro: 1 de 31 dias sem custo",
-    "fevereiro: 28 de 28 dias sem custo",
-    "fevereiro: 28 de 28 dias sem taxa",
-    "fevereiro: 29 de 29 dias sem custo",
-    "fevereiro: 29 de 29 dias sem taxa",
-    "fevereiro: 30 de 30 dias sem custo",
-    "fevereiro: 30 de 30 dias sem taxa",
-    "fevereiro: 31 de 31 dias sem custo",
-    "fevereiro: 31 de 31 dias sem taxa",
-    "maio de 2025: 1 de 5 dias sem taxa",
-    "maio de 2025: 1 de 9 dias sem taxa",
-    "maio de 2025: 5 de 5 dias sem taxa",
-    "maio de 2025: 9 de 9 dias sem taxa",
-    "novembro: 28 de 28 dias sem custo",
-    "novembro: 29 de 29 dias sem custo",
-    "novembro: 30 de 30 dias sem custo",
-    "novembro: 31 de 31 dias sem custo",
-    "setembro: 28 de 28 dias sem custo",
-    "setembro: 29 de 29 dias sem custo",
-    "setembro: 30 de 30 dias sem custo",
-    "setembro: 31 de 31 dias sem custo",
-  ];
+  /**
+   * Same rule as `unknownDaysText` and `unknownDaysFit` (`home/home-kpis.ts`), written here because importing the app's
+   * modules from `e2e/` pulls the `@/` alias in, which the `tsconfig.node.json` that type-checks this folder does not have.
+   * It is a copy with no guard against drift: if the app changes the limit or the text, change it here too.
+   */
+  const UNKNOWN_DAYS_MAX_CHARS = 34;
+  const unknownDaysLine = (
+    month: string,
+    unknown: number,
+    total: number,
+    word: "custo" | "taxa"
+  ) =>
+    `${month}: ${unknown} de ${total} ${total === 1 ? "dia" : "dias"} sem ${word}`;
+
+  /**
+   * The widest counts the limit lets stay on the line: every month, named with and without a year, with the cost or only
+   * the fee missing, every total and every count that fits at 33 or 34 characters. Each one must fit in one line.
+   */
+  const AT_THE_LIMIT = (() => {
+    const upTo = (last: number) =>
+      Array.from({ length: last }, (_, index) => index + 1);
+    const months = upTo(12).flatMap((month) => {
+      const name = new Date(Date.UTC(2025, month - 1, 1)).toLocaleDateString(
+        "pt-BR",
+        { month: "long", timeZone: "UTC" }
+      );
+      return [name, `${name} de 2025`];
+    });
+    const texts = months.flatMap((month) =>
+      (["custo", "taxa"] as const).flatMap((word) =>
+        upTo(31).flatMap((total) =>
+          upTo(total).map((unknown) =>
+            unknownDaysLine(month, unknown, total, word)
+          )
+        )
+      )
+    );
+    return [
+      ...new Set(
+        texts.filter(
+          (text) =>
+            text.length >= UNKNOWN_DAYS_MAX_CHARS - 1 &&
+            text.length <= UNKNOWN_DAYS_MAX_CHARS
+        )
+      ),
+    ].sort();
+  })();
+  const MUST_STAY_AT_THE_LIMIT = "maio de 2025: 1 de 1 dia sem custo";
 
   for (const size of [
     { fontPixels: 20, height: 740, width: 320 },
@@ -4069,6 +4086,10 @@ test.describe("o aviso dos dias sem custo com o mês nomeado tem teto: a contage
           await page.keyboard.press("Escape");
           await assertNoPageScroll(page);
           if (scenario.line !== null && scenario === CASES[0]) {
+            expect(
+              AT_THE_LIMIT,
+              "a contagem singular de outro ano segue na lista"
+            ).toContain(MUST_STAY_AT_THE_LIMIT);
             const wrapped = await unknown.evaluate((span, texts) => {
               const line = Number.parseFloat(getComputedStyle(span).lineHeight);
               return texts.filter((text) => {
