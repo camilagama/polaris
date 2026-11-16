@@ -160,6 +160,61 @@ describe("useHomePlanLimit: a linha por loja", () => {
     expect(shown).toBeNull();
   });
 
+  it("a resposta lenta de A que chega depois da de B não apaga a linha de B", async () => {
+    let answerA: (plan: unknown) => void = () => undefined;
+    readPlan.mockImplementation(
+      ({ organizationId }: { organizationId: string }) =>
+        organizationId === "org-a"
+          ? new Promise((resolve) => {
+              answerA = resolve;
+            })
+          : Promise.resolve(planWith(46))
+    );
+    render();
+    switchTo("org-b");
+    await flush();
+    render();
+    expect(shown?.usage.used).toBe(46);
+
+    answerA(planWith(47));
+    await flush();
+    render();
+    expect(shown?.usage.used).toBe(46);
+  });
+
+  it("A lida, a conexão cai, A → B → A sem conexão e ela volta: não relê A e a linha some, sem o número de outra loja em nenhum passo", async () => {
+    readPlan.mockImplementation(
+      ({ organizationId }: { organizationId: string }) =>
+        Promise.resolve(planWith(organizationId === "org-a" ? 47 : 46))
+    );
+    render();
+    await flush();
+    render();
+    expect(shown?.usage.used).toBe(47);
+
+    store.online = false;
+    render();
+    expect(shown).toBeNull();
+    switchTo("org-b");
+    expect(shown).toBeNull();
+    switchTo("org-a");
+    expect(shown).toBeNull();
+
+    store.online = true;
+    render();
+    await flush();
+    render();
+    expect(shown).toBeNull();
+    switchTo("org-b");
+    await flush();
+    render();
+    expect(shown?.usage.used).toBe(46);
+    expect(readPlan.mock.calls.map(([input]) => input.organizationId)).toEqual([
+      "org-a",
+      "org-b",
+    ]);
+  });
+
   it("a conexão que cai e volta na mesma loja não lê de novo", async () => {
     readPlan.mockResolvedValue(planWith(47));
     render();

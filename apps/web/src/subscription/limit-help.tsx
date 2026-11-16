@@ -13,6 +13,7 @@ import { buttonVariants } from "@/ui/button";
 import { dialogEntries } from "@/ui/dialog-history";
 import { navigateInApp } from "../app-shell/address";
 import { tabHref } from "../app-shell/navigation-model";
+import { ARCHIVED_PRODUCTS_HREF } from "../catalog/products-link-model";
 import { canManageBilling } from "../lib/billing-access";
 import { useConnectionOnline } from "../lib/browser-connection";
 import { leaveForReturn } from "../lib/kept-for-return";
@@ -22,6 +23,7 @@ import {
   LIMIT_ASK_OWNER,
   type LimitHelpView,
   type LimitSubject,
+  freeableLineText,
   limitHelpFor,
   limitUsageText,
   nearLimitFor,
@@ -39,6 +41,13 @@ const SUBSCRIPTION_HREF = tabHref("settings", "assinatura");
  */
 const LimitLeaveContext = createContext<(() => void) | null>(null);
 export const LimitLeaveScope = LimitLeaveContext.Provider;
+
+/**
+ * What "Ver arquivados" does where the list of Produtos is already the screen: shows "Arquivados" without leaving the
+ * page (the screen is not opened again by an address it already has). Elsewhere the link opens Produtos by its address.
+ */
+const ViewArchivedContext = createContext<(() => void) | null>(null);
+export const ViewArchivedScope = ViewArchivedContext.Provider;
 
 export interface LimitHelpState {
   clear: () => void;
@@ -142,12 +151,16 @@ export function isPlainClick(event: MouseEvent<HTMLAnchorElement>): boolean {
 }
 
 /**
- * The click of "Conhecer o Pro": inside the app, so nothing typed is lost; a dialog closes first and keeps its draft.
- * A second tap while the first one is on its way does not open the Assinatura twice.
+ * The click of a link of the warning that leaves the place: inside the app, so nothing typed is lost; a dialog closes
+ * first and keeps its draft. A second tap while the first one is on its way does not run it twice.
  */
-function useProLinkClick(): (event: MouseEvent<HTMLAnchorElement>) => void {
+function useLeavingClick(
+  go: () => void
+): (event: MouseEvent<HTMLAnchorElement>) => void {
   const leave = useContext(LimitLeaveContext);
   const going = useRef<boolean>(false);
+  const latest = useRef(go);
+  latest.current = go;
   return useCallback(
     (event: MouseEvent<HTMLAnchorElement>) => {
       if (!isPlainClick(event)) {
@@ -162,14 +175,39 @@ function useProLinkClick(): (event: MouseEvent<HTMLAnchorElement>) => void {
       // after the render that closed the dialog, and after the step back that takes its entry out of the history
       window.setTimeout(() => {
         dialogEntries().afterSteps(() => {
-          leaveForReturn();
-          navigateInApp(SUBSCRIPTION_HREF);
+          latest.current();
           going.current = false;
         });
       }, 0);
     },
     [leave]
   );
+}
+
+const openSubscription = () => {
+  leaveForReturn();
+  navigateInApp(SUBSCRIPTION_HREF);
+};
+
+/** The click of "Conhecer o Pro": the Assinatura, with the draft kept. */
+function useProLinkClick(): (event: MouseEvent<HTMLAnchorElement>) => void {
+  return useLeavingClick(openSubscription);
+}
+
+/** The click of "Ver arquivados": the list of archived products, with the draft kept as the Pro link keeps it. */
+function useArchivedLinkClick(): (
+  event: MouseEvent<HTMLAnchorElement>
+) => void {
+  const viewArchived = useContext(ViewArchivedContext);
+  const go = useCallback(() => {
+    if (viewArchived) {
+      viewArchived();
+    } else {
+      leaveForReturn();
+      navigateInApp(ARCHIVED_PRODUCTS_HREF);
+    }
+  }, [viewArchived]);
+  return useLeavingClick(go);
 }
 
 /**
@@ -225,6 +263,17 @@ export function useNearLimit(
   subject: NearLimitSubject,
   version = 0
 ): NearLimitView | null {
+  return useNearLimitRead(subject, version).view;
+}
+
+/**
+ * `useNearLimit` plus whether the read of this store has answered (`settled`): not while offline, nor while the first
+ * read is on the way. A screen that keeps the line's space reads it to know when it can let the space go.
+ */
+export function useNearLimitRead(
+  subject: NearLimitSubject,
+  version = 0
+): { settled: boolean; view: NearLimitView | null } {
   const { billingSelfService, organization, organizationId } =
     useCurrentOrganization();
   const online = useConnectionOnline();
@@ -256,7 +305,7 @@ export function useNearLimit(
       })
       .catch(() => {
         if (current) {
-          setRead(null);
+          setRead({ organizationId, view: null });
         }
       });
     return () => {
@@ -264,42 +313,117 @@ export function useNearLimit(
     };
   }, [billingSelfService, online, organizationId, role, subject, version]);
   // a number read for another store is never shown for this one while its own read is on the way
-  return online && read?.organizationId === organizationId ? read.view : null;
+  const settled = online && read?.organizationId === organizationId;
+  return { settled, view: settled ? read.view : null };
+}
+
+const TEXT_LINK =
+  "focus-ring touch-hit rounded-sm text-foreground underline decoration-input underline-offset-4 hover:decoration-foreground";
+
+/** How the second line ("N produtos arquivados sem estoque") shows: with its link, without it (already in Arquivados) or not. */
+export type FreeableLine = "hidden" | "link" | "plain";
+
+/**
+ * Whether the second line has its link where the warning is drawn: the screen that holds the list says it (in
+ * "Arquivados" there is no link to what is already on screen); the default is the link.
+ */
+const FreeableLineContext =
+  createContext<Exclude<FreeableLine, "hidden">>("link");
+export const FreeableLineScope = FreeableLineContext.Provider;
+export const useFreeableLine = () => useContext(FreeableLineContext);
+
+function FreeableNotice({
+  line,
+  text,
+}: {
+  line: Exclude<FreeableLine, "hidden">;
+  text: string;
+}) {
+  const handleClick = useArchivedLinkClick();
+  return (
+    <p
+      className="text-muted-foreground text-support"
+      data-near-limit-freeable=""
+    >
+      {text}
+      {line === "link" ? (
+        <>
+          {" "}
+          <a
+            className={TEXT_LINK}
+            href={ARCHIVED_PRODUCTS_HREF}
+            onClick={handleClick}
+          >
+            Ver arquivados
+          </a>
+        </>
+      ) : null}
+    </p>
+  );
 }
 
 /**
  * The warning line, at the end of a block (never above what the person touches): supporting text, no icon, no
- * background, no alert role, with "Conhecer o Pro" ending the sentence. `hidden` is for when the line must not show
- * although there is a view: the refusal's help is on screen (the two never go together), or the screen is still
- * loading what sits above it or has no session.
+ * background, no alert role, with "Conhecer o Pro" ending the sentence. A second paragraph, below, tells how many
+ * archived products with no stock deleting would free (`freeable`: where the person can act on it, never the Início).
+ * `hidden` is for when the line must not show although there is a view: the refusal's help is on screen (the two never
+ * go together), or the screen is still loading what sits above it or has no session. `holdSpace` is for a block whose
+ * box is centred (the dialog from 760 px): while it is true and the line is gone (the connection went, or the next read
+ * is on the way), the line's space stays, unseen and out of the reading order, so the box does not move; the space goes
+ * when it turns false with no line, and it is never there for a line that was not shown. The second paragraph is not
+ * held: a block that holds space does not ask for it.
  */
 export function NearLimitNotice({
+  freeable = "hidden",
   hidden = false,
+  holdSpace = false,
   view,
 }: {
+  freeable?: FreeableLine;
   hidden?: boolean;
+  holdSpace?: boolean;
   view: NearLimitView | null;
 }) {
   const handleClick = useProLinkClick();
-  if (view === null || hidden) {
+  const [lastView, setLastView] = useState<NearLimitView | null>(view);
+  if (view !== null && view !== lastView) {
+    setLastView(view);
+  } else if (view === null && !holdSpace && lastView !== null) {
+    setLastView(null);
+  }
+  const held = holdSpace && view === null && !hidden;
+  const shown = held ? lastView : view;
+  if (shown === null || hidden) {
     return null;
   }
-  const sentences = [nearLimitText(view), nearLimitProText(view)]
+  const sentences = [nearLimitText(shown), nearLimitProText(shown)]
     .filter((sentence) => sentence !== null)
     .join(" ");
-  return (
+  const freeableText =
+    freeable === "hidden" || view === null ? null : freeableLineText(view);
+  const proLine = (
     <p
-      className="text-muted-foreground text-support"
-      data-near-limit={view.kind}
+      aria-hidden={held ? true : undefined}
+      className={
+        held
+          ? "invisible text-muted-foreground text-support"
+          : "text-muted-foreground text-support"
+      }
+      data-near-limit={held ? undefined : shown.kind}
     >
       {sentences}{" "}
-      <a
-        className="focus-ring touch-hit rounded-sm text-foreground underline decoration-input underline-offset-4 hover:decoration-foreground"
-        href={SUBSCRIPTION_HREF}
-        onClick={handleClick}
-      >
+      <a className={TEXT_LINK} href={SUBSCRIPTION_HREF} onClick={handleClick}>
         Conhecer o Pro
       </a>
     </p>
+  );
+  if (freeable === "hidden" || freeableText === null) {
+    return proLine;
+  }
+  return (
+    <div className="grid gap-3 touch:gap-6">
+      {proLine}
+      <FreeableNotice line={freeable} text={freeableText} />
+    </div>
   );
 }

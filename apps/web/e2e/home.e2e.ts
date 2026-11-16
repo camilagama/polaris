@@ -1961,6 +1961,34 @@ test.describe("cartões de KPI (revisão de UI v7, § 3 e § 6)", () => {
     await expect(region(page, "Vendas hoje")).toContainText("Nenhuma venda");
   });
 
+  test("um dia lido antes da primeira venda de um mês com vendas diz só “Sem vendas”, no texto e na fala do minigráfico, nas Vendas e no Ticket (KPI-2)", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 800, width: 1280 });
+    await openHome(page, new FakeServer({ ...SOLD, results: KNOWN }));
+    const sales = region(page, "Vendas em outubro");
+    const ticket = region(page, "Ticket médio");
+    const slider = sales.getByRole("slider");
+    await slider.focus();
+    await slider.press("Home");
+    await expect(sales.locator("[data-kpi-date]")).toHaveText("Até 01/10");
+    await expect(sales).toContainText("Sem vendas");
+    await expect(sales).not.toContainText("no período");
+    await expect(ticket).toContainText("Sem vendas");
+    await expect(ticket).not.toContainText("no período");
+    await expect(slider).toHaveAttribute(
+      "aria-valuetext",
+      "Até 01/10: R$ 0,00. Sem vendas"
+    );
+    await expect(ticket.getByRole("slider")).toHaveAttribute(
+      "aria-valuetext",
+      "Até 01/10: sem valor. Sem vendas"
+    );
+    await slider.press("End");
+    await expect(sales).not.toContainText("Sem vendas");
+    await expect(sales).toContainText("12 vendas");
+  });
+
   test("Esconder valores: todo valor em reais vira R$ ••••, as porcentagens e as contagens ficam, e a escolha fica no aparelho", async ({
     page,
   }) => {

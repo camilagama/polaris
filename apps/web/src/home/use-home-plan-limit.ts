@@ -9,12 +9,14 @@ import {
 } from "../subscription/limit-help-model";
 
 /**
- * The plan's warning for the Início, read once per store when the page opens, and again when the store in use changes
- * (including going back to a store read before), only for the owner with the self-service on: never on focus or on a
- * timer, and not again when the connection comes back to the same store. Nothing is kept past the page (the use lives
- * in memory), no read starts without a connection, and a read that fails (a refusal included) adds no line and no
- * error. An answer that comes after the connection dropped is dropped, so a number read before the drop is never shown
- * after it.
+ * The plan's warning for the Início, read when the page opens and again when the store in use is not the one last
+ * asked for (going back to a store read before reads it again), only for the owner with the self-service on: never on
+ * focus or on a timer, and not again when the connection comes back to the same store; stores switched while offline
+ * start no read, so coming back to the store last asked for does not read it again. Nothing is kept past the page (the
+ * use lives in memory), no read starts without a connection, and a read that fails (a refusal included) adds no line
+ * and no error. An answer is dropped when the connection dropped after it was asked, or when it was asked for a store
+ * other than the last one asked: a number read before the drop, or for another store, is never shown, and a late
+ * answer for another store never replaces the reading of the store in use.
  */
 export function useHomePlanLimit(): NearLimitView | null {
   const { billingSelfService, organization, organizationId } =
@@ -37,7 +39,10 @@ export function useHomePlanLimit(): NearLimitView | null {
     orpcClient.billing
       .readPlan({ organizationId })
       .then((plan) => {
-        if (drops.current === dropsAtAsk) {
+        if (
+          drops.current === dropsAtAsk &&
+          askedFor.current === organizationId
+        ) {
           setRead({
             organizationId,
             view: nearLimitForHome({
