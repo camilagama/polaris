@@ -1218,9 +1218,9 @@ test.describe("a segunda linha: arquivados sem estoque", () => {
         );
         expect(overflow).toBeLessThanOrEqual(0);
         if (inDialog) {
-          const dialogOverflow = await scope.evaluate(
-            (node) => node.scrollWidth - node.clientWidth
-          );
+          const dialogOverflow = await page
+            .getByRole("dialog")
+            .evaluate((node) => node.scrollWidth - node.clientWidth);
           expect(dialogOverflow).toBeLessThanOrEqual(0);
         }
         await context.close();
