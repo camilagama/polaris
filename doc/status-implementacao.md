@@ -2138,7 +2138,7 @@ Achados do QA de 24/10/2026 no staging. Emendas dos [ADR 0040](../docs/adr/0040-
 | --- | --- | --- |
 | "Tentar novamente" | Concluído (PR 314, 5ed42081) | `app-shell/error-boundary.tsx`: erro de baixar o pedaço da tela recarrega a página (uma vez por janela de 10 s, marca em `sessionStorage`); outro erro recria o componente lazy (`app-shell/lazy-screen.ts`). Todas as telas lazy de `app.tsx` usam `lazyScreen`. |
 | `/assets/*` ausente | Concluído (PR 314, 5ed42081) | `src/server/built-assets.ts`, `run_worker_first` e binding `ASSETS`: 404 `no-store` em vez do HTML do SPA; o chunk 200 recebe os cabeçalhos de segurança do Worker onde o `_headers` não pôs. Prova no Worker real (`vite preview`) em `e2e-real/pilha/fumaca.e2e.ts`. |
-| Service worker | Concluído (PR 314, 5ed42081) | Instalação e cache-first só com 200 e o `content-type` do arquivo; sem `builtAt` no `sw.js` (mesmo conteúdo, mesmo worker, sem aviso); cache por id, ordem pela criação; cópia servida em `clone()` (aviso de console "cross-world service worker resource mismatch" some). |
+| Service worker | Concluído (PR 314, 5ed42081) | Instalação e cache-first só com 200 e o `content-type` do arquivo; sem `builtAt` no `sw.js` (mesmo conteúdo, mesmo worker, sem aviso); cache por id, ordem pela criação; cópia servida como `Response` nova sobre o corpo lido (`blob()`): o Chrome não cancela mais scripts numa recarga logo depois do `load` e o aviso "cross-world service worker resource mismatch" fica raro (ADR 0040, `apps/web/scripts/sw-recarga-bancada.mjs`). |
 | Atualizar com várias abas | Concluído (PR 314, 5ed42081) | Espera de 5 s e recarga própria, reabilita o botão, a aba que não pediu não recarrega (ADR 0041, "Nunca automático"), com fila vazia ou não. |
 | Provas | Concluído (PR 314, 5ed42081) | Unitários (`chunk-load-error`, `lazy-screen`, `error-boundary`, `sw`, `update`, `built-assets`, `worker/index`); `e2e-pwa/lazy-retry.e2e.ts`, `e2e-pwa/update.e2e.ts` (mesmo conteúdo sem aviso; duas abas). |
 
@@ -3492,3 +3492,12 @@ Origem: achado B do Diego no Pixel 6 (28/10): a venda montada em Vender sumia ao
 | Diálogo | Em revisão | `catalog/product-delete-dialog.tsx`: nome digitado (regra do nome único), "Excluir produto" / "Manter arquivado", variantes que libera (`product.getVariants`), recusas dentro do diálogo. `catalog/use-product-delete.ts`: chamada direta a `product.delete` com a versão vista, sem fila; a linha local muda só depois da confirmação. `catalog/product-errors.ts`: saldo (lido do estoque na recusa), teto por hora (hora da liberação), produto mudado, sem resposta. |
 | Provas | Em revisão | `e2e/products-screen.e2e.ts` (menu, diálogo, nome, Esc e "Manter arquivado", saldo, teto, produto mudado, sem resposta); e2e-real `jornadas/excluir-produto-arquivado.e2e.ts` (a vaga volta, a venda antiga abre e aceita devolução, o de saldo é recusado); testes de `product-errors` e `product-search-model`. |
 | Fora | Pendente | Exclusão em lote (se vier, exige login recente); a linha "N arquivados" no aviso de limite (item 3 do corte). |
+
+### UI de 15/11: o Resultado diz o mês e quando só falta a taxa (t1135-r2, RES-T2; sem migration)
+
+| Parte | Estado | O que há |
+| --- | --- | --- |
+| Causa do dia desconhecido | Em revisão | `dashboard/missing-input.ts`: `missingInputOf(quality)` diz "taxa" quando nenhuma linha de item tem custo desconhecido e alguma taxa é desconhecida; senão "custo" (inclui a cópia sem contagem). Sem mudança de servidor nem de contrato. |
+| Frases | Em revisão | "sem taxa informada" / "sem taxa" no lugar de "sem custo informado" / "sem custo": tabela, hachura, leitura, resumo do `role="img"`, frase de apoio, aviso dos cartões do Resultado e do Início, "sem taxa neste dia" e o (i). |
+| Mês nomeado | Em revisão | Em período por mês com os dias desconhecidos num só mês: "novembro: 1 de 7 dias sem custo informado" (cartões, (i), frase de apoio e leitura do mês); dois meses ou mais mantêm a contagem do período. |
+| Provas | Em revisão | Testes de `result-series`, `result-kpis`, `result-chart`, `result-cards` e `home-kpis`. Fora: voltar/avançar entre períodos (a regra do `replaceAddress` fica). |

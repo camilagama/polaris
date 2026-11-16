@@ -38,6 +38,29 @@ vi.mock("../ui/bklit/charts/chart-context", async (importOriginal) => ({
   useYScale: () => (value: number) => 100 - value * 5,
 }));
 
+// the drawing is lazy and the markup of the server has only its placeholder: the props the screen hands it (the summary
+// for a screen reader and the legend of the hatch) are copied into attributes of an element beside the real one
+vi.mock("../ui/charts/on-demand", async (importOriginal) => {
+  const original =
+    await importOriginal<typeof import("../ui/charts/on-demand")>();
+  return {
+    ...original,
+    OnDemandAreaChart: (
+      props: Parameters<typeof original.OnDemandAreaChart>[0]
+    ) => (
+      <>
+        <original.OnDemandAreaChart {...props} />
+        <i
+          data-drawing-label={props.label}
+          data-first-note={props.readingNote?.(0) ?? ""}
+          data-hatch-legend={props.secondary?.unknown?.legend ?? ""}
+          data-hatch-text={props.secondary?.unknown?.text ?? ""}
+        />
+      </>
+    ),
+  };
+});
+
 const ZONE = "America/Sao_Paulo";
 // October 2026 read on the 25th at noon of the store
 const READ = "2026-10-25T15:00:00.000Z";
@@ -131,6 +154,8 @@ function support(summary: StoredPeriodSummary): string {
   );
   return [count, tail].filter((part) => part !== null).join(" ");
 }
+const DRAWING_LABEL = /data-drawing-label="([^"]*)"/;
+const drawingLabel = (markup: string) => markup.match(DRAWING_LABEL)?.[1] ?? "";
 const COSTS_TOTAL = /<dt[^>]*>Custos<\/dt>/;
 const THIRD_ROW = /<tr[^>]*>(?:(?!<\/tr>).)*03\/10\/2026.*?<\/tr>/s;
 const EQUALITY = "A diferença entre as duas linhas";
@@ -171,6 +196,126 @@ describe("the sentence of support of the chart, in its five cases (AC-11)", () =
         "25 de 25 dias sem custo informado. Despesas do período entram no dia da competência."
       );
     }
+  });
+});
+
+/** October with the days of `unknown` lacking only the fee: no item line has an unknown cost, some fee is unknown. */
+function onlyFee(unknown: readonly number[]): StoredPeriodSummary {
+  const summary = october(unknown);
+  return {
+    ...summary,
+    quality: {
+      ...summary.quality,
+      itemLinesWithUnknownCost: 0,
+      processingFeesUnknown: 2,
+    },
+  };
+}
+
+describe("when only the fee is missing, the chart says the fee and not the cost (RES-T2)", () => {
+  const said = (summary: StoredPeriodSummary) =>
+    text(chart(summary).match(THIRD_ROW)?.[0] ?? "");
+
+  it("says it in the table, in the cost and in the result of an unknown day", () => {
+    const row = said(onlyFee([3]));
+    expect(row.match(/sem taxa informada/g)).toHaveLength(2);
+    expect(row).not.toContain("sem custo informado");
+  });
+
+  it("says it in the summary of the drawing and in the legend of the hatch", () => {
+    const markup = chart(onlyFee([3, 12, 21]));
+    expect(drawingLabel(markup)).toContain("3 de 25 dias sem taxa informada");
+    expect(drawingLabel(markup)).not.toContain("sem custo informado");
+    expect(markup).toContain('data-hatch-legend="dia sem taxa informada"');
+    expect(markup).toContain('data-hatch-text="sem taxa informada"');
+  });
+
+  it("keeps the words of the cost in the summary and in the hatch when a cost is what is missing", () => {
+    const markup = chart(october([3, 12, 21]));
+    expect(drawingLabel(markup)).toContain("3 de 25 dias sem custo informado");
+    expect(markup).toContain('data-hatch-legend="dia sem custo informado"');
+  });
+
+  it("writes the year in the reading of a month of last year", () => {
+    const base = onlyFee([]);
+    const markup = chart({
+      ...base,
+      daily: [
+        {
+          costs: null,
+          date: "2025-12-01",
+          days: 31,
+          netSales: "50.00",
+          operatingExpenses: "0.00",
+          operatingResult: null,
+          salesCount: 1,
+          to: "2025-12-31",
+          unknownDays: 31,
+        },
+      ],
+      generatedAt: "2026-02-10T15:00:00.000Z",
+      granularity: "month",
+      period: { from: "2025-12-01", to: "2025-12-31" },
+    } as StoredPeriodSummary);
+    expect(markup).toContain(
+      'data-first-note="dezembro de 2025: 31 de 31 dias sem taxa informada"'
+    );
+  });
+
+  it("names the month in the summary of the drawing of a period by month", () => {
+    const base = onlyFee([]);
+    const month = (
+      date: string,
+      to: string,
+      days: number,
+      unknown: number
+    ) => ({
+      costs: unknown > 0 ? null : "10.00",
+      date,
+      days,
+      netSales: "50.00",
+      operatingExpenses: "0.00",
+      operatingResult: unknown > 0 ? null : "40.00",
+      salesCount: 1,
+      to,
+      unknownDays: unknown,
+    });
+    const markup = chart({
+      ...base,
+      daily: [
+        month("2026-09-01", "2026-09-30", 30, 0),
+        month("2026-11-01", "2026-11-07", 7, 1),
+      ],
+      generatedAt: "2026-11-07T15:00:00.000Z",
+      granularity: "month",
+      period: { from: "2026-09-01", to: "2026-11-07" },
+    } as StoredPeriodSummary);
+    expect(drawingLabel(markup)).toContain(
+      "novembro: 1 de 7 dias sem taxa informada"
+    );
+    expect(drawingLabel(markup)).not.toContain("sem custo informado");
+    expect(markup).toContain(
+      'data-hatch-legend="mês com dia sem taxa informada"'
+    );
+  });
+
+  it("keeps the cost when an item line has no cost, even if a fee is unknown too", () => {
+    const both = onlyFee([3]);
+    const row = said({
+      ...both,
+      quality: { ...both.quality, itemLinesWithUnknownCost: 1 },
+    });
+    expect(row.match(/sem custo informado/g)).toHaveLength(2);
+    expect(row).not.toContain("sem taxa informada");
+  });
+
+  it("keeps the cost when no count explains the unknown day", () => {
+    const none = october([3]);
+    const row = said({
+      ...none,
+      quality: { ...none.quality, itemLinesWithUnknownCost: 0 },
+    });
+    expect(row.match(/sem custo informado/g)).toHaveLength(2);
   });
 });
 
@@ -412,10 +557,17 @@ describe("the (i) of the title and the caveat said once (AC-7.2 to AC-7.4)", () 
             resultSeries(summary.daily ?? [], "2026-10-25"),
             summary.chain
           );
-          const count =
-            unknown > 0 ? "366 de 366 dias sem custo informado." : null;
-          for (const help of [periodHelp({ count, range, source }), tail]) {
-            expect(help?.length ?? 0).toBeLessThanOrEqual(160);
+          const counts =
+            unknown > 0
+              ? [
+                  "366 de 366 dias sem custo informado.",
+                  "Setembro de 2025: 31 de 31 dias sem taxa informada.",
+                ]
+              : [null];
+          for (const count of counts) {
+            for (const help of [periodHelp({ count, range, source }), tail]) {
+              expect(help?.length ?? 0).toBeLessThanOrEqual(160);
+            }
           }
         }
       }
