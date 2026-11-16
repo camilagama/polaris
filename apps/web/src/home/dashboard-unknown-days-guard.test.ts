@@ -121,17 +121,19 @@ describe("o e2e do Início guarda a regra dos dias sem custo do app", () => {
         `const UNKNOWN_DAYS_MAX_CHARS = ${limit};`
       );
       expect(otherLimit).not.toBe(E2E_SOURCE);
-      expect(() => expectLimitIsTheApps(otherLimit)).toThrow();
+      expect(() => expectLimitIsTheApps(otherLimit)).toThrow("o texto mais");
     }
 
-    const otherText = E2E_SOURCE.replace(`"dias"`, `"d"`);
+    const otherText = E2E_SOURCE.replace(`"dias"} sem`, `"d"} sem`);
     expect(otherText).not.toBe(E2E_SOURCE);
-    expect(() => expectTextIsTheApps(otherText)).toThrow();
+    expect(() => expectTextIsTheApps(otherText)).toThrow("expected");
 
     const withoutDeclaration = E2E_SOURCE.replace(
       "const unknownDaysLine",
       "const lineOfDays"
     );
-    expect(() => expectTextIsTheApps(withoutDeclaration)).toThrow();
+    expect(() => expectTextIsTheApps(withoutDeclaration)).toThrow(
+      "declarada uma vez"
+    );
   });
 });
