@@ -186,7 +186,7 @@ async function run() {
   assert.doesNotMatch(parsedAdminUrl.hostname, poolerPattern);
 
   const owner = createDatabase(adminUrl, { maxConnections: 2 });
-  const logins: [string, string][] = [];
+  const logins: string[] = [];
   const tests: string[] = [];
   const closers: (() => Promise<unknown>)[] = [];
   const suffix = randomUUID().slice(0, 8);
@@ -235,7 +235,7 @@ async function run() {
         `CREATE ROLE "${role}" WITH LOGIN INHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS PASSWORD '${password}'`
       );
       await owner.pool.query(`GRANT "${group}" TO "${role}"`);
-      logins.push([role, group]);
+      logins.push(role);
       return temporaryRuntimeUrl(adminUrl, role, password);
     };
     const outboxUrl = await login("polaris_outbox_runtime", "polaris_dlq_obx");
@@ -2525,8 +2525,7 @@ async function run() {
       "DELETE FROM public.operational_incidents WHERE subject LIKE $1 OR (subject = 'unknown' AND id <> ALL($2::uuid[]))",
       [`gate\\_dlq.%${suffix}`, unknownBefore]
     );
-    for (const [role, group] of logins) {
-      await cleanup("revoke", `REVOKE "${group}" FROM "${role}"`);
+    for (const role of logins) {
       await cleanup("role", `DROP ROLE IF EXISTS "${role}"`);
     }
     await owner.pool.end();

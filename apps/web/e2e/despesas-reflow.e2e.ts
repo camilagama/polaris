@@ -29,10 +29,14 @@ const uuid = (n: number) =>
 const FILTER_BUTTON_NAME = /^Filtrar( despesas)?$/;
 const CATEGORY_ITEM = /^Categoria/;
 const ROWS = 14;
+const LONG_CATEGORY = "Material de embalagem e limpeza do ateliê";
+const LONG_GROUP = "Operacional/Administrativa";
+const SHORT_CATEGORY = "Aluguel";
 
 const CATEGORIES = [
   ["commercial", "Marketing"],
-  ["operational", "Aluguel"],
+  ["operational", SHORT_CATEGORY],
+  ["operational", LONG_CATEGORY],
 ].map(([groupKey, name], index) => ({
   archivedAt: null,
   createdAt: NOW,
@@ -332,4 +336,181 @@ test.describe("a 360 px com a letra padrão", () => {
       expect(height).toBeGreaterThanOrEqual(TOUCH);
     }
   );
+});
+
+interface ValueReading {
+  clientHeight: number;
+  clientWidth: number;
+  scrollHeight: number;
+  scrollWidth: number;
+  text: string;
+  title: string | null;
+  triggerHeight: number;
+}
+
+const readValue = (trigger: Locator) =>
+  trigger.evaluate((element): ValueReading => {
+    const value = element.querySelector<HTMLElement>(
+      '[data-slot="select-value"]'
+    );
+    if (value === null) {
+      throw new Error("the select has no value element");
+    }
+    return {
+      clientHeight: value.clientHeight,
+      clientWidth: value.clientWidth,
+      scrollHeight: value.scrollHeight,
+      scrollWidth: value.scrollWidth,
+      text: value.textContent ?? "",
+      title: value.getAttribute("title"),
+      triggerHeight: element.getBoundingClientRect().height,
+    };
+  });
+
+/** The value is whole in the DOM and in the title, and never cut sideways: only the end of its second line may be cut. */
+async function expectValueNotCutSideways(
+  trigger: Locator,
+  expected: string
+): Promise<ValueReading> {
+  const reading = await readValue(trigger);
+  expect(reading.text).toBe(expected);
+  expect(reading.scrollWidth, "the value is cut sideways").toBeLessThanOrEqual(
+    reading.clientWidth + 1
+  );
+  expect(reading.title, "the title has the whole name").toBe(expected);
+  return reading;
+}
+
+async function pick(page: Page, scope: Locator, label: string, option: string) {
+  await scope.getByRole("combobox", { exact: true, name: label }).click();
+  await page.getByRole("option", { exact: true, name: option }).click();
+  await expect(page.getByRole("listbox")).toHaveCount(0);
+}
+
+const openExpenseForm = async (page: Page) => {
+  await newButton(page).click();
+  return page.getByRole("dialog", { exact: true, name: "Nova despesa" });
+};
+
+const openRuleForm = async (page: Page) => {
+  await page.getByRole("tab", { name: "Recorrentes" }).click();
+  await page
+    .getByRole("button", { exact: true, name: "Nova despesa recorrente" })
+    .click();
+  return page.getByRole("dialog", {
+    exact: true,
+    name: "Nova despesa recorrente",
+  });
+};
+
+const openCategoryForm = async (page: Page) => {
+  await page.getByRole("tab", { name: "Categorias" }).click();
+  await page
+    .getByRole("button", { exact: true, name: "Nova categoria" })
+    .click();
+  return page.getByRole("dialog", { exact: true, name: "Nova categoria" });
+};
+
+const SELECTS = [
+  {
+    label: "Categoria",
+    name: "o formulário de despesa",
+    open: openExpenseForm,
+    option: LONG_CATEGORY,
+    trigger: "#expense-categoryId",
+  },
+  {
+    label: "Categoria",
+    name: "a regra recorrente",
+    open: openRuleForm,
+    option: LONG_CATEGORY,
+    trigger: "#expense-rule-categoryId",
+  },
+  {
+    label: "Grupo",
+    name: "o formulário de categoria",
+    open: openCategoryForm,
+    option: LONG_GROUP,
+    trigger: "#expense-new-category-group",
+  },
+] as const;
+
+test.describe("o valor do seletor a 320 px com letra de 20 px", () => {
+  for (const select of SELECTS) {
+    reflowTest(
+      `${select.name}: o valor escolhido quebra de linha em vez de ser cortado seco, e o campo cresce sem passar da caixa`,
+      async ({ page }) => {
+        await openReflowViewport(page);
+        await openExpenses(page);
+        await expectReflowFont(page);
+        const dialog = await select.open(page);
+        await expect(dialog).toBeVisible();
+        const trigger = dialog.locator(select.trigger);
+        const before = await readValue(trigger);
+
+        await pick(page, dialog, select.label, select.option);
+
+        const after = await expectValueNotCutSideways(trigger, select.option);
+        const lineHeight = await trigger
+          .locator('[data-slot="select-value"]')
+          .evaluate((element) =>
+            Number.parseFloat(getComputedStyle(element).lineHeight)
+          );
+        expect(
+          after.triggerHeight - before.triggerHeight,
+          "the field grew by more than one line"
+        ).toBeLessThanOrEqual(lineHeight + 1);
+        expect(
+          after.clientHeight,
+          "the value shows more than two lines"
+        ).toBeLessThanOrEqual(2 * lineHeight + 1);
+        if (after.scrollHeight > after.clientHeight + 1) {
+          expect(
+            after.clientHeight,
+            "a cut value shows two lines, not one"
+          ).toBeGreaterThan(lineHeight * 1.5);
+        }
+        await assertNothingClipped(dialog);
+        await assertNoPageScroll(page);
+      }
+    );
+  }
+});
+
+test.describe("o valor do seletor a 360 px com letra de 16 px", () => {
+  for (const select of SELECTS.slice(0, 2)) {
+    reflowTest(
+      `${select.name}: valor curto deixa o campo na altura de hoje e valor longo cresce no máximo uma linha`,
+      async ({ page }) => {
+        await page.setViewportSize({ height: 740, width: 360 });
+        await openExpenses(page);
+        const dialog = await select.open(page);
+        const trigger = dialog.locator(select.trigger);
+        const empty = await readValue(trigger);
+
+        await pick(page, dialog, select.label, SHORT_CATEGORY);
+        const short = await readValue(trigger);
+        expect(
+          short.triggerHeight,
+          "a short value changes the height of the field"
+        ).toBe(empty.triggerHeight);
+        expect(
+          short.triggerHeight,
+          "the field is not at its height of always"
+        ).toBe(TOUCH);
+
+        await pick(page, dialog, select.label, select.option);
+        const long = await expectValueNotCutSideways(trigger, select.option);
+        const lineHeight = await trigger
+          .locator('[data-slot="select-value"]')
+          .evaluate((element) =>
+            Number.parseFloat(getComputedStyle(element).lineHeight)
+          );
+        expect(
+          long.triggerHeight - short.triggerHeight,
+          "the field grew by more than one line"
+        ).toBeLessThanOrEqual(lineHeight + 1);
+      }
+    );
+  }
 });

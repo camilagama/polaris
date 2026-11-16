@@ -13,6 +13,12 @@ import {
   type TenantRequestTransaction,
   withAuthorizedTenantTransaction,
 } from "../src/tenant-transaction";
+import {
+  assertAllowedGateUrl,
+  disposableHostPattern,
+  isLocalGateHost,
+} from "./gate-hosts";
+import { setLoginRole } from "./gate-roles";
 import { archiveThenDeleteProduct } from "./product-lifecycle-support";
 
 const gateDatabase =
@@ -23,9 +29,6 @@ const gateDatabase =
 const runtimeRole = "polaris_pr11_runtime";
 const expectedTables = ["media_assets", "product_media", "variant_media"];
 const sqlStatePattern = /^[0-9A-Z]{5}$/;
-const disposableHostPattern =
-  /^ep-[a-z-]+-[a-z0-9]+\.c-2\.sa-east-1\.aws\.neon\.tech$/;
-
 const poolerPattern = /pooler/i;
 
 type Database = ReturnType<typeof createDatabase>["db"];
@@ -54,15 +57,28 @@ function sqlState(error: unknown): string | undefined {
     : undefined;
 }
 
+function sqlConstraint(error: unknown): string | undefined {
+  if (typeof error !== "object" || error === null || !("constraint" in error)) {
+    return undefined;
+  }
+  const { constraint } = error as { constraint?: unknown };
+  return typeof constraint === "string" ? constraint : undefined;
+}
+
+// 23514 is shared by the CHECKs, the tombstone guard and the link trigger, so a refusal also names its constraint.
 async function expectSqlState(
   operation: Promise<unknown>,
   expected: string,
-  label: string
+  label: string,
+  constraint?: string
 ): Promise<void> {
   await assert.rejects(
     operation,
     (error: unknown) => {
       assert.equal(sqlState(error), expected, label);
+      if (constraint !== undefined) {
+        assert.equal(sqlConstraint(error), constraint, `${label} (constraint)`);
+      }
       return true;
     },
     label
@@ -97,7 +113,8 @@ async function expectSqlStateWithUnlinkedAsset(
   statement: string,
   parameters: (assetId: string) => unknown[],
   expected: string,
-  label: string
+  label: string,
+  constraint?: string
 ): Promise<void> {
   const client = await pool.connect();
   try {
@@ -106,7 +123,8 @@ async function expectSqlStateWithUnlinkedAsset(
     await expectSqlState(
       client.query(statement, parameters(assetId)),
       expected,
-      label
+      label,
+      constraint
     );
   } finally {
     try {
@@ -128,7 +146,8 @@ async function expectUnlinkedAssetRefusedAtCommit(
     await expectSqlState(
       client.query("COMMIT"),
       "23514",
-      "an asset without a product link is refused at commit"
+      "an asset without a product link is refused at commit",
+      "media_assets_product_link_required"
     );
   } finally {
     try {
@@ -261,6 +280,10 @@ async function createRuntimeClient(connectionString: string): Promise<Client> {
     connectionTimeoutMillis: 5000,
   });
   await client.connect();
+  if (process.env.POLARIS_GATE_RUNTIME_LOGIN) {
+    // The unified gate runner connects through a temporary login that is a member of the runtime role.
+    await setLoginRole(client, runtimeRole, "session");
+  }
   const role = await client.query("SELECT current_user AS role");
   assert.equal(role.rows[0]?.role, runtimeRole);
   return client;
@@ -314,16 +337,20 @@ async function main(): Promise<void> {
   );
   assert.equal(confirmation, "polaris-pr33-media-schema-gate");
 
-  const connection = new URL(connectionString);
+  const connection = assertAllowedGateUrl(connectionString);
   const runtimeConnectionString = requiredEnvironment(
     "POLARIS_MEDIA_GATE_RUNTIME_DATABASE_URL"
   );
-  const runtimeConnection = new URL(runtimeConnectionString);
+  const runtimeConnection = assertAllowedGateUrl(runtimeConnectionString);
   for (const candidate of [connection, runtimeConnection]) {
     assert.equal(candidate.protocol, "postgresql:");
     assert.equal(candidate.pathname, `/${gateDatabase}`);
     assert.equal(candidate.hostname, expectedHostname);
     assert.match(candidate.hostname, disposableHostPattern);
+    // the job's own Postgres has no TLS; every Neon endpoint is verified
+    if (!isLocalGateHost(candidate.hostname)) {
+      assert.equal(candidate.searchParams.get("sslmode"), "verify-full");
+    }
     assert.doesNotMatch(candidate.hostname, poolerPattern);
   }
 
@@ -364,13 +391,11 @@ async function main(): Promise<void> {
       table_name: string;
       can_select: boolean;
       can_insert: boolean;
-      can_update: boolean;
       can_delete: boolean;
     }>(
       "SELECT table_name, " +
         "has_table_privilege($1, format('public.%I', table_name), 'SELECT') AS can_select, " +
         "has_table_privilege($1, format('public.%I', table_name), 'INSERT') AS can_insert, " +
-        "has_table_privilege($1, format('public.%I', table_name), 'UPDATE') AS can_update, " +
         "has_table_privilege($1, format('public.%I', table_name), 'DELETE') AS can_delete " +
         "FROM unnest($2::text[]) AS table_name ORDER BY table_name",
       [runtimeRole, expectedTables]
@@ -392,16 +417,32 @@ async function main(): Promise<void> {
         `${grant.table_name} runtime INSERT`
       );
       assert.equal(
-        grant.can_update,
-        false,
-        `${grant.table_name} runtime UPDATE`
-      );
-      assert.equal(
         grant.can_delete,
         expectedGrant.delete,
         `${grant.table_name} runtime DELETE`
       );
     }
+
+    // has_table_privilege cannot see a grant on one column, and has_column_privilege is also true for a table-wide
+    // UPDATE, so the columns the runtime may update are exactly the ones the media commands need
+    const updatableColumns = await pool.query<{
+      column_name: string;
+      table_name: string;
+    }>(
+      "SELECT c.relname AS table_name, a.attname AS column_name " +
+        "FROM pg_class AS c " +
+        "JOIN pg_namespace AS n ON n.oid = c.relnamespace " +
+        "JOIN pg_attribute AS a ON a.attrelid = c.oid AND a.attnum > 0 AND NOT a.attisdropped " +
+        "WHERE n.nspname = 'public' AND c.relname = ANY($2::text[]) " +
+        "AND has_column_privilege($1, c.oid, a.attnum, 'UPDATE') " +
+        'ORDER BY c.relname COLLATE "C", a.attname COLLATE "C"',
+      [runtimeRole, expectedTables]
+    );
+    assert.deepEqual(
+      updatableColumns.rows,
+      [{ column_name: "position", table_name: "product_media" }],
+      "the runtime may update only product_media.position (reorder)"
+    );
 
     const tenantA = await createTenantFixture(pool, "tenant-a");
     const tenantB = await createTenantFixture(pool, "tenant-b");
@@ -506,7 +547,8 @@ async function main(): Promise<void> {
         "VALUES ($1, $2, $3, -1)",
       (assetId) => [tenantA.organizationId, productA, assetId],
       "23514",
-      "product media position must be nonnegative"
+      "product media position must be nonnegative",
+      "product_media_position_nonnegative"
     );
     await expectSqlState(
       pool.query(
@@ -698,7 +740,8 @@ async function main(): Promise<void> {
         "VALUES ($1, $2, $3, 2)",
       (assetId) => [tenantA.organizationId, productA, assetId],
       "23514",
-      "database blocks new product media links after tombstone"
+      "database blocks new product media links after tombstone",
+      "media_product_tombstone_guard"
     );
     await expectSqlState(
       pool.query(
@@ -707,7 +750,8 @@ async function main(): Promise<void> {
         [tenantA.organizationId, productA, assetB]
       ),
       "23514",
-      "database blocks reordering product media after tombstone"
+      "database blocks reordering product media after tombstone",
+      "media_product_tombstone_guard"
     );
     await expectSqlState(
       pool.query(
@@ -716,7 +760,8 @@ async function main(): Promise<void> {
         [tenantA.organizationId, productA, variantA1, assetA]
       ),
       "23514",
-      "database preserves variant media links after tombstone"
+      "database preserves variant media links after tombstone",
+      "media_product_tombstone_guard"
     );
 
     const report = {
@@ -725,7 +770,7 @@ async function main(): Promise<void> {
       serverVersion: serverInfo.server_version,
       status: "passed",
       tests: [
-        "media tables are protected by FORCE RLS and the runtime has only the grants the media commands need (no UPDATE; media_assets has no DELETE)",
+        "media tables are protected by FORCE RLS and the runtime has only the grants the media commands need (UPDATE only on product_media.position; media_assets has no DELETE)",
         "asset can be reused across variants of its owning product without duplication",
         "product and variant media positions are nonnegative and unique per parent",
         "an asset cannot link to another product or organization",

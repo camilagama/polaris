@@ -1599,11 +1599,9 @@ async function run() {
       await runtime.pool.end();
     }
     if (loginRole && loginRoleCreated) {
-      await admin.pool.query(`REVOKE "${runtimeRole}" FROM "${loginRole}"`);
       await admin.pool.query(`DROP ROLE "${loginRole}"`);
     }
     if (authLogin && authLoginCreated) {
-      await admin.pool.query(`REVOKE "${authRuntimeRole}" FROM "${authLogin}"`);
       await admin.pool.query(`DROP ROLE "${authLogin}"`);
     }
     await admin.pool.end();

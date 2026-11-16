@@ -122,7 +122,7 @@ async function run() {
   assert.doesNotMatch(parsedAdminUrl.hostname, poolerPattern);
 
   const owner = createDatabase(adminUrl, { maxConnections: 4 });
-  const logins: [string, string][] = [];
+  const logins: string[] = [];
   const tests: string[] = [];
   const stores: BillingStore[] = [];
 
@@ -151,7 +151,7 @@ async function run() {
       `CREATE ROLE "${role}" WITH LOGIN INHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS PASSWORD '${password}'`
     );
     await owner.pool.query(`GRANT "polaris_billing_runtime" TO "${role}"`);
-    logins.push([role, "polaris_billing_runtime"]);
+    logins.push(role);
     const billingUrl = temporaryRuntimeUrl(adminUrl, role, password);
     const newStore = (options?: Parameters<typeof createBillingStore>[1]) => {
       const created = createBillingStore(billingUrl, options);
@@ -472,8 +472,7 @@ async function run() {
     for (const store of stores) {
       await store.close();
     }
-    for (const [role, group] of logins) {
-      await owner.pool.query(`REVOKE "${group}" FROM "${role}"`);
+    for (const role of logins) {
       await owner.pool.query(`DROP ROLE IF EXISTS "${role}"`);
     }
     await owner.pool.end();

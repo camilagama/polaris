@@ -1891,13 +1891,9 @@ async function main() {
     if (store) {
       await store.close();
     }
-    for (const [role, group] of [
-      [loginRole, runtimeRole],
-      [billingLoginRole, "polaris_billing_runtime"],
-    ] as const) {
+    for (const role of [loginRole, billingLoginRole] as const) {
       if (role) {
         // biome-ignore lint/performance/noAwaitInLoops: Two cleanups, in order.
-        await admin.pool.query(`REVOKE "${group}" FROM "${role}"`);
         await admin.pool.query(`DROP ROLE IF EXISTS "${role}"`);
       }
     }
