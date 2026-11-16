@@ -19,6 +19,14 @@ import {
   type StoredDay,
   type StoredPeriodSummary,
 } from "../lib/period-summary-cache";
+import { NO_SALES_UNTIL_DAY } from "./dashboard-model";
+import {
+  type MissingDays,
+  type MissingInput,
+  type MissingQuality,
+  missingInputOf,
+  singleUnknownMonth,
+} from "./missing-input";
 import {
   addDays,
   dayCount,
@@ -175,16 +183,23 @@ function dayCounts(day: Day): { total: number; unknown: number } {
 
 /**
  * Whether the result of the days has a sparkline and a chip, and if not why (AC-8, AC-9): with a month that has an
- * unknown day, "N de M dias" counts the days of the months (D1-4).
+ * unknown day, "N de M dias" counts the days of the months (D1-4), or the days of the one month that has them, named.
  */
-function resultKindOf(days: readonly Day[]): ResultKind {
+function resultKindOf(
+  days: readonly Day[],
+  input: MissingInput,
+  thisYear: string
+): ResultKind {
   const counts = days.map(dayCounts);
   const unknown = counts.reduce((sum, count) => sum + count.unknown, 0);
   if (unknown > 0 || days.some((day) => day.operatingResult === null)) {
     return {
+      input,
       kind: "incomplete",
+      month: null,
       total: counts.reduce((sum, count) => sum + count.total, 0),
       unknown: Math.max(unknown, 1),
+      ...singleUnknownMonth(days, thisYear),
     };
   }
   if (
@@ -208,7 +223,7 @@ export function resultChipPeriod(
 ): Period | null {
   const days = daysUpToToday(summary.daily ?? [], summary.period, today);
   if (
-    resultKindOf(days).kind !== "known" ||
+    resultKindOf(days, "cost", today.slice(0, 4)).kind !== "known" ||
     cogsCoverageOf(summary.quality) === "none"
   ) {
     return null;
@@ -227,7 +242,7 @@ export interface ResultKpiCards {
 /** Why the result has no sparkline and no chip: "N de M dias sem custo informado", or no series at all. */
 type ResultKind =
   | { kind: "known" }
-  | { kind: "incomplete"; total: number; unknown: number }
+  | ({ kind: "incomplete" } & MissingDays)
   | { kind: "unsent" };
 
 export interface ResultKpis {
@@ -254,9 +269,6 @@ interface Prior {
   range: string;
   sum: Cumulative | undefined;
 }
-
-/** Said by the sales and ticket cards, and by the range control, when the day read has no sale yet in a period that has. */
-export const NO_SALES_UNTIL_DAY = "Sem vendas";
 
 interface ReadContext {
   /** The period the cards read, to say what its chips compare with. */
@@ -451,6 +463,7 @@ export function resultKpis({
   period,
   previous,
   previousSales,
+  quality,
   today,
 }: {
   cards: ResultKpiCards;
@@ -458,6 +471,7 @@ export function resultKpis({
   period: Period;
   previous: PriorSeries | null;
   previousSales: PriorSeries | null;
+  quality: MissingQuality;
   today: string;
 }): ResultKpis {
   const days = daysUpToToday(daily, period, today);
@@ -468,7 +482,7 @@ export function resultKpis({
   const month = isWholeMonth(period) ? monthName(period.from) : null;
 
   // the same day the chart hatches: the contract sends `costs` and `operatingResult` null together (AC-8)
-  const result = resultKindOf(days);
+  const result = resultKindOf(days, missingInputOf(quality), thisYear);
   const whole = month
     ? `${month} inteiro`
     : periodShort(period.from, period.to, thisYear);

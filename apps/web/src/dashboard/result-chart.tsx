@@ -17,6 +17,7 @@ import { calendarDayInTimezone } from "../lib/dates";
 import { formatBrlAmount } from "../lib/format";
 import type { StoredPeriodSummary } from "../lib/period-summary-cache";
 import { isIncompleteEstimate } from "./dashboard-model";
+import { missingInformed, missingInputOf } from "./missing-input";
 import { IncompleteBadge } from "./result-cards";
 import { periodText } from "./result-period";
 import {
@@ -29,7 +30,6 @@ import {
   costText,
   hasAnyValue,
   moneyText,
-  NO_COST_TEXT,
   type ResultRow,
   type ResultSeries,
   readingNote,
@@ -119,8 +119,8 @@ export function NumbersTable({
           ? [
               row.tableLabel,
               formatBrlAmount(row.netSales),
-              costText(row.costs),
-              costText(row.operatingResult),
+              costText(row.costs, series.missing),
+              costText(row.operatingResult, series.missing),
               row.expenses ? formatBrlAmount(row.expenses) : EMPTY_CELL,
             ]
           : [row.tableLabel, formatBrlAmount(row.netSales)],
@@ -253,7 +253,10 @@ function Totals({
  * The numbers a drawing is given: the sales, the costs when they are sent (`null` on a day whose cost is unknown:
  * hatched, never a zero) and the note of a day. Memoized, so the layout is not redone.
  */
-function useDrawingData({ costsSent, grouped, rows }: ResultSeries) {
+function useDrawingData(
+  { costsSent, grouped, missing, rows }: ResultSeries,
+  thisYear: string
+) {
   const data = useMemo(
     () =>
       rows.map((row) => ({
@@ -276,27 +279,25 @@ function useDrawingData({ costsSent, grouped, rows }: ResultSeries) {
       name: "Custos",
       unknown: {
         // a month with one unknown day is unknown as a whole (never a partial sum): the hatch names it so
-        legend: grouped
-          ? "mês com dia sem custo informado"
-          : "dia sem custo informado",
-        text: NO_COST_TEXT,
+        legend: `${grouped ? "mês com dia" : "dia"} ${missingInformed(missing)}`,
+        text: missingInformed(missing),
       },
     };
-  }, [costsSent, grouped, rows]);
+  }, [costsSent, grouped, missing, rows]);
   const [hidden] = useHiddenValues();
   const note = useCallback(
     (index: number) => {
-      const text = readingNote(rows[index]);
+      const text = readingNote(rows[index], missing, thisYear);
       return text && hidden ? maskMoney(text) : text;
     },
-    [hidden, rows]
+    [hidden, missing, rows, thisYear]
   );
   const spoken = useCallback(
     (index: number) => {
-      const text = readingNote(rows[index]);
+      const text = readingNote(rows[index], missing, thisYear);
       return text && hidden ? maskMoney(text, MASKED_SPOKEN) : text;
     },
-    [hidden, rows]
+    [hidden, missing, rows, thisYear]
   );
   return { data, note, secondary, spoken };
 }
@@ -317,13 +318,15 @@ function Drawing({
   empty,
   label,
   series,
+  thisYear,
 }: {
   details: string;
   empty: boolean;
   label: string;
   series: ResultSeries;
+  thisYear: string;
 }) {
-  const { data, note, secondary, spoken } = useDrawingData(series);
+  const { data, note, secondary, spoken } = useDrawingData(series, thisYear);
   const [hidden] = useHiddenValues();
   return (
     <OnDemandAreaChart
@@ -354,10 +357,12 @@ function Body({
   details,
   label,
   series,
+  thisYear,
 }: {
   details: string;
   label: string;
   series: ResultSeries;
+  thisYear: string;
 }) {
   if (series.rows.length === 0) {
     return (
@@ -371,6 +376,7 @@ function Body({
       empty={!hasAnyValue(series.rows, series.costsDrawn)}
       label={label}
       series={series}
+      thisYear={thisYear}
     />
   );
 }
@@ -396,8 +402,14 @@ export function ResultChart({ source, summary, timezone }: ResultChartProps) {
   const today = calendarDayInTimezone(new Date(summary.generatedAt), timezone);
   const series = useMemo(
     () =>
-      daily ? resultSeries(daily, today, { afterToday, granularity }) : null,
-    [afterToday, daily, granularity, today]
+      daily
+        ? resultSeries(daily, today, {
+            afterToday,
+            granularity,
+            missing: missingInputOf(summary.quality),
+          })
+        : null,
+    [afterToday, daily, granularity, summary.quality, today]
   );
   if (!(daily && series)) {
     return null;
@@ -412,7 +424,7 @@ export function ResultChart({ source, summary, timezone }: ResultChartProps) {
   const costsTotal = costsKnown(daily)
     ? costParts(summary.chain, summary.quality).total
     : null;
-  const label = `Vendas líquidas${costsDrawn ? " e custos" : ""} por ${series.grouped ? "mês" : "dia"}, ${range}: ${formatBrlAmount(salesTotal)} de vendas${costsTotal ? ` e ${formatBrlAmount(costsTotal)} de custos` : ""}${unknown ? `. ${unknownDaysCount(days.unknown, days.total)}` : ""}`;
+  const label = `Vendas líquidas${costsDrawn ? " e custos" : ""} por ${series.grouped ? "mês" : "dia"}, ${range}: ${formatBrlAmount(salesTotal)} de vendas${costsTotal ? ` e ${formatBrlAmount(costsTotal)} de custos` : ""}${unknown ? `. ${unknownDaysCount({ ...days, input: series.missing })}` : ""}`;
 
   return (
     <Card aria-labelledby={TITLE_ID} className="gap-0 py-0" role="region">
@@ -434,7 +446,12 @@ export function ResultChart({ source, summary, timezone }: ResultChartProps) {
             {best ? <MoneyText text={best} /> : null}
           </p>
         ) : null}
-        <Body details={numbersId} label={label} series={series} />
+        <Body
+          details={numbersId}
+          label={label}
+          series={series}
+          thisYear={today.slice(0, 4)}
+        />
         {rows.length > 0 ? (
           <NumbersTable
             hasCosts={sent}

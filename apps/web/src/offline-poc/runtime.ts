@@ -13,6 +13,7 @@ import {
   type OnlineDetector,
   startOfflineExecutor,
 } from "@tanstack/offline-transactions";
+import { withLocalFileLock } from "../offline/local-store-lock";
 
 export const OFFLINE_POC_DATABASE_FILE = "polaris-pr12-offline-poc.sqlite";
 export const SHARED_RECORD_ID = "polaris-pr12-shared-concurrent-record";
@@ -28,7 +29,6 @@ const RESET_JOURNAL_STORE_NAME = "journal";
 const RESET_JOURNAL_RECORD_KEY = "reset";
 const RESET_JOURNAL_LOCK_NAME = "polaris-pr12-offline-poc-reset-recovery";
 const RESET_JOURNAL_PENDING_VALUE = "pending";
-const DATABASE_OPEN_LOCK_NAME = "polaris-pr12-offline-poc-database-open";
 
 export type OfflinePocRelease = 1 | 2;
 
@@ -192,18 +192,12 @@ function createNotesV2Collection(
   );
 }
 
-// Two tabs creating the same OPFS file at once (right after a reset removed it) make one of them fail with
-// NotFoundError inside the SQLite worker. Opening one tab at a time leaves the second a file that already exists,
-// the same path as any later tab.
 function openDatabaseSerialized() {
-  const open = () =>
+  return withLocalFileLock(OFFLINE_POC_DATABASE_FILE, () =>
     openBrowserWASQLiteOPFSDatabase({
       databaseName: OFFLINE_POC_DATABASE_FILE,
-    });
-  if (typeof navigator.locks?.request !== "function") {
-    return open();
-  }
-  return navigator.locks.request(DATABASE_OPEN_LOCK_NAME, open);
+    })
+  );
 }
 
 export async function createOfflinePocRuntime(
