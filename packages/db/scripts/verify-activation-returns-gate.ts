@@ -104,7 +104,7 @@ async function run() {
   assert.doesNotMatch(parsedAdminUrl.hostname, poolerPattern);
 
   const owner = createDatabase(adminUrl, { maxConnections: 2 });
-  const logins: [string, string][] = [];
+  const logins: string[] = [];
   const tests: string[] = [];
 
   try {
@@ -148,7 +148,7 @@ async function run() {
         `CREATE ROLE "${role}" WITH LOGIN INHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS PASSWORD '${password}'`
       );
       await owner.pool.query(`GRANT "${group}" TO "${role}"`);
-      logins.push([role, group]);
+      logins.push(role);
       const url = new URL(adminUrl);
       url.username = role;
       url.password = password;
@@ -920,7 +920,7 @@ async function run() {
       )
     );
   } finally {
-    for (const [loginRole] of logins) {
+    for (const loginRole of logins) {
       await owner.pool.query(`DROP ROLE IF EXISTS "${loginRole}"`);
     }
     await owner.pool.end();

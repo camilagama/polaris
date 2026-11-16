@@ -671,7 +671,7 @@ async function run() {
   assert.doesNotMatch(parsedAdminUrl.hostname, poolerPattern);
 
   const owner = createDatabase(adminUrl, { maxConnections: 2 });
-  const logins: [string, string][] = [];
+  const logins: string[] = [];
   const tests: string[] = [];
   let runtime: ReturnType<typeof createDatabase> | undefined;
   let privacy: ReturnType<typeof createPrivacyMaintenanceClient> | undefined;
@@ -713,7 +713,7 @@ async function run() {
         `CREATE ROLE "${role}" WITH LOGIN INHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS PASSWORD '${password}'`
       );
       await owner.pool.query(`GRANT "${group}" TO "${role}"`);
-      logins.push([role, group]);
+      logins.push(role);
       return temporaryRuntimeUrl(adminUrl, role, password);
     };
     const tenantUrl = await login(runtimeRole, "polaris_purge_tenant");
@@ -3069,11 +3069,8 @@ async function run() {
     await concurrentPrivacy?.close().catch(() => undefined);
     await adminDatabase?.pool.end().catch(() => undefined);
     await runtime?.pool.end().catch(() => undefined);
-    for (const [role, group] of logins) {
+    for (const role of logins) {
       // biome-ignore lint/performance/noAwaitInLoops: each login is dropped after its sessions end.
-      await owner.pool
-        .query(`REVOKE "${group}" FROM "${role}"`)
-        .catch(() => undefined);
       await owner.pool
         .query(`DROP ROLE IF EXISTS "${role}"`)
         .catch(() => undefined);
