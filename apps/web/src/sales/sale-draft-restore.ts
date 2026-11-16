@@ -1,10 +1,12 @@
 import type { InventoryBalanceEntryReadModel } from "@polaris/contracts";
 import { formatBrlAmount } from "../lib/format";
 import { priceFieldText } from "./last-prices-model";
+import { clearSaleConsequenceText, type SaleCount } from "./sale-count-text";
 import {
   createBlankSaleForm,
   type ItemDraft,
   parseMoneyText,
+  quantityUnits,
   type SaleFormState,
 } from "./sale-form-model";
 import { itemChangesForEntry } from "./sale-variant-picker-model";
@@ -163,14 +165,16 @@ export function refreshedDraftMessage({
   return parts.length > 0 ? parts.join(" ") : null;
 }
 
-/** How many lines of the cart have a variant chosen: what "Limpar venda" takes out. */
-export function chosenItemCount(form: SaleFormState): number {
-  return form.items.filter((item) => item.variantId !== "").length;
+/** The lines of the cart with a variant chosen and the units they add up to: what "Limpar venda" takes out. */
+export function chosenSaleCount(form: SaleFormState): SaleCount {
+  const chosen = form.items.filter((item) => item.variantId !== "");
+  return {
+    lines: chosen.length,
+    units: chosen.reduce((sum, item) => sum + quantityUnits(item.quantity), 0),
+  };
 }
 
 /** The consequence said before "Limpar venda" takes the lines out. */
-export function clearSaleConsequence(count: number): string {
-  return count === 1
-    ? "Isso tira o item da venda."
-    : `Isso tira os ${count} itens da venda.`;
+export function clearSaleConsequence(count: SaleCount): string {
+  return clearSaleConsequenceText(count);
 }

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  freeableLineText,
   isLimitReached,
   LIMIT_ASK_OWNER,
   type LimitSubject,
@@ -256,6 +257,79 @@ describe("o aviso de que o limite está perto", () => {
       plan: { ...plan, proLimits: { goals: 3, images: null, variants: 2000 } },
     });
     expect(unlimited && nearLimitProText(unlimited)).toBeNull();
+  });
+
+  describe("os arquivados sem estoque que excluir libera (usage.freeable)", () => {
+    const freeablePlan = (
+      state: (typeof STATES)[number],
+      used: number,
+      products: number | null
+    ) => ({
+      ...planWith(state, used),
+      usage: {
+        ...planWith(state, used).usage,
+        ...(products === null ? {} : { freeable: { products, variants: 4 } }),
+      },
+    });
+    const line = (
+      state: (typeof STATES)[number],
+      used: number,
+      products: number | null,
+      subject: NearLimitSubject = "variants"
+    ) => {
+      const view = nearLimitFor({
+        billingSelfService: true,
+        canManageBilling: true,
+        plan: freeablePlan(state, used, products),
+        subject,
+      });
+      return view === null ? null : freeableLineText(view);
+    };
+    const SENTENCE =
+      "Você tem 3 produtos arquivados sem estoque. Excluir libera vaga.";
+
+    it.each([
+      [44, null],
+      [45, SENTENCE],
+      [49, SENTENCE],
+      [50, SENTENCE],
+      [51, SENTENCE],
+    ])("com %i de 50 e 3 arquivados: %s", (used, expected) => {
+      expect(line(used === 51 ? "free_over_limit" : "free", used, 3)).toBe(
+        expected
+      );
+    });
+
+    it("sem arquivados sem estoque, ou sem o campo na leitura, nada muda", () => {
+      for (const products of [0, null]) {
+        expect(line("free", 50, products)).toBeNull();
+        expect(
+          nearLimitFor({
+            billingSelfService: true,
+            canManageBilling: true,
+            plan: freeablePlan("free", 50, products),
+            subject: "variants",
+          })?.kind
+        ).toBe("reached");
+      }
+    });
+
+    it("Pro, teste e carência não mostram, e a regra de quem vê é a do aviso", () => {
+      for (const state of STATES) {
+        const shown = state === "free" || state === "free_over_limit";
+        expect(line(state, 50, 3) !== null).toBe(shown);
+      }
+    });
+
+    it("só as variantes carregam a linha: as imagens não liberam vaga com a exclusão de produto", () => {
+      expect(line("free", 50, 3, "images")).toBeNull();
+    });
+
+    it("o singular segue a contagem, não o limite", () => {
+      expect(line("free", 50, 1)).toBe(
+        "Você tem 1 produto arquivado sem estoque. Excluir libera vaga."
+      );
+    });
   });
 
   it("sem limite no plano, ou limite zero, não avisa", () => {

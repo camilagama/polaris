@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import {
   mkdirSync,
@@ -8,9 +9,9 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, relative as relativePath, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import {
   BUDGET_MODE,
   CALENDAR_BUDGET_GZIP_BYTES,
@@ -34,7 +35,13 @@ import {
   onlineOnlyLine,
   onlineOnlyPlacementProblems,
   PRIMITIVES_BUDGET_GZIP_BYTES,
+  precacheSizePath,
+  parsePrecacheSizeRecord,
   precacheBudgetPlugin,
+  precacheSizeRecord,
+  type PrecacheSizeRecord,
+  deltaLine,
+  deltaReport,
   primitiveShares,
   REST_BASELINE_GZIP_BYTES,
   REST_GROWTH_BUDGET_GZIP_BYTES,
@@ -56,6 +63,16 @@ const SOURCE_FILE = /\.tsx?$/;
 const TEST_FILE = /\.test\.tsx?$/;
 
 const bytes = (length: number, fill = 0) => new Uint8Array(length).fill(fill);
+
+const LEFTOVER_SIZE_FILE = /^precache-budget-.*\.precache-size\.json$/;
+
+afterEach(() => {
+  for (const file of readdirSync(tmpdir())) {
+    if (LEFTOVER_SIZE_FILE.test(file)) {
+      rmSync(join(tmpdir(), file), { force: true });
+    }
+  }
+});
 
 describe("precache budget (ADR 0103, section 4)", () => {
   it("counts fonts by their bytes and the rest gzipped, leaving the Sentry chunk out", () => {
@@ -461,6 +478,12 @@ describe("precache budget (ADR 0103, section 4)", () => {
       );
       // the line a review greps for in the CI log is always printed
       expect(logged.join("\n")).toMatch(GROWTH_LINE);
+      // the file the delta reads holds the same measures the lines above print
+      expect(
+        parsePrecacheSizeRecord(
+          readFileSync(precacheSizePath(directory), "utf8")
+        )
+      ).toEqual(precacheSizeRecord(size));
     } finally {
       rmSync(directory, { force: true, recursive: true });
     }
@@ -1550,5 +1573,193 @@ describe("the heat map line (ADR 0103, amendment of the map of the Início, t394
         },
       ])
     ).toHaveLength(1);
+  });
+});
+
+describe("PRECACHE-DELTA (the change of the precache against the base of the pull request)", () => {
+  const record = (overrides: Partial<PrecacheSizeRecord> = {}) =>
+    precacheSizeRecord({
+      calendar: 22_000,
+      charts: 7000,
+      fonts: 50_000,
+      heatmap: 10_000,
+      interface: 40_000,
+      motion: 49_000,
+      primitives: 90_000,
+      rest: 1_200_000,
+      ...overrides,
+    });
+  const HEAD = record({ interface: 40_300, rest: 1_210_000 });
+  const BASE = record();
+
+  it("leaves the file beside the client directory of the Cloudflare build, so it is not served", () => {
+    expect(precacheSizePath("/repo/apps/web/dist/client")).toBe(
+      "/repo/apps/web/dist/precache-size.json"
+    );
+    expect(precacheSizePath("/repo/apps/web/dist/client/")).toBe(
+      "/repo/apps/web/dist/precache-size.json"
+    );
+  });
+
+  it("never leaves the file inside an output directory that is not named client", () => {
+    for (const out of [
+      "/tmp/out",
+      "/tmp/out/",
+      "/repo/dist/client-test",
+      ".",
+      "dist",
+      "client",
+    ]) {
+      const path = precacheSizePath(out);
+      const relative = relativePath(resolve(out), path);
+      expect(relative.startsWith(`..${sep}`)).toBe(true);
+    }
+    expect(() => precacheSizePath("/")).toThrow("root directory");
+    expect(precacheSizePath("/tmp/out")).toBe("/tmp/out.precache-size.json");
+    expect(precacheSizePath("/tmp/other")).not.toBe(
+      precacheSizePath("/tmp/out")
+    );
+  });
+
+  it("the build of a directory that is not named client writes the measures outside it", () => {
+    const directory = mkdtempSync(join(tmpdir(), "precache-budget-"));
+    writeFileSync(join(directory, "index.html"), "<!doctype html>");
+    const plugin = precacheBudgetPlugin();
+    (plugin.configResolved as (config: unknown) => void)({ env: {} });
+    try {
+      (
+        plugin.writeBundle as (this: unknown, output: { dir: string }) => void
+      ).call(
+        {
+          error: () => undefined,
+          info: () => undefined,
+          warn: () => undefined,
+        },
+        { dir: directory }
+      );
+      expect(readdirSync(directory)).toEqual(["index.html"]);
+      expect(
+        parsePrecacheSizeRecord(
+          readFileSync(precacheSizePath(directory), "utf8")
+        )
+      ).not.toBeNull();
+    } finally {
+      rmSync(directory, { force: true, recursive: true });
+    }
+  });
+
+  it("sums every line into the total, fonts included", () => {
+    expect(BASE.total).toBe(
+      22_000 + 7000 + 50_000 + 10_000 + 40_000 + 49_000 + 90_000 + 1_200_000
+    );
+  });
+
+  it("prints each line's change and the total over the base, with the first 8 characters of its SHA", () => {
+    expect(
+      deltaLine(HEAD, BASE, "0123456789abcdef0123456789abcdef01234567")
+    ).toBe(
+      "PRECACHE-DELTA total +10300 B (rest +10000, interface +300, fonts +0, primitives +0, charts +0, motion +0, calendar +0, heatmap +0) vs base 01234567"
+    );
+  });
+
+  it("prints a smaller precache with a minus sign and the same file against itself as zero", () => {
+    expect(
+      deltaLine(record({ rest: 1_199_500 }), BASE, "abcdef0123")
+    ).toContain("total -500 B (rest -500,");
+    expect(deltaLine(BASE, BASE, "abcdef0123")).toContain(
+      "total +0 B (rest +0,"
+    );
+  });
+
+  it("reads the two files and prints the delta", () => {
+    expect(
+      deltaReport({
+        baseBuild: "ok",
+        baseSha: "abcdef0123456789",
+        baseText: JSON.stringify(BASE),
+        headText: JSON.stringify(HEAD),
+      })
+    ).toBe(deltaLine(HEAD, BASE, "abcdef01"));
+  });
+
+  it("says the delta is unavailable, instead of throwing, when the base did not build", () => {
+    expect(
+      deltaReport({
+        baseBuild: "failed",
+        baseSha: "abcdef01",
+        baseText: null,
+        headText: JSON.stringify(HEAD),
+      })
+    ).toBe("PRECACHE-DELTA indisponível (build da base falhou)");
+  });
+
+  it("says the delta is unavailable when the base built without writing the file, or wrote one that is not a record", () => {
+    for (const baseText of [null, "", "{", "[]", "null", '{"rest":"1"}']) {
+      expect(
+        deltaReport({
+          baseBuild: "ok",
+          baseSha: "abcdef01",
+          baseText,
+          headText: JSON.stringify(HEAD),
+        })
+      ).toBe(
+        "PRECACHE-DELTA indisponível (a base não gravou precache-size.json)"
+      );
+    }
+  });
+
+  it("says the delta is unavailable when the pull request's own file is missing or broken", () => {
+    for (const headText of [null, "{", '{"total":1}']) {
+      expect(
+        deltaReport({
+          baseBuild: "ok",
+          baseSha: "abcdef01",
+          baseText: JSON.stringify(BASE),
+          headText,
+        })
+      ).toBe(
+        "PRECACHE-DELTA indisponível (o build do PR não gravou precache-size.json)"
+      );
+    }
+  });
+
+  it("the script prints the line and exits 0 in every case, including a base that is not there", () => {
+    const directory = mkdtempSync(join(tmpdir(), "precache-delta-"));
+    const headFile = join(directory, "head.json");
+    const baseFile = join(directory, "base.json");
+    writeFileSync(headFile, JSON.stringify(HEAD));
+    writeFileSync(baseFile, JSON.stringify(BASE));
+    const script = fileURLToPath(
+      new URL("../scripts/precache-delta.ts", import.meta.url)
+    );
+    const run = (...args: string[]) =>
+      spawnSync("bun", [script, ...args], { encoding: "utf8" });
+    try {
+      const ok = run(headFile, baseFile, "abcdef0123456789", "ok");
+      expect(ok.status).toBe(0);
+      expect(ok.stdout.trim()).toBe(deltaLine(HEAD, BASE, "abcdef01"));
+      const failed = run(
+        headFile,
+        join(directory, "missing.json"),
+        "abcdef01",
+        "failed"
+      );
+      expect(failed.status).toBe(0);
+      expect(failed.stdout.trim()).toBe(
+        "PRECACHE-DELTA indisponível (build da base falhou)"
+      );
+      const nothing = run();
+      expect(nothing.status).toBe(0);
+      expect(nothing.stdout).toContain("PRECACHE-DELTA indisponível");
+    } finally {
+      rmSync(directory, { force: true, recursive: true });
+    }
+  }, 30_000);
+
+  it("rejects a record with a negative count and names an empty SHA", () => {
+    expect(
+      parsePrecacheSizeRecord(JSON.stringify({ ...BASE, rest: -1 }))
+    ).toBeNull();
+    expect(deltaLine(HEAD, BASE, "")).toContain("vs base desconhecida");
   });
 });

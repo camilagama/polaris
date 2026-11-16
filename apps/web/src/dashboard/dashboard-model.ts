@@ -239,6 +239,9 @@ const NO_KNOWN_COST_NOTE = "Sem custo conhecido no período.";
 /** What a card of the estimated result says when no cost of the goods is known (the Resultado and the Início). */
 export const NO_KNOWN_COST_RESULT = "Sem custo informado: não dá para estimar.";
 
+/** Said by the sales and ticket cards, and by the range control, when the day read has no sale yet in a period that has. */
+export const NO_SALES_UNTIL_DAY = "Sem vendas";
+
 /** The subtotals that follow from the cost of goods: with no cost known they are the sales, not an estimate. */
 const COST_SUBTOTALS: ReadonlySet<keyof PeriodChain> = new Set([
   "grossProfit",

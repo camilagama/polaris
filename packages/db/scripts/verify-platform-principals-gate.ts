@@ -442,13 +442,9 @@ async function run() {
       )
     );
   } finally {
-    for (const [role, group] of [
-      [loginRole, "polaris_admin_runtime"],
-      [tenantLogin, runtimeRole],
-    ] as const) {
+    for (const role of [loginRole, tenantLogin] as const) {
       if (role) {
         // biome-ignore lint/performance/noAwaitInLoops: Two cleanups, in order.
-        await owner.pool.query(`REVOKE "${group}" FROM "${role}"`);
         await owner.pool.query(`DROP ROLE IF EXISTS "${role}"`);
       }
     }

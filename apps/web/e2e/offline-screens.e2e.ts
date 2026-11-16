@@ -558,13 +558,15 @@ test.describe("venda", () => {
       page.getByText("Vendas guardadas neste aparelho")
     ).toBeVisible();
     await expect(page.getByText("Aguardando envio")).toBeVisible();
-    // one card, one line: when, how many items, how much (P-3)
+    // one card, one line: when, lines and units, how much (P-3)
     const saved = page.getByRole("region", {
       name: "Vendas guardadas neste aparelho",
     });
     await expect(saved.getByRole("listitem")).toHaveCount(1);
     await expect(saved.getByRole("listitem")).toContainText(MONEY);
-    await expect(saved.getByRole("listitem")).toContainText("1 item");
+    await expect(saved.getByRole("listitem")).toContainText(
+      "1 linha · 2 unidades"
+    );
     await expect(
       page.getByText("Venda guardada neste aparelho.")
     ).toBeVisible();
