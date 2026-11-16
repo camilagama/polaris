@@ -1,0 +1,190 @@
+# Produção: recursos, primeiro deploy, rollback e liberação em etapas
+
+Status: proposta de procedimento, **nada deste runbook foi executado**. O workflow de deploy de produção (`deploy-production.yml`) existe e está desligado pela variável `PRODUCTION_DEPLOY_ENABLED`; o smoke com hosts de produção e a leitura remota dos Hyperdrive de produção ainda não existem (seção 6). O que só existe no staging, ou que só o staging provou, está marcado **a confirmar em produção**. Este runbook não cria conta, não escolhe domínio e não traz segredo, ID de recurso nem host real: nomes e endereços de produção aparecem como `<placeholder>`, e o que faltar faz o processo falhar fechado (seção 4).
+
+Espelho do [Staging fixo](./staging.md): a mesma estrutura de recursos, na conta Cloudflare e no projeto Neon **de produção**, separados dos do staging ([ADR 0097](../adr/0097-staging-fixo-e-producao-em-conta-separada.md)). Não substitui o [release-checklist](./release-checklist.md) (que decide se um SHA pode ser promovido) nem o [checklist de go-live](./README.md#checklist-de-go-live-cloudflare-e-neon) (a primeira exposição pública): os dois são citados por link, e os itens deles não são copiados aqui.
+
+## Gatilho
+
+- Criar a produção pela primeira vez (seções 1 a 5 e 7).
+- Promover um SHA já com a produção criada (seção 7, depois o [release-checklist](./release-checklist.md)).
+- Reverter ou consertar para frente depois de uma promoção (seção 8).
+- Ligar uma flag de liberação em etapas (seção 9).
+
+## Pré-requisitos de acesso
+
+- Wrangler e Neon CLI com o perfil autorizado pela [política de perfis de CLI](./cli-profile-policy.md), **na conta de produção**. Sem confirmar perfil e identidade, não se executa nada ([AGENTS.md](../../AGENTS.md)).
+- Administração do repositório no GitHub (Environment `production`, variáveis) e do Zero Trust da conta de produção.
+- Nenhum valor de segredo, connection string ou token vai para o repositório, PR, log ou relatório: os registros citam só nomes e datas. Credencial de produção nunca é usada por agente de desenvolvimento.
+
+## 1. Quem faz o quê: responsável e automático
+
+| O quê | Quem | Fonte |
+| --- | --- | --- |
+| Criar a conta Cloudflare de produção, o projeto ou organização Neon de produção, o plano de cada um e o custo | Responsável pelo projeto (decisão do usuário) | [ADR 0097](../adr/0097-staging-fixo-e-producao-em-conta-separada.md) |
+| Escolher o domínio do web, do catálogo e do Admin (e o remetente dos e-mails) | Usuário (decisão em aberto: o cookie `__Secure-` do host, ou `__Host-` com domínio separado, [ADR 0097](../adr/0097-staging-fixo-e-producao-em-conta-separada.md), emenda de 22/10) | seção 4 |
+| Marcador do banco, papel `polaris_pr11_runtime`, logins por binding | Responsável, com o dono do banco | seção 2 |
+| Hyperdrive (uma configuração por login), filas, bucket R2 e a regra de ciclo de vida de `exports/v1/` | Responsável | seção 3 |
+| Zero Trust: aplicação Access do Admin, política, passkeys | Responsável (e cada operador, nas próprias passkeys) | seção 5 |
+| Environment `production` no GitHub, revisores obrigatórios, variáveis `LEGAL_*` | Responsável | seção 7 |
+| Segredos de cada Worker | Responsável | seção 3 |
+| Trocar os placeholders do `wrangler.jsonc` pelos IDs reais | Dev, por pull request, **depois** de o responsável criar o recurso e informar o ID | seção 4 |
+| Falha se houver host de staging, host de sandbox, URL base de provedor errada, `workers_dev` ou rota | **Automático**: `bun run verify:staging-isolation` (bloco `env.production`, estático) | [verify-staging-isolation.mjs](../../scripts/verify-staging-isolation.mjs) |
+| Migration incompatível com o Worker anterior reprova | **Automático**: `bun run migrations:compat` (dentro do `bun run check`) | [ADR 0096](../adr/0096-migrations-compativeis-com-a-versao-anterior-do-worker.md) |
+| Build de produção recusa marcador `[preencher: ...]` ou `VITE_LEGAL_*` faltando | **Automático**: `legal-build-guard-plugin.ts`, quando o build roda com `CLOUDFLARE_ENV=production` | [item 20 do checklist](./release-checklist.md#20-deploy-de-produção-com-cloudflare_envproduction-block) |
+| Valor `"false"` de `CLOSURE_AUTO_PURGE_ENABLED`, `ACTIVATION_EMAILS_ENABLED`, `CLOSURE_NOTICE_EMAIL_ENABLED` e `BILLING_SELF_SERVICE_ENABLED` em `env.production` | **Automático**: testes `privacy/maintenance.test.ts` e `billing/activation-sweep.test.ts` de `apps/web/src/server` e `verify-staging-isolation.test.mjs` (seção 9) | seção 9 |
+| Deploy de produção (construir e verificar, migrar, publicar, conferir o SHA, smoke) | `deploy-production.yml`, por dispatch, desligado até o responsável criar o Environment `production`, os segredos e a variável `PRODUCTION_DEPLOY_ENABLED`; segue a ordem da seção 7, ainda sem o smoke. Quem dispara e quem aprova: o responsável | a confirmar em produção |
+| Decidir reverter ou consertar para frente (seção 8) | Responsável pelo projeto (papel; o nome é do usuário, [item 7 do checklist](./release-checklist.md#7-critérios-de-rollback-e-responsável-block)) | seção 8 |
+| Ligar cada flag da seção 9 | Responsável, depois da decisão do usuário sobre o quando | seção 9 |
+
+## 2. Banco: marcador, papéis e migrations (responsável)
+
+Espelha a seção 1 do [staging](./staging.md#1-banco-responsável); o que muda é o ambiente e os nomes.
+
+1. Projeto Neon de produção, com PostgreSQL 18. Região, plano, compute e autosuspend: **decisão do responsável (custo)**; o staging usa Free, `aws-sa-east-1`, 0,25 CU e autosuspend de 5 min, e nada disso vale por herança. O projeto dos gates nunca é a produção, e a produção nunca recebe os gates ([ADR 0097](../adr/0097-staging-fixo-e-producao-em-conta-separada.md)).
+2. Com o dono do banco e a URL **direta**, sem pooler, gravar o marcador uma vez: `COMMENT ON DATABASE <banco> IS 'polaris.environment=production';` O texto tem de ser exatamente esse, em minúsculas e sem espaço sobrando. Leitura de volta: `SELECT shobj_description(oid, 'pg_database') FROM pg_database WHERE datname = current_database();`. O Neon não dá superusuário, então o `ALTER DATABASE … SET polaris.environment` falha com 42501; o motivo e a regra do texto estão no [staging, seção 1](./staging.md#1-banco-responsável) e em `environment-marker.ts`. O marcador `production` também faz o executor dos gates recusar este banco ([release-checklist, item 5](./release-checklist.md#5-pendências-de-ambiente-do-go-live-block)).
+3. `CREATE ROLE polaris_pr11_runtime NOLOGIN NOSUPERUSER NOBYPASSRLS;` (o papel de tenant vive fora das migrations, como no CI e no staging).
+4. Migrar com o dono, **antes** de qualquer Worker, com a URL lida sem passar pelo histórico do shell (`read -rs MIGRATOR_URL && export MIGRATOR_URL`; o nome da variável é local, o que vale é nunca escrever a URL no comando), e com a mesma variável na conferência e no migrate. A conferência é `production:verify-database before-migrate` e, depois do migrate, `after-migrate` (`packages/db/scripts/verify-deploy-database.ts --env production`): só leitura, exige o marcador `polaris.environment=production`, lê só `PRODUCTION_MIGRATOR_DATABASE_URL` (nunca a URL do staging) e confere dono do banco e de `public` e o `BYPASSRLS` do migrador ([release-checklist, item 3](./release-checklist.md#3-migrações-pendentes-com-plano-de-aplicação-e-de-volta-block)); à mão, `PRODUCTION_MIGRATOR_DATABASE_URL="$MIGRATOR_URL" bun run --filter @polaris/db production:verify-database before-migrate`. O workflow de produção roda os dois. **A confirmar em produção** (nunca rodou contra um banco de produção). O comando do migrate em si é o mesmo: `DATABASE_URL="$MIGRATOR_URL" bun run --filter @polaris/db db:migrate`.
+5. Um login por binding, cada um membro de **um** grupo `polaris_*_runtime`, sem `SUPERUSER`, `CREATEROLE`, `CREATEDB`, `BYPASSRLS` nem `TEMP`, fora de `neon_superuser`, com `statement_timeout`, `lock_timeout`, `idle_in_transaction_session_timeout` e `CONNECTION LIMIT` próprios, criados pelo script do [staging, seção 1.4](./staging.md#1-banco-responsável) (a senha entra em texto e nunca pela linha de comando, a API ou o console do Neon). Os nomes **não** levam `staging` (por exemplo `polaris_<nome de produção>_tenant`), e os tempos limite são os da tabela do staging (de requisição: `3s` e `15s`; de job: `5s` e `15s`).
+
+   | Binding | Worker | Grupo |
+   | --- | --- | --- |
+   | `HYPERDRIVE` | web | `polaris_pr11_runtime` |
+   | `AUTH_HYPERDRIVE` | web | `polaris_auth_runtime` |
+   | `ONBOARDING_HYPERDRIVE` | web | `polaris_onboarding_runtime` |
+   | `MEDIA_CLEANUP_HYPERDRIVE` | web | `polaris_media_cleanup_runtime` |
+   | `PRIVACY_HYPERDRIVE` | web | `polaris_privacy_runtime` |
+   | `BILLING_HYPERDRIVE` | web (e `ADMIN_BILLING_HYPERDRIVE` do Admin, a mesma configuração) | `polaris_billing_runtime` |
+   | `OUTBOX_HYPERDRIVE` | web | `polaris_outbox_runtime` |
+   | `CATALOG_HYPERDRIVE` | catálogo | `polaris_catalog_runtime` |
+   | `ADMIN_HYPERDRIVE` | Admin | `polaris_admin_runtime` |
+
+   O limite de conexões de cada login é igual ao `origin_connection_limit` da configuração Hyperdrive (de 5 a 20). O valor de produção depende do plano e do compute do Neon contratados: **decisão do responsável**; o 5 do staging é o menor aceito. Os nove logins somam 9 vezes o limite escolhido, e a soma tem de caber no limite de conexões do Neon.
+6. Leitura de volta, sem imprimir senha: cada login com o grupo (release-checklist, item 15), `rolconfig` com os três tempos limite, nenhum `polaris_%_owner` com atributo proibido. Sem o verificador de produção, é consulta em `pg_roles` e `pg_auth_members` pelo dono. **A confirmar em produção.**
+7. O que o `after-migrate` do staging reprova (função `SECURITY DEFINER` com dono de fora, política com GUC fora de `app.`) vale igual: aceitar uma função de objeto do Neon é decisão de segurança, não do deploy ([staging, seção 1](./staging.md#1-banco-responsável)).
+8. Backup: o marcador, o login `polaris_backup_reader` e o bucket de backup de produção seguem o [runbook de backup, seção Produção](./backup.md#produção-go-live). Não duplicado aqui.
+
+## 3. Recursos e segredos na conta Cloudflare de produção (responsável)
+
+Espelha a seção 2 do [staging](./staging.md#2-recursos-cloudflare-responsável-conta-atual); nomes de produção **sem** sufixo `-staging` (a verificação de isolamento recusa o nome de **Worker** de produção com `-staging`; fila, bucket e ID de produção reprovam se forem iguais aos do staging).
+
+- **Filas:** `polaris-critical`, `polaris-default`, `polaris-media` e `polaris-dlq` (`wrangler queues create <nome>`; [queues.md](./queues.md#criar-as-filas-responsável)). O deploy falha de propósito se faltar uma, a DLQ inclusive. Um teste confere os nomes do `wrangler.jsonc` (`queue-names.test.ts`).
+- **R2:** bucket privado `polaris-media` (o `bucket_name` de `env.production` do web e do catálogo), sem domínio público nem acesso anônimo. Regra de ciclo de vida que apaga `exports/v1/` 7 dias depois da criação, lida de volta, **sem** substituir regras que já existam: o procedimento está no [item 5 do release-checklist](./release-checklist.md#5-pendências-de-ambiente-do-go-live-block). Sem a leitura de volta, o item 5 não passa.
+- **Hyperdrive:** as nove configurações da tabela da seção 2, cada uma **sem query caching** (`"caching": {"disabled": true}`) e com `origin_connection_limit` igual ao do login, apontando para o host direto do projeto Neon de produção. A criação segue o cuidado do [staging, seção 2](./staging.md#2-recursos-cloudflare-responsável-conta-atual): API com corpo JSON lido de arquivo `umask 077`, `trap` que apaga o arquivo, senha fora do `argv`, sem `-v`. A conta de produção tem o limite de configurações do plano dela: conferir antes (no Free são 10). Query caching ligado em dado de tenant ou do Admin é proibido ([AGENTS.md](../../AGENTS.md)).
+- **Rate limit:** os namespaces `901016` a `901025` estão em `env.production.ratelimits` do `wrangler.jsonc`. O [go-live](./README.md#checklist-de-go-live-cloudflare-e-neon) os trata como marcadores a reservar por conta; conferir no primeiro deploy se são aceitos como estão. **A confirmar em produção.**
+- **Cron Triggers:** `17 * * * *` e `19 * * * *`, herdados do topo do `wrangler.jsonc`. Ocupam 2 dos 5 permitidos no Free. O que cada um faz, o estado e como desligar: [scheduled-jobs.md](./scheduled-jobs.md).
+- **Imagens:** binding `IMAGES`, sem recurso a criar; a cota de transformações e o formato do erro 9422 são o item 14 do release-checklist, que o staging só ensaia.
+- **Segredos do Worker `polaris-web`** (`wrangler secret put <NOME> --env production`, em `apps/web`, colando no prompt): os nomes são os de [staging, seção 5](./staging.md#5-segredos-do-worker-polaris-web-staging-responsável) e [5a](./staging.md#5a-cobrança-no-sandbox-responsável). **Nenhum valor do staging é reaproveitado.** Valem desde o 1º deploy: `BETTER_AUTH_SECRET`, `SYNC_PAYLOAD_HASH_SECRET`, `OFFLINE_LEASE_SECRET` (com `OFFLINE_LEASE_KEY_ID` do `wrangler.jsonc`), `UNSUBSCRIBE_TOKEN_SECRET`, `BILLING_PAYER_KEY` e `GOOGLE_CLIENT_ID` e `GOOGLE_CLIENT_SECRET` (cliente OAuth próprio de produção, fora do modo Testing). Ficam para quando a flag correspondente for ligada: `AUTH_PASSWORD_PEPPER` (senha), `TURNSTILE_SECRET_KEY` (proteção de abuso), `RESEND_API_KEY` (e-mails de senha, de cobrança e avisos de encerramento), `ASAAS_API_KEY`, `ASAAS_WEBHOOK_TOKEN` e `WOOVI_APP_ID` (cobrança). A lista completa de segredos do go-live está nos itens finais do [checklist de go-live](./README.md#checklist-de-go-live-cloudflare-e-neon). Quantos `secret_text` a versão ativa deve ter em produção: **a confirmar em produção** (no staging são 12).
+- **Segredos do Admin** (`apps/admin`, `--env production`): `ASAAS_API_KEY` e `WOOVI_APP_ID`, os mesmos valores do web, só com a cobrança. O catálogo não tem segredo.
+- **Credencial de produção nunca no sandbox** e o contrário: a URL base do Asaas e da Woovi em `env.production` é a de produção, exata, e a verificação de isolamento reprova host de sandbox em qualquer variável de produção (`checkProductionBilling`).
+
+## 4. Configuração do `wrangler.jsonc`: placeholders e falha fechada (dev, por PR)
+
+`env.production` existe nos três `wrangler.jsonc` (`apps/web/wrangler.jsonc` a partir da linha ~455, `apps/catalog` e `apps/admin`) com **18 placeholders**: a mesma ideia do `env.staging` antes de os recursos existirem (seção 3 do [staging](./staging.md#3-preencher-a-configuração-pr-do-responsável-ou-do-dev)). Cada recurso criado pelo responsável vira um PR que troca o placeholder pelo ID informado, sem segredo:
+
+| Arquivo | Placeholder | Vira |
+| --- | --- | --- |
+| web, catálogo, Admin | `account_id` (`PLACEHOLDER-production-account-id`) | o ID da conta de produção (não é segredo) |
+| web | `PLACEHOLDER-production-hyperdrive-tenant`, `-auth`, `-onboarding`, `-media-cleanup`, `-privacy`, `-billing`, `-outbox` | o ID de cada configuração Hyperdrive da seção 3 |
+| catálogo | `PLACEHOLDER-production-hyperdrive-catalog` | o ID da configuração do catálogo |
+| Admin | `PLACEHOLDER-production-hyperdrive-admin` e `PLACEHOLDER-production-hyperdrive-billing` | o do Admin e o **mesmo** ID do `billing` do web |
+| web | `BETTER_AUTH_BASE_URL` (`https://PLACEHOLDER-production-web-origin`) | a origem do web, quando o usuário escolher o domínio |
+| web, catálogo | `CATALOG_ORIGIN` (`https://PLACEHOLDER-production-catalog-origin`) | a origem do catálogo, a mesma nos dois |
+| Admin | `ACCESS_TEAM_DOMAIN` e `ACCESS_AUDIENCE` | o time e a *audience tag* da aplicação Access de produção (seção 5) |
+
+Falha fechada, hoje: `bun run verify:staging-isolation` aceita placeholder em `env.production` (é o estado do repositório) mas reprova host ou rota de staging, host de sandbox, URL base de provedor diferente da de produção, `workers_dev` ou `preview_urls` ligados, `ROUTE_TIMING_ALL`, `CLIENT_ERRORS_ENABLED` ou `RELEASE_HEADER_ENABLED` ligados, chave do Turnstile igual à do staging e time ou *audience* do Access iguais aos do staging. **Falha fechada de placeholder em produção:** `node scripts/verify-production-build.mjs`, que o `deploy-production.yml` roda depois do build e de novo antes de migrar, recusa `PLACEHOLDER` em qualquer valor do que vai ser publicado (o `wrangler.json` gerado do web e do catálogo e o `env.production` do Admin), conta ou Hyperdrive que não seja id da Cloudflare, nome ou recurso `-staging`/`-local` e build com bindings ou `vars` diferentes do `env.production`. Com o repositório como está, ele reprova: o deploy não passa dali.
+
+Mantêm-se vazios de propósito até o responsável decidir (a verificação de paridade exige o nome presente): `AUTH_EMAIL_FROM`, `TURNSTILE_SITE_KEY`, `WOOVI_WEBHOOK_PUBLIC_KEYS`, `BILLING_SUPPORT_EMAIL`. Domínio de e-mail, conta de provedor e caixa de suporte são decisões do usuário (P48 e P49 do ledger de pendências), não deste runbook.
+
+## 5. Access do Admin (responsável)
+
+O Admin de produção é o mesmo código do staging, **só** alcançável pelo Cloudflare Access da conta de produção. Repete-se, na conta de produção, o fluxo inteiro da [seção 3c do staging](./staging.md#3c-admin-adminarauteapp-só-atrás-do-access-responsável) (ADR 0070, emenda de 05/11/2026): quem executou no staging em 05/11 foi o responsável com o operador, e o aceite se repete antes do go-live. Resumo e ordem:
+
+1. Zero Trust na conta de produção (time `<time de produção>.cloudflareaccess.com`). Um segundo cliente OAuth do Google, **próprio do Admin de produção**, com o `redirect_uri` do time de produção ([staging, seção 4](./staging.md#4-cliente-oauth-do-google-responsável)).
+2. Aplicação self-hosted para o hostname do Admin de produção, **nunca recriada** depois de ligada (a *audience tag* mudaria e o `ACCESS_AUDIENCE` deixaria de bater). Política Allow só com e-mails exatos, *Require login method* = Google, MFA independente (biometria ou chave de segurança, sem TOTP), sessão, MFA e AMR matching de até 8 h, *cookie binding* ligado, `SameSite` Lax, página de login sem recurso de terceiros.
+3. Matricular **duas passkeys por operador, uma fora da conta Google do login**, e o responsável conferir a lista, **antes** do primeiro login no Admin e na ordem do [staging, 3c](./staging.md#3c-admin-adminarauteapp-só-atrás-do-access-responsável) (TOTP sai só depois da conferência; Google exigido só depois de um login Google visto).
+4. A aplicação Access tem de existir **antes** do Custom Domain do Admin. O domínio é ligado à mão pelo responsável, depois do primeiro deploy do Admin; o `workers.dev` do Admin fica desligado e nunca é usado.
+5. Trocar `ACCESS_TEAM_DOMAIN` e `ACCESS_AUDIENCE` no `env.production` do Admin por PR (seção 4) e implantar **antes** de ligar a aplicação, se ela for recriada.
+6. Primeiro principal, pelo dono do banco de produção: ler `iss` e `sub` do token que o Access emitiu (nunca o `id` de `get-identity`) e `INSERT INTO public.platform_principals (issuer, subject, role, email_snapshot) …` com o `iss` do time **de produção**; um principal do staging não vale na produção. Conferir com `GET /api/whoami` com sessão. Perda de passkey, de conta Google e revogação: os mesmos procedimentos do staging.
+
+O que depende do responsável aqui é tudo: não há automação. O que é automático é só a prova de que o Access está na frente, e ela vem do smoke (verificações 14 e 15, seção 7), que **a confirmar em produção** exige o host do time de produção.
+
+## 6. O que ainda não existe para produção
+
+Dito por escrito, para ninguém supor que o staging cobre:
+
+- **Workflow de deploy de produção:** `deploy-production.yml`, no molde do `deploy-staging.yml`: só `workflow_dispatch`, todo job atrás de `PRODUCTION_DEPLOY_ENABLED` (que não existe, então nada roda), o job com segredo no Environment `production`. Descrição e pré-requisitos para ligar: [release-checklist, Workflow de produção](./release-checklist.md#workflow-de-produção).
+- **Smoke de produção:** `scripts/smoke-staging.mjs` aceita só os hosts fixos do staging (`STAGING_FIXED_HOST`) e o time de Access do staging. Para produção, as 19 verificações da [tabela do staging](./staging.md#smoke-do-deploy) são feitas à mão, só leitura, **a confirmar em produção**, ajustando o esperado onde a flag estiver desligada: a verificação 5 espera `emailPassword` e `google` `true` (a senha nasce desligada), a 1 e a 12 esperam o cabeçalho de release (`RELEASE_HEADER_ENABLED` é `"false"` em produção, item 8 do checklist) e as 16 e 17 esperam 401 e não 503 (sem os segredos do provedor, responde 503).
+- **`verify-deployed-sha.mjs`:** com `--env production` lê `polaris-web` e `polaris-catalog` (os nomes do `env.production`, conferidos pelo teste); o workflow de produção o roda depois de publicar os dois ([item 8](./release-checklist.md#8-sha-implantado-conferido-no-host-de-deploy-block)).
+- **`verify-staging-isolation.mjs --remote`:** só staging; para produção falta a leitura remota de cada Hyperdrive (sem cache, host direto, login que não é o dono), pré-requisito para ligar o workflow. A verificação do build gerado é a `verify-production-build.mjs` (seção 4).
+- **Backup de produção:** [backup.md](./backup.md#produção-go-live); o workflow dele é à parte.
+
+## 7. Ordem do deploy
+
+A ordem é a do [`deploy-staging.yml`](../../.github/workflows/deploy-staging.yml), com os nomes de produção: build e verificações primeiro, depois a migração, depois a publicação. O que o staging provou a cada passo está citado; o que muda em produção está marcado.
+
+**Antes de qualquer deploy:** o [release-checklist](./release-checklist.md) com veredito, o SHA candidato com CI verde (job a job, inclusive `Checks` e `PostgreSQL 18 gates`, item 2) e a prova em Neon descartável (item 4).
+
+1. **Build com `CLOUDFLARE_ENV=production`.** `bun run --filter @polaris/web build` e `bun run --filter @polaris/catalog build`, com as `VITE_LEGAL_*` lidas das variáveis do repositório (`LEGAL_RAZAO_SOCIAL`, `LEGAL_ENDERECO`, `LEGAL_CONTATO_EMAIL`, `LEGAL_DPO_EMAIL`, `LEGAL_SUPORTE_QUEM_LE_RESPOSTAS`). **O build de produção falha** com marcador `[preencher: ...]`, variável `VITE_LEGAL_*` faltando ou vazia, ou o dia de vigência fora de `effectiveFrom` ([item 20](./release-checklist.md#20-deploy-de-produção-com-cloudflare_envproduction-block); sem `CLOUDFLARE_ENV`, o build sai como rascunho com os marcadores, e é por isso que ele é obrigatório). A caixa de suporte vai ao build e ao deploy conforme o item 20 (`LEGAL_CONTATO_EMAIL` como `BILLING_SUPPORT_EMAIL`). `VITE_OFFLINE_RUNTIME_ENABLED` e `VITE_CLIENT_ERRORS_ENABLED` são ligados na build do staging; o valor da build de produção é decisão do go-live ([Gate 5](./gate-5-offline.md) e item 21 do release-checklist), a confirmar em produção. Até lá o `deploy-production.yml` não as define, e o teste do `verify-production-workflow.mjs` reprova quem as acrescentar: ligar é mudar os dois no mesmo PR, com a evidência do item.
+2. **Verificação do build gerado:** `node scripts/verify-no-lab-in-build.mjs` (o build publicado não leva laboratório offline nem a galeria de interface, [lista de go-live](./README.md#checklist-de-go-live-cloudflare-e-neon)) e `bun run verify:staging-isolation` (estático, bloco `env.production`). O `--built` do staging não vale para produção; o que confere o `wrangler.json` gerado é `node scripts/verify-production-build.mjs` (seção 4).
+3. **Admin: `build:ui` antes do `wrangler deploy` do Admin**, no mesmo checkout do SHA ([item 26](./release-checklist.md#26-página-do-admin-gerada-antes-do-deploy-do-admin-block-proposta)): `bun run --filter @polaris/admin build:ui`. Sem isso o Worker publica o arquivo velho do disco ou falha.
+4. **Migrations, depois do build verificado, antes de publicar o Worker, e compatíveis com a versão anterior.** Cada migration pendente é classificada como compatível, `contract` ou `janela` ([ADR 0096](../adr/0096-migrations-compativeis-com-a-versao-anterior-do-worker.md)); `bun run migrations:compat` já reprova o que falta no PR. Marcador do banco conferido (seção 2, passo 2), depois `db:migrate` com o dono, depois a leitura do estado (seção 2, passos 6 e 7). Um Worker novo sobre banco antigo falha nas funções novas (por exemplo SQLSTATE 42703); migration com falha para o fluxo **antes** de publicar, e o Worker anterior continua no ar. O build e as verificações vêm antes de migrar de propósito: uma falha deles (por exemplo `VITE_LEGAL_*` faltando) nunca deixa o banco migrado com o Worker anterior no ar, que sobre uma migration `contract` ou `janela` não funciona (seção 8). Lock forte em tabela grande só em janela de pouco uso (ver o [item 3](./release-checklist.md#3-migrações-pendentes-com-plano-de-aplicação-e-de-volta-block)).
+5. **Publicar web e catálogo**, cada um a partir do `wrangler.json` gerado, com `--message "<SHA completo>"` (a mensagem é o que `verify-deployed-sha` lê): `(cd apps/web && bunx --no-install wrangler deploy --message "$HEAD_SHA")` e o mesmo em `apps/catalog`. Nunca `wrangler deploy` sem a build de produção feita e sem `--no-install`.
+6. **Conferir o SHA ativo** de cada Worker: uma só versão, a 100% do tráfego, com `message` igual ao SHA (`HEAD_SHA=<SHA> node scripts/verify-deployed-sha.mjs --env production`, com o token de produção).
+7. **Admin por último**: `(cd apps/admin && bunx --no-install wrangler deploy --env production --message "$HEAD_SHA")`. O Admin só é alcançável pelo Access; no **primeiro** deploy ele ainda não tem Custom Domain, e as verificações 14 e 15 do smoke ficam vermelhas de propósito até o responsável ligar o domínio (seção 5, passo 4) e reexecutar.
+8. **Smoke** (seção 6): só leitura, depois do deploy, contra os hosts de produção vindos de variável, nunca do código. A escrita com sessão fica no passo manual do [item 6](./release-checklist.md#6-smoke-test-definido-e-executado-block), numa loja `smoke-<data>`.
+9. **Registrar** o resultado no relatório da execução do release-checklist (fora do repositório): SHA, item a item, o que passou e o que não.
+
+Primeiro deploy, além disso: nenhuma flag da seção 9 ligada; `OUTBOX_HYPERDRIVE` fora do primeiro deploy segundo o passo 4 do [checklist das filas](./queues.md#checklist-de-go-live-do-despachante-responsável), embora o `env.production` do web já o declare. Essa divergência **precisa de decisão antes do 1º deploy**: tirar o binding do bloco no primeiro deploy, como o passo 4 pede, ou mantê-lo, com o alerta `agendador-falhando` ligado antes ([alertas.md](./alertas.md)) e a medida de CPU feita. A decisão é do responsável, com a revisão de segurança. Depois do deploy: a passagem do Custom Domain do web e do catálogo (como as seções 3a e 3b do staging, `workers_dev: false` e sem `routes` no config), a atualização da URL de callback do Google e do widget Turnstile, o primeiro operador do Admin (seção 5) e os webhooks de cobrança só quando a cobrança for ligada.
+
+## 8. Rollback ou forward-fix
+
+**Ferramenta:** `wrangler rollback --env production`, por Worker, para a versão anterior. **Ele não volta o schema**: o banco migrado tem de servir a versão revertida, o que a regra expand/contract garante para migration compatível ([ADR 0096](../adr/0096-migrations-compativeis-com-a-versao-anterior-do-worker.md); [item 7 do checklist](./release-checklist.md#7-critérios-de-rollback-e-responsável-block)). Migration nunca é editada depois de aplicada.
+
+**Quem decide:** o responsável pelo projeto (papel). Quem executa é quem fez o deploy, com o perfil autorizado. Segurança, RLS, tenancy, cobrança e privacidade: o revisor de segurança é ouvido antes de escolher o caminho. O nome da pessoa é decisão do usuário e fica no relatório da execução, não neste arquivo (item 7, decisão pendente).
+
+**Reverter o Worker** (o Worker anterior no ar é mais seguro que o atual) quando:
+- o defeito está só no código, e todas as migrations do release são compatíveis (só adicionam);
+- o sintoma começou no deploy: 5xx novo, smoke vermelho com o SHA antigo respondendo bem, login ou venda quebrados.
+
+**Consertar para frente** (commit novo, migration nova se for o caso) quando:
+- a migration do release é `contract` ou `janela`: o Worker anterior não funciona com o banco novo;
+- a versão nova já gravou dado que a anterior não lê ou reintroduz, ou tocou dado de tenant (o ADR 0096 trata o caso da correção de dado que a versão anterior reintroduziria);
+- a causa é configuração (segredo, Hyperdrive, variável), que o rollback não restaura: segredo se grava de novo, flag se desliga (seção 9);
+- o Admin: o SHA mínimo para reverter é o que o contrato aceita depois da última migration que mexeu nele. No staging o piso é `0ddc9698`, e **a confirmar em produção** qual vale lá ([staging, rollback](./staging.md#rollback-ou-forward-fix)).
+
+**Lição dos segredos herdados** (incidente de 07/11/2026, [staging, seção 9](./staging.md#9-itens-do-release-checklist-no-staging)): `wrangler deploy` e `wrangler versions upload` herdam os segredos da **versão enviada mais recente**, mesmo que ela não esteja implantada. Uma versão enviada sem segredos faz o deploy seguinte nascer sem eles. Em produção: nada de `POST …/versions` com `bindings: []`; só `wrangler versions upload` a partir do checkout, que herda; e depois de qualquer rollback, conferir que a versão **mais recente** tem todos os `secret_text` esperados (o número de produção é a confirmar). Para criar uma versão portadora, o procedimento é o do staging (`binding` do tipo `inherit` com `version_id` da última versão boa), sem nenhum valor.
+
+**App instalado** ([ADR 0041](../adr/0041-ciclo-de-atualizacao-do-app.md)): o rollback serve o `sw.js` antigo, e cada aparelho só troca depois de 2 h. Revert ou correção de segurança sai com `POLARIS_SWAP_URGENT=1` na build de um commit novo. No staging o deploy lê a linha `Swap-Urgent: yes` da mensagem do commit; em produção é a entrada `urgent` do dispatch do `deploy-production.yml`, que o resumo do job mostra a quem aprova.
+
+**Filas e jobs:** parar o consumo, o despachante ou um cron está em [queues.md](./queues.md#rollback-ou-forward-fix) e [scheduled-jobs.md](./scheduled-jobs.md#forçar-mudar-ou-desligar); apagar fila é só do responsável.
+
+**Migration com falha:** o fluxo para antes de publicar e o Worker anterior continua. Conserta-se com commit novo.
+
+**Dado de produção corrompido:** nunca se recria o banco como no staging. É incidente: restauração pelo [backup](./backup.md) e pelo [deletion ledger](./deletion-ledger-restore.md), com decisão do responsável.
+
+## 9. Liberação em etapas: flags que nascem desligadas
+
+Todas ficam `"false"` em `env.production.vars` do `apps/web/wrangler.jsonc` (e no topo local). Ligar é um PR que muda o valor e um deploy; desligar é o inverso. O staging liga algumas (cobrança, avisos de encerramento, miniaturas) para provar; **a confirmar em produção** o que cada uma exige a mais.
+
+| Flag | Padrão em produção | O que liga | O que se confere antes de ligar | O que garante o valor hoje |
+| --- | --- | --- | --- | --- |
+| `BILLING_SELF_SERVICE_ENABLED` | `"false"` | Tela Assinatura, `billing.readPlan`, comandos do dono e e-mails de cobrança | Contas de produção do Asaas e da Woovi (P49), `BILLING_SUPPORT_EMAIL`, `WOOVI_WEBHOOK_PUBLIC_KEYS`, segredos dos provedores, webhooks registrados, Gate 7, item 29 do release-checklist e os itens de cobrança do go-live (login e Hyperdrive de billing, webhooks, Gate 7); migration 0103 aplicada **e Worker anterior fora do ar** antes de ligar ([item 3](./release-checklist.md#3-migrações-pendentes-com-plano-de-aplicação-e-de-volta-block)); [billing-providers.md](./billing-providers.md) | `scripts/verify-staging-isolation.test.mjs` ("has billing on in staging … and off in production") fixa `"false"` em `env.production`. A verificação de isolamento só exige `BILLING_SUPPORT_EMAIL` e a chave da Woovi com a flag ligada no **staging** (`checkStagingBilling`); em produção essas duas conferências são à mão |
+| `ACTIVATION_EMAILS_ENABLED` | `"false"` | Série de dicas "para começar" por e-mail | 9a (parada por reclamação) no SHA, `STOP_ENFORCED` verdadeiro (hoje `false` em `packages/domain/src/activation/notices.ts`), rastreio de clique do Resend desligado no domínio, `BILLING_HYPERDRIVE` sem cache ([item 30](./release-checklist.md#30-série-de-dicas-ligada-só-com-a-parada-por-reclamação-block-proposta)) | `apps/web/src/server/billing/activation-sweep.test.ts`: `false` nos três blocos |
+| `CLOSURE_NOTICE_EMAIL_ENABLED` | `"false"` | E-mails dos marcos do encerramento da loja (D−30, D−7, D) | Painel `/loja-encerrada` no ar, domínio de envio verificado no Resend, `RESEND_API_KEY`, `AUTH_EMAIL_FROM`, `BETTER_AUTH_BASE_URL`, `AUTH_HYPERDRIVE` ([avisos-de-encerramento.md](./avisos-de-encerramento.md#ligar-o-e-mail)); em staging primeiro, com endereço de teste | `scripts/verify-staging-isolation.test.mjs` ("has the closure notices on in staging only, off at the top level and in production") fixa `"false"` no topo e em `env.production` |
+| `CLOSURE_AUTO_PURGE_ENABLED` | `"false"` | Agendamento automático do apagamento da loja encerrada | Avisos entregues, prova em staging com datas retroagidas, AC-47, AC-49 e AC-61 verdes, revisão de advogado, sinais `apagamento-automatico` e `loja-encerrada-parada` ligados ([item 22](./release-checklist.md#22-freio-do-apagamento-automático-block); [alertas.md](./alertas.md)) | `apps/web/src/server/privacy/maintenance.test.ts`: `false` nos três blocos |
+| `MEDIA_THUMBS_ENABLED` | `"false"` | `GET /api/media/thumbs` e a capa nas listas | Reteste do AC-13 com o lote de 5 e o AC-26; medida de CPU do lote ([ADR 0018](../adr/0018-midia-privada-cloudflare-images-r2.md), emenda de 05/11/2026; [staging, miniaturas](./staging.md#miniaturas-das-listas-media_thumbs_enabled)) | Nenhum teste fixa o valor de produção; a verificação só exige `"true"` ou `"false"` no staging. Desligada, a rota responde 404 antes de abrir transação ou ler o R2 |
+
+**Ordem de ligar** (proposta, a decidir pelo responsável; cada passo só depois do anterior estável e com os alertas ligados): (1) a produção no ar com **todas** desligadas e o smoke verde; (2) `CLOSURE_NOTICE_EMAIL_ENABLED`, porque é pré-requisito do apagamento e é leitura-sem-risco para o dado; (3) `MEDIA_THUMBS_ENABLED`, depois da medida de CPU; (4) `BILLING_SELF_SERVICE_ENABLED`, depois das contas e do Gate 7; (5) `ACTIVATION_EMAILS_ENABLED`, depois do 9a; (6) `CLOSURE_AUTO_PURGE_ENABLED`, por último: é a única que apaga dado, exige os avisos já entregues e o ato de suporte disponível no Admin ([alertas.md](./alertas.md#loja-encerrada-parada--loja-encerrada-parada-sem-apagamento-purge-preso-ou-aviso-sem-entregar)). O **quando** de cada uma é decisão do usuário.
+
+**Lojas internas antes:** cada flag liga primeiro para o responsável e as lojas de teste internas (conta própria, dados sintéticos ou de quem testa), com os logs do Worker acompanhados nas primeiras horas, e só depois fica aberta a lojas reais. As flags de hoje são globais por ambiente, não por loja: **"lojas internas antes" é, em produção, o período entre ligar e abrir à base, em que só as lojas internas existem**; liberação por loja exigiria código novo, e não está desenhada (a confirmar com o responsável). Se uma flag precisar de teste com dado real de loja, a decisão é do usuário.
+
+## Verificação
+
+- `bun run verify:staging-isolation` (o bloco `env.production`, estático) e `bun run migrations:compat` no PR de cada mudança de configuração ou migration.
+- Marcador, dono, logins, `BYPASSRLS` e leitura de volta do Hyperdrive sem cache e dos tempos limite, como no [item 5](./release-checklist.md#5-pendências-de-ambiente-do-go-live-block) e no [item 15](./release-checklist.md#15-todo-login-do-app-é-membro-de-um-polaris__runtime-block).
+- `invocation_logs` desligado e exceção não capturada visível nos Workers Logs: [item 16](./release-checklist.md#16-exceção-não-capturada-visível-nos-workers-logs-com-invocation_logs-desligado-block), repetido atrás do Access de produção para o Admin.
+
+## Escalonamento
+
+O responsável pelo projeto, como nos demais runbooks.
