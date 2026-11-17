@@ -313,6 +313,10 @@ Os segredos vêm **antes** do deploy que liga a cobrança: sem `ASAAS_WEBHOOK_TO
 
 `"true"` em `env.staging.vars` abre `GET /api/media/thumbs` e faz Produtos e a Venda mostrarem a capa dos produtos; na raiz e em `env.production.vars` vale `"false"` até o reteste do AC-13 com o lote de 5 e o AC-26 ([ADR 0018, emenda de 05/11/2026](../adr/0018-midia-privada-cloudflare-images-r2.md#emenda-05112026-a-chave-media_thumbs_enabled-liga-as-miniaturas-das-telas)). Desligada, a rota responde 404 antes de abrir transação ou ler o R2 e as telas não pedem nada. Para medir no staging (CPU do lote, requisições de mídia por abertura de lista), a chave já está ligada; para tirar as miniaturas do staging, `"false"` por pull request.
 
+### Aceite legal (`LEGAL_ACCEPTANCE_ENFORCED`)
+
+`"true"` em `env.staging.vars` faz o servidor exigir o aceite das versões vigentes dos termos e da política no primeiro acesso autenticado: quem não aceitou é levado a `/aceite` e o servidor responde `FORBIDDEN` com `data.reason = legal_acceptance_required` às demais rotas autenticadas ([ADR 0100](../adr/0100-tela-de-entrada-senha-atras-de-flag-bloqueio-e-aceite-legal.md), P7). Na raiz e em `env.production.vars` vale `"false"` até o go-live (item 19 do [checklist de release](./release-checklist.md#19-ordem-do-controle-de-aceite-legal-cliente-primeiro-flag-depois-block)). O aceite pendente não é sessão recusada: o runtime só pausa a sincronização e não apaga lease, usuário lembrado nem coleções ([ADR 0047](../adr/0047-abrir-o-app-sem-rede.md)). Cada conta de teste (a do Gate 7 e as do QA) aceita uma vez, pela tela `/aceite`. Para tirar o controle do staging, `"false"` por pull request.
+
 ## 6. GitHub (responsável)
 
 - Environment `staging`, com os segredos `CLOUDFLARE_API_TOKEN` (restrito à conta atual em "Account Resources", com validade curta e permissões mínimas: Workers Scripts Edit, Queues Edit e Hyperdrive Read, este só para a verificação `--remote`; sem R2; a lista final é conferida no primeiro deploy. O token alcança qualquer Worker e fila da conta, e por isso a conta atual não guarda nada de produção) e `STAGING_MIGRATOR_DATABASE_URL` (dono, URL direta).
