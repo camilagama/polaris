@@ -118,19 +118,16 @@ async function hmacsOf(
   addresses: readonly string[],
   secret: string
 ): Promise<{ hmacs: Uint8Array[]; unusable: number }> {
-  const normalized = [
-    ...new Set(
-      addresses
-        .map((address) => normalizeActivationAddress(address))
-        .filter((address): address is string => address !== null)
-    ),
-  ];
+  const readable = addresses
+    .map((address) => normalizeActivationAddress(address))
+    .filter((address): address is string => address !== null);
+  const normalized = [...new Set(readable)];
   const hmacs = await Promise.all(
     normalized
       .slice(0, MAX_ADDRESSES_PER_EVENT)
       .map((address) => activationSuppressionHmac(secret, address))
   );
-  return { hmacs, unusable: addresses.length - normalized.length };
+  return { hmacs, unusable: addresses.length - readable.length };
 }
 
 interface RecordPlan {
