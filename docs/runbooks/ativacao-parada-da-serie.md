@@ -128,7 +128,7 @@ O Resend tem endereços de teste (`complained@resend.dev`, `bounced@resend.dev`;
 
 ## Rotação da chave da supressão
 
-A chave (`ACTIVATION_SUPPRESSION_HMAC_SECRET`) não gira por rotina. Ao girar, a antiga vira `ACTIVATION_SUPPRESSION_HMAC_SECRET_PREVIOUS` e continua valendo: ao achar uma linha sob a chave antiga, a conferência a **regrava sob a nova, com a data original**. Só retire a `PREVIOUS` quando nenhuma linha **vigente** (12 meses) ficou com a chave antiga. O `key_id` da chave é o início, em hexadecimal, de um HMAC de texto fixo sob o segredo (`activationSuppressionKeyId` em `apps/web/src/server/activation/notice-consumer.ts`), e a conta se faz sem ler endereço:
+A chave (`ACTIVATION_SUPPRESSION_HMAC_SECRET`) não gira por rotina. Ao girar, a antiga vira `ACTIVATION_SUPPRESSION_HMAC_SECRET_PREVIOUS` e continua valendo: ao achar uma linha sob a chave antiga, a conferência a **regrava sob a nova, com a data original**. Só retire a `PREVIOUS` quando nenhuma linha **vigente** (12 meses) ficou com a chave antiga. O `key_id` da chave é o início, em hexadecimal, de um HMAC de texto fixo sob o segredo (`activationSuppressionKeyId` em `apps/web/src/server/activation/suppression.ts`), e a conta se faz sem ler endereço:
 
 ```sql
 SELECT count(*) FROM public.activation_email_suppressions
