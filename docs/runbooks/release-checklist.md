@@ -198,15 +198,15 @@ O `deploy-production.yml` promove a ponta de `main` a produção, no molde do de
 
 ### 22. Freio do apagamento automático (BLOCK)
 
-- Critério: `CLOSURE_AUTO_PURGE_ENABLED` está `"false"` no ambiente promovido, a menos que a promoção seja o go-live que o liga ([ADR 0102](../adr/0102-apagamento-automatico-da-loja-encerrada.md), decisão N1 do corte da loja encerrada). Ligar em produção exige, antes:
-  1. a prova de fiação em staging com datas retroagidas registrada (agendamento em D menos 7 e execução a partir de D mais 48 horas numa loja sintética);
+- Critério: `CLOSURE_AUTO_PURGE_ENABLED` está `"false"` no ambiente promovido, a menos que a promoção seja o go-live que o liga (no `env.staging` ela já está `"true"`, para a prova; [ADR 0102](../adr/0102-apagamento-automatico-da-loja-encerrada.md), decisão N1 do corte da loja encerrada). Ligar em produção exige, antes:
+  1. a prova de fiação em staging com datas retroagidas registrada (agendamento em D menos 7 e execução a partir de D mais 48 horas numa loja sintética), pelo [roteiro do operador](./prova-do-apagamento-automatico.md);
   2. os critérios AC-47, AC-49 e AC-61 verdes;
   3. o lojista avisado antes de os dados saírem: os avisos por marco (D − 30, D − 7, D e o reagendamento depois de uma trava) e o e-mail ligados em produção, com o domínio definitivo (AC-30, AC-50 e AC-51), e o painel da loja encerrada com o pedido de cópia no ar; ou uma exceção registrada pelo responsável;
   4. a revisão de advogado dos termos;
   5. os sinais `apagamento-automatico` e `loja-encerrada-parada` do [runbook de alertas](./alertas.md) ligados no mesmo deploy.
 - `CLOSURE_NOTICE_EMAIL_ENABLED` (o e-mail dos avisos, [runbook](./avisos-de-encerramento.md#ligar-o-e-mail)) só fica `"true"` no ambiente promovido com o PR G no ar: a tela da loja encerrada, com o pedido de cópia e o desfazer. O G1 entrega o painel `/loja-encerrada` com o pedido de cópia, e o link e o botão do e-mail já apontam para ele; o desfazer pelo painel é do G2, e até lá o e-mail convida a desfazer num painel que ainda não desfaz. A chave de idempotência do Resend vale 24 horas: um reenvio depois disso, de um aviso cuja marca de enviado falhou, pode chegar duas vezes ao dono.
 - `BILLING_SUPPORT_EMAIL` (a caixa do rodapé e do `reply-to` dos e-mails de cobrança, ADR 0104) fica vazia no `env.production` do `wrangler.jsonc` até o responsável definir a caixa do ambiente (no staging é `suporte@araute.app`); sem ela, `BILLING_SELF_SERVICE_ENABLED` ligada não envia nada e os avisos saem `email_not_configured`.
-- Evidência: o valor da variável no `wrangler.jsonc` do SHA candidato (o teste `maintenance.test.ts` confere que está desligada nos três blocos) e, no go-live, o registro da prova em staging e da decisão do usuário.
+- Evidência: o valor da variável no `wrangler.jsonc` do SHA candidato (o teste `maintenance.test.ts` confere que está desligada no topo e na produção e ligada só no `env.staging`) e, no go-live, o registro da prova em staging e da decisão do usuário.
 - Severidade BLOCK: proposta, pendente de decisão do responsável.
 
 ### 23. Entrada por senha ligada só com as páginas do P9 no ar (BLOCK)

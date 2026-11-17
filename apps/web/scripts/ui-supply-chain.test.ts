@@ -16,10 +16,12 @@ import {
   type PackageManifest,
   parseBunLock,
   readWorkflow,
-  scanUiFolderFile,
   SOURCE_RULE_EXCEPTIONS,
+  scanTestLibraryImports,
+  scanUiFolderFile,
   scanUiSource,
   secretsInInstallOrBuild,
+  TEST_LIBRARY_EXCEPTIONS,
   testPackagesOutsideDev,
   trustedDependencyEntries,
   UI_ALLOWED_PACKAGES,
@@ -280,7 +282,7 @@ describe("trustedDependencies stays empty (condition 1)", () => {
   });
 });
 
-describe("source of apps/web/src/ui/, src/ui-gallery/ and src/lib/ (condition 3)", () => {
+describe("source of apps/web/src (condition 3)", () => {
   function sourceFiles(dir: string): string[] {
     return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
       const path = join(dir, entry.name);
@@ -447,6 +449,147 @@ export const Box = () => <Dialog.Root />;`;
     expect(
       scanUiSource("x.tsx", 'import { a } from "@base-ui/other/popover";')
     ).toEqual([{ file: "x.tsx", rule: "import of @base-ui/other/popover" }]);
+  });
+  // The test libraries never reach the bundle: every file of src/ that is not a `*.test.*` or `*.spec.*` is
+  // production code, whatever its folder.
+  it("no file under src/ outside the tests imports a test library", () => {
+    const srcDir = join(webDir, "src");
+    const files = sourceFiles(srcDir);
+    expect(files.length).toBeGreaterThan(100);
+    expect(files.some((file) => TEST_FILE.test(file))).toBe(true);
+    const findings = files.flatMap((file) =>
+      scanTestLibraryImports(
+        file,
+        readFileSync(file, "utf8").replace(COMMENT, "")
+      )
+    );
+    expect(findings).toEqual([]);
+  });
+
+  it("lists no exception, and every one it lists names an existing file and a reason", () => {
+    expect(TEST_LIBRARY_EXCEPTIONS).toEqual([]);
+    for (const { file, why } of TEST_LIBRARY_EXCEPTIONS) {
+      expect(existsSync(join(root, file)), file).toBe(true);
+      expect(why.length, file).toBeGreaterThan(0);
+    }
+  });
+
+  describe("scanTestLibraryImports", () => {
+    const catalog = join(root, "apps/web/src/catalog/planted.tsx");
+    const rules = (
+      file: string,
+      source: string,
+      exceptions?: typeof TEST_LIBRARY_EXCEPTIONS
+    ) =>
+      scanTestLibraryImports(file, source, root, exceptions).map(
+        (finding) => finding.rule
+      );
+
+    it.each([
+      'import { render } from "@testing-library/react";',
+      'import userEvent from "@testing-library/user-event";',
+      'import { screen } from "@testing-library/dom";',
+      'import { Window } from "happy-dom";',
+      'import axe from "axe-core";',
+      'export { render } from "@testing-library/react";',
+      'const lib = await import("happy-dom");',
+      'const lib = require("@testing-library/react");',
+      'import "@testing-library/jest-dom";',
+      'import { Window } from "happy-dom/lib/window";',
+      'import { Window } from "../../node_modules/happy-dom/lib/index.js";',
+      'import { render } from "../../../../node_modules/@testing-library/react";',
+    ])("rejects a planted import in src/catalog: %s", (source) => {
+      const found = rules(catalog, source);
+      expect(found).toHaveLength(1);
+      expect(found[0]?.startsWith("import of ")).toBe(true);
+    });
+
+    it("passes the same file without the import", () => {
+      expect(
+        rules(
+          catalog,
+          'import { useState } from "react";\nimport { cn } from "@/lib/utils";'
+        )
+      ).toEqual([]);
+    });
+
+    it("lets the tests import them, in `.test.` and `.spec.` files of any folder", () => {
+      const source = 'import { render } from "@testing-library/react";';
+      for (const name of [
+        "a.test.tsx",
+        "a.test.ts",
+        "a.spec.tsx",
+        "a.spec.ts",
+      ]) {
+        expect(rules(join(root, "apps/web/src/catalog", name), source)).toEqual(
+          []
+        );
+      }
+    });
+
+    it("does not take a file that only has `test` in its name for a test", () => {
+      const source = 'import { render } from "@testing-library/react";';
+      for (const name of [
+        "test-support.ts",
+        "render-test-support.tsx",
+        "a.test-utils.tsx",
+        "latest.tsx",
+      ]) {
+        expect(rules(join(root, "apps/web/src/catalog", name), source)).toEqual(
+          ["import of @testing-library/react"]
+        );
+      }
+    });
+
+    it("does not take a package that only starts with the same letters, nor a relative path, nor types", () => {
+      expect(
+        rules(
+          catalog,
+          [
+            'import a from "happy-dom-fake";',
+            'import b from "./happy-dom";',
+            'import c from "../axe-core";',
+            'import d from "@testing-library-fake/react";',
+            'import e from "@types/d3-shape";',
+          ].join("\n")
+        )
+      ).toEqual([]);
+    });
+
+    it("lets one exact file through, by its whole path, and only the file it names", () => {
+      const source = 'import { render } from "@testing-library/react";';
+      const exceptions = [
+        { file: "apps/web/src/catalog/planted.tsx", why: "control" },
+      ];
+      expect(rules(catalog, source, exceptions)).toEqual([]);
+      expect(
+        rules(join(root, "apps/web/src/sales/planted.tsx"), source, exceptions)
+      ).toEqual(["import of @testing-library/react"]);
+      expect(
+        rules(
+          join(root, "apps/web/src/catalog/deep/planted.tsx"),
+          source,
+          exceptions
+        )
+      ).toEqual(["import of @testing-library/react"]);
+      expect(
+        rules(
+          join(root, "apps/other/apps/web/src/catalog/planted.tsx"),
+          source,
+          exceptions
+        )
+      ).toEqual(["import of @testing-library/react"]);
+    });
+
+    it("covers every test library of the list and nothing but them", () => {
+      for (const name of UI_TEST_PACKAGES.filter(
+        (item) => !item.startsWith("@types/")
+      )) {
+        expect(rules(catalog, `import x from "${name}";`)).toEqual([
+          `import of ${name}`,
+        ]);
+      }
+    });
   });
 });
 
