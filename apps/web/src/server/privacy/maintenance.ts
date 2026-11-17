@@ -49,7 +49,7 @@ export interface PrivacyMaintenanceReport {
 }
 
 export interface PrivacyMaintenanceOptions {
-  /** `CLOSURE_AUTO_PURGE_ENABLED === "true"`: off by default, on only at the go-live. */
+  /** `CLOSURE_AUTO_PURGE_ENABLED === "true"`: off by default; on in staging and, in production, only at the go-live. */
   autoPurgeEnabled: boolean;
 }
 
