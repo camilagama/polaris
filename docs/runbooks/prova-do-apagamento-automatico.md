@@ -7,6 +7,8 @@
 ## Pré-requisitos de acesso
 
 - Perfil do dono do banco do **staging**, seguindo a [política de perfis de CLI](./cli-profile-policy.md). Não rode nada sem confirmar o perfil e a identidade permitidos. **Nunca na produção.**
+- Entregue a connection string ao `psql` por variável de ambiente (`PGHOST`, `PGDATABASE`, `PGUSER`, `PGPASSWORD`) ou arquivo local fora do repositório, nunca na linha de comando, no PR nem no registro da prova.
+- **Confirme o ambiente antes de qualquer escrita**, na mesma sessão do `psql`: `SELECT shobj_description(oid, 'pg_database') FROM pg_database WHERE datname = current_database();` tem de devolver exatamente `polaris.environment=staging` (o marcador do [ADR 0097](../adr/0097-staging-fixo-e-producao-em-conta-separada.md)). Qualquer outro texto, ou vazio: pare.
 - O dono da Neon ignora o RLS que as tabelas forçam (o mesmo pré-requisito da [auditoria depois do purge](./auditoria-do-tenant-apos-o-purge.md#pré-requisitos-de-acesso)). Se algum `UPDATE` abaixo disser `UPDATE 0` onde o texto espera `UPDATE 1`, o perfil não é o certo: pare e não contorne.
 - No staging, já no ar: `CLOSURE_AUTO_PURGE_ENABLED` = `"true"` e `CLOSURE_NOTICE_EMAIL_ENABLED` = `"true"` (confira o `env.staging` do `wrangler.jsonc` do SHA implantado), os dois alertas de [apagamento-automatico](./alertas.md#apagamento-automatico) e [loja-encerrada-parada](./alertas.md#loja-encerrada-parada), e o painel `/loja-encerrada`.
 - Acesso aos Workers Logs do `polaris-web-staging`. Eles guardam poucos dias (3 no plano Free): **cada etapa é conferida no mesmo dia**, e o registro guarda só nome do evento, hora e contagens.
@@ -15,7 +17,7 @@
 
 Uma loja **sintética de staging encerrada só para esta prova**, escolhida por ID (`<org>` abaixo). A etapa 2 **apaga a loja de verdade**: não use uma loja que alguém ainda precise (a loja 5 do Gate 7 só se a decisão for apagá-la agora). A dona da loja tem de ser uma conta de teste com e-mail **verificado** numa caixa de teste (`teste.araute.app`): sem o aviso de D menos 7 dias entregue há 7 dias nada é agendado nem apagado. Nada de dado pessoal no registro da prova: IDs opacos, datas e contagens.
 
-Crie a loja e encerre-a pelo app (o dono pede o encerramento e espera a varredura a marcar como `closed`, ou use uma já `closed`). Com a chave ligada, **qualquer** loja encerrada de staging que cumpra as regras é agendada pela mesma varredura: antes de começar, liste as que estão perto de D menos 7 para saber o que mais pode entrar (são só IDs):
+Crie a loja e encerre-a pelo app (o dono pede o encerramento e espera a varredura a marcar como `closed`, ou use uma já `closed`). Com a chave ligada, **qualquer** loja encerrada de staging que cumpra as regras é agendada pela mesma varredura, **a partir do primeiro cron depois do deploy que liga a chave**, não só durante a prova. Liste as candidatas **antes desse deploy** e de novo antes de começar (são só IDs), para saber o que mais pode entrar e para avisar o Diego sobre as fixtures de outras tarefas e a loja 5 do Gate 7:
 
 ```sql
 SELECT o.id, c.requested_at, d.d7_at
@@ -71,6 +73,7 @@ UPDATE public.organization_closures
    AND closed_at IS NOT NULL AND recovered_at IS NULL
    AND EXISTS (SELECT 1 FROM public.organizations
                 WHERE id = :'org' AND status = 'closed');
+-- confira "UPDATE 1" e então rode COMMIT; (com qualquer outro resultado, ROLLBACK;)
 ```
 
 Esperado: `UPDATE 1`. Se não for, `ROLLBACK;` e volte ao passo 0. Se for, `COMMIT;`.
@@ -123,19 +126,21 @@ O que a varredura horária faz agora (cron `17 * * * *`, [scheduled-jobs](./sche
 
 ### 2. Recuar as datas para D mais 48 horas (execução)
 
-**Esta etapa leva ao apagamento definitivo da loja.** Ela recua o pedido para 95 dias atrás (2280 horas: D e mais 48 horas já passaram em qualquer fuso), leva o aviso do ciclo junto (a chave do ciclo do aviso é o `requested_at`) e põe o agendamento no passado, mantendo o `not_before` coerente (o maior entre D mais 48 horas e o agendamento mais 7 dias), para não nascer um aviso `rescheduled` novo, que reiniciaria os 7 dias de espera.
+**Esta etapa leva ao apagamento definitivo da loja.** Ela recua o pedido para 92 dias atrás (2208 horas: D é a meia-noite local de dois dias atrás, então D mais 48 horas é a meia-noite local de hoje, que já passou; recuar mais deixaria o marco `deletion_day` atrasado há mais de 72 horas, e o aviso atrasado dispararia o `closure_purge_overdue` à toa), leva o aviso do ciclo junto (a chave do ciclo do aviso é o `requested_at`) e põe o agendamento no passado, mantendo o `not_before` coerente (o maior entre D mais 48 horas e o agendamento mais 7 dias), para não nascer um aviso `rescheduled` novo, que reiniciaria os 7 dias de espera.
 
 ```sql
 SELECT requested_at AS old_requested FROM public.organization_closures
  WHERE organization_id = :'org' \gset
-SELECT now() - interval '2280 hours' AS new_requested \gset
+SELECT now() - interval '2208 hours' AS new_requested \gset
 
 BEGIN;
 UPDATE public.organization_closures
    SET requested_at  = :'new_requested'::timestamptz,
        recover_until = :'new_requested'::timestamptz + (recover_until - requested_at),
        closed_at     = :'new_requested'::timestamptz + (recover_until - requested_at)
- WHERE organization_id = :'org' AND recovered_at IS NULL;
+ WHERE organization_id = :'org' AND recovered_at IS NULL
+   AND EXISTS (SELECT 1 FROM public.organizations
+                WHERE id = :'org' AND status = 'purge_pending');
 
 UPDATE public.closure_notices
    SET closure_requested_at = :'new_requested'::timestamptz
@@ -149,11 +154,12 @@ UPDATE public.organization_purges AS p
   CROSS JOIN LATERAL public.closure_deadlines(c.requested_at, o.timezone) AS deadline
  WHERE p.organization_id = :'org' AND o.id = p.organization_id
    AND p.trigger = 'closure_period' AND p.purged_at IS NULL AND p.storage_touched_at IS NULL;
+-- confira as três contagens e então rode COMMIT; (com qualquer outra, ROLLBACK;)
 ```
 
-Esperado: `UPDATE 1`, `UPDATE` com a contagem de avisos do ciclo (pelo menos 3) e `UPDATE 1`. Qualquer contagem diferente: `ROLLBACK;` e a reversão abaixo. Se estiver certo, `COMMIT;`.
+Esperado: `UPDATE 1`, `UPDATE` com a contagem de avisos do ciclo (pelo menos 3) e `UPDATE 1`. Qualquer contagem diferente: `ROLLBACK;` (isto desfaz a etapa 2 inteira, e a seção de reversão abaixo não é necessária). Se estiver certo, `COMMIT;`. Antes de rodar, confira que a loja é a do passo 0 e está `purge_pending` (`SELECT status FROM public.organizations WHERE id = :'org';`): o `UPDATE` do pedido abaixo também só vale para essa situação. Se a hora local da loja for logo depois da meia-noite, espere a hora seguinte, para o `not_before` não ficar no futuro.
 
-Na varredura seguinte o purge vence (`not_before` no passado, pedido há mais de 90 dias, aviso entregue há mais de 7 dias): o job apaga o armazenamento e o banco, e o marco `deletion_day` do ciclo recuado fica gravado. Confira:
+Na varredura seguinte o purge vence (`not_before` no passado, pedido há 92 dias, aviso entregue há mais de 7 dias): o job apaga o armazenamento e o banco, e o marco `deletion_day` do ciclo recuado fica gravado. Confira:
 
 ```sql
 SELECT o.status, p.purged_at, p.swept_at, p.attempts, p.last_error_code
@@ -178,7 +184,7 @@ Workers Logs do `polaris-web-staging`, filtrando por `event`. Registre o nome, a
 | Depois do passo 1 | `closure_notice_email_sent` | `milestone = d7`, `outcome = success` |
 | Varredura do passo 4 | `privacy_maintenance_complete` | `scheduledPurges = 1`, `scheduledPurgesLastDay ≥ 1` (acima de 5 o `closure_auto_purge_volume_high` sai: investigue as outras lojas) |
 | Varredura da etapa 2 | `organization_purge_complete` | `purged = 1`, `failed = 0` |
-| Em nenhum momento | `closure_auto_purge_volume_high`, `closure_purge_overdue`, `organization_purge_stalled` | ausentes (os dois primeiros disparam o e-mail dos alertas da Cloudflare: se chegou, a fiação dos alertas está provada, e a causa se investiga pelos runbooks) |
+| Em nenhum momento | `closure_auto_purge_volume_high`, `closure_purge_overdue`, `organization_purge_stalled` | ausentes (os dois primeiros mandam o e-mail do alerta da Cloudflare: se ele chegou, investigue a causa pelos runbooks de [apagamento-automatico](./alertas.md#apagamento-automatico) e [loja-encerrada-parada](./alertas.md#loja-encerrada-parada)) |
 
 O `closure_purge_overdue` é o sinal de [loja-encerrada-parada](./alertas.md#loja-encerrada-parada): `purgesHeldBack ≥ 1` na etapa 2 quer dizer que a reconferência segurou o purge (acesso temporário, renovação viva ou aviso sem a entrega de 7 dias); o `organization_purge_step_failed` com `outcome = rejected` traz o motivo (`reason`). O marco `deletion_day` do ciclo recuado também é gravado na etapa 2, mas o purge apaga a fila de eventos da loja: o e-mail dele pode não sair, e não faz parte da prova.
 
@@ -203,7 +209,7 @@ Registro da prova (no PR do item 22 ou na issue do go-live, sem dado pessoal): o
 
 ## Limites
 
-- O roteiro altera linhas de uma loja sintética com SQL do dono do banco, o único caminho que mexe em `requested_at`, `recover_until`, `closed_at`, `closure_notices.sent_at` e `organization_purges.not_before`: nenhum papel de aplicação os escreve. Não o use fora do staging.
+- O roteiro altera linhas de uma loja sintética com SQL do dono do banco, o único caminho que **recua** `requested_at`, `recover_until`, `closed_at`, `closure_notices.sent_at` e `organization_purges.not_before`: as funções da aplicação os gravam só para frente, no instante do ato. Não o use fora do staging.
 - Prova a fiação do Worker, da varredura, dos avisos e das funções com as datas recuadas. Os critérios AC-47, AC-49 e AC-61 são dos gates de banco (`purge-functions` e as verificações do apagamento automático), que rodam no CI, não aqui.
 - A prova é por uma loja; o volume e o fuso de lojas diferentes ficam nos gates.
 
