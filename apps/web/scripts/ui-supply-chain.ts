@@ -433,7 +433,18 @@ export function scanUiFolderFile(
 const TEST_OR_SPEC_FILE = /\.(?:test|spec)\.[cm]?[jt]sx?$/;
 
 /**
- * The only files of apps/web/src outside `*.test.*` and `*.spec.*` that may import a test library (a name of
+ * The production folders of apps/web (from apps/web) that the test-library check walks: the app and the code
+ * outside `src/` that the build bundles or runs (the Worker, the PWA build plugins, the legal guard).
+ */
+export const TEST_LIBRARY_SCAN_FOLDERS: readonly string[] = [
+  "src",
+  "worker",
+  "pwa",
+  "legal",
+];
+
+/**
+ * The only files of those folders outside `*.test.*` and `*.spec.*` that may import a test library (a name of
  * `UI_TEST_PACKAGES` that is not a types package), each with the reason: the path from the repository root,
  * matched whole. Empty: the helpers that sit beside the tests (`*-test-support.ts`) do not import any of them.
  */
@@ -452,8 +463,8 @@ function isTestLibrary(specifier: string) {
 }
 
 /**
- * The test libraries (the whole `@testing-library/` scope, happy-dom, axe-core) imported by a file of apps/web/src that is not a
- * test: `vite build` bundles whatever production code imports, whichever field of the manifest declares it.
+ * The test libraries (the whole `@testing-library/` scope, happy-dom, axe-core) imported by a file of
+ * `TEST_LIBRARY_SCAN_FOLDERS` that is not a test: `vite build` bundles whatever production code imports, whichever field of the manifest declares it.
  * The comments are the caller's to strip.
  */
 export function scanTestLibraryImports(
