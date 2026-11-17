@@ -1776,6 +1776,64 @@ const DEPLOY_WORKFLOW = readFileSync(
   "utf8"
 );
 
+const DSN_SOURCE = readFileSync(
+  new URL("../apps/web/src/observability/sentry-dsn.ts", import.meta.url),
+  "utf8"
+);
+
+const APP_INGEST_HOST = /^const INGEST_HOST = \/(.+)\/;$/m;
+const SMOKE_INGEST_ORIGIN = /^const SENTRY_INGEST_ORIGIN =\s*\/(.+)\/;$/m;
+const ORIGIN_PREFIX = "^https:\\/\\/";
+
+function patternSource(source, pattern, what) {
+  const found = pattern.exec(source);
+  if (!found) {
+    throw new Error(`${what} not found`);
+  }
+  return found[1];
+}
+
+function ingestPatternDrift(appSource, smokeSource) {
+  const app = patternSource(appSource, APP_INGEST_HOST, "INGEST_HOST");
+  const smoke = patternSource(
+    smokeSource,
+    SMOKE_INGEST_ORIGIN,
+    "SENTRY_INGEST_ORIGIN"
+  );
+  const expected = `${ORIGIN_PREFIX}${app.slice(1)}`;
+  return smoke === expected
+    ? null
+    : `the ingest pattern of the smoke (${smoke}) differs from the one of the app (${expected})`;
+}
+
+describe("the Sentry ingest pattern of the smoke", () => {
+  it("is the host pattern of the app (apps/web/src/observability/sentry-dsn.ts) as an origin", () => {
+    expect(ingestPatternDrift(DSN_SOURCE, SMOKE_SOURCE)).toBeNull();
+  });
+
+  it("fails when the app accepts a host format the smoke does not (planted control)", () => {
+    const widened = DSN_SOURCE.replace(
+      "ingest(?:\\.[a-z0-9-]+)?",
+      "ingest(?:\\.[a-z0-9-]+)*"
+    );
+    expect(widened).not.toBe(DSN_SOURCE);
+    expect(ingestPatternDrift(widened, SMOKE_SOURCE)).toContain("differs");
+  });
+
+  it("fails when the smoke narrows its pattern (planted control)", () => {
+    const narrowed = SMOKE_SOURCE.replace("o\\d+\\.ingest", "o\\d{3}\\.ingest");
+    expect(narrowed).not.toBe(SMOKE_SOURCE);
+    expect(ingestPatternDrift(DSN_SOURCE, narrowed)).toContain("differs");
+  });
+
+  it("fails loudly when either pattern cannot be found", () => {
+    expect(() => ingestPatternDrift("", SMOKE_SOURCE)).toThrow("INGEST_HOST");
+    expect(() => ingestPatternDrift(DSN_SOURCE, "")).toThrow(
+      "SENTRY_INGEST_ORIGIN"
+    );
+  });
+});
+
 const STARTUP_SLACK_SECONDS = 15;
 
 const ATTEMPTS_PATTERN = /^const ATTEMPTS = ([\d_]+);/m;
