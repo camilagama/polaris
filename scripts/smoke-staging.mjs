@@ -759,22 +759,22 @@ export function planOf(environment, env) {
       return { origins: {}, refusals, target: STAGING_TARGET };
     }
     return {
-      refusals,
       origins: {
         admin: env[PRODUCTION_VARIABLES.admin],
         catalog: env[PRODUCTION_VARIABLES.catalog],
         web: env[PRODUCTION_VARIABLES.web],
       },
+      refusals,
       target,
     };
   }
   return {
-    refusals: [],
     origins: {
       admin: env.STAGING_ADMIN_URL,
       catalog: env.STAGING_CATALOG_URL,
       web: env.STAGING_WEB_URL,
     },
+    refusals: [],
     target: STAGING_TARGET,
   };
 }
