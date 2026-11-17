@@ -1,10 +1,10 @@
 import { createORPCClient } from "@orpc/client";
 import { RPCLink } from "@orpc/client/fetch";
-import { readFileSync } from "node:fs";
 import type { ActivationPreference } from "@polaris/db/activation-preference";
 import {
   ACTIVATION_PREFERENCE_STATEMENT,
   ACTIVATION_SET_TIPS_STATEMENT,
+  renderActivationStatement,
 } from "@polaris/db/activation-preference";
 import { TenantAuthorizationError } from "@polaris/db/tenant-transaction";
 import { describe, expect, it, vi } from "vitest";
@@ -15,7 +15,6 @@ import type { TenantRequestContextInput } from "../tenant-request-context";
 import { createRpcRouter } from "./router";
 
 const organizationId = "org_7b9c212a";
-const OWN_CONNECTION = /from "pg"|new Pool|connectionString|HYPERDRIVE/;
 const SERVER_FAULT = /^(INTERNAL|SERVICE)/;
 
 const testBindings = {
@@ -52,29 +51,6 @@ function createClient(
   return createORPCClient(link) as unknown as PreferenceClient;
 }
 
-interface DrizzleQuery {
-  queryChunks: unknown[];
-}
-
-/** Renders a drizzle `sql` template the way the driver receives it: text with $n and the values apart. */
-function render(query: DrizzleQuery) {
-  const params: unknown[] = [];
-  let text = "";
-  for (const chunk of query.queryChunks) {
-    if (
-      typeof chunk === "object" &&
-      chunk !== null &&
-      Array.isArray((chunk as { value?: unknown }).value)
-    ) {
-      text += (chunk as { value: string[] }).value.join("");
-    } else {
-      params.push(chunk);
-      text += `$${params.length}`;
-    }
-  }
-  return { params, sql: text };
-}
-
 /**
  * The database in memory: one row of preference per person, as the functions of the migration keep it. It is the
  * transaction the tenant context hands to the handler, so what it receives is the statement the handler really ran.
@@ -85,8 +61,8 @@ function fakeDatabase() {
   const stateOf = (userId: string) =>
     people.get(userId) ?? { sent: 0, tips: true };
   const transaction = {
-    execute(query: DrizzleQuery) {
-      const { params, sql } = render(query);
+    execute(query: Parameters<typeof renderActivationStatement>[0]) {
+      const { params, sql } = renderActivationStatement(query);
       statements.push({ params, sql });
       const [userId, on] = params as [string, boolean | undefined];
       if (sql === ACTIVATION_SET_TIPS_STATEMENT) {
@@ -144,14 +120,16 @@ describe("account.emailPreference and account.setTips", () => {
   it("opens no connection of its own: the two functions run in the transaction of the tenant context", async () => {
     const database = fakeDatabase();
     const connectionStringReads: string[] = [];
+    const watched = (name: "HYPERDRIVE" | "ONBOARDING_HYPERDRIVE") => ({
+      get connectionString(): string {
+        connectionStringReads.push(name);
+        return testBindings[name].connectionString;
+      },
+    });
     const bindings = {
       ...testBindings,
-      HYPERDRIVE: {
-        get connectionString(): string {
-          connectionStringReads.push("HYPERDRIVE");
-          return testBindings.HYPERDRIVE.connectionString;
-        },
-      },
+      HYPERDRIVE: watched("HYPERDRIVE"),
+      ONBOARDING_HYPERDRIVE: watched("ONBOARDING_HYPERDRIVE"),
     } as WorkerBindings;
     const client = createClient(
       { withTenantRequestContext: tenantOf("conta-a", database) },
@@ -162,14 +140,6 @@ describe("account.emailPreference and account.setTips", () => {
     await client.account.setTips({ on: false, organizationId });
     expect(database.statements).toHaveLength(3);
     expect(connectionStringReads).toEqual([]);
-  });
-
-  it.each([
-    "../../../../../packages/db/src/activation-preference.ts",
-    "./email-preference-handlers.ts",
-  ])("has no pool and no connection string in the path of %s", (path) => {
-    const source = readFileSync(new URL(path, import.meta.url), "utf8");
-    expect(source).not.toMatch(OWN_CONNECTION);
   });
 
   it("hands over the switch it was given and answers the state the database reports", async () => {
