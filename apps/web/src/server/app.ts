@@ -35,6 +35,7 @@ import {
 } from "./observability/server-log";
 import { authMethodsRoutes } from "./routes/auth-methods";
 import { createBillingWebhookRoutes } from "./routes/billing-webhooks";
+import { createResendWebhookRoutes } from "./routes/resend-webhooks";
 import {
   CLIENT_ERRORS_PATH,
   clientErrorsSwitchMiddleware,
@@ -257,6 +258,7 @@ export function createServerApp({
   // Provider webhooks sit outside /api and /rpc (browser origin checks): they
   // prove themselves by the provider signature their adapter verifies.
   app.route("/", createBillingWebhookRoutes());
+  app.route("/", createResendWebhookRoutes());
 
   app.notFound((context) =>
     context.json(

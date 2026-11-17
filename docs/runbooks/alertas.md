@@ -42,6 +42,7 @@
 | [`pix-revogacao-nao-mostrada`](#pix-revogacao-nao-mostrada) | `billing_woovi_revocation_not_shown` | 24 h | 1 | warning | não |
 | [`comando-de-cobranca-do-operador`](#comando-de-cobranca-do-operador) | `billing_operator_command` (Worker `polaris-admin`) | 15 min | 1 | critical | sim |
 | [`revelacoes-por-hora`](#revelacoes-por-hora) | `admin_reveal_rate_limited` (Worker `polaris-admin`) | 60 min | 1 | warning | não |
+| [`serie-parada`](#serie-parada) | `activation_series_stopped` (`stopped = true`) | 24 h | 1 | warning | não |
 
 Os limiares são um primeiro chute, sem medida de tráfego real; a Fase 14 os revê. A taxa de 5xx é uma contagem por janela, sem denominador (só as rotas críticas emitem um evento por requisição).
 
@@ -333,3 +334,13 @@ O lote de miniaturas (`/api/media/thumbs`) lê com um `get` por id e responde in
 **Como confirmar.** Workers Logs do `polaris-admin`: `event = "billing_operator_command"`. No Admin, o caso da loja mostra a auditoria `billing.operator_*_requested` e `…_recorded`, com o ID do comando; o motivo digitado está no ledger de cobrança (`billing_events`, `provider_event_id = command:operator_<tipo>:<commandId>`).
 
 **O que fazer.** Se foi a outra pessoa, confira o caso e o motivo; nada a fazer. Se ninguém reconhece o comando, trate como sessão de operador comprometida: desligue o operador (`platform_principals.status`), revogue a sessão no Access e siga [suspeita de vazamento da chave](./billing-providers.md#suspeita-de-vazamento-da-chave). Um `admin.operator_refund_rate_limited` no mesmo Worker diz que alguém passou do limite de 3 reembolsos por hora.
+
+<a id="serie-parada"></a>
+
+### serie-parada — a série de dicas parou depois de uma reclamação de spam
+
+**O que significa.** O webhook do Resend entregou uma reclamação (`email.complained`) e o banco abriu uma parada da série "Dicas para começar" ([ADR 0106](../adr/0106-avisos-de-ativacao-e-medida-de-comportamento.md), D7). O evento é `activation_series_stopped` (aviso, no Worker `polaris-web`), com `stopped: true`, o `eventId` opaco da entrega e o `requestId`; nunca o endereço, o HMAC nem o corpo. Só a reclamação que **abre** uma parada gera o evento: uma segunda, com a parada já ativa, e a reentrega do mesmo evento não. A parada vale para todas as lojas e não sai sozinha.
+
+**Como confirmar.** Workers Logs do `polaris-web`: `event = "activation_series_stopped"`. No banco, pelo dono, `SELECT id, stopped_at FROM activation_series_stops WHERE released_at IS NULL` (o [runbook da parada](./ativacao-parada-da-serie.md) tem os passos e a foto).
+
+**O que fazer.** Olhe a origem no painel do Resend no mesmo dia: a reclamação veio de uma dica da série ou de um e-mail da conta (login, verificação, cobrança, encerramento). A conta é uma só, e quem se cadastra com uma caixa que é dele pode marcar o e-mail de verificação como spam e parar a série de todas as lojas: o risco foi aceito no ADR. Quem decide liberar é o usuário; o passo está em [Parada da série e liberação](./ativacao-parada-da-serie.md). Enquanto o cron de alertas não existe (Fase 14), este sinal é lido à mão: o Arrascaeta consulta o evento (ou a parada ativa) ao menos uma vez por dia com a série ligada.

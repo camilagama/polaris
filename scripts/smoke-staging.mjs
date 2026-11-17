@@ -126,15 +126,20 @@ export const BILLING_WEBHOOK_PROVIDERS = ["asaas", "woovi"];
 
 /**
  * A delivery without proof of the provider is refused with 401 `unauthorized` before the body is read as an event,
- * so nothing is stored. A 503 `billing_provider_not_configured` means a secret or a public key of the provider is
- * missing in the Worker; a 200 would mean the route took a delivery nobody signed.
+ * so nothing is stored. A 503 `billing_provider_not_configured` (or `resend_webhook_not_configured`, the Resend
+ * webhook of the tips series) means a secret or a public key of the provider is missing in the Worker; a 200 would
+ * mean the route took a delivery nobody signed.
  */
 const refusedWebhook = (response, body) => {
   const code = parsed(body)?.error?.code;
   if (response.status === 401) {
     return code === "unauthorized" || "401 not unauthorized";
   }
-  if (response.status === 503 && code === "billing_provider_not_configured") {
+  if (
+    response.status === 503 &&
+    (code === "billing_provider_not_configured" ||
+      code === "resend_webhook_not_configured")
+  ) {
     return "provider not configured (a secret is missing)";
   }
   return response.status === 200 ? "accepted without a signature" : "not 401";
@@ -316,6 +321,14 @@ export function smokeChecks(
       url: `${web}/webhooks/billing/${provider}`,
       worker: true,
     })),
+    {
+      ...rpc({}),
+      expect: refusedWebhook,
+      name: "web POST /webhooks/email/resend without a signature (refused with 401)",
+      readBody: true,
+      url: `${web}/webhooks/email/resend`,
+      worker: true,
+    },
     {
       ...rpc({}),
       expect: status(401),

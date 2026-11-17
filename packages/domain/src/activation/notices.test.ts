@@ -49,8 +49,8 @@ describe("the skip codes of the activation series", () => {
 });
 
 describe("the brake before the stop on a complaint", () => {
-  it("keeps every tip from going out until the stop is in force", () => {
-    expect(STOP_ENFORCED).toBe(false);
+  it("has the stop on a complaint in force", () => {
+    expect(STOP_ENFORCED).toBe(true);
   });
 });
 
