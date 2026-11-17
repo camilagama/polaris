@@ -1,4 +1,4 @@
-﻿# Polaris — acompanhamento da implementação
+# Polaris — acompanhamento da implementação
 
 Atualizado em 17 de novembro de 2026.
 
@@ -3464,7 +3464,7 @@ Origem: achado B do Diego no Pixel 6 (28/10): a venda montada em Vender sumia ao
 | Nome da loja (P-1) | Em revisão | `SELECT (name)` em `organizations` para o papel da série: 35 colunas de leitura, conferidas no fim da migration e no gate. Os candidatos seguem sem o nome (o gate confere as colunas de saída). |
 | Códigos | Em revisão | `packages/domain/src/activation/notices.ts`: os do banco na ordem da releitura e os do Worker, com `outside_send_hours`. |
 | Gate (AC-7c.13) | Em revisão | `activation-candidates` estendido: privilégios e ACL da função, leitores exatos de `organizations.name`, lista exata do papel, uma loja por motivo com paridade contra os candidatos (o a1 de loja que já tem produto vira `state_changed`), a ordem dos motivos, os nulos e o limite do relógio. |
-| Fora deste PR | Pendente | O consumidor que chama a função (7c-2); os modelos (7c-1); `series_stopped` nas duas funções (9a). |
+| Fora deste PR | Pendente | O consumidor que chama a função (7c-2); os modelos (7c-1); `series_stopped` nas duas funções (9a-db, migration 0135, abaixo). |
 
 ### Avisos de ativação: a preferência das dicas pela sessão, parte do banco (t1224; corte staging-alinhado, item 2, Item 8b-db; migration 0134, número provisório)
 
@@ -3484,6 +3484,17 @@ Origem: achado B do Diego no Pixel 6 (28/10): a venda montada em Vender sumia ao
 | Cartão (AC-8b.2, 8b.3, 8b.5) | Em revisão | `settings/email-preference-card.tsx`, o primeiro da aba Seus dados, antes de "Pedir cópia": linha de avisos da conta sem controle, `Switch` "Dicas para começar" e "Enviados até agora: N de 3." só com `sent > 0`. Grava ao tocar, "Salvo." em `role="status"`, erro inline, sem internet `aria-disabled` descrito pela faixa. O primitivo `ui/switch.tsx` (sobre o `@base-ui/react/switch`, dependência que já havia) é novo, com entrada na galeria. |
 | Provas | Em revisão | `email-preference-router.test.ts` (capacidade, duas contas que não se tocam, `p_user` nunca do cliente, conexão fechada), `email-preference-card.test.tsx` (DOM: sem controle na linha 1, 0 e 2 envios, sem jargão, grava, falha, um pedido para dois toques, offline), `data-export-page.test.tsx` (ordem e papel), e2e `email-preference.e2e.ts` (por papel, offline, axe, ordem de foco), `email-preference-reflow.e2e.ts` (320/20 e 360/16, claro e escuro, toque de 44 px), `reflow-rotas` sem entrada nova em `settings:seus-dados`, e a jornada real `e2e-real/jornadas/dicas-por-duas-portas.e2e.ts` (o POST do leitor de e-mail desliga e a tela mostra desligado; a tela liga e a linha some; duas contas). |
 | Fora | Pendente | O envio real da série e a flag (fase 2); a política do Hyperdrive de tenant segue com o cache desligado no staging (`wrangler.jsonc`), condição para a leitura não ser cacheada. |
+
+### Avisos de ativação: a parada da série, a caixa de entrada e a supressão por função, parte do banco (t1231; corte ativacao-fase1b, Item 9a-db; migration 0135, número provisório)
+
+| Item | Estado | Detalhe |
+| --- | --- | --- |
+| Parada (AC-9.3, AC-9.4, AC-9.5) | Em revisão | `activation_series_stops` (uma linha por parada, no máximo uma ativa) e `activation_series_stop_releases` (só de acrescentar, `session_user` e nota de 10 a 200 caracteres sem `@`). `released_at` só sai de nulo com a linha de liberação do mesmo instante (gatilho `ALWAYS`); `DELETE` e `TRUNCATE` recusados. Os candidatos devolvem nada e a releitura responde `series_stopped` (primeiro código) antes da flag e do instante da liga. |
+| Funções do dono da série (AC-9.5b, AC-9.6, AC-9.8, AC-9.9) | Em revisão | Oito ao todo (as cinco da 0134 e três novas): `activation_record_email_event` (caixa por `svix-id`, supressão por HMAC e, na reclamação, a parada, numa transação), `activation_address_suppressed` (12 meses em UTC, guarda de relógio de 10 min, re-chaveamento com a data mais antiga, `22023` para HMAC fora de 32 bytes e `key_id` iguais ou mal formados) e `activation_release_stop` (nenhum papel de aplicação a executa; o dono do banco, por runbook). O runtime de cobrança perdeu `SELECT`, `INSERT` e `UPDATE` na supressão. `activation_email_suppressions.key_id` nulo. |
+| Cliente e consumidor | Em revisão | `packages/db/src/activation-email-events.ts` (a chamada do webhook, ainda sem quem a use) e `isSuppressed(keys, now)` com as duas chaves e os `key_id`; "a função não existe" (`42883`) conta como suprimido (ordem do deploy: migration antes do Worker). `STOP_ENFORCED` continua `false`. |
+| Retenção | Em revisão | `retention.ts` (classe `activation_series`): as três tabelas novas; a caixa de entrada fica fora da purga de 12 meses (o `svix-id` não é dado pessoal e a linha impede que um reenvio antigo pare a série de novo depois da liberação). |
+| Gate | Em revisão | `activation-candidates` seção 12 e `activation-sweep` caso 4, com a mutação provada de cada regra nova; `docs/runbooks/ativacao-parada-da-serie.md` executado num PostgreSQL descartável. |
+| Fora deste PR | Pendente | A rota do webhook, a verificação Svix, `STOP_ENFORCED = true`, `RESEND_WEBHOOK_SECRET`, a forma frouxa da reclamação (B1 do Rodrigo), o smoke, o checklist e o alerta `serie-parada` (9a-app). |
 
 ### Avisos de ativação: o consumidor das dicas (t1089; corte ativacao-fase1b, Item 7c-2; sem migration)
 

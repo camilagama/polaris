@@ -2,6 +2,8 @@ import type { ActivationNoticeRecipientClient } from "@polaris/db/activation-not
 import type {
   ActivationNoticeStep,
   ActivationNoticeStore,
+  ActivationSuppressionKey,
+  ActivationSuppressionKeys,
 } from "@polaris/db/activation-notice-store";
 import {
   type ActivationNoticeSkipReason,
@@ -66,6 +68,8 @@ export function activationNoticeIdempotencyKey(noticeId: string): string {
 }
 
 const SUPPRESSION_HMAC_PREFIX = "activation-suppression:v1:";
+const SUPPRESSION_KEY_ID_TEXT = "activation-suppression-key-id:v1";
+const KEY_ID_BYTES = 4;
 const MIN_SECRET_LENGTH = 32;
 
 export interface ActivationSuppressionSecrets {
@@ -152,6 +156,43 @@ export async function activationSuppressionHmac(
       encoder.encode(`${SUPPRESSION_HMAC_PREFIX}${normalizedAddress}`)
     )
   );
+}
+
+/**
+ * The identifier of one secret of the suppression, written with every row so the old secret can be retired when no row
+ * is left under it: the first 4 bytes, in hexadecimal, of an HMAC-SHA-256 over a fixed purpose text. It does not reveal
+ * the secret and changes with it.
+ */
+export async function activationSuppressionKeyId(
+  secret: string
+): Promise<string> {
+  const key = await crypto.subtle.importKey(
+    "raw",
+    encoder.encode(secret),
+    { hash: "SHA-256", name: "HMAC" },
+    false,
+    ["sign"]
+  );
+  const signature = new Uint8Array(
+    await crypto.subtle.sign(
+      "HMAC",
+      key,
+      encoder.encode(SUPPRESSION_KEY_ID_TEXT)
+    )
+  );
+  return Array.from(signature.slice(0, KEY_ID_BYTES), (byte) =>
+    byte.toString(16).padStart(2, "0")
+  ).join("");
+}
+
+async function suppressionKeyOf(
+  secret: string,
+  normalizedAddress: string
+): Promise<ActivationSuppressionKey> {
+  return {
+    hmac: await activationSuppressionHmac(secret, normalizedAddress),
+    keyId: await activationSuppressionKeyId(secret),
+  };
 }
 
 /** The provider's configuration (secrets): never logged. */
@@ -408,10 +449,14 @@ export async function handleActivationNotice(
   if (!(address && normalized)) {
     return await skip("no_recipient", step);
   }
-  const secrets = [config.suppression.current, config.suppression.previous]
-    .filter((secret): secret is string => secret !== undefined)
-    .map((secret) => activationSuppressionHmac(secret, normalized));
-  if (await notices.isSuppressed(await Promise.all(secrets))) {
+  const { previous } = config.suppression;
+  const keys: ActivationSuppressionKeys = {
+    current: await suppressionKeyOf(config.suppression.current, normalized),
+    ...(previous === undefined
+      ? {}
+      : { previous: await suppressionKeyOf(previous, normalized) }),
+  };
+  if (await notices.isSuppressed(keys, now)) {
     return await skip("address_suppressed", step);
   }
   return await sendActivationNotice(dependencies, config, {
