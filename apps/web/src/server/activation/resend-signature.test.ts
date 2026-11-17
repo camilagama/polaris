@@ -98,6 +98,26 @@ describe("the signature of the provider's delivery", () => {
     expect(await verify(overrides)).toBe(false);
   });
 
+  it("refuses a correctly signed timestamp padded with a leading zero to 11 characters, though its value is the vector's", async () => {
+    const padded = `0${TIMESTAMP}`;
+    const hmacKey = await crypto.subtle.importKey(
+      "raw",
+      key,
+      { hash: "SHA-256", name: "HMAC" },
+      false,
+      ["sign"]
+    );
+    const mac = new Uint8Array(
+      await crypto.subtle.sign(
+        "HMAC",
+        hmacKey,
+        new TextEncoder().encode(`${ID}.${padded}.${BODY}`)
+      )
+    );
+    const signature = `v1,${btoa(String.fromCharCode(...mac))}`;
+    expect(await verify({ signature, timestamp: padded })).toBe(false);
+  });
+
   it("accepts a timestamp exactly at the edge of the window, in both directions, and refuses one second beyond", async () => {
     const limit = SVIX_TOLERANCE_SECONDS * 1000;
     expect(await verify({ nowMs: NOW_MS + limit })).toBe(true);

@@ -169,14 +169,15 @@ describe("the signature comes before the database", () => {
     }
   );
 
-  it("refuses a timestamp of more than 10 digits", async () => {
+  it("refuses a signed timestamp padded with a leading zero to 11 characters, though its value is inside the window", async () => {
     const fixture = setup();
     const response = await fixture.send(
       body,
-      await sign(body, { timestamp: `${NOW_SECONDS}0` })
+      await sign(body, { timestamp: `0${NOW_SECONDS}` })
     );
     expect(response.status).toBe(401);
     expect(fixture.createRecorder).not.toHaveBeenCalled();
+    expect(fixture.recorder.record).not.toHaveBeenCalled();
   });
 
   it("accepts one valid signature among several", async () => {
