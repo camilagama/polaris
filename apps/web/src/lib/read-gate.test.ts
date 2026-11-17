@@ -2,6 +2,7 @@ import { polarisContract } from "@polaris/contracts";
 import { describe, expect, it } from "vitest";
 import { createConnection } from "./connection";
 import { callKind, createReadGate, READ_PROCEDURES } from "./read-gate";
+import { READ_PROCEDURES as PAGE_READ_PROCEDURES } from "./read-procedures";
 
 const MARK = "0199c2d0-0000-7000-8000-000000000001";
 
@@ -123,6 +124,27 @@ describe("what a call is", () => {
       return contract[router ?? ""]?.[procedure ?? ""] === undefined;
     });
     expect(missing).toEqual([]);
+  });
+
+  it("every read the page can send is in the line, except the ones it never sends", () => {
+    // `system/ping` is a health probe of the contract that no screen or worker of the page calls
+    const NEVER_SENT_BY_THE_PAGE: readonly string[] = ["system/ping"];
+
+    const outOfTheLine = PAGE_READ_PROCEDURES.filter(
+      (path) =>
+        !(READ_PROCEDURES.has(path) || NEVER_SENT_BY_THE_PAGE.includes(path))
+    );
+    expect(outOfTheLine).toEqual([]);
+
+    for (const path of NEVER_SENT_BY_THE_PAGE) {
+      expect(PAGE_READ_PROCEDURES, path).toContain(path);
+      expect(READ_PROCEDURES.has(path), path).toBe(false);
+    }
+    expect(
+      [...READ_PROCEDURES].filter(
+        (path) => !PAGE_READ_PROCEDURES.includes(path)
+      )
+    ).toEqual([]);
   });
 
   it("no write of the outbox or of a screen is in the list", () => {
