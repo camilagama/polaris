@@ -412,6 +412,20 @@ export const alertSignals = [
     title: "Operador chegou ao limite de revelações de dado pessoal por hora",
     windowMinutes: 60,
   },
+  {
+    // a stop is the series doing its job, not a failure: it is reported so the origin of the complaint is looked at the
+    // same day (the account of the provider is shared with sign-in and billing e-mails), not to wake anyone
+    id: "serie-parada",
+    notify: "report",
+    severity: "warning",
+    source: {
+      events: ["activation_series_stopped"],
+      where: "stopped = true",
+    },
+    threshold: { atLeast: 1, kind: "count" },
+    title: "A série de dicas parou depois de uma reclamação de spam",
+    windowMinutes: 1440,
+  },
 ] as const satisfies readonly AlertSignal[];
 
 export type AlertSignalId = (typeof alertSignals)[number]["id"];

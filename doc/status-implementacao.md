@@ -3487,12 +3487,22 @@ Origem: achado B do Diego no Pixel 6 (28/10): a venda montada em Vender sumia ao
 | Gate | Em revisão | `activation-candidates` seção 12 e `activation-sweep` caso 4, com a mutação provada de cada regra nova; `docs/runbooks/ativacao-parada-da-serie.md` executado num PostgreSQL descartável. |
 | Fora deste PR | Pendente | A rota do webhook, a verificação Svix, `STOP_ENFORCED = true`, `RESEND_WEBHOOK_SECRET`, a forma frouxa da reclamação (B1 do Rodrigo), o smoke, o checklist e o alerta `serie-parada` (9a-app). |
 
+### Avisos de ativação: o webhook do Resend e o freio ligado (t1232; corte ativacao-fase1b, Item 9a-app; sem migration)
+
+| Item | Estado | Detalhe |
+| --- | --- | --- |
+| Rota e assinatura (AC-9.1) | Em revisão | `POST /webhooks/email/resend` (`server/routes/resend-webhooks.ts`) e a verificação Svix à mão com WebCrypto (`server/activation/resend-signature.ts`, sem dependência nova): corpo cru de até 64 KiB, janela de 300 s, `svix-timestamp` de até 10 dígitos, até 5 entradas `v1`, tempo constante; 401 genérico antes de qualquer conexão. Teste com o vetor publicado na documentação do Svix. |
+| Reclamação sempre para a série (B1 do Rodrigo) | Em revisão | Depois da assinatura, `email.complained` chama `activation_record_email_event(kind = 'complaint')` mesmo com `data` vazio, `to` ausente ou lista de objetos (HMACs vazios, log `resend_complaint_unparseable`). Bounce: suprime em `Permanent`, ausente ou desconhecido; só `Transient` explícito é ignorado; os outros tipos, 200 sem banco. |
+| Freio e configuração (Q-3) | Em revisão | `STOP_ENFORCED = true`; a configuração do consumidor exige `RESEND_WEBHOOK_SECRET` (`whsec_…`, 32+ caracteres, diferente dos outros segredos). |
+| Aviso, smoke e documentos | Em revisão | Sinal `serie-parada` (registro e runbook de alertas); verificação 18 do smoke (`web POST /webhooks/email/resend without a signature (refused with 401)`, agora 20 verificações); item 30 do release-checklist, `production.md`, `staging.md`, README dos runbooks, runbook da parada e a seção do ADR 0106. |
+| Fora deste PR | Pendente | O registro do endpoint no painel do Resend e o `RESEND_WEBHOOK_SECRET` nos Workers (responsável); a forma real do payload e a janela do Svix (nenhum evento recebido); a conta separada do Resend ou o aceite da U4 antes da produção; o M1 agregado no Admin (9b). |
+
 ### Avisos de ativação: o consumidor das dicas (t1089; corte ativacao-fase1b, Item 7c-2; sem migration)
 
 | Item | Estado | Detalhe |
 | --- | --- | --- |
 | Consumidor (AC-7c.1, lado Worker) | Em revisão | `server/activation/notice-consumer.ts` troca o `activation_consumer_not_ready`: a flag primeiro, sem leitura (`switched_off`); `claim` e `activation_notice_still_owed` pelo runtime de cobrança (`packages/db/src/activation-notice-store.ts`); configuração; 23 h desde a 1ª tentativa; 08:00–20:00 de São Paulo (`outside_send_hours`); endereço só por `activation_notice_recipient` (`packages/db/src/activation-notice-recipient.ts`); supressão pelo HMAC do endereço normalizado; o primeiro motivo que vale é o gravado. |
-| Freio antes do 9a | Em revisão | `STOP_ENFORCED = false` em `packages/domain/src/activation/notices.ts`: com a flag ligada e tudo configurado, o aviso sai `email_not_configured` e nada é enviado; o 9a a vira `true`. |
+| Freio antes do 9a | Em revisão | `STOP_ENFORCED = false` em `packages/domain/src/activation/notices.ts`: com a flag ligada e tudo configurado, o aviso sai `email_not_configured` e nada é enviado; o 9a-app a virou `true` (seção do webhook do Resend acima). |
 | Configuração (AC-7c.3, P-5, P-6) | Em revisão | `ACTIVATION_EMAIL_FROM` (separado do `AUTH_EMAIL_FROM`), Reply-To `BILLING_SUPPORT_EMAIL` (sem ele nada sai), `ACTIVATION_SUPPRESSION_HMAC_SECRET` e `_PREVIOUS` (32+ caracteres, recusados se iguais a outro segredo do Worker; `PREVIOUS` inválido falha fechado), segredo do token do 8a. Mensagem do HMAC: `activation-suppression:v1:` + endereço normalizado (`normalizeActivationAddress`, função única do domínio, só ASCII imprimível); o e-mail vai para o endereço normalizado, o mesmo da conferência. A lista de segredos distintos cobre todo segredo declarado em `WorkerBindings`, e um teste reprova segredo novo fora dela. Nada em `wrangler.jsonc` (fase 2). |
 | Envio (AC-7c.8, AC-7c.9) | Em revisão | Chave do Resend `activation-notice/<id>`; `List-Unsubscribe` e `List-Unsubscribe-Post` passados ao sender; 5xx, rede e 409 `concurrent_idempotent_requests` lançam; 409 `invalid_idempotent_request` marca `sent`; 4xx de endereço marca `failed` (`email_rejected`). |
 | Flag | Em revisão | `ACTIVATION_EMAILS_ENABLED` passa para `WorkerBindings`; `runBillingJobs(env: WorkerBindings)`; `activationEmailsEnabled` única leitura, usada pela varredura e pelo consumidor. |

@@ -197,6 +197,12 @@ export interface WorkerBindings {
   RELEASE_HEADER_ENABLED?: string;
   RESEND_API_KEY?: string;
   /**
+   * The signing secret of Resend's webhook (`whsec_` and the base64 of the key; ADR 0106, D7), a Worker secret of each
+   * environment: 32 characters or more, different from every other secret of the Worker. Without it the endpoint
+   * `/webhooks/email/resend` answers 503 and the tips stay off.
+   */
+  RESEND_WEBHOOK_SECRET?: string;
+  /**
    * `true` makes `http_request_timed` (with `isolate.id`/`seq`) cover every matched `/rpc` procedure and named `/api` route, not
    * only the critical routes (CPU-1e, ADR 0094 amended). Set only in `env.staging`; production keeps `false`, which the
    * staging isolation check enforces.

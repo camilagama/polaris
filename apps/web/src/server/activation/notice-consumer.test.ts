@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import type { ActivationNoticeRecipientClient } from "@polaris/db/activation-notice-recipient";
 import type {
   ActivationNoticeReread,
@@ -7,7 +8,6 @@ import type {
 import { ACTIVATION_NOTICE_REREAD_REASONS } from "@polaris/domain/activation/notices";
 import { outboxIdempotencyKey } from "@polaris/domain/events/outbox";
 import type { QueueEnvelope } from "@polaris/domain/events/queue-envelope";
-import { readFileSync } from "node:fs";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type {
   ClosureNoticeSender,
@@ -43,6 +43,7 @@ const SECRETS = {
   BETTER_AUTH_SECRET: "better-auth-secret-0123456789-abcdefghij",
   BILLING_PAYER_KEY: "billing-payer-key-0123456789-abcdefghijkl",
   OFFLINE_LEASE_SECRET: "offline-lease-secret-0123456789-abcdefghi",
+  RESEND_WEBHOOK_SECRET: `whsec_${btoa("webhook-signing-key-0123456789-abc")}`,
   SYNC_PAYLOAD_HASH_SECRET: "sync-payload-secret-0123456789-abcdefghi",
   UNSUBSCRIBE_TOKEN_SECRET: "unsubscribe-secret-0123456789-abcdefghij",
 };
@@ -354,13 +355,13 @@ describe("the consumer of an activation notice: not due and the re-read", () => 
 });
 
 describe("the consumer of an activation notice: the configuration", () => {
-  it("R-4: with the switch on and everything set it still skips as email_not_configured while the stop is not in force, and logs an error", async () => {
+  it("R-4: with the switch on and everything set but the webhook's secret it skips as email_not_configured and logs an error, so the series does not turn on", async () => {
     const spies = spyConsole();
     const { notices } = setup();
     const openRecipients =
       vi.fn<(connectionString: string) => ActivationNoticeRecipientClient>();
     const wiring = {
-      ...bindingsWith(),
+      ...bindingsWith({ RESEND_WEBHOOK_SECRET: undefined }),
       ACTIVATION_EMAILS_ENABLED: "true",
       AUTH_HYPERDRIVE: { connectionString: "postgresql://auth.invalid/db" },
     } as unknown as WiringBindings;
@@ -393,8 +394,9 @@ describe("the consumer of an activation notice: the configuration", () => {
     expect(spies.error).toHaveBeenCalled();
   });
 
-  it("is off by default (the stop is not in force in the code) and on when told so", () => {
-    expect(activationNoticeEmailConfig(bindingsWith())).toBeNull();
+  it("is off when the stop is not in force and on when it is", () => {
+    expect(activationNoticeEmailConfig(bindingsWith(), false)).toBeNull();
+    expect(activationNoticeEmailConfig(bindingsWith())).not.toBeNull();
     expect(activationNoticeEmailConfig(bindingsWith(), true)).toMatchObject({
       appBaseUrl: "https://app.example",
       supportEmail: "suporte@araute.app",
@@ -446,6 +448,23 @@ describe("the consumer of an activation notice: the configuration", () => {
       "the suppression's secret is under 32 characters",
       { ACTIVATION_SUPPRESSION_HMAC_SECRET: "x".repeat(31) },
     ],
+    ["the webhook's secret is missing", { RESEND_WEBHOOK_SECRET: undefined }],
+    ["the webhook's secret is empty", { RESEND_WEBHOOK_SECRET: "" }],
+    [
+      "the webhook's secret is under 32 characters",
+      { RESEND_WEBHOOK_SECRET: "whsec_c2hvcnQ=" },
+    ],
+    [
+      "the webhook's secret is long enough but is not a whsec_ secret",
+      { RESEND_WEBHOOK_SECRET: "x".repeat(40) },
+    ],
+    [
+      "the webhook's secret equals another secret of the Worker",
+      {
+        RESEND_API_KEY: SECRETS.RESEND_WEBHOOK_SECRET,
+        RESEND_WEBHOOK_SECRET: SECRETS.RESEND_WEBHOOK_SECRET,
+      },
+    ],
     [
       "the previous suppression secret is set but short",
       { ACTIVATION_SUPPRESSION_HMAC_SECRET_PREVIOUS: "short" },
@@ -483,7 +502,8 @@ describe("the consumer of an activation notice: the configuration", () => {
       .filter(
         (name) =>
           SECRET_BINDING.test(name) &&
-          !name.startsWith("ACTIVATION_SUPPRESSION_HMAC_SECRET")
+          !name.startsWith("ACTIVATION_SUPPRESSION_HMAC_SECRET") &&
+          name !== "RESEND_WEBHOOK_SECRET"
       );
     expect(secretNames.length).toBeGreaterThanOrEqual(16);
     const shared = "a-value-two-secrets-share-0123456789-abcdef";
@@ -503,6 +523,25 @@ describe("the consumer of an activation notice: the configuration", () => {
         `${name} equal to the suppression's`
       ).toBeNull();
     }
+  });
+
+  it("is null when the suppression's secret equals the webhook's, and the webhook's must differ from the suppression's", () => {
+    expect(
+      activationNoticeEmailConfig(
+        bindingsWith({
+          ACTIVATION_SUPPRESSION_HMAC_SECRET: SECRETS.RESEND_WEBHOOK_SECRET,
+        }),
+        true
+      )
+    ).toBeNull();
+    expect(
+      activationNoticeEmailConfig(
+        bindingsWith({
+          RESEND_WEBHOOK_SECRET: SECRETS.ACTIVATION_SUPPRESSION_HMAC_SECRET,
+        }),
+        true
+      )
+    ).toBeNull();
   });
 
   it("keeps only the current secret when the previous one is the same", () => {
