@@ -498,6 +498,7 @@
         },
         "traces": { "enabled": true, "head_sampling_rate": 0.05 }
       },
+      // OUTBOX_HYPERDRIVE is left out on purpose: the first deploy goes without the queue path and the binding returns in step 7 of docs/runbooks/queues.md, after the CPU measurements of step 6
       "hyperdrive": [
         {
           "binding": "HYPERDRIVE",
@@ -522,10 +523,6 @@
         {
           "binding": "BILLING_HYPERDRIVE",
           "id": "PLACEHOLDER-production-hyperdrive-billing"
-        },
-        {
-          "binding": "OUTBOX_HYPERDRIVE",
-          "id": "PLACEHOLDER-production-hyperdrive-outbox"
         }
       ],
       "images": { "binding": "IMAGES" },
