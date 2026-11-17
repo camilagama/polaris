@@ -429,12 +429,19 @@ describe("the staging smoke", () => {
   });
 
   it("fails when the sign-in methods of staging are not all on", async () => {
-    for (const methods of [
-      { ...AUTH_METHODS, google: false },
-      { ...AUTH_METHODS, emailPassword: false },
-      { ...AUTH_METHODS, turnstileSiteKey: null },
-      { ...AUTH_METHODS, turnstileSiteKey: " " },
-    ]) {
+    const cases = [
+      [{ ...AUTH_METHODS, google: false }, "sign-in methods different"],
+      [{ ...AUTH_METHODS, emailPassword: false }, "sign-in methods different"],
+      [
+        { ...AUTH_METHODS, turnstileSiteKey: null },
+        "Turnstile site key missing with the password on",
+      ],
+      [
+        { ...AUTH_METHODS, turnstileSiteKey: " " },
+        "Turnstile site key missing with the password on",
+      ],
+    ];
+    for (const [methods, reason] of cases) {
       // biome-ignore lint/performance/noAwaitInLoops: each case on its own, for a clear failure
       const failures = await runSmoke(
         origins,
@@ -446,7 +453,7 @@ describe("the staging smoke", () => {
         noPause
       );
       expect(failures).toEqual([
-        "web /api/auth-methods (Google, password and Turnstile configured): 200 sign-in methods different",
+        `web /api/auth-methods (Google, password and Turnstile configured): 200 ${reason}`,
       ]);
     }
   });
@@ -1061,7 +1068,11 @@ function productionAnswer(url, init = {}) {
   }
   const stagingUrl = toStagingUrl(url);
   if (stagingUrl === `${origins.web}/api/auth-methods`) {
-    return fromWorker(200, {}, json({ ...AUTH_METHODS, emailPassword: false }));
+    return fromWorker(
+      200,
+      {},
+      json({ ...AUTH_METHODS, emailPassword: false, turnstileSiteKey: null })
+    );
   }
   const response = stagingAnswer(stagingUrl, { ...init, headers });
   if (response.status === 302) {
@@ -1268,6 +1279,65 @@ describe("the production smoke", () => {
     expect(failures).toEqual([
       "web /api/auth-methods (Google, password and Turnstile configured): 200 sign-in methods different",
     ]);
+  });
+
+  describe("sign-in methods of production", () => {
+    const sentWith = (methods, expectPassword) => {
+      const declared = {
+        ...productionEnv,
+        PRODUCTION_EXPECT_PASSWORD_SIGN_IN: expectPassword,
+      };
+      return runSmoke(
+        productionOrigins,
+        { ...options, target: productionTarget(declared).target },
+        (url, init) => {
+          const stagingUrl = toStagingUrl(url);
+          if (stagingUrl === `${origins.web}/api/auth-methods`) {
+            return Promise.resolve(fromWorker(200, {}, json(methods)));
+          }
+          return Promise.resolve(productionAnswer(url, init));
+        },
+        noPause
+      );
+    };
+    const check =
+      "web /api/auth-methods (Google, password and Turnstile configured)";
+
+    it("passes with the password off and a null Turnstile key, as production is born", async () => {
+      expect(
+        await sentWith(
+          { emailPassword: false, google: true, turnstileSiteKey: null },
+          "false"
+        )
+      ).toEqual([]);
+    });
+
+    it("passes with the password on and the Turnstile key", async () => {
+      expect(await sentWith(AUTH_METHODS, "true")).toEqual([]);
+    });
+
+    it("fails with the password on and no Turnstile key", async () => {
+      expect(
+        await sentWith({ ...AUTH_METHODS, turnstileSiteKey: null }, "true")
+      ).toEqual([
+        `${check}: 200 Turnstile site key missing with the password on`,
+      ]);
+    });
+
+    it("fails with the password off and a Turnstile key", async () => {
+      expect(
+        await sentWith({ ...AUTH_METHODS, emailPassword: false }, "false")
+      ).toEqual([`${check}: 200 Turnstile site key set with the password off`]);
+    });
+
+    it("fails when Google differs from the expected", async () => {
+      expect(
+        await sentWith(
+          { emailPassword: false, google: false, turnstileSiteKey: null },
+          "false"
+        )
+      ).toEqual([`${check}: 200 sign-in methods different`]);
+    });
   });
 
   it("expects no release header while the flag is off, and fails if one is sent", async () => {

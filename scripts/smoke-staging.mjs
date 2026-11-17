@@ -46,7 +46,7 @@ export const CREATE_INITIAL_INPUT = {
   timezone: "America/Sao_Paulo",
 };
 
-/** What `/api/auth-methods` must say in staging: the Google and the password sign-in, with the Turnstile key. */
+/** What `/api/auth-methods` must say in staging: the Google and the password sign-in, with the Turnstile key (the key is only expected while the password is on). */
 const EXPECTED_AUTH_METHODS = { emailPassword: true, google: true };
 
 const ACCESS_LOGIN_PREFIX = "/cdn-cgi/access/login/";
@@ -205,12 +205,22 @@ export function smokeChecks(
           return "not 200";
         }
         const methods = parsed(body);
-        const ready =
-          methods?.google === authMethods.google &&
-          methods?.emailPassword === authMethods.emailPassword &&
-          typeof methods?.turnstileSiteKey === "string" &&
-          methods.turnstileSiteKey.trim() !== "";
-        return ready || "sign-in methods different";
+        if (
+          methods?.google !== authMethods.google ||
+          methods?.emailPassword !== authMethods.emailPassword
+        ) {
+          return "sign-in methods different";
+        }
+        const siteKey = methods.turnstileSiteKey;
+        if (authMethods.emailPassword) {
+          return (
+            (typeof siteKey === "string" && siteKey.trim() !== "") ||
+            "Turnstile site key missing with the password on"
+          );
+        }
+        return (
+          siteKey === null || "Turnstile site key set with the password off"
+        );
       },
       name: "web /api/auth-methods (Google, password and Turnstile configured)",
       readBody: true,
