@@ -474,8 +474,8 @@ function loadProduct() {
  * pedaços. Entra aqui só o que o código de produto não traz inteiro; a lista é exata e o teste reprova sobra.
  */
 const COMPOSED_TEXTS: Record<string, string[]> = {
-  "Iniciar: ok (ready)": ["Iniciar: ok ("],
   "Camiseta do laboratório · Azul": ["Camiseta do laboratório", "Azul"],
+  "Iniciar: ok (ready)": ["Iniciar: ok ("],
   "Sem conexão · 1 operação guardada": ["Sem conexão", "operação guardada"],
 };
 
