@@ -176,13 +176,20 @@ const monitorsEndPattern = /^#{1,2} |<a id="/m;
 const monitorIdPattern = /^\[`([^`]+)`\]/;
 const monitorWindowPattern = /^(\d+) (min|h)$/;
 const dlqRowPattern = /(\| \[`dlq`\].*\n)/;
-const monitorStatePattern =
-  /^(?:pendente|criado em (?:0[1-9]|[12]\d|3[01])\/(?:0[1-9]|1[0-2])\/\d{4} por \S.*)$/;
-const monitorToConfirm = {
-  id: "registro-de-acesso",
-  state: "a confirmar (V14)",
-};
+const monitorDate = String.raw`(?:0[1-9]|[12]\d|3[01])\/(?:0[1-9]|1[0-2])\/\d{4}`;
+const signalStatePattern = /^(?:pendente|coberto pela política ([1-9]\d*))$/;
+const policyStatePattern = new RegExp(
+  `^(?:criada em ${monitorDate} por \\S.*|V14, provada em ${monitorDate} \\(registro do \\S+\\))$`
+);
 const monitorLinkPattern = /\(#([^)]+)\)/;
+const policyRowPattern = /^\| [1-9]\d* \|/;
+const queryEventsPattern =
+  /^event (?:= ("[^"]+")|in \(("[^"]+"(?:, "[^"]+")*)\))/;
+const backtickedPattern = /`([^`]+)`/g;
+const accountPolicyLimit = 5;
+const leadingBacktickPattern = /^`/;
+const http5xxStatePattern =
+  /(\| \[`http-5xx`\].*\| )coberto pela política 3 \|/;
 
 interface MonitorRow {
   readonly cells: readonly string[];
@@ -209,20 +216,37 @@ function isMonitorRowLine(line: string): boolean {
   return line.startsWith("| [`");
 }
 
+function isPolicyRowLine(line: string): boolean {
+  return policyRowPattern.test(line);
+}
+
+function splitCells(line: string): string[] {
+  return line
+    .slice(1, line.lastIndexOf("|"))
+    .split("|")
+    .map((cell) => cell.trim());
+}
+
 function monitorRows(markdown: string): MonitorRow[] {
   const rows: MonitorRow[] = [];
   for (const line of monitorTableLines(markdown)) {
     if (!isMonitorRowLine(line)) {
       continue;
     }
-    const cells = line
-      .slice(1, line.lastIndexOf("|"))
-      .split("|")
-      .map((cell) => cell.trim());
+    const cells = splitCells(line);
     const id = monitorIdPattern.exec(cells[0] ?? "")?.[1] ?? cells[0] ?? "";
     rows.push({ cells, id });
   }
   return rows;
+}
+
+function policyRows(markdown: string): MonitorRow[] {
+  return monitorTableLines(markdown)
+    .filter(isPolicyRowLine)
+    .map((line) => {
+      const cells = splitCells(line);
+      return { cells, id: cells[0] ?? "" };
+    });
 }
 
 function minutesOf(cell: string): number | undefined {
@@ -243,20 +267,51 @@ function expectedLimit(threshold: AlertThreshold): string {
   }
 }
 
-/** What differs between the monitors section of the runbook and the registry, one message per problem, each naming the signal. */
-function monitorDrift(
+/** The events a query cell names in its leading `event = ...` or `event in (...)` clause, or undefined when the cell does not start with one. */
+function queryEvents(query: string): string[] | undefined {
+  const match = queryEventsPattern.exec(
+    query.replace(leadingBacktickPattern, "")
+  );
+  const quoted = match?.[1] ?? match?.[2];
+  return quoted?.split(", ").map((name) => name.slice(1, -1));
+}
+
+function setDifference(
+  left: readonly string[],
+  right: readonly string[]
+): string[] {
+  return left.filter((name) => !right.includes(name));
+}
+
+function eventDrift(
+  label: string,
+  query: string,
+  expected: readonly string[]
+): string[] {
+  const named = queryEvents(query);
+  if (!named) {
+    return [`${label}: query does not start with an event clause`];
+  }
+  return [
+    ...setDifference(expected, named).map(
+      (event) => `${label}: query lacks ${event}`
+    ),
+    ...setDifference(named, expected).map(
+      (event) => `${label}: query names ${event}, which the registry does not`
+    ),
+  ];
+}
+
+function backticked(cell: string): string[] {
+  return [...cell.matchAll(backtickedPattern)].map((match) => match[1] ?? "");
+}
+
+function signalDrift(
   markdown: string,
   signals: readonly SignalLike[]
 ): string[] {
   const rows = monitorRows(markdown);
   const problems: string[] = [];
-  for (const line of monitorTableLines(markdown)) {
-    const isHeader = line.startsWith("| Sinal |");
-    const isSeparator = line.startsWith("| ---");
-    if (!(isMonitorRowLine(line) || isHeader || isSeparator)) {
-      problems.push(`line outside the format: ${line.slice(0, 60)}`);
-    }
-  }
   const seen = new Set<string>();
   for (const row of rows) {
     if (seen.has(row.id)) {
@@ -273,11 +328,7 @@ function monitorDrift(
     if (row.cells.length !== 6) {
       problems.push(`${row.id}: ${row.cells.length} columns instead of 6`);
     }
-    for (const event of signal.source.events) {
-      if (!query.includes(`"${event}"`)) {
-        problems.push(`${row.id}: query does not name ${event}`);
-      }
-    }
+    problems.push(...eventDrift(row.id, query, signal.source.events));
     if (signal.source.where && !query.includes(`\`${signal.source.where}\``)) {
       problems.push(`${row.id}: query lacks the filter of the registry`);
     }
@@ -297,12 +348,8 @@ function monitorDrift(
         `${row.id}: runbook says wakes "${wakes}", registry says "${expectedWakes}"`
       );
     }
-    const isToConfirm =
-      row.id === monitorToConfirm.id && state === monitorToConfirm.state;
-    if (!(isToConfirm || monitorStatePattern.test(state))) {
-      problems.push(
-        `${row.id}: state "${state}" is not one of the three forms`
-      );
+    if (!signalStatePattern.test(state)) {
+      problems.push(`${row.id}: state "${state}" is not one of the two forms`);
     }
     if (monitorLinkPattern.exec(row.cells[0] ?? "")?.[1] !== row.id) {
       problems.push(`${row.id}: link does not point to its own id`);
@@ -324,6 +371,93 @@ function monitorDrift(
     );
   }
   return problems;
+}
+
+function policyDrift(
+  markdown: string,
+  signals: readonly SignalLike[]
+): string[] {
+  const policies = policyRows(markdown);
+  const problems: string[] = [];
+  if (policies.length > accountPolicyLimit) {
+    problems.push(
+      `policies: ${policies.length} lines, the account accepts at most ${accountPolicyLimit}`
+    );
+  }
+  const owner = new Map<string, string>();
+  const numbers = new Set<string>();
+  for (const policy of policies) {
+    const label = `policy ${policy.id}`;
+    if (numbers.has(policy.id)) {
+      problems.push(`${label}: line repeated`);
+    }
+    numbers.add(policy.id);
+    const [, query = "", , covered = "", state = ""] = policy.cells;
+    if (policy.cells.length !== 5) {
+      problems.push(`${label}: ${policy.cells.length} columns instead of 5`);
+    }
+    if (!policyStatePattern.test(state)) {
+      problems.push(`${label}: state "${state}" is not one of the two forms`);
+    }
+    const expectedEvents: string[] = [];
+    for (const id of backticked(covered)) {
+      const signal = signals.find((candidate) => candidate.id === id);
+      if (!signal) {
+        problems.push(`${label}: covers ${id}, which is not in the registry`);
+        continue;
+      }
+      const earlier = owner.get(id);
+      if (earlier !== undefined) {
+        problems.push(
+          `${id}: covered by policy ${earlier} and by policy ${policy.id}`
+        );
+      }
+      owner.set(id, policy.id);
+      for (const event of signal.source.events) {
+        if (!expectedEvents.includes(event)) {
+          expectedEvents.push(event);
+        }
+      }
+    }
+    problems.push(...eventDrift(label, query, expectedEvents));
+  }
+  for (const row of monitorRows(markdown)) {
+    const claimed = signalStatePattern.exec(row.cells[5] ?? "")?.[1];
+    if (owner.get(row.id) !== claimed) {
+      problems.push(
+        `${row.id}: the signal line says ${claimed === undefined ? "no policy" : `policy ${claimed}`} and the policy table says ${owner.get(row.id) === undefined ? "none" : `policy ${owner.get(row.id)}`}`
+      );
+    }
+  }
+  return problems;
+}
+
+/** What differs between the monitors section of the runbook and the registry, one message per problem, each naming the signal or the policy. */
+function monitorDrift(
+  markdown: string,
+  signals: readonly SignalLike[]
+): string[] {
+  const problems: string[] = [];
+  for (const line of monitorTableLines(markdown)) {
+    const isHeader =
+      line.startsWith("| Sinal |") || line.startsWith("| Política |");
+    const isSeparator = line.startsWith("| ---");
+    if (
+      !(
+        isMonitorRowLine(line) ||
+        isPolicyRowLine(line) ||
+        isHeader ||
+        isSeparator
+      )
+    ) {
+      problems.push(`line outside the format: ${line.slice(0, 60)}`);
+    }
+  }
+  return [
+    ...problems,
+    ...signalDrift(markdown, signals),
+    ...policyDrift(markdown, signals),
+  ];
 }
 
 describe("emittedEvents", () => {
@@ -564,14 +698,38 @@ describe("the monitors section of the runbook", () => {
       );
     });
 
-    it("names the id when an event or the filter of the query changes", () => {
+    it("names the id when an event is added to the registry, or removed from it, in either direction", () => {
+      const sweep = alertSignals.find((s) => s.id === "cobranca-reconcile");
+      const withoutSweep = sweep?.source.events.filter(
+        (event) => event !== "billing_sweep_failed"
+      );
+
       expect(
         drift(
           swap("outbox-falhando", {
-            source: { events: ["outbox_send_failed", "outro_evento"] },
+            source: {
+              events: [
+                "outbox_send_failed",
+                "outbox_event_unsendable",
+                "outro_evento",
+              ],
+            },
           })
         )
-      ).toEqual(["outbox-falhando: query does not name outro_evento"]);
+      ).toEqual(["outbox-falhando: query lacks outro_evento"]);
+      expect(
+        drift(
+          swap("cobranca-reconcile", {
+            source: { events: withoutSweep ?? [] },
+          })
+        )
+      ).toEqual([
+        "cobranca-reconcile: query names billing_sweep_failed, which the registry does not",
+        "policy 4: query names billing_sweep_failed, which the registry does not",
+      ]);
+    });
+
+    it("names the id when the filter of the query changes", () => {
       expect(
         drift(
           swap("http-5xx", {
@@ -581,37 +739,73 @@ describe("the monitors section of the runbook", () => {
       ).toEqual(["http-5xx: query lacks the filter of the registry"]);
     });
 
-    it("rejects a state that is not one of the three forms, and a repeated line", () => {
+    it("rejects a state of a signal that is not one of the two forms, and a repeated line", () => {
       const withState = inSection((text) =>
-        text.replace("| criado em 17/11/2026 por Arrascaeta |", "| ligado |")
+        text.replace("| coberto pela política 2 |", "| ligado |")
       );
       const repeated = inSection((text) => text.replace(dlqRowPattern, "$1$1"));
 
       expect(monitorDrift(withState, alertSignals)).toEqual([
-        expect.stringContaining('state "ligado"'),
+        'apagamento-automatico: state "ligado" is not one of the two forms',
+        "apagamento-automatico: the signal line says no policy and the policy table says policy 2",
       ]);
       expect(monitorDrift(repeated, alertSignals)).toEqual([
         "dlq: line repeated",
       ]);
     });
 
-    it("keeps the to-confirm state to the signal it was written for, and rejects an impossible date", () => {
-      const toConfirm = (id: string) =>
-        inSection((text) =>
-          text.replace(
-            new RegExp(`(\\| \\[\`${id}\`\\].*\\| )pendente \\|`),
-            "$1a confirmar (V14) |"
-          )
-        );
+    it("rejects a policy state that is not one of the two forms, and an impossible date", () => {
+      const badState = inSection((text) =>
+        text.replace(
+          "| V14, provada em 09/11/2026 (registro do Arrascaeta) |",
+          "| a confirmar (V14) |"
+        )
+      );
       const badDate = inSection((text) =>
         text.replace("17/11/2026 por Arrascaeta", "31/13/2026 por Arrascaeta")
       );
 
-      expect(monitorDrift(toConfirm("dlq"), alertSignals)).toEqual([
-        'dlq: state "a confirmar (V14)" is not one of the three forms',
+      expect(monitorDrift(badState, alertSignals)).toEqual([
+        'policy 1: state "a confirmar (V14)" is not one of the two forms',
       ]);
       expect(monitorDrift(badDate, alertSignals)).toEqual([
-        'apagamento-automatico: state "criado em 31/13/2026 por Arrascaeta" is not one of the three forms',
+        'policy 2: state "criada em 31/13/2026 por Arrascaeta" is not one of the two forms',
+      ]);
+    });
+
+    it("keeps the policy table and the signal lines in step", () => {
+      const sixth = inSection((text) =>
+        text.replace(
+          "\n| Sinal |",
+          '| 6 | `event = "auth_access_log_write_failed"` | 1 ou mais em 1 min | `registro-de-acesso` | criada em 17/11/2026 por Arrascaeta |\n\n| Sinal |'
+        )
+      );
+      const unknownSignal = inSection((text) =>
+        text.replace("`outbox-parado` |", "`outbox-parado`, `sinal-solto` |")
+      );
+      const dropped = inSection((text) =>
+        text.replace("`http-5xx`, `erros-de-banco` |", "`http-5xx` |")
+      );
+      const wrongPolicy = inSection((text) =>
+        text.replace(http5xxStatePattern, "$1coberto pela política 2 |")
+      );
+
+      expect(monitorDrift(sixth, alertSignals)).toEqual(
+        expect.arrayContaining([
+          "policies: 6 lines, the account accepts at most 5",
+          "registro-de-acesso: covered by policy 1 and by policy 6",
+        ])
+      );
+      expect(monitorDrift(unknownSignal, alertSignals)).toEqual([
+        "policy 5: covers sinal-solto, which is not in the registry",
+      ]);
+      expect(monitorDrift(dropped, alertSignals)).toEqual([
+        "policy 3: query names scheduler_state_unavailable, which the registry does not",
+        "policy 3: query names queue_ledger_unavailable, which the registry does not",
+        "erros-de-banco: the signal line says policy 3 and the policy table says none",
+      ]);
+      expect(monitorDrift(wrongPolicy, alertSignals)).toEqual([
+        "http-5xx: the signal line says policy 2 and the policy table says policy 3",
       ]);
     });
 

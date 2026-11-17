@@ -2,7 +2,7 @@
 
 **Gatilho:** um alerta disparou (e-mail de alerta ou resumo diário), ou antes de ligar um deploy ao tráfego real. A definição de cada sinal é código: o registro `alertSignals` de [`packages/observability/src/alerts.ts`](../../packages/observability/src/alerts.ts); este runbook diz o que cada um significa, como confirmar e o que fazer ([ADR 0095](../adr/0095-onde-os-alertas-operacionais-vao-rodar.md), plano PR 119).
 
-> **Nada disto roda ainda, com uma exceção no staging:** os sinais [`apagamento-automatico`](#apagamento-automatico) e [`loja-encerrada-parada`](#loja-encerrada-parada) existem lá como alertas da Cloudflare (criados pelo Arrascaeta em 17/11/2026, registro dele; este runbook não os verifica), cada um com o texto da sua seção. Para os demais sinais não há alerta, cron, token nem conta em serviço externo criados por este runbook (o monitor V14, mais antigo, não está verificado: veja [Monitores no staging](#monitores-no-staging)). O roteiro do que criar, sinal por sinal, está lá. Hoje o runbook é lido à mão: as consultas abaixo funcionam no Workers Logs de um ambiente que exista (Fase 14). Se um limiar e o registro divergirem, vale o registro; ajuste os dois no mesmo PR (um teste exige que cada sinal tenha a seção abaixo e que ela cite cada evento dele, e que cada evento exista no código; outro confere a seção Monitores no staging com o registro).
+> **Nada disto roda ainda, com uma exceção no staging:** cinco políticas `custom_analytics` da Cloudflare, agrupadas porque a conta aceita no máximo 5 (criadas pelo Arrascaeta em 17/11/2026, registro dele, e a primeira é o monitor V14; este runbook não as verifica), cobrem os sinais que a seção [Monitores no staging](#monitores-no-staging) marca como `coberto pela política N`, e a seção de cada um diz o que cobre. Para os demais sinais (`pendente`) não há alerta, cron, token nem conta em serviço externo criados por este runbook. Hoje o runbook é lido à mão: as consultas abaixo funcionam no Workers Logs de um ambiente que exista (Fase 14). Se um limiar e o registro divergirem, vale o registro; ajuste os dois no mesmo PR (um teste exige que cada sinal tenha a seção abaixo e que ela cite cada evento dele, e que cada evento exista no código; outro confere a seção Monitores no staging com o registro).
 
 ## Como ler
 
@@ -48,25 +48,35 @@ Os limiares são um primeiro chute, sem medida de tráfego real; a Fase 14 os re
 
 ## Monitores no staging
 
-O roteiro do que o operador cria no painel (Observability, Alertas, Monitores), um monitor por sinal, com o nome do id. A coluna de consulta, a janela, o limiar e o "acorda" são os do registro `alertSignals`; um teste (`packages/observability/src/alerts.test.ts`) exige as 27 linhas, nem uma a mais nem a menos, e reprova, dizendo o id, quando um desses campos diverge do registro. Os 9 sinais que acordam vêm primeiro.
+O que existe e o que falta no painel (Observability, Alertas, Monitores). A conta da Cloudflare aceita no máximo 5 políticas `custom_analytics` (erro 17204, "this account can have at most 5 custom analytics policies"), então uma política vale por vários sinais. A primeira tabela diz o que cada política consulta e quais sinais cobre; a segunda, por sinal, a política que o cobre ou `pendente`. Na segunda, a consulta, a janela, o limiar e o "acorda" são os do registro `alertSignals`; um teste (`packages/observability/src/alerts.test.ts`) exige uma linha por sinal do registro, nem uma a mais nem a menos, e reprova, dizendo o id, quando um desses campos diverge do registro, quando os eventos da consulta não são exatamente os do sinal, ou quando as políticas não batem com os sinais. Os sinais que acordam vêm primeiro.
 
-- **Estado** é só `criado em <data> por <quem>`, `pendente` ou `a confirmar (V14)`. Quem cria o monitor anota o estado aqui no mesmo PR; este texto não verifica o painel.
-- **Os dois já criados** (17/11/2026, registro do Arrascaeta) usam na Cloudflare o tipo `custom_analytics` com limiar de 1 ou mais evento em 1 minuto, não a janela do registro (24 h); a seção de cada um diz isso.
-- **`registro-de-acesso`:** existe um monitor mais antigo, o V14, criado pelo operador; este texto não o verifica e qual sinal ele cobre ainda não foi confirmado (a suposição é este).
-- **Worker:** como na tabela de sinais acima, as consultas valem para o Worker `polaris-web`, salvo as duas linhas que citam `polaris-admin`. `catalog_media_read_failed`, de `r2-e-midia`, só é emitido em `apps/catalog` (o Worker do catálogo); o nome do Worker no painel do staging não foi conferido aqui.
+- **Estado da política** é só `criada em <data> por <quem>` ou, na primeira, `V14, provada em <data> (registro do <quem>)`. **Estado do sinal** é só `coberto pela política N` ou `pendente`. Quem cria ou muda uma política anota o estado aqui no mesmo PR; este texto não verifica o painel.
+- **Política 1 (V14):** o registro do Arrascaeta diz que ela consulta `auth_access_log_write_failed` e foi provada em 09/11/2026; a confirmação do Juan (Q-3) de que ela cobre `registro-de-acesso` segue com ele.
+- **O que a Cloudflare conta é menos que o registro.** O registro do Arrascaeta descreve as políticas 2 a 4 como 1 ou mais evento em 1 minuto, sem os filtros do registro (como `httpStatus >= 500`) e sem as janelas e limiares dele; a política 5 é a ausência do registro (menos de 1 em 3 h, avaliada a cada 10 min). A política 1 não tem limiar registrado. Quem lê o e-mail de uma política agrupada olha o evento no Workers Logs para saber qual sinal disparou. Nenhum desses eventos, fora o V14, foi provocado ainda para provar o disparo.
+- **A política 4 deixa de fora `billing_woovi_reconcile_failed`,** que falha de hora em hora até o sandbox da Woovi voltar; nenhum sinal do registro o cita.
+- **A conta está no limite (5 de 5).** Os sinais `pendente` não ganham política própria: criar monitor para eles pede agrupar numa política existente ou mudar o limite da conta, escolha que não é deste texto.
+- **Worker:** como na tabela de sinais acima, as consultas valem para o Worker `polaris-web`, salvo as duas linhas que citam `polaris-admin`; o registro do Arrascaeta não cita filtro de Worker nas políticas. `catalog_media_read_failed`, de `r2-e-midia`, só é emitido em `apps/catalog` (o Worker do catálogo); o nome do Worker no painel do staging não foi conferido aqui.
 - Nenhum monitor, token ou conta é criado por este texto.
+
+| Política | Consulta (Workers Logs) | Limiar na Cloudflare | Sinais que cobre | Estado |
+| --- | --- | --- | --- | --- |
+| 1 | `event = "auth_access_log_write_failed"` | não registrado | `registro-de-acesso` | V14, provada em 09/11/2026 (registro do Arrascaeta) |
+| 2 | `event in ("closure_auto_purge_volume_high", "closure_purge_overdue")` | 1 ou mais em 1 min | `apagamento-automatico`, `loja-encerrada-parada` | criada em 17/11/2026 por Arrascaeta |
+| 3 | `event in ("server_error", "scheduler_state_unavailable", "queue_ledger_unavailable")` | 1 ou mais em 1 min | `http-5xx`, `erros-de-banco` | criada em 17/11/2026 por Arrascaeta |
+| 4 | `event in ("billing_maintenance_incomplete", "billing_sweep_failed", "billing_event_retry_failed", "billing_grant_sweep_failed", "billing_webhook_processing_failed", "billing_refund_rearm_exhausted", "billing_refund_pending_incident_failed", "billing_amount_mismatch_incident_failed", "billing_operator_command")` | 1 ou mais em 1 min | `cobranca-reconcile`, `rede-de-reembolso-parada`, `incidente-de-reembolso-nao-gravado`, `comando-de-cobranca-do-operador` | criada em 17/11/2026 por Arrascaeta |
+| 5 | `event = "scheduled_job_run"`; `job = "outbox.dispatch" and outcome = "success"` | ausência: menos de 1 em 3 h, avaliada a cada 10 min | `outbox-parado` | criada em 17/11/2026 por Arrascaeta |
 
 | Sinal | Consulta (Workers Logs) | Janela | Limiar | Acorda | Estado |
 | --- | --- | --- | --- | --- | --- |
-| [`http-5xx`](#http-5xx) | `event = "server_error"`; `httpStatus >= 500` | 15 min | 5 | sim | pendente |
-| [`outbox-parado`](#outbox-parado) | `event = "scheduled_job_run"`; `job = "outbox.dispatch" and outcome = "success"` | 180 min | ausência | sim | pendente |
-| [`cobranca-reconcile`](#cobranca-reconcile) | `event in ("billing_maintenance_incomplete", "billing_sweep_failed", "billing_event_retry_failed", "billing_grant_sweep_failed", "billing_webhook_processing_failed")` | 180 min | 3 | sim | pendente |
-| [`erros-de-banco`](#erros-de-banco) | `event in ("server_error", "scheduler_state_unavailable", "queue_ledger_unavailable")`; `sqlState exists, or the event is not server_error` | 15 min | 3 | sim | pendente |
-| [`registro-de-acesso`](#registro-de-acesso) | `event = "auth_access_log_write_failed"` | 15 min | 3 | sim | a confirmar (V14) |
-| [`apagamento-automatico`](#apagamento-automatico) | `event = "closure_auto_purge_volume_high"` | 24 h | 1 | sim | criado em 17/11/2026 por Arrascaeta |
-| [`rede-de-reembolso-parada`](#rede-de-reembolso-parada) | `event = "billing_refund_rearm_exhausted"` | 60 min | 1 | sim | pendente |
-| [`incidente-de-reembolso-nao-gravado`](#incidente-de-reembolso-nao-gravado) | `event in ("billing_refund_pending_incident_failed", "billing_amount_mismatch_incident_failed")` | 60 min | 1 | sim | pendente |
-| [`comando-de-cobranca-do-operador`](#comando-de-cobranca-do-operador) | `event = "billing_operator_command"`; Worker `polaris-admin` | 15 min | 1 | sim | pendente |
+| [`http-5xx`](#http-5xx) | `event = "server_error"`; `httpStatus >= 500` | 15 min | 5 | sim | coberto pela política 3 |
+| [`outbox-parado`](#outbox-parado) | `event = "scheduled_job_run"`; `job = "outbox.dispatch" and outcome = "success"` | 180 min | ausência | sim | coberto pela política 5 |
+| [`cobranca-reconcile`](#cobranca-reconcile) | `event in ("billing_maintenance_incomplete", "billing_sweep_failed", "billing_event_retry_failed", "billing_grant_sweep_failed", "billing_webhook_processing_failed")` | 180 min | 3 | sim | coberto pela política 4 |
+| [`erros-de-banco`](#erros-de-banco) | `event in ("server_error", "scheduler_state_unavailable", "queue_ledger_unavailable")`; `sqlState exists, or the event is not server_error` | 15 min | 3 | sim | coberto pela política 3 |
+| [`registro-de-acesso`](#registro-de-acesso) | `event = "auth_access_log_write_failed"` | 15 min | 3 | sim | coberto pela política 1 |
+| [`apagamento-automatico`](#apagamento-automatico) | `event = "closure_auto_purge_volume_high"` | 24 h | 1 | sim | coberto pela política 2 |
+| [`rede-de-reembolso-parada`](#rede-de-reembolso-parada) | `event = "billing_refund_rearm_exhausted"` | 60 min | 1 | sim | coberto pela política 4 |
+| [`incidente-de-reembolso-nao-gravado`](#incidente-de-reembolso-nao-gravado) | `event in ("billing_refund_pending_incident_failed", "billing_amount_mismatch_incident_failed")` | 60 min | 1 | sim | coberto pela política 4 |
+| [`comando-de-cobranca-do-operador`](#comando-de-cobranca-do-operador) | `event = "billing_operator_command"`; Worker `polaris-admin` | 15 min | 1 | sim | coberto pela política 4 |
 | [`latencia-p95`](#latencia-p95) | `event = "http_request_timed"`; `route in criticalRoutes and outcome != "rejected"` | 30 min | p95 acima do limite da rota (20 requisições, no mínimo) | não | pendente |
 | [`dlq`](#dlq) | `event in ("queue_dead_letter_recorded", "queue_dead_letter_not_recorded", "queue_dead_letter_send_failed", "outbox_events_exhausted")` | 60 min | 3 | não | pendente |
 | [`outbox-falhando`](#outbox-falhando) | `event in ("outbox_send_failed", "outbox_event_unsendable")` | 120 min | 1 | não | pendente |
@@ -78,7 +88,7 @@ O roteiro do que o operador cria no painel (Observability, Alertas, Monitores), 
 | [`rejeicao-no-sync`](#rejeicao-no-sync) | `event = "sync_push_command_rejected"`; `reason in ("session_changed", "lease_invalid", "authorization_revoked")` | 15 min | 10 | não | pendente |
 | [`aceite-no-cadastro`](#aceite-no-cadastro) | `event = "legal_acceptance_signup_record_failed"` | 24 h | 1 | não | pendente |
 | [`link-de-verificacao`](#link-de-verificacao) | `event = "auth_verification_link_record_failed"` | 24 h | 1 | não | pendente |
-| [`loja-encerrada-parada`](#loja-encerrada-parada) | `event = "closure_purge_overdue"` | 24 h | 1 | não | criado em 17/11/2026 por Arrascaeta |
+| [`loja-encerrada-parada`](#loja-encerrada-parada) | `event = "closure_purge_overdue"` | 24 h | 1 | não | coberto pela política 2 |
 | [`purge-parado`](#purge-parado) | `event = "organization_purge_stalled"` | 24 h | 1 | não | pendente |
 | [`aviso-de-encerramento-falhando`](#aviso-de-encerramento-falhando) | `event = "closure_notice_email_failed"` | 24 h | 1 | não | pendente |
 | [`checkout-pago-no-encerramento`](#checkout-pago-no-encerramento) | `event = "billing_closure_paid_checkout_refund_pending"` | 24 h | 1 | não | pendente |
@@ -263,7 +273,7 @@ O lote de miniaturas (`/api/media/thumbs`) lê com um `get` por id e responde in
 
 **Quem recebe.** O sinal é `critical` com `notify = wake`: quando o cron de alertas existir (Fase 14, [ADR 0095](../adr/0095-onde-os-alertas-operacionais-vao-rodar.md)), vai um e-mail imediato ao endereço de alertas que o responsável cadastrar, no máximo um a cada 6 horas, só com o nome do sinal, a contagem e a janela. Quem age é um operador do Admin com a capability `organization:purge`, porque o cancelamento exige caso e motivo; o deploy que desliga a chave é do responsável. **Até o cron existir, ninguém é acordado:** o evento fica só no Workers Logs. Enquanto isso, quem liga a chave em um ambiente confere o `privacy_maintenance_complete` de cada hora nos primeiros dias.
 
-**No staging.** `CLOSURE_AUTO_PURGE_ENABLED` está `"true"` no `env.staging` desde 17/11/2026 (a produção segue `"false"`), e as lojas sintéticas encerradas seguem o ciclo e são apagadas de verdade 90 dias depois. O alerta foi criado na Cloudflare pelo Arrascaeta em 17/11/2026 (`closure_auto_purge_volume_high`, `custom_analytics`, limiar de 1 ou mais evento em 1 minuto, e-mail ao dono): o e-mail é o que acorda, e a confirmação é a deste runbook. A prova da fiação com datas retroagidas é o [roteiro do operador](./prova-do-apagamento-automatico.md).
+**No staging.** `CLOSURE_AUTO_PURGE_ENABLED` está `"true"` no `env.staging` desde 17/11/2026 (a produção segue `"false"`), e as lojas sintéticas encerradas seguem o ciclo e são apagadas de verdade 90 dias depois. O alerta foi criado na Cloudflare pelo Arrascaeta em 17/11/2026, agrupado com o de `loja-encerrada-parada` na política 2 (`closure_auto_purge_volume_high` ou `closure_purge_overdue`, `custom_analytics`, limiar de 1 ou mais evento em 1 minuto, e-mail ao dono): o e-mail é o que acorda, e a confirmação é a deste runbook. A prova da fiação com datas retroagidas é o [roteiro do operador](./prova-do-apagamento-automatico.md).
 
 **O que fazer.** Se as datas estão certas (um lote real de encerramentos de 90 dias atrás), registre e siga. Se não estão, cancele em lote:
 
@@ -291,7 +301,7 @@ O lote de miniaturas (`/api/media/thumbs`) lê com um `get` por id e responde in
 
 **Com o e-mail desligado, nenhum purge sai**, nem o do Admin por caso de privacidade: nenhum aviso fica entregue, então o caso pode agendar o purge e a execução espera. Com o e-mail ligado, os avisos saem, e o repasse horário envia o mais recente de cada ciclo devido. O ato de suporte resolve o que sobra (aviso pulado, falho ou de dono sem conta). O prazo de resposta do caso (`PRIVACY_CASE_RESPONSE_DAYS`, 15 dias, provisório) segue valendo: responda ao titular dentro dele, dizendo que a exclusão está aceita e só ocorre depois do aviso, e registre o motivo da espera no caso.
 
-**No staging.** Com a chave ligada lá desde 17/11/2026, o `closure_purge_overdue` conta lojas sintéticas encerradas e é lido como acima. O alerta foi criado na Cloudflare pelo Arrascaeta em 17/11/2026 (`custom_analytics`, limiar de 1 ou mais evento em 1 minuto, e-mail ao dono), não só o resumo diário: um e-mail dele é uma loja parada a decidir, não um incidente. O roteiro com datas retroagidas, [prova do apagamento automático](./prova-do-apagamento-automatico.md), faz esse sinal ficar ausente quando tudo corre bem.
+**No staging.** Com a chave ligada lá desde 17/11/2026, o `closure_purge_overdue` conta lojas sintéticas encerradas e é lido como acima. O alerta foi criado na Cloudflare pelo Arrascaeta em 17/11/2026, agrupado com o de `apagamento-automatico` na política 2 (`custom_analytics`, limiar de 1 ou mais evento em 1 minuto, e-mail ao dono), não só o resumo diário: um e-mail dele é uma loja parada a decidir, não um incidente. O roteiro com datas retroagidas, [prova do apagamento automático](./prova-do-apagamento-automatico.md), faz esse sinal ficar ausente quando tudo corre bem.
 
 <a id="purge-parado"></a>
 
