@@ -160,6 +160,15 @@ function resolvesTo(file, specifier, target) {
   );
 }
 
+const WRANGLER_MODULE = "scripts/lib/wrangler-config.mjs";
+
+/** True when `source`, the text of `file`, imports the neutral wrangler module by a relative path. */
+function importsWranglerModule(file, source) {
+  return importSpecifiers(source).some((specifier) =>
+    resolvesTo(file, specifier, WRANGLER_MODULE)
+  );
+}
+
 /** Text that names `target` by a relative path (`../../scripts/x.mjs`, `new URL("../scripts/x.mjs", ...)`). */
 function namesByRelativePath(text, target) {
   const escaped = target.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -528,19 +537,58 @@ describe("the operation scripts are outside the browser gate's import graph", ()
     expect(operationsDependents(OPERATIONS_FILES)).toEqual([]);
   });
 
-  it("lists every script that imports the neutral wrangler module", () => {
-    const importers = readdirSync(path.join(root, "scripts"))
-      .filter((name) => name.endsWith(".mjs") && name !== "ci-changed.test.mjs")
-      .filter((name) =>
-        readFileSync(path.join(root, "scripts", name), "utf8").includes(
-          'from "./lib/wrangler-config.mjs"'
-        )
-      )
-      .map((name) => `scripts/${name}`);
+  it("lists every script, in any subfolder, that imports the neutral wrangler module", () => {
+    const importers = sourceFiles(path.join(root, "scripts"))
+      .filter((file) => file !== fileURLToPath(import.meta.url))
+      .filter((file) => importsWranglerModule(file, readFileSync(file, "utf8")))
+      .map((file) => path.relative(root, file).split(path.sep).join("/"));
     expect(importers.length).toBeGreaterThanOrEqual(7);
+    expect(importers).toContain("scripts/lib/wrangler-config.test.mjs");
     for (const file of importers) {
       expect(OPERATIONS_FILES, file).toContain(file);
     }
+  });
+
+  it("recognises a relative import of the wrangler module in every form and folder", () => {
+    const reaches = (file, source) =>
+      importsWranglerModule(path.join(root, file), source);
+    expect(
+      reaches("scripts/a.mjs", 'import { x } from "./lib/wrangler-config.mjs";')
+    ).toBe(true);
+    expect(
+      reaches("scripts/a.mjs", "import { x } from './lib/wrangler-config.mjs';")
+    ).toBe(true);
+    expect(
+      reaches("scripts/a.mjs", 'export * from "./lib/wrangler-config.mjs";')
+    ).toBe(true);
+    expect(
+      reaches(
+        "scripts/sub/a.mjs",
+        "const m = await import('../lib/wrangler-config.mjs');"
+      )
+    ).toBe(true);
+    expect(reaches("scripts/lib/a.js", 'import("./wrangler-config.mjs")')).toBe(
+      true
+    );
+    expect(
+      reaches(
+        "scripts/sub/deep/a.ts",
+        "export { y } from '../../lib/wrangler-config.mjs'"
+      )
+    ).toBe(true);
+    expect(
+      reaches("scripts/sub/a.cjs", "require('../lib/wrangler-config.mjs')")
+    ).toBe(true);
+    // the same file name in another folder is another module
+    expect(
+      reaches("scripts/sub/a.mjs", 'import "./lib/wrangler-config.mjs"')
+    ).toBe(false);
+    expect(
+      reaches("scripts/a.mjs", 'import "./other/lib/wrangler-config.mjs"')
+    ).toBe(false);
+    expect(reaches("scripts/a.mjs", 'import "wrangler-config.mjs"')).toBe(
+      false
+    );
   });
 
   it("does see the workerd harness, which the Vitest configs of apps/web import (so it stays out of the list)", () => {
