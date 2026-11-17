@@ -195,11 +195,14 @@ function expectedCohort(
     windowClosed ? cell : unavailable("activation_window_open");
   const band = (value: number) =>
     window(tier === 1 ? shown(value) : SUPPRESSED);
+  // a subset of the stores that sold, so it shows only where the sales do (the cut 1 to 5), as soldInTrial does
   const retention = (weekNumber: number, value: number) => {
     if (start + weekNumber * 7 * DAY > current) {
       return unavailable("week_not_closed");
     }
-    return value >= K && t.b - value >= K ? shown(value) : SUPPRESSED;
+    return tier <= 5 && value >= K && t.b - value >= K
+      ? shown(value)
+      : SUPPRESSED;
   };
   // the cell is the 7-day activation plus the band of 8 to 14 days; that band and the sales later than 14 days are its
   // differences with two shown counts, so both hold k
@@ -283,6 +286,13 @@ function suppressionProblems(funnel: Funnel): string[] {
     const a14 = shownValue(cohort.activatedWithin14Days);
     const trial = shownValue(cohort.trialStarted);
     const soldTrial = shownValue(cohort.soldInTrial);
+    for (const [week, cell] of Object.entries(cohort.retention)) {
+      if (b === null && shownValue(cell) !== null) {
+        problems.push(
+          `${cohort.week}: ${week} shows where withFirstSale is hidden`
+        );
+      }
+    }
     // nested counts: each difference is a set of stores too
     const nested: [string, number | null, number | null][] = [
       ["stores - withFirstProduct", n, a],
@@ -925,7 +935,7 @@ async function run() {
     );
 
     // ------------------------------------------------- 3. the fixture written by hand
-    // weeks far enough back (up to 19) for every week of retention to be closed, where no other gate creates stores or users
+    // weeks far enough back (up to 19, and 25 for the retention cut) for every week of retention to be closed, where no other gate creates stores or users
     // and the cuts 2, 3, 4 and 6 and the borders of the bands each in a week of its own; one cohort in the last week,
     // whose 7 days are not over yet
     const WEEKS = {
@@ -947,14 +957,15 @@ async function run() {
       users: number;
     }>(
       `WITH bounds AS (
-         SELECT (date_trunc('week', now() AT TIME ZONE '${ZONE}') - interval '19 weeks') AT TIME ZONE '${ZONE}' AS since,
+         SELECT (date_trunc('week', now() AT TIME ZONE '${ZONE}') - interval '25 weeks') AT TIME ZONE '${ZONE}' AS since,
+                (date_trunc('week', now() AT TIME ZONE '${ZONE}') - interval '19 weeks') AT TIME ZONE '${ZONE}' AS users_since,
                 (date_trunc('week', now() AT TIME ZONE '${ZONE}') - interval '7 weeks') AT TIME ZONE '${ZONE}' AS users_until,
                 date_trunc('week', now() AT TIME ZONE '${ZONE}') AT TIME ZONE '${ZONE}' AS stores_until
        )
        SELECT ARRAY(SELECT o.id FROM public.organizations AS o, bounds
                      WHERE o.created_at >= bounds.since AND o.created_at < bounds.stores_until) AS stores,
               (SELECT count(*)::int FROM public."user" AS u, bounds
-                WHERE u.created_at >= bounds.since AND u.created_at < bounds.users_until) AS users`
+                WHERE u.created_at >= bounds.users_since AND u.created_at < bounds.users_until) AS users`
     );
     // a store of another gate in these weeks is kept out the way the funnel allows: marked as internal
     const strangers = fixtureRange.rows[0]?.stores ?? [];
@@ -1272,6 +1283,7 @@ async function run() {
       e1: 7,
       open: 2,
     } as const;
+    const RETENTION_CUT_WEEK = 25;
     const BORN = 36_000;
     interface Group {
       count: number;
@@ -1407,6 +1419,19 @@ async function run() {
       { count: 5, sold: 5 * MINUTES, trial: { after: 0, state: "free" } },
       { count: 5, sold: 8 * DAYS, trial: { after: 0, state: "free" } },
       { count: 5, sold: 5 * MINUTES },
+    ]);
+
+    // week 25, cut 7 with the retention of weeks 2, 3 and 5 each at 5 stores and the 10 that did not sell in it: 17 stores,
+    // 2 with a product and none sold (under k without a sale, so `withFirstSale` and `withoutSale` are hidden), 15 that
+    // sold, 5 of them first at 8 days (week 2) and 5 and 5 first in 5 minutes with a second sale at 15 days (week 3) and at
+    // 29 days (week 5). Each retention cell and its complement hold k, so only the cut hides them: with the retention
+    // shown, `withFirstSale` would be at least 10 and `withoutSale` at most 2. The random cohorts of section 5 add their
+    // stores to this week afterwards; this cohort is read before that
+    await groupsOf(RETENTION_CUT_WEEK, [
+      { count: 2 },
+      { count: 5, sold: 8 * DAYS },
+      { count: 5, sold: 5 * MINUTES, soldAgain: 15 * DAYS },
+      { count: 5, sold: 5 * MINUTES, soldAgain: 29 * DAYS },
     ]);
 
     const byWeek = (
@@ -1681,6 +1706,30 @@ async function run() {
       SUPPRESSED,
       "week 19: the sales are hidden"
     );
+    const retentionCut = byWeek(
+      fixture.funnel,
+      RETENTION_CUT_WEEK,
+      fixture.clock
+    ).cohort;
+    assert.deepEqual(
+      {
+        retention: retentionCut.retention,
+        stores: retentionCut.stores,
+        withFirstSale: retentionCut.withFirstSale,
+        withoutSale: retentionCut.withoutSale,
+      },
+      {
+        retention: {
+          week2: SUPPRESSED,
+          week3: SUPPRESSED,
+          week5: SUPPRESSED,
+        },
+        stores: shown(17),
+        withFirstSale: SUPPRESSED,
+        withoutSale: SUPPRESSED,
+      },
+      "week 25: 17 stores, 15 that sold, 2 that did not: the sales are hidden, and so are the retention of weeks 2, 3 and 5 (5 stores each, 10 that did not sell in it), or `stores` and a retention cell would give `withoutSale` away (at most 2)"
+    );
     const weekSeven = {
       activatedIn7Days: shown(10),
       activatedWithin14Days: SUPPRESSED,
@@ -1783,8 +1832,9 @@ async function run() {
     //  10 (cut 3): 5 of the cut itself and the 5 of cut 2 that sold later than 7 days = 10
     //   9 (cut 4): 5 of the cut itself, the 5 later ones sell in the next week = 5
     //   8 (cut 6): 2 of the cut itself and cut 4's 5 later ones = 7; hidden (see below)
-    //  18 (F's week): F's 1 and the 5 of week 19 that sell 8 days after their creation = 6, hidden because the retention
-    //     of week 2 of that cohort (5, shown) takes 5 of them out and leaves 1; 17 (E's week): nobody sold: hidden, never 0
+    //  18 (F's week): F's 1 and the 5 of week 19 that sell 8 days after their creation = 6; the retention of week 2 of
+    //     that cohort (5) is hidden by its cut, so nothing is taken out and the 6 show; 17 (E's week): nobody sold: hidden,
+    //     never 0
     const activeOf = (weeksAgo: number) =>
       byWeek(fixture.funnel, weeksAgo, fixture.clock).active.stores;
     for (const [weeksAgo, value] of [
@@ -1795,6 +1845,7 @@ async function run() {
       [WEEKS.cut2, 15],
       [WEEKS.cut3, 10],
       [WEEKS.cut4, 5],
+      [WEEKS.f, 6],
     ] as const) {
       assert.deepEqual(
         activeOf(weeksAgo),
@@ -1807,7 +1858,6 @@ async function run() {
     // 8 are the stores of cut 4 that sold in their week 2 (shown), which leaves 2
     assert.deepEqual(activeOf(WEEKS.b), SUPPRESSED);
     assert.deepEqual(activeOf(WEEKS.cut6), SUPPRESSED);
-    assert.deepEqual(activeOf(WEEKS.f), SUPPRESSED);
     assert.deepEqual(activeOf(WEEKS.e), SUPPRESSED);
     // last week (the cohort whose 7 days are not over) is closed for the sales of the week: its 5 that sold show
     assert.deepEqual(activeOf(WEEKS.open), shown(5));
@@ -2173,6 +2223,7 @@ async function run() {
             tally &&
             Date.parse(`${older}T00:00:00Z`) + weekNumber * 7 * DAY <=
               Date.parse(`${final.clock.currentWeek}T00:00:00Z`) &&
+            tierOf(tally, true) <= 5 &&
             tally[key] >= K &&
             tally.b - tally[key] >= K
           ) {
