@@ -13,8 +13,9 @@ import { gitEnvironment } from "./exact-count-list.mjs";
 /**
  * Operation scripts that the browser gate never runs, bundles or reads: the
  * staging smoke and isolation checks, the production build, workflow and
- * deployed-SHA verifiers, the neutral wrangler module the build and
- * workflow verifiers share (scripts/lib/wrangler-config.mjs), the migration compatibility check, the
+ * deployed-SHA verifiers, the backup workflow verifier, the neutral wrangler
+ * module (scripts/lib/wrangler-config.mjs) that the staging isolation, production
+ * build and production workflow verifiers import, the migration compatibility check, the
  * flaky-test report (only the e2e-real job runs it), the real-device runner,
  * and the staging deploy workflow. Listed one by one, never with a wildcard
  * over scripts/: a new script is relevant until someone proves otherwise.
@@ -39,6 +40,8 @@ export const OPERATIONS_FILES = [
   "scripts/verify-production-workflow.test.mjs",
   "scripts/verify-deployed-sha.mjs",
   "scripts/verify-deployed-sha.test.mjs",
+  "scripts/verify-backup-workflow.mjs",
+  "scripts/verify-backup-workflow.test.mjs",
   "scripts/lib/wrangler-config.mjs",
   "scripts/lib/wrangler-config.test.mjs",
   "scripts/gate5-real-devices.sh",
