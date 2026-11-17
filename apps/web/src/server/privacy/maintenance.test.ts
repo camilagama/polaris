@@ -307,16 +307,24 @@ describe("the automatic schedule of the purge (ADR 0102, AC-62)", () => {
     expect(closureAutoPurgeVolumeHigh(report(6))).toBe(true);
   });
 
-  it("is off in every environment of the repository", () => {
+  it("is on only in staging: the local top level and production stay off", () => {
     const config = readFileSync(
       new URL("../../../wrangler.jsonc", import.meta.url),
       "utf8"
     );
-    const values = [
-      ...config.matchAll(/"CLOSURE_AUTO_PURGE_ENABLED":\s*"([^"]*)"/g),
-    ].map((match) => match[1]);
-    // the local top level, staging and production each declare it, and each one off
-    expect(values).toEqual(["false", "false", "false"]);
+    const stagingAt = config.indexOf('"staging": {');
+    const productionAt = config.indexOf('"production": {');
+    expect(stagingAt).toBeGreaterThan(-1);
+    expect(productionAt).toBeGreaterThan(stagingAt);
+    const valuesOf = (block: string) =>
+      [...block.matchAll(/"CLOSURE_AUTO_PURGE_ENABLED":\s*"([^"]*)"/g)].map(
+        (match) => match[1]
+      );
+    expect({
+      production: valuesOf(config.slice(productionAt)),
+      staging: valuesOf(config.slice(stagingAt, productionAt)),
+      top: valuesOf(config.slice(0, stagingAt)),
+    }).toEqual({ production: ["false"], staging: ["true"], top: ["false"] });
   });
 });
 

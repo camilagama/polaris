@@ -2,7 +2,7 @@
 
 **Gatilho:** um alerta disparou (e-mail de alerta ou resumo diário), ou antes de ligar um deploy ao tráfego real. A definição de cada sinal é código: o registro `alertSignals` de [`packages/observability/src/alerts.ts`](../../packages/observability/src/alerts.ts); este runbook diz o que cada um significa, como confirmar e o que fazer ([ADR 0095](../adr/0095-onde-os-alertas-operacionais-vao-rodar.md), plano PR 119).
 
-> **Nada disto roda ainda.** Não há ambiente, e este PR não cria alerta, cron, token nem conta em serviço externo. Hoje o runbook é lido à mão: as consultas abaixo funcionam no Workers Logs de um ambiente que exista (Fase 14). Se um limiar e o registro divergirem, vale o registro; ajuste os dois no mesmo PR (um teste exige que cada sinal tenha a seção abaixo e que ela cite cada evento dele, e que cada evento exista no código).
+> **Nada disto roda ainda, com uma exceção no staging:** os sinais [`apagamento-automatico`](#apagamento-automatico) e [`loja-encerrada-parada`](#loja-encerrada-parada) existem lá como alertas da Cloudflare (criados em 17/11/2026), cada um com o texto da sua seção. Para os demais sinais não há alerta, cron, token nem conta em serviço externo criados por este runbook. Hoje o runbook é lido à mão: as consultas abaixo funcionam no Workers Logs de um ambiente que exista (Fase 14). Se um limiar e o registro divergirem, vale o registro; ajuste os dois no mesmo PR (um teste exige que cada sinal tenha a seção abaixo e que ela cite cada evento dele, e que cada evento exista no código).
 
 ## Como ler
 
@@ -222,6 +222,8 @@ O lote de miniaturas (`/api/media/thumbs`) lê com um `get` por id e responde in
 
 **Quem recebe.** O sinal é `critical` com `notify = wake`: quando o cron de alertas existir (Fase 14, [ADR 0095](../adr/0095-onde-os-alertas-operacionais-vao-rodar.md)), vai um e-mail imediato ao endereço de alertas que o responsável cadastrar, no máximo um a cada 6 horas, só com o nome do sinal, a contagem e a janela. Quem age é um operador do Admin com a capability `organization:purge`, porque o cancelamento exige caso e motivo; o deploy que desliga a chave é do responsável. **Até o cron existir, ninguém é acordado:** o evento fica só no Workers Logs. Enquanto isso, quem liga a chave em um ambiente confere o `privacy_maintenance_complete` de cada hora nos primeiros dias.
 
+**No staging.** `CLOSURE_AUTO_PURGE_ENABLED` está `"true"` no `env.staging` desde 17/11/2026 (a produção segue `"false"`), e as lojas sintéticas encerradas seguem o ciclo e são apagadas de verdade 90 dias depois. O alerta existe na Cloudflare (`closure_auto_purge_volume_high`, `custom_analytics`, limiar de 1 ou mais evento em 1 minuto, e-mail ao dono): o e-mail é o que acorda, e a confirmação é a deste runbook. A prova da fiação com datas retroagidas é o [roteiro do operador](./prova-do-apagamento-automatico.md).
+
 **O que fazer.** Se as datas estão certas (um lote real de encerramentos de 90 dias atrás), registre e siga. Se não estão, cancele em lote:
 
 1. **Pare os agendamentos novos.** O responsável põe `CLOSURE_AUTO_PURGE_ENABLED` = `false` e faz o deploy. Os purges já agendados continuam valendo até serem cancelados.
@@ -247,6 +249,8 @@ O lote de miniaturas (`/api/media/thumbs`) lê com um `get` por id e responde in
 **O que fazer.** Cada loja é uma decisão: pôr a trava legal (se há motivo para guardar), agendar o purge pelo Admin sob o caso de exclusão (toda escrita no Admin manda `Origin: https://<host do Admin>`; sem ela, 403, [ADR 0070](../adr/0070-admin-acesso-identidade-e-capacidades.md)), revogar o acesso temporário esquecido ou resolver a renovação no provedor (siga [cobranca-reconcile](#cobranca-reconcile) e o [runbook dos provedores](./billing-providers.md)) ou, se o aviso não foi entregue, corrigir o envio (o e-mail não configurado, um endereço recusado) para o aviso sair; não se grava `sent_at` à mão. Registre a decisão no caso.
 
 **Com o e-mail desligado, nenhum purge sai**, nem o do Admin por caso de privacidade: nenhum aviso fica entregue, então o caso pode agendar o purge e a execução espera. Com o e-mail ligado, os avisos saem, e o repasse horário envia o mais recente de cada ciclo devido. O ato de suporte resolve o que sobra (aviso pulado, falho ou de dono sem conta). O prazo de resposta do caso (`PRIVACY_CASE_RESPONSE_DAYS`, 15 dias, provisório) segue valendo: responda ao titular dentro dele, dizendo que a exclusão está aceita e só ocorre depois do aviso, e registre o motivo da espera no caso.
+
+**No staging.** Com a chave ligada lá desde 17/11/2026, o `closure_purge_overdue` conta lojas sintéticas encerradas e é lido como acima. O alerta existe na Cloudflare (`custom_analytics`, limiar de 1 ou mais evento em 1 minuto, e-mail ao dono), não só o resumo diário: um e-mail dele é uma loja parada a decidir, não um incidente. O roteiro com datas retroagidas, [prova do apagamento automático](./prova-do-apagamento-automatico.md), faz esse sinal ficar ausente quando tudo corre bem.
 
 <a id="purge-parado"></a>
 
