@@ -289,10 +289,17 @@ const DATA_EXPORT: Case = {
         })
       )
     );
+    await page.route("**/rpc/account/emailPreference", (route) =>
+      route.fulfill(rpc({ sent: 2, tips: true }))
+    );
     await page.goto("/configuracoes?aba=seus-dados");
     await expect(
       page.getByRole("heading", { exact: true, level: 2, name: "Seus dados" })
     ).toBeVisible();
+    await expect(
+      page.getByRole("switch", { name: "Dicas para começar" })
+    ).toBeVisible();
+    await expect(page.getByText("Enviados até agora: 2 de 3.")).toBeVisible();
     await expect(
       page.getByRole("region", { name: "Suas cópias" })
     ).toContainText("dados.json");
