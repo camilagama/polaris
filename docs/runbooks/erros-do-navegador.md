@@ -20,7 +20,7 @@ O relatório de erro do app no navegador vai a `POST /api/client-errors`, no Wor
 | Build do cliente | `VITE_CLIENT_ERRORS_ENABLED` | `true` | o navegador não envia nada; o build é o mesmo de antes (sem `VITE_RELEASE`) |
 | Worker | `CLIENT_ERRORS_ENABLED` (var do `wrangler.jsonc`) | `"1"` (só esse valor) | a rota responde 204 sem ler o corpo e sem logar nada, nem a recusa de origem |
 
-No `wrangler.jsonc`: local e staging com `"1"`, produção com `"0"` até o item do checklist de liberação. A flag de build e o `VITE_RELEASE` no deploy do staging dependem de um ajuste do workflow de deploy, que é do responsável; até lá o staging aceita a rota, mas o build publicado não envia.
+No `wrangler.jsonc`: local e staging com `"1"`, produção com `"0"` até o item do checklist de liberação. O deploy do staging passa a flag de build e o `VITE_RELEASE`, e desde 17/11/2026 também o DSN do Sentry: no staging o Sentry é o destino do navegador e a rota só recebe o que o SDK não cobre (nada, com o SDK iniciado).
 
 Com o Sentry iniciado no build (`VITE_SENTRY_DSN` válido), o Sentry é o destino e a rota não recebe nada do navegador.
 
