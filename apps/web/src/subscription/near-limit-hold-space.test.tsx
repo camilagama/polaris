@@ -136,13 +136,20 @@ function pathToAnchor(
     : pathToAnchor(element.props.children, next);
 }
 
-function leavesTabOrder(element: ReactElement<ElementProps>): boolean {
-  const { className, inert, tabIndex } = element.props;
-  return (
-    className?.split(" ").includes("invisible") === true ||
-    inert === true ||
-    tabIndex === -1
-  );
+function leavesTabOrder(path: ReactElement<ElementProps>[]): boolean {
+  let hidden = false;
+  let inert = false;
+  for (const { props } of path) {
+    const classes = props.className?.split(" ") ?? [];
+    inert ||= props.inert === true;
+    if (classes.includes("visible")) {
+      hidden = false;
+    }
+    if (classes.includes("invisible")) {
+      hidden = true;
+    }
+  }
+  return inert || hidden || path.at(-1)?.props.tabIndex === -1;
 }
 
 let noticeOf: ReactElement<NoticeProps> | null = null;
@@ -214,18 +221,18 @@ describe("NearLimitNotice com holdSpace", () => {
     expect(held?.props["data-near-limit"]).toBeUndefined();
   });
 
-  it("o link do parágrafo retido fica fora da ordem de Tab e o parágrafo leva invisible", () => {
+  it("o link do parágrafo retido fica fora da ordem de Tab: o parágrafo leva invisible e nada dentro dele o reabre", () => {
     const held = renderNotice(null, true);
     expect(held?.props.className.split(" ")).toContain("invisible");
     const path = pathToAnchor(held);
     expect(path?.at(-1)?.props.href).toBeDefined();
-    expect(path?.some(leavesTabOrder)).toBe(true);
+    expect(path && leavesTabOrder(path)).toBe(true);
   });
 
   it("o link da linha à mostra continua na ordem de Tab", () => {
     const path = pathToAnchor(renderNotice(near, true));
     expect(path?.at(-1)?.props.href).toBeDefined();
-    expect(path?.some(leavesTabOrder)).toBe(false);
+    expect(path && leavesTabOrder(path)).toBe(false);
   });
 
   it("sem o vão, nada é renderizado", () => {
