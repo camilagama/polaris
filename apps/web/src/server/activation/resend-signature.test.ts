@@ -161,7 +161,7 @@ describe("the signature of the provider's delivery", () => {
       }
     );
 
-    it("accepts the same value written as 10 plain digits, so the window was not what refused", async () => {
+    it("accepts a leading zero within 10 characters; the 11-character case above is refused by its length, not by the window", async () => {
       const timestamp = "0161426533";
       const signature = await signedFor(ID, timestamp);
       expect(
