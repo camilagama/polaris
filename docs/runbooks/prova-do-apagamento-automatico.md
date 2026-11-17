@@ -49,6 +49,8 @@ Só para a loja que ainda está em `closing` (o dono acabou de encerrá-la pelo 
    ```
 
    Esperado: `status = closing`, `closed_at` e `recovered_at` nulos, `janela` menor que 2016 horas (a de uma loja encerrada pelo app é de 30 dias). **Anote `requested_at` e `recover_until`**: são os valores originais que a reversão devolve. Qualquer outro resultado: pare e escolha outra loja.
+
+   **Antes de qualquer `UPDATE`, confira a dona e os bloqueios** rodando agora o segundo e o terceiro comandos do [passo 0](#0-conferir-a-loja-e-guardar-as-datas-originais) (bloqueios e dona verificada; o primeiro comando do passo 0 espera `closed` e só passa depois deste passo). Esperado, como lá: as quatro colunas do segundo comando `false` (retenção legal, acesso de suporte, cancelamento do apagamento, renovação viva), `owners ≥ 1` e `owners_verified = true`. Se algum não bater, **pare antes do item 2 (o primeiro `UPDATE`)**: a loja não serve para a prova (sem dona verificada ou com bloqueio ela não é agendada nem apagada), e recuar as datas só a gastaria. Escolha outra loja (em `closing`, volte ao item 1 com ela; já `closed`, comece no passo 0) e **não** libere o bloqueio nem marque o e-mail como verificado à mão para encaixar a prova. Registre só o ID opaco da loja descartada e qual coluna reprovou.
 2. **Recue o pedido e mantenha a duração da janela.** O pedido passa a ser de 84 dias atrás (2016 horas, as contas em horas, para o fuso da sessão não mexer nelas) e `recover_until` fica no passado, porque a janela (30 dias) é menor que os 84 dias. O `closed_at` fica como está (nulo): quem o grava é a varredura.
 
    ```sql
