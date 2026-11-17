@@ -3,12 +3,12 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import {
   bindingsSnapshot,
-  findIsolationProblems,
   parseJsonc,
   readBuilt,
   stringsOf,
   WORKERS,
-} from "./verify-staging-isolation.mjs";
+} from "./lib/wrangler-config.mjs";
+import { findIsolationProblems } from "./verify-staging-isolation.mjs";
 
 /**
  * What the production deploy publishes (ADR 0097), checked before any database or Cloudflare step: it fails

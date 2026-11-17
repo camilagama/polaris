@@ -1,13 +1,12 @@
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import { parseJsonc, WORKERS } from "./lib/wrangler-config.mjs";
 import {
   BILLING_BASE_URLS,
   findHyperdriveProblems,
   findIsolationProblems,
-  parseJsonc,
   PRODUCTION_DEFERRED_BINDINGS,
-  WORKERS,
 } from "./verify-staging-isolation.mjs";
 
 const SITE_KEY = /^0x[A-Za-z0-9_-]+$/;

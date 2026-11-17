@@ -1,13 +1,11 @@
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { parseJsonc, stringsOf, WORKERS } from "./lib/wrangler-config.mjs";
 import {
-  parseJsonc,
   STAGING_ADMIN_HOST,
   STAGING_CATALOG_ORIGIN,
   STAGING_WEB_ORIGIN,
-  stringsOf,
-  WORKERS,
 } from "./verify-staging-isolation.mjs";
 
 /**
