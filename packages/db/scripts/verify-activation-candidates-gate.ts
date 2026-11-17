@@ -2098,7 +2098,7 @@ async function run() {
       const accountA = await newStore(client, {
         createdAt: at(ten, -30 * HOUR),
       });
-      await newStore(client, {
+      const accountASecond = await newStore(client, {
         createdAt: at(ten, -28 * HOUR),
         owner: accountA.userId,
       });
@@ -2106,14 +2106,20 @@ async function run() {
         createdAt: at(ten, -29 * HOUR),
       });
       await seedNotice(client, accountA, "a1", "sent", at(ten, -20 * HOUR));
-      await seedNotice(client, accountA, "a2", "sent", at(ten, -10 * HOUR));
+      await seedNotice(
+        client,
+        accountASecond,
+        "a2",
+        "sent",
+        at(ten, -10 * HOUR)
+      );
       await seedNotice(client, accountA, "a3", "skipped", at(ten, -5 * HOUR));
       await seedNotice(client, accountB, "a1", "sent", at(ten, -20 * HOUR));
       await seedNotice(client, accountB, "a2", "failed", at(ten, -10 * HOUR));
       assert.deepEqual(
         await preferenceOf(accountA.userId),
         { sent: 2, tips: true },
-        "A: tips on, the two sent count and the skipped does not"
+        "A: tips on, the two sent (one in each store) count and the skipped does not"
       );
       assert.deepEqual(
         await preferenceOf(accountB.userId),
