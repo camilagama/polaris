@@ -335,7 +335,8 @@ jobs:
       # the job decide looks for this step name to find the last real deploy (urgent swap marker, ADR 0041)
       - if: steps.tip.outputs.deploy == 'true'
         name: Smoke
-        # 17 checks; worst case 15 x (3 tries of 10 s + 2 pauses of 5 s) + 2 x 10 s, about 11 min
+        # 19 checks (17 common + 2 platform); worst case 19 x (3 tries of 10 s + 2 pauses of 5 s) = 760 s, about 12.7 min,
+        # when every request times out (a platform check stops at its first platform failure, so 700 s if those answer)
         timeout-minutes: 13
         env:
           STAGING_WEB_URL: ${{ vars.STAGING_WEB_URL }}
