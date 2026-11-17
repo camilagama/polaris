@@ -1,7 +1,8 @@
 -- The stop of the activation series after a complaint, the inbox of the provider's webhook and the suppression kept by
 -- functions of the owner (ADR 0106, D7, D8 and D11): the database part of the Item 9, before the webhook that calls it
 -- (the previous Worker never calls any of it, and `STOP_ENFORCED` stays false). Expand only (ADR 0096): three new
--- tables, one nullable column, new policies and grants, three new functions and two `CREATE OR REPLACE` that keep their
+-- tables, one nullable column, new policies and grants, three new functions (and the trigger function of the stop's
+-- guard, owned by the migrator) and two `CREATE OR REPLACE` that keep their
 -- signature, owner and privileges; nothing is dropped or renamed. The runtime of billing loses the direct privileges on
 -- `activation_email_suppressions` (nothing writes the table yet and the previous Worker reads it only with the series
 -- switched on, which no environment does): the order of the deploy is the migration before the Worker, and a Worker
@@ -29,8 +30,9 @@
 --   the caller replaced by the database's when more than 10 minutes apart, as in 0131). A row found only under the
 --   previous key moves to the current one keeping its date; when both exist the older date stays and the old row goes.
 --   `22023` for a current HMAC that is not 32 bytes, equal key IDs, or a malformed key ID, so a caller cannot move a row
---   to garbage and free the address through it (a hostile Worker already holds the provider's key and sends without
---   the database: this reduces the surface and the cost of a code error, it does not close the door).
+--   to garbage in one call (a hostile Worker that holds an address's old HMAC can still move it and a hostile Worker
+--   already holds the provider's key and sends without the database: this reduces the surface and the cost of a code
+--   error, it does not close the door).
 -- * `activation_release_stop(p_stop_id, p_note)`: executed by no role of the application, only by the owner of the
 --   database through the owner of the series (the runbook). The note has 10 to 200 characters without "@" nor control
 --   characters (`22023` otherwise); an id that is unknown or of a stop already released answers false.

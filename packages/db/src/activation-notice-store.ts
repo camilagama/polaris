@@ -2,6 +2,7 @@ import {
   ACTIVATION_NOTICE_REREAD_REASONS,
   type ActivationNoticeSkipReason,
 } from "@polaris/domain/activation/notices";
+import { logger } from "@polaris/observability/logger";
 import { Pool } from "pg";
 import { guardPoolErrors } from "./pool-errors";
 
@@ -138,6 +139,19 @@ export function hexOf(bytes: Uint8Array): string {
   );
 }
 
+/** 42883 about this function only: the same code for another function missing inside a body is a defect, not a deploy order. */
+function isMissingSuppressionFunction(error: unknown): boolean {
+  const { code, message } = (error ?? {}) as {
+    code?: unknown;
+    message?: unknown;
+  };
+  return (
+    code === UNDEFINED_FUNCTION &&
+    typeof message === "string" &&
+    message.includes("activation_address_suppressed")
+  );
+}
+
 function assertSuppressionKey(key: ActivationSuppressionKey): void {
   if (key.hmac.length !== HMAC_BYTES || !KEY_ID.test(key.keyId)) {
     throw new Error("activation_suppression_hmac_invalid");
@@ -168,7 +182,10 @@ export async function addressSuppressed(
     ]);
     return result.rows[0]?.suppressed === true;
   } catch (error) {
-    if ((error as { code?: unknown } | null)?.code === UNDEFINED_FUNCTION) {
+    if (isMissingSuppressionFunction(error)) {
+      logger.warn("activation_suppression_function_missing", {
+        outcome: "skipped",
+      });
       return true;
     }
     throw error;

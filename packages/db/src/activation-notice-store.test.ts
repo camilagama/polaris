@@ -110,12 +110,33 @@ describe("the suppression check of an address", () => {
   it("reads a missing function (42883, the Worker before the migration) as suppressed, so nothing is sent unchecked", async () => {
     const query: ActivationSuppressionQuery = () =>
       Promise.reject(
-        Object.assign(new Error("function does not exist"), { code: "42883" })
+        Object.assign(
+          new Error(
+            "function public.activation_address_suppressed(bytea, text, bytea, text, timestamp with time zone) does not exist"
+          ),
+          { code: "42883" }
+        )
       );
 
     expect(
       await addressSuppressed(query, { current: key(1, "00000001") }, NOW)
     ).toBe(true);
+  });
+
+  it("does not read a missing function of another name (42883 inside a body) as suppressed", async () => {
+    const query: ActivationSuppressionQuery = () =>
+      Promise.reject(
+        Object.assign(
+          new Error("function pg_catalog.nothing(text) does not exist"),
+          {
+            code: "42883",
+          }
+        )
+      );
+
+    await expect(
+      addressSuppressed(query, { current: key(1, "00000001") }, NOW)
+    ).rejects.toThrow("nothing(text)");
   });
 
   it.each([
