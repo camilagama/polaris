@@ -10,6 +10,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { parseJsonc } from "./lib/wrangler-config.mjs";
 import {
   ATTEMPTS,
   checkWorker,
@@ -21,7 +22,6 @@ import {
   WRANGLER_TIMEOUT_MS,
   workersFromArgs,
 } from "./verify-deployed-sha.mjs";
-import { parseJsonc } from "./verify-staging-isolation.mjs";
 
 const SHA = "0123456789abcdef0123456789abcdef01234567";
 const OTHER = "fedcba9876543210fedcba9876543210fedcba98";

@@ -1,8 +1,8 @@
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import { parseJsonc, WORKERS } from "./lib/wrangler-config.mjs";
 import { findProductionBuildProblems } from "./verify-production-build.mjs";
-import { parseJsonc, WORKERS } from "./verify-staging-isolation.mjs";
 
 const ACCOUNT = "0123456789abcdef0123456789abcdef";
 const HYPERDRIVE_PLACEHOLDER = /^PLACEHOLDER-production-hyperdrive-(.+)$/;
