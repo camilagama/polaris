@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import {
   existsSync,
   mkdirSync,
@@ -490,15 +491,17 @@ export const Box = () => <Dialog.Root />;`;
       "real-devices",
       "scripts",
     ];
-    const folders = readdirSync(webDir, { withFileTypes: true })
-      .filter(
-        (entry) =>
-          entry.isDirectory() &&
-          entry.name !== "node_modules" &&
-          !entry.name.startsWith(".")
-      )
-      .map((entry) => entry.name)
-      .sort();
+    const tracked = execFileSync("git", ["ls-files", "-z", "apps/web"], {
+      cwd: root,
+      encoding: "utf8",
+    })
+      .split("\0")
+      .filter((path) => path.length > 0)
+      .map((path) => path.slice("apps/web/".length))
+      .filter((path) => path.includes("/"));
+    const folders = [
+      ...new Set(tracked.map((path) => path.split("/")[0])),
+    ].sort();
     expect(folders).toEqual(
       [...TEST_LIBRARY_SCAN_FOLDERS, ...NOT_WALKED].sort()
     );
