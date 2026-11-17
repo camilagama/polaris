@@ -296,7 +296,7 @@
         "MEDIA_THUMBS_ENABLED": "true",
         // the footer and reply-to of the billing e-mails: one address on araute.app (the isolation check refuses another domain)
         "BILLING_SUPPORT_EMAIL": "suporte@araute.app",
-        "LEGAL_ACCEPTANCE_ENFORCED": "false",
+        "LEGAL_ACCEPTANCE_ENFORCED": "true",
         "BETTER_AUTH_BASE_URL": "https://dash.araute.app",
         "CATALOG_ORIGIN": "https://catalogo.araute.app",
         "OFFLINE_LEASE_KEY_ID": "staging-1",
