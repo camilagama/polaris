@@ -162,6 +162,13 @@ const HELPERS = [
   insideOwner,
   spillsSideways,
   keyOf,
+  spoken,
+  targetsOf,
+  readableText,
+  isScreenReaderOnly,
+  nameOf,
+  repeatedByAttribute,
+  repeatedBySrOnly,
 ]
   .map((helper) => helper.toString())
   .join("\n");
@@ -725,6 +732,207 @@ export async function focusFaults(page: Page) {
     }
   }
   return faults;
+}
+
+// ---- 10. one name, read once -----------------------------------------------------------------------------
+
+/** In page: a text as a person compares it by ear: whitespace collapsed, case ignored. */
+function spoken(text: string | null | undefined) {
+  return (text ?? "").replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+/** In page: the elements an `aria-labelledby` or `aria-describedby` value points to. */
+function targetsOf(element: Element, attribute: string) {
+  return (element.getAttribute(attribute) ?? "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .split(" ")
+    .map((id) => (id ? document.getElementById(id) : null))
+    .filter((target): target is HTMLElement => target !== null);
+}
+
+/**
+ * In page: the text of an element as a screen reader walks it: what is aria-hidden or not rendered is skipped, an
+ * `aria-label` stands for its subtree, an image says its `alt`. An SVG says nothing (its `<title>` is not read here).
+ * `except` leaves one descendant out.
+ */
+function readableText(element: Element, except?: Element): string {
+  let text = "";
+  for (const node of element.childNodes) {
+    if (node.nodeType === Node.TEXT_NODE) {
+      text += node.textContent ?? "";
+      continue;
+    }
+    if (!(node instanceof Element) || node === except) {
+      continue;
+    }
+    const tag = node.tagName.toLowerCase();
+    const silent =
+      tag === "svg" ||
+      node.getAttribute("aria-hidden") === "true" ||
+      !node.checkVisibility({ visibilityProperty: true });
+    if (!silent) {
+      const alt = tag === "img" ? node.getAttribute("alt") : null;
+      text += ` ${node.getAttribute("aria-label") ?? alt ?? readableText(node, except)} `;
+    }
+  }
+  return text;
+}
+
+/** In page: hidden from the eye and read by the ear (`sr-only`), and not a live region, which is read on purpose. */
+function isScreenReaderOnly(element: Element) {
+  return (
+    isVisuallyHidden(element) &&
+    isShown(element) &&
+    !element.closest("[aria-live], [role=status], [role=alert]")
+  );
+}
+
+/**
+ * In page: the accessible name a reader takes before the `title`: `aria-labelledby`, `aria-label`, the label of a
+ * field, the `alt`, the content. Empty when only the `title` names the element (that is no repetition). `labelNodes`
+ * are the elements the name came from, which a neighbor in `sr-only` may be without repeating anything.
+ */
+function nameOf(element: Element) {
+  const tag = element.tagName.toLowerCase();
+  const targets = targetsOf(element, "aria-labelledby");
+  const labels = [...((element as HTMLInputElement).labels ?? [])];
+  const isField = tag === "input" || tag === "select" || tag === "textarea";
+  const text =
+    (targets.length > 0
+      ? targets.map((target) => target.textContent).join(" ")
+      : null) ||
+    element.getAttribute("aria-label") ||
+    labels.map((label) => label.textContent).join(" ") ||
+    (tag === "img" ? element.getAttribute("alt") : null) ||
+    (isField ? "" : readableText(element));
+  return { labelNodes: [...targets, ...labels], name: spoken(text) };
+}
+
+/** In page: what the markup says again about an element whose name is `name`, through attributes. */
+function repeatedByAttribute(element: Element, name: string) {
+  const described = spoken(
+    targetsOf(element, "aria-describedby")
+      .map((target) => target.textContent)
+      .join(" ")
+  );
+  const repeats = [
+    ["title", spoken(element.getAttribute("title"))],
+    ["aria-description", spoken(element.getAttribute("aria-description"))],
+    ["aria-describedby", described],
+  ] as const;
+  return repeats
+    .filter(([, text]) => text === name)
+    .map(([via]) => ({
+      text: `o ${via} repete "${name}"`,
+      via: via as string,
+    }));
+}
+
+/** In page: what the markup says again about an element whose name is `name`, through `sr-only` text next to it. */
+function repeatedBySrOnly(element: Element, labelNodes: Element[]) {
+  const said = spoken(
+    element.getAttribute("aria-label") || readableText(element)
+  );
+  if (!said || isScreenReaderOnly(element)) {
+    return [];
+  }
+  const found: Array<{ text: string; via: string }> = [];
+  for (const neighbor of [
+    element.previousElementSibling,
+    element.nextElementSibling,
+  ]) {
+    if (
+      neighbor &&
+      !labelNodes.includes(neighbor) &&
+      isScreenReaderOnly(neighbor) &&
+      spoken(readableText(neighbor)) === said
+    ) {
+      found.push({
+        text: `o vizinho em sr-only repete "${said}"`,
+        via: "sr-only",
+      });
+    }
+  }
+  if (!element.hasAttribute("aria-label")) {
+    for (const child of element.children) {
+      const inside = spoken(readableText(child));
+      if (
+        inside &&
+        isScreenReaderOnly(child) &&
+        spoken(readableText(element, child)) === inside
+      ) {
+        found.push({
+          text: `o texto visível e o sr-only de dentro repetem "${inside}"`,
+          via: "sr-only",
+        });
+      }
+    }
+  }
+  return found;
+}
+
+/**
+ * In page: the elements whose accessible name is said twice by the markup: by a `title`, by an `aria-description` or
+ * `aria-describedby` that repeat it, or by `sr-only` text with the same words next to it or inside it. A neighbor that
+ * is the source of the name (the label of a field, a `labelledby` target) is not a repetition. It reads the markup, not
+ * what a reader says: `ui-guardrails.e2e.ts` says so in the control cases.
+ */
+function repeatedNames(known: KnownRepeatedName[]) {
+  const faults: string[] = [];
+  for (const element of document.body.querySelectorAll("*")) {
+    if (
+      ["script", "style", "option"].includes(element.tagName.toLowerCase()) ||
+      element.closest("svg") ||
+      !isShown(element)
+    ) {
+      continue;
+    }
+    const { labelNodes, name } = nameOf(element);
+    if (!name) {
+      continue;
+    }
+    for (const { text, via } of [
+      ...repeatedByAttribute(element, name),
+      ...repeatedBySrOnly(element, labelNodes),
+    ]) {
+      const excused = known.some(
+        (entry) => entry.via === via && element.matches(entry.selector)
+      );
+      if (!excused) {
+        faults.push(`${labelOf(element)} diz o nome duas vezes: ${text}`);
+      }
+    }
+  }
+  return faults;
+}
+
+/** A repetition the check accepts until its cause is gone: where it is and by which attribute it repeats. */
+export interface KnownRepeatedName {
+  reason: string;
+  selector: string;
+  via: "title" | "aria-description" | "aria-describedby" | "sr-only";
+}
+
+/**
+ * The repetitions the screens of `ui-screens.ts` have, each with its cause. The list is exact (`ui-guardrails.e2e.ts` compares it entry by entry and proves each one still happens, so a fix has to take
+ * its entry out), and what it excuses is a selector and an attribute, never a screen.
+ */
+export const KNOWN_REPEATED_NAMES: readonly KnownRepeatedName[] = [
+  {
+    reason:
+      "SelectValue (src/ui/select.tsx) writes the chosen text into the title of its span, and the span already says it as content",
+    selector: "[data-slot=select-value]",
+    via: "title",
+  },
+];
+
+/** 10. One name, read once: no `title`, description or `sr-only` neighbor that repeats the accessible name. */
+export function repeatedNameFaults(
+  page: Page,
+  known: readonly KnownRepeatedName[] = KNOWN_REPEATED_NAMES
+) {
+  return inPage(page, repeatedNames, known);
 }
 
 // ---- 5. motion ------------------------------------------------------------------------------------------
