@@ -148,6 +148,9 @@ async function openScreen(
         })
       );
     }
+    if (procedure === "account/emailPreference") {
+      return route.fulfill(rpc({ sent: 0, tips: true }));
+    }
     if (
       procedure === "dataExport/list" ||
       procedure === "dataExport/listClosed"

@@ -43,6 +43,7 @@ const SPECS: Readonly<Record<string, SpecRule>> = {
     why: "one card read at the default font, not the sweep with the browser font at 24, 20 and 16 px",
   },
   "despesas-reflow.e2e.ts": { bare: 0, coarse: 0, why: "" },
+  "email-preference-reflow.e2e.ts": { bare: 0, coarse: 0, why: "" },
   "estoque-reflow.e2e.ts": {
     bare: 0,
     coarse: 1,

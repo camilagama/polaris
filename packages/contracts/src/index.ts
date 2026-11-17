@@ -1708,6 +1708,11 @@ const legalAcceptanceStatus = z.object({
   ),
 });
 
+const emailPreference = z.object({
+  sent: z.number().int().nonnegative(),
+  tips: z.boolean(),
+});
+
 /**
  * Whether a procedure only reads (`read`) or changes state (`write`), declared on each one. The Worker's
  * rate limit picks its bucket by it, never by the name: a write with a name like a read still counts as a
@@ -1763,6 +1768,20 @@ export const polarisContract = {
           .strict()
       )
       .output(legalAcceptanceStatus),
+    // The preference of the tips e-mails of the person who owns the store (ADR 0106, D8): `tips` is false when they
+    // asked not to receive them, `sent` how many went out in every store of theirs. The person is the session's, never
+    // a field of the input; `organizationId` only names the store whose `organization:export` the owner shows.
+    emailPreference: readProcedure
+      .input(z.object({ organizationId: organizationIdInput }).strict())
+      .output(emailPreference),
+    // Turns the tips on or off and answers the state after, in the shape of the read. Idempotent.
+    setTips: writeProcedure
+      .input(
+        z
+          .object({ on: z.boolean(), organizationId: organizationIdInput })
+          .strict()
+      )
+      .output(emailPreference),
     // The documents still to accept: those whose highest accepted version is below the floor of the
     // server's constant, each with the version in force and what changed from the previous one.
     legalStatus: readProcedure.output(legalAcceptanceStatus),

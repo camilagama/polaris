@@ -127,6 +127,9 @@ async function openScreen(
         })
       );
     }
+    if (procedure === "account/emailPreference") {
+      return route.fulfill(rpc({ sent: 0, tips: true }));
+    }
     if (procedure === "dataExport/list") {
       const answer = lists[Math.min(calls.reads, lists.length - 1)];
       calls.reads += 1;
