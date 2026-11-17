@@ -1707,8 +1707,7 @@ function timeoutVerdict(checkCount, timeoutMinutes) {
   return (
     `the smoke has ${checkCount} checks: worst case ${worst} s + ${STARTUP_SLACK_SECONDS} s of slack, ` +
     `but the step Smoke of deploy-staging.yml allows ${limit} s (timeout-minutes: ${timeoutMinutes}). ` +
-    "Raise timeout-minutes of the step in the workflow (a patch for the maintainer to apply: this repository " +
-    "does not edit .github/workflows) or cut a check."
+    "Raise timeout-minutes of the step in deploy-staging.yml or cut a check."
   );
 }
 
