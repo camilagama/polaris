@@ -336,7 +336,7 @@ O workflow `.github/workflows/deploy-staging.yml` só roda com a variável de re
 
 ## Smoke do deploy
 
-O passo `Smoke` do `deploy-staging.yml` roda `node scripts/smoke-staging.mjs` logo depois dos três `wrangler deploy`. Lê `STAGING_WEB_URL`, `STAGING_CATALOG_URL` e `STAGING_ADMIN_URL` (aceita só `https://dash.araute.app`, `https://catalogo.araute.app` e `https://admin.araute.app`), `HEAD_SHA` (40 hex minúsculos; outro valor é recusado antes de qualquer requisição) e a pasta `apps/web/dist/client` do artefato que acabou de ser publicado. Toda requisição leva `User-Agent: polaris-staging-smoke/1`, para separar o smoke nos Workers Logs. O log diz verificação, status e um motivo fixo; nunca corpo nem valor de cabeçalho (para o SHA, só "release different" ou "release absent").
+O passo `Smoke` do `deploy-staging.yml` roda `node scripts/smoke-staging.mjs` logo depois dos três `wrangler deploy`. Lê `STAGING_WEB_URL`, `STAGING_CATALOG_URL` e `STAGING_ADMIN_URL` (aceita só `https://dash.araute.app`, `https://catalogo.araute.app` e `https://admin.araute.app`), `HEAD_SHA` (40 hex minúsculos; outro valor é recusado antes de qualquer requisição, com o motivo em texto fixo no stderr, sem o valor da variável) e a pasta `apps/web/dist/client` do artefato que acabou de ser publicado. Toda requisição leva `User-Agent: polaris-staging-smoke/1`, para separar o smoke nos Workers Logs. O log diz verificação, status e um motivo fixo; nunca corpo nem valor de cabeçalho (para o SHA, só "release different" ou "release absent").
 
 Ordem e o que cada falha quer dizer:
 
@@ -376,7 +376,7 @@ O domínio de produção ainda não foi decidido, então nenhum host está escri
 
 | Variável | O que é | Recusa |
 | --- | --- | --- |
-| `PRODUCTION_WEB_URL`, `PRODUCTION_CATALOG_URL`, `PRODUCTION_ADMIN_URL` | origem https de cada Worker, sem caminho, porta nem credencial | ausente, vazia ou com espaço em volta; não https; com porta, caminho, query, credencial ou maiúscula; IP, `localhost` e sufixos reservados (`.workers.dev`, `.cloudflareaccess.com`, `.invalid`, `.local`, `.test`, `.example`, `.internal`, `.home.arpa`); um dos três hosts do staging; dois Workers no mesmo host |
+| `PRODUCTION_WEB_URL`, `PRODUCTION_CATALOG_URL`, `PRODUCTION_ADMIN_URL` | origem https de cada Worker, sem caminho, porta nem credencial | ausente, vazia ou com espaço em volta; não https; com porta, caminho, query, credencial ou maiúscula; IP, `localhost` e sufixos reservados (`.workers.dev`, `.cloudflareaccess.com`, `.invalid`, `.localhost`, `.local`, `.test`, `.example`, `.internal`, `.home.arpa`); um dos três hosts do staging; dois Workers no mesmo host |
 | `PRODUCTION_ACCESS_TEAM` | `<time>.cloudflareaccess.com` do Access de produção, para onde o Admin sem login deve ser redirecionado (o caminho do login é `/cdn-cgi/access/login/<host do Admin>`) | ausente, mal formado ou o time do staging |
 | `PRODUCTION_EXPECT_PASSWORD_SIGN_IN` | `true` ou `false`: o `auth-methods` de produção declara o login por senha (fica atrás de flag, desligada até o domínio de e-mail) | qualquer outro valor |
 | `PRODUCTION_EXPECT_RELEASE_HEADER` | `true` ou `false`: os Workers de produção declaram `X-Polaris-Release` (`RELEASE_HEADER_ENABLED`, hoje `"false"` no `env.production`). Com `false`, as verificações 1 e 12 continuam rodando e exigem o cabeçalho **ausente** (presente com a flag desligada falha) | qualquer outro valor |

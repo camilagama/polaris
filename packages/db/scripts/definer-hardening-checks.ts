@@ -4,7 +4,7 @@ import type { Client } from "pg";
 /**
  * The read-only part of the definer-hardening gate (ADR 0093): the queries that list what is wrong in
  * the whole database, with no probe and no change. The gate (`verify-definer-hardening-gate.ts`) runs
- * them before and after each of its throwaway probes; the staging check (`verify-staging-database.ts`)
+ * them before and after each of its throwaway probes; the deploy check (`verify-deploy-database.ts`)
  * runs them after every migration of the staging database, where nothing may be written.
  */
 // a runtime role is a `polaris_*_runtime` group, a temporary gate login, or any role that is a member of such a group
@@ -21,7 +21,7 @@ export const OWNER_ROLE_LIKE = "polaris\\_%\\_owner";
  */
 export const OWNER_SCOPE_PREFIX = "app.owner_scope.";
 /**
- * Roles Neon creates and manages itself (the same names `verify-staging-database.ts` treats as the platform's): never a
+ * Roles Neon creates and manages itself (the same names `verify-deploy-database.ts` treats as the platform's): never a
  * role of the app, and not checked by `rowSecurityWithoutPolicy` (a superuser or a role with BYPASSRLS is left out anyway).
  */
 const NEON_PLATFORM_ROLES = ["cloud_admin", "neon_superuser", "neon_service"];

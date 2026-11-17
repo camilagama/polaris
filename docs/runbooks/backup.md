@@ -1,16 +1,16 @@
 # Backup diário do banco e ensaio de restauração
 
-**Gatilho:** ligar o backup de um ambiente (staging primeiro, produção no go-live), um backup que falhou (issue com o rótulo `backup-staging`), o ensaio periódico de restauração ou uma restauração de verdade.
+**Gatilho:** ligar o backup de um ambiente (staging primeiro, produção no go-live), um backup que falhou (issue com o rótulo `backup-staging` ou `backup-production`), o ensaio periódico de restauração ou uma restauração de verdade.
 
 **Por quê:** o Neon Free guarda só 6 horas de histórico. O backup cobre o desastre maior (projeto apagado, conta perdida, corrupção percebida tarde): um `pg_dump` diário, cifrado fora do Neon, guardado 35 dias (o prazo de `provider_backups` do [ADR 0079](../adr/0079-retencao-por-classe-de-dado.md)). A decisão e as alternativas estão no [ADR 0099](../adr/0099-backup-logico-diario-no-r2-cifrado-com-age.md). O staging roda o mesmo mecanismo da produção, com outros nomes, para que ele chegue ao go-live já provado.
 
-> **Estado:** os scripts e as checagens existem no repositório, mas o login, o bucket, o token, o Environment `staging-backup` e o rótulo existem desde 12/11/2026 e o workflow (`backup-staging.yml`) está no repositório, mas o job só roda com `STAGING_BACKUP_ENABLED` = `true`, que é do responsável. Os passos marcados **a provar** são o primeiro ensaio do staging; o resultado de cada um entra neste runbook, como no [restore e deletion ledger](./deletion-ledger-restore.md).
+> **Estado:** os scripts e as checagens existem no repositório, mas o login, o bucket, o token, o Environment `staging-backup` e o rótulo existem desde 12/11/2026 e o workflow `backup-staging.yml` (só o staging) está no repositório. O workflow `backup.yml`, com um job por ambiente (`staging` e `production`), cada um só rodando com a variável do seu ambiente (`STAGING_BACKUP_ENABLED`, `PRODUCTION_BACKUP_ENABLED`, do responsável), está **pendente**: vem no patch `t1195-workflow.patch`, que o Arrascaeta aplica (o dev não altera `.github/workflows`), e substitui o `backup-staging.yml`. Até lá, o que vale no repositório é o `backup-staging.yml`, e tudo abaixo que cita o `backup.yml` descreve o estado depois do patch. A produção nasce desligada e sem chave: a [seção de produção](#produção-go-live) diz o que falta. Os passos marcados **a provar** são o primeiro ensaio do staging; o resultado de cada um entra neste runbook, como no [restore e deletion ledger](./deletion-ledger-restore.md).
 
 ## Quem faz o quê
 
 | Quem | O quê |
 | --- | --- |
-| Responsável (Arrascaeta) | roda o ensaio de restauração com a identidade do cofre do servidor; cria o login, o bucket, o token R2, o Environment, as variáveis e o rótulo; liga a variável `STAGING_BACKUP_ENABLED`; cria e apaga a branch Neon do ensaio ([política de perfis da CLI](./cli-profile-policy.md)); decide qualquer restauração de verdade |
+| Responsável (Arrascaeta) | roda o ensaio de restauração com a identidade do cofre do servidor; cria o login, o bucket, o token R2, o Environment, as variáveis e o rótulo; liga a variável `STAGING_BACKUP_ENABLED` (a `PRODUCTION_BACKUP_ENABLED` só no go-live); configura e lê de volta o PITR do Neon; cria e apaga a branch Neon do ensaio ([política de perfis da CLI](./cli-profile-policy.md)); decide qualquer restauração de verdade |
 | Titular da chave (a pessoa escolhida pelo usuário; uma chave por ambiente) | gera a chave age, guarda a identidade no cofre do servidor e entrega só a chave pública |
 | Dev | mantém os scripts, o SQL e este runbook; nunca vê a chave privada nem a senha do login; a conferência da chave está descrita logo abaixo da tabela |
 
@@ -24,7 +24,8 @@ A chave privada nunca vai ao GitHub nem ao R2. Por decisão do dono de 12/11/202
 - `scripts/backup/seal.sh`: `tar` dos três arquivos, cifrado com `age` para as chaves públicas de `ops/backup/recipients-<ambiente>.txt`; apaga o texto claro.
 - `scripts/backup/upload.sh`: envia `daily/AAAAMMDDTHHMMSSZ.tar.age` com o cabeçalho `x-amz-checksum-sha256` (o R2 confere os bytes recebidos e recusa o envio que não bate) e o SHA-256 também no metadado `sha256`, relê tamanho e metadado com `head-object` e só então aplica a retenção (`scripts/backup/retention.mjs`).
 - `scripts/backup/restore.mjs`: o ensaio de restauração (seção abaixo).
-- `ops/backup/recipients-staging.txt`: a chave pública do staging. Trocar passa por PR revisado, junto com a variável `BACKUP_RECIPIENTS_SHA256`.
+- `ops/backup/recipients-staging.txt` e `ops/backup/recipients-production.txt`: a chave pública de cada ambiente (a da produção está vazia, com a instrução no próprio arquivo). Trocar passa por PR revisado, junto com a variável `BACKUP_RECIPIENTS_SHA256` do Environment do ambiente.
+- `scripts/verify-backup-workflow.mjs`: no `bun run test`, reprova o `backup.yml` (depois do patch; sem ele, o teste não confere nada) se os dois jobs diferirem em algo além dos nomes do ambiente, se um job citar bucket, Environment, chave, grupo de concorrência ou rótulo do outro, ou se o workflow ganhar gatilho além de `schedule` e `workflow_dispatch`.
 - `staging:verify-database after-migrate` aceita o login `polaris_backup_reader` como única exceção à regra "todo login é membro de um grupo `*_runtime`", e só com os atributos exatos abaixo (`packages/db/scripts/backup-reader.ts`).
 
 **Retenção:** o job apaga o que tem mais de 35 dias, mas mantém sempre os 35 backups mais novos, e só depois de confirmar o envio do dia. Com o job parado por semanas, nada some. O bucket fica **sem** regra de ciclo de vida: ela apagaria o último backup quando o job para. Só objetos com o nome que o job grava entram na conta; outro arquivo no prefixo nunca é apagado.
@@ -48,22 +49,22 @@ Tudo na conta Cloudflare e no projeto Neon do staging. Registre o resultado de c
 2. **Conferir o login.** `bun run --filter @polaris/db staging:verify-database after-migrate` (com a URL do migrador) tem de listar `login polaris_backup_reader: pg_read_all_data, BYPASSRLS, read-only, owns nothing`. Qualquer outro atributo, pertença, objeto, grant ou política com o login, ou alguém que possa virar ele, reprova o deploy do staging, de propósito. **A provar:** que o Neon não acrescenta pertença nem dependência ao papel (se acrescentar, levar ao Rodrigo antes de afrouxar a checagem).
 3. **Bucket e token.** Bucket privado `polaris-backup-staging`, sem ciclo de vida e sem acesso público. Token R2 "Object Read & Write" só nesse bucket, com validade. **A provar:** se o bucket lock (retenção por prefixo) de 7 dias em `daily/` é grátis no plano Free; se for, ligar.
 4. **Chave.** O titular gera a identidade: `age-keygen -o staging.key`. A identidade vai para o cofre do servidor OpenBot (0400, fora do repositório; decisão de 12/11/2026, ver acima), não para cópia offline, e `staging.key` é apagado da máquina onde foi gerada. A chave pública (`age-keygen -y staging.key` antes de apagar) vai num PR para `ops/backup/recipients-staging.txt`, uma linha `age1…`. Sem chave nesse arquivo o job recusa selar.
-5. **Environment `staging-backup`**, restrito à branch `main`, sem revisor obrigatório (travaria o cron). Os segredos ficam **só** no Environment, nunca no repositório: o `if` do job é texto do próprio workflow, e quem tem escrita pode tirá-lo num branch; o que barra um `workflow_dispatch` de outro branch é a restrição do Environment. Depois de criar, dispare o workflow de um branch qualquer e confira que ele é recusado antes de qualquer passo. Segredos: `BACKUP_PGPASSWORD` (a senha do login), `R2_BACKUP_ACCESS_KEY_ID` e `R2_BACKUP_SECRET_ACCESS_KEY`. Variáveis: `BACKUP_PGHOST` (host **direto** do projeto, sem `-pooler`), `BACKUP_PGDATABASE` (`neondb`), `R2_BACKUP_ENDPOINT` (`https://<id da conta>.r2.cloudflarestorage.com`) e `BACKUP_RECIPIENTS_SHA256` (`sha256sum ops/backup/recipients-staging.txt` da `main`, depois do PR da chave). O bucket fica escrito no workflow (`polaris-backup-staging`): um backup do staging nunca vai a outro bucket.
+5. **Environment `staging-backup`**, restrito à branch `main`, sem revisor obrigatório (travaria o cron). Os segredos ficam **só** no Environment, nunca no repositório: o `if` do job é texto do próprio workflow, e quem tem escrita pode tirá-lo num branch; o que barra um `workflow_dispatch` de outro branch é a restrição do Environment. Crie e restrinja o Environment à `main` **antes** de gravar qualquer segredo nele, e confira a política de branches na tela do Environment (só `main`). Disparar o workflow de outro branch não prova a restrição, porque o `if` do job já o pula antes do Environment; ela só vale para quem editar o `if` num branch. Segredos: `BACKUP_PGPASSWORD` (a senha do login), `R2_BACKUP_ACCESS_KEY_ID` e `R2_BACKUP_SECRET_ACCESS_KEY`. Variáveis: `BACKUP_PGHOST` (host **direto** do projeto, sem `-pooler`), `BACKUP_PGDATABASE` (`neondb`), `R2_BACKUP_ENDPOINT` (`https://<id da conta>.r2.cloudflarestorage.com`) e `BACKUP_RECIPIENTS_SHA256` (`sha256sum ops/backup/recipients-staging.txt` da `main`, depois do PR da chave). O bucket fica escrito no workflow (`polaris-backup-staging`): um backup do staging nunca vai a outro bucket.
 6. **Rótulo** `backup-staging` no repositório (a issue de falha usa ele).
-7. **Ligar.** O workflow `backup-staging.yml` já está no repositório; criar a variável de repositório `STAGING_BACKUP_ENABLED` = `true` liga o job.
-8. **Primeiro backup:** `workflow_dispatch` na `main`. Esperado no log: `ok: marker staging and login polaris_backup_reader`, `ok: pg_dump`, `ok: roles`, `ok: manifest (N entries, M MB)`, `ok: sealed for 1 key(s), …, sha256 …`, `ok: uploaded daily/…`, `ok: retention removed 0 object(s)`. Depois, o ensaio de restauração abaixo, que é o que prova o backup.
+7. **Ligar.** O workflow `backup-staging.yml` está no repositório; depois do patch do `backup.yml` (pendente, ver o início do runbook), o job `staging` dele o substitui com a mesma variável. Criar a variável de repositório `STAGING_BACKUP_ENABLED` = `true` liga o backup do staging em qualquer dos dois.
+8. **Primeiro backup:** `workflow_dispatch` na `main` (o campo `environment` do disparo vale `staging` por padrão; o cron roda todos os ambientes ligados). Esperado no log: `ok: marker staging and login polaris_backup_reader`, `ok: pg_dump`, `ok: roles`, `ok: manifest (N entries, M MB)`, `ok: sealed for 1 key(s), …, sha256 …`, `ok: uploaded daily/…`, `ok: retention removed 0 object(s)`. Depois, o ensaio de restauração abaixo, que é o que prova o backup.
 
-**Desligar:** apagar `STAGING_BACKUP_ENABLED`. Os backups existentes ficam no bucket até alguém apagá-los (a retenção só roda junto de um backup novo).
+**Desligar:** apagar `STAGING_BACKUP_ENABLED` (na produção, `PRODUCTION_BACKUP_ENABLED`). Os backups existentes ficam no bucket até alguém apagá-los (a retenção só roda junto de um backup novo).
 
 ## Concorrência com o deploy
 
-O job usa o grupo `deploy-staging`, o mesmo do deploy: um `pg_dump` (que segura `ACCESS SHARE` em todas as tabelas) nunca corre junto de uma migration, que esperaria por ele ou cairia no `lock_timeout` de 10 s. O GitHub guarda **um** job pendente por grupo: se o backup entrar na fila enquanto um deploy roda e outro espera, o que espera é cancelado (o próximo merge faz o deploy) e vice-versa (o backup do dia não sai; a próxima execução sai no dia seguinte). O horário (06:22 UTC) diminui a chance. Se o deploy pendente for cancelado, reexecute o run do deploy.
+O job do staging usa o grupo `deploy-staging`, o mesmo do deploy, e o da produção o grupo `deploy-production`: um `pg_dump` (que segura `ACCESS SHARE` em todas as tabelas) nunca corre junto de uma migration, que esperaria por ele ou cairia no `lock_timeout` de 10 s. O GitHub guarda **um** job pendente por grupo: se o backup entrar na fila enquanto um deploy roda e outro espera, o que espera é cancelado (o próximo merge faz o deploy) e vice-versa (o backup do dia não sai; a próxima execução sai no dia seguinte). O horário (06:22 UTC) diminui a chance. Se o deploy pendente for cancelado, reexecute o run do deploy.
 
 ## Falha
 
-- O job abre uma issue `backup-staging` com o link do run (texto genérico) e comenta nela a cada nova falha; o próximo sucesso a fecha. O e-mail do GitHub para cron com falha vai à conta do GitHub que editou o cron por último, e só a ela; o aviso que vale para todos é a issue `backup-staging`.
+- O job abre uma issue `backup-staging` (na produção, `backup-production`) com o link do run (texto genérico) e comenta nela a cada nova falha; o próximo sucesso a fecha. O e-mail do GitHub para cron com falha vai à conta do GitHub que editou o cron por último, e só a ela; o aviso que vale para todos é a issue do ambiente.
 - Leia o log do run. As recusas dizem a causa pelo nome: `marker: …` (banco sem o marcador de staging ou URL de outro banco), `login: …` (atributo do login), `the recipients file …`, `… does not match BACKUP_RECIPIENTS_SHA256` (chave trocada sem atualizar a variável, ou o contrário: confira o PR), `the stored object does not match …` (envio corrompido: nada foi apagado), `an object with this stamp already exists`.
-- Um job que não roda (cron desligado pelo GitHub depois de 60 dias sem atividade num repositório público, ou cancelado pelo grupo de concorrência) não abre issue. Por enquanto a conferência é manual: o objeto mais novo de `daily/` tem menos de 26 h. O vigia automático (sentinela lendo o bucket com um token só leitura) fica para o PR da produção.
+- Um job que não roda (cron desligado pelo GitHub depois de 60 dias sem atividade num repositório público, ou cancelado pelo grupo de concorrência) não abre issue. Por enquanto a conferência é manual: o objeto mais novo de `daily/` tem menos de 26 h. O vigia automático (sentinela lendo o bucket com um token só leitura) fica para depois.
 
 ## Ensaio de restauração
 
@@ -94,12 +95,53 @@ Quem: o responsável pelo servidor onde a identidade está (o titular não preci
 
 ## Produção (go-live)
 
-O mesmo mecanismo, com outros nomes, na conta Cloudflare e no projeto Neon da produção. Pré-requisito: o staging com backups diários verdes e um ensaio de restauração aprovado depois do último ajuste.
+O mesmo mecanismo, com outros nomes, na conta Cloudflare e no projeto Neon da produção. O job `production` do `backup.yml` (pendente do patch) é o do staging com as trocas da tabela abaixo; `scripts/verify-backup-workflow.mjs` garante que não há outra diferença. **Ele nasce desligado e sem chave:** só roda com `PRODUCTION_BACKUP_ENABLED` = `true`, e `ops/backup/recipients-production.txt` não tem chave, então o job também não passaria da conferência do hash nem selaria. O repositório não cria nenhum recurso da produção, e o job só existe depois que o patch do `backup.yml` for aplicado.
 
-- Marcador `polaris.environment=production`, login `polaris_backup_reader` criado do mesmo jeito no banco da produção (e aceito pelo verificador da produção, quando ele existir, com a mesma exceção), bucket `polaris-backup`, token só nele, Environment `production-backup`, chave do titular da produção em `ops/backup/recipients-production.txt` (outra chave, não a do staging), variável `PRODUCTION_BACKUP_ENABLED`, grupo de concorrência do deploy da produção.
-- O workflow da produção é cópia deste com essas trocas, aplicado pelo responsável. A frequência é diária (decisão do usuário; o egress do Neon Free limita execuções × tamanho do banco a cerca de 4 GB por mês). Só a 1ª cópia, no R2; a 2ª cópia fica para depois.
-- O ensaio na produção usa uma branch descartável do projeto da produção, com autorização explícita do responsável, numa máquina com disco cifrado (os dados são reais). É item de bloqueio do [checklist de go-live](./README.md#checklist-de-go-live-cloudflare-e-neon) ("Backup diário e ensaio de restauração").
-- Revisão obrigatória: `scripts/backup/`, `ops/backup/` e os workflows de backup decidem para quem o backup é cifrado e para onde vai; um PR que mexa neles passa pela revisão de segurança, e o responsável segura o merge automático desses caminhos.
+Pré-requisito: o staging com backups diários verdes e um ensaio de restauração aprovado depois do último ajuste, e o PITR da produção configurado e lido de volta (seção seguinte).
+
+| | Staging | Produção |
+| --- | --- | --- |
+| Variável que liga | `STAGING_BACKUP_ENABLED` | `PRODUCTION_BACKUP_ENABLED` |
+| Environment | `staging-backup` | `production-backup` |
+| Bucket R2 | `polaris-backup-staging` | `polaris-backup` |
+| Chave pública | `ops/backup/recipients-staging.txt` | `ops/backup/recipients-production.txt` (outra chave, nunca a do staging) |
+| Marcador do banco | `polaris.environment=staging` | `polaris.environment=production` |
+| Rótulo da issue de falha | `backup-staging` | `backup-production` |
+| Grupo de concorrência | `deploy-staging` | `deploy-production` (o do workflow de deploy da produção: se o nome mudar lá, mude no `backup.yml` e em `scripts/verify-backup-workflow.mjs`) |
+
+Os mesmos segredos e variáveis do staging (`BACKUP_PGPASSWORD`, `R2_BACKUP_ACCESS_KEY_ID`, `R2_BACKUP_SECRET_ACCESS_KEY`, `BACKUP_PGHOST`, `BACKUP_PGDATABASE`, `R2_BACKUP_ENDPOINT`, `BACKUP_RECIPIENTS_SHA256`), agora no Environment `production-backup`, com os valores da produção. O bucket fica escrito no workflow, como no staging: um backup da produção nunca vai a outro bucket.
+
+**Ligar na produção (responsável, nesta ordem; registre o resultado de cada passo sem senha nem chave):**
+
+1. **PITR do Neon**, como na seção seguinte.
+2. **Login.** Criar `polaris_backup_reader` no banco da produção pelo SQL do passo 1 do staging, nunca pelo console, e conferir os atributos com o verificador do banco da produção quando ele existir (com a mesma exceção estrita do staging). A prova do `BYPASSRLS` e do `GRANT pg_read_all_data` é a do staging; se o Neon da produção se comportar diferente, pare e leve ao Rodrigo.
+3. **Bucket e token.** Bucket privado `polaris-backup`, sem ciclo de vida e sem acesso público; token R2 "Object Read & Write" só nele, com validade. O custo é o de guardar 35 backups cifrados: multiplique o tamanho do último dump por 35 e confira na tabela de preços do R2 antes de criar (decisão de gasto do responsável, com o Juan).
+4. **Chave.** O titular da produção gera outra identidade (`age-keygen -o production.key`), a guarda no cofre do servidor OpenBot (0400, fora do repositório), apaga a cópia da máquina onde a gerou e entrega só a chave pública (`age-keygen -y`). Ela entra em `ops/backup/recipients-production.txt` por PR revisado pela segurança, uma linha `age1…` e mais nada.
+5. **Environment `production-backup`**, restrito à `main`, sem revisor obrigatório (travaria o cron), com os segredos e as variáveis acima. Crie e restrinja o Environment à `main` e confira a política de branches na tela (só `main`) **antes** de gravar qualquer segredo. `BACKUP_RECIPIENTS_SHA256` é o `sha256sum ops/backup/recipients-production.txt` da `main` depois do PR da chave.
+6. **Rótulo** `backup-production` no repositório.
+7. **Ligar.** Criar a variável de repositório `PRODUCTION_BACKUP_ENABLED` = `true`, só depois dos passos 4 e 5.
+8. **Primeiro backup:** `workflow_dispatch` na `main` com `environment` = `production`. Esperado no log o mesmo do staging, com `ok: marker production and login polaris_backup_reader`. Depois, o ensaio de restauração.
+
+**Se algo faltar, o job para antes de ler ou de sair dado da produção:** sem a variável, o job nem começa; arquivo sem nenhuma linha `age1…`, ou com hash diferente do de `BACKUP_RECIPIENTS_SHA256` (ou com a variável vazia), recusa na conferência dos destinatários, antes de abrir o banco; banco sem o marcador `production`, host com `-pooler` ou login que não é o de leitura esperado, o `dump.sh` recusa; o `seal.sh` ainda recusa chave malformada, e o texto claro, que só existe em memória, é apagado em qualquer saída. Nada disso depende de uma pessoa lembrar.
+
+A frequência é diária (decisão do usuário; no plano Free o egress do Neon limita execuções × tamanho do banco a cerca de 4 GB por mês). Só a 1ª cópia, no R2; a 2ª cópia fica para depois.
+
+O ensaio na produção usa uma branch descartável do projeto da produção, com autorização explícita do responsável, numa máquina com disco cifrado (os dados são reais). É item de bloqueio do [checklist de go-live](./README.md#checklist-de-go-live-cloudflare-e-neon) ("Backup diário e ensaio de restauração").
+
+Revisão obrigatória: `scripts/backup/`, `ops/backup/` e os workflows de backup decidem para quem o backup é cifrado e para onde vai; um PR que mexa neles passa pela revisão de segurança, e o responsável segura o merge automático desses caminhos.
+
+### PITR do Neon (produção)
+
+O backup lógico não é a única camada: o Neon guarda o histórico do projeto e deixa criar uma branch num instante do passado, dentro da **janela de restauração** do plano. O PITR resolve o erro recente (uma migration ruim, um `DELETE` sem filtro) em minutos e sem baixar nada. Ele não cobre projeto apagado, conta perdida nem dano percebido depois da janela, porque o histórico mora no mesmo projeto: para isso existe o backup lógico, cifrado e fora do Neon. As duas camadas se completam, nenhuma substitui a outra.
+
+A janela é do plano contratado e muda de plano para plano; **não presuma o padrão** (o Free guarda 6 horas, e é por isso que o staging tem o backup lógico). Escolher o plano e o tamanho da janela é decisão de gasto do responsável com o usuário; o dev não escolhe nem altera isso. O PITR é configuração do Neon, fora do repositório.
+
+1. **Configurar (responsável).** No console do Neon, no projeto da produção, ajustar a janela de restauração ao valor decidido, dentro do máximo do plano.
+2. **Ler de volta.** Conferir o valor gravado, não o digitado: no console, na mesma tela, ou pela API do projeto (o campo é `history_retention_seconds` das configurações do projeto; confirme o nome na documentação vigente). Com a CLI, só depois de confirmar o perfil e a identidade permitidos, como na [política de perfis da CLI](./cli-profile-policy.md). Registre aqui, sem mais nada: a data, o plano e a janela em horas.
+3. **Provar uma restauração por PITR.** Depois de configurar e de a produção ter histórico para voltar, com a autorização explícita do responsável e numa máquina com disco cifrado (os dados são reais, como no ensaio acima): criar uma branch do projeto da produção num instante dentro da janela (nome único `pitr-drill-AAAAMMDD`, nunca `--schema-only`), conectar com o dono pela conexão direta, conferir o marcador `polaris.environment=production` e que uma tabela conhecida tem as linhas do instante escolhido, e apagar a branch. Registre o instante pedido, o tempo até a branch responder e o resultado, só números e nomes. É a prova de que a janela lida de volta é a que vale.
+4. **Restauração de verdade por PITR** nunca acontece sobre a produção aberta: restaura-se numa branch nova, valida-se, e antes de qualquer cliente voltar aplicam-se os passos 0, 1, 3, 4 e 5 do [restore e deletion ledger](./deletion-ledger-restore.md), porque o PITR também devolve dado já apagado por pedido de exclusão. A decisão de restaurar é do responsável ([Escalonamento](#escalonamento)).
+
+Valor lido de volta da produção: _a registrar pelo responsável (data, plano, janela em horas)._
 
 ## Escalonamento
 

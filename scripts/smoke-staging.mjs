@@ -744,6 +744,9 @@ async function main() {
     target,
   });
   if (failures.length > 0) {
+    for (const failure of failures) {
+      console.error(failure);
+    }
     const label = environment === "staging" ? "Staging" : "Production";
     console.error(`${label} smoke failed (${failures.length}).`);
     process.exitCode = 1;
