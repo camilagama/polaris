@@ -480,7 +480,11 @@ export const Box = () => <Dialog.Root />;`;
     }
   });
 
-  // A new folder of apps/web is either walked or listed here with the reason it holds no production code.
+  // A new folder of apps/web is either walked or listed here with the reason it holds no production code:
+  // e2e*, poc and real-devices are browser and device tests that Vite never imports; scripts/ runs in Node at
+  // build or check time; public/ (boot-retry.js, theme-init.js) is copied as it is and served without a bundle,
+  // so no import in it reaches the build. The configs at the root of apps/web (`vite*.ts`, `playwright*.ts`,
+  // `vitest*.ts`) are outside the walk too: it takes folders, and they run in Node, never in the bundle.
   it("leaves out of the walk only these folders of apps/web", () => {
     const NOT_WALKED = [
       "e2e",
@@ -491,10 +495,20 @@ export const Box = () => <Dialog.Root />;`;
       "real-devices",
       "scripts",
     ];
-    const tracked = execFileSync("git", ["ls-files", "-z", "apps/web"], {
-      cwd: root,
-      encoding: "utf8",
-    })
+    let listing: string;
+    try {
+      listing = execFileSync("git", ["ls-files", "-z", "apps/web"], {
+        cwd: root,
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+    } catch (error) {
+      throw new Error(
+        "git ls-files falhou: este teste lista as pastas de apps/web pelo git e precisa rodar dentro de um checkout com .git",
+        { cause: error }
+      );
+    }
+    const tracked = listing
       .split("\0")
       .filter((path) => path.length > 0)
       .map((path) => path.slice("apps/web/".length))
@@ -505,6 +519,40 @@ export const Box = () => <Dialog.Root />;`;
     expect(folders).toEqual(
       [...TEST_LIBRARY_SCAN_FOLDERS, ...NOT_WALKED].sort()
     );
+  });
+
+  const scanTestLibraryTree = (webRoot: string, repoRoot?: string) =>
+    TEST_LIBRARY_SCAN_FOLDERS.flatMap((folder) =>
+      existsSync(join(webRoot, folder))
+        ? sourceFiles(join(webRoot, folder)).flatMap((file) =>
+            scanTestLibraryImports(
+              file,
+              readFileSync(file, "utf8").replace(COMMENT, ""),
+              repoRoot
+            ).map((finding) => `${folder}/${basename(file)}: ${finding.rule}`)
+          )
+        : []
+    );
+
+  it("a library planted in each walked folder is found by the walk, and one in a folder outside the list is not", () => {
+    const dir = mkdtempSync(join(tmpdir(), "t-lib-tree-"));
+    try {
+      const folders = [...TEST_LIBRARY_SCAN_FOLDERS, "e2e-pwa", "scripts"];
+      for (const folder of folders) {
+        const deep = join(dir, "apps/web", folder, "a");
+        mkdirSync(deep, { recursive: true });
+        writeFileSync(join(deep, "planted.ts"), 'import "happy-dom";');
+        writeFileSync(join(deep, "planted.test.ts"), 'import "happy-dom";');
+      }
+      expect(scanTestLibraryTree(join(dir, "apps/web"), dir).sort()).toEqual([
+        "legal/planted.ts: import of happy-dom",
+        "pwa/planted.ts: import of happy-dom",
+        "src/planted.ts: import of happy-dom",
+        "worker/planted.ts: import of happy-dom",
+      ]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it("finds a planted file in a subfolder, whatever its extension", () => {
@@ -534,13 +582,7 @@ export const Box = () => <Dialog.Root />;`;
     );
     expect(sourceFiles(join(webDir, "src")).length).toBeGreaterThan(100);
     expect(files.some((file) => TEST_FILE.test(file))).toBe(true);
-    const findings = files.flatMap((file) =>
-      scanTestLibraryImports(
-        file,
-        readFileSync(file, "utf8").replace(COMMENT, "")
-      )
-    );
-    expect(findings).toEqual([]);
+    expect(scanTestLibraryTree(webDir)).toEqual([]);
   });
 
   it("lists no exception, and every one it lists names an existing file and a reason", () => {
@@ -583,6 +625,9 @@ export const Box = () => <Dialog.Root />;`;
       expect(found[0]?.startsWith("import of ")).toBe(true);
     });
 
+    // The scan looks at the file, never at its folder, so this case would pass on any folder: the proof that the
+    // walk reaches worker/, pwa/ and legal/ is the `toEqual` of TEST_LIBRARY_SCAN_FOLDERS, the planted tree and
+    // the `git ls-files` check above.
     it.each([
       'import { render } from "@testing-library/react";',
       'import userEvent from "@testing-library/user-event";',
@@ -596,13 +641,16 @@ export const Box = () => <Dialog.Root />;`;
       'import { Window } from "happy-dom/lib/window";',
       'import { Window } from "../node_modules/happy-dom/lib/index.js";',
       'import { render } from "../../node_modules/@testing-library/react";',
-    ])("rejects a planted import in worker, pwa and legal: %s", (source) => {
-      for (const folder of ["worker", "pwa", "legal"]) {
-        const found = rules(plantedIn(folder), source);
-        expect(found, folder).toHaveLength(1);
-        expect(found[0]?.startsWith("import of "), folder).toBe(true);
+    ])(
+      "rejects a planted import in a file of worker, pwa and legal (the scan looks at the file, not the folder): %s",
+      (source) => {
+        for (const folder of ["worker", "pwa", "legal"]) {
+          const found = rules(plantedIn(folder), source);
+          expect(found, folder).toHaveLength(1);
+          expect(found[0]?.startsWith("import of "), folder).toBe(true);
+        }
       }
-    });
+    );
 
     it("passes a file of worker, pwa and legal without the import, and lets their tests import", () => {
       for (const folder of ["worker", "pwa", "legal"]) {
