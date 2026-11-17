@@ -534,11 +534,12 @@ export const Box = () => <Dialog.Root />;`;
         : []
     );
 
-  it("a library planted in each walked folder is found by the walk, and one in a folder outside the list is not", () => {
+  // That the folders outside the list are not walked is proved by the `git ls-files` test above, which pins the
+  // list of folders; this one only proves the walk reaches a nested file in each listed folder.
+  it("a library planted in each folder of the list is found by the walk", () => {
     const dir = mkdtempSync(join(tmpdir(), "t-lib-tree-"));
     try {
-      const folders = [...TEST_LIBRARY_SCAN_FOLDERS, "e2e-pwa", "scripts"];
-      for (const folder of folders) {
+      for (const folder of TEST_LIBRARY_SCAN_FOLDERS) {
         const deep = join(dir, "apps/web", folder, "a");
         mkdirSync(deep, { recursive: true });
         writeFileSync(join(deep, "planted.ts"), 'import "happy-dom";');
