@@ -6,12 +6,12 @@ import {
 import { normalizeActivationAddress } from "@polaris/domain/activation/notices";
 import { logger, opaqueId } from "@polaris/observability/logger";
 import { type Context, Hono } from "hono";
+import { svixKeyOf, verifySvixSignature } from "../activation/resend-signature";
 import {
   activationSuppressionHmac,
   activationSuppressionKeyId,
   activationSuppressionSecretsOf,
-} from "../activation/notice-consumer";
-import { svixKeyOf, verifySvixSignature } from "../activation/resend-signature";
+} from "../activation/suppression";
 import type { ServerEnv } from "../environment";
 import {
   logServerErrorFromContext,

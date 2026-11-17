@@ -21,11 +21,13 @@ import {
   activationNoticeDependenciesOf,
   activationNoticeEmailConfig,
   activationNoticeIdempotencyKey,
+  handleActivationNotice,
+} from "./notice-consumer";
+import {
   activationSuppressionHmac,
   activationSuppressionKeyId,
   activationSuppressionSecretsOf,
-  handleActivationNotice,
-} from "./notice-consumer";
+} from "./suppression";
 
 const NOTICE = "0199f0aa-2b3c-7d4e-8f90-123456789abc";
 const ORG = "org_1";
