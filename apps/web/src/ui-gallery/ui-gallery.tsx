@@ -134,6 +134,7 @@ import {
 } from "@/ui/table";
 import { Thumbnail, type ThumbnailSize } from "@/ui/thumbnail";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/ui/tabs";
+import { Switch } from "@/ui/switch";
 import { Textarea } from "@/ui/textarea";
 import { ThemeSegmented } from "@/ui/theme-segmented";
 import { ThemeSwitch } from "@/ui/theme-switch";
@@ -1144,6 +1145,22 @@ export function UiGallery() {
                       antecipação ocorreu.
                     </FieldDescription>
                   </FieldContent>
+                </Field>
+                <Separator />
+                <Field orientation="horizontal">
+                  <FieldContent>
+                    <FieldLabel htmlFor="galeria-dicas">
+                      Dicas para começar
+                    </FieldLabel>
+                    <FieldDescription id="galeria-dicas-ajuda">
+                      Até 3 e-mails nos primeiros 14 dias de uma loja nova.
+                    </FieldDescription>
+                  </FieldContent>
+                  <Switch
+                    aria-describedby="galeria-dicas-ajuda"
+                    defaultChecked
+                    id="galeria-dicas"
+                  />
                 </Field>
               </CardContent>
             </Card>

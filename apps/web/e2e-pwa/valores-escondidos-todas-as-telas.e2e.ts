@@ -179,6 +179,7 @@ const DATA_EXPORT: Case = {
   name: "seus dados com uma cópia pronta e um pedido em andamento",
   open: async (page) => {
     await serveShell(page, {
+      "account/emailPreference": { sent: 2, tips: true },
       "dataExport/list": {
         exports: [
           {

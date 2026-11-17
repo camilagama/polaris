@@ -284,6 +284,7 @@ import {
   type readPeriodSummary,
 } from "@polaris/db/economics-repository";
 import type { ExpenseRepository } from "./expense-handlers";
+import type { ActivationPreferenceClient } from "@polaris/db/activation-preference";
 import type { DataExportRepository } from "./data-export-handlers";
 import type { GoalRepository } from "./goal-handlers";
 import type { PlanRepository } from "./plan-handlers";
@@ -324,6 +325,7 @@ import {
 } from "./billing-handlers";
 import { createExpenseRpcHandlers } from "./expense-handlers";
 import { createDataExportRpcHandlers } from "./data-export-handlers";
+import { createEmailPreferenceRpcHandlers } from "./email-preference-handlers";
 import { createGoalRpcHandlers } from "./goal-handlers";
 import { createPlanRpcHandlers } from "./plan-handlers";
 import { createPublicCatalogRpcHandlers } from "./public-catalog-handlers";
@@ -386,6 +388,9 @@ interface RpcRouterDependencies {
   createInitialOrganization: typeof createInitialOrganization;
   createOnboardingDatabase: typeof createDatabase;
   createPaymentProfile: typeof createPaymentProfile;
+  createPreferenceClient: (
+    connectionString: string
+  ) => ActivationPreferenceClient;
   createProduct: typeof createProduct;
   /** The one use case of `product.create` (the sync command runs it too); tests give a fake one. */
   createProductWithOpeningStock: typeof createProductWithOpeningStock;
@@ -1543,6 +1548,11 @@ export function createRpcRouter(
     toRpcError,
     withAuthenticatedRequestContext: authenticatedRequest,
   });
+  const emailPreferenceHandlers = createEmailPreferenceRpcHandlers({
+    createPreferenceClient: overrides.createPreferenceClient,
+    toRpcError,
+    withTenantRequestContext: tenantRequest,
+  });
   const reportHandlers = createReportRpcHandlers({
     readDailySales: overrides.readDailySales,
     readPeriodSummary: overrides.readPeriodSummary,
@@ -2151,7 +2161,7 @@ export function createRpcRouter(
       return next();
     })
     .router({
-      account: accountHandlers,
+      account: { ...accountHandlers, ...emailPreferenceHandlers },
       billing: billingHandlers,
       category: { archive, create, delete: remove, list, rename, restore },
       customer: customerHandlers,

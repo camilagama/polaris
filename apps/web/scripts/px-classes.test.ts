@@ -117,6 +117,7 @@ const PX_EXCEPTIONS: readonly PxException[] = [
   },
   { count: 2, path: "ui/radio-group.tsx", reason: RING, segment: "ring-[3px]" },
   { count: 1, path: "ui/select.tsx", reason: RING, segment: "ring-[3px]" },
+  { count: 1, path: "ui/switch.tsx", reason: RING, segment: "ring-[3px]" },
   {
     count: 1,
     path: "ui/sidebar.tsx",

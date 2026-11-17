@@ -19,6 +19,7 @@ const THEMES = [
 // the browser resolves `oklch(… / 50%)` to a color with an alpha of 0.5
 const HALF_STRENGTH = /\/ 0\.5\)$/;
 const ANTICIPATION_HELP = /^É uma intenção registrada na venda/;
+const TIPS_HELP = /^Até 3 e-mails nos primeiros 14 dias de uma loja nova\./;
 
 async function openGallery(page: Page, stored: string | null) {
   if (stored) {
@@ -175,8 +176,17 @@ test("os componentes da venda têm papel e rótulo", async ({ page }) => {
   await anticipation.press("Space");
   await expect(anticipation).not.toBeChecked();
 
+  // Switch: named by its label, described by its help, starts on, toggled by Space
+  const tips = sale.getByRole("switch", { name: "Dicas para começar" });
+  await expect(tips).toHaveAccessibleDescription(TIPS_HELP);
+  await expect(tips).toBeChecked();
+  await tips.press("Space");
+  await expect(tips).not.toBeChecked();
+  await tips.press("Space");
+  await expect(tips).toBeChecked();
+
   // Separator
-  await expect(sale.getByRole("separator")).toHaveCount(3);
+  await expect(sale.getByRole("separator")).toHaveCount(4);
 });
 
 for (const theme of THEMES) {

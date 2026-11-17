@@ -4,6 +4,7 @@
  * in flight from a read without bundling the contract (`writes-in-flight.ts`), and a test keeps the two equal.
  */
 export const READ_PROCEDURES: readonly string[] = [
+  "account/emailPreference",
   "account/legalStatus",
   "billing/readPlan",
   "category/list",
