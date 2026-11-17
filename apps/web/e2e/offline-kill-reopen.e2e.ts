@@ -405,8 +405,8 @@ async function reopenAndAccept(
 
 test.describe("matar o navegador no meio de um envio", () => {
   test.skip(
-    ({ browserName, isMobile }) =>
-      browserName !== "chromium" || isMobile || process.platform !== "linux",
+    ({ browserName }) =>
+      browserName !== "chromium" || process.platform !== "linux",
     "só o Chromium de mesa no Linux: o processo a derrubar se acha por /proc"
   );
   test.describe.configure({ timeout: 120_000 });
