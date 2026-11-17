@@ -23,6 +23,7 @@
     "admin:sheet": "bun apps/web/scripts/admin-sheet.ts",
     "typecheck": "turbo run typecheck && tsc -p tsconfig.skills.json",
     "verify:no-lab-in-build": "node scripts/verify-no-lab-in-build.mjs",
+    "verify:no-map-published": "node scripts/verify-no-map-published.mjs",
     "verify:staging-isolation": "node scripts/verify-staging-isolation.mjs"
   },
   "overrides": {
