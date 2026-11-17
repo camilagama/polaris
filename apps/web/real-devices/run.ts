@@ -9,6 +9,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Local } from "browserstack-local";
 import { remote } from "webdriverio";
+import { appCommit, UNKNOWN_APP_COMMIT } from "./app-commit";
 import {
   credentials,
   markSession,
@@ -27,7 +28,6 @@ import {
 import {
   type DeviceReport,
   deviceStatus,
-  normalizeSha,
   type RunReport,
   writeReport,
 } from "./report";
@@ -67,25 +67,12 @@ function localBinary() {
   return binaryPath;
 }
 
-/**
- * O commit da árvore de que a build sai, e se ela tinha alterações não commitadas (o SHA então não a identifica
- * inteira). A build não carrega o SHA de forma legível: só `VITE_RELEASE`, encurtado, e só com os erros de cliente ligados.
- */
-function appCommit() {
-  const git = (args: string[]) =>
-    execFileSync("git", args, {
-      cwd: webRoot,
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "ignore"],
-    });
-  try {
-    return {
-      dirty: git(["status", "--porcelain"]).trim() !== "",
-      sha: normalizeSha(git(["rev-parse", "HEAD"])),
-    };
-  } catch {
-    return { dirty: false, sha: normalizeSha(null) };
-  }
+function gitInWebRoot(args: string[]) {
+  return execFileSync("git", args, {
+    cwd: webRoot,
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "ignore"],
+  });
 }
 
 function build() {
@@ -264,10 +251,10 @@ for (const event of ["uncaughtException", "unhandledRejection"] as const) {
 }
 
 const devices: DeviceReport[] = [];
-let app = { dirty: false, sha: normalizeSha(null) };
+let app = UNKNOWN_APP_COMMIT;
 try {
   console.log("Gate 5 em aparelhos reais: construindo o app…");
-  app = appCommit();
+  app = appCommit(gitInWebRoot);
   build();
   servers.push(
     await serveBuild(join(webRoot, "dist/offline-poc"), LAB_PORT, certificate)
