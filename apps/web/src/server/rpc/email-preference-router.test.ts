@@ -4,8 +4,8 @@ import type { ActivationPreference } from "@polaris/db/activation-preference";
 import {
   ACTIVATION_PREFERENCE_STATEMENT,
   ACTIVATION_SET_TIPS_STATEMENT,
-  renderActivationStatement,
 } from "@polaris/db/activation-preference";
+import { renderActivationStatement } from "@polaris/db/activation-preference-testing";
 import { TenantAuthorizationError } from "@polaris/db/tenant-transaction";
 import { describe, expect, it, vi } from "vitest";
 import { createServerApp } from "../app";

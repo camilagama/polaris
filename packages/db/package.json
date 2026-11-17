@@ -54,6 +54,7 @@
     "./activation-notice-store": "./src/activation-notice-store.ts",
     "./activation-opt-out": "./src/activation-opt-out.ts",
     "./activation-preference": "./src/activation-preference.ts",
+    "./activation-preference-testing": "./src/activation-preference.testing.ts",
     "./billing-notice-recipient": "./src/billing-notice-recipient.ts",
     "./billing-store": "./src/billing-store.ts",
     "./billing-repository": "./src/billing-repository.ts",
