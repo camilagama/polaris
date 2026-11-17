@@ -78,6 +78,34 @@ Fluxos (cada passo falho pula os seguintes do mesmo fluxo):
 
 `report.md` traz, por aparelho, o link da sessão no BrowserStack (vídeo, logs e capturas, com a conta do projeto) e uma tabela com fluxo, passo, resultado (✅ passou, ❌ falhou, ⏭️ pulado), tempo e detalhe. No primeiro passo o detalhe registra o navegador do aparelho e o resultado de `storage.persist()`. `report.json` tem os mesmos dados (`status` geral, `devices[].steps[]`, `sessionUrl`). Os dois trazem o commit do app testado (`appSha` no JSON, linha "App testado" no Markdown): o `git rev-parse HEAD` da árvore no começo da execução, de que a build sai (a build não carrega o SHA de forma legível). Com alterações não commitadas, `appDirty` é verdadeiro e o relatório avisa que o SHA não identifica a build inteira. Sem SHA completo válido o campo é `desconhecido` e o relatório diz isso; o gate não falha por isso. Uma execução restrita por `GATE5_PLATFORMS` ou `GATE5_FLOWS` sai com `partial: true` (e um aviso no `report.md`) e não prova o Gate inteiro. Um passo falho traz a mensagem; abra o vídeo da sessão para ver a tela. Guarde o relatório (sem segredos) junto do registro do Gate; não aponte `GATE5_REPORT_DIR` para dentro do repositório. O log do binário do Local fica num diretório temporário e é apagado ao final.
 
+### Guarda de deriva da suíte (roda no CI, sem BrowserStack)
+
+A suíte acima não roda no CI, então ela pode ficar defasada em relação à tela sem que ninguém perceba até alguém abrir o aparelho. `apps/web/real-devices/suite-drift.test.ts` roda no `bun run test` (e, portanto, no job Checks) e reprova quando a suíte espera algo que o código de produto ou do laboratório não tem mais. Ela lê `apps/web/real-devices/suite.ts` sem comentários, extrai o que cada chamada espera e procura no código de `apps/web/src`, `packages/domain/src` e `packages/contracts/src` (sem testes, sem comentários) e no `apps/web/index.html`.
+
+O que ela confere:
+
+| Tipo | Exemplos na suíte | Existe quando |
+| --- | --- | --- |
+| Id | `#customer-name`, `#customer-phone`, `#sale-profile`, `sale-method-<método>`, `galeria-form-1`, `#root` | algum `id=` (ou `fieldProps(`) do código traz o valor ou o começo do modelo `` `prefixo-${…}` `` |
+| Atributo | `data-row-open`, `data-customer-id`, `data-sync-state`, `data-chart-area`, `data-day`, `data-motion` | o nome aparece no código (ou `dataset.<nome>`) |
+| Texto | "Novo cliente", "Aguardando envio", "Venda guardada neste aparelho", "Vendas guardadas neste aparelho", "Pode vender: a venda fica guardada neste aparelho", "Cadastrar cliente", "Nova despesa", "Data de competência" (também como `aria-label` do botão do seletor, `COMPETENCE_BUTTON`), "O calendário não abriu.", "Tentar novamente", "Recarregar a página", "Abrir formulário", "Fechar", os rótulos dos campos (`Usuário`, `Rede disponível`, `Quantidade`, `Produto ou variante`, `Campo 1`) e os títulos que a suíte espera | o texto aparece em literal ou em JSX do código, sem diferença de espaços e quebras de linha |
+| Id de teste | `server-records` | existe `data-testid` com o valor |
+| Endereço e tela do laboratório | `/offline-screens-lab?screen=…`, `/ui-galeria`, `/termos`, `/vendas/historico` | o endereço é um literal do código; o `screen=` é um dos que `src/offline-poc/screens-lab.tsx` aceita |
+| Camada carregada sob demanda | `filter-bar-motion` | o nome aparece no código |
+| Chave do histórico | `polarisDialog` | o nome aparece no código |
+
+Texto que a tela monta em pedaços (`Sem conexão · 1 operação guardada`, `Iniciar: ok (ready)`) entra em `COMPOSED_TEXTS`, no teste, com os pedaços que têm de existir; o teste reprova a entrada que o produto passar a trazer inteira.
+
+Quando a guarda reprovar, a mensagem diz o tipo, o valor e a linha de `suite.ts`:
+
+1. Abra a tela (ou o laboratório) e veja o que mudou: o seletor ou o texto foi renomeado, movido ou apagado?
+2. Atualize `suite.ts` para o que a tela tem hoje e rode a suíte no aparelho (`GATE5_FLOWS=<fluxo>`), porque a guarda só prova que o valor existe, não que o passo funciona. Atualize a tabela de fluxos acima se o passo mudou.
+3. Se o produto é que está errado (o texto sumiu por engano), corrija o produto, não a suíte.
+4. Texto montado em pedaços: acrescente-o a `COMPOSED_TEXTS` com os pedaços, nunca apague a checagem.
+5. Ajudante novo da suíte que recebe texto ou seletor do produto: classifique-o em `CALLS` (confere) ou `DATA_ARGUMENTS` (dado de teste) no teste. Um ajudante com literal sem classificação reprova de propósito, para o ajudante novo não esperar um texto que ninguém confere.
+
+Limites: a guarda não prova que a tela está no estado certo nem que um passo que a suíte nunca teve existe (a suíte sem o passo "Novo cliente" não reprovaria, só a que o esperasse); só confere o que a suíte já espera. Ela também não vê texto que a suíte lê por código fora das formas listadas em `CALLS`: use sempre um ajudante conhecido. `KNOWN_DRIFT` guarda o que ela já acusa e ainda não foi corrigido; a lista é exata, o teste reprova a entrada que deixou de reprovar, e a entrada sai junto da correção.
+
 ### Como a rede do aparelho é derrubada
 
 A sessão WebDriver não passa pela rede do aparelho, então o perfil de rede pode ser trocado no meio do teste pela API REST do BrowserStack (`PUT /automate/sessions/<id>/update_network.json` com `{"networkProfile":"no-network"}`). Observado em 18/10/2026 (Pixel 11 Pro): o perfil `reset` responde 200 mas **não** religa a rede; a rede é restaurada com o perfil documentado `4g-lte-advanced-good`. Depois de cada troca o script confere de dentro da página (um `fetch` para `/rpc/probe`, que o service worker nunca guarda) que a rede de fato caiu ou voltou.
