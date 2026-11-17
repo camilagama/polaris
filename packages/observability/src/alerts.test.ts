@@ -184,7 +184,10 @@ const policyStatePattern = new RegExp(
 const monitorLinkPattern = /\(#([^)]+)\)/;
 const policyRowPattern = /^\| [1-9]\d* \|/;
 const queryEventsPattern =
-  /^event (?:= ("[^"]+")|in \(("[^"]+"(?:, "[^"]+")*)\))/;
+  /^event (?:= ("[^"]+")|in \(("[^"]+"(?:, "[^"]+")*)\))(?=`?(?:;|$))/;
+const secondEventClausePattern = /\bevent (?:=|in) /;
+const outsideBackticksPattern = /[,\s]/g;
+const policyNumberLimit = 5;
 const backtickedPattern = /`([^`]+)`/g;
 const accountPolicyLimit = 5;
 const leadingBacktickPattern = /^`/;
@@ -267,13 +270,27 @@ function expectedLimit(threshold: AlertThreshold): string {
   }
 }
 
-/** The events a query cell names in its leading `event = ...` or `event in (...)` clause, or undefined when the cell does not start with one. */
-function queryEvents(query: string): string[] | undefined {
-  const match = queryEventsPattern.exec(
-    query.replace(leadingBacktickPattern, "")
-  );
+/** The events a query cell names in its leading `event = ...` or `event in (...)` clause, and the text after that clause; undefined when the cell does not start with one. */
+function queryClause(
+  query: string
+): { events: string[]; rest: string } | undefined {
+  const text = query.replace(leadingBacktickPattern, "");
+  const match = queryEventsPattern.exec(text);
   const quoted = match?.[1] ?? match?.[2];
-  return quoted?.split(", ").map((name) => name.slice(1, -1));
+  if (!match || quoted === undefined) {
+    return undefined;
+  }
+  return {
+    events: quoted.split(", ").map((name) => name.slice(1, -1)),
+    rest: text.slice(match[0].length),
+  };
+}
+
+function queryFilters(rest: string): string[] {
+  return rest
+    .split(";")
+    .map((part) => part.replaceAll("`", "").trim())
+    .filter((part) => part !== "");
 }
 
 function setDifference(
@@ -288,11 +305,15 @@ function eventDrift(
   query: string,
   expected: readonly string[]
 ): string[] {
-  const named = queryEvents(query);
-  if (!named) {
+  const clause = queryClause(query);
+  if (!clause) {
     return [`${label}: query does not start with an event clause`];
   }
+  const named = clause.events;
   return [
+    ...(secondEventClausePattern.test(clause.rest)
+      ? [`${label}: query has an event clause after the first`]
+      : []),
     ...setDifference(expected, named).map(
       (event) => `${label}: query lacks ${event}`
     ),
@@ -399,7 +420,21 @@ function policyDrift(
     if (!policyStatePattern.test(state)) {
       problems.push(`${label}: state "${state}" is not one of the two forms`);
     }
+    if (state.startsWith("V14,") && policy.id !== "1") {
+      problems.push(`${label}: the V14 state belongs to policy 1`);
+    }
+    if (Number(policy.id) > policyNumberLimit) {
+      problems.push(`${label}: number outside 1 to ${policyNumberLimit}`);
+    }
+    if (
+      covered
+        .replace(backtickedPattern, "")
+        .replace(outsideBackticksPattern, "") !== ""
+    ) {
+      problems.push(`${label}: signals column has text outside backticks`);
+    }
     const expectedEvents: string[] = [];
+    const coveredFilters: string[] = [];
     for (const id of backticked(covered)) {
       const signal = signals.find((candidate) => candidate.id === id);
       if (!signal) {
@@ -413,6 +448,9 @@ function policyDrift(
         );
       }
       owner.set(id, policy.id);
+      if (signal.source.where) {
+        coveredFilters.push(signal.source.where);
+      }
       for (const event of signal.source.events) {
         if (!expectedEvents.includes(event)) {
           expectedEvents.push(event);
@@ -420,6 +458,13 @@ function policyDrift(
       }
     }
     problems.push(...eventDrift(label, query, expectedEvents));
+    for (const filter of queryFilters(queryClause(query)?.rest ?? "")) {
+      if (!coveredFilters.includes(filter)) {
+        problems.push(
+          `${label}: filter "${filter}" is not the filter of a signal it covers`
+        );
+      }
+    }
   }
   for (const row of monitorRows(markdown)) {
     const claimed = signalStatePattern.exec(row.cells[5] ?? "")?.[1];
@@ -773,6 +818,85 @@ describe("the monitors section of the runbook", () => {
       ]);
     });
 
+    it("rejects a policy query that lacks an event, adds a second event clause or starts with something else, and a filter the signals do not have", () => {
+      const lacks = inSection((text) =>
+        text.replace(', "queue_ledger_unavailable")`', ")`")
+      );
+      const second = inSection((text) =>
+        text.replace(
+          '`event = "auth_access_log_write_failed"` | não',
+          '`event = "auth_access_log_write_failed"`; `event in ("outro_evento")` | não'
+        )
+      );
+      const orClause = inSection((text) =>
+        text.replace(
+          '`event = "auth_access_log_write_failed"` | não',
+          '`event = "auth_access_log_write_failed" or event = "outro_evento"` | não'
+        )
+      );
+      const noClause = inSection((text) =>
+        text.replace(
+          '`event = "auth_access_log_write_failed"` | não',
+          "`httpStatus >= 500` | não"
+        )
+      );
+      const otherJob = inSection((text) =>
+        text.replace('job = "outbox.dispatch"', 'job = "outro.job"')
+      );
+
+      expect(monitorDrift(lacks, alertSignals)).toEqual([
+        "policy 3: query lacks queue_ledger_unavailable",
+      ]);
+      expect(monitorDrift(second, alertSignals)).toEqual([
+        "policy 1: query has an event clause after the first",
+        'policy 1: filter "event in ("outro_evento")" is not the filter of a signal it covers',
+      ]);
+      expect(monitorDrift(orClause, alertSignals)).toEqual([
+        "policy 1: query does not start with an event clause",
+      ]);
+      expect(monitorDrift(noClause, alertSignals)).toEqual([
+        "policy 1: query does not start with an event clause",
+      ]);
+      expect(monitorDrift(otherJob, alertSignals)).toEqual([
+        'policy 5: filter "job = "outro.job" and outcome = "success"" is not the filter of a signal it covers',
+      ]);
+    });
+
+    it("rejects the V14 state outside policy 1, a policy number above 5 and a signal id outside backticks", () => {
+      const v14Elsewhere = inSection((text) =>
+        text.replace(
+          "| criada em 17/11/2026 por Arrascaeta |\n| 3 |",
+          "| V14, provada em 09/11/2026 (registro do Arrascaeta) |\n| 3 |"
+        )
+      );
+      const numberNine = inSection((text) =>
+        text.replace(
+          '| 5 | `event = "scheduled_job_run"`',
+          '| 9 | `event = "scheduled_job_run"`'
+        )
+      );
+      const bareId = inSection((text) =>
+        text.replace(
+          "`http-5xx`, `erros-de-banco` |",
+          "`http-5xx`, erros-de-banco |"
+        )
+      );
+
+      expect(monitorDrift(v14Elsewhere, alertSignals)).toEqual([
+        "policy 2: the V14 state belongs to policy 1",
+      ]);
+      expect(monitorDrift(numberNine, alertSignals)).toEqual([
+        "policy 9: number outside 1 to 5",
+        "outbox-parado: the signal line says policy 5 and the policy table says policy 9",
+      ]);
+      expect(monitorDrift(bareId, alertSignals)).toEqual([
+        "policy 3: signals column has text outside backticks",
+        "policy 3: query names scheduler_state_unavailable, which the registry does not",
+        "policy 3: query names queue_ledger_unavailable, which the registry does not",
+        "erros-de-banco: the signal line says policy 3 and the policy table says none",
+      ]);
+    });
+
     it("keeps the policy table and the signal lines in step", () => {
       const sixth = inSection((text) =>
         text.replace(
@@ -790,12 +914,12 @@ describe("the monitors section of the runbook", () => {
         text.replace(http5xxStatePattern, "$1coberto pela política 2 |")
       );
 
-      expect(monitorDrift(sixth, alertSignals)).toEqual(
-        expect.arrayContaining([
-          "policies: 6 lines, the account accepts at most 5",
-          "registro-de-acesso: covered by policy 1 and by policy 6",
-        ])
-      );
+      expect(monitorDrift(sixth, alertSignals)).toEqual([
+        "policies: 6 lines, the account accepts at most 5",
+        "policy 6: number outside 1 to 5",
+        "registro-de-acesso: covered by policy 1 and by policy 6",
+        "registro-de-acesso: the signal line says policy 1 and the policy table says policy 6",
+      ]);
       expect(monitorDrift(unknownSignal, alertSignals)).toEqual([
         "policy 5: covers sinal-solto, which is not in the registry",
       ]);
