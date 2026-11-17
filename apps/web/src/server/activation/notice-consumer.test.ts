@@ -2,6 +2,7 @@ import type { ActivationNoticeRecipientClient } from "@polaris/db/activation-not
 import type {
   ActivationNoticeReread,
   ActivationNoticeStore,
+  ActivationSuppressionKeys,
 } from "@polaris/db/activation-notice-store";
 import { ACTIVATION_NOTICE_REREAD_REASONS } from "@polaris/domain/activation/notices";
 import { outboxIdempotencyKey } from "@polaris/domain/events/outbox";
@@ -21,6 +22,7 @@ import {
   activationNoticeEmailConfig,
   activationNoticeIdempotencyKey,
   activationSuppressionHmac,
+  activationSuppressionKeyId,
   activationSuppressionSecretsOf,
   handleActivationNotice,
 } from "./notice-consumer";
@@ -33,6 +35,7 @@ const ADDRESS = "ana@exemplo.com";
 const NOW = new Date("2026-11-12T17:00:00.000Z");
 const HOUR_MS = 3_600_000;
 const STRING_BINDING = /^\s+([A-Z][A-Z0-9_]+)\?: string;/gm;
+const KEY_ID_FORMAT = /^[0-9a-f]{8}$/;
 const SECRET_BINDING = /SECRET|PEPPER|TOKEN|API_KEY|PAYER_KEY|APP_ID/;
 
 const SECRETS = {
@@ -119,7 +122,7 @@ function setup(options: SetupOptions = {}) {
   };
   const notices = {
     claim: vi.fn((_notice: string, _org: string) => Promise.resolve(claim)),
-    isSuppressed: vi.fn((_hmacs: readonly Uint8Array[]) =>
+    isSuppressed: vi.fn((_keys: ActivationSuppressionKeys, _now: Date) =>
       Promise.resolve(options.suppressed ?? false)
     ),
     markAttempted: vi.fn((_notice: string, _org: string) =>
@@ -602,13 +605,13 @@ describe("the consumer of an activation notice: the address sent to", () => {
     expect(await handleActivationNotice(dependencies, envelope())).toBe("sent");
 
     expect(send.mock.calls[0]?.[0].to).toBe("outra@exemplo.com");
-    const [hmacs] = notices.isSuppressed.mock.calls[0] ?? [];
-    expect(hmacs).toEqual([
+    const [keys] = notices.isSuppressed.mock.calls[0] ?? [];
+    expect(keys?.current.hmac).toEqual(
       await activationSuppressionHmac(
         SECRETS.ACTIVATION_SUPPRESSION_HMAC_SECRET,
         "outra@exemplo.com"
-      ),
-    ]);
+      )
+    );
   });
 
   it("skips as no_recipient an address outside printable ASCII", async () => {
@@ -654,6 +657,13 @@ describe("the consumer of an activation notice: the address", () => {
     expect(fixture.notices.isSuppressed).toHaveBeenCalledTimes(1);
   });
 
+  it("asks with the clock of the consumer, so the database counts the 12 months from the same instant", async () => {
+    spyConsole();
+    const fixture = setup({ suppressed: true });
+    await handleActivationNotice(fixture.dependencies, envelope());
+    expect(fixture.notices.isSuppressed.mock.calls[0]?.[1]).toEqual(NOW);
+  });
+
   it("asks for one HMAC with the current secret only, 32 bytes, signed over the purpose and the normalized address", async () => {
     spyConsole();
     const secret = SECRETS.ACTIVATION_SUPPRESSION_HMAC_SECRET;
@@ -663,18 +673,25 @@ describe("the consumer of an activation notice: the address", () => {
       const fixture = setup({ address, suppressed: true });
       // biome-ignore lint/performance/noAwaitInLoops: one address at a time
       await handleActivationNotice(fixture.dependencies, envelope());
-      const [hmacs] = fixture.notices.isSuppressed.mock.calls[0] ?? [];
-      expect(hmacs).toHaveLength(1);
-      expect(hmacs?.[0]).toHaveLength(32);
-      expect(Array.from(hmacs?.[0] ?? [])).toEqual(Array.from(expected));
-      expect(Array.from(hmacs?.[0] ?? [])).not.toEqual(Array.from(bare));
+      const [keys] = fixture.notices.isSuppressed.mock.calls[0] ?? [];
+      expect(keys?.previous).toBeUndefined();
+      expect(keys?.current.hmac).toHaveLength(32);
+      expect(Array.from(keys?.current.hmac ?? [])).toEqual(
+        Array.from(expected)
+      );
+      expect(Array.from(keys?.current.hmac ?? [])).not.toEqual(
+        Array.from(bare)
+      );
+      expect(keys?.current.keyId).toBe(
+        await activationSuppressionKeyId(secret)
+      );
     }
     expect(
       Array.from(await activationSuppressionHmac(secret, "a@b.com"))
     ).toEqual(Array.from(expected));
   });
 
-  it("asks for two HMACs, the current and the previous secret's, when a valid previous one is set", async () => {
+  it("asks for two keys, the current and the previous secret's, each with its key id, when a valid previous one is set", async () => {
     spyConsole();
     const previous = "previous-suppression-secret-0123456789-abc";
     const email = activationNoticeEmailConfig(
@@ -683,9 +700,8 @@ describe("the consumer of an activation notice: the address", () => {
     );
     const fixture = setup({ email, suppressed: true });
     await handleActivationNotice(fixture.dependencies, envelope());
-    const [hmacs] = fixture.notices.isSuppressed.mock.calls[0] ?? [];
-    expect(hmacs).toHaveLength(2);
-    expect(Array.from(hmacs?.[0] ?? [])).toEqual(
+    const [keys] = fixture.notices.isSuppressed.mock.calls[0] ?? [];
+    expect(Array.from(keys?.current.hmac ?? [])).toEqual(
       Array.from(
         await hmacOf(
           SECRETS.ACTIVATION_SUPPRESSION_HMAC_SECRET,
@@ -693,11 +709,20 @@ describe("the consumer of an activation notice: the address", () => {
         )
       )
     );
-    expect(Array.from(hmacs?.[1] ?? [])).toEqual(
+    expect(Array.from(keys?.previous?.hmac ?? [])).toEqual(
       Array.from(
         await hmacOf(previous, "activation-suppression:v1:ana@exemplo.com")
       )
     );
+    expect(keys?.current.keyId).toBe(
+      await activationSuppressionKeyId(
+        SECRETS.ACTIVATION_SUPPRESSION_HMAC_SECRET
+      )
+    );
+    expect(keys?.previous?.keyId).toBe(
+      await activationSuppressionKeyId(previous)
+    );
+    expect(keys?.previous?.keyId).not.toBe(keys?.current.keyId);
   });
 });
 
@@ -713,6 +738,28 @@ async function hmacOf(secret: string, text: string): Promise<Uint8Array> {
     await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(text))
   );
 }
+
+describe("the identifier of a secret of the suppression", () => {
+  it("is the first 4 bytes of an HMAC over its purpose, in hexadecimal", async () => {
+    const secret = SECRETS.ACTIVATION_SUPPRESSION_HMAC_SECRET;
+    const full = await hmacOf(secret, "activation-suppression-key-id:v1");
+
+    expect(await activationSuppressionKeyId(secret)).toBe(
+      Array.from(full.slice(0, 4), (byte) =>
+        byte.toString(16).padStart(2, "0")
+      ).join("")
+    );
+    expect(await activationSuppressionKeyId(secret)).toMatch(KEY_ID_FORMAT);
+  });
+
+  it("changes with the secret and does not contain it", async () => {
+    const first = await activationSuppressionKeyId("a".repeat(40));
+    const second = await activationSuppressionKeyId("b".repeat(40));
+
+    expect(first).not.toBe(second);
+    expect(first).not.toContain("a".repeat(8));
+  });
+});
 
 describe("the consumer of an activation notice: the send", () => {
   it.each([

@@ -32,6 +32,11 @@ describe("the skip codes of the activation series", () => {
     ).toEqual([...ACTIVATION_NOTICE_REREAD_REASONS]);
   });
 
+  it("make the stop after a complaint the first rule the database re-reads", () => {
+    expect(ACTIVATION_NOTICE_REREAD_REASONS[0]).toBe("series_stopped");
+    expect(ACTIVATION_NOTICE_REREAD_REASONS[1]).toBe("expired");
+  });
+
   it("keep the codes the sweep and the billing series also record, and the hour of a late retry", () => {
     expect(ACTIVATION_NOTICE_SKIP_REASONS).toEqual(
       expect.arrayContaining([
