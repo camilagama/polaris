@@ -229,6 +229,21 @@ describe("NearLimitNotice com holdSpace", () => {
     expect(path && leavesTabOrder(path)).toBe(true);
   });
 
+  it("controle: o caminho que reabre o link com visible, ou o prende por inert ou tabIndex, é lido como esperado", () => {
+    const element = (props: ElementProps) =>
+      ({ props, type: "span" }) as ReactElement<ElementProps>;
+    const hiddenBox = element({ className: "invisible" });
+    expect(leavesTabOrder([hiddenBox, element({})])).toBe(true);
+    expect(leavesTabOrder([hiddenBox, element({ className: "visible" })])).toBe(
+      false
+    );
+    expect(leavesTabOrder([element({ inert: true }), element({})])).toBe(true);
+    expect(leavesTabOrder([element({}), element({ tabIndex: -1 })])).toBe(true);
+    expect(leavesTabOrder([element({ tabIndex: -1 }), element({})])).toBe(
+      false
+    );
+  });
+
   it("o link da linha à mostra continua na ordem de Tab", () => {
     const path = pathToAnchor(renderNotice(near, true));
     expect(path?.at(-1)?.props.href).toBeDefined();

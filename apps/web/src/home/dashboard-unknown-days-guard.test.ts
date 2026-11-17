@@ -38,6 +38,7 @@ const MONTHS_OF_2025 = Array.from({ length: 12 }, (_, index) =>
 const LIMIT_DECLARATION = /const UNKNOWN_DAYS_MAX_CHARS = (\d+);/g;
 const LINE_DECLARATION =
   /const unknownDaysLine = \(([^)]*)\)\s*=>\s*(`[^`]*`);/g;
+const BAND_USE = /\}, AT_THE_LIMIT\);/g;
 const BAND_DECLARATION =
   /const AT_THE_LIMIT = (\(\(\) => \{[\s\S]*?\}\)\(\));/g;
 
@@ -74,6 +75,13 @@ function copiedBand(source: string): string[] {
     "unknownDaysLine",
     `return ${body};`
   )(copiedLimit(source), copiedLine(source)) as string[];
+}
+
+function expectBandIsMeasuredWhole(source: string): void {
+  expect(
+    [...source.matchAll(BAND_USE)],
+    "AT_THE_LIMIT passada inteira à medição, uma vez"
+  ).toHaveLength(1);
 }
 
 function appLengthsByFit(): { fit: number[]; unfit: number[] } {
@@ -165,6 +173,7 @@ describe("o e2e do Início guarda a regra dos dias sem custo do app", () => {
 
   it("a faixa de AT_THE_LIMIT do e2e é a que o app deixa a até 1 caractere do teto", () => {
     expect(expectBandIsTheApps(E2E_SOURCE)).toBeGreaterThan(100);
+    expectBandIsMeasuredWhole(E2E_SOURCE);
   });
 
   it("controle: teto ou texto copiado que difere do app reprova", () => {
@@ -200,6 +209,13 @@ describe("o e2e do Início guarda a regra dos dias sem custo do app", () => {
       "const NEAR_THE_LIMIT"
     );
     expect(() => expectBandIsTheApps(withoutBand)).toThrow("declarada uma vez");
+
+    const slicedBand = E2E_SOURCE.replace(
+      "}, AT_THE_LIMIT);",
+      "}, AT_THE_LIMIT.slice(0, 3));"
+    );
+    expect(slicedBand).not.toBe(E2E_SOURCE);
+    expect(() => expectBandIsMeasuredWhole(slicedBand)).toThrow("inteira");
 
     const withoutDeclaration = E2E_SOURCE.replace(
       "const unknownDaysLine",
