@@ -3,6 +3,11 @@ import type { ActivationSweepReport } from "@polaris/db/billing-store";
 import { logger } from "@polaris/observability/logger";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  namesAndValuesOf,
+  parseWranglerConfig,
+  varsOf,
+} from "../wrangler-config.testing";
+import {
   ACTIVATION_SWEEP_BATCH,
   activationEmailsEnabled,
   runActivationSweep,
@@ -10,6 +15,7 @@ import {
 
 const bindingsOf = (value: string | undefined) =>
   value === undefined ? {} : { ACTIVATION_EMAILS_ENABLED: value };
+const wranglerPath = new URL("../../../wrangler.jsonc", import.meta.url);
 const now = new Date("2026-11-12T13:17:00.000Z");
 const ownerId = "0f8fad5b-d9cb-469f-a165-70867728950e";
 const organizationId = "7c9e6679-7425-40de-944b-e07fc1f90ae7";
@@ -47,41 +53,87 @@ describe("the switch of the activation series", () => {
     }
   });
 
-  it("is on only in staging, with a public sender there (AC-7b.7, AC-9b.1); the local top level and production stay off, production with an empty sender", () => {
-    const config = readFileSync(
-      new URL("../../../wrangler.jsonc", import.meta.url),
-      "utf8"
-    );
-    const stagingAt = config.indexOf('"staging": {');
-    const productionAt = config.indexOf('"production": {');
-    expect(stagingAt).toBeGreaterThan(-1);
-    expect(productionAt).toBeGreaterThan(stagingAt);
+  const FLAG = "ACTIVATION_EMAILS_ENABLED";
+  const SENDER = "ACTIVATION_EMAIL_FROM";
+  const SECRET_NAMES = ["RESEND_API_KEY", "RESEND_WEBHOOK_SECRET"];
+
+  const stagingSender = "Polaris (staging) <dicas@araute.app>";
+  const configText = (
+    order: ("staging" | "production")[],
+    staging = "true"
+  ) => {
     const blocks = {
-      production: config.slice(productionAt),
-      staging: config.slice(stagingAt, productionAt),
-      top: config.slice(0, stagingAt),
+      production: `"production": { "vars": { "${FLAG}": "false", "${SENDER}": "" } }`,
+      staging: `"staging": { "vars": { "${FLAG}": "${staging}", "${SENDER}": "${stagingSender}" } }`,
     };
-    const valuesOf = (block: string, name: string) =>
-      [...block.matchAll(new RegExp(`"${name}":\\s*"([^"]*)"`, "g"))].map(
-        (match) => match[1]
+    return `{
+      // top level, the local one
+      "vars": { "${FLAG}": "false" },
+      "env": { ${order.map((name) => blocks[name]).join(",\n")}, },
+    }`;
+  };
+  const seriesOf = (text: string) => {
+    const config = parseWranglerConfig(text);
+    const of = (environment?: string) => {
+      const vars = varsOf(config, environment);
+      return { enabled: vars[FLAG], sender: vars[SENDER] };
+    };
+    return {
+      production: of("production"),
+      staging: of("staging"),
+      top: of(),
+    };
+  };
+  const secretsIn = (text: string) =>
+    namesAndValuesOf(parseWranglerConfig(text)).filter(
+      (item) =>
+        SECRET_NAMES.some((name) => item.includes(name)) ||
+        item.includes("whsec_")
+    );
+
+  const expected = {
+    production: { enabled: "false", sender: "" },
+    staging: { enabled: "true", sender: stagingSender },
+    top: { enabled: "false", sender: undefined },
+  };
+
+  it("is on only in staging, with a public sender there (AC-7b.7, AC-9b.1); the local top level and production stay off, production with an empty sender", () => {
+    expect(seriesOf(readFileSync(wranglerPath, "utf8"))).toEqual(expected);
+  });
+
+  it("gives the same answer whichever of the staging and production blocks comes first", () => {
+    expect(seriesOf(configText(["staging", "production"]))).toEqual(expected);
+    expect(seriesOf(configText(["production", "staging"]))).toEqual(expected);
+  });
+
+  it("tells staging off from staging on, whichever block comes first", () => {
+    for (const order of [
+      ["staging", "production"],
+      ["production", "staging"],
+    ] as const) {
+      expect(seriesOf(configText([...order], "false"))).not.toEqual(expected);
+      expect(seriesOf(configText([...order], "false")).staging.enabled).toBe(
+        "false"
       );
-    expect({
-      production: valuesOf(blocks.production, "ACTIVATION_EMAILS_ENABLED"),
-      staging: valuesOf(blocks.staging, "ACTIVATION_EMAILS_ENABLED"),
-      top: valuesOf(blocks.top, "ACTIVATION_EMAILS_ENABLED"),
-    }).toEqual({ production: ["false"], staging: ["true"], top: ["false"] });
-    expect(valuesOf(blocks.staging, "ACTIVATION_EMAIL_FROM")).toEqual([
-      "Polaris (staging) <dicas@araute.app>",
-    ]);
-    expect(valuesOf(blocks.top, "ACTIVATION_EMAIL_FROM")).toEqual([]);
-    expect(valuesOf(blocks.production, "ACTIVATION_EMAIL_FROM")).toEqual([""]);
-    for (const secret of [
-      '"RESEND_API_KEY"',
-      '"RESEND_WEBHOOK_SECRET"',
-      "whsec_",
-    ]) {
-      expect(config.includes(secret)).toBe(false);
     }
+  });
+
+  it("refuses the name of a Resend secret or a whsec_ value as key or value, anywhere in wrangler.jsonc, and lets a comment that only names one pass", () => {
+    expect(secretsIn(readFileSync(wranglerPath, "utf8"))).toEqual([]);
+    const withVar = (entry: string) =>
+      `{ "vars": { ${entry} }, "env": { "staging": { "vars": { ${entry} } } } }`;
+    for (const entry of [
+      '"RESEND_API_KEY": "x"',
+      '"RESEND_WEBHOOK_SECRET": "x"',
+      '"SOME_VAR": "RESEND_API_KEY"',
+      '"SOME_VAR": "RESEND_WEBHOOK_SECRET"',
+      '"SOME_VAR": "whsec_x"',
+    ]) {
+      expect(secretsIn(withVar(entry)), entry).not.toEqual([]);
+    }
+    expect(
+      secretsIn('{ "vars": {} } // RESEND_API_KEY is a Worker secret')
+    ).toEqual([]);
   });
 });
 
