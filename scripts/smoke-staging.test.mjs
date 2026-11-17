@@ -1,4 +1,5 @@
 import { spawnSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
@@ -1638,5 +1639,120 @@ describe("the command line of the smoke", () => {
     ]) {
       expect(result.stderr).not.toContain(value);
     }
+  });
+});
+
+const SMOKE_SOURCE = readFileSync(
+  new URL("./smoke-staging.mjs", import.meta.url),
+  "utf8"
+);
+const DEPLOY_WORKFLOW = readFileSync(
+  new URL("../.github/workflows/deploy-staging.yml", import.meta.url),
+  "utf8"
+);
+
+const STARTUP_SLACK_SECONDS = 15;
+
+const ATTEMPTS_PATTERN = /^const ATTEMPTS = ([\d_]+);/m;
+const PAUSE_PATTERN = /^const wait = .*setTimeout\(resolve, ([\d_]+)\)/m;
+const REQUEST_TIMEOUT_PATTERN = /^const TIMEOUT_MS = ([\d_]+);/m;
+const WORKFLOW_STEP_SPLIT = /\n {6}- /;
+const SMOKE_STEP_NAME = /^(?:if: .*\n {8})?name: Smoke$/m;
+const STEP_TIMEOUT_PATTERN = /^ {8}timeout-minutes: (\d+)$/m;
+
+function numberAfter(source, pattern, what) {
+  const found = pattern.exec(source);
+  if (!found) {
+    throw new Error(`${what} not found in the source of the smoke`);
+  }
+  return Number(found[1].replaceAll("_", ""));
+}
+
+function smokeTiming() {
+  return {
+    attempts: numberAfter(SMOKE_SOURCE, ATTEMPTS_PATTERN, "ATTEMPTS"),
+    pauseSeconds:
+      numberAfter(SMOKE_SOURCE, PAUSE_PATTERN, "the pause of wait") / 1000,
+    requestSeconds:
+      numberAfter(SMOKE_SOURCE, REQUEST_TIMEOUT_PATTERN, "TIMEOUT_MS") / 1000,
+  };
+}
+
+function smokeStepMinutes(workflow) {
+  const step = workflow
+    .split(WORKFLOW_STEP_SPLIT)
+    .find((part) => SMOKE_STEP_NAME.test(part));
+  if (!step) {
+    throw new Error("the step Smoke was not found in deploy-staging.yml");
+  }
+  return numberAfter(step, STEP_TIMEOUT_PATTERN, "timeout-minutes");
+}
+
+/** Worst case: every check times out on every try (a `platform` check that times out is repeated like the others). */
+function worstCaseSeconds(
+  checkCount,
+  { attempts, pauseSeconds, requestSeconds }
+) {
+  return (
+    checkCount * (attempts * requestSeconds + (attempts - 1) * pauseSeconds)
+  );
+}
+
+function timeoutVerdict(checkCount, timeoutMinutes) {
+  const worst = worstCaseSeconds(checkCount, smokeTiming());
+  const limit = timeoutMinutes * 60;
+  if (worst + STARTUP_SLACK_SECONDS <= limit) {
+    return null;
+  }
+  return (
+    `the smoke has ${checkCount} checks: worst case ${worst} s + ${STARTUP_SLACK_SECONDS} s of slack, ` +
+    `but the step Smoke of deploy-staging.yml allows ${limit} s (timeout-minutes: ${timeoutMinutes}). ` +
+    "Raise timeout-minutes of the step in the workflow (a patch for the maintainer to apply: this repository " +
+    "does not edit .github/workflows) or cut a check."
+  );
+}
+
+describe("the worst case of the smoke against the timeout of its step", () => {
+  const checkCount = () =>
+    smokeChecks(origins, {
+      release: RELEASE,
+      shell: { index: "", serviceWorker: "" },
+    }).length;
+  const needed = () =>
+    worstCaseSeconds(checkCount(), smokeTiming()) + STARTUP_SLACK_SECONDS;
+
+  it("reads the timing the script really uses", () => {
+    expect(smokeTiming()).toEqual({
+      attempts: 3,
+      pauseSeconds: 5,
+      requestSeconds: 10,
+    });
+  });
+
+  it("fits in the timeout-minutes of the step Smoke of the deploy workflow", () => {
+    expect(
+      timeoutVerdict(checkCount(), smokeStepMinutes(DEPLOY_WORKFLOW))
+    ).toBeNull();
+  });
+
+  it("control: one more check than the timeout allows fails, saying both numbers and what to do", () => {
+    const minutes = Math.ceil(needed() / 60);
+    expect(timeoutVerdict(checkCount(), minutes)).toBeNull();
+    const verdict = timeoutVerdict(checkCount() + 1, minutes);
+    expect(verdict).toContain(`${checkCount() + 1} checks`);
+    expect(verdict).toContain(`allows ${minutes * 60} s`);
+    expect(verdict).toContain("Raise timeout-minutes");
+    expect(verdict).toContain("cut a check");
+  });
+
+  it("control: a timeout one minute shorter than the checks need fails", () => {
+    const below = Math.ceil(needed() / 60) - 1;
+    expect(timeoutVerdict(checkCount(), below)).toContain(`${below * 60} s`);
+  });
+
+  it("control: a workflow without the step Smoke is refused", () => {
+    expect(() =>
+      smokeStepMinutes("jobs:\n  x:\n    steps:\n      - name: Other\n")
+    ).toThrow("the step Smoke");
   });
 });
