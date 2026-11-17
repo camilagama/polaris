@@ -250,9 +250,24 @@ function checkTopLevel(app, config, problems) {
   }
 }
 
+/**
+ * Bindings that env.production does not declare until the go-live step that turns them on. The first
+ * production deploy goes out without the outbox path and the binding comes back only in step 7 of
+ * docs/runbooks/queues.md, after the CPU measurements of step 6 that the Free plan requires.
+ */
+export const PRODUCTION_DEFERRED_BINDINGS = [
+  "web:hyperdrive:OUTBOX_HYPERDRIVE",
+];
+
 function checkParity(app, top, environment, envName, problems) {
   const present = new Set(bindingNames(environment));
   for (const name of bindingNames(top)) {
+    if (
+      envName === "production" &&
+      PRODUCTION_DEFERRED_BINDINGS.includes(`${app}:${name}`)
+    ) {
+      continue;
+    }
     if (!present.has(name)) {
       problems.push(
         `${app}: env.${envName} lacks ${name} (bindings are not inherited)`
