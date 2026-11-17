@@ -15,6 +15,8 @@ import {
  * it has to choose, and the default of the choice is "controlled".
  */
 const CONTROLLED = [
+  "account.emailPreference",
+  "account.setTips",
   "billing.cancelRenewal",
   "billing.openOverduePayment",
   "billing.readPlan",

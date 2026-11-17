@@ -1,0 +1,176 @@
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/ui/card";
+import { FieldError } from "@/ui/field";
+import { Label } from "@/ui/label";
+import { Separator } from "@/ui/separator";
+import { Skeleton } from "@/ui/skeleton";
+import { Switch } from "@/ui/switch";
+import { connectionControlProps } from "../app-shell/connection-required-notice";
+
+const TITLE_ID = "email-preference-title";
+const TIPS_ID = "email-preference-tips";
+const TIPS_HELP_ID = "email-preference-tips-help";
+
+const NOTICES_LABEL = "Avisos da conta e da cobrança";
+const NOTICES_HELP = "Sempre enviados: fazem parte do serviço.";
+const TIPS_LABEL = "Dicas para começar";
+const TIPS_HELP =
+  "Até 3 e-mails nos primeiros 14 dias de uma loja nova, para ajudar a fazer a primeira venda. Vale para todas as suas lojas.";
+const SAVED_TEXT = "Salvo.";
+const SAVE_FAILED_TEXT = "Não deu para salvar. Tente de novo.";
+
+export interface EmailPreference {
+  sent: number;
+  tips: boolean;
+}
+
+export interface EmailPreferenceCalls {
+  read: () => Promise<EmailPreference>;
+  readRefusal: (error: unknown) => string;
+  setTips: (on: boolean) => Promise<EmailPreference>;
+}
+
+function describedBy(online: boolean) {
+  const offline = connectionControlProps(online);
+  return {
+    ...offline,
+    "aria-describedby": [TIPS_HELP_ID, offline["aria-describedby"]]
+      .filter(Boolean)
+      .join(" "),
+  };
+}
+
+type Outcome = "failed" | "saved" | null;
+
+function useEmailPreference(calls: EmailPreferenceCalls) {
+  const [preference, setPreference] = useState<EmailPreference | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [outcome, setOutcome] = useState<Outcome>(null);
+  // a second touch lands before React draws the busy state
+  const savingRef = useRef<boolean>(false);
+  // a read sent before a save would answer with the state from before it
+  const latestRead = useRef(0);
+
+  useEffect(() => {
+    latestRead.current += 1;
+    const read = latestRead.current;
+    calls
+      .read()
+      .then((answer) => {
+        if (read === latestRead.current) {
+          setPreference(answer);
+        }
+      })
+      .catch((error: unknown) => {
+        if (read === latestRead.current) {
+          setLoadError(calls.readRefusal(error));
+        }
+      });
+    return () => {
+      latestRead.current += 1;
+    };
+  }, [calls]);
+
+  const choose = useCallback(
+    (on: boolean) => {
+      if (savingRef.current) {
+        return;
+      }
+      savingRef.current = true;
+      latestRead.current += 1;
+      setSaving(true);
+      setOutcome(null);
+      calls
+        .setTips(on)
+        .then((answer) => {
+          setPreference(answer);
+          setOutcome("saved");
+        })
+        .catch(() => setOutcome("failed"))
+        .finally(() => {
+          savingRef.current = false;
+          setSaving(false);
+        });
+    },
+    [calls]
+  );
+
+  return { choose, loadError, outcome, preference, saving };
+}
+
+/**
+ * "E-mails que você recebe" in Seus dados (ADR 0106, D8): the tips series is the one preference the person turns on
+ * and off, and it is the same one the link of the e-mail turns off, for every store of theirs. The account and billing
+ * notices are listed with no control, because they are part of the service. A touch on the switch saves at once.
+ */
+export function EmailPreferenceCard({
+  calls,
+  online,
+}: {
+  calls: EmailPreferenceCalls;
+  online: boolean;
+}) {
+  const { choose, loadError, outcome, preference, saving } =
+    useEmailPreference(calls);
+
+  const handleChange = useCallback(
+    (checked: boolean) => {
+      if (online) {
+        choose(checked);
+      }
+    },
+    [choose, online]
+  );
+
+  return (
+    <Card aria-labelledby={TITLE_ID} role="region">
+      <CardHeader>
+        <CardTitle aria-level={3} id={TITLE_ID} role="heading">
+          E-mails que você recebe
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="grid gap-4">
+        <div className="grid gap-1">
+          <p className="font-medium">{NOTICES_LABEL}</p>
+          <p className="text-muted-foreground">{NOTICES_HELP}</p>
+        </div>
+        <Separator />
+        {preference ? (
+          <div className="flex items-start justify-between gap-3">
+            <div className="grid min-w-0 flex-1 gap-1">
+              <Label className="font-medium" htmlFor={TIPS_ID}>
+                {TIPS_LABEL}
+              </Label>
+              <p className="text-muted-foreground" id={TIPS_HELP_ID}>
+                {TIPS_HELP}
+              </p>
+            </div>
+            <Switch
+              aria-busy={saving}
+              checked={preference.tips}
+              id={TIPS_ID}
+              onCheckedChange={handleChange}
+              {...describedBy(online)}
+            />
+          </div>
+        ) : null}
+        {preference || loadError ? null : <Skeleton className="h-10 w-full" />}
+        {loadError ? <FieldError>{loadError}</FieldError> : null}
+        {preference && preference.sent > 0 ? (
+          <p className="text-muted-foreground">
+            Enviados até agora: {preference.sent} de 3.
+          </p>
+        ) : null}
+        <div className="empty:-mt-4" role="status">
+          {outcome === "saved" ? (
+            <p className="text-muted-foreground">{SAVED_TEXT}</p>
+          ) : null}
+        </div>
+        {outcome === "failed" ? (
+          <FieldError>{SAVE_FAILED_TEXT}</FieldError>
+        ) : null}
+      </CardContent>
+    </Card>
+  );
+}

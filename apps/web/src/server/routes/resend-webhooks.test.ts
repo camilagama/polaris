@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   activationSuppressionHmac,
   activationSuppressionKeyId,
-} from "../activation/notice-consumer";
+} from "../activation/suppression";
 import { createServerApp } from "../app";
 import type { ServerEnv, WorkerBindings } from "../environment";
 import { requestIdMiddleware } from "../middleware/request-id";
@@ -231,6 +231,118 @@ describe("a delivery that cannot be served is answered 503 before the body is re
   });
 });
 
+describe("the body is read with a ceiling of 64 KiB", () => {
+  const LIMIT = 64 * 1024;
+  const fetchOf = (fixture: ReturnType<typeof setup>) => {
+    const app = new Hono<ServerEnv>();
+    app.use("*", requestIdMiddleware);
+    app.route(
+      "/",
+      createResendWebhookRoutes({
+        createRecorder: fixture.createRecorder,
+        now: () => NOW,
+      })
+    );
+    return (init: RequestInit & { duplex?: "half" }) =>
+      app.fetch(
+        new Request("https://polaris.example.invalid/webhooks/email/resend", {
+          method: "POST",
+          ...init,
+        }),
+        BINDINGS
+      );
+  };
+
+  /** A body in chunks of 1 KiB, as a client without Content-Length sends it; the counters show how far it was read. */
+  function chunked(totalBytes: number) {
+    const state = { cancelled: false, pulled: 0 };
+    const stream = new ReadableStream<Uint8Array>(
+      {
+        cancel() {
+          state.cancelled = true;
+        },
+        pull(controller) {
+          if (state.pulled * 1024 >= totalBytes) {
+            controller.close();
+            return;
+          }
+          state.pulled += 1;
+          controller.enqueue(new Uint8Array(1024).fill(120));
+        },
+      },
+      { highWaterMark: 0 }
+    );
+    return { state, stream };
+  }
+
+  it("answers 413 to a declared Content-Length above the ceiling without reading the body", async () => {
+    const fixture = setup();
+    const { state, stream } = chunked(LIMIT * 4);
+    const response = await fetchOf(fixture)({
+      body: stream,
+      duplex: "half",
+      headers: { "content-length": String(LIMIT + 1) },
+    });
+    expect(response.status).toBe(413);
+    expect(await response.json()).toMatchObject({
+      error: { code: "payload_too_large" },
+    });
+    expect(state.pulled).toBe(0);
+    expect(fixture.createRecorder).not.toHaveBeenCalled();
+  });
+
+  it("answers 413 to a Content-Length that is not a number", async () => {
+    const fixture = setup();
+    const response = await fetchOf(fixture)({
+      body: "{}",
+      headers: { "content-length": "abc" },
+    });
+    expect(response.status).toBe(413);
+    expect(fixture.createRecorder).not.toHaveBeenCalled();
+  });
+
+  it("does not refuse a declared Content-Length of exactly 64 KiB: the signature decides", async () => {
+    const fixture = setup();
+    const response = await fetchOf(fixture)({
+      body: "{}",
+      headers: { "content-length": String(LIMIT) },
+    });
+    expect(response.status).toBe(401);
+  });
+
+  it("cuts a body with no Content-Length at the ceiling and stops reading", async () => {
+    const fixture = setup();
+    const { state, stream } = chunked(LIMIT * 4);
+    const response = await fetchOf(fixture)({ body: stream, duplex: "half" });
+    expect(response.status).toBe(413);
+    expect(state.cancelled).toBe(true);
+    expect(state.pulled).toBeLessThan(LIMIT / 1024 + 4);
+    expect(fixture.createRecorder).not.toHaveBeenCalled();
+  });
+
+  it("cuts a body larger than the small Content-Length it declares", async () => {
+    const fixture = setup();
+    const { state, stream } = chunked(LIMIT * 4);
+    const response = await fetchOf(fixture)({
+      body: stream,
+      duplex: "half",
+      headers: { "content-length": "10" },
+    });
+    expect(response.status).toBe(413);
+    expect(state.cancelled).toBe(true);
+    expect(fixture.createRecorder).not.toHaveBeenCalled();
+  });
+
+  it("reads a body of exactly 64 KiB with no Content-Length and goes on to the signature", async () => {
+    const fixture = setup();
+    const { state, stream } = chunked(LIMIT);
+    const response = await fetchOf(fixture)({ body: stream, duplex: "half" });
+    expect(response.status).toBe(401);
+    expect(state.cancelled).toBe(false);
+    expect(state.pulled).toBe(LIMIT / 1024);
+  });
+});
+
 describe("a complaint always stops the series (the shape of the payload cannot drop it)", () => {
   async function expectStopped(body: string, hmacCount: number) {
     const spies = spyConsole();
@@ -255,6 +367,17 @@ describe("a complaint always stops the series (the shape of the payload cannot d
     const text = await expectStopped(complained({ to: [ADDRESS] }), 1);
     expect(text).not.toContain("@");
     expect(text).toContain("activation_series_stopped");
+  });
+
+  it("logs the stop only for the delivery that opens it: a later complaint is recorded without the alert", async () => {
+    const spies = spyConsole();
+    const fixture = setup({ recorder: fakeRecorder({ stopped: false }) });
+    const response = await fixture.sendSigned(complained({ to: [ADDRESS] }));
+    expect(response.status).toBe(200);
+    expect(fixture.recorder.record).toHaveBeenCalledOnce();
+    const text = logged(spies);
+    expect(text).toContain("resend_webhook_recorded");
+    expect(text).not.toContain("activation_series_stopped");
   });
 
   it("records a complaint with the addressee as one text", async () => {
@@ -338,6 +461,19 @@ describe("a bounce suppresses the address unless it is explicitly transient", ()
     ];
     expect(call[0].kind).toBe("bounce");
     expect(call[0].hmacs).toHaveLength(1);
+  });
+
+  it("records a bounce without the stop alert", async () => {
+    const spies = spyConsole();
+    const fixture = setup({ recorder: fakeRecorder({ stopped: false }) });
+    const response = await fixture.sendSigned(
+      bounced({ bounce: { type: "Permanent" }, to: [ADDRESS] })
+    );
+    expect(response.status).toBe(200);
+    expect(fixture.recorder.record).toHaveBeenCalledOnce();
+    const text = logged(spies);
+    expect(text).toContain("resend_webhook_recorded");
+    expect(text).not.toContain("activation_series_stopped");
   });
 
   it.each(["Transient", "transient"])(

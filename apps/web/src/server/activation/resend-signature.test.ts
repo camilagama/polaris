@@ -81,15 +81,6 @@ describe("the signature of the provider's delivery", () => {
     ["no signature", { signature: null }],
     ["no timestamp", { timestamp: null }],
     ["an empty signature", { signature: "" }],
-    [
-      "an id with a character outside the alphabet",
-      { id: "msg_p5jXN8AQM9 LW" },
-    ],
-    ["an id that is too short", { id: "msg_1" }],
-    ["a timestamp with a sign", { timestamp: "-1614265330" }],
-    ["a timestamp with a decimal point", { timestamp: "1614265330.5" }],
-    ["a timestamp of 11 digits", { timestamp: "16142653300" }],
-    ["a timestamp with a leading plus", { timestamp: "+161426533" }],
     ["a signature of another version", { signature: `v2,${SIGNATURE}` }],
     ["a signature without a version", { signature: SIGNATURE }],
     ["a signature that is not base64", { signature: "v1,%%%%" }],
@@ -98,24 +89,85 @@ describe("the signature of the provider's delivery", () => {
     expect(await verify(overrides)).toBe(false);
   });
 
-  it("refuses a correctly signed timestamp padded with a leading zero to 11 characters, though its value is the vector's", async () => {
-    const padded = `0${TIMESTAMP}`;
-    const hmacKey = await crypto.subtle.importKey(
-      "raw",
-      key,
-      { hash: "SHA-256", name: "HMAC" },
-      false,
-      ["sign"]
+  describe("an id or a timestamp that is malformed but correctly signed", () => {
+    async function signedFor(id: string, timestamp: string) {
+      const hmacKey = await crypto.subtle.importKey(
+        "raw",
+        key,
+        { hash: "SHA-256", name: "HMAC" },
+        false,
+        ["sign"]
+      );
+      const mac = new Uint8Array(
+        await crypto.subtle.sign(
+          "HMAC",
+          hmacKey,
+          new TextEncoder().encode(`${id}.${timestamp}.${BODY}`)
+        )
+      );
+      return `v1,${btoa(String.fromCharCode(...mac))}`;
+    }
+
+    it("signs the controls the same way, so only the format can refuse", async () => {
+      const signature = await signedFor(ID, TIMESTAMP);
+      expect(signature).toBe(`v1,${SIGNATURE}`);
+      expect(await verify({ signature })).toBe(true);
+      const other = "msg_AAAAAAAAAAAA";
+      expect(
+        await verify({
+          id: other,
+          signature: await signedFor(other, TIMESTAMP),
+        })
+      ).toBe(true);
+    });
+
+    it.each([
+      ["8 characters", "msg_AbC1"],
+      ["100 characters", `msg_${"a".repeat(96)}`],
+    ])(
+      "accepts a correctly signed id of %s, the edges of the format",
+      async (_label, id) => {
+        const signature = await signedFor(id, TIMESTAMP);
+        expect(await verify({ id, signature })).toBe(true);
+      }
     );
-    const mac = new Uint8Array(
-      await crypto.subtle.sign(
-        "HMAC",
-        hmacKey,
-        new TextEncoder().encode(`${ID}.${padded}.${BODY}`)
-      )
+
+    it.each([
+      ["a space", "msg_p5jXN8AQM9 LW"],
+      ["a dot, the separator of the signed text", "msg_p5jXN8.AQM9LWM0D4"],
+      ["a character outside ASCII", "msg_p5jXN8AQM9LWMé0D4"],
+      ["7 characters, one under the minimum", "msg_p5j"],
+      ["101 characters, one over the maximum", `msg_${"a".repeat(97)}`],
+    ])("refuses an id with %s", async (_label, id) => {
+      const signature = await signedFor(id, TIMESTAMP);
+      expect(await verify({ id, signature })).toBe(false);
+    });
+
+    it.each([
+      ["a minus sign", "-161426533"],
+      ["a leading plus", "+161426533"],
+      ["a decimal point", "16142653.5"],
+      ["an exponent", "1e9"],
+      ["a hexadecimal prefix", "0x5B3CB9D1"],
+      ["a leading space", " 161426533"],
+      ["11 characters, a leading zero and the vector's value", `0${TIMESTAMP}`],
+    ])(
+      "refuses a timestamp with %s, though its value is inside the window",
+      async (_label, timestamp) => {
+        const signature = await signedFor(ID, timestamp);
+        const nowMs = Number(timestamp) * 1000;
+        expect(Number.isFinite(nowMs)).toBe(true);
+        expect(await verify({ nowMs, signature, timestamp })).toBe(false);
+      }
     );
-    const signature = `v1,${btoa(String.fromCharCode(...mac))}`;
-    expect(await verify({ signature, timestamp: padded })).toBe(false);
+
+    it("accepts the same value written as 10 plain digits, so the window was not what refused", async () => {
+      const timestamp = "0161426533";
+      const signature = await signedFor(ID, timestamp);
+      expect(
+        await verify({ nowMs: 161_426_533_000, signature, timestamp })
+      ).toBe(true);
+    });
   });
 
   it("accepts a timestamp exactly at the edge of the window, in both directions, and refuses one second beyond", async () => {
