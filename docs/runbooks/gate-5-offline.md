@@ -90,11 +90,13 @@ O que ela confere:
 | Atributo | `data-row-open`, `data-customer-id`, `data-sync-state`, `data-chart-area`, `data-day`, `data-motion` | o nome aparece no código (ou `dataset.<nome>`) |
 | Texto | "Novo cliente", "Aguardando envio", "Venda guardada neste aparelho", "Vendas guardadas neste aparelho", "Pode vender: a venda fica guardada neste aparelho", "Cadastrar cliente", "Nova despesa", "Data de competência" (também como `aria-label` do botão do seletor, `COMPETENCE_BUTTON`), "O calendário não abriu.", "Tentar novamente", "Recarregar a página", "Abrir formulário", "Fechar", os rótulos dos campos (`Usuário`, `Rede disponível`, `Quantidade`, `Produto ou variante`, `Campo 1`) e os títulos que a suíte espera | o texto aparece em literal ou em JSX do código, sem diferença de espaços e quebras de linha |
 | Id de teste | `server-records` | existe `data-testid` com o valor |
-| Endereço e tela do laboratório | `/offline-screens-lab?screen=…`, `/ui-galeria`, `/termos`, `/vendas/historico` | o endereço é um literal do código; o `screen=` é um dos que `src/offline-poc/screens-lab.tsx` aceita |
+| Endereço e tela do laboratório | `/offline-screens-lab?screen=…`, `/ui-galeria`, `/termos` | o endereço aparece como literal entre aspas no código; o nome do `screen=` aparece como literal em `src/offline-poc/screens-lab.tsx` |
 | Camada carregada sob demanda | `filter-bar-motion` | o nome aparece no código |
 | Chave do histórico | `polarisDialog` | o nome aparece no código |
 
-Texto que a tela monta em pedaços (`Sem conexão · 1 operação guardada`, `Iniciar: ok (ready)`) entra em `COMPOSED_TEXTS`, no teste, com os pedaços que têm de existir; o teste reprova a entrada que o produto passar a trazer inteira.
+O que a guarda lê da suíte são os argumentos literais (ou constantes `const NOME = "…"`, em qualquer recuo) das chamadas dos ajudantes da própria suíte e de `browser.$`, `querySelector`, `querySelectorAll` e `getElementById`, mais as formas diretas `.includes("…")`, a comparação de `textContent?.trim()` e de `where.focus` com um literal, `.dataset.<nome>` e `history.state?.<nome>`. Um nome que não é constante nem parâmetro, usado onde se espera texto, faz o teste falhar, em vez de deixar de conferir. Um texto precisa ter ao menos um pedaço de 3 caracteres que não seja número, e os pedaços têm de estar no mesmo arquivo.
+
+Texto que a tela monta em pedaços (`Sem conexão · 1 operação guardada`, `Iniciar: ok (ready)`, `Camiseta do laboratório · Azul`) entra em `COMPOSED_TEXTS`, no teste, com os pedaços que têm de existir; o teste reprova a entrada que o produto passar a trazer inteira.
 
 Quando a guarda reprovar, a mensagem diz o tipo, o valor e a linha de `suite.ts`:
 
@@ -104,7 +106,7 @@ Quando a guarda reprovar, a mensagem diz o tipo, o valor e a linha de `suite.ts`
 4. Texto montado em pedaços: acrescente-o a `COMPOSED_TEXTS` com os pedaços, nunca apague a checagem.
 5. Ajudante novo da suíte que recebe texto ou seletor do produto: classifique-o em `CALLS` (confere) ou `DATA_ARGUMENTS` (dado de teste) no teste. Um ajudante com literal sem classificação reprova de propósito, para o ajudante novo não esperar um texto que ninguém confere.
 
-Limites: a guarda não prova que a tela está no estado certo nem que um passo que a suíte nunca teve existe (a suíte sem o passo "Novo cliente" não reprovaria, só a que o esperasse); só confere o que a suíte já espera. Ela também não vê texto que a suíte lê por código fora das formas listadas em `CALLS`: use sempre um ajudante conhecido. `KNOWN_DRIFT` guarda o que ela já acusa e ainda não foi corrigido; a lista é exata, o teste reprova a entrada que deixou de reprovar, e a entrada sai junto da correção.
+Limites: a guarda não prova que a tela está no estado certo nem que um passo que a suíte nunca teve existe (a suíte sem o passo "Novo cliente" não reprovaria, só a que o esperasse); só confere o que a suíte já espera. Ela não lê expressões regulares (`SHIRT_WITH_THREE`, o "Saldo 3"), não vê texto que a suíte lê fora das formas acima (use um ajudante conhecido ou acrescente a forma ao teste), e `.includes("…")` solto é tratado como texto do produto: um `.includes` sobre outra coisa (agente do navegador, por exemplo) precisa de um ajudante, senão a guarda o acusa como texto que sumiu. O texto e o seletor têm de aparecer como literal; um `data-testid` ou um endereço passado por constante deixa de casar e reprova, então mude a guarda junto. `KNOWN_DRIFT` guarda o que ela já acusa e ainda não foi corrigido; a lista é exata, o teste reprova a entrada que deixou de reprovar, e a entrada sai junto da correção.
 
 ### Como a rede do aparelho é derrubada
 

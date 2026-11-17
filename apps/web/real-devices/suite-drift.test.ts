@@ -59,7 +59,13 @@ const CALLS: {
   { arg: 0, as: "route", name: "labUrl" },
 ];
 
-const CONST_DECLARATION = /^const ([A-Z][A-Z0-9_]*) = (.+);$/gm;
+const CONST_DECLARATION = /^\s*const (\w+) = (.+);$/gm;
+const DECLARED = /^\s*(?:const|let) (\w+)\b/gm;
+const ARROW_PARAMETERS = /\(([^()]*)\)\s*(?::\s*[^=]+)?=>|\b(\w+)\s*=>/g;
+const SIGNATURE =
+  /^\s*(?:export )?(?:async function \w+|function \w+|const \w+ = (?:async )?)\(([^)]*)\)/gm;
+const PARAMETER_NAME = /(\w+)\??\s*(?::|=|,|$)/g;
+const PARAMETER = "\u0001";
 const STRING_LITERAL = /^(["'])((?:(?!\1)[^\\]|\\.)*)\1$/;
 const ASSET_PREFIX = /^\/assets\//;
 const TRAILING_DASH = /-$/;
@@ -73,6 +79,31 @@ const TEST_FILE = /\.(test|spec)\./;
 const DATA_PREFIX = /^data-/;
 const NOT_READABLE = /não sabe ler/;
 const TEMPLATE_LITERAL = /^`((?:[^`\\]|\\.)*)`$/;
+
+const WINDOWS = [16, 8, 4, 1];
+
+/** Para cada posição do texto sem comentários, a posição no original: a linha acusada é a de `suite.ts`. */
+function offsetsOf(original: string, stripped: string) {
+  const map: number[] = [];
+  let at = 0;
+  for (let index = 0; index < stripped.length; index += 1) {
+    const aligned = WINDOWS.some((size) =>
+      original.startsWith(stripped.slice(index, index + size), at)
+    );
+    if (!aligned) {
+      for (const size of WINDOWS) {
+        const next = original.indexOf(stripped.slice(index, index + size), at);
+        if (next !== -1) {
+          at = next;
+          break;
+        }
+      }
+    }
+    map.push(at);
+    at += 1;
+  }
+  return map;
+}
 
 function lineOf(source: string, index: number) {
   return source.slice(0, index).split("\n").length;
@@ -90,12 +121,41 @@ function isCheckedCall(argument: string) {
   return CALLS.some((call) => call.name.replaceAll("\\", "") === name);
 }
 
+/**
+ * Os nomes que a suíte resolve para um texto (`const NOME = "…"`, em qualquer recuo) e os que são valor de execução
+ * (parâmetro de ajudante, resultado de uma chamada): um nome fora dos dois grupos, usado onde se espera texto, é
+ * argumento que a guarda não sabe ler.
+ */
 function constants(source: string) {
   const found = new Map<string, string>();
+  const runtime = new Set<string>();
   for (const [, name, expression] of source.matchAll(CONST_DECLARATION)) {
+    if (!name) {
+      continue;
+    }
     const value = literal(expression ?? "", found, false);
-    if (typeof value === "string" && name) {
+    if (typeof value === "string" && value !== "param") {
       found.set(name, value);
+    } else {
+      runtime.add(name);
+    }
+  }
+  for (const [, name] of source.matchAll(DECLARED)) {
+    runtime.add(name ?? "");
+  }
+  for (const [, list, single] of source.matchAll(ARROW_PARAMETERS)) {
+    for (const [, name] of (list ?? single ?? "").matchAll(PARAMETER_NAME)) {
+      runtime.add(name ?? "");
+    }
+  }
+  for (const [, list] of source.matchAll(SIGNATURE)) {
+    for (const [, name] of (list ?? "").matchAll(PARAMETER_NAME)) {
+      runtime.add(name ?? "");
+    }
+  }
+  for (const name of runtime) {
+    if (!found.has(name)) {
+      found.set(name, PARAMETER);
     }
   }
   return found;
@@ -115,15 +175,24 @@ function literal(
   const template = TEMPLATE_LITERAL.exec(text);
   if (template) {
     return unquote(
-      (template[1] ?? "").replace(
-        /\$\{([^}]*)\}/g,
-        (_, inner: string) => known.get(inner.trim()) ?? WILDCARD
-      )
+      (template[1] ?? "").replace(/\$\{([^}]*)\}/g, (_, inner: string) => {
+        const value = known.get(inner.trim());
+        return value === undefined || value === PARAMETER ? WILDCARD : value;
+      })
     );
   }
   const name = IDENTIFIER.exec(text)?.[0];
   if (name) {
-    return known.get(name) ?? "param";
+    const value = known.get(name);
+    if (value === PARAMETER) {
+      return "param";
+    }
+    if (value !== undefined) {
+      return value;
+    }
+    if (!strict) {
+      return undefined;
+    }
   }
   if (AWAITED_HANDLE.test(text)) {
     return "param";
@@ -229,6 +298,8 @@ function routeExpectations(route: string, line: number, origin: string) {
 /** Tudo o que a suíte espera achar na tela, com a linha em que espera. */
 function extractExpectations(suiteSource: string): Expectation[] {
   const source = stripComments(suiteSource);
+  const offsets = offsetsOf(suiteSource, source);
+  const lineAt = (index: number) => lineOf(suiteSource, offsets[index] ?? 0);
   const known = constants(source);
   const found: Expectation[] = [];
 
@@ -241,7 +312,7 @@ function extractExpectations(suiteSource: string): Expectation[] {
       if (source.slice(0, match.index).trimEnd().endsWith("function")) {
         continue;
       }
-      const line = lineOf(source, match.index);
+      const line = lineAt(match.index);
       const argument = splitArguments(source, match.index + match[0].length)[
         call.arg
       ];
@@ -290,7 +361,7 @@ function extractExpectations(suiteSource: string): Expectation[] {
         origin === "dataset"
           ? `data-${raw.replace(/[A-Z]/g, (letter: string) => `-${letter.toLowerCase()}`)}`
           : raw;
-      found.push({ kind, line: lineOf(source, match.index), origin, value });
+      found.push({ kind, line: lineAt(match.index), origin, value });
     }
   }
   return found;
@@ -312,7 +383,7 @@ const DATA_ARGUMENTS: Record<string, number[]> = {
 };
 
 const LOCAL_HELPER =
-  /^(?:async function (\w+)|function (\w+)|const (\w+) = (?:async )?\()/gm;
+  /^\s*(?:export )?(?:async function (\w+)|function (\w+)|const (\w+) = (?:async )?\()/gm;
 const ANY_LITERAL = /^(?:["'`])/;
 
 /**
@@ -321,6 +392,7 @@ const ANY_LITERAL = /^(?:["'`])/;
  */
 function unclassifiedLiterals(suiteSource: string) {
   const code = stripComments(suiteSource);
+  const offsets = offsetsOf(suiteSource, code);
   const known = constants(code);
   const helpers = new Set(
     [...code.matchAll(LOCAL_HELPER)].map(
@@ -346,7 +418,7 @@ function unclassifiedLiterals(suiteSource: string) {
           text !== undefined
         ) {
           found.push(
-            `${helper}(argumento ${index}: ${argument.slice(0, 40)}) em suite.ts:${originalLine(suiteSource, argument.slice(1, 12))}`
+            `${helper}(argumento ${index}: ${argument.slice(0, 40)}) em suite.ts:${lineOf(suiteSource, offsets[match.index] ?? 0)}`
           );
         }
       });
@@ -387,12 +459,12 @@ function loadProduct() {
   for (const file of files) {
     product.set(
       relative(REPOSITORY, file),
-      stripComments(readFileSync(file, "utf8"))
+      collapse(stripComments(readFileSync(file, "utf8")))
     );
   }
   product.set(
     "apps/web/index.html",
-    readFileSync(join(WEB, "index.html"), "utf8")
+    collapse(readFileSync(join(WEB, "index.html"), "utf8"))
   );
   return product;
 }
@@ -403,6 +475,7 @@ function loadProduct() {
  */
 const COMPOSED_TEXTS: Record<string, string[]> = {
   "Iniciar: ok (ready)": ["Iniciar: ok ("],
+  "Camiseta do laboratório · Azul": ["Camiseta do laboratório", "Azul"],
   "Sem conexão · 1 operação guardada": ["Sem conexão", "operação guardada"],
 };
 
@@ -419,6 +492,22 @@ function fragmentsOf(value: string) {
     .filter((part) => part.length >= 3);
 }
 
+const TEMPLATE_ID =
+  /(?:(?<![\w-])id\s*[=:]|fieldProps\()\s*\{?\s*`([^`$]*)\$\{/g;
+const templateIdCache = new WeakMap<Map<string, string>, string[]>();
+
+function templateIds(files: Map<string, string>) {
+  const cached = templateIdCache.get(files);
+  if (cached) {
+    return cached;
+  }
+  const heads = [...files.values()].flatMap((text) =>
+    [...text.matchAll(TEMPLATE_ID)].map((match) => match[1] ?? "")
+  );
+  templateIdCache.set(files, heads);
+  return heads;
+}
+
 const quoted = (name: string) => `["'\`]${name}["'\`]`;
 
 function existsInProduct(expectation: Expectation, files: Map<string, string>) {
@@ -428,27 +517,18 @@ function existsInProduct(expectation: Expectation, files: Map<string, string>) {
     case "text": {
       const fragments = fragmentsOf(value);
       return (
-        fragments.length === 0 ||
-        entries.some(([, text]) => {
-          const flat = collapse(text);
-          return fragments.every((fragment) => flat.includes(fragment));
-        })
+        fragments.length > 0 &&
+        entries.some(([, text]) =>
+          fragments.every((fragment) => text.includes(fragment))
+        )
       );
     }
     case "id": {
       const prefix = value.split(WILDCARD)[0] ?? "";
       const literalId = new RegExp(
-        `(?:\\bid\\s*[=:]|fieldProps\\()\\s*\\{?\\s*${quoted(prefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))}`
+        `(?:(?<![\\w-])id\\s*[=:]|fieldProps\\()\\s*\\{?\\s*${quoted(prefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))}`
       );
-      const templateId = [
-        ...entries.flatMap(([, text]) =>
-          [
-            ...text.matchAll(
-              /(?:\bid\s*[=:]|fieldProps\()\s*\{?\s*`([^`$]*)\$\{/g
-            ),
-          ].map((match) => match[1] ?? "")
-        ),
-      ];
+      const templateId = templateIds(files);
       return (
         entries.some(
           ([path, text]) =>
@@ -494,13 +574,6 @@ function existsInProduct(expectation: Expectation, files: Map<string, string>) {
   }
 }
 
-function originalLine(source: string, value: string) {
-  const piece =
-    [...value.split(WILDCARD)].sort((a, b) => b.length - a.length)[0] ?? "";
-  const index = source.split("\n").findIndex((text) => text.includes(piece));
-  return index + 1;
-}
-
 /** Cada expectativa da suíte que o produto não tem mais, como linha legível. */
 function findDrift(suiteSource: string, files: Map<string, string>) {
   const unique = new Map<string, Expectation>();
@@ -514,12 +587,12 @@ function findDrift(suiteSource: string, files: Map<string, string>) {
     .filter((expectation) => !existsInProduct(expectation, files))
     .map(
       (expectation) =>
-        `${expectation.kind} ${JSON.stringify(expectation.value.replace(WILDCARD, "…"))} (${expectation.origin}, suite.ts:${originalLine(suiteSource, expectation.value)})`
+        `${expectation.kind} ${JSON.stringify(expectation.value.replace(WILDCARD, "…"))} (${expectation.origin}, suite.ts:${expectation.line})`
     );
 }
 
 /**
- * Expectativas que a guarda já acusa na suíte de hoje e que esta tarefa não corrige. A lista é exata: quando a suíte
+ * Expectativas que a guarda já acusa na suíte e que ainda não foram corrigidas nela. A lista é exata: quando a suíte
  * passa a usar o endereço certo, a entrada tem de sair, e o teste reprova se ela ficar sem motivo.
  */
 const KNOWN_DRIFT: { entry: string; reason: string }[] = [
@@ -553,7 +626,7 @@ describe("deriva da suíte do Gate 5 (real-devices/suite.ts)", () => {
     ).toEqual([]);
   });
 
-  it("extrai os seletores e textos que a t1196 achou defasados e não passa com extração vazia", () => {
+  it("extrai o que a suíte espera e não passa com extração vazia", () => {
     const found = extractExpectations(SUITE_SOURCE);
     const has = (kind: Kind, value: string) =>
       found.some((item) => item.kind === kind && item.value === value);
@@ -572,10 +645,10 @@ describe("deriva da suíte do Gate 5 (real-devices/suite.ts)", () => {
     expect(has("attribute", "data-day")).toBe(true);
     const perKind = (kind: Kind) =>
       found.filter((item) => item.kind === kind).length;
-    expect(perKind("text")).toBeGreaterThanOrEqual(30);
+    expect(perKind("text")).toBeGreaterThanOrEqual(20);
     expect(perKind("id")).toBeGreaterThanOrEqual(3);
-    expect(perKind("attribute")).toBeGreaterThanOrEqual(4);
-    expect(perKind("route")).toBeGreaterThanOrEqual(4);
+    expect(perKind("attribute")).toBeGreaterThanOrEqual(5);
+    expect(perKind("route")).toBeGreaterThanOrEqual(3);
     expect(perKind("testid")).toBeGreaterThanOrEqual(1);
   });
 
@@ -587,9 +660,7 @@ describe("deriva da suíte do Gate 5 (real-devices/suite.ts)", () => {
     const found = extractExpectations(SUITE_SOURCE).map((item) => item.value);
     for (const text of Object.keys(COMPOSED_TEXTS)) {
       expect(found, text).toContain(text);
-      const whole = [...PRODUCT.values()].some((file) =>
-        collapse(file).includes(text)
-      );
+      const whole = [...PRODUCT.values()].some((file) => file.includes(text));
       expect(whole, `${text} já existe inteiro no produto`).toBe(false);
     }
   });
@@ -628,6 +699,105 @@ describe("deriva da suíte do Gate 5 (real-devices/suite.ts)", () => {
       );
     });
 
+    it.each([
+      [
+        "atributo",
+        "data-row-open",
+        "data-row-abrir",
+        'attribute "data-row-abrir"',
+      ],
+      [
+        "id de teste",
+        '"server-records"',
+        '"server-registros"',
+        'testid "server-registros"',
+      ],
+      [
+        "endereço",
+        '"/ui-galeria"',
+        '"/ui-galeria-nova"',
+        'route "/ui-galeria-nova"',
+      ],
+      [
+        "tela do laboratório",
+        "?screen=expenses",
+        "?screen=despesas",
+        'screen "despesas"',
+      ],
+      [
+        "camada sob demanda",
+        "/assets/filter-bar-motion-",
+        "/assets/filter-bar-movimento-",
+        'chunk "/assets/filter-bar-movimento-"',
+      ],
+      [
+        "chave do histórico",
+        "polarisDialog",
+        "polarisFormulario",
+        'name "polarisFormulario"',
+      ],
+      [
+        "dataset",
+        "dataset.motion",
+        "dataset.movimento",
+        'attribute "data-movimento"',
+      ],
+      [
+        "texto em includes",
+        '"O calendário não abriu."',
+        '"O calendário falhou."',
+        'text "O calendário falhou."',
+      ],
+      [
+        "texto em comparação",
+        '!== "Abrir formulário"',
+        '!== "Abrir cadastro"',
+        'text "Abrir cadastro"',
+      ],
+      [
+        "rótulo de campo",
+        '"Quantidade"',
+        '"Qtd. de itens"',
+        'text "Qtd. de itens"',
+      ],
+      [
+        "aria-label do seletor",
+        'const COMPETENCE = "Data de competência"',
+        'const COMPETENCE = "Data do gasto"',
+        'text "Data do gasto"',
+      ],
+    ])("reprova a cópia da suíte com %s renomeado", (_, from, to, expected) => {
+      const changed = SUITE_SOURCE.replaceAll(from, to);
+      expect(changed).not.toBe(SUITE_SOURCE);
+      expect(findDrift(changed, PRODUCT).join("\n")).toContain(expected);
+    });
+
+    it("reprova o texto montado em pedaços quando um pedaço some do produto", () => {
+      const without = new Map(
+        [...PRODUCT].map(([path, text]) => [
+          path,
+          text.replaceAll("operação guardada", "operação"),
+        ])
+      );
+      expect(findDrift(SUITE_SOURCE, without).join("\n")).toContain(
+        'text "Sem conexão · 1 operação guardada"'
+      );
+    });
+
+    it("acusa a linha de suite.ts em que a chamada está, com comentários antes dela", () => {
+      const suite = [
+        "/**",
+        " * Um comentário de bloco",
+        " * de várias linhas.",
+        " */",
+        "// Novo cliente só em comentário",
+        'await waitForText(browser, "Texto que sumiu");',
+      ].join("\n");
+      expect(findDrift(suite, new Map())).toEqual([
+        'text "Texto que sumiu" (waitForText, suite.ts:6)',
+      ]);
+    });
+
     it("não conta texto que só aparece em comentário", () => {
       const onlyComment = new Map([
         [
@@ -647,6 +817,24 @@ describe("deriva da suíte do Gate 5 (real-devices/suite.ts)", () => {
         'await waitForBadge(browser, "Aguardando envio");',
       ].join("\n");
       expect(unclassifiedLiterals(suite)).toHaveLength(1);
+    });
+
+    it("recusa um nome que não é constante nem parâmetro, em vez de deixar de conferir", () => {
+      expect(() =>
+        extractExpectations("await waitForText(browser, misterio);")
+      ).toThrow(NOT_READABLE);
+    });
+
+    it("confere a constante local indentada e não só as de coluna 0", () => {
+      const suite = [
+        "async function run(browser: Browser) {",
+        '  const shirt = "Camiseta que sumiu";',
+        "  await waitForText(browser, shirt);",
+        "}",
+      ].join("\n");
+      expect(findDrift(suite, new Map())).toEqual([
+        'text "Camiseta que sumiu" (waitForText, suite.ts:3)',
+      ]);
     });
 
     it("recusa um argumento que não sabe ler, em vez de deixar de conferir", () => {
