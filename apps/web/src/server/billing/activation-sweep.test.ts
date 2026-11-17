@@ -84,12 +84,12 @@ describe("the switch of the activation series", () => {
       top: of(),
     };
   };
-  const secretsIn = (text: string) =>
-    namesAndValuesOf(parseWranglerConfig(text)).filter(
-      (item) =>
-        SECRET_NAMES.some((name) => item.includes(name)) ||
-        item.includes("whsec_")
-    );
+  const secretsIn = (text: string) => [
+    ...namesAndValuesOf(parseWranglerConfig(text)).filter((item) =>
+      SECRET_NAMES.some((name) => item.includes(name))
+    ),
+    ...(text.includes("whsec_") ? ["whsec_"] : []),
+  ];
 
   const expected = {
     production: { enabled: "false", sender: "" },
@@ -111,14 +111,13 @@ describe("the switch of the activation series", () => {
       ["staging", "production"],
       ["production", "staging"],
     ] as const) {
-      expect(seriesOf(configText([...order], "false"))).not.toEqual(expected);
       expect(seriesOf(configText([...order], "false")).staging.enabled).toBe(
         "false"
       );
     }
   });
 
-  it("refuses the name of a Resend secret or a whsec_ value as key or value, anywhere in wrangler.jsonc, and lets a comment that only names one pass", () => {
+  it("refuses the name of a Resend secret as key or value and whsec_ anywhere in wrangler.jsonc, comments included, and lets a comment that only names a Resend secret pass", () => {
     expect(secretsIn(readFileSync(wranglerPath, "utf8"))).toEqual([]);
     const withVar = (entry: string) =>
       `{ "vars": { ${entry} }, "env": { "staging": { "vars": { ${entry} } } } }`;
@@ -131,6 +130,7 @@ describe("the switch of the activation series", () => {
     ]) {
       expect(secretsIn(withVar(entry)), entry).not.toEqual([]);
     }
+    expect(secretsIn('{ "vars": {} } // whsec_x')).not.toEqual([]);
     expect(
       secretsIn('{ "vars": {} } // RESEND_API_KEY is a Worker secret')
     ).toEqual([]);

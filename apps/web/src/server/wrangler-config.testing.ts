@@ -1,4 +1,4 @@
-export interface WranglerConfig {
+interface WranglerConfig {
   env?: Record<string, { vars?: Record<string, string> } | undefined>;
   vars?: Record<string, string>;
 }
