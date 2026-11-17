@@ -1,5 +1,5 @@
-import { Pool } from "pg";
-import { guardPoolErrors } from "./pool-errors";
+import { sql } from "drizzle-orm";
+import type { TenantRequestTransaction } from "./tenant-transaction";
 
 /**
  * The preference of the "tips for getting started" for the person's own session (ADR 0106, D8): the two functions of
@@ -14,7 +14,10 @@ export interface ActivationPreference {
   tips: boolean;
 }
 
-/** The read: the function of migration 0134, with the person as its one parameter. */
+/**
+ * The read: the function of migration 0134, with the person as its one parameter. The gate runs this text; the
+ * functions below build the same text with drizzle, and the router test holds the two together.
+ */
 export const ACTIVATION_PREFERENCE_STATEMENT =
   "SELECT public.activation_email_preference($1::text) AS preference";
 
@@ -40,40 +43,33 @@ export function parseActivationPreference(
   throw new Error("The activation preference has an unexpected shape.");
 }
 
-export interface ActivationPreferenceClient {
-  close: () => Promise<void>;
-  read: (userId: string) => Promise<ActivationPreference>;
-  setTips: (userId: string, on: boolean) => Promise<ActivationPreference>;
+async function runPreference(
+  transaction: TenantRequestTransaction,
+  query: ReturnType<typeof sql>
+): Promise<ActivationPreference> {
+  const answer = await transaction.execute(query);
+  return parseActivationPreference(answer.rows[0]?.preference);
 }
 
-export function createActivationPreferenceClient(
-  connectionString: string
-): ActivationPreferenceClient {
-  const pool = guardPoolErrors(
-    new Pool({
-      connectionString,
-      connectionTimeoutMillis: 5000,
-      idleTimeoutMillis: 5000,
-      max: 1,
-      // one row each way: a statement held longer than this answers the screen "try again" instead of the Worker's limit
-      query_timeout: 5000,
-    })
+/** Reads the preference on the connection and in the transaction the caller already holds: no connection of its own. */
+export function readActivationPreference(
+  transaction: TenantRequestTransaction,
+  userId: string
+): Promise<ActivationPreference> {
+  return runPreference(
+    transaction,
+    sql`SELECT public.activation_email_preference(${userId}::text) AS preference`
   );
-  return {
-    close: () => pool.end(),
-    async read(userId) {
-      const answer = await pool.query<{ preference: unknown }>(
-        ACTIVATION_PREFERENCE_STATEMENT,
-        [userId]
-      );
-      return parseActivationPreference(answer.rows[0]?.preference);
-    },
-    async setTips(userId, on) {
-      const answer = await pool.query<{ preference: unknown }>(
-        ACTIVATION_SET_TIPS_STATEMENT,
-        [userId, on]
-      );
-      return parseActivationPreference(answer.rows[0]?.preference);
-    },
-  };
+}
+
+/** Turns the tips on or off in the transaction the caller already holds, and answers the state after. */
+export function setActivationTips(
+  transaction: TenantRequestTransaction,
+  userId: string,
+  on: boolean
+): Promise<ActivationPreference> {
+  return runPreference(
+    transaction,
+    sql`SELECT public.activation_set_tips(${userId}::text, ${on}::boolean) AS preference`
+  );
 }

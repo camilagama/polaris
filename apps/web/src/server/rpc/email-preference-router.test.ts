@@ -1,8 +1,10 @@
 import { createORPCClient } from "@orpc/client";
 import { RPCLink } from "@orpc/client/fetch";
-import type {
-  ActivationPreference,
-  ActivationPreferenceClient,
+import { readFileSync } from "node:fs";
+import type { ActivationPreference } from "@polaris/db/activation-preference";
+import {
+  ACTIVATION_PREFERENCE_STATEMENT,
+  ACTIVATION_SET_TIPS_STATEMENT,
 } from "@polaris/db/activation-preference";
 import { TenantAuthorizationError } from "@polaris/db/tenant-transaction";
 import { describe, expect, it, vi } from "vitest";
@@ -13,6 +15,7 @@ import type { TenantRequestContextInput } from "../tenant-request-context";
 import { createRpcRouter } from "./router";
 
 const organizationId = "org_7b9c212a";
+const OWN_CONNECTION = /from "pg"|new Pool|connectionString|HYPERDRIVE/;
 const SERVER_FAULT = /^(INTERNAL|SERVICE)/;
 
 const testBindings = {
@@ -33,12 +36,15 @@ interface PreferenceClient {
   };
 }
 
-function createClient(overrides: Record<string, unknown>) {
+function createClient(
+  overrides: Record<string, unknown>,
+  bindings: WorkerBindings = testBindings
+) {
   const app = createServerApp({
     rpcRouter: createRpcRouter(overrides as unknown as Overrides),
   });
   const link = new RPCLink({
-    fetch: (request) => Promise.resolve(app.fetch(request, testBindings)),
+    fetch: (request) => Promise.resolve(app.fetch(request, bindings)),
     headers: { origin: "https://polaris.example.invalid" },
     method: "POST",
     url: new URL("/rpc", "https://polaris.example.invalid"),
@@ -46,51 +52,71 @@ function createClient(overrides: Record<string, unknown>) {
   return createORPCClient(link) as unknown as PreferenceClient;
 }
 
-function tenantOf(userId: string, seen: string[] = []) {
+interface DrizzleQuery {
+  queryChunks: unknown[];
+}
+
+/** Renders a drizzle `sql` template the way the driver receives it: text with $n and the values apart. */
+function render(query: DrizzleQuery) {
+  const params: unknown[] = [];
+  let text = "";
+  for (const chunk of query.queryChunks) {
+    if (
+      typeof chunk === "object" &&
+      chunk !== null &&
+      Array.isArray((chunk as { value?: unknown }).value)
+    ) {
+      text += (chunk as { value: string[] }).value.join("");
+    } else {
+      params.push(chunk);
+      text += `$${params.length}`;
+    }
+  }
+  return { params, sql: text };
+}
+
+/**
+ * The database in memory: one row of preference per person, as the functions of the migration keep it. It is the
+ * transaction the tenant context hands to the handler, so what it receives is the statement the handler really ran.
+ */
+function fakeDatabase() {
+  const people = new Map<string, ActivationPreference>();
+  const statements: { params: unknown[]; sql: string }[] = [];
+  const stateOf = (userId: string) =>
+    people.get(userId) ?? { sent: 0, tips: true };
+  const transaction = {
+    execute(query: DrizzleQuery) {
+      const { params, sql } = render(query);
+      statements.push({ params, sql });
+      const [userId, on] = params as [string, boolean | undefined];
+      if (sql === ACTIVATION_SET_TIPS_STATEMENT) {
+        people.set(userId, { ...stateOf(userId), tips: on === true });
+      }
+      return Promise.resolve({ rows: [{ preference: stateOf(userId) }] });
+    },
+  };
+  return {
+    seed(userId: string, state: ActivationPreference) {
+      people.set(userId, state);
+    },
+    statements,
+    transaction,
+  };
+}
+
+function tenantOf(
+  userId: string,
+  database: ReturnType<typeof fakeDatabase>,
+  seen: string[] = []
+) {
   return (input: TenantRequestContextInput<unknown>) => {
     seen.push(input.capability);
-    return input.operation({} as never, {
+    return input.operation(database.transaction as never, {
       capability: input.capability,
       organizationId: input.requestedOrganizationId,
       role: "owner",
       userId,
     });
-  };
-}
-
-/** The database in memory: one row of preference per person, as the functions of the migration keep it. */
-function fakeDatabase() {
-  const people = new Map<string, ActivationPreference>();
-  const calls: { connectionString: string; userId: string }[] = [];
-  let closed = 0;
-  const stateOf = (userId: string) =>
-    people.get(userId) ?? { sent: 0, tips: true };
-  return {
-    calls,
-    closedCount: () => closed,
-    createPreferenceClient(
-      connectionString: string
-    ): ActivationPreferenceClient {
-      return {
-        close: () => {
-          closed += 1;
-          return Promise.resolve();
-        },
-        read: (userId) => {
-          calls.push({ connectionString, userId });
-          return Promise.resolve(stateOf(userId));
-        },
-        setTips: (userId, on) => {
-          calls.push({ connectionString, userId });
-          const next = { ...stateOf(userId), tips: on };
-          people.set(userId, next);
-          return Promise.resolve(next);
-        },
-      };
-    },
-    seed(userId: string, state: ActivationPreference) {
-      people.set(userId, state);
-    },
   };
 }
 
@@ -100,8 +126,7 @@ describe("account.emailPreference and account.setTips", () => {
     const database = fakeDatabase();
     database.seed("session-user-17", { sent: 2, tips: false });
     const client = createClient({
-      createPreferenceClient: database.createPreferenceClient,
-      withTenantRequestContext: tenantOf("session-user-17", seen),
+      withTenantRequestContext: tenantOf("session-user-17", database, seen),
     });
     await expect(
       client.account.emailPreference({ organizationId })
@@ -110,17 +135,56 @@ describe("account.emailPreference and account.setTips", () => {
       client.account.setTips({ on: true, organizationId })
     ).resolves.toEqual({ sent: 2, tips: true });
     expect(seen).toEqual(["organization:export", "organization:export"]);
-    expect(database.calls).toEqual([
-      {
-        connectionString: testBindings.HYPERDRIVE.connectionString,
-        userId: "session-user-17",
-      },
-      {
-        connectionString: testBindings.HYPERDRIVE.connectionString,
-        userId: "session-user-17",
-      },
+    expect(database.statements).toEqual([
+      { params: ["session-user-17"], sql: ACTIVATION_PREFERENCE_STATEMENT },
+      { params: ["session-user-17", true], sql: ACTIVATION_SET_TIPS_STATEMENT },
     ]);
-    expect(database.closedCount()).toBe(2);
+  });
+
+  it("opens no connection of its own: the two functions run in the transaction of the tenant context", async () => {
+    const database = fakeDatabase();
+    const connectionStringReads: string[] = [];
+    const bindings = {
+      ...testBindings,
+      HYPERDRIVE: {
+        get connectionString(): string {
+          connectionStringReads.push("HYPERDRIVE");
+          return testBindings.HYPERDRIVE.connectionString;
+        },
+      },
+    } as WorkerBindings;
+    const client = createClient(
+      { withTenantRequestContext: tenantOf("conta-a", database) },
+      bindings
+    );
+    await client.account.emailPreference({ organizationId });
+    await client.account.setTips({ on: false, organizationId });
+    await client.account.setTips({ on: false, organizationId });
+    expect(database.statements).toHaveLength(3);
+    expect(connectionStringReads).toEqual([]);
+  });
+
+  it.each([
+    "../../../../../packages/db/src/activation-preference.ts",
+    "./email-preference-handlers.ts",
+  ])("has no pool and no connection string in the path of %s", (path) => {
+    const source = readFileSync(new URL(path, import.meta.url), "utf8");
+    expect(source).not.toMatch(OWN_CONNECTION);
+  });
+
+  it("hands over the switch it was given and answers the state the database reports", async () => {
+    const database = fakeDatabase();
+    const client = createClient({
+      withTenantRequestContext: tenantOf("conta-a", database),
+    });
+    const first = await client.account.setTips({ on: false, organizationId });
+    const second = await client.account.setTips({ on: false, organizationId });
+    expect(first).toEqual({ sent: 0, tips: false });
+    expect(second).toEqual(first);
+    expect(database.statements.map((statement) => statement.params)).toEqual([
+      ["conta-a", false],
+      ["conta-a", false],
+    ]);
   });
 
   it("keeps two accounts apart: what A reads and writes never reaches B (AC-8b.6a)", async () => {
@@ -129,8 +193,7 @@ describe("account.emailPreference and account.setTips", () => {
     database.seed("conta-b", { sent: 1, tips: true });
     const as = (userId: string) =>
       createClient({
-        createPreferenceClient: database.createPreferenceClient,
-        withTenantRequestContext: tenantOf(userId),
+        withTenantRequestContext: tenantOf(userId, database),
       });
     const a = as("conta-a");
     const b = as("conta-b");
@@ -147,16 +210,15 @@ describe("account.emailPreference and account.setTips", () => {
     await expect(
       b.account.emailPreference({ organizationId })
     ).resolves.toEqual({ sent: 1, tips: false });
-    expect(new Set(database.calls.map((call) => call.userId))).toEqual(
-      new Set(["conta-a", "conta-b"])
-    );
+    expect(
+      new Set(database.statements.map((statement) => statement.params[0]))
+    ).toEqual(new Set(["conta-a", "conta-b"]));
   });
 
   it("never takes the person from the input: a user field is refused and nothing reaches the database", async () => {
     const database = fakeDatabase();
     const client = createClient({
-      createPreferenceClient: database.createPreferenceClient,
-      withTenantRequestContext: tenantOf("conta-a"),
+      withTenantRequestContext: tenantOf("conta-a", database),
     });
     await expect(
       client.account.emailPreference({ organizationId, userId: "conta-b" })
@@ -167,13 +229,15 @@ describe("account.emailPreference and account.setTips", () => {
     await expect(
       client.account.setTips({ on: "no", organizationId })
     ).rejects.toBeDefined();
-    expect(database.calls).toEqual([]);
+    expect(database.statements).toEqual([]);
   });
 
-  it("answers 403 to who lacks the capability and never opens the database connection", async () => {
-    const createPreferenceClient = vi.fn();
+  it("answers 403 to who lacks the capability and never reaches the database", async () => {
+    const readActivationPreference = vi.fn();
+    const setActivationTips = vi.fn();
     const client = createClient({
-      createPreferenceClient,
+      readActivationPreference,
+      setActivationTips,
       withTenantRequestContext: () =>
         Promise.reject(new TenantAuthorizationError("capability_denied")),
     });
@@ -183,40 +247,53 @@ describe("account.emailPreference and account.setTips", () => {
     await expect(
       client.account.setTips({ on: false, organizationId })
     ).rejects.toMatchObject({ code: "FORBIDDEN" });
-    expect(createPreferenceClient).not.toHaveBeenCalled();
+    expect(readActivationPreference).not.toHaveBeenCalled();
+    expect(setActivationTips).not.toHaveBeenCalled();
   });
 
   it("answers 401 without a session", async () => {
-    const createPreferenceClient = vi.fn();
+    const readActivationPreference = vi.fn();
     const client = createClient({
-      createPreferenceClient,
+      readActivationPreference,
       withTenantRequestContext: () =>
         Promise.reject(new TenantRequestContextError("session_required")),
     });
     await expect(
       client.account.emailPreference({ organizationId })
     ).rejects.toMatchObject({ code: "UNAUTHORIZED" });
-    expect(createPreferenceClient).not.toHaveBeenCalled();
+    expect(readActivationPreference).not.toHaveBeenCalled();
   });
 
-  it("closes the connection when the database fails, and the error leaves as an error of the server", async () => {
-    let closed = 0;
+  it("lets the error of the database leave as an error of the server, so the screen says it could not save", async () => {
     const client = createClient({
-      createPreferenceClient: () => ({
-        close: () => {
-          closed += 1;
-          return Promise.resolve();
-        },
-        read: () => Promise.reject(new Error("connection terminated")),
-        setTips: () => Promise.reject(new Error("connection terminated")),
-      }),
-      withTenantRequestContext: tenantOf("conta-a"),
+      setActivationTips: () =>
+        Promise.reject(new Error("connection terminated")),
+      withTenantRequestContext: tenantOf("conta-a", fakeDatabase()),
     });
     await expect(
       client.account.setTips({ on: false, organizationId })
     ).rejects.toMatchObject({
       code: expect.stringMatching(SERVER_FAULT),
     });
-    expect(closed).toBe(1);
+  });
+
+  it("refuses an answer that is not the two fields of the preference", async () => {
+    const client = createClient({
+      withTenantRequestContext: (input: TenantRequestContextInput<unknown>) =>
+        input.operation(
+          {
+            execute: () => Promise.resolve({ rows: [{ preference: null }] }),
+          } as never,
+          {
+            capability: input.capability,
+            organizationId: input.requestedOrganizationId,
+            role: "owner",
+            userId: "conta-a",
+          }
+        ),
+    });
+    await expect(
+      client.account.emailPreference({ organizationId })
+    ).rejects.toMatchObject({ code: expect.stringMatching(SERVER_FAULT) });
   });
 });
