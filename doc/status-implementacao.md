@@ -1,4 +1,4 @@
-﻿# Polaris — acompanhamento da implementação
+# Polaris — acompanhamento da implementação
 
 Atualizado em 17 de novembro de 2026.
 
@@ -3464,7 +3464,7 @@ Origem: achado B do Diego no Pixel 6 (28/10): a venda montada em Vender sumia ao
 | Nome da loja (P-1) | Em revisão | `SELECT (name)` em `organizations` para o papel da série: 35 colunas de leitura, conferidas no fim da migration e no gate. Os candidatos seguem sem o nome (o gate confere as colunas de saída). |
 | Códigos | Em revisão | `packages/domain/src/activation/notices.ts`: os do banco na ordem da releitura e os do Worker, com `outside_send_hours`. |
 | Gate (AC-7c.13) | Em revisão | `activation-candidates` estendido: privilégios e ACL da função, leitores exatos de `organizations.name`, lista exata do papel, uma loja por motivo com paridade contra os candidatos (o a1 de loja que já tem produto vira `state_changed`), a ordem dos motivos, os nulos e o limite do relógio. |
-| Fora deste PR | Pendente | O consumidor que chama a função (7c-2); os modelos (7c-1); `series_stopped` nas duas funções (9a). |
+| Fora deste PR | Pendente | O consumidor que chama a função (7c-2); os modelos (7c-1); `series_stopped` nas duas funções (9a-db, migration 0135, abaixo). |
 
 ### Avisos de ativação: a preferência das dicas pela sessão, parte do banco (t1224; corte staging-alinhado, item 2, Item 8b-db; migration 0134, número provisório)
 
@@ -3475,6 +3475,17 @@ Origem: achado B do Diego no Pixel 6 (28/10): a venda montada em Vender sumia ao
 | Cliente | Em revisão | `packages/db/src/activation-preference.ts`: os dois comandos e a leitura tipada da resposta, com teste. |
 | Gate | Em revisão | `activation-candidates` estendido: `has_function_privilege` função a função, duas contas que não se tocam, desligar pela 0129 lê `tips: false`, ligar pela nova devolve a pessoa aos candidatos, conta com loja de mais de 14 dias. |
 | Fora deste PR | Pendente | A rota, o contrato e o cartão "E-mails que você recebe" (8b-app). O handler é quem passa o `context.user.id`. |
+
+### Avisos de ativação: a parada da série, a caixa de entrada e a supressão por função, parte do banco (t1231; corte ativacao-fase1b, Item 9a-db; migration 0135, número provisório)
+
+| Item | Estado | Detalhe |
+| --- | --- | --- |
+| Parada (AC-9.3, AC-9.4, AC-9.5) | Em revisão | `activation_series_stops` (uma linha por parada, no máximo uma ativa) e `activation_series_stop_releases` (só de acrescentar, `session_user` e nota de 10 a 200 caracteres sem `@`). `released_at` só sai de nulo com a linha de liberação do mesmo instante (gatilho `ALWAYS`); `DELETE` e `TRUNCATE` recusados. Os candidatos devolvem nada e a releitura responde `series_stopped` (primeiro código) antes da flag e do instante da liga. |
+| Funções do dono da série (AC-9.5b, AC-9.6, AC-9.8, AC-9.9) | Em revisão | Oito ao todo (as cinco da 0134 e três novas): `activation_record_email_event` (caixa por `svix-id`, supressão por HMAC e, na reclamação, a parada, numa transação), `activation_address_suppressed` (12 meses em UTC, guarda de relógio de 10 min, re-chaveamento com a data mais antiga, `22023` para HMAC fora de 32 bytes e `key_id` iguais ou mal formados) e `activation_release_stop` (nenhum papel de aplicação a executa; o dono do banco, por runbook). O runtime de cobrança perdeu `SELECT`, `INSERT` e `UPDATE` na supressão. `activation_email_suppressions.key_id` nulo. |
+| Cliente e consumidor | Em revisão | `packages/db/src/activation-email-events.ts` (a chamada do webhook, ainda sem quem a use) e `isSuppressed(keys, now)` com as duas chaves e os `key_id`; "a função não existe" (`42883`) conta como suprimido (ordem do deploy: migration antes do Worker). `STOP_ENFORCED` continua `false`. |
+| Retenção | Em revisão | `retention.ts` (classe `activation_series`): as três tabelas novas; a caixa de entrada fica fora da purga de 12 meses (o `svix-id` não é dado pessoal e a linha impede que um reenvio antigo pare a série de novo depois da liberação). |
+| Gate | Em revisão | `activation-candidates` seção 12 e `activation-sweep` caso 4, com a mutação provada de cada regra nova; `docs/runbooks/ativacao-parada-da-serie.md` executado num PostgreSQL descartável. |
+| Fora deste PR | Pendente | A rota do webhook, a verificação Svix, `STOP_ENFORCED = true`, `RESEND_WEBHOOK_SECRET`, a forma frouxa da reclamação (B1 do Rodrigo), o smoke, o checklist e o alerta `serie-parada` (9a-app). |
 
 ### Avisos de ativação: o consumidor das dicas (t1089; corte ativacao-fase1b, Item 7c-2; sem migration)
 
