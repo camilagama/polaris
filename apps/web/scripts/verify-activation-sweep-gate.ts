@@ -155,7 +155,7 @@ async function run() {
     closers.push(() => second.close());
 
     // the clock of every case: 10:00 of São Paulo on the day the database is in, so every store of the gate (at most
-    // 5 days back) stays inside the 14 days the owner of the series sees, and what the sweeps record is set to the day
+    // 5 days back) stays inside the window the owner of the series sees, and what the sweeps record is set to the day
     // of the cap (recordedAt)
     const clock = await owner.pool.query<{ ten: Date }>(
       `SELECT (pg_catalog.date_trunc('day', now() AT TIME ZONE '${ZONE}') + interval '10 hours') AT TIME ZONE '${ZONE}' AS ten`
@@ -524,7 +524,7 @@ async function run() {
     const counted = await countedToday();
     assert.ok(counted <= CAP - 2, `room for the case (${counted} counted)`);
     const toSeed = CAP - 2 - counted;
-    // the seeded notices: stores older than the 14 days the owner of the series sees, so never candidates themselves
+    // the seeded notices: stores older than the window the owner of the series sees, so never candidates themselves
     const outcomes: SeededOutcome[] = [
       ...Array.from(
         { length: toSeed },
@@ -629,7 +629,7 @@ async function run() {
     // 5. AC-7b.4: the count of the cap follows the day of the sweep's clock, not the hour the gate runs at. On a day
     // far ahead, 58 notices are recorded one second before midnight of São Paulo and 5 one second after it: only the 58
     // are the day of the sweep, so two of three owed stores are recorded, and the next morning the third is.
-    // The day is past the 14 days a store stays a candidate: the stores the other gates left (created at the real hour
+    // The day is past the window in which a store stays a candidate: the stores the other gates left (created at the real hour
     // the gate runs, whether before or after `ten`) are no longer candidates there, so they cannot be recorded onto
     // the day's cap ahead of the case's own. A day a few days ahead would have them due or not by the hour of the run.
     const dayX = at(ten, FAR_DAYS * DAY);
