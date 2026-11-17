@@ -71,6 +71,7 @@ const BRACKETS = /[[\]]/g;
 const TRIGGER_KEY = /^ {2}([\w-]+):/;
 const STAGING_WORD = /staging/i;
 const COMMENT_LINE = /^\s*#/;
+const STEP_COMMENT = /^ {6}#/;
 const LEGAL_VARIABLE = /^\s+VITE_LEGAL_[A-Z_]+: .*$/;
 const WRANGLER_DEPLOY = "wrangler deploy";
 
@@ -105,6 +106,21 @@ function blockText(lines, index, indent) {
     .trimEnd();
 }
 
+function isStepBody(lines, index) {
+  if (!STEP_COMMENT.test(lines[index])) {
+    return true;
+  }
+  for (let next = index + 1; next < lines.length; next += 1) {
+    if (STEP_START.test(lines[next])) {
+      return false;
+    }
+    if (lines[next].trim() !== "" && !STEP_COMMENT.test(lines[next])) {
+      return true;
+    }
+  }
+  return false;
+}
+
 function parseSteps(lines) {
   const steps = [];
   let current = null;
@@ -114,6 +130,9 @@ function parseSteps(lines) {
       steps.push(current);
     }
     if (current === null) {
+      return;
+    }
+    if (!isStepBody(lines, index)) {
       return;
     }
     current.lines.push(line);

@@ -440,6 +440,53 @@ describe("the production workflow check", () => {
       }
     );
 
+    it("keeps a comment written before the next step out of the step above it", () => {
+      const planted = [
+        "jobs:",
+        "  build:",
+        "    steps:",
+        "      - name: First",
+        "        run: echo one",
+        "      # about the next step",
+        "",
+        "      # still about the next step",
+        "      - name: Second",
+        "        run: |",
+        "          echo two",
+        "          # inside the script",
+        "      - name: Third",
+        "        run: echo three",
+      ].join("\n");
+      const [first, second, third] = parseJobs(planted)[0].steps;
+      expect(first.lines.join("\n").trimEnd()).toBe(
+        "      - name: First\n        run: echo one"
+      );
+      expect(first.run).toBe("echo one");
+      expect(second.lines.at(-1)).toBe("          # inside the script");
+      expect(second.run).toBe("echo two\n# inside the script");
+      expect(third.run).toBe("echo three");
+    });
+
+    it("keeps guarding the run of a shared step that has a comment right after it", () => {
+      const name = "No offline lab in the build";
+      const commented = (text) =>
+        once(
+          text,
+          "        run: node scripts/verify-no-lab-in-build.mjs\n",
+          "        run: node scripts/verify-no-lab-in-build.mjs\n      # a note about the step that follows\n"
+        );
+      const drifted = (text) =>
+        once(
+          commented(text),
+          "        run: node scripts/verify-no-lab-in-build.mjs\n",
+          "        run: node scripts/verify-no-lab-in-build.mjs && true\n"
+        );
+      expect(problemsOf(commented(production), commented(staging))).toEqual([]);
+      expect(problemsOf(drifted(production), commented(staging))).toEqual([
+        `drift: the step "${name}" differs from the staging deploy`,
+      ]);
+    });
+
     it("refuses other build commands, other legal variables or another list of required CI jobs", () => {
       expect(
         problemsOf(
