@@ -71,7 +71,7 @@ Desenho do D3 (smoke do staging) aprovado pelo Filipe e pelo Rodrigo; a var de l
 
 ## Emenda (17/11/2026): o staging liga o Sentry do navegador
 
-Decisão do usuário (17/11/2026): ligar o Sentry do navegador no staging, no plano grátis, e manter o leitor de erros próprio no código. O DSN é o da chave `staging-web` do projeto `polaris`, que se revoga sem afetar outra chave.
+Decisão do usuário (17/11/2026): ligar o Sentry do navegador no staging, no plano grátis, como destino único dos erros do navegador (confirmado pelo usuário no mesmo dia, depois de saber que o código manda cada erro a um destino só). O leitor de erros próprio continua no código e volta a ser o destino se o DSN sair do build. O DSN é o da chave `staging-web` do projeto `polaris`, que se revoga sem afetar outra chave.
 
 - **O workflow de staging passa** `VITE_SENTRY_DSN` (literal: o DSN é público por desenho, vai no bundle, como `VITE_OFFLINE_RUNTIME_ENABLED`), `VITE_SENTRY_ENVIRONMENT=staging` e `VITE_SENTRY_RELEASE` com o SHA do commit construído (o `head_sha` do `workflow_run`, o mesmo do `VITE_RELEASE`, porque o `GITHUB_SHA` dali é o da branch padrão). A produção não muda.
 - **Um destino só.** Com o SDK iniciado, o Sentry é o destino do navegador e a rota `/api/client-errors` não recebe nada; as linhas `client_error` do staging cessam e o sentinela delas fica sem sinal. A rota volta a ser o destino se o DSN sair do build.
