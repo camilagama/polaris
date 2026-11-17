@@ -240,14 +240,52 @@ async function commandsOnDisk(page: Page): Promise<DiskCommand[]> {
   }, OUTBOX_DATABASE_PREFIX);
 }
 
-async function openBrowser(dataDir: string, server: Server) {
-  const context = await chromium.launchPersistentContext(dataDir, {
-    ...devices["Desktop Chrome"],
-    baseURL: OFFLINE_POC_ORIGIN,
-  });
-  await context.clock.setFixedTime(NOW);
-  await server.install(context);
-  return { context, page: context.pages()[0] ?? (await context.newPage()) };
+/** The browsers and data folders of a test, closed and removed in the order that lets nothing write into a removed folder. */
+class Workspace {
+  private readonly contexts: BrowserContext[] = [];
+  private readonly dirs: string[] = [];
+
+  async newDir() {
+    const dir = await mkdtemp(join(tmpdir(), "polaris-kill-reopen-"));
+    this.dirs.push(dir);
+    return dir;
+  }
+
+  async open(dataDir: string, server: Server) {
+    const context = await chromium.launchPersistentContext(dataDir, {
+      ...devices["Desktop Chrome"],
+      baseURL: OFFLINE_POC_ORIGIN,
+    });
+    this.contexts.push(context);
+    await context.clock.setFixedTime(NOW);
+    await server.install(context);
+    return { context, page: context.pages()[0] ?? (await context.newPage()) };
+  }
+
+  async dispose() {
+    for (const context of this.contexts) {
+      // biome-ignore lint/performance/noAwaitInLoops: one browser at a time
+      await context.close().catch(() => undefined);
+    }
+    for (const dir of this.dirs) {
+      // biome-ignore lint/performance/noAwaitInLoops: one folder at a time
+      await rm(dir, {
+        force: true,
+        maxRetries: 5,
+        recursive: true,
+        retryDelay: 200,
+      });
+    }
+  }
+}
+
+async function withWorkspace(run: (workspace: Workspace) => Promise<void>) {
+  const workspace = new Workspace();
+  try {
+    await run(workspace);
+  } finally {
+    await workspace.dispose();
+  }
 }
 
 async function createCustomer(page: Page, n: number) {
@@ -257,53 +295,62 @@ async function createCustomer(page: Page, n: number) {
   await page.getByRole("button", { name: "Cadastrar cliente" }).click();
 }
 
-/** The main process of the browser that owns the data folder: the one without `--type=`, which is what dies. */
-function browserPid(dataDir: string) {
-  const own = `--user-data-dir=${dataDir}`;
-  const found = readdirSync("/proc")
+/** Every process that was started on the data folder: the browser, which is what dies, and its helpers. */
+function processesOn(dataDir: string) {
+  return readdirSync("/proc")
     .filter((entry) => NUMERIC.test(entry))
-    .filter((pid) => {
+    .flatMap((pid) => {
       try {
         const args = readFileSync(`/proc/${pid}/cmdline`, "utf8").split("\0");
-        return args.includes(own) && !args.some((a) => a.startsWith("--type="));
+        return args.some((arg) => arg.includes(dataDir))
+          ? [{ browser: !args.some((a) => a.startsWith("--type=")), pid }]
+          : [];
       } catch {
-        return false;
+        return [];
       }
     });
-  if (found.length !== 1) {
+}
+
+/** SIGKILL: no `beforeunload`, no `pagehide`, no flush the page could have asked for; returns when the folder has no process left. */
+async function killBrowser(dataDir: string) {
+  const main = processesOn(dataDir).filter(({ browser }) => browser);
+  if (main.length !== 1) {
     throw new Error(
-      `expected one browser process on ${dataDir}, found ${found.length}`
+      `expected one browser process on ${dataDir}, found ${main.length}`
     );
   }
-  return Number(found[0]);
+  process.kill(Number(main[0]?.pid), "SIGKILL");
+  await expect
+    .poll(() => processesOn(dataDir).length, { timeout: 15_000 })
+    .toBe(0);
 }
 
-/** SIGKILL: no `beforeunload`, no `pagehide`, no flush the page could have asked for. */
-async function killBrowser(context: BrowserContext, dataDir: string) {
-  process.kill(browserPid(dataDir), "SIGKILL");
-  await context.close().catch(() => undefined);
-}
-
-/** Queue of three with the head in flight and the network cut, then the browser dies. Returns what was on disk. */
-async function queueAndKill(dataDir: string, server: Server) {
-  const { context, page } = await openBrowser(dataDir, server);
+/** Queue of three with the head in flight (the push never answers), then the browser dies. Returns what was on disk. */
+async function queueAndKill(
+  workspace: Workspace,
+  dataDir: string,
+  server: Server
+) {
+  const { page } = await workspace.open(dataDir, server);
   await page.goto("/customers");
   await expect(chip(page)).toContainText("Tudo sincronizado", {
     timeout: 20_000,
   });
 
+  const slow = { timeout: 15_000 };
   server.pushMode = "hang";
   await createCustomer(page, 1);
-  await expect.poll(() => server.pushes.length).toBe(1);
+  await expect.poll(() => server.pushes.length, slow).toBe(1);
   await expect
-    .poll(async () => (await commandsOnDisk(page)).map((c) => c.status))
+    .poll(async () => (await commandsOnDisk(page)).map((c) => c.status), slow)
     .toEqual(["sending"]);
   for (let n = 2; n <= QUEUED; n += 1) {
     // biome-ignore lint/performance/noAwaitInLoops: the commands are queued in order
     await createCustomer(page, n);
-    await expect.poll(async () => (await commandsOnDisk(page)).length).toBe(n);
+    await expect
+      .poll(async () => (await commandsOnDisk(page)).length, slow)
+      .toBe(n);
   }
-  await context.setOffline(true);
 
   const onDisk = await commandsOnDisk(page);
   expect(onDisk.map((c) => c.status)).toEqual([
@@ -311,23 +358,25 @@ async function queueAndKill(dataDir: string, server: Server) {
     "pending",
     "pending",
   ]);
-  await killBrowser(context, dataDir);
+  await killBrowser(dataDir);
   return onDisk;
 }
 
 /** The same folder reopened: the queue as it is on disk before the app starts, then the one send that follows. */
 async function reopenAndAccept(
+  workspace: Workspace,
   dataDir: string,
   server: Server,
   before: DiskCommand[]
 ) {
   server.pushMode = "cut";
-  const { context, page } = await openBrowser(dataDir, server);
+  const pushesBefore = server.pushes.length;
+  const { page } = await workspace.open(dataDir, server);
   // a page of the same origin that does not start the app: nothing has recovered or sent anything yet
   await page.goto("/offline-outbox-lab");
   expect(await commandsOnDisk(page)).toEqual(before);
+  expect(server.pushes.length).toBe(pushesBefore);
 
-  const pushesBefore = server.pushes.length;
   server.pushMode = "ok";
   await page.goto("/customers");
   await expect(chip(page)).toContainText("Tudo sincronizado", {
@@ -338,45 +387,39 @@ async function reopenAndAccept(
   expect([...server.accepted]).toEqual(ids.map((id) => [id, 1]));
   expect(server.replayed).toEqual([]);
   expect(await commandsOnDisk(page)).toEqual([]);
-  await context.close();
-}
-
-async function withDataDirs<T>(
-  run: (first: string, second: string) => Promise<T>
-) {
-  const first = await mkdtemp(join(tmpdir(), "polaris-kill-reopen-"));
-  const second = await mkdtemp(join(tmpdir(), "polaris-kill-reopen-"));
-  try {
-    return await run(first, second);
-  } finally {
-    await rm(first, { force: true, recursive: true });
-    await rm(second, { force: true, recursive: true });
-  }
 }
 
 test.describe("matar o navegador no meio de um envio", () => {
   test.skip(
-    ({ browserName, isMobile }) => browserName !== "chromium" || isMobile,
-    "só o Chromium de mesa: é ele que tem o processo para derrubar"
+    ({ browserName, isMobile }) =>
+      browserName !== "chromium" || isMobile || process.platform !== "linux",
+    "só o Chromium de mesa no Linux: o processo a derrubar se acha por /proc"
   );
   test.describe.configure({ timeout: 120_000 });
 
   test("a fila volta inteira, o comando que estava em envio continua o primeiro e o servidor confirma cada um uma vez", async () => {
-    await withDataDirs(async (dataDir) => {
+    await withWorkspace(async (workspace) => {
+      const dataDir = await workspace.newDir();
       const server = new Server();
-      const before = await queueAndKill(dataDir, server);
-      await reopenAndAccept(dataDir, server, before);
+      const before = await queueAndKill(workspace, dataDir, server);
+      await reopenAndAccept(workspace, dataDir, server, before);
     });
   });
 
   test("controle: reaberto numa pasta de dados vazia, o teste reprova na primeira conferência", async () => {
-    await withDataDirs(async (dataDir, otherDir) => {
+    await withWorkspace(async (workspace) => {
+      const dataDir = await workspace.newDir();
+      const emptyDir = await workspace.newDir();
       const server = new Server();
-      const before = await queueAndKill(dataDir, server);
+      const before = await queueAndKill(workspace, dataDir, server);
       await expect(
-        reopenAndAccept(otherDir, server, before)
+        reopenAndAccept(workspace, emptyDir, server, before)
       ).rejects.toMatchObject({
-        matcherResult: expect.objectContaining({ pass: false }),
+        matcherResult: expect.objectContaining({
+          actual: [],
+          expected: before,
+          pass: false,
+        }),
       });
     });
   });
