@@ -10,6 +10,7 @@ import {
 } from "./verify-staging-isolation.mjs";
 
 const SITE_KEY = /^0x[A-Za-z0-9_-]+$/;
+const ARAUTE_ADDRESS_END = /@araute\.app>?$/;
 
 const readConfig = (app) =>
   parseJsonc(
@@ -700,6 +701,74 @@ describe("the staging isolation check", () => {
     expect(findIsolationProblems(entries)).toEqual([
       "web: env.staging: staging needs vars.AUTH_EMAIL_FROM on @araute.app, whatever the flags",
     ]);
+  });
+
+  const tipsProblem =
+    'web: env.staging: staging needs vars.ACTIVATION_EMAIL_FROM on @araute.app (empty only while vars.ACTIVATION_EMAILS_ENABLED is not "true")';
+
+  it("has the tips sender of the real config on araute.app with the series on", () => {
+    const entries = repositoryEntries();
+    const { staging } = entryOf(entries, "web").config.env;
+    expect(staging.vars.ACTIVATION_EMAILS_ENABLED).toBe("true");
+    expect(staging.vars.ACTIVATION_EMAIL_FROM).toMatch(ARAUTE_ADDRESS_END);
+    expect(findIsolationProblems(entries)).toEqual([]);
+  });
+
+  it("refuses a tips sender of staging outside araute.app, whatever the series flag", () => {
+    const entries = repositoryEntries();
+    const { staging } = entryOf(entries, "web").config.env;
+    for (const flag of ["true", "false"]) {
+      staging.vars.ACTIVATION_EMAILS_ENABLED = flag;
+      for (const sender of [
+        "Polaris <dicas@example.com>",
+        "dicas@evil-araute.app",
+        "dicas@araute.app.evil.com",
+        "dicas@dash.araute.app",
+        "evil@example.com <dicas@araute.app>",
+        "Polaris <dicas@araute.app> <a@example.com>",
+      ]) {
+        staging.vars.ACTIVATION_EMAIL_FROM = sender;
+        expect(findIsolationProblems(entries), `${flag} ${sender}`).toEqual([
+          tipsProblem,
+        ]);
+      }
+    }
+  });
+
+  it("accepts the tips sender on araute.app, as a name and address or bare", () => {
+    const entries = repositoryEntries();
+    const { staging } = entryOf(entries, "web").config.env;
+    for (const sender of [
+      "Polaris (staging) <dicas@araute.app>",
+      "dicas@araute.app",
+      "Polaris <Dicas@ARAUTE.APP>",
+    ]) {
+      staging.vars.ACTIVATION_EMAIL_FROM = sender;
+      expect(findIsolationProblems(entries), sender).toEqual([]);
+    }
+  });
+
+  it("accepts an empty tips sender only while the series is not on", () => {
+    const entries = repositoryEntries();
+    const { staging } = entryOf(entries, "web").config.env;
+    for (const empty of ["", "  ", undefined]) {
+      staging.vars.ACTIVATION_EMAIL_FROM = empty;
+      staging.vars.ACTIVATION_EMAILS_ENABLED = "false";
+      expect(findIsolationProblems(entries), `off ${empty}`).toEqual([]);
+      staging.vars.ACTIVATION_EMAILS_ENABLED = "true";
+      expect(findIsolationProblems(entries), `on ${empty}`).toEqual([
+        tipsProblem,
+      ]);
+    }
+  });
+
+  it("does not print the sender value in the tips problem", () => {
+    const entries = repositoryEntries();
+    const { staging } = entryOf(entries, "web").config.env;
+    staging.vars.ACTIVATION_EMAIL_FROM = "Polaris <whsec_segredo@example.com>";
+    const problems = findIsolationProblems(entries);
+    expect(problems).toEqual([tipsProblem]);
+    expect(problems.join("\n")).not.toContain("whsec_segredo");
   });
 
   it("accepts the closure notices flag in staging only as true or false", () => {

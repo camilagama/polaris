@@ -20,7 +20,7 @@ import {
  * - a staging value is still a PLACEHOLDER, or a staging id, queue, bucket or rate limit namespace is
  *   shared with production or the top level, or does not say `staging`;
  * - two staging roles share a Hyperdrive configuration (the billing role of the Admin is the one exception);
- * - the deployed name does not end in `-staging`, previews are on, or the sender or reply-to of e-mail is outside araute.app (whatever the flags), or an e-mail flag is neither "true" nor "false";
+ * - the deployed name does not end in `-staging`, previews are on, or the sender, the tips sender (empty only while the series is off) or reply-to of e-mail is outside araute.app (whatever the flags), or an e-mail flag is neither "true" nor "false";
  * - the web of staging is not at exactly https://dash.araute.app and the catalog not at exactly https://catalogo.araute.app, each with workers_dev off, or production names or reaches a host of staging (a variable, a route, a wildcard route);
  * - the Admin of staging is reachable other than through its Access application: workers_dev or previews on, any
  *   route (its Custom Domain at admin.araute.app is created outside the config), an Access team or audience missing, malformed
@@ -426,7 +426,7 @@ function checkStagingExposure(app, where, staging, production, problems) {
 
 // Password sign-in is on in staging by decision of the user (ADR 0100), open to anyone because the
 // data is synthetic. The sender and the reply-to are shared by every e-mail the Worker sends (the password
-// ones and the closure notices, with the one RESEND_API_KEY), so they are checked whatever the flags say: a
+// ones, the closure notices and the tips series, with the one RESEND_API_KEY), so they are checked whatever the flags say: a
 // sender of another domain would send from a verified domain of production or of a third party the day any
 // flag turns on. Name and address, or the bare address.
 const STAGING_SENDER =
@@ -453,6 +453,15 @@ function checkStagingEmail(where, staging, problems) {
   if (from === "" ? passwordOn : !STAGING_SENDER.test(from)) {
     problems.push(
       `${where}: staging needs vars.AUTH_EMAIL_FROM on @araute.app, whatever the flags`
+    );
+  }
+  // The tips series sends through the same RESEND_API_KEY with its own sender, so an empty one is only
+  // refused while the series is on and would need it.
+  const tipsOn = vars.ACTIVATION_EMAILS_ENABLED === "true";
+  const tipsFrom = (vars.ACTIVATION_EMAIL_FROM ?? "").trim();
+  if (tipsFrom === "" ? tipsOn : !STAGING_SENDER.test(tipsFrom)) {
+    problems.push(
+      `${where}: staging needs vars.ACTIVATION_EMAIL_FROM on @araute.app (empty only while vars.ACTIVATION_EMAILS_ENABLED is not "true")`
     );
   }
   // The reply-to is optional, but when it is there the answer of a person goes to a mailbox of the staging
