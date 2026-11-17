@@ -3263,6 +3263,13 @@ Origem: achado B do Diego no Pixel 6 (28/10): a venda montada em Vender sumia ao
 | Função | Em revisão | Migration 0132 recria `admin_activation_funnel` (mesma assinatura, mesmos grants): `soldInTrial` exige o corte 1 a 5 (o mesmo de `withFirstSale`) além das condições de k que já tinha. Antes, coorte de 10 lojas ou mais que venderam e com menos de 5 sem venda (corte 7) escondia `withFirstSale` e mostrava `soldInTrial`, subconjunto da célula escondida. |
 | Gate `activation-funnel` | Em revisão | Coorte fixa na semana 19 (2 sem venda, 10 com teste, 5 venderam no teste, 5 depois, 5 sem teste) com `soldInTrial` suprimido e `trialStarted` 10; falhava antes da migration. A contagem direta (`expectedCohort`) exige o corte 1 a 5; nenhuma asserção nem o k foram afrouxados. Só roda no CI e no PostgreSQL local. |
 
+### Funil de ativação: a retenção das semanas 2, 3 e 5 só aparece com `withFirstSale` mostrado (t1197; migration 0133, número provisório)
+
+| Item | Estado | Detalhe |
+| --- | --- | --- |
+| Função | Em revisão | Migration 0133 recria `admin_activation_funnel` (mesma assinatura, mesmos grants): as três células de `retention` exigem o corte 1 a 5 (o mesmo de `withFirstSale`) além de `r >= k` e `b - r >= k`, e a série de lojas ativas (`shown_retention`) lê a mesma condição. Antes, coorte de 10 lojas ou mais que venderam e com menos de 5 sem venda (corte 7) escondia `withFirstSale` e mostrava `week2`, e `stores` com `week2` estreitava `withoutSale` (12 lojas, 10 que venderam, 5 na semana 2: `withoutSale` de no máximo 2). |
+| Gate `activation-funnel` | Em revisão | Coorte fixa na semana 25 (2 sem venda, 5 que venderam primeiro no oitavo dia, 5 e 5 com a 2ª venda no 15º e no 29º dia): `retention` das três semanas suprimida e `withFirstSale` suprimido; falhava antes da migration. A contagem direta (`expectedCohort` e a série de lojas ativas) exige o corte, e `suppressionProblems` reprova retenção mostrada sem `withFirstSale`. Consequência no gate: a semana 18 de lojas ativas (6) deixa de ser escondida pela retenção da coorte da semana 19, e passa a aparecer. Nenhuma asserção nem o k foram afrouxados. Só roda no CI e no PostgreSQL local. |
+
 ### Rota aberta pelo endereço com a raiz vazia: a página cujo módulo de entrada não rodou recarrega uma vez (t937; emenda de 08/11/2026 do ADR 0040; sem migration)
 
 | Item | Status | Observação |

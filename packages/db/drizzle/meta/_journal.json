@@ -911,6 +911,13 @@
       "when": 1794867136680,
       "tag": "0132_soldintrial_so_com_vendas_mostradas",
       "breakpoints": true
+    },
+    {
+      "idx": 131,
+      "version": "7",
+      "when": 1794871790802,
+      "tag": "0133_retencao_so_com_vendas_mostradas",
+      "breakpoints": true
     }
   ]
 }
