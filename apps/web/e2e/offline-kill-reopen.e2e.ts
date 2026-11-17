@@ -46,12 +46,17 @@ interface DiskCommand {
   status: string;
 }
 
-/** What `sync.push` does: reach the server, fail on the network, or hang with no answer (the request is in flight). */
-type PushMode = "hang" | "cut" | "ok";
+/**
+ * What `sync.push` does: reach the server, fail on the network, hang with no answer (the request is in flight), or
+ * hang after the server has already stored the commands (the answer is lost).
+ */
+type PushMode = "hang" | "keep-then-hang" | "cut" | "ok";
 
 /** The server of a test; each browser the test opens talks to the same one. */
 class Server {
   pushMode: PushMode = "ok";
+  /** Answers a repeat of a stored command as a new one: the duplicate that the idempotency must prevent. */
+  repeatsAsNew = false;
   /** The ids of every `sync.push` that arrived, in order, whatever it was answered. */
   readonly pushes: string[][] = [];
   /** Per command id, how many times the server took it as new (a repeat of one it has is a replay). */
@@ -174,7 +179,12 @@ class Server {
         commands: { commandId: string }[];
       };
       this.pushes.push(commands.map(({ commandId }) => commandId));
-      if (this.pushMode === "hang") {
+      if (this.pushMode === "keep-then-hang") {
+        for (const { commandId } of commands) {
+          this.accepted.set(commandId, (this.accepted.get(commandId) ?? 0) + 1);
+        }
+      }
+      if (this.pushMode === "hang" || this.pushMode === "keep-then-hang") {
         await new Promise<never>(() => undefined);
       }
       if (this.pushMode === "cut") {
@@ -183,15 +193,16 @@ class Server {
       }
       const results = commands.map(({ commandId }) => {
         const seen = this.accepted.get(commandId) ?? 0;
-        if (seen > 0) {
+        const replayed = seen > 0 && !this.repeatsAsNew;
+        if (replayed) {
           this.replayed.push(commandId);
         } else {
-          this.accepted.set(commandId, 1);
+          this.accepted.set(commandId, seen + 1);
         }
         return {
           code: null,
           commandId,
-          replayed: seen > 0,
+          replayed,
           result: null,
           status: "accepted",
         };
@@ -325,11 +336,12 @@ async function killBrowser(dataDir: string) {
     .toBe(0);
 }
 
-/** Queue of three with the head in flight (the push never answers), then the browser dies. Returns what was on disk. */
+/** Queue of three with the head in flight (the push never answers, stored by the server or not), then the browser dies. Returns what was on disk. */
 async function queueAndKill(
   workspace: Workspace,
   dataDir: string,
-  server: Server
+  server: Server,
+  inFlight: PushMode = "hang"
 ) {
   const { page } = await workspace.open(dataDir, server);
   await page.goto("/customers");
@@ -338,7 +350,7 @@ async function queueAndKill(
   });
 
   const slow = { timeout: 15_000 };
-  server.pushMode = "hang";
+  server.pushMode = inFlight;
   await createCustomer(page, 1);
   await expect.poll(() => server.pushes.length, slow).toBe(1);
   await expect
@@ -367,7 +379,8 @@ async function reopenAndAccept(
   workspace: Workspace,
   dataDir: string,
   server: Server,
-  before: DiskCommand[]
+  before: DiskCommand[],
+  storedBeforeDeath = 0
 ) {
   server.pushMode = "cut";
   const pushesBefore = server.pushes.length;
@@ -385,8 +398,9 @@ async function reopenAndAccept(
   const ids = before.map(({ commandId }) => commandId);
   expect(server.pushes.slice(pushesBefore)).toEqual([ids]);
   expect([...server.accepted]).toEqual(ids.map((id) => [id, 1]));
-  expect(server.replayed).toEqual([]);
+  expect(server.replayed).toEqual(ids.slice(0, storedBeforeDeath));
   expect(await commandsOnDisk(page)).toEqual([]);
+  await expect(page.locator('[data-sync-state="rejected"]')).toHaveCount(0);
 }
 
 test.describe("matar o navegador no meio de um envio", () => {
@@ -418,6 +432,46 @@ test.describe("matar o navegador no meio de um envio", () => {
         matcherResult: expect.objectContaining({
           actual: [],
           expected: before,
+          pass: false,
+        }),
+      });
+    });
+  });
+
+  test("o servidor gravou e a resposta se perdeu: na reabertura o envio volta como repetido, a fila esvazia e nada grava duas vezes", async () => {
+    await withWorkspace(async (workspace) => {
+      const dataDir = await workspace.newDir();
+      const server = new Server();
+      const before = await queueAndKill(
+        workspace,
+        dataDir,
+        server,
+        "keep-then-hang"
+      );
+      const head = before[0]?.commandId;
+      expect(server.pushes).toEqual([[head]]);
+      expect([...server.accepted]).toEqual([[head, 1]]);
+      await reopenAndAccept(workspace, dataDir, server, before, 1);
+    });
+  });
+
+  test("controle: se o servidor responde à repetição como comando novo, o teste acusa a duplicata", async () => {
+    await withWorkspace(async (workspace) => {
+      const dataDir = await workspace.newDir();
+      const server = new Server();
+      const before = await queueAndKill(
+        workspace,
+        dataDir,
+        server,
+        "keep-then-hang"
+      );
+      const head = before[0]?.commandId;
+      server.repeatsAsNew = true;
+      await expect(
+        reopenAndAccept(workspace, dataDir, server, before, 1)
+      ).rejects.toMatchObject({
+        matcherResult: expect.objectContaining({
+          actual: expect.arrayContaining([[head, 2]]),
           pass: false,
         }),
       });
