@@ -215,6 +215,59 @@ async function run() {
           now
         )
       );
+    const probe = createDatabase(billingUrl, { maxConnections: 1 });
+    closers.push(() => probe.pool.end());
+    /**
+     * The stores among `organizationIds` that the official `activation_notice_candidates` answers at `now`, whatever the
+     * outcome: the rules of who is a candidate stay in that function, never copied here. The function returns at most
+     * 50 rows, so each answer is recorded as skipped (a skipped notice is not counted in the cap) to leave the next
+     * answer the rest, until it returns none; the transaction is rolled back and nothing stays.
+     */
+    const candidatesAmong = async (
+      organizationIds: readonly string[],
+      now: Date
+    ): Promise<string[]> => {
+      const wanted = new Set(organizationIds);
+      const found = new Set<string>();
+      const client = await probe.pool.connect();
+      try {
+        await client.query("BEGIN");
+        for (;;) {
+          const answer = await client.query<{
+            organization_id: string;
+            step: string;
+            user_id: string;
+            due_at: Date;
+          }>(
+            "SELECT organization_id, user_id, step, due_at FROM public.activation_notice_candidates($1, 50)",
+            [now]
+          );
+          if (answer.rows.length === 0) {
+            break;
+          }
+          for (const row of answer.rows) {
+            if (wanted.has(row.organization_id)) {
+              found.add(row.organization_id);
+            }
+            await client.query(
+              "INSERT INTO public.activation_notices (organization_id, user_id, step, due_at) VALUES ($1, $2, $3, $4)",
+              [row.organization_id, row.user_id, row.step, row.due_at]
+            );
+            await client.query(
+              "UPDATE public.activation_notices SET skipped_reason = 'expired' WHERE user_id = $1 AND step = $2",
+              [row.user_id, row.step]
+            );
+          }
+        }
+      } finally {
+        const rolledBack = await client.query("ROLLBACK").then(
+          () => true,
+          () => false
+        );
+        client.release(!rolledBack);
+      }
+      return [...found].sort();
+    };
     const instant = async () => {
       const state = await owner.pool.query<{
         enabled_since: Date | null;
@@ -592,7 +645,7 @@ async function run() {
     await sweep(true, at(ten, -5 * DAY));
     // 64 stores as the other gates leave them, on both sides of 10:00 of São Paulo, whose a1 is not yet recorded:
     // a day closer to the case they would all be due and fill the cap
-    await owner.pool.query(
+    const leftover = await owner.pool.query<{ organization_id: string }>(
       `WITH leftover AS (
          SELECT n, pg_catalog.gen_random_uuid()::text AS user_id, pg_catalog.gen_random_uuid()::text AS organization_id,
                 $1::timestamptz + (n - 32) * interval '1 minute' AS created_at
@@ -604,20 +657,24 @@ async function run() {
        ), stores AS (
          INSERT INTO public.organizations (id, name, timezone, status, created_at)
          SELECT organization_id, 'Loja de sobra do gate da varredura', $2, 'active', created_at FROM leftover
+       ), owners AS (
+         INSERT INTO public.memberships (organization_id, user_id, role, status, created_at)
+         SELECT organization_id, user_id, 'owner', 'active', created_at FROM leftover
        )
-       INSERT INTO public.memberships (organization_id, user_id, role, status, created_at)
-       SELECT organization_id, user_id, 'owner', 'active', created_at FROM leftover`,
+       SELECT organization_id FROM leftover`,
       [ten, ZONE]
     );
-    const leftoverCandidates = await owner.pool.query<{ n: string }>(
-      `SELECT count(*)::text AS n FROM public.organizations
-        WHERE name = 'Loja de sobra do gate da varredura' AND created_at > $1::timestamptz - interval '14 days'`,
-      [dayX]
+    const leftoverIds = leftover.rows.map((row) => row.organization_id);
+    assert.equal(leftoverIds.length, 64);
+    assert.deepEqual(
+      await candidatesAmong(leftoverIds, at(ten, 5 * DAY)),
+      [...leftoverIds].sort(),
+      "control: while inside their days the official function answers the leftover stores"
     );
-    assert.equal(
-      Number(leftoverCandidates.rows[0]?.n),
-      0,
-      "the leftover stores are out of the 14 days of the case's day"
+    assert.deepEqual(
+      await candidatesAmong(leftoverIds, dayX),
+      [],
+      "the official function answers no leftover store on the case's day"
     );
     await settle(dayX);
     const owedAcross = [
@@ -675,7 +732,7 @@ async function run() {
       await assertEvents(store, "the notices across midnight");
     }
     tests.push(
-      "AC-7b.4: the count of the cap follows the day of the sweep's clock, not the hour the gate runs at: 30 days ahead (past the 14 days of a store, with 64 leftover stores created around 10:00 that cannot fill it), 58 notices recorded one second before midnight of São Paulo and 5 one second after it, a sweep at 10:00 records two of three owed stores (the 5 of the next day are not counted) and the day stays at 60, the sweep of the next morning records the third, and what a sweep records carries the clock of its case"
+      "AC-7b.4: the count of the cap follows the day of the sweep's clock, not the hour the gate runs at: 30 days ahead (past the days a store stays a candidate, with 64 leftover stores created around 10:00 that cannot fill it: the official candidates function answers all 64 five days ahead and none 30 days ahead), 58 notices recorded one second before midnight of São Paulo and 5 one second after it, a sweep at 10:00 records two of three owed stores (the 5 of the next day are not counted) and the day stays at 60, the sweep of the next morning records the third, and what a sweep records carries the clock of its case"
     );
 
     // the connection check and the five cases: one that did not run would leave the gate green with less proof
