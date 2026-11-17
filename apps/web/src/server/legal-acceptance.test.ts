@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { LEGAL_DOCUMENTS } from "@polaris/domain/legal/legal-documents";
 import { describe, expect, it, vi } from "vitest";
 import type { WorkerBindings } from "./environment";
@@ -6,8 +7,8 @@ import {
   isExemptFromLegalAcceptance,
   isLegalAcceptanceEnforced,
   LEGAL_ACCEPTANCE_EXEMPT_PROCEDURES,
-  LegalAcceptanceRecordError,
   type LegalAcceptanceQueryable,
+  LegalAcceptanceRecordError,
   legalAcceptanceStatus,
   pendingLegalAcceptance,
   readAcceptedLegalVersions,
@@ -218,6 +219,24 @@ describe("isLegalAcceptanceEnforced", () => {
     "true ",
   ])("is off for %j", (value) => {
     expect(enforced(value)).toBe(false);
+  });
+});
+
+describe("LEGAL_ACCEPTANCE_ENFORCED in wrangler.jsonc", () => {
+  // wrangler.jsonc is JSON with comments and trailing commas, which is also a valid JavaScript expression
+  const config = new Function(
+    `return (${readFileSync(new URL("../../wrangler.jsonc", import.meta.url), "utf8")});`
+  )() as {
+    vars?: Record<string, string>;
+    env?: Record<string, { vars?: Record<string, string> }>;
+  };
+
+  it("is on in staging only, until the go-live", () => {
+    expect(config.vars?.LEGAL_ACCEPTANCE_ENFORCED).toBe("false");
+    expect(config.env?.staging?.vars?.LEGAL_ACCEPTANCE_ENFORCED).toBe("true");
+    expect(config.env?.production?.vars?.LEGAL_ACCEPTANCE_ENFORCED).toBe(
+      "false"
+    );
   });
 });
 
