@@ -1473,6 +1473,42 @@ describe("the command line of the smoke", () => {
     });
     expect(result.status).toBe(1);
     expect(result.stdout).toBe("");
-    expect(result.stderr).toBe("Staging smoke failed (1).\n");
+    expect(result.stderr).toBe(`${REFUSAL.web}\nStaging smoke failed (1).\n`);
+  });
+
+  it("prints the reason of a HEAD_SHA refusal, without the value of the variable", () => {
+    const secret = "valor-que-nao-pode-aparecer";
+    const result = run([], {
+      HEAD_SHA: secret,
+      STAGING_ADMIN_URL: origins.admin,
+      STAGING_CATALOG_URL: origins.catalog,
+      STAGING_WEB_URL: origins.web,
+    });
+    expect(result.status).toBe(1);
+    expect(result.stdout).toBe("");
+    expect(result.stderr).toBe(
+      `${COMMIT_REFUSAL}\nStaging smoke failed (1).\n`
+    );
+    expect(result.stderr).not.toContain(secret);
+  });
+
+  it("prints the reason of a HEAD_SHA refusal in production too, without any variable value", () => {
+    const secret = "valor-que-nao-pode-aparecer";
+    const result = run(["--env", "production"], {
+      ...productionEnv,
+      HEAD_SHA: secret,
+    });
+    expect(result.status).toBe(1);
+    expect(result.stdout).toBe("");
+    expect(result.stderr).toBe(
+      `${COMMIT_REFUSAL}\nProduction smoke failed (1).\n`
+    );
+    for (const value of [
+      secret,
+      productionEnv.PRODUCTION_ACCESS_TEAM,
+      ...Object.values(productionOrigins),
+    ]) {
+      expect(result.stderr).not.toContain(value);
+    }
   });
 });
