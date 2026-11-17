@@ -42,7 +42,7 @@ export interface UiScreen {
   sourceDirs: string[];
 }
 
-export type UiCheck = "overflow" | "touch" | "axe" | "focus";
+export type UiCheck = "overflow" | "touch" | "axe" | "focus" | "names";
 
 export const VIEWPORTS = {
   "320": { height: 640, width: 320 },
@@ -78,7 +78,9 @@ const light = (viewport: UiContext["viewport"], touch: boolean): UiContext => ({
  *   check loads anyway); the theme does not move a box;
  * - touch (2): the areas of 44 px exist with a coarse pointer, at the two phone widths and on a tablet;
  * - axe (3): the contrast is the theme's, and the phone is the width where the layout is tightest;
- * - focus (6): the ring is drawn with the keyboard, which is the wide screen with a mouse.
+ * - focus (6): the ring is drawn with the keyboard, which is the wide screen with a mouse;
+ * - names (10): the markup of the phone (tab bar, sheet) and of the wide screen (side menu) differ, so both, in the
+ *   contexts that the other checks already load.
  *
  * Motion (5) is not here: it needs no axis, it runs once per state in `MOTION_CONTEXT`. Colors only in OKLCH and
  * tokens (4) is a source test, with no context (`scripts/ui-source-rules.test.ts`).
@@ -86,6 +88,7 @@ const light = (viewport: UiContext["viewport"], touch: boolean): UiContext => ({
 export const CHECK_CONTEXTS: Record<UiCheck, readonly UiContext[]> = {
   axe: [light("360", true), { theme: "escuro", touch: true, viewport: "360" }],
   focus: [light("1280", false)],
+  names: [light("360", true), light("1280", false)],
   overflow: [
     light("320", true),
     light("360", true),

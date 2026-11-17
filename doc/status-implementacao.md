@@ -1860,7 +1860,7 @@ Sétimo passo da Fase 12 ([ADR 0098](../docs/adr/0098-sentry-no-navegador-so-err
 | CSP | Concluído | Num build com DSN, `pwa/sentry-build.ts` regrava o `_headers` da saída com só o host de ingestão no `connect-src`; o `public/_headers` commitado segue sem origem (ADR 0090, emenda no ADR 0098). |
 | Source maps | Gerados, upload pendente | `sourcemap: "hidden"` no cliente e `public/.assetsignore` (`*.map`) fora dos Static Assets; o upload ao Sentry é o item 21 do [checklist de release](../docs/runbooks/release-checklist.md) e precisa de um token que não existe aqui. |
 | Teste | Concluído | `apps/web/src/observability/*.test.ts` e `apps/web/pwa/sentry-build.test.ts`: evento com cookie, token, e-mail, CPF, CNPJ, telefone e `?token=` sai limpo; sem DSN o SDK não inicia; a CSP muda só o `connect-src`. |
-| Pendências | Abertas | Projeto `polaris`, DSN e token são do responsável; o workflow de staging não define `VITE_SENTRY_*` (fora do escopo desta tarefa); revisão de dados pessoais antes de ligar em produção; até o upload dos mapas as pilhas chegam minificadas. |
+| Pendências | Abertas | Projeto `polaris`, DSN e token são do responsável; o workflow de staging passa `VITE_SENTRY_*` desde 17/11/2026 (DSN `staging-web`, sem envio de mapas; `scripts/verify-no-map-published.mjs` no deploy); produção segue sem DSN; revisão de dados pessoais antes de ligar em produção; até o upload dos mapas as pilhas chegam minificadas. |
 
 ### Fase 10H — a auditoria do tenant sobrevive ao purge, imutável, com retenção por classe (t062; emenda de 19/10/2026 do ADR 0081; implementação local concluída)
 

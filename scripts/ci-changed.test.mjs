@@ -131,6 +131,8 @@ const EXPECTED_OPERATIONS_FILES = [
   "scripts/verify-staging-isolation.test.mjs",
   "scripts/verify-no-lab-in-build.mjs",
   "scripts/verify-no-lab-in-build.test.mjs",
+  "scripts/verify-no-map-published.mjs",
+  "scripts/verify-no-map-published.test.mjs",
   "scripts/verify-migration-compat.mjs",
   "scripts/verify-migration-compat.test.mjs",
   "scripts/admin-production-guard.test.mjs",

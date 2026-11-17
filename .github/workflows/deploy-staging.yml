@@ -159,6 +159,11 @@ jobs:
           # the release (GITHUB_SHA of a workflow_run is the default branch's, not the built one)
           VITE_CLIENT_ERRORS_ENABLED: "true"
           VITE_RELEASE: ${{ github.event.workflow_run.head_sha }}
+          # the browser Sentry (ADR 0098): errors only, sanitized. The DSN is public by design (it ships in the bundle)
+          # and is the staging-web key of the polaris project, which is revoked without touching another key
+          VITE_SENTRY_DSN: https://9fc7105ea4fd0cbe7e0012b84b9ba5a3@o4510972850208768.ingest.us.sentry.io/4512272164126720
+          VITE_SENTRY_ENVIRONMENT: staging
+          VITE_SENTRY_RELEASE: ${{ github.event.workflow_run.head_sha }}
           # "1" only when a commit since the last deploy carries the marker (job decide, ADR 0041)
           POLARIS_SWAP_URGENT: ${{ needs.decide.outputs.urgent }}
         run: |
@@ -173,6 +178,9 @@ jobs:
       # what is published must not carry the offline labs or the UI gallery (same build mode as production)
       - name: No offline lab in the build
         run: node scripts/verify-no-lab-in-build.mjs
+      # the build writes hidden source maps for Sentry; none may reach the Static Assets upload (no token sends them yet)
+      - name: No source map published
+        run: node scripts/verify-no-map-published.mjs
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: staging-build
