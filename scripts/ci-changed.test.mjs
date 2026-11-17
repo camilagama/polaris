@@ -142,6 +142,8 @@ const EXPECTED_OPERATIONS_FILES = [
   "scripts/verify-deployed-sha.test.mjs",
   "scripts/verify-backup-workflow.mjs",
   "scripts/verify-backup-workflow.test.mjs",
+  "ops/backup/recipients-production.txt",
+  "ops/backup/recipients-staging.txt",
   "scripts/lib/wrangler-config.mjs",
   "scripts/lib/wrangler-config.test.mjs",
   "scripts/gate5-real-devices.sh",
@@ -378,7 +380,7 @@ describe("which CI jobs a change affects", () => {
     ).toBe(false);
   });
 
-  it("skips the browser gate for a change only in the neutral wrangler module or a production verifier", () => {
+  it("skips the browser gate for a change only in the neutral wrangler module, an operations verifier or a backup recipients file", () => {
     for (const file of [
       "scripts/lib/wrangler-config.mjs",
       "scripts/lib/wrangler-config.test.mjs",
@@ -387,6 +389,8 @@ describe("which CI jobs a change affects", () => {
       "scripts/verify-deployed-sha.mjs",
       "scripts/verify-backup-workflow.mjs",
       "scripts/verify-backup-workflow.test.mjs",
+      "ops/backup/recipients-production.txt",
+      "ops/backup/recipients-staging.txt",
     ]) {
       expect(classifyChanges([file]), file).toEqual({
         browser: false,
@@ -522,6 +526,21 @@ describe("the operation scripts are outside the browser gate's import graph", ()
 
   it("is reached by no source, config or manifest of apps/web, apps/catalog or packages/", () => {
     expect(operationsDependents(OPERATIONS_FILES)).toEqual([]);
+  });
+
+  it("lists every script that imports the neutral wrangler module", () => {
+    const importers = readdirSync(path.join(root, "scripts"))
+      .filter((name) => name.endsWith(".mjs") && name !== "ci-changed.test.mjs")
+      .filter((name) =>
+        readFileSync(path.join(root, "scripts", name), "utf8").includes(
+          'from "./lib/wrangler-config.mjs"'
+        )
+      )
+      .map((name) => `scripts/${name}`);
+    expect(importers.length).toBeGreaterThanOrEqual(7);
+    for (const file of importers) {
+      expect(OPERATIONS_FILES, file).toContain(file);
+    }
   });
 
   it("does see the workerd harness, which the Vitest configs of apps/web import (so it stays out of the list)", () => {

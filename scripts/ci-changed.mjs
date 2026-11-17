@@ -13,12 +13,15 @@ import { gitEnvironment } from "./exact-count-list.mjs";
 /**
  * Operation scripts that the browser gate never runs, bundles or reads: the
  * staging smoke and isolation checks, the production build, workflow and
- * deployed-SHA verifiers, the backup workflow verifier, the neutral wrangler
- * module (scripts/lib/wrangler-config.mjs) that the staging isolation, production
- * build and production workflow verifiers import, the migration compatibility check, the
- * flaky-test report (only the e2e-real job runs it), the real-device runner,
- * and the staging deploy workflow. Listed one by one, never with a wildcard
- * over scripts/: a new script is relevant until someone proves otherwise.
+ * deployed-SHA verifiers, the backup workflow verifier and the two age
+ * recipients files it checks (ops/backup/recipients-production.txt and
+ * ops/backup/recipients-staging.txt), the neutral wrangler module
+ * (scripts/lib/wrangler-config.mjs) that the scripts listed here import
+ * (ci-changed.test.mjs fails if an importer is missing here), the migration
+ * compatibility check, the flaky-test report (only the e2e-real job runs it),
+ * the real-device runner, and the staging deploy workflow. Listed one by one,
+ * never with a wildcard over scripts/ or ops/: a new file is relevant until
+ * someone proves otherwise.
  * ci-changed.test.mjs reads the imports and configs of apps/web (Playwright
  * configs included), apps/catalog and packages/ and fails if any of them
  * reaches one of these files. The workerd-* scripts are not here: the Vitest
@@ -42,6 +45,8 @@ export const OPERATIONS_FILES = [
   "scripts/verify-deployed-sha.test.mjs",
   "scripts/verify-backup-workflow.mjs",
   "scripts/verify-backup-workflow.test.mjs",
+  "ops/backup/recipients-production.txt",
+  "ops/backup/recipients-staging.txt",
   "scripts/lib/wrangler-config.mjs",
   "scripts/lib/wrangler-config.test.mjs",
   "scripts/gate5-real-devices.sh",
