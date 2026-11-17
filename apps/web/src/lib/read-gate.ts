@@ -34,6 +34,7 @@ const BREAKER_OPEN_MS = 15_000;
  * same answer whenever it is called (ADR 0055).
  */
 const READ_PROCEDURES: ReadonlySet<string> = new Set([
+  "account/emailPreference",
   "account/legalStatus",
   "billing/readPlan",
   "category/list",
@@ -57,6 +58,7 @@ const READ_PROCEDURES: ReadonlySet<string> = new Set([
   "plan/operationalSelection",
   "product/getVariants",
   "product/list",
+  "product/namesExisting",
   "publicCatalog/setup",
   "report/dailySales",
   "report/periodSummary",
