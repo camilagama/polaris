@@ -134,6 +134,14 @@ const EXPECTED_OPERATIONS_FILES = [
   "scripts/verify-migration-compat.mjs",
   "scripts/verify-migration-compat.test.mjs",
   "scripts/admin-production-guard.test.mjs",
+  "scripts/verify-production-build.mjs",
+  "scripts/verify-production-build.test.mjs",
+  "scripts/verify-production-workflow.mjs",
+  "scripts/verify-production-workflow.test.mjs",
+  "scripts/verify-deployed-sha.mjs",
+  "scripts/verify-deployed-sha.test.mjs",
+  "scripts/lib/wrangler-config.mjs",
+  "scripts/lib/wrangler-config.test.mjs",
   "scripts/gate5-real-devices.sh",
   "scripts/e2e-flaky-report.mjs",
   "scripts/e2e-flaky-report.test.mjs",
@@ -366,6 +374,22 @@ describe("which CI jobs a change affects", () => {
       classifyChanges(EXPECTED_OPERATIONS_FILES).browser,
       "all together"
     ).toBe(false);
+  });
+
+  it("skips the browser gate for a change only in the neutral wrangler module or a production verifier", () => {
+    for (const file of [
+      "scripts/lib/wrangler-config.mjs",
+      "scripts/lib/wrangler-config.test.mjs",
+      "scripts/verify-production-build.mjs",
+      "scripts/verify-production-workflow.mjs",
+      "scripts/verify-deployed-sha.mjs",
+    ]) {
+      expect(classifyChanges([file]), file).toEqual({
+        browser: false,
+        dependencies: false,
+        e2e: false,
+      });
+    }
   });
 
   it("keeps running the browser gate for what can change what it proves", () => {
