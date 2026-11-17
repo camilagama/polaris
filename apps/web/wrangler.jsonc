@@ -16,7 +16,7 @@
     "AUTH_ABUSE_PROTECTION_ENABLED": "false",
     // the Woovi refund command stays off until the refund of an installment is proven (S3.2, Gate 7)
     "WOOVI_REFUND_ENABLED": "false",
-    // the automatic purge of a closed organization (ADR 0102): off until the go-live
+    // the automatic purge of a closed organization (ADR 0102): off here (local) and in production until the go-live; on only in `env.staging`
     "CLOSURE_AUTO_PURGE_ENABLED": "false",
     // the e-mail of the closure notices (ADR 0102, amended): off until the responsible turns it on
     "CLOSURE_NOTICE_EMAIL_ENABLED": "false",
