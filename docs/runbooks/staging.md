@@ -349,8 +349,8 @@ Ordem e o que cada falha quer dizer:
 | # | Verificação | Esperado | Falha quer dizer |
 | --- | --- | --- | --- |
 | 1 | web `GET /health` | 200, `X-Polaris-Release` = 12 primeiros de `HEAD_SHA`, `X-Request-Id` | Worker velho no ar (propagação, deploy que falhou, rollback) ou `RELEASE_HEADER_ENABLED` fora do `env.staging`. |
-| 2 | web `GET /` | 200, CSP, corpo igual ao `index.html` do artefato (sha256) | Static Assets de outra versão, ou algo reescrevendo o HTML na borda (ver plano B). |
-| 3 | web `GET /sw.js` | 200, igual ao `sw.js` do artefato | idem. |
+| 2 | web `GET /` | 200, CSP, corpo igual ao `index.html` do artefato (sha256) e, só no staging, o `connect-src` da CSP lista um host de ingestão do Sentry (`https://o<n>.ingest[.<região>].sentry.io`) | Static Assets de outra versão, ou algo reescrevendo o HTML na borda (ver plano B). Com o corpo igual e a CSP sem o host (`sentry ingest host missing in CSP`): o build saiu sem `VITE_SENTRY_DSN` (ou sem `VITE_SENTRY_ENVIRONMENT` válido), porque o host só entra na CSP com os dois ([ADR 0098](../adr/0098-sentry-no-navegador-so-erros-e-sanitizado.md)); os erros do navegador voltam à rota `/api/client-errors`. Em `--env production` a verificação não exige nem recusa o host: a produção segue sem DSN. |
+| 3 | web `GET /sw.js` | 200, igual ao `sw.js` do artefato | Static Assets de outra versão, ou algo reescrevendo o arquivo na borda. |
 | 4 | web `GET /entrar` | 200, igual ao `index.html` (fallback SPA) | `not_found_handling` mudou ou shell de outra versão. |
 | 5 | web `GET /api/auth-methods` | 200, `google` e `emailPassword` `true`, `turnstileSiteKey` não vazio | falta segredo do Google ou do Turnstile, ou a proteção de abuso desligou (seção 5). |
 | 6 | web `POST /rpc/system/ping` com `Origin` do app | 200, `pong` | roteamento de `/rpc/*`, limite de leitura ou handler oRPC. A `Origin` sai de `new URL(STAGING_WEB_URL).origin`. |

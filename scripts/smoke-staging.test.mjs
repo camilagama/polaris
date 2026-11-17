@@ -46,6 +46,9 @@ const origins = {
 const COMMIT = "9b3d37ed5c223fba78109e32e9196bb294b35358";
 const RELEASE = "9b3d37ed5c22";
 const INDEX = "<!doctype html><title>Polaris</title>";
+const SHELL_CSP_WITHOUT_SENTRY =
+  "default-src 'self'; script-src 'self'; connect-src 'self' data:";
+const SHELL_CSP_WITH_SENTRY = `${SHELL_CSP_WITHOUT_SENTRY} https://o4510000000000000.ingest.us.sentry.io`;
 const SERVICE_WORKER = "self.addEventListener('install', () => {});";
 const REQUEST_ID = "0199c2d0-0000-7000-8000-0000000000aa";
 const AUTH_METHODS = {
@@ -127,7 +130,7 @@ function stagingAnswer(url, init = {}) {
     case `${origins.web}/`:
       return answer(
         200,
-        { "content-security-policy": "default-src 'self'" },
+        { "content-security-policy": SHELL_CSP_WITH_SENTRY },
         INDEX
       );
     case `${origins.web}/sw.js`:
@@ -275,6 +278,105 @@ describe("the staging smoke", () => {
       )
     ).toEqual([
       "catalog /robots.txt (release of the Worker): 200 release absent",
+    ]);
+  });
+
+  it("fails when the CSP of the shell does not open the ingest host of Sentry (a build without the DSN)", async () => {
+    expect(
+      await runSmoke(
+        origins,
+        options,
+        fakeStaging({
+          [`${origins.web}/`]: () =>
+            answer(
+              200,
+              { "content-security-policy": SHELL_CSP_WITHOUT_SENTRY },
+              INDEX
+            ),
+        }),
+        noPause
+      )
+    ).toEqual([
+      "web / (SPA shell with CSP, equal to the artifact): 200 sentry ingest host missing in CSP",
+    ]);
+  });
+
+  it.each([
+    `${SHELL_CSP_WITHOUT_SENTRY}; img-src https://o4510000000000000.ingest.us.sentry.io`,
+    `${SHELL_CSP_WITHOUT_SENTRY} https://o1.ingest.sentry.io.exemplo.com`,
+    `${SHELL_CSP_WITHOUT_SENTRY} https://sentry.io`,
+  ])(
+    "does not take the ingest host of Sentry from another directive or a foreign host: %s",
+    async (policy) => {
+      expect(
+        await runSmoke(
+          origins,
+          options,
+          fakeStaging({
+            [`${origins.web}/`]: () =>
+              answer(200, { "content-security-policy": policy }, INDEX),
+          }),
+          noPause
+        )
+      ).toEqual([
+        "web / (SPA shell with CSP, equal to the artifact): 200 sentry ingest host missing in CSP",
+      ]);
+    }
+  );
+
+  it.each(["o4510000000000000.ingest.us.sentry.io", "o123.ingest.sentry.io"])(
+    "accepts the ingest host of Sentry %s",
+    async (host) => {
+      expect(
+        await runSmoke(
+          origins,
+          options,
+          fakeStaging({
+            [`${origins.web}/`]: () =>
+              answer(
+                200,
+                {
+                  "content-security-policy": `${SHELL_CSP_WITHOUT_SENTRY} https://${host}`,
+                },
+                INDEX
+              ),
+          }),
+          noPause
+        )
+      ).toEqual([]);
+    }
+  );
+
+  it("refuses a shell different from the artifact before judging the Sentry host", async () => {
+    expect(
+      await runSmoke(
+        origins,
+        options,
+        fakeStaging({
+          [`${origins.web}/`]: () =>
+            answer(
+              200,
+              { "content-security-policy": SHELL_CSP_WITHOUT_SENTRY },
+              `${INDEX}<!-- edge -->`
+            ),
+        }),
+        noPause
+      )
+    ).toEqual([
+      "web / (SPA shell with CSP, equal to the artifact): 200 shell different",
+    ]);
+  });
+
+  it("fails as no CSP when the shell answers without a policy", async () => {
+    expect(
+      await runSmoke(
+        origins,
+        options,
+        fakeStaging({ [`${origins.web}/`]: () => answer(200, {}, INDEX) }),
+        noPause
+      )
+    ).toEqual([
+      "web / (SPA shell with CSP, equal to the artifact): 200 no CSP",
     ]);
   });
 
@@ -1300,6 +1402,29 @@ describe("the production smoke", () => {
       expect(init.headers["user-agent"]).toBe(PRODUCTION_USER_AGENT);
     }
   });
+
+  it.each([
+    ["without", SHELL_CSP_WITHOUT_SENTRY],
+    ["with", SHELL_CSP_WITH_SENTRY],
+  ])(
+    "does not ask for the ingest host of Sentry in production, nor refuse it (shell %s the host)",
+    async (_, policy) => {
+      const fetchImpl = (url, init) =>
+        Promise.resolve(
+          toStagingUrl(url) === `${origins.web}/`
+            ? answer(200, { "content-security-policy": policy }, INDEX)
+            : productionAnswer(url, init)
+        );
+      expect(
+        await runSmoke(
+          productionOrigins,
+          productionOptions(),
+          fetchImpl,
+          noPause
+        )
+      ).toEqual([]);
+    }
+  );
 
   it("runs the same twenty checks as staging, in the same order, with the host swapped", () => {
     const shell = { index: "", serviceWorker: "" };
