@@ -467,7 +467,10 @@ describe("the production workflow check", () => {
       expect(third.run).toBe("echo three");
     });
 
-    it("keeps guarding the run of a shared step that has a comment right after it", () => {
+    // A comment after the step changes nothing in the `run` that is compared, so this case
+    // passes with or without the `isStepBody` filter. What proves the filter is the parser case
+    // above and the `No offline lab in the build` run of the `it.each` over the shared steps.
+    it("compares the run of a shared step that has a comment right after it, equal and drifted", () => {
       const name = "No offline lab in the build";
       const commented = (text) =>
         once(
