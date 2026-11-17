@@ -21,6 +21,7 @@ import {
   createResendClosureNoticeSender,
 } from "../privacy/closure-notice-email";
 import { PermanentHandlerError } from "../queue/consumer";
+import { svixKeyOf } from "./resend-signature";
 import {
   createUnsubscribeToken,
   type UnsubscribeSecrets,
@@ -89,6 +90,7 @@ const OTHER_SECRETS = [
   "OFFLINE_LEASE_PREVIOUS_SECRET",
   "OFFLINE_LEASE_SECRET",
   "RESEND_API_KEY",
+  "RESEND_WEBHOOK_SECRET",
   "SYNC_PAYLOAD_HASH_PREVIOUS_SECRET",
   "SYNC_PAYLOAD_HASH_SECRET",
   "TURNSTILE_SECRET_KEY",
@@ -133,6 +135,25 @@ export function activationSuppressionSecretsOf(
     return undefined;
   }
   return previous === current ? { current } : { current, previous };
+}
+
+/**
+ * Whether the webhook's secret is set the way the endpoint reads it (`whsec_` and a key of 24 bytes or more), is at least
+ * 32 characters and is no other secret of the Worker. Without it the endpoint answers 503 and a complaint would not stop
+ * the series, so the tips stay off.
+ */
+function resendWebhookSecretUsable(bindings: SecretBindings): boolean {
+  const secret = bindings.RESEND_WEBHOOK_SECRET;
+  if (
+    secret === undefined ||
+    secret.length < MIN_SECRET_LENGTH ||
+    svixKeyOf(secret) === null
+  ) {
+    return false;
+  }
+  return !OTHER_SECRETS.some(
+    (name) => name !== "RESEND_WEBHOOK_SECRET" && bindings[name] === secret
+  );
 }
 
 const encoder = new TextEncoder();
@@ -235,7 +256,8 @@ type EmailBindings = SecretBindings &
 
 /**
  * The configuration of the tips, or null when anything is missing: the provider's key, the sender of the series, the
- * support box (one address, the reply-to), the app's origin, the secret of the stop link and the suppression's. Also
+ * support box (one address, the reply-to), the app's origin, the secret of the stop link, the suppression's and the
+ * webhook's (without it a complaint would not reach the stop). Also
  * null while the stop on a complaint is not in force in the code (`STOP_ENFORCED`): with it off, no tip goes out even
  * with everything set.
  */
@@ -254,6 +276,7 @@ export function activationNoticeEmailConfig(
   const suppression = activationSuppressionSecretsOf(bindings);
   if (
     !(
+      resendWebhookSecretUsable(bindings) &&
       apiKey &&
       from &&
       supportEmail &&

@@ -27,11 +27,11 @@ import {
   REFUSAL,
   refusalOf,
   runSmoke,
-  STAGING_TARGET,
+  STAGING_ACCESS_TEAM,
   STAGING_FIXED_HOST,
+  STAGING_TARGET,
   STRANGE_ORIGIN,
   send,
-  STAGING_ACCESS_TEAM,
   smokeChecks,
   USER_AGENT,
 } from "./smoke-staging.mjs";
@@ -147,6 +147,7 @@ function stagingAnswer(url, init = {}) {
       return anonymousCall(polarisContract.organization.createInitial, init);
     case `${origins.web}/webhooks/billing/asaas`:
     case `${origins.web}/webhooks/billing/woovi`:
+    case `${origins.web}/webhooks/email/resend`:
       return webhookRefusal();
     case `${origins.catalog}/`:
       return answer(200, {
@@ -184,10 +185,10 @@ describe("the staging smoke", () => {
     vi.restoreAllMocks();
   });
 
-  it("passes when every check answers as expected, with nineteen checks", async () => {
+  it("passes when every check answers as expected, with twenty checks", async () => {
     const fetchImpl = vi.fn(fakeStaging());
     expect(await runSmoke(origins, options, fetchImpl, noPause)).toEqual([]);
-    expect(fetchImpl).toHaveBeenCalledTimes(19);
+    expect(fetchImpl).toHaveBeenCalledTimes(20);
   });
 
   it("runs the anonymous /rpc calls that build Better Auth last, after the get-session", () => {
@@ -195,7 +196,7 @@ describe("the staging smoke", () => {
       release: RELEASE,
       shell: { index: "", serviceWorker: "" },
     }).map((check) => check.url);
-    expect(names).toHaveLength(19);
+    expect(names).toHaveLength(20);
     expect(names.slice(-2)).toEqual([
       `${origins.web}/rpc/organization/listMine`,
       `${origins.web}/rpc/organization/createInitial`,
@@ -232,6 +233,7 @@ describe("the staging smoke", () => {
       ["/rpc/system/ping", "null"],
       ["/webhooks/billing/asaas", null],
       ["/webhooks/billing/woovi", null],
+      ["/webhooks/email/resend", null],
       ["/rpc/organization/listMine", origins.web],
       ["/rpc/organization/createInitial", origins.web],
     ]);
@@ -467,8 +469,8 @@ describe("the staging smoke", () => {
     expect(await runSmoke(origins, options, fetchImpl, noPause)).toEqual([
       "web /api/auth/get-session (auth configured, no session): 503 not 200",
     ]);
-    // eighteen checks pass at once, the failing one is tried three times
-    expect(fetchImpl).toHaveBeenCalledTimes(21);
+    // nineteen checks pass at once, the failing one is tried three times
+    expect(fetchImpl).toHaveBeenCalledTimes(22);
     expect(
       await runSmoke(
         origins,
@@ -572,6 +574,61 @@ describe("the staging smoke", () => {
         expect(sent[0].headers.has("x-webhook-signature")).toBe(false);
         expect(sent[0].headers.has("origin")).toBe(false);
       }
+    });
+
+    const resendWebhook = `${origins.web}/webhooks/email/resend`;
+    const resendName =
+      "web POST /webhooks/email/resend without a signature (refused with 401)";
+
+    it("knocks on the Resend webhook with a POST, without any Svix header or Origin", async () => {
+      const requests = [];
+      const fetchImpl = (url, init) => {
+        requests.push({ headers: new Headers(init.headers), init, url });
+        return fakeStaging()(url, init);
+      };
+      expect(await runSmoke(origins, options, fetchImpl, noPause)).toEqual([]);
+      const sent = requests.filter((request) => request.url === resendWebhook);
+      expect(sent).toHaveLength(1);
+      expect(sent[0].init.method).toBe("POST");
+      expect(sent[0].headers.has("svix-id")).toBe(false);
+      expect(sent[0].headers.has("svix-signature")).toBe(false);
+      expect(sent[0].headers.has("origin")).toBe(false);
+    });
+
+    it("fails when the Resend webhook's secret is missing (503), accepts without a signature (200) or is not routed (404)", async () => {
+      expect(
+        await runSmoke(
+          origins,
+          options,
+          fakeStaging({
+            [resendWebhook]: () =>
+              webhookRefusal(503, "resend_webhook_not_configured"),
+          }),
+          noPause
+        )
+      ).toEqual([
+        `${resendName}: 503 provider not configured (a secret is missing)`,
+      ]);
+      expect(
+        await runSmoke(
+          origins,
+          options,
+          fakeStaging({
+            [resendWebhook]: () => fromWorker(200, {}, json({ received: 1 })),
+          }),
+          noPause
+        )
+      ).toEqual([`${resendName}: 200 accepted without a signature`]);
+      expect(
+        await runSmoke(
+          origins,
+          options,
+          fakeStaging({
+            [resendWebhook]: () => webhookRefusal(404, "not_found"),
+          }),
+          noPause
+        )
+      ).toEqual([`${resendName}: 404 not 401`]);
     });
 
     it("fails when a provider's secret is missing (503), saying so", async () => {
@@ -1026,6 +1083,7 @@ describe("the requests of the smoke over the real fetch of Node", () => {
       "/rpc/system/ping",
       "/webhooks/billing/asaas",
       "/webhooks/billing/woovi",
+      "/webhooks/email/resend",
     ]);
     for (const request of received) {
       expect(request.method).toBe("POST");
@@ -1225,14 +1283,14 @@ describe("the production smoke", () => {
     }
   });
 
-  it("passes with nineteen checks, only at the production hosts and with its own user agent", async () => {
+  it("passes with twenty checks, only at the production hosts and with its own user agent", async () => {
     const fetchImpl = vi.fn((url, init) =>
       Promise.resolve(productionAnswer(url, init))
     );
     expect(
       await runSmoke(productionOrigins, productionOptions(), fetchImpl, noPause)
     ).toEqual([]);
-    expect(fetchImpl).toHaveBeenCalledTimes(19);
+    expect(fetchImpl).toHaveBeenCalledTimes(20);
     const productionHosts = Object.values(productionOrigins).map(
       (origin) => new URL(origin).host
     );
@@ -1242,7 +1300,7 @@ describe("the production smoke", () => {
     }
   });
 
-  it("runs the same nineteen checks as staging, in the same order, with the host swapped", () => {
+  it("runs the same twenty checks as staging, in the same order, with the host swapped", () => {
     const shell = { index: "", serviceWorker: "" };
     const stagingChecks = smokeChecks(origins, { release: RELEASE, shell });
     const productionChecks = smokeChecks(

@@ -4,7 +4,25 @@
 
 **Por quê:** uma só reclamação passa do limite do Resend (0,08 %) e pode suspender a conta inteira, que também envia login, recuperação de senha e cobrança. Por isso a parada é um **estado no banco**, global (todas as lojas), que não depende da flag `ACTIVATION_EMAILS_ENABLED`, do instante em que ela foi ligada, de variável do deploy nem de tempo: **ligar e desligar a flag não a solta**. Ela só sai por um passo nomeado, que nenhum papel da aplicação executa.
 
-> **Estado do código:** a parada só vale como freio em produção quando o Worker do webhook e `STOP_ENFORCED = true` entrarem (9a-app). Até lá, este runbook vale para o banco (a 0135 já cria a parada, a caixa de entrada e a liberação) e foi ensaiado num PostgreSQL descartável, não num ambiente real.
+> **Estado do código:** o webhook (`POST /webhooks/email/resend`, 9a-app) e `STOP_ENFORCED = true` estão no código. A parada vale como freio em um ambiente quando o `RESEND_WEBHOOK_SECRET` está no Worker e o endpoint está registrado no painel do Resend; sem o segredo a série não liga. Este runbook foi ensaiado num PostgreSQL descartável, não ainda num ambiente real (o item 30 do [release-checklist](./release-checklist.md#30-série-de-dicas-ligada-só-com-a-parada-por-reclamação-block-proposta) pede a execução no staging).
+
+## O que o webhook faz
+
+Rota `POST /webhooks/email/resend` (fora de `/api` e `/rpc`, sem exceção na guarda de origem; não depende da flag da série: bounce e reclamação são gravados com a série desligada). A ordem, tudo antes do banco até o passo 3:
+
+1. Segredo ausente ou que não é `whsec_…` (24 bytes ou mais), banco ou segredo da supressão ausentes: **503** (o Resend tenta de novo).
+2. Corpo cru de até 64 KiB (**413** acima).
+3. Assinatura Svix (`svix-id`, `svix-timestamp` com no máximo 10 dígitos, `svix-signature`, HMAC-SHA-256 por WebCrypto, janela de 300 s): qualquer falha é **401** genérico, sem motivo no corpo nem no log (`resend_webhook_rejected`).
+4. Só então o JSON. **`email.complained` sempre chama o banco** (`kind = 'complaint'`), com os HMACs dos endereços que forem legíveis em `data.to` (texto ou lista de textos, no máximo 50) e **com lista vazia** quando `data.to` não tem a forma esperada: a parada não depende do endereço. Nesse caso o log é `resend_complaint_unparseable` (aviso, sem corpo). A forma real do evento ainda não foi vista (nenhum evento real recebido): é por isso que a reclamação não é descartada por formato.
+5. `email.bounced`: suprime o endereço quando `data.bounce.type` é `Permanent`, ausente ou desconhecido; **só `Transient` explícito** é ignorado (200, sem tocar o banco). Bounce cujo `data.to` não se lê ou sem nenhum endereço normalizável: 200 e o log `resend_bounce_unparseable`; com mais de 50 endereços: 200 e o log `resend_webhook_too_many_addresses` (a reclamação com mais de 50 grava os 50 primeiros HMACs, loga o mesmo evento e para a série do mesmo jeito); não há parada por bounce.
+6. `email.suppressed`, `email.failed`, `email.delivery_delayed` e os demais tipos: 200, sem tocar o banco.
+7. Falha do banco: **503**; o Resend reenvia e a caixa de entrada por `svix-id` garante um efeito só. Uma reclamação que **abre** a parada gera o evento `activation_series_stopped` (sinal [`serie-parada`](./alertas.md#serie-parada)).
+
+O log traz só o tipo, o resultado, as contagens e o `svix-id` opaco: nunca o corpo, o endereço, o HMAC, `data.from` nem `email_id`.
+
+## Aviso da parada (enquanto não há cron de alertas)
+
+A parada só gera um log, e o cron de alertas ainda não existe (Fase 14, [ADR 0095](../adr/0095-onde-os-alertas-operacionais-vao-rodar.md)). O sinal [`serie-parada`](./alertas.md#serie-parada) (evento `activation_series_stopped`, `stopped: true`, limiar 1 em 24 h) está definido no registro e no runbook de alertas; até lá, com a série ligada, o Arrascaeta consulta o evento nos Workers Logs ou `SELECT id, stopped_at FROM activation_series_stops WHERE released_at IS NULL` ao menos uma vez por dia e olha a origem da reclamação no painel do Resend no mesmo dia.
 
 ## Ordem obrigatória do deploy
 
@@ -100,7 +118,7 @@ O Resend tem endereços de teste (`complained@resend.dev`, `bounced@resend.dev`;
 **Só rode a prova com conta do Resend separada da produção, ou com a conta sem endpoint de produção registrado.** Numa conta compartilhada, o evento de teste chega a **todos os endpoints registrados nela** e para a série **de produção**. Se o endpoint de produção já existe na conta que o staging usa, **não rode**.
 
 - **Saída preferida:** conta do Resend separada por ambiente (a mesma pré-condição de produção de D6 e de U4).
-- **Alternativa em software, registrada para o aceite da U4:** marcar o envio com a etiqueta `env=<ambiente>` (`tags` do Resend) e o Worker ignorar com `200` o evento cuja etiqueta é de outro ambiente. A forma como o Resend devolve `tags` no evento **ainda não foi vista num evento real** (a confirmar no 9a-app); por isso a alternativa não substitui a conta separada.
+- **Alternativa em software, registrada para o aceite da U4:** marcar o envio com a etiqueta `env=<ambiente>` (`tags` do Resend) e o Worker ignorar com `200` o evento cuja etiqueta é de outro ambiente. A forma como o Resend devolve `tags` no evento **ainda não foi vista num evento real** (o 9a-app não a implementou); por isso a alternativa não substitui a conta separada.
 
 ## O que não existe, por decisão
 
@@ -120,7 +138,7 @@ SELECT count(*) FROM public.activation_email_suppressions
 
 Zero: a antiga pode sair. Linhas vencidas com a chave antiga não contam (a conferência as ignora e ninguém as lê).
 
-## Rotação do segredo do webhook (9a-app)
+## Rotação do segredo do webhook
 
 Ordem: trocar o segredo no painel do Resend, depois `wrangler secret put RESEND_WEBHOOK_SECRET` no Worker, dentro da janela. Se o Resend não assinar com os dois segredos durante a troca, o pior caso é `401` e o **reenvio** do Resend: atraso, não perda (a caixa de entrada cobre o reenvio). Não há `_PREVIOUS` do segredo do webhook.
 

@@ -1417,7 +1417,7 @@ describe("the queue consumer", () => {
         type: "activation.notice",
         version: 1,
       });
-    /** Everything the tips need but the stop on a complaint, which the code does not have yet. */
+    /** Everything the tips need, the webhook's secret included. */
     const tipsConfigured = {
       ACTIVATION_EMAIL_FROM: "Polaris <dicas@example.invalid>",
       ACTIVATION_EMAILS_ENABLED: "true",
@@ -1427,6 +1427,7 @@ describe("the queue consumer", () => {
       BETTER_AUTH_SECRET: "b".repeat(40),
       BILLING_SUPPORT_EMAIL: "suporte@example.invalid",
       RESEND_API_KEY: "re_not_a_key",
+      RESEND_WEBHOOK_SECRET: `whsec_${btoa("w".repeat(33))}`,
       UNSUBSCRIBE_TOKEN_SECRET: "u".repeat(40),
     };
 
@@ -1464,7 +1465,7 @@ describe("the queue consumer", () => {
       expect(mocks.activationStoreClose).toHaveBeenCalledTimes(1);
     });
 
-    it("with the switch on and everything set, still gives the consumer no e-mail while the stop on a complaint is not in force", async () => {
+    it("with the switch on and everything set, gives the consumer the e-mail configuration and opens the recipient connection", async () => {
       mocks.handleActivationNotice.mockResolvedValue("skipped");
       await worker.queue(
         {
@@ -1472,6 +1473,28 @@ describe("the queue consumer", () => {
           queue: "polaris-default",
         } as never,
         { ...configured, ...tipsConfigured } as never
+      );
+
+      const [dependencies] = mocks.handleActivationNotice.mock.calls[0] ?? [];
+      expect(dependencies.switchedOn).toBe(true);
+      expect(dependencies.email).not.toBeNull();
+      expect(mocks.createActivationNoticeRecipientClient).toHaveBeenCalledTimes(
+        1
+      );
+    });
+
+    it("with the switch on and everything set but the webhook's secret, gives the consumer no e-mail and opens no recipient connection", async () => {
+      mocks.handleActivationNotice.mockResolvedValue("skipped");
+      await worker.queue(
+        {
+          messages: [activationNotice("0199a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a54")],
+          queue: "polaris-default",
+        } as never,
+        {
+          ...configured,
+          ...tipsConfigured,
+          RESEND_WEBHOOK_SECRET: undefined,
+        } as never
       );
 
       const [dependencies] = mocks.handleActivationNotice.mock.calls[0] ?? [];
