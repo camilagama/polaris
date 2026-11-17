@@ -47,7 +47,7 @@ describe("the switch of the activation series", () => {
     }
   });
 
-  it("is on only in staging, with a public sender there; the local top level and production stay off, production with an empty sender", () => {
+  it("is on only in staging, with a public sender there (AC-7b.7, AC-9b.1); the local top level and production stay off, production with an empty sender", () => {
     const config = readFileSync(
       new URL("../../../wrangler.jsonc", import.meta.url),
       "utf8"

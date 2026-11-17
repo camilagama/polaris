@@ -290,8 +290,8 @@
         // on in staging only, with the notice e-mail on: the synthetic closed stores follow the cycle and are erased (ADR 0102)
         "CLOSURE_AUTO_PURGE_ENABLED": "true",
         "CLOSURE_NOTICE_EMAIL_ENABLED": "true",
-        // on in staging only: the tips really go out there, to the test mailboxes of the staging domain (ADR 0106);
-        // the sender is a public address, and the secrets stay in the Worker
+        // on in staging only: the tips really go out there (ADR 0106); the operator uses test mailboxes only, since
+        // the code does not filter recipients. The sender is a public address, and the secrets stay in the Worker
         "ACTIVATION_EMAILS_ENABLED": "true",
         "ACTIVATION_EMAIL_FROM": "Polaris (staging) <dicas@araute.app>",
         "BILLING_SELF_SERVICE_ENABLED": "true",
