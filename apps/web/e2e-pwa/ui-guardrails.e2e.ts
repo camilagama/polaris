@@ -4,8 +4,10 @@ import { expect, test } from "@playwright/test";
 import {
   axeFaults,
   focusFaults,
+  KNOWN_REPEATED_NAMES,
   overflowFaults,
   readMotion,
+  repeatedNameFaults,
   runningMotion,
   startMotionRecorder,
   touchFaults,
@@ -127,6 +129,14 @@ for (const screen of SCREENS) {
         if (runs("focus")) {
           expect
             .soft((await focusFaults(page)).sort(), "6. foco de 3 px")
+            .toEqual([]);
+        }
+        if (runs("names")) {
+          expect
+            .soft(
+              (await repeatedNameFaults(page)).sort(),
+              "10. nome acessível dito uma vez"
+            )
             .toEqual([]);
         }
       });
@@ -522,6 +532,118 @@ test.describe("controle: cada verificação pega a falha", () => {
     expect(await focusFaults(page)).toEqual([
       'button "Rouba o foco" está na ordem de Tab e o teclado não chega nele',
     ]);
+  });
+
+  test("10. aria-label e title iguais, aria-description e aria-describedby que repetem o nome e texto sr-only igual ao nome (ao lado ou dentro) são pegos; limite: é a marcação, não o que um leitor fala", async ({
+    page,
+  }) => {
+    // The limit: the check compares what the markup says (name, title, descriptions, `sr-only` text), not what a
+    // real reader speaks. Whether TalkBack or VoiceOver announces a control twice depends on the reader, the browser and
+    // the verbosity setting, and only a device test shows it.
+    await openScreen(gallery, page);
+    expect(await repeatedNameFaults(page)).toEqual([]);
+    await page.evaluate(() => {
+      // `sr-only` is the class of the build: the CSP of the page refuses a `style` attribute in markup
+      const host = document.createElement("section");
+      host.setAttribute("aria-label", "Controles de nome repetido");
+      host.innerHTML = `
+        <button aria-label="Salvar rótulo" title="Salvar rótulo">+</button>
+        <button title="Salvar texto">Salvar texto</button>
+        <button aria-description="Salvar descrição">Salvar descrição</button>
+        <button aria-describedby="dica-igual">Salvar dica</button>
+        <p id="dica-igual" class="sr-only">Salvar dica</p>
+        <span>Despesas vizinho</span><span class="sr-only">Despesas vizinho</span>
+        <button>Despesas dentro<span class="sr-only">Despesas dentro</span></button>`;
+      document.querySelector("main")?.append(host);
+    });
+    const faults = (await repeatedNameFaults(page, [])).join("\n");
+    expect(faults).toContain(
+      'button "Salvar rótulo" diz o nome duas vezes: o title repete "salvar rótulo"'
+    );
+    expect(faults).toContain(
+      'button "Salvar texto" diz o nome duas vezes: o title repete "salvar texto"'
+    );
+    expect(faults).toContain(
+      'button "Salvar descrição" diz o nome duas vezes: o aria-description repete "salvar descrição"'
+    );
+    expect(faults).toContain(
+      'button "Salvar dica" diz o nome duas vezes: o aria-describedby repete "salvar dica"'
+    );
+    expect(faults).toContain(
+      'span "Despesas vizinho" diz o nome duas vezes: o vizinho em sr-only repete "despesas vizinho"'
+    );
+    expect(faults).toContain(
+      'button "Despesas dentroDespesas dentro" diz o nome duas vezes: o texto visível e o sr-only de dentro repetem "despesas dentro"'
+    );
+  });
+
+  test("10. o que não repete passa: title que é o único nome, texto diferente, rótulo de campo e alvo de labelledby em sr-only, texto aria-hidden, região viva e controle escondido", async ({
+    page,
+  }) => {
+    await openScreen(gallery, page);
+    await page.evaluate(() => {
+      const host = document.createElement("section");
+      host.setAttribute("aria-label", "Controles de nome único");
+      host.innerHTML = `
+        <button title="Só pelo title">+</button>
+        <button aria-label="Despesas" title="Abrir as despesas do mês">+</button>
+        <button aria-description="Marcada como nova">Despesas</button>
+        <span>Despesas distinto</span><span class="sr-only">, 3 novas</span>
+        <label for="campo-rotulo" class="sr-only">Campo com rótulo</label>
+        <input id="campo-rotulo" />
+        <span id="alvo-nome" class="sr-only">Alvo do nome</span>
+        <button aria-labelledby="alvo-nome">+</button>
+        <button aria-label="Despesas inteira"><span aria-hidden="true">Desp</span><span aria-hidden="true">esas</span></button>
+        <span>Salvando</span><span role="status" class="sr-only">Salvando</span>
+        <button hidden title="Escondido">Escondido</button>
+        <button aria-hidden="true" title="Fora da árvore">Fora da árvore</button>`;
+      document.querySelector("main")?.append(host);
+    });
+    expect(await repeatedNameFaults(page)).toEqual([]);
+  });
+
+  test("10. cada exceção da lista conhecida ainda acontece numa tela do mapa, e só ela é perdoada", async ({
+    page,
+  }) => {
+    expect(
+      KNOWN_REPEATED_NAMES.map(({ selector, via }) => [selector, via])
+    ).toEqual([["[data-slot=select-value]", "title"]]);
+    for (const entry of KNOWN_REPEATED_NAMES) {
+      expect(entry.reason, "a exceção diz a causa").not.toBe("");
+    }
+    await openScreen(gallery, page);
+    for (const entry of KNOWN_REPEATED_NAMES) {
+      const others = KNOWN_REPEATED_NAMES.filter((known) => known !== entry);
+      // biome-ignore lint/performance/noAwaitInLoops: one entry at a time, on the same page
+      const left = await repeatedNameFaults(page, others);
+      expect(
+        left.length,
+        `${entry.selector} (${entry.via}) não acontece mais em nenhuma tela do mapa: se a causa saiu da main, tire a entrada de KNOWN_REPEATED_NAMES`
+      ).toBeGreaterThan(0);
+    }
+    expect(await repeatedNameFaults(page)).toEqual([]);
+    await page.evaluate(() => {
+      const bare = document.createElement("button");
+      bare.textContent = "Fora da lista";
+      bare.title = "Fora da lista";
+      document.querySelector("main")?.append(bare);
+    });
+    expect(await repeatedNameFaults(page)).toEqual([
+      'button "Fora da lista" diz o nome duas vezes: o title repete "fora da lista"',
+    ]);
+    await page.evaluate(() => {
+      const value = document.querySelector("[data-slot=select-value]");
+      const text = value?.textContent ?? "";
+      const other = document.createElement("span");
+      other.setAttribute("data-slot", "select-value");
+      other.setAttribute("aria-description", text);
+      other.textContent = text;
+      value?.after(other);
+    });
+    expect(
+      (await repeatedNameFaults(page)).join("\n"),
+      "o mesmo seletor com outro atributo continua reprovando"
+    ).toContain("o aria-description repete");
   });
 
   test("5. sem reduce e no nível full (janela de 360 px com mouse), o popover e os outros animam (100 ms do shadcn) e o painel recolhível anima a altura (200 ms); a verificação com reduce não passa por não haver animação", async ({
