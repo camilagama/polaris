@@ -17,7 +17,7 @@
 
 Uma loja **sintética de staging encerrada só para esta prova**, escolhida por ID (`<org>` abaixo). A etapa 2 **apaga a loja de verdade**: não use uma loja que alguém ainda precise (a loja 5 do Gate 7 só se a decisão for apagá-la agora). A dona da loja tem de ser uma conta de teste com e-mail **verificado** numa caixa de teste (`teste.araute.app`): sem o aviso de D menos 7 dias entregue há 7 dias nada é agendado nem apagado. Nada de dado pessoal no registro da prova: IDs opacos, datas e contagens.
 
-Crie a loja e encerre-a pelo app (o dono pede o encerramento e espera a varredura a marcar como `closed`, ou use uma já `closed`). Com a chave ligada, **qualquer** loja encerrada de staging que cumpra as regras é agendada pela mesma varredura, **a partir do primeiro cron depois do deploy que liga a chave**, não só durante a prova. Liste as candidatas **antes desse deploy** e de novo antes de começar (são só IDs), para saber o que mais pode entrar e para avisar o Diego sobre as fixtures de outras tarefas e a loja 5 do Gate 7:
+Crie a loja e encerre-a pelo app. A loja só chega a `closed` quando a janela de recuperação (30 dias) acaba: use uma que já esteja `closed` ou, se ela ainda está em `closing`, leve-a a `closed` sem esperar os 30 dias pelo [passo A](#a-loja-ainda-em-closing-levar-a-closed-sem-esperar-a-janela). Com a chave ligada, **qualquer** loja encerrada de staging que cumpra as regras é agendada pela mesma varredura, **a partir do primeiro cron depois do deploy que liga a chave**, não só durante a prova. Liste as candidatas **antes desse deploy** e de novo antes de começar (são só IDs), para saber o que mais pode entrar e para avisar o Diego sobre as fixtures de outras tarefas e a loja 5 do Gate 7:
 
 ```sql
 SELECT o.id, c.requested_at, d.d7_at
@@ -31,6 +31,52 @@ SELECT o.id, c.requested_at, d.d7_at
 ## Passos
 
 Os comandos são do `psql`. Defina a loja uma vez: `\set org '<org>'`.
+
+### A. Loja ainda em `closing`: levar a `closed` sem esperar a janela
+
+Só para a loja que ainda está em `closing` (o dono acabou de encerrá-la pelo app). Loja já `closed`: comece no passo 0.
+
+**Por que é preciso.** Quem leva `closing` a `closed` é a varredura horária de privacidade (`privacy.maintenance`, cron `17 * * * *` do `wrangler.jsonc`, pista `maintenance`; [scheduled-jobs](./scheduled-jobs.md)): `runPrivacyMaintenance` chama `finalizeExpiredClosures` antes de agendar e de gravar os avisos (`apps/web/src/server/privacy/maintenance.ts`), e a função `finalize_expired_closures` (`packages/db/drizzle/0065_organization_closure.sql`, o `WITH due`) escolhe as lojas com `status = 'closing'` e `recover_until <= now()`, passa-as a `closed` e grava `closed_at = now()`. `recovered_at` não entra na condição: a loja recuperada volta a `active` (`recover_organization_closure`), então `closing` já implica pedido não recuperado. Sem recuar `recover_until`, a espera é a janela inteira.
+
+1. **Confirme o ambiente** (o marcador `polaris.environment=staging` dos pré-requisitos, na mesma sessão) e **leia a loja**:
+
+   ```sql
+   SELECT o.status, c.requested_at, c.recover_until, c.closed_at, c.recovered_at,
+          c.recover_until - c.requested_at AS janela
+     FROM public.organizations AS o
+     JOIN public.organization_closures AS c ON c.organization_id = o.id
+    WHERE o.id = :'org';
+   ```
+
+   Esperado: `status = closing`, `closed_at` e `recovered_at` nulos, `janela` menor que 2016 horas (a de uma loja encerrada pelo app é de 30 dias). **Anote `requested_at` e `recover_until`**: são os valores originais que a reversão devolve. Qualquer outro resultado: pare e escolha outra loja.
+2. **Recue o pedido e mantenha a duração da janela.** O pedido passa a ser de 84 dias atrás (2016 horas, as contas em horas, para o fuso da sessão não mexer nelas) e `recover_until` fica no passado, porque a janela (30 dias) é menor que os 84 dias. O `closed_at` fica como está (nulo): quem o grava é a varredura.
+
+   ```sql
+   BEGIN;
+   UPDATE public.organization_closures
+      SET requested_at  = now() - interval '2016 hours',
+          recover_until = now() - interval '2016 hours' + (recover_until - requested_at)
+    WHERE organization_id = :'org'
+      AND closed_at IS NULL AND recovered_at IS NULL
+      AND recover_until - requested_at < interval '2016 hours'
+      AND EXISTS (SELECT 1 FROM public.organizations
+                   WHERE id = :'org' AND status = 'closing');
+   -- confira "UPDATE 1" e então rode COMMIT; (com qualquer outro resultado, ROLLBACK;)
+   ```
+
+   Esperado: `UPDATE 1`. Se não for, `ROLLBACK;` e volte à leitura do item 1. Se for, `COMMIT;`. O `UPDATE` cabe nas constraints da tabela (`organization_closures_window_allowed`: `recover_until` depois de `requested_at` e até 2160 horas dele).
+3. **Espere a próxima varredura** (no máximo uma hora; o evento `privacy_maintenance_complete` traz `closedOrganizations ≥ 1`) e confira:
+
+   ```sql
+   SELECT o.status, c.requested_at, c.recover_until, c.closed_at
+     FROM public.organizations AS o
+     JOIN public.organization_closures AS c ON c.organization_id = o.id
+    WHERE o.id = :'org';
+   ```
+
+   Esperado: `status = closed`, `closed_at` preenchido (a hora da varredura), `recover_until` no passado.
+
+Daqui em diante siga pelo passo 0, que agora passa. **O passo 1 pode ser pulado**: o pedido já foi recuado em 84 dias, e recuar de novo só o desloca por algumas horas. Pule o `UPDATE` do passo 1 e confira só que o pedido já é de 84 dias atrás (`now() - requested_at` de 84 dias mais as horas de espera). A varredura que fechou a loja já pode ter gravado os avisos do ciclo recuado (ela grava os avisos depois de fechar e agendar): comece o passo 1 pela conferência do aviso (item 2) e pela entrega do `d7`. O `closed_at` fica na hora da varredura, não no passado; a etapa 2 o recua junto com o pedido. Com o passo 0 depois do A, o `requested_at` e o `recover_until` que ele manda anotar já são os recuados; os originais são os do passo A.
 
 ### 0. Conferir a loja e guardar as datas originais
 
@@ -57,7 +103,7 @@ SELECT count(*) AS owners, bool_and(u.email_verified) AS owners_verified
  WHERE m.organization_id = :'org' AND m.role = 'owner' AND m.status = 'active';
 ```
 
-Esperado: `status = closed`, `closed_at` preenchido, `recovered_at` nulo; as quatro colunas do segundo comando `false`; `owners ≥ 1` e `owners_verified = true`. Qualquer outro resultado: escolha outra loja. **Anote** `requested_at`, `recover_until` e `closed_at` do primeiro comando: são o que a reversão devolve.
+Esperado: `status = closed`, `closed_at` preenchido, `recovered_at` nulo; as quatro colunas do segundo comando `false`; `owners ≥ 1` e `owners_verified = true`. Qualquer outro resultado: escolha outra loja. **Anote** `requested_at`, `recover_until` e `closed_at` do primeiro comando: são o que a reversão devolve (numa loja que veio do passo A, são os valores já recuados; os originais são os anotados no passo A).
 
 ### 1. Recuar as datas para D menos 6 dias (agendamento)
 
@@ -180,6 +226,7 @@ Workers Logs do `polaris-web-staging`, filtrando por `event`. Registre o nome, a
 
 | Quando | Evento | Esperado |
 | --- | --- | --- |
+| Passo A (se feito) | `privacy_maintenance_complete` | `closedOrganizations ≥ 1` na varredura seguinte ao `UPDATE` |
 | Depois do passo 1 | `privacy_maintenance_complete` | `purgeSchedulingEnabled = true`, `closureNoticesRecorded ≥ 1`, `closureNoticesSkipped ≥ 2`, `scheduledPurges = 0` |
 | Depois do passo 1 | `closure_notice_email_sent` | `milestone = d7`, `outcome = success` |
 | Varredura do passo 4 | `privacy_maintenance_complete` | `scheduledPurges = 1`, `scheduledPurgesLastDay ≥ 1` (acima de 5 o `closure_auto_purge_volume_high` sai: investigue as outras lojas) |
@@ -192,7 +239,17 @@ Registro da prova (no PR do item 22 ou na issue do go-live, sem dado pessoal): o
 
 ## Rollback ou forward-fix
 
-- **Datas erradas, antes de a loja ser agendada** (a loja continua `closed`): devolva as datas anotadas no passo 0 e deixe o ciclo recuado para trás:
+- **Passo A com a loja ainda em `closing`** (a varredura não passou): devolva as duas datas anotadas no passo A. O `closed_at` continua nulo.
+
+  ```sql
+  UPDATE public.organization_closures
+     SET requested_at = '<requested_at original do passo A>', recover_until = '<recover_until original do passo A>'
+   WHERE organization_id = :'org' AND closed_at IS NULL AND recovered_at IS NULL
+     AND EXISTS (SELECT 1 FROM public.organizations WHERE id = :'org' AND status = 'closing');
+  ```
+
+  Esperado: `UPDATE 1`. Depois que a varredura levou a loja a `closed`, ela **não volta** a `closing` (nenhuma função da aplicação faz isso, e `recover_organization_closure` só vale em `closing`): a reversão passa a ser a do item seguinte, e o `recover_until` original, no futuro, não reabre a janela. Para o app voltar a mostrar a loja como recuperável não há caminho neste roteiro: use outra loja.
+- **Datas erradas, antes de a loja ser agendada** (a loja continua `closed`): devolva as datas anotadas no passo 0 e deixe o ciclo recuado para trás. Se a loja veio do passo A e a prova vai ser abandonada, `requested_at` e `recover_until` são os **originais do passo A** (não os do passo 0) e `closed_at` é o do passo 0; o efeito é a loja ficar `closed` com `recover_until` no futuro, que a varredura não reabre e que o agendamento só aceita depois que essa janela original acabar (`recover_until <= now()`). Para repetir a prova com a mesma loja, deixe as datas recuadas e siga do passo 1:
 
   ```sql
   UPDATE public.organization_closures
