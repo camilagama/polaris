@@ -1,5 +1,4 @@
 import { sql } from "drizzle-orm";
-import { PgDialect } from "drizzle-orm/pg-core";
 import type { TenantRequestTransaction } from "./tenant-transaction";
 
 /**
@@ -42,20 +41,6 @@ export function parseActivationPreference(
     }
   }
   throw new Error("The activation preference has an unexpected shape.");
-}
-
-const dialect = new PgDialect();
-
-/**
- * The text and the parameters of a statement as the driver receives them, read through the public dialect so that a
- * test of a caller outside this package can inspect what reached the transaction without importing drizzle.
- */
-export function renderActivationStatement(query: ReturnType<typeof sql>): {
-  params: unknown[];
-  sql: string;
-} {
-  const { params, sql: text } = dialect.sqlToQuery(query);
-  return { params, sql: text };
 }
 
 async function runPreference(
