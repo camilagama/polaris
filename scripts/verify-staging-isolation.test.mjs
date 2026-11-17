@@ -6,6 +6,7 @@ import {
   findHyperdriveProblems,
   findIsolationProblems,
   parseJsonc,
+  PRODUCTION_DEFERRED_BINDINGS,
   WORKERS,
 } from "./verify-staging-isolation.mjs";
 
@@ -86,6 +87,36 @@ describe("the staging isolation check", () => {
       "web: env.staging lacks ratelimit:AUTH_RATE_LIMITER (bindings are not inherited)",
       "web: env.staging lacks images:IMAGES (bindings are not inherited)",
     ]);
+  });
+
+  it("lets env.production leave out the outbox Hyperdrive until step 7 of the queues runbook, and nothing else", () => {
+    const entries = repositoryEntries();
+    const web = entryOf(entries, "web").config;
+    expect(
+      web.env.production.hyperdrive.map(({ binding }) => binding)
+    ).not.toContain("OUTBOX_HYPERDRIVE");
+    expect(PRODUCTION_DEFERRED_BINDINGS).toEqual([
+      "web:hyperdrive:OUTBOX_HYPERDRIVE",
+    ]);
+    expect(findIsolationProblems(entries)).toEqual([]);
+
+    web.env.production.hyperdrive = web.env.production.hyperdrive.filter(
+      ({ binding }) => binding !== "BILLING_HYPERDRIVE"
+    );
+    expect(findIsolationProblems(entries)).toEqual([
+      "web: env.production lacks hyperdrive:BILLING_HYPERDRIVE (bindings are not inherited)",
+    ]);
+  });
+
+  it("still requires the outbox Hyperdrive in env.staging", () => {
+    const entries = repositoryEntries();
+    const { staging } = entryOf(entries, "web").config.env;
+    staging.hyperdrive = staging.hyperdrive.filter(
+      ({ binding }) => binding !== "OUTBOX_HYPERDRIVE"
+    );
+    expect(findIsolationProblems(entries)).toContain(
+      "web: env.staging lacks hyperdrive:OUTBOX_HYPERDRIVE (bindings are not inherited)"
+    );
   });
 
   it("refuses a staging Worker name that does not end in -staging", () => {
