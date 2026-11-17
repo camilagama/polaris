@@ -284,7 +284,10 @@ import {
   type readPeriodSummary,
 } from "@polaris/db/economics-repository";
 import type { ExpenseRepository } from "./expense-handlers";
-import type { ActivationPreferenceClient } from "@polaris/db/activation-preference";
+import type {
+  readActivationPreference,
+  setActivationTips,
+} from "@polaris/db/activation-preference";
 import type { DataExportRepository } from "./data-export-handlers";
 import type { GoalRepository } from "./goal-handlers";
 import type { PlanRepository } from "./plan-handlers";
@@ -388,18 +391,17 @@ interface RpcRouterDependencies {
   createInitialOrganization: typeof createInitialOrganization;
   createOnboardingDatabase: typeof createDatabase;
   createPaymentProfile: typeof createPaymentProfile;
-  createPreferenceClient: (
-    connectionString: string
-  ) => ActivationPreferenceClient;
   createProduct: typeof createProduct;
   /** The one use case of `product.create` (the sync command runs it too); tests give a fake one. */
   createProductWithOpeningStock: typeof createProductWithOpeningStock;
   createSaleReturn: typeof createSaleReturn;
+  setActivationTips: typeof setActivationTips;
   expenseRepository: Partial<ExpenseRepository>;
   dataExportRepository: Partial<DataExportRepository>;
   goalRepository: Partial<GoalRepository>;
   planRepository: Partial<PlanRepository>;
   publicCatalogRepository: Partial<PublicCatalogRepository>;
+  readActivationPreference: typeof readActivationPreference;
   readDailySales: typeof readDailySales;
   readPeriodSummary: typeof readPeriodSummary;
   readAcceptedLegalVersions: typeof readAcceptedLegalVersions;
@@ -1549,7 +1551,8 @@ export function createRpcRouter(
     withAuthenticatedRequestContext: authenticatedRequest,
   });
   const emailPreferenceHandlers = createEmailPreferenceRpcHandlers({
-    createPreferenceClient: overrides.createPreferenceClient,
+    readPreference: overrides.readActivationPreference,
+    setTips: overrides.setActivationTips,
     toRpcError,
     withTenantRequestContext: tenantRequest,
   });

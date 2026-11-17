@@ -29,6 +29,14 @@ const REQUEST_ID =
 const COMMIT_SHA = /^[0-9a-f]{40}$/;
 const RELEASE_HEADER = "x-polaris-release";
 
+/**
+ * The ingest origin of a Sentry DSN (`apps/web/src/observability/sentry-dsn.ts`). The build opens it in the
+ * `connect-src` of the app shell only when it was made with a valid `VITE_SENTRY_DSN`, so its presence in the CSP
+ * of the shell proves the DSN reached the build that is on the air.
+ */
+const SENTRY_INGEST_ORIGIN =
+  /^https:\/\/o\d+\.ingest(?:\.[a-z0-9-]+)?\.sentry\.io$/;
+
 /** The Access team of staging: an anonymous request to the Admin is sent to the login of its application. */
 export const STAGING_ACCESS_TEAM = "polaris-staging.cloudflareaccess.com";
 const REDIRECT_STATUS = new Set([301, 302, 303, 307, 308]);
@@ -74,6 +82,19 @@ function releaseReason(response, release, declares = true) {
   }
   return declared === release ? true : "release different";
 }
+
+const WHITESPACE = /\s+/;
+
+/** True when the `connect-src` of the policy lists an ingest origin of Sentry. */
+const opensSentryIngest = (policy) =>
+  policy
+    .split(";")
+    .map((directive) => directive.trim().split(WHITESPACE))
+    .some(
+      ([name, ...sources]) =>
+        name?.toLowerCase() === "connect-src" &&
+        sources.some((source) => SENTRY_INGEST_ORIGIN.test(source))
+    );
 
 const status = (expected) => (response) =>
   response.status === expected || `not ${expected}`;
@@ -160,7 +181,7 @@ export function smokeChecks(
 ) {
   const appOrigin = new URL(web).origin;
   const toAccess = sentToAccess(target);
-  const { authMethods, declaresRelease } = target;
+  const { authMethods, declaresRelease, expectsSentryIngest } = target;
   const sameOrigin = { origin: appOrigin };
   return [
     {
@@ -177,10 +198,18 @@ export function smokeChecks(
         if (response.status !== 200) {
           return "not 200";
         }
-        if (!response.headers.get("content-security-policy")) {
+        const policy = response.headers.get("content-security-policy");
+        if (!policy) {
           return "no CSP";
         }
-        return sha256(body) === shell.index || "shell different";
+        if (sha256(body) !== shell.index) {
+          return "shell different";
+        }
+        return (
+          !expectsSentryIngest ||
+          opensSentryIngest(policy) ||
+          "sentry ingest host missing in CSP"
+        );
       },
       name: "web / (SPA shell with CSP, equal to the artifact)",
       readBody: "bytes",
@@ -398,13 +427,16 @@ export function refusalOf(key) {
 /**
  * What the smoke needs to know about an environment: the host each Worker is served at (the only hosts a request
  * may leave for), the Access team and login path the Admin is redirected to, the sign-in methods `/api/auth-methods`
- * must declare, whether the Workers declare their release, the refusal of a key and the user agent.
+ * must declare, whether the Workers declare their release, whether the CSP of the shell must open the ingest origin
+ * of Sentry (`expectsSentryIngest`, a flag of the target: only staging builds with a DSN), the refusal of a key and the
+ * user agent.
  */
 export const STAGING_TARGET = {
   accessLoginPath: `${ACCESS_LOGIN_PREFIX}${STAGING_FIXED_HOST.admin}`,
   accessTeam: STAGING_ACCESS_TEAM,
   authMethods: EXPECTED_AUTH_METHODS,
   declaresRelease: true,
+  expectsSentryIngest: true,
   hosts: STAGING_FIXED_HOST,
   name: "staging",
   refusalOf,
@@ -539,6 +571,7 @@ export function productionTarget(env) {
       accessTeam: team,
       authMethods: { emailPassword: password === "true", google: true },
       declaresRelease: release === "true",
+      expectsSentryIngest: false,
       hosts,
       name: "production",
       refusalOf: (key) =>
