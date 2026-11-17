@@ -63,13 +63,21 @@ export const UI_ALLOWED_PACKAGES = [
  * closure under review) but never importable by src/ui/ nor declared as a runtime dependency.
  * `axe-core` came with the components of the sale (ADR 0103, section 8, item 3): the Playwright checks
  * evaluate it inside the gallery (no violation in each theme). It has no dependencies and no install script.
+ * `@testing-library/react`, `@testing-library/user-event` (and `@testing-library/dom`, the peer both need) and `happy-dom`
+ * came with the component tests that render the real tree and click it, instead of replacing React's hooks: the DOM
+ * environment is chosen per test file (`// @vitest-environment happy-dom`), so the node project stays as fast as it was.
+ * None has an install script; the closure under review is in `ui-dependency-closure.txt`.
  * `@types/d3-shape` and `@types/d3-array` are types only, no code at run time; `d3-array` is imported by
  * the time-series block of Bklit UI and its types are the ones `@visx/vendor` already brings (same version).
  */
 export const UI_TEST_PACKAGES = [
+  "@testing-library/dom",
+  "@testing-library/react",
+  "@testing-library/user-event",
   "@types/d3-array",
   "@types/d3-shape",
   "axe-core",
+  "happy-dom",
 ] as const;
 
 /**
