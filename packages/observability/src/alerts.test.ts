@@ -4,6 +4,8 @@ import { fileURLToPath } from "node:url";
 import { parseSync } from "oxc-parser";
 import { describe, expect, it } from "vitest";
 import {
+  type AlertSignal,
+  type AlertThreshold,
   alertSeverities,
   alertSignals,
   alertSourceEvents,
@@ -169,6 +171,161 @@ function runbookSection(id: string): string | undefined {
   return runbook.slice(start, next === -1 ? undefined : next);
 }
 
+const monitorsHeading = "## Monitores no staging";
+const monitorsEndPattern = /^#{1,2} |<a id="/m;
+const monitorIdPattern = /^\[`([^`]+)`\]/;
+const monitorWindowPattern = /^(\d+) (min|h)$/;
+const dlqRowPattern = /(\| \[`dlq`\].*\n)/;
+const monitorStatePattern =
+  /^(?:pendente|criado em (?:0[1-9]|[12]\d|3[01])\/(?:0[1-9]|1[0-2])\/\d{4} por \S.*)$/;
+const monitorToConfirm = {
+  id: "registro-de-acesso",
+  state: "a confirmar (V14)",
+};
+const monitorLinkPattern = /\(#([^)]+)\)/;
+
+interface MonitorRow {
+  readonly cells: readonly string[];
+  readonly id: string;
+}
+
+type SignalLike = Pick<
+  AlertSignal,
+  "id" | "notify" | "source" | "threshold" | "windowMinutes"
+>;
+
+function monitorTableLines(markdown: string): string[] {
+  const start = markdown.indexOf(monitorsHeading);
+  if (start === -1) {
+    return [];
+  }
+  const after = markdown.slice(start + monitorsHeading.length);
+  const end = after.search(monitorsEndPattern);
+  const body = end === -1 ? after : after.slice(0, end);
+  return body.split("\n").filter((line) => line.startsWith("|"));
+}
+
+function isMonitorRowLine(line: string): boolean {
+  return line.startsWith("| [`");
+}
+
+function monitorRows(markdown: string): MonitorRow[] {
+  const rows: MonitorRow[] = [];
+  for (const line of monitorTableLines(markdown)) {
+    if (!isMonitorRowLine(line)) {
+      continue;
+    }
+    const cells = line
+      .slice(1, line.lastIndexOf("|"))
+      .split("|")
+      .map((cell) => cell.trim());
+    const id = monitorIdPattern.exec(cells[0] ?? "")?.[1] ?? cells[0] ?? "";
+    rows.push({ cells, id });
+  }
+  return rows;
+}
+
+function minutesOf(cell: string): number | undefined {
+  const match = monitorWindowPattern.exec(cell);
+  return match ? Number(match[1]) * (match[2] === "h" ? 60 : 1) : undefined;
+}
+
+function expectedLimit(threshold: AlertThreshold): string {
+  switch (threshold.kind) {
+    case "count":
+      return String(threshold.atLeast);
+    case "absence":
+      return "ausência";
+    case "p95Ms":
+      return `p95 acima do limite da rota (${threshold.minSamples} requisições, no mínimo)`;
+    default:
+      return threshold satisfies never;
+  }
+}
+
+/** What differs between the monitors section of the runbook and the registry, one message per problem, each naming the signal. */
+function monitorDrift(
+  markdown: string,
+  signals: readonly SignalLike[]
+): string[] {
+  const rows = monitorRows(markdown);
+  const problems: string[] = [];
+  for (const line of monitorTableLines(markdown)) {
+    const isHeader = line.startsWith("| Sinal |");
+    const isSeparator = line.startsWith("| ---");
+    if (!(isMonitorRowLine(line) || isHeader || isSeparator)) {
+      problems.push(`line outside the format: ${line.slice(0, 60)}`);
+    }
+  }
+  const seen = new Set<string>();
+  for (const row of rows) {
+    if (seen.has(row.id)) {
+      problems.push(`${row.id}: line repeated`);
+    }
+    seen.add(row.id);
+    const signal = signals.find((candidate) => candidate.id === row.id);
+    if (!signal) {
+      problems.push(`${row.id}: line without a signal in the registry`);
+      continue;
+    }
+    const [, query = "", window = "", limit = "", wakes = "", state = ""] =
+      row.cells;
+    if (row.cells.length !== 6) {
+      problems.push(`${row.id}: ${row.cells.length} columns instead of 6`);
+    }
+    for (const event of signal.source.events) {
+      if (!query.includes(`"${event}"`)) {
+        problems.push(`${row.id}: query does not name ${event}`);
+      }
+    }
+    if (signal.source.where && !query.includes(`\`${signal.source.where}\``)) {
+      problems.push(`${row.id}: query lacks the filter of the registry`);
+    }
+    if (minutesOf(window) !== signal.windowMinutes) {
+      problems.push(
+        `${row.id}: runbook says window "${window}", registry says ${signal.windowMinutes} min`
+      );
+    }
+    if (limit !== expectedLimit(signal.threshold)) {
+      problems.push(
+        `${row.id}: runbook says threshold "${limit}", registry says "${expectedLimit(signal.threshold)}"`
+      );
+    }
+    const expectedWakes = signal.notify === "wake" ? "sim" : "não";
+    if (wakes !== expectedWakes) {
+      problems.push(
+        `${row.id}: runbook says wakes "${wakes}", registry says "${expectedWakes}"`
+      );
+    }
+    const isToConfirm =
+      row.id === monitorToConfirm.id && state === monitorToConfirm.state;
+    if (!(isToConfirm || monitorStatePattern.test(state))) {
+      problems.push(
+        `${row.id}: state "${state}" is not one of the three forms`
+      );
+    }
+    if (monitorLinkPattern.exec(row.cells[0] ?? "")?.[1] !== row.id) {
+      problems.push(`${row.id}: link does not point to its own id`);
+    }
+  }
+  for (const signal of signals) {
+    if (!seen.has(signal.id)) {
+      problems.push(`${signal.id}: signal without a line`);
+    }
+  }
+  const wakes = rows.map(
+    (row) => signals.find((s) => s.id === row.id)?.notify === "wake"
+  );
+  const firstOther = wakes.indexOf(false);
+  const lastWake = wakes.lastIndexOf(true);
+  if (firstOther !== -1 && lastWake > firstOther) {
+    problems.push(
+      `${rows[lastWake]?.id}: a waking signal after one that does not`
+    );
+  }
+  return problems;
+}
+
 describe("emittedEvents", () => {
   it("finds the event names of every kind of call (the scan is not vacuous)", () => {
     const snippet = [
@@ -320,6 +477,194 @@ describe("alert signals", () => {
     expect(anchors.sort()).toEqual(
       alertSignals.map((signal) => signal.id).sort()
     );
+  });
+});
+
+describe("the monitors section of the runbook", () => {
+  const section = monitorRows(runbook);
+
+  it("has exactly the signals of the registry, none missing or left over", () => {
+    expect(section.length).toBeGreaterThan(0);
+    expect(section.map((row) => row.id).sort()).toEqual(
+      alertSignals.map((signal) => signal.id).sort()
+    );
+  });
+
+  it("matches the registry in query, window, threshold, wake and state, waking signals first", () => {
+    expect(monitorDrift(runbook, alertSignals)).toEqual([]);
+  });
+
+  describe("control cases (the check fails for the right reason)", () => {
+    const drift = (change: (signals: AlertSignal[]) => AlertSignal[]) =>
+      monitorDrift(runbook, change([...alertSignals]));
+    const inSection = (change: (text: string) => string) => {
+      const start = runbook.indexOf(monitorsHeading);
+      const end = runbook.indexOf('<a id="', start);
+      return (
+        runbook.slice(0, start) +
+        change(runbook.slice(start, end)) +
+        runbook.slice(end)
+      );
+    };
+    const swap =
+      (id: string, patch: Partial<AlertSignal>) => (signals: AlertSignal[]) =>
+        signals.map((signal) =>
+          signal.id === id ? { ...signal, ...patch } : signal
+        );
+
+    it("names the id when a threshold changes in the registry", () => {
+      expect(
+        drift(swap("http-5xx", { threshold: { atLeast: 6, kind: "count" } }))
+      ).toEqual(['http-5xx: runbook says threshold "5", registry says "6"']);
+    });
+
+    it("names the id when a window changes in the registry", () => {
+      expect(drift(swap("dlq", { windowMinutes: 90 }))).toEqual([
+        'dlq: runbook says window "60 min", registry says 90 min',
+      ]);
+    });
+
+    it("names the id when a signal starts or stops waking", () => {
+      expect(drift(swap("dlq", { notify: "wake" }))).toEqual([
+        'dlq: runbook says wakes "não", registry says "sim"',
+        "dlq: a waking signal after one that does not",
+      ]);
+      expect(drift(swap("http-5xx", { notify: "report" }))).toEqual([
+        'http-5xx: runbook says wakes "sim", registry says "não"',
+        "comando-de-cobranca-do-operador: a waking signal after one that does not",
+      ]);
+    });
+
+    it("names the id when the threshold changes kind", () => {
+      expect(
+        drift(
+          swap("outbox-parado", { threshold: { atLeast: 1, kind: "count" } })
+        )
+      ).toEqual([
+        'outbox-parado: runbook says threshold "ausência", registry says "1"',
+      ]);
+    });
+
+    it("names the signal that is new in the registry and the one removed from it", () => {
+      const extra: AlertSignal = {
+        id: "sinal-novo",
+        notify: "report",
+        severity: "warning",
+        source: { events: ["evento_novo"] },
+        threshold: { atLeast: 1, kind: "count" },
+        title: "Novo",
+        windowMinutes: 5,
+      };
+
+      expect(drift((signals) => [...signals, extra])).toEqual([
+        "sinal-novo: signal without a line",
+      ]);
+      expect(drift((signals) => signals.filter((s) => s.id !== "dlq"))).toEqual(
+        ["dlq: line without a signal in the registry"]
+      );
+    });
+
+    it("names the id when an event or the filter of the query changes", () => {
+      expect(
+        drift(
+          swap("outbox-falhando", {
+            source: { events: ["outbox_send_failed", "outro_evento"] },
+          })
+        )
+      ).toEqual(["outbox-falhando: query does not name outro_evento"]);
+      expect(
+        drift(
+          swap("http-5xx", {
+            source: { events: ["server_error"], where: "httpStatus >= 400" },
+          })
+        )
+      ).toEqual(["http-5xx: query lacks the filter of the registry"]);
+    });
+
+    it("rejects a state that is not one of the three forms, and a repeated line", () => {
+      const withState = inSection((text) =>
+        text.replace("| criado em 17/11/2026 por Arrascaeta |", "| ligado |")
+      );
+      const repeated = inSection((text) => text.replace(dlqRowPattern, "$1$1"));
+
+      expect(monitorDrift(withState, alertSignals)).toEqual([
+        expect.stringContaining('state "ligado"'),
+      ]);
+      expect(monitorDrift(repeated, alertSignals)).toEqual([
+        "dlq: line repeated",
+      ]);
+    });
+
+    it("keeps the to-confirm state to the signal it was written for, and rejects an impossible date", () => {
+      const toConfirm = (id: string) =>
+        inSection((text) =>
+          text.replace(
+            new RegExp(`(\\| \\[\`${id}\`\\].*\\| )pendente \\|`),
+            "$1a confirmar (V14) |"
+          )
+        );
+      const badDate = inSection((text) =>
+        text.replace("17/11/2026 por Arrascaeta", "31/13/2026 por Arrascaeta")
+      );
+
+      expect(monitorDrift(toConfirm("dlq"), alertSignals)).toEqual([
+        'dlq: state "a confirmar (V14)" is not one of the three forms',
+      ]);
+      expect(monitorDrift(badDate, alertSignals)).toEqual([
+        'apagamento-automatico: state "criado em 31/13/2026 por Arrascaeta" is not one of the three forms',
+      ]);
+    });
+
+    it("rejects a line outside the format, a wrong column count, a wrong link and a missing filter", () => {
+      const stray = inSection((text) => `${text}| \`sinal-solto\` | x |\n`);
+      const fiveColumns = inSection((text) =>
+        text.replace(dlqRowPattern, (row) => row.replace(" | pendente |", " |"))
+      );
+      const wrongLink = inSection((text) => text.replace("(#dlq)", "(#outro)"));
+      const noFilter = inSection((text) =>
+        text.replace("; `httpStatus >= 500`", "")
+      );
+
+      expect(monitorDrift(stray, alertSignals)).toEqual([
+        "line outside the format: | `sinal-solto` | x |",
+      ]);
+      expect(monitorDrift(fiveColumns, alertSignals)).toEqual([
+        "dlq: 5 columns instead of 6",
+        expect.stringContaining("dlq: state"),
+      ]);
+      expect(monitorDrift(wrongLink, alertSignals)).toEqual([
+        "dlq: link does not point to its own id",
+      ]);
+      expect(monitorDrift(noFilter, alertSignals)).toEqual([
+        "http-5xx: query lacks the filter of the registry",
+      ]);
+    });
+
+    it("rejects a waking signal listed after one that only reports", () => {
+      const moved = inSection((text) => {
+        const lines = text.split("\n");
+        const first = lines.findIndex((line) =>
+          line.startsWith("| [`http-5xx`]")
+        );
+        const [row] = lines.splice(first, 1);
+        const last = lines.findIndex((line) =>
+          line.startsWith("| [`serie-parada`]")
+        );
+        lines.splice(last + 1, 0, row ?? "");
+        return lines.join("\n");
+      });
+
+      expect(monitorDrift(moved, alertSignals)).toEqual([
+        "http-5xx: a waking signal after one that does not",
+      ]);
+    });
+
+    it("finds no line in a runbook without the section", () => {
+      expect(monitorRows("# Alertas\n")).toEqual([]);
+      expect(monitorDrift("# Alertas\n", alertSignals)).toHaveLength(
+        alertSignals.length
+      );
+    });
   });
 });
 
