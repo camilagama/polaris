@@ -47,16 +47,41 @@ describe("the switch of the activation series", () => {
     }
   });
 
-  it("is off in every environment of the repository, staging included (AC-7b.7)", () => {
+  it("is on only in staging, with a public sender there (AC-7b.7, AC-9b.1); the local top level and production stay off, production with an empty sender", () => {
     const config = readFileSync(
       new URL("../../../wrangler.jsonc", import.meta.url),
       "utf8"
     );
-    const values = [
-      ...config.matchAll(/"ACTIVATION_EMAILS_ENABLED":\s*"([^"]*)"/g),
-    ].map((match) => match[1]);
-    // the local top level, staging and production each declare it, and each one off
-    expect(values).toEqual(["false", "false", "false"]);
+    const stagingAt = config.indexOf('"staging": {');
+    const productionAt = config.indexOf('"production": {');
+    expect(stagingAt).toBeGreaterThan(-1);
+    expect(productionAt).toBeGreaterThan(stagingAt);
+    const blocks = {
+      production: config.slice(productionAt),
+      staging: config.slice(stagingAt, productionAt),
+      top: config.slice(0, stagingAt),
+    };
+    const valuesOf = (block: string, name: string) =>
+      [...block.matchAll(new RegExp(`"${name}":\\s*"([^"]*)"`, "g"))].map(
+        (match) => match[1]
+      );
+    expect({
+      production: valuesOf(blocks.production, "ACTIVATION_EMAILS_ENABLED"),
+      staging: valuesOf(blocks.staging, "ACTIVATION_EMAILS_ENABLED"),
+      top: valuesOf(blocks.top, "ACTIVATION_EMAILS_ENABLED"),
+    }).toEqual({ production: ["false"], staging: ["true"], top: ["false"] });
+    expect(valuesOf(blocks.staging, "ACTIVATION_EMAIL_FROM")).toEqual([
+      "Polaris (staging) <dicas@araute.app>",
+    ]);
+    expect(valuesOf(blocks.top, "ACTIVATION_EMAIL_FROM")).toEqual([]);
+    expect(valuesOf(blocks.production, "ACTIVATION_EMAIL_FROM")).toEqual([""]);
+    for (const secret of [
+      '"RESEND_API_KEY"',
+      '"RESEND_WEBHOOK_SECRET"',
+      "whsec_",
+    ]) {
+      expect(config.includes(secret)).toBe(false);
+    }
   });
 });
 
