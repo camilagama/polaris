@@ -7,8 +7,6 @@ import { keepLocalRow } from "./product-commands";
 
 const HOOK = new URL("./use-product-delete.ts", import.meta.url);
 
-const STRING_OR_COMMENT =
-  /("(?:\\.|[^"\\\n])*"|'(?:\\.|[^'\\\n])*')|\/\*[\s\S]*?\*\/|\/\/[^\n]*/g;
 const IMPORT = /^import\s+([^;]*?)\s+from\s+"([^"]+)";/gm;
 // Textual: a queue reached through a name outside these words and outside the static imports is not seen, nor is one named only inside a string (`stores["outbox"]`).
 const OFFLINE_WORDS = /outbox|enqueue|createOffline|stores\b/gi;
@@ -19,12 +17,9 @@ const DYNAMIC_IMPORT = /(?<!\btypeof\s+)\bimport\s*\(/g;
 const TYPE_KEYWORD = /\btype\s+/g;
 const BRACES = /[{}]/g;
 
-/** Source without comments; quoted strings stay whole, so a `//` inside one does not cut the line. */
+/** Source without comments; quoted strings and template text stay whole, so a `//`, `/*` or quote inside one does not cut or shift what follows. */
 function withoutComments(source: string): string {
-  return source.replace(
-    STRING_OR_COMMENT,
-    (_all, quoted?: string) => quoted ?? ""
-  );
+  return scan(source, "keep");
 }
 
 /** Each name the file imports, as `source: name` (a default or namespace import counts by its local name). */
@@ -40,14 +35,16 @@ function importedNames(source: string): string[] {
   );
 }
 
-/** Source with comments, quoted strings and template text blanked; the code inside `${}` stays. Regex literals are not understood. */
-function liveCode(source: string): string {
+/** Walks the source token by token, tracking template literals and the code inside `${}`. In "blank" mode comments, quoted strings and template text become spaces; in "keep" mode only comments are dropped. Regex literals are not understood. */
+function scan(source: string, mode: "blank" | "keep"): string {
+  const keep = mode === "keep";
   const stack: string[] = [];
-  let live = "";
+  let out = "";
   let inTemplate = false;
   let at = 0;
   while (at < source.length) {
     if (inTemplate) {
+      const start = at;
       TEMPLATE_TEXT.lastIndex = at;
       at += (TEMPLATE_TEXT.exec(source)?.[0] ?? "").length;
       inTemplate = false;
@@ -57,7 +54,7 @@ function liveCode(source: string): string {
       } else {
         at += 1;
       }
-      live += " ";
+      out += keep ? source.slice(start, at) : " ";
       continue;
     }
     QUOTED_OR_COMMENT.lastIndex = at;
@@ -70,9 +67,20 @@ function liveCode(source: string): string {
     } else if (token === "}") {
       inTemplate = stack.pop() === "template";
     }
-    live += token.length > 1 ? " " : token;
+    if (token.length === 1) {
+      out += token;
+    } else if (keep) {
+      out += token.startsWith("/") ? "" : token;
+    } else {
+      out += " ";
+    }
   }
-  return live;
+  return out;
+}
+
+/** Source with comments, quoted strings and template text blanked; the code inside `${}` stays. */
+function liveCode(source: string): string {
+  return scan(source, "blank");
 }
 
 /** `import()` calls: `typeof import("x")` is read as the type form (a runtime `typeof import(...)` would pass), and quoted or commented text does not count. */
@@ -133,6 +141,34 @@ workspace.stores.outbox.enqueue(command);`;
     expect(
       offlineWords('const u = "a\\"//b"; stores.outbox.enqueue(c)')
     ).toEqual(["stores", "outbox", "enqueue"]);
+  });
+
+  it("crase com /* ou aspas antes do import não apaga nem desalinha o que vem depois", () => {
+    const planted = [
+      "const a = `a /* b`;",
+      "const b = `it's`;",
+      'import { createOfflineProduct } from "../offline/product-create";',
+      "stores.outbox.enqueue(c); /* nota */",
+    ].join("\n");
+    expect(importedNames(planted)).toEqual([
+      "../offline/product-create: createOfflineProduct",
+    ]);
+    expect(withoutComments(planted)).toContain("stores.outbox.enqueue(c);");
+    expect(offlineWords(planted)).toEqual([
+      "createOffline",
+      "stores",
+      "outbox",
+      "enqueue",
+    ]);
+    const sameLine = 'const b = `it\'s // x`; import { d } from "z";';
+    expect(withoutComments(sameLine)).toBe(sameLine);
+    const importZ = 'import { d } from "z";';
+    const escaped = "const e = `a\\`/*b`;\n";
+    expect(withoutComments(escaped + importZ)).toBe(escaped + importZ);
+    const inside = `const c = \`x \${/* y */ 1} it's\`;\n`;
+    expect(withoutComments(inside + importZ)).toBe(
+      `const c = \`x \${ 1} it's\`;\n${importZ}`
+    );
   });
 
   it("import seguido de comentário continua lido, e comentário de linha e de bloco é ignorado", () => {
