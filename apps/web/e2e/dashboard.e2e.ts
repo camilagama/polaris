@@ -3998,7 +3998,8 @@ test.describe("o aviso dos dias sem custo com o mês nomeado tem teto: a contage
    * Same rule as `unknownDaysText` and `unknownDaysFit` (`home/home-kpis.ts`), written here because importing the app's
    * modules from `e2e/` pulls the `@/` alias in, which the `tsconfig.node.json` that type-checks this folder does not have.
    * It is a copy, held to the app by `src/home/dashboard-unknown-days-guard.test.ts`: that test fails when the limit or the
-   * text written here differs from the app's.
+   * text written here differs from the app's. The same test evaluates `AT_THE_LIMIT` below and holds it to the texts the app
+   * lets stay on the line within one character of the limit, so the band cannot drift from the rule either.
    */
   const UNKNOWN_DAYS_MAX_CHARS = 34;
   const unknownDaysLine = (
@@ -4014,20 +4015,18 @@ test.describe("o aviso dos dias sem custo com o mês nomeado tem teto: a contage
    * the fee missing, every total and every count that fits at 33 or 34 characters. Each one must fit in one line.
    */
   const AT_THE_LIMIT = (() => {
-    const upTo = (last: number) =>
-      Array.from({ length: last }, (_, index) => index + 1);
-    const months = upTo(12).flatMap((month) => {
-      const name = new Date(Date.UTC(2025, month - 1, 1)).toLocaleDateString(
+    const months = Array.from({ length: 12 }, (_, month) => {
+      const name = new Date(Date.UTC(2025, month, 1)).toLocaleDateString(
         "pt-BR",
         { month: "long", timeZone: "UTC" }
       );
       return [name, `${name} de 2025`];
-    });
+    }).flat();
     const texts = months.flatMap((month) =>
       (["custo", "taxa"] as const).flatMap((word) =>
-        upTo(31).flatMap((total) =>
-          upTo(total).map((unknown) =>
-            unknownDaysLine(month, unknown, total, word)
+        Array.from({ length: 31 }, (_, index) => index + 1).flatMap((total) =>
+          Array.from({ length: total }, (_, index) => index + 1).map(
+            (unknown) => unknownDaysLine(month, unknown, total, word)
           )
         )
       )
