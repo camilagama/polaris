@@ -595,13 +595,7 @@ function findDrift(suiteSource: string, files: Map<string, string>) {
  * Expectativas que a guarda já acusa na suíte e que ainda não foram corrigidas nela. A lista é exata: quando a suíte
  * passa a usar o endereço certo, a entrada tem de sair, e o teste reprova se ela ficar sem motivo.
  */
-const KNOWN_DRIFT: { entry: string; reason: string }[] = [
-  {
-    entry: 'route "/vendas/historico" (shellUrl',
-    reason:
-      "o endereço do histórico no app é /sales/history; o passo do fluxo 3 só confere título e #root, e o shell em cache responde qualquer endereço, então não reprova",
-  },
-];
+const KNOWN_DRIFT: { entry: string; reason: string }[] = [];
 
 const SUITE_SOURCE = readFileSync(SUITE_PATH, "utf8");
 const PRODUCT = loadProduct();

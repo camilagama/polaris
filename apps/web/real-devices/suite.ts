@@ -615,12 +615,18 @@ async function shellFlow(
   await recorder.step(
     "Sem rede, uma rota interna também abre do shell",
     async () => {
-      await browser.url(shellUrl("/vendas/historico"));
+      await browser.url(shellUrl("/sales/history"));
+      await (
+        await browser.$('a[href="/sales/history"][aria-current="page"]')
+      ).waitForExist({
+        timeout: WAIT_MS,
+        timeoutMsg: "o menu não marcou o Histórico na rota interna",
+      });
       const title = await browser.getTitle();
       const filled = await browser.execute(
         () => (document.querySelector("#root")?.childElementCount ?? 0) > 0
       );
-      if (!(title.endsWith("Polaris") && filled)) {
+      if (!(title === "Histórico de vendas · Polaris" && filled)) {
         throw new Error(`rota interna não abriu offline (título "${title}")`);
       }
     }
