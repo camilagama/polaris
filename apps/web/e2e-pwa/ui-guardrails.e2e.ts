@@ -612,11 +612,15 @@ test.describe("controle: cada verificação pega a falha", () => {
       expect(entry.reason, "a exceção diz a causa").not.toBe("");
     }
     await openScreen(gallery, page);
-    const without = await repeatedNameFaults(page, []);
-    expect(
-      without.length,
-      "o valor do Select repete o nome pelo title: se a causa saiu da main, tire a entrada de KNOWN_REPEATED_NAMES"
-    ).toBeGreaterThan(0);
+    for (const entry of KNOWN_REPEATED_NAMES) {
+      const others = KNOWN_REPEATED_NAMES.filter((known) => known !== entry);
+      // biome-ignore lint/performance/noAwaitInLoops: one entry at a time, on the same page
+      const left = await repeatedNameFaults(page, others);
+      expect(
+        left.length,
+        `${entry.selector} (${entry.via}) não acontece mais em nenhuma tela do mapa: se a causa saiu da main, tire a entrada de KNOWN_REPEATED_NAMES`
+      ).toBeGreaterThan(0);
+    }
     expect(await repeatedNameFaults(page)).toEqual([]);
     await page.evaluate(() => {
       const bare = document.createElement("button");
@@ -627,6 +631,19 @@ test.describe("controle: cada verificação pega a falha", () => {
     expect(await repeatedNameFaults(page)).toEqual([
       'button "Fora da lista" diz o nome duas vezes: o title repete "fora da lista"',
     ]);
+    await page.evaluate(() => {
+      const value = document.querySelector("[data-slot=select-value]");
+      const text = value?.textContent ?? "";
+      const other = document.createElement("span");
+      other.setAttribute("data-slot", "select-value");
+      other.setAttribute("aria-description", text);
+      other.textContent = text;
+      value?.after(other);
+    });
+    expect(
+      (await repeatedNameFaults(page)).join("\n"),
+      "o mesmo seletor com outro atributo continua reprovando"
+    ).toContain("o aria-description repete");
   });
 
   test("5. sem reduce e no nível full (janela de 360 px com mouse), o popover e os outros animam (100 ms do shadcn) e o painel recolhível anima a altura (200 ms); a verificação com reduce não passa por não haver animação", async ({

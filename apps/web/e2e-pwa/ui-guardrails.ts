@@ -744,6 +744,8 @@ function spoken(text: string | null | undefined) {
 /** In page: the elements an `aria-labelledby` or `aria-describedby` value points to. */
 function targetsOf(element: Element, attribute: string) {
   return (element.getAttribute(attribute) ?? "")
+    .replace(/\s+/g, " ")
+    .trim()
     .split(" ")
     .map((id) => (id ? document.getElementById(id) : null))
     .filter((target): target is HTMLElement => target !== null);
@@ -768,7 +770,7 @@ function readableText(element: Element, except?: Element): string {
     const silent =
       tag === "svg" ||
       node.getAttribute("aria-hidden") === "true" ||
-      !node.checkVisibility();
+      !node.checkVisibility({ visibilityProperty: true });
     if (!silent) {
       const alt = tag === "img" ? node.getAttribute("alt") : null;
       text += ` ${node.getAttribute("aria-label") ?? alt ?? readableText(node, except)} `;
@@ -830,7 +832,7 @@ function repeatedByAttribute(element: Element, name: string) {
 /** In page: what the markup says again about an element whose name is `name`, through `sr-only` text next to it. */
 function repeatedBySrOnly(element: Element, labelNodes: Element[]) {
   const said = spoken(
-    element.getAttribute("aria-label") ?? readableText(element)
+    element.getAttribute("aria-label") || readableText(element)
   );
   if (!said || isScreenReaderOnly(element)) {
     return [];
@@ -905,7 +907,7 @@ function repeatedNames(known: KnownRepeatedName[]) {
   return faults;
 }
 
-/** A repetition the product has today and this task does not fix: where it is and by which attribute it repeats. */
+/** A repetition the check accepts until its cause is gone: where it is and by which attribute it repeats. */
 export interface KnownRepeatedName {
   reason: string;
   selector: string;
@@ -913,8 +915,7 @@ export interface KnownRepeatedName {
 }
 
 /**
- * The repetitions found on the screens of `ui-screens.ts` the first time the check ran, each with its cause. The list
- * is exact (`ui-guardrails.e2e.ts` compares it entry by entry and proves each one still happens, so a fix has to take
+ * The repetitions the screens of `ui-screens.ts` have, each with its cause. The list is exact (`ui-guardrails.e2e.ts` compares it entry by entry and proves each one still happens, so a fix has to take
  * its entry out), and what it excuses is a selector and an attribute, never a screen.
  */
 export const KNOWN_REPEATED_NAMES: readonly KnownRepeatedName[] = [
