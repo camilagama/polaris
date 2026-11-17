@@ -140,6 +140,8 @@ const EXPECTED_OPERATIONS_FILES = [
   "scripts/verify-production-workflow.test.mjs",
   "scripts/verify-deployed-sha.mjs",
   "scripts/verify-deployed-sha.test.mjs",
+  "scripts/verify-backup-workflow.mjs",
+  "scripts/verify-backup-workflow.test.mjs",
   "scripts/lib/wrangler-config.mjs",
   "scripts/lib/wrangler-config.test.mjs",
   "scripts/gate5-real-devices.sh",
@@ -383,6 +385,8 @@ describe("which CI jobs a change affects", () => {
       "scripts/verify-production-build.mjs",
       "scripts/verify-production-workflow.mjs",
       "scripts/verify-deployed-sha.mjs",
+      "scripts/verify-backup-workflow.mjs",
+      "scripts/verify-backup-workflow.test.mjs",
     ]) {
       expect(classifyChanges([file]), file).toEqual({
         browser: false,
