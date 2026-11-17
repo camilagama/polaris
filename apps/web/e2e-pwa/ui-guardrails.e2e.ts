@@ -602,7 +602,7 @@ test.describe("controle: cada verificação pega a falha", () => {
     expect(await repeatedNameFaults(page)).toEqual([]);
   });
 
-  test("10. cada exceção da lista conhecida ainda acontece numa tela do mapa, e só ela é perdoada", async ({
+  test("10. cada exceção da lista conhecida ainda acontece na galeria, e só ela é perdoada", async ({
     page,
   }) => {
     expect(
@@ -618,7 +618,7 @@ test.describe("controle: cada verificação pega a falha", () => {
       const left = await repeatedNameFaults(page, others);
       expect(
         left.length,
-        `${entry.selector} (${entry.via}) não acontece mais em nenhuma tela do mapa: se a causa saiu da main, tire a entrada de KNOWN_REPEATED_NAMES`
+        `${entry.selector} (${entry.via}) não acontece mais na galeria (a única tela aberta aqui): confira as outras telas do mapa antes de tirar a entrada de KNOWN_REPEATED_NAMES; se a causa saiu da main, tire-a`
       ).toBeGreaterThan(0);
     }
     expect(await repeatedNameFaults(page)).toEqual([]);
