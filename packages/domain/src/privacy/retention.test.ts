@@ -658,6 +658,21 @@ describe("the activation series", () => {
     expect(policy.proposed).toContain("legal hold");
     expect(policy.proposed).toContain("não sai com a conta");
   });
+
+  it("lists the stop, its releases and the inbox, and keeps the inbox out of any purge with the reason", () => {
+    const policy = retentionPolicy("activation_series");
+    const data = policy.data.join(" ");
+    expect(data).toContain("activation_series_stops");
+    expect(data).toContain("activation_series_stop_releases");
+    expect(data).toContain("activation_email_events");
+    expect(data).toContain("identificador da chave");
+    if (policy.status !== "proposta") {
+      throw new Error("activation_series must stay proposed");
+    }
+    expect(policy.proposed).toContain("A caixa de entrada: sem purga");
+    expect(policy.proposed).toContain("não é dado pessoal");
+    expect(policy.rule).toContain("funções do dono da série");
+  });
 });
 
 describe("class names", () => {

@@ -6,8 +6,10 @@ import {
   type BillingStore,
   createBillingStore,
 } from "@polaris/db/billing-store";
+import { ACTIVATION_EMAIL_EVENT_STATEMENT } from "@polaris/db/activation-email-events";
 import { createDatabase } from "@polaris/db/client";
 import { outboxIdempotencyKey } from "@polaris/domain/events/outbox";
+import { withGateRole } from "../../../packages/db/scripts/gate-roles";
 import {
   disposableHostPattern,
   gateBranchPattern,
@@ -31,12 +33,17 @@ import { runActivationSweep } from "../src/server/billing/activation-sweep";
  *   3. AC-7b.5: a1 at 23h59 of the store is not recorded and at 24 h is, with its event; 3 days less a minute after
  *      the trigger is due and 3 days after is recorded skipped `expired`; at 12:00 and at 07:59 nothing is recorded,
  *      at 11:59 it is;
- *   4. AC-7b.4 and AC-7b.2: with 58 counted on the day of São Paulo (skipped ones beside them, not counted), three
+ *   4. AC-9.4: a complaint recorded through the billing role's function stops the series, and then the sweep (on, off,
+ *      on again with the instant of the switch long before the store, on at the store's own day) records no notice and
+ *      no event and the stop stays; the release by the owner of the series, the one way out, brings the store's a1 back
+ *      owed with its event. A stop is never deleted, so the case releases whatever it opened, whatever happens, and runs
+ *      before the cases that fill the cap of the day;
+ *   5. AC-7b.4 and AC-7b.2: with 58 counted on the day of São Paulo (skipped ones beside them, not counted), three
  *      stores due: a sweep while another transaction holds the lock of the cap records nothing, two sweeps at once
  *      record the two earliest by trigger and no more (60 counted), an expired step is still recorded, an hour later
  *      nothing more, and the next day the third comes first in the order of the triggers (a batch of 1 says
  *      truncated);
- *   5. AC-7b.4: the count of the cap follows the day of the sweep's clock: with 58 recorded one second before
+ *   6. AC-7b.4: the count of the cap follows the day of the sweep's clock: with 58 recorded one second before
  *      midnight of São Paulo and 5 one second after, a sweep records two of three owed stores and the next morning's
  *      the third.
  * Every owed notice is checked against its event: type `activation.notice`, pending, the body with the notice's ID
@@ -60,7 +67,8 @@ const DAY = 24 * HOUR;
 const CAP = 60;
 const FAR_DAYS = 30;
 const CAP_LOCK = "activation_notice_candidates";
-const CASE_LABEL = /^AC-7b\.\d(?: and AC-7b\.\d)?/;
+const CASE_LABEL = /^AC-(?:7b|9)\.\d(?: and AC-(?:7b|9)\.\d)?/;
+const NOTICE_OWNER = "polaris_activation_notice_owner";
 
 const at = (base: Date, offset: number) => new Date(base.getTime() + offset);
 
@@ -512,7 +520,89 @@ async function run() {
       "AC-7b.5: nothing is recorded for anyone at 12:00 nor at 07:59 of São Paulo; at 10:00 an a1 at 23h59 of its store is not recorded and one at 24 h is, owed with its event; an a1 3 days less a minute past its trigger is owed and one 3 days past it is recorded skipped expired with no event (its a2 of the 5th day owed); an a1 falling due at 11:59 is recorded at 11:59"
     );
 
-    // 4. AC-7b.4 and AC-7b.2: the cap of the day, with two sweeps at once
+    // 4. AC-9.4: turning the switch off and on is not the way out of a stop (before the cases that fill the cap of the day)
+    const NOTE = "released by the sweep gate after the cycle";
+    const releaseStops = async () => {
+      const client = await owner.pool.connect();
+      try {
+        await client.query("BEGIN");
+        await withGateRole(client, NOTICE_OWNER, async () => {
+          const active = await client.query<{ id: string }>(
+            "SELECT id FROM public.activation_series_stops WHERE released_at IS NULL"
+          );
+          for (const row of active.rows) {
+            await client.query(
+              "SELECT public.activation_release_stop($1::uuid, $2)",
+              [row.id, NOTE]
+            );
+          }
+        });
+        await client.query("COMMIT");
+      } catch (error) {
+        await client.query("ROLLBACK").catch(() => undefined);
+        throw error;
+      } finally {
+        client.release();
+      }
+    };
+    await sweep(false, ten);
+    await sweep(true, at(ten, -5 * DAY));
+    await settle(ten);
+    const stoppedStore = await newStore(at(ten, -26 * HOUR));
+    try {
+      await probe.pool.query(ACTIVATION_EMAIL_EVENT_STATEMENT, [
+        `gate-${randomUUID()}`,
+        "complaint",
+        "0000aaaa",
+        [randomBytes(32).toString("hex")],
+      ]);
+      const beforeStop = await totals();
+      const nothing = { due: 0, expired: 0, seriesOff: 0, truncated: false };
+      assert.deepEqual(
+        await sweep(true, ten),
+        nothing,
+        "a sweep with the stop standing records nothing, with the store's a1 owed"
+      );
+      assert.deepEqual(await sweep(false, ten), nothing);
+      assert.equal(
+        (await instant())?.enabled_since,
+        null,
+        "the sweep off still clears the instant"
+      );
+      assert.deepEqual(await sweep(false, at(ten, DAY)), nothing);
+      assert.deepEqual(await sweep(true, at(ten, -5 * DAY)), nothing);
+      assert.equal(
+        (await instant())?.enabled_since?.getTime(),
+        at(ten, -5 * DAY).getTime(),
+        "and the switch on records its instant again"
+      );
+      assert.deepEqual(
+        await sweep(true, ten),
+        nothing,
+        "with the instant of the switch long before the store, still nothing"
+      );
+      assert.deepEqual(
+        await totals(),
+        beforeStop,
+        "no notice and no event is born, anywhere, through the whole cycle of the switch"
+      );
+      assert.deepEqual(await stepsOf(stoppedStore), []);
+      await releaseStops();
+      await settle(ten);
+      assert.deepEqual(
+        await stepsOf(stoppedStore),
+        ["a1:owed"],
+        "after the release the store's a1 is recorded"
+      );
+      await assertEvents(stoppedStore, "the a1 after the release");
+    } finally {
+      await releaseStops();
+    }
+    tests.push(
+      "AC-9.4: with a stop standing after a complaint (recorded through activation_record_email_event on the billing login), a sweep on, off, off a day later, on at an early instant and on again at 10:00 records no notice and no activation.notice event anywhere (counts unchanged), the switch's instant is still cleared and set as before, and the store whose a1 is owed gets none; after the release by the owner of the series the sweep records the store's a1 with its event"
+    );
+
+    // 5. AC-7b.4 and AC-7b.2: the cap of the day, with two sweeps at once
     await settle(ten);
     const capped = [
       await newStore(at(ten, -2 * DAY + MINUTE)),
@@ -626,7 +716,7 @@ async function run() {
     await sweep(false, tomorrow);
     assert.equal((await instant())?.enabled_since, null);
 
-    // 5. AC-7b.4: the count of the cap follows the day of the sweep's clock, not the hour the gate runs at. On a day
+    // 6. AC-7b.4: the count of the cap follows the day of the sweep's clock, not the hour the gate runs at. On a day
     // far ahead, 58 notices are recorded one second before midnight of São Paulo and 5 one second after it: only the 58
     // are the day of the sweep, so two of three owed stores are recorded, and the next morning the third is.
     // The day is past the window in which a store stays a candidate: the stores the other gates left (created at the real hour
@@ -735,8 +825,8 @@ async function run() {
       "AC-7b.4: the count of the cap follows the day of the sweep's clock, not the hour the gate runs at: 30 days ahead (past the days a store stays a candidate, with 64 leftover stores created around 10:00 that cannot fill it: the official candidates function answers all 64 five days ahead and none 30 days ahead), 58 notices recorded one second before midnight of São Paulo and 5 one second after it, a sweep at 10:00 records two of three owed stores (the 5 of the next day are not counted) and the day stays at 60, the sweep of the next morning records the third, and what a sweep records carries the clock of its case"
     );
 
-    // the connection check and the five cases: one that did not run would leave the gate green with less proof
-    assert.equal(tests.length, 6, "every case of the gate ran");
+    // the connection check and the six cases: one that did not run would leave the gate green with less proof
+    assert.equal(tests.length, 7, "every case of the gate ran");
     const proven = tests
       .map((test) => test.match(CASE_LABEL)?.[0])
       .filter(Boolean);
