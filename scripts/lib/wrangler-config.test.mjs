@@ -50,13 +50,39 @@ describe("the neutral wrangler config module", () => {
     ]);
   });
 
-  it("reads the bindings of every Worker, sorted in the snapshot", () => {
-    for (const app of WORKERS) {
-      const config = readConfig(app);
-      expect(bindingsOf(config).hyperdrive).toBeInstanceOf(Map);
-      expect(bindingsSnapshot(config).hyperdrive).toEqual(
-        [...bindingsOf(config).hyperdrive].sort()
-      );
-    }
+  it("reads each kind of binding by name, without the consumer lanes", () => {
+    const config = {
+      account_id: "acc",
+      hyperdrive: [{ binding: "HD", id: "hd-1" }],
+      images: { binding: "IMAGES" },
+      queues: {
+        consumers: [{ dead_letter_queue: "dlq-1", queue: "q-1" }],
+        producers: [{ binding: "PRODUCER", queue: "q-1" }],
+      },
+      r2_buckets: [{ binding: "MEDIA", bucket_name: "bucket-1" }],
+      ratelimits: [{ name: "RL", namespace_id: 7 }],
+    };
+    const bindings = bindingsOf(config);
+    expect(bindings.hyperdrive).toEqual(new Map([["HD", "hd-1"]]));
+    expect(bindings.buckets).toEqual(new Map([["MEDIA", "bucket-1"]]));
+    expect(bindings.producers).toEqual(new Map([["PRODUCER", "q-1"]]));
+    expect(bindings.consumers).toEqual(["q-1", "dlq-1"]);
+    expect(bindings.ratelimits).toEqual(new Map([["RL", "7"]]));
+    expect(bindings.images).toEqual(["IMAGES"]);
+    expect(bindings).not.toHaveProperty("consumerLanes");
+    expect(bindingsSnapshot(config)).toEqual({
+      account: "acc",
+      buckets: [["MEDIA", "bucket-1"]],
+      consumers: ["dlq-1", "q-1"],
+      hyperdrive: [["HD", "hd-1"]],
+      producers: [["PRODUCER", "q-1"]],
+      ratelimits: [["RL", "7"]],
+    });
+  });
+
+  it("refuses an unterminated block comment", () => {
+    expect(() => parseJsonc('{ /* open "a": 1 }')).toThrow(
+      "unterminated comment"
+    );
   });
 });
