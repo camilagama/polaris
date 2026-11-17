@@ -1,44 +1,10 @@
-import type { ReactElement } from "react";
-import { renderToStaticMarkup } from "react-dom/server";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+// @vitest-environment happy-dom
+import { cleanup, render } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { NearLimitNotice } from "./limit-help";
 import type { NearLimitView } from "./limit-help-model";
 
-interface Slot {
-  value?: unknown;
-}
-
-const runtime = { index: 0, slots: [] as Slot[] };
-
-function nextSlot(): Slot {
-  const slot = runtime.slots[runtime.index] ?? {};
-  runtime.slots[runtime.index] = slot;
-  runtime.index += 1;
-  return slot;
-}
-
-vi.mock("react", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("react")>()),
-  useCallback: <T,>(callback: T) => callback,
-  useContext: () => null,
-  useRef: <T,>(initial: T) => {
-    const slot = nextSlot();
-    slot.value ??= { current: initial };
-    return slot.value as { current: T };
-  },
-  useState: <T,>(initial: T) => {
-    const slot = nextSlot();
-    if (!("value" in slot)) {
-      slot.value = initial;
-    }
-    const set = (next: T) => {
-      slot.value = next;
-    };
-    return [slot.value as T, set];
-  },
-}));
 vi.mock("../lib/orpc", () => ({ orpcClient: {} }));
-
-const { NearLimitNotice } = await import("./limit-help");
 
 const FREEABLE_TEXT = "Você tem 3 produtos arquivados sem estoque.";
 
@@ -49,42 +15,49 @@ const withFreeable: NearLimitView = {
   usage: { max: 50, subject: "images", used: 47 },
 };
 
-function draw(view: NearLimitView | null, holdSpace: boolean) {
-  runtime.index = 0;
-  return NearLimitNotice({
-    freeable: "link",
-    holdSpace,
-    view,
-  }) as ReactElement | null;
+function mount(view: NearLimitView | null, holdSpace: boolean) {
+  const notice = (next: NearLimitView | null, hold: boolean) => (
+    <NearLimitNotice freeable="link" holdSpace={hold} view={next} />
+  );
+  const mounted = render(notice(view, holdSpace));
+  return {
+    draw: (next: NearLimitView | null, hold: boolean) => {
+      mounted.rerender(notice(next, hold));
+      return {
+        markup: mounted.container.innerHTML,
+        notice: mounted.container.firstElementChild,
+      };
+    },
+    first: {
+      markup: mounted.container.innerHTML,
+      notice: mounted.container.firstElementChild,
+    },
+  };
 }
 
-beforeEach(() => {
-  runtime.slots = [];
-  runtime.index = 0;
-});
+afterEach(cleanup);
 
 describe("o segundo parágrafo fora do vão do holdSpace", () => {
   it("com a view à mostra o parágrafo dos arquivados aparece; sem conexão a linha do Pro fica invisível e o parágrafo sai", () => {
-    const visible = draw(withFreeable, true);
-    const visibleMarkup = renderToStaticMarkup(visible);
-    expect(visibleMarkup).toContain(FREEABLE_TEXT);
-    expect(visibleMarkup).toContain("data-near-limit-freeable");
+    const screen = mount(withFreeable, true);
+    expect(screen.first.markup).toContain(FREEABLE_TEXT);
+    expect(screen.first.markup).toContain("data-near-limit-freeable");
 
-    const held = draw(null, true);
-    expect(held).not.toBeNull();
-    const heldMarkup = renderToStaticMarkup(held);
-    expect(heldMarkup).not.toContain(FREEABLE_TEXT);
-    expect(heldMarkup).not.toContain("Ver arquivados");
-    expect(heldMarkup).toContain('aria-hidden="true"');
-    expect(heldMarkup).toContain("invisible");
-    expect(heldMarkup).toContain("Conhecer o Pro");
-    expect(heldMarkup).not.toContain("data-near-limit=");
-    expect(heldMarkup.match(/<p /g)).toHaveLength(1);
+    const held = screen.draw(null, true);
+    expect(held.notice).not.toBeNull();
+    expect(held.markup).not.toContain(FREEABLE_TEXT);
+    expect(held.markup).not.toContain("Ver arquivados");
+    expect(held.markup).toContain('aria-hidden="true"');
+    expect(held.markup).toContain("invisible");
+    expect(held.markup).toContain("Conhecer o Pro");
+    expect(held.markup).not.toContain("data-near-limit=");
+    expect(held.markup.match(/<p /g)).toHaveLength(1);
   });
 
   it("controle: com a view antes à mostra, sem holdSpace a view null não deixa nada, e o vão não volta depois", () => {
-    expect(draw(withFreeable, true)).not.toBeNull();
-    expect(draw(null, false)).toBeNull();
-    expect(draw(null, true)).toBeNull();
+    const screen = mount(withFreeable, true);
+    expect(screen.first.notice).not.toBeNull();
+    expect(screen.draw(null, false).notice).toBeNull();
+    expect(screen.draw(null, true).notice).toBeNull();
   });
 });
