@@ -3,6 +3,11 @@ import assert from "node:assert/strict";
 import { randomBytes, randomUUID } from "node:crypto";
 import { ACTIVATION_NOTICE_REREAD_REASONS } from "@polaris/domain/activation/notices";
 import { Client } from "pg";
+import {
+  ACTIVATION_PREFERENCE_STATEMENT,
+  ACTIVATION_SET_TIPS_STATEMENT,
+  parseActivationPreference,
+} from "../src/activation-preference";
 import { createDatabase } from "../src/client";
 import { setLoginRole, withGateRole } from "./gate-roles";
 import {
@@ -60,6 +65,13 @@ import {
  *      `organizations.name`, the owner of the series among them, and the candidates answer no name; one store per rule
  *      leaves the candidates while the re-read of its notice answers the code of `@polaris/domain/activation/notices`, in
  *      that order; the name comes only with a notice still owed; a clock more than 10 minutes away is the database's.
+ *  11. the preference for the session (migration 0134, AC-8b.1 and AC-8b.6a): `activation_email_preference` and
+ *      `activation_set_tips` are SECURITY DEFINER of the owner of the series, never read `"user"`, and only the tenant
+ *      runtime executes them (function by function, every `polaris_*` group and PUBLIC; the billing runtime keeps only
+ *      the opt-out); the owner of the series holds the DELETE of `email_opt_outs` and no other table privilege; with
+ *      two accounts the read and the write of one never touch the other; an opt-out recorded through the page of 0129
+ *      reads `tips: false`, and turning the tips on through the new function brings the person back into the
+ *      candidates; an account older than the 14 days the owner sees on `"user"` still works.
  * Every case runs in a transaction that is rolled back, with the stores the other gates left suspended inside it, so
  * the answers are about this gate's stores only. Local Postgres only: the fixtures write sale headers whose items the
  * deferred checks never see.
@@ -77,6 +89,11 @@ const RECIPIENT_OWNER = "polaris_activation_recipient_owner";
 const MEASURE_OWNER = "polaris_activation_owner";
 const RECIPIENT_FUNCTION = "public.activation_notice_recipient(text, uuid)";
 const OPT_OUT_FUNCTION = "public.activation_record_opt_out(text)";
+const PREFERENCE_FUNCTIONS = [
+  { signature: "public.activation_email_preference(text)", volatility: "s" },
+  { signature: "public.activation_set_tips(text, boolean)", volatility: "v" },
+] as const;
+const USER_TABLE = /"user"/;
 const STILL_OWED_FUNCTION =
   "public.activation_notice_still_owed(text, uuid, timestamptz)";
 /** The exact columns of the owner of the series: those of 0124 and 0126, the INSERT of 0129 and the name of 0131. */
@@ -1688,7 +1705,17 @@ async function run() {
     assert.deepEqual(
       optOutOwnerColumns.rows.map((row) => row.entry).sort(),
       ["user_id:INSERT", "user_id:SELECT"],
-      "the owner of the series inserts and reads only the person, and never updates nor deletes"
+      "the owner of the series inserts and reads only the person, by column, and never updates"
+    );
+    const ownerTablePrivileges = await owner.pool.query<{ entry: string }>(
+      `SELECT t.table_name || ':' || t.privilege_type AS entry
+         FROM information_schema.table_privileges AS t WHERE t.grantee = $1`,
+      [NOTICE_OWNER]
+    );
+    assert.deepEqual(
+      ownerTablePrivileges.rows.map((row) => row.entry),
+      ["email_opt_outs:DELETE"],
+      "the one table privilege of the owner of the series is the DELETE of email_opt_outs, which turns the tips back on"
     );
     const optOutAclRoles = await owner.pool.query<{ role: string }>(
       `SELECT DISTINCT a.grantee::regrole::text AS role
@@ -1730,10 +1757,11 @@ async function run() {
       optOutPolicies.rows.map((row) => row.entry).sort(),
       [
         `email_opt_outs_billing_runtime_select:SELECT:${BILLING_RUNTIME}`,
+        `email_opt_outs_owner_delete:DELETE:${NOTICE_OWNER}`,
         `email_opt_outs_owner_insert:INSERT:${NOTICE_OWNER}`,
         `email_opt_outs_owner_select:SELECT:${NOTICE_OWNER}`,
       ],
-      "the policies of email_opt_outs: the owner's insert of 0129 and the two reads of 0124 (the billing one with no grant behind it)"
+      "the policies of email_opt_outs: the owner's delete of 0134, its insert of 0129 and the two reads of 0124 (the billing one with no grant behind it)"
     );
     await as(billingUrl, async (client) => {
       await setLoginRole(client, BILLING_RUNTIME, "session");
@@ -1864,6 +1892,374 @@ async function run() {
     });
     tests.push(
       "activation_record_opt_out called by the billing runtime: two calls are one row; a repeat keeps the first instant; a person that does not exist and a null person leave no row, raise nothing and leave the caller's transaction usable; the answer (columns and value) is the same for a new person, a repeat, an earlier opt-out, an unknown person and null"
+    );
+
+    // 11. the preference for the session (migration 0134)
+    for (const preferenceFunction of PREFERENCE_FUNCTIONS) {
+      const preferenceDefinition = await owner.pool.query<{
+        config: string[] | null;
+        definer: boolean;
+        owner: string;
+        returns: string;
+        set: boolean;
+        source: string;
+        volatility: string;
+      }>(
+        `SELECT p.prosecdef AS definer, p.proconfig AS config, p.proowner::regrole::text AS owner, p.prosrc AS source,
+                p.provolatile::text AS volatility, p.prorettype::regtype::text AS returns, p.proretset AS set
+           FROM pg_catalog.pg_proc AS p WHERE p.oid = $1::regprocedure`,
+        [preferenceFunction.signature]
+      );
+      const [row] = preferenceDefinition.rows;
+      assert.ok(row, `${preferenceFunction.signature} exists`);
+      assert.equal(
+        row.definer,
+        true,
+        `${preferenceFunction.signature}: SECURITY DEFINER`
+      );
+      assert.equal(
+        row.owner,
+        NOTICE_OWNER,
+        `${preferenceFunction.signature}: its owner`
+      );
+      assert.deepEqual(row.config, ["search_path=pg_catalog, public, pg_temp"]);
+      assert.doesNotMatch(row.source, DYNAMIC_SQL, "no dynamic SQL");
+      assert.doesNotMatch(
+        row.source,
+        USER_TABLE,
+        `${preferenceFunction.signature} never reads "user": it works for an account older than the 14 days the owner sees there`
+      );
+      assert.equal(row.volatility, preferenceFunction.volatility);
+      assert.equal(row.returns, "jsonb");
+      assert.equal(row.set, false);
+      const reach = await owner.pool.query<{ role: string }>(
+        `SELECT r.role FROM (
+           SELECT 'public' AS role
+           UNION ALL SELECT rolname::text FROM pg_catalog.pg_roles WHERE rolname LIKE 'polaris\\_%' AND NOT rolcanlogin
+         ) AS r
+        WHERE pg_catalog.has_function_privilege(r.role, $1, 'EXECUTE')`,
+        [preferenceFunction.signature]
+      );
+      assert.deepEqual(
+        reach.rows.map((entry) => entry.role).sort(),
+        [NOTICE_OWNER, runtimeRole].sort(),
+        `${preferenceFunction.signature}: of PUBLIC and every polaris_* group only the tenant runtime executes it (and its owner)`
+      );
+      const acl = await owner.pool.query<{ role: string }>(
+        `SELECT DISTINCT a.grantee::regrole::text AS role
+           FROM pg_catalog.pg_proc AS p, pg_catalog.aclexplode(p.proacl) AS a
+          WHERE p.oid = $1::regprocedure`,
+        [preferenceFunction.signature]
+      );
+      assert.deepEqual(
+        acl.rows.map((entry) => entry.role).sort(),
+        [NOTICE_OWNER, runtimeRole].sort(),
+        `${preferenceFunction.signature}: its ACL names only its owner and the tenant runtime`
+      );
+      const billingReach = await owner.pool.query<{ billing: boolean }>(
+        "SELECT pg_catalog.has_function_privilege($1, $2, 'EXECUTE') AS billing",
+        [BILLING_RUNTIME, preferenceFunction.signature]
+      );
+      assert.deepEqual(billingReach.rows, [{ billing: false }]);
+    }
+    const billingFunctions = await owner.pool.query<{ signature: string }>(
+      `SELECT p.oid::regprocedure::text AS signature FROM pg_catalog.pg_proc AS p
+        WHERE p.proowner = $1::regrole AND pg_catalog.has_function_privilege($2, p.oid, 'EXECUTE')
+        ORDER BY p.oid::regprocedure::text COLLATE "C"`,
+      [NOTICE_OWNER, BILLING_RUNTIME]
+    );
+    assert.deepEqual(
+      billingFunctions.rows.map((row) => row.signature),
+      [
+        "activation_notice_candidates(timestamp with time zone,integer)",
+        "activation_notice_still_owed(text,uuid,timestamp with time zone)",
+        "activation_record_opt_out(text)",
+      ],
+      "the billing runtime keeps the candidates, the re-read and the opt-out, and gets nothing of the preference"
+    );
+    await as(tenantUrl, async (client) => {
+      await setLoginRole(client, runtimeRole, "session");
+      const unknown = `gate-unknown-${randomUUID()}`;
+      const read = await client.query<{ preference: unknown }>(
+        ACTIVATION_PREFERENCE_STATEMENT,
+        [unknown]
+      );
+      assert.deepEqual(
+        parseActivationPreference(read.rows[0]?.preference),
+        { sent: 0, tips: true },
+        "a tenant login reads the state of a person that does not exist: tips on, nothing sent"
+      );
+      const off = await client.query<{ preference: unknown }>(
+        ACTIVATION_SET_TIPS_STATEMENT,
+        [unknown, false]
+      );
+      assert.deepEqual(
+        parseActivationPreference(off.rows[0]?.preference),
+        { sent: 0, tips: true },
+        "turning the tips off for a person that does not exist records nothing and answers the same state"
+      );
+      await expectSqlState(
+        () => client.query(ACTIVATION_PREFERENCE_STATEMENT, [null]),
+        "22023",
+        "a null person is refused by the read"
+      );
+      await expectSqlState(
+        () => client.query(ACTIVATION_SET_TIPS_STATEMENT, [null, true]),
+        "22023",
+        "a null person is refused by the write"
+      );
+      await expectSqlState(
+        () => client.query(ACTIVATION_SET_TIPS_STATEMENT, [unknown, null]),
+        "22023",
+        "a null switch is refused"
+      );
+      await expectSqlState(
+        () =>
+          client.query(ACTIVATION_SET_TIPS_STATEMENT, [
+            "pessoa@malformada",
+            false,
+          ]),
+        "23514",
+        "a malformed person is refused by the table's check: only the foreign key is swallowed"
+      );
+      for (const statement of [
+        "SELECT count(*) FROM public.email_opt_outs",
+        "DELETE FROM public.email_opt_outs WHERE false",
+        "INSERT INTO public.email_opt_outs (user_id) VALUES ('x')",
+      ]) {
+        await expectSqlState(
+          () => client.query(statement),
+          "42501",
+          `the tenant login is refused a direct statement on email_opt_outs: ${statement}`
+        );
+      }
+    });
+    for (const [url, role] of [
+      [billingUrl, BILLING_RUNTIME],
+      [authUrl, AUTH_RUNTIME],
+    ] as const) {
+      await as(url, async (client) => {
+        await setLoginRole(client, role, "session");
+        await expectSqlState(
+          () => client.query(ACTIVATION_PREFERENCE_STATEMENT, [randomUUID()]),
+          "42501",
+          `${role} does not execute the read of the preference`
+        );
+        await expectSqlState(
+          () =>
+            client.query(ACTIVATION_SET_TIPS_STATEMENT, [randomUUID(), false]),
+          "42501",
+          `${role} does not execute the write of the preference`
+        );
+      });
+    }
+    tests.push(
+      'AC-8b.6a: activation_email_preference and activation_set_tips are SECURITY DEFINER of polaris_activation_notice_owner, with search_path pg_catalog, public, pg_temp, no dynamic SQL, no mention of "user", one jsonb each (stable the read, volatile the write); has_function_privilege role by role: of PUBLIC and every polaris_* group only the tenant runtime executes each (and its owner), their ACL names no one else, and the billing runtime keeps exactly the candidates, the re-read and the opt-out; the owner of the series holds the DELETE of email_opt_outs as its one table privilege and owns exactly five functions; a tenant login calls both for a person that does not exist (tips on, nothing sent, no row), gets 22023 for a null person or switch and 23514 for a malformed person, and is refused every direct statement on the table (42501); a billing and an authentication login are refused both functions (42501)'
+    );
+
+    await scenario(async (client) => {
+      const asTenant = <T>(work: () => Promise<T>) =>
+        withGateRole(client, runtimeRole, work);
+      const preferenceOf = (userId: string) =>
+        asTenant(async () =>
+          parseActivationPreference(
+            (
+              await client.query<{ preference: unknown }>(
+                ACTIVATION_PREFERENCE_STATEMENT,
+                [userId]
+              )
+            ).rows[0]?.preference
+          )
+        );
+      const setTips = (userId: string, on: boolean) =>
+        asTenant(async () =>
+          parseActivationPreference(
+            (
+              await client.query<{ preference: unknown }>(
+                ACTIVATION_SET_TIPS_STATEMENT,
+                [userId, on]
+              )
+            ).rows[0]?.preference
+          )
+        );
+      const optOutAt = async (userId: string) =>
+        (
+          await client.query<{ opted_out_at: Date }>(
+            "SELECT opted_out_at FROM public.email_opt_outs WHERE user_id = $1",
+            [userId]
+          )
+        ).rows.map((row) => row.opted_out_at.getTime());
+      const recordByPage = (userId: string) =>
+        withGateRole(client, BILLING_RUNTIME, () =>
+          client.query("SELECT public.activation_record_opt_out($1)", [userId])
+        );
+
+      // two accounts: each one's read and write touch only its own rows
+      const accountA = await newStore(client, {
+        createdAt: at(ten, -30 * HOUR),
+      });
+      await newStore(client, {
+        createdAt: at(ten, -28 * HOUR),
+        owner: accountA.userId,
+      });
+      const accountB = await newStore(client, {
+        createdAt: at(ten, -29 * HOUR),
+      });
+      await seedNotice(client, accountA, "a1", "sent", at(ten, -20 * HOUR));
+      await seedNotice(client, accountA, "a2", "sent", at(ten, -10 * HOUR));
+      await seedNotice(client, accountA, "a3", "skipped", at(ten, -5 * HOUR));
+      await seedNotice(client, accountB, "a1", "sent", at(ten, -20 * HOUR));
+      await seedNotice(client, accountB, "a2", "failed", at(ten, -10 * HOUR));
+      assert.deepEqual(
+        await preferenceOf(accountA.userId),
+        { sent: 2, tips: true },
+        "A: tips on, the two sent count and the skipped does not"
+      );
+      assert.deepEqual(
+        await preferenceOf(accountB.userId),
+        { sent: 1, tips: true },
+        "B: the sent counts and the failed does not"
+      );
+      const bFirst = at(databaseNow, -DAY);
+      await client.query(
+        "INSERT INTO public.email_opt_outs (user_id, opted_out_at) VALUES ($1, $2)",
+        [accountB.userId, bFirst]
+      );
+      assert.deepEqual(
+        await setTips(accountA.userId, false),
+        { sent: 2, tips: false },
+        "A turns the tips off and gets the state after"
+      );
+      assert.deepEqual(
+        await preferenceOf(accountB.userId),
+        { sent: 1, tips: false },
+        "B was already off and is untouched by A"
+      );
+      assert.deepEqual(await optOutAt(accountB.userId), [bFirst.getTime()]);
+      const aFirst = await optOutAt(accountA.userId);
+      assert.equal(aFirst.length, 1);
+      assert.deepEqual(
+        await setTips(accountA.userId, false),
+        { sent: 2, tips: false },
+        "turning off twice is the same answer"
+      );
+      assert.deepEqual(
+        await optOutAt(accountA.userId),
+        aFirst,
+        "a repeat keeps the first instant"
+      );
+      assert.deepEqual(
+        await setTips(accountB.userId, true),
+        { sent: 1, tips: true },
+        "B turns the tips on"
+      );
+      assert.deepEqual(await optOutAt(accountB.userId), []);
+      assert.deepEqual(
+        await preferenceOf(accountA.userId),
+        { sent: 2, tips: false },
+        "A stays off when B turns on"
+      );
+      assert.deepEqual(
+        await setTips(accountB.userId, true),
+        { sent: 1, tips: true },
+        "turning on twice is the same answer"
+      );
+      assert.deepEqual(await setTips(accountA.userId, true), {
+        sent: 2,
+        tips: true,
+      });
+      assert.deepEqual(await optOutAt(accountA.userId), []);
+
+      // the two doors tell one story: the page of 0129 writes, the read of 0134 says so, and the other way round
+      await recordByPage(accountB.userId);
+      assert.deepEqual(
+        await preferenceOf(accountB.userId),
+        { sent: 1, tips: false },
+        "off through the page of the e-mail, the session reads tips: false"
+      );
+      assert.deepEqual(await setTips(accountB.userId, true), {
+        sent: 1,
+        tips: true,
+      });
+      assert.deepEqual(
+        await optOutAt(accountB.userId),
+        [],
+        "on through the session removes the row the page wrote"
+      );
+
+      // turning on through the new function brings the person back into the candidates
+      const person = await newStore(client, { createdAt: at(ten, -30 * HOUR) });
+      const personSecond = await newStore(client, {
+        createdAt: at(ten, -28 * HOUR),
+        owner: person.userId,
+      });
+      assert.deepEqual(
+        stepsOf(await candidates(client, ten), person),
+        ["a1:due"],
+        "before anything, the person's first store is a candidate"
+      );
+      await recordByPage(person.userId);
+      assert.deepEqual(
+        stepsOf(await candidates(client, ten), person),
+        [],
+        "off through the page: no candidate"
+      );
+      assert.deepEqual(
+        (await preferenceOf(person.userId)).tips,
+        false,
+        "and the read says off"
+      );
+      await setTips(person.userId, true);
+      assert.deepEqual(
+        stepsOf(await candidates(client, ten), person),
+        ["a1:due"],
+        "on through the session: the person is a candidate again"
+      );
+      assert.deepEqual(
+        stepsOf(await candidates(client, ten), personSecond),
+        [],
+        "and only the first store, as before"
+      );
+      await setTips(person.userId, false);
+      assert.deepEqual(
+        stepsOf(await candidates(client, ten), person),
+        [],
+        "off through the session: no candidate"
+      );
+
+      // an account whose only store is out of the 14 days the owner sees on "user" still works
+      const oldStore = await newStore(client, {
+        createdAt: at(databaseNow, -40 * DAY),
+      });
+      await seedNotice(
+        client,
+        oldStore,
+        "a1",
+        "sent",
+        at(databaseNow, -39 * DAY)
+      );
+      assert.deepEqual(
+        await preferenceOf(oldStore.userId),
+        { sent: 1, tips: true },
+        "an old account is read, with its notice"
+      );
+      assert.deepEqual(
+        await setTips(oldStore.userId, false),
+        { sent: 1, tips: false },
+        "and written"
+      );
+      assert.deepEqual(
+        (await optOutAt(oldStore.userId)).length,
+        1,
+        "its row exists"
+      );
+      assert.deepEqual(await setTips(oldStore.userId, true), {
+        sent: 1,
+        tips: true,
+      });
+    });
+    tests.push(
+      "AC-8b.1 and AC-8b.6a: with two accounts, A's read and write leave B's row, count and first instant as they were, in either direction; the sent count is the person's, in every store, and counts only sent (not skipped nor failed); turning off twice keeps the first instant and turning on twice answers the same; an opt-out recorded through the page of 0129 reads tips: false and turning on through the session deletes that row; turning on makes the person's first store a candidate again (a2 of its second store still is not) and turning off takes it out; an account with only a store older than 14 days is read and written"
     );
 
     // AC-8a.4: once recorded, no notice of the person is born, in any of their stores, with the switch on or off;
@@ -2315,11 +2711,13 @@ async function run() {
     assert.deepEqual(
       ownedBySeries.rows.map((row) => row.signature),
       [
+        "activation_email_preference(text)",
         "activation_notice_candidates(timestamp with time zone,integer)",
         "activation_notice_still_owed(text,uuid,timestamp with time zone)",
         "activation_record_opt_out(text)",
+        "activation_set_tips(text,boolean)",
       ],
-      "the owner of the series owns exactly its three functions"
+      "the owner of the series owns exactly its five functions"
     );
     for (const [url, role] of [
       [tenantUrl, runtimeRole],
@@ -2358,7 +2756,7 @@ async function run() {
       );
     });
     tests.push(
-      "AC-7c.12: activation_notice_still_owed(text, uuid, timestamptz) is SECURITY DEFINER of polaris_activation_notice_owner, volatile, with search_path pg_catalog, public, pg_temp and no dynamic SQL, takes three inputs and returns one jsonb (no set, no column of its own); of PUBLIC and every polaris_* group only the billing runtime executes it (and its owner), and its ACL names no one else; a tenant and an authentication login are refused (42501), a billing login gets null for an unknown notice and 22023 for a null clock, and is refused a SELECT of organizations.name (42501); the owner of the series owns exactly the candidates, the re-read and the opt-out; the columns of activation_notice_candidates are exactly organization_id, user_id, step, due_at, outcome and truncated (pg_proc), so the candidates never answer the name of the store"
+      "AC-7c.12: activation_notice_still_owed(text, uuid, timestamptz) is SECURITY DEFINER of polaris_activation_notice_owner, volatile, with search_path pg_catalog, public, pg_temp and no dynamic SQL, takes three inputs and returns one jsonb (no set, no column of its own); of PUBLIC and every polaris_* group only the billing runtime executes it (and its owner), and its ACL names no one else; a tenant and an authentication login are refused (42501), a billing login gets null for an unknown notice and 22023 for a null clock, and is refused a SELECT of organizations.name (42501); the owner of the series owns exactly the candidates, the re-read, the opt-out and the two functions of the preference; the columns of activation_notice_candidates are exactly organization_id, user_id, step, due_at, outcome and truncated (pg_proc), so the candidates never answer the name of the store"
     );
 
     const nameReaders = await owner.pool.query<{ role: string }>(

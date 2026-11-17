@@ -3466,6 +3466,16 @@ Origem: achado B do Diego no Pixel 6 (28/10): a venda montada em Vender sumia ao
 | Gate (AC-7c.13) | Em revisão | `activation-candidates` estendido: privilégios e ACL da função, leitores exatos de `organizations.name`, lista exata do papel, uma loja por motivo com paridade contra os candidatos (o a1 de loja que já tem produto vira `state_changed`), a ordem dos motivos, os nulos e o limite do relógio. |
 | Fora deste PR | Pendente | O consumidor que chama a função (7c-2); os modelos (7c-1); `series_stopped` nas duas funções (9a). |
 
+### Avisos de ativação: a preferência das dicas pela sessão, parte do banco (t1224; corte staging-alinhado, item 2, Item 8b-db; migration 0134, número provisório)
+
+| Item | Estado | Detalhe |
+| --- | --- | --- |
+| Funções (AC-8b.1, AC-8b.3) | Em revisão | `activation_email_preference(p_user)` devolve `{"tips", "sent"}` (`tips` falso se há linha em `email_opt_outs`; `sent` conta os avisos da pessoa com `sent_at`, em todas as lojas) e `activation_set_tips(p_user, p_on)` liga (`DELETE`) ou desliga (`INSERT … ON CONFLICT DO NOTHING`) e devolve o estado depois. `SECURITY DEFINER` do papel da série, `search_path` fixo, sem SQL dinâmico, sem ler `"user"`; idempotentes. |
+| Privilégios (AC-8b.6a) | Em revisão | O papel da série ganha o `DELETE` de `email_opt_outs` (único privilégio de tabela dele) e a política de `DELETE`. `EXECUTE` só ao runtime de tenant (`polaris_pr11_runtime`, o de "Seus dados"); a cobrança segue só com `activation_record_opt_out`. Conferido no fim da migration e no gate. |
+| Cliente | Em revisão | `packages/db/src/activation-preference.ts`: os dois comandos e a leitura tipada da resposta, com teste. |
+| Gate | Em revisão | `activation-candidates` estendido: `has_function_privilege` função a função, duas contas que não se tocam, desligar pela 0129 lê `tips: false`, ligar pela nova devolve a pessoa aos candidatos, conta com loja de mais de 14 dias. |
+| Fora deste PR | Pendente | A rota, o contrato e o cartão "E-mails que você recebe" (8b-app). O handler é quem passa o `context.user.id`. |
+
 ### Avisos de ativação: o consumidor das dicas (t1089; corte ativacao-fase1b, Item 7c-2; sem migration)
 
 | Item | Estado | Detalhe |
