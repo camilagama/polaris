@@ -896,6 +896,17 @@ describe("alert signals", () => {
     expect(signal?.notify).toBe("report");
   });
 
+  it("leave the purges held on purpose and the first failure of a step out of the purge signal", () => {
+    const signal = alertSignals.find(
+      (candidate) => candidate.id === "purge-parado"
+    );
+
+    expect(signal?.source.events).toContain("organization_purge_step_failed");
+    expect(signal?.source.where).toContain('outcome != "rejected"');
+    expect(signal?.source.where).toContain("attempt >= 3");
+    expect(signal?.source.where).toContain("organization_purge_step_failed");
+  });
+
   it("have a positive window and a threshold that can fire", () => {
     for (const signal of alertSignals) {
       expect(signal.windowMinutes).toBeGreaterThan(0);
@@ -1173,8 +1184,8 @@ describe("the monitors section of the runbook", () => {
       );
       const bareId = inSection((text) =>
         text.replace(
-          "`http-5xx`, `erros-de-banco`, `serie-falhando` |",
-          "`http-5xx`, erros-de-banco, `serie-falhando` |"
+          "`http-5xx`, `erros-de-banco`, `serie-falhando`, `email-de-acesso-falhando` |",
+          "`http-5xx`, erros-de-banco, `serie-falhando`, `email-de-acesso-falhando` |"
         )
       );
 
@@ -1206,8 +1217,8 @@ describe("the monitors section of the runbook", () => {
       );
       const dropped = inSection((text) =>
         text.replace(
-          "`http-5xx`, `erros-de-banco`, `serie-falhando` |",
-          "`http-5xx`, `serie-falhando` |"
+          "`http-5xx`, `erros-de-banco`, `serie-falhando`, `email-de-acesso-falhando` |",
+          "`http-5xx`, `serie-falhando`, `email-de-acesso-falhando` |"
         )
       );
       const wrongPolicy = inSection((text) =>
