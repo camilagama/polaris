@@ -245,7 +245,7 @@ function watch(page: Page) {
     }
   };
   const onRequestFailed = (request: Request) => {
-    if (request.resourceType() !== "script") {
+    if (!reloadAsked || request.resourceType() !== "script") {
       return;
     }
     const cancelled = request.failure()?.errorText === CANCELLED;
@@ -523,6 +523,15 @@ test.describe("o vigia da recarga", () => {
     ask(afterCommit);
     fail(afterCommit);
     expect(seen.console).toEqual(["script failed: http://app.test/depois.js"]);
+  });
+
+  test("não julga o que falhou antes de a recarga ser pedida", () => {
+    const { page, ask, fail } = fakePage();
+    const seen = watch(page);
+    const leaving = script("saindo");
+    ask(leaving);
+    fail(leaving);
+    expect(seen.console).toEqual([]);
   });
 
   test("reprova o script que falhou por outro motivo, mesmo o do documento antigo", () => {

@@ -207,9 +207,10 @@ async function tabStops(page: Page, presses: number) {
     stops.push(
       await page.evaluate(() => {
         const active = document.activeElement;
-        const name =
-          active?.getAttribute("aria-label") ?? active?.textContent?.trim();
-        return `${active?.tagName ?? "none"}:${name ?? ""}`;
+        const named =
+          active instanceof HTMLAnchorElement ||
+          active instanceof HTMLButtonElement;
+        return `${active?.tagName ?? "none"}:${named ? (active.textContent?.trim() ?? "") : ""}`;
       })
     );
   }
@@ -813,14 +814,14 @@ test.describe("painel de imagens", () => {
     await expect(heldLink).toHaveCount(0);
 
     const shown = await tabStops(page, TAB_PRESSES);
-    expect(shown).toContain(PRO_LINK_STOP);
+    expect(shown[0]).toBe(PRO_LINK_STOP);
 
     await context.setOffline(true);
     await expect(dialogLine(page)).toHaveCount(0);
     await expect(heldLink).toHaveCount(1);
     const held = await tabStops(page, TAB_PRESSES);
-    expect(new Set(held).size).toBeGreaterThan(1);
     expect(held).not.toContain(PRO_LINK_STOP);
+    expect(held[0]).toBe(shown[1]);
   });
 
   test("sem linha antes de ficar offline, o quadro do diálogo não ganha espaço vazio", async ({
