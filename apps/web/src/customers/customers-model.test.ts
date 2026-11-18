@@ -1,5 +1,6 @@
 import type { CustomerReadModel } from "@polaris/contracts";
 import { describe, expect, it } from "vitest";
+import { PLATFORM_CUT_REASON } from "../lib/connection";
 import type { PendingCustomer } from "../offline/customer-create";
 import type { PendingCustomerUpdate } from "../offline/customer-update";
 import {
@@ -134,6 +135,23 @@ describe("what the screen says when a call fails", () => {
     expect(customerErrorMessage(refusal("SERVICE_UNAVAILABLE"), "load")).toBe(
       "A lista de clientes está temporariamente indisponível. Tente novamente."
     );
+  });
+
+  it("a conferência de repetidos que falha sem texto próprio não diz para revisar os campos", () => {
+    const check =
+      "Não foi possível verificar possíveis clientes repetidos. Tente novamente antes de salvar.";
+    for (const error of [
+      refusal("INTERNAL_SERVER_ERROR"),
+      refusal("ALGO_DESCONHECIDO"),
+      {},
+      new TypeError("Failed to fetch"),
+      Object.assign(new Error("signal timed out"), { name: "TimeoutError" }),
+      { data: { reason: PLATFORM_CUT_REASON }, status: 502 },
+    ]) {
+      const message = customerErrorMessage(error, "duplicate-check");
+      expect(message).toBe(check);
+      expect(message).not.toContain("Revise os campos");
+    }
   });
 
   it("sends a customer with a command waiting to Pendências", () => {
