@@ -4,7 +4,7 @@
 
 **Por quê:** o Neon Free guarda só 6 horas de histórico. O backup cobre o desastre maior (projeto apagado, conta perdida, corrupção percebida tarde): um `pg_dump` diário, cifrado fora do Neon, guardado 35 dias (o prazo de `provider_backups` do [ADR 0079](../adr/0079-retencao-por-classe-de-dado.md)). A decisão e as alternativas estão no [ADR 0099](../adr/0099-backup-logico-diario-no-r2-cifrado-com-age.md). O staging roda o mesmo mecanismo da produção, com outros nomes, para que ele chegue ao go-live já provado.
 
-> **Estado:** os scripts e as checagens existem no repositório, mas o login, o bucket, o token, o Environment `staging-backup` e o rótulo existem desde 12/11/2026 e o workflow `backup-staging.yml` (só o staging) está no repositório. O workflow `backup.yml`, com um job por ambiente (`staging` e `production`), cada um só rodando com a variável do seu ambiente (`STAGING_BACKUP_ENABLED`, `PRODUCTION_BACKUP_ENABLED`, do responsável), está **pendente**: vem no patch `t1195-workflow.patch`, que o Arrascaeta aplica (o dev não altera `.github/workflows`), e substitui o `backup-staging.yml`. Até lá, o que vale no repositório é o `backup-staging.yml`, e tudo abaixo que cita o `backup.yml` descreve o estado depois do patch. A produção nasce desligada e sem chave: a [seção de produção](#produção-go-live) diz o que falta. Os passos marcados **a provar** são o primeiro ensaio do staging; o resultado de cada um entra neste runbook, como no [restore e deletion ledger](./deletion-ledger-restore.md).
+> **Estado:** os scripts e as checagens existem no repositório, mas o login, o bucket, o token, o Environment `staging-backup` e o rótulo existem desde 12/11/2026 e o workflow `backup-staging.yml` (só o staging) está no repositório. O workflow `backup.yml`, com um job por ambiente (`staging` e `production`), cada um só rodando com a variável do seu ambiente (`STAGING_BACKUP_ENABLED`, `PRODUCTION_BACKUP_ENABLED`, do responsável), está **pendente**: vem no patch `t1195-workflow.patch`, que o Arrascaeta aplica (o dev não altera `.github/workflows`), e substitui o `backup-staging.yml`. Até lá, o que vale no repositório é o `backup-staging.yml`, e tudo abaixo que cita o `backup.yml` descreve o estado depois do patch. A produção nasce desligada e sem chave: a [seção de produção](#produção-go-live) diz o que falta. O primeiro backup e o primeiro ensaio do staging passaram em 15/11/2026 ([resultado abaixo](#ensaio-de-15112026-staging)); a produção repete os dois no go-live.
 
 ## Quem faz o quê
 
@@ -92,6 +92,28 @@ Quem: o responsável pelo servidor onde a identidade está (o titular não preci
 5. **Apagar** a branch (responsável) e o arquivo baixado. A identidade volta ao cofre.
 
 **O que o ensaio não faz:** os passos 0, 1, 3 e 4 do [restore e deletion ledger](./deletion-ledger-restore.md) (ler o ledger da origem desde o backup, carregar e reaplicar os tombstones posteriores). Num ensaio o banco restaurado nunca é aberto, então eles não se aplicam; numa restauração de verdade são obrigatórios, à mão, antes de reabrir o ambiente, e o script vem antes deles. Também não restaura papéis num projeto novo (`roles.sql` vai no pacote para esse caso, de perda total, que segue o passo 2 daquele runbook) nem aponta Hyperdrive para o banco restaurado.
+
+## Ensaio de 15/11/2026 (staging)
+
+Primeiro backup e primeiro ensaio de restauração do staging, que levaram o [ADR 0099](../adr/0099-backup-logico-diario-no-r2-cifrado-com-age.md) a `accepted` (escopo staging). Só números e nomes.
+
+| Item | Resultado |
+| --- | --- |
+| Backup | run 43742485132 do job diário do staging |
+| Restauração de ponta a ponta | `rc 0`, `ok: true`, `checks: []` |
+| Tabelas e linhas restauradas | 84 tabelas, 64.337 linhas |
+| RTO de dados (passo 3) | 23 s |
+| RPO medido | cerca de 38 min (instante do ensaio menos `snapshot_at`) |
+
+O RPO de desenho continua "até um dia mais o atraso do agendador": os 38 min são a medida deste ensaio.
+
+Comando usado (passo 3 acima, com as variáveis `PG*` da branch descartável e a identidade do cofre; os valores não entram aqui):
+
+```bash
+node scripts/backup/restore.mjs --environment staging --archive <stamp>.tar.age --identity <caminho da identidade no cofre> --sha256 <hash do log do run>
+```
+
+Limites: o ledger tinha 0 linhas, então a consulta final do passo 5 do [restore e deletion ledger](./deletion-ledger-restore.md) não exercitou nada; PITR e produção não foram provados. A produção repete o primeiro backup e o primeiro ensaio no go-live ([release-checklist](./release-checklist.md#5-pendências-de-ambiente-do-go-live-block)).
 
 ## Produção (go-live)
 

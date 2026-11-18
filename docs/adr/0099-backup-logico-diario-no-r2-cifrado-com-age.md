@@ -1,10 +1,10 @@
 ---
-status: proposed
+status: accepted
 ---
 
 # Backup lógico diário do banco no R2, cifrado com age, provado primeiro no staging
 
-> O número 0099 estava reservado ao backup na `main` e não é usado por nenhum PR aberto no momento da escrita; pode mudar se outro entrar antes. Este ADR fica `proposed` até o primeiro backup e o primeiro ensaio de restauração do staging passarem; o resultado entra como emenda.
+> O número 0099 estava reservado ao backup na `main` e não é usado por nenhum PR aberto no momento da escrita; pode mudar se outro entrar antes. Este ADR está `accepted` com escopo **staging**: o primeiro backup e o primeiro ensaio de restauração do staging passaram em 15/11/2026 (ver a [emenda](#emenda-de-15112026-primeiro-backup-e-primeiro-ensaio-do-staging)). A produção repete os dois no go-live.
 
 ## Contexto
 
@@ -34,3 +34,17 @@ O Neon Free ([ADR 0076](0076-teto-de-custo-e-free-tier-primeiro.md)) guarda 6 ho
 - **Usar o dono do banco no dump:** dá escrita e DDL a um job agendado.
 - **Worker Cron fazendo o dump:** sem `pg_dump` e com o limite de CPU do plano Free.
 - **Dump horário ou a cada 3 horas:** estoura o egress do Neon Free.
+
+## Emenda de 15/11/2026: primeiro backup e primeiro ensaio do staging
+
+Decisão de 18/11/2026: o ADR passa a `accepted`, com escopo staging.
+
+- **Backup:** o primeiro job diário do staging passou no run 43742485132.
+- **Restauração:** o ensaio de ponta a ponta, feito pelo responsável com a identidade do cofre do servidor, terminou com `rc 0`, `ok: true` e `checks: []`: 84 tabelas e 64.337 linhas, as contagens de cada tabela iguais às do manifest.
+- **RTO de dados:** 23 s (passo 3 do [ensaio](../runbooks/backup.md#ensaio-de-restauração)).
+- **RPO medido:** cerca de 38 min (instante do ensaio menos o `snapshot_at` do backup).
+- **O RPO de desenho não muda:** continua "até um dia mais o atraso do agendador" (Consequências); os 38 min são a medida deste ensaio, não uma garantia.
+- **Limites:** o ledger de eliminação do staging tinha 0 linhas, então a consulta final do passo 5 do [restore e deletion ledger](../runbooks/deletion-ledger-restore.md) passou sem exercitar nada; a restauração por PITR e a produção não foram provadas.
+- **Produção:** repete o primeiro backup e o primeiro ensaio de restauração no go-live, como pré-condição no [release-checklist](../runbooks/release-checklist.md#5-pendências-de-ambiente-do-go-live-block). Isso não reabre este ADR.
+
+Os detalhes e o comando estão no [runbook](../runbooks/backup.md#ensaio-de-15112026-staging).
