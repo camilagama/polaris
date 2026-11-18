@@ -41,6 +41,7 @@ interface CancelPanelProps {
   onSaleChanged: (notice: SaleNotice) => void;
   organizationId: string;
   saleId: string;
+  saleItemCount: number;
 }
 
 interface CancelReviewNoticeProps {
@@ -79,6 +80,7 @@ export function SaleCancelPanel({
   onSaleChanged,
   organizationId,
   saleId,
+  saleItemCount,
 }: CancelPanelProps) {
   const [state, setState] = useState(initialCancelState);
   useHoldSwap(isCancelDraftChanged(state));
@@ -156,7 +158,10 @@ export function SaleCancelPanel({
     try {
       const result = await orpcClient.sale.cancel(prepared.request);
       setState(initialCancelState());
-      onSaleChanged({ message: cancelSuccessMessage(result), ok: true });
+      onSaleChanged({
+        message: cancelSuccessMessage(result, saleItemCount),
+        ok: true,
+      });
     } catch (error) {
       setState((current) => cancelFailed(current, error));
       const failure = mapCancelError(error);
@@ -166,7 +171,7 @@ export function SaleCancelPanel({
     } finally {
       inFlight.current = false;
     }
-  }, [onSaleChanged, organizationId, saleId, state]);
+  }, [onSaleChanged, organizationId, saleId, saleItemCount, state]);
   const handleConfirmEvent = useCallback(() => {
     handleConfirm().catch(() => undefined);
   }, [handleConfirm]);
