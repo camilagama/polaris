@@ -18,6 +18,7 @@ import {
   navigateInApp,
   readNavigationState,
   replaceAddress,
+  useAddress,
 } from "../app-shell/address";
 import { addressWithTab, requestedTab } from "../app-shell/navigation-model";
 import { SlowReadNote } from "../app-shell/read-wait";
@@ -342,6 +343,20 @@ export function DashboardPage() {
   useLayoutEffect(() => {
     replaceAddress(addressWithPeriod(window.location.href, selection));
   }, [selection]);
+  // a step of the browser's history to another address of this route changes the period in it: the screen follows, and
+  // the figures are read for it by the same path as a choice in the picker. An address already equal to the selection
+  // (the write above, or a step to the same period) changes nothing
+  const { search } = useAddress();
+  // `search` only wakes the effect: it reads the address itself, which is current after the write above
+  useEffect(() => {
+    const fromAddress = periodFromSearch(window.location.search);
+    if (
+      addressWithPeriod(window.location.href, fromAddress) !==
+      addressWithPeriod(window.location.href, selection)
+    ) {
+      setSelection(fromAddress);
+    }
+  }, [search, selection]);
   const period = useMemo(
     () =>
       presetPeriod(selection.preset, today, selection.custom) ??
