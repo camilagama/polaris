@@ -293,6 +293,49 @@ describe("the retry of a failed read", () => {
     ).toBeNull();
   });
 
+  it("moves the focus to the switch when the read of the touch answers with the focus still on the button", async () => {
+    const { calls } = failingThenReading();
+    render(<EmailPreferenceCard calls={calls} online />);
+    await screen.findByRole("alert");
+    await user.click(screen.getByRole("button", { name: "Tentar novamente" }));
+    const toggle = await screen.findByRole("switch", {
+      name: "Dicas para começar",
+    });
+    await waitFor(() => expect(document.activeElement).toBe(toggle));
+  });
+
+  it("does not move the focus to the switch on the first read", async () => {
+    const { toggle } = await opened({ sent: 0, tips: true });
+    expect(document.activeElement).not.toBe(toggle);
+  });
+
+  it("leaves the focus where the person took it before the read of the touch answered", async () => {
+    const pending = deferredRead();
+    const read = vi
+      .fn<() => Promise<EmailPreference>>()
+      .mockRejectedValueOnce(new Error("falhou"))
+      .mockImplementation(pending.read);
+    render(
+      <>
+        <button type="button">Outro lugar</button>
+        <EmailPreferenceCard
+          calls={callsOf({ sent: 0, tips: true }, { read })}
+          online
+        />
+      </>
+    );
+    await screen.findByRole("alert");
+    await user.click(screen.getByRole("button", { name: "Tentar novamente" }));
+    const elsewhere = screen.getByRole("button", { name: "Outro lugar" });
+    act(() => elsewhere.focus());
+    await answer(() => pending.resolve({ sent: 0, tips: true }));
+    const toggle = await screen.findByRole("switch", {
+      name: "Dicas para começar",
+    });
+    expect(document.activeElement).toBe(elsewhere);
+    expect(document.activeElement).not.toBe(toggle);
+  });
+
   it("sends one read for two touches, and says it is busy while it waits", async () => {
     const pending = deferredRead();
     const read = vi
