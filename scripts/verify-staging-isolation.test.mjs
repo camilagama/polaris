@@ -591,7 +591,7 @@ describe("the staging isolation check", () => {
     const entries = repositoryEntries();
     const { staging } = entryOf(entries, "web").config.env;
     const problem =
-      "web: env.staging: staging needs vars.AUTH_EMAIL_FROM on @araute.app, whatever the flags";
+      'web: env.staging: staging needs vars.AUTH_EMAIL_FROM on @araute.app (empty only while vars.EMAIL_PASSWORD_AUTH_ENABLED is not "true")';
     for (const sender of [
       "Polaris <nao-responda@example.com>",
       "nao-responda@evil-araute.app",
@@ -656,7 +656,7 @@ describe("the staging isolation check", () => {
     const entries = repositoryEntries();
     const { staging } = entryOf(entries, "web").config.env;
     const fromProblem =
-      "web: env.staging: staging needs vars.AUTH_EMAIL_FROM on @araute.app, whatever the flags";
+      'web: env.staging: staging needs vars.AUTH_EMAIL_FROM on @araute.app (empty only while vars.EMAIL_PASSWORD_AUTH_ENABLED is not "true")';
     const replyToProblem =
       "web: env.staging: staging needs vars.AUTH_EMAIL_REPLY_TO absent, empty or on @araute.app, whatever the flags";
     for (const password of ["true", "false"]) {
@@ -683,7 +683,7 @@ describe("the staging isolation check", () => {
     staging.vars.CLOSURE_NOTICE_EMAIL_ENABLED = "true";
     staging.vars.AUTH_EMAIL_FROM = "Polaris <nao-responda@example.com>";
     expect(findIsolationProblems(entries)).toEqual([
-      "web: env.staging: staging needs vars.AUTH_EMAIL_FROM on @araute.app, whatever the flags",
+      'web: env.staging: staging needs vars.AUTH_EMAIL_FROM on @araute.app (empty only while vars.EMAIL_PASSWORD_AUTH_ENABLED is not "true")',
     ]);
     staging.vars.AUTH_EMAIL_FROM = "Polaris <nao-responda@araute.app>";
     expect(findIsolationProblems(entries)).toEqual([]);
@@ -699,7 +699,7 @@ describe("the staging isolation check", () => {
     expect(findIsolationProblems(entries)).toEqual([]);
     staging.vars.EMAIL_PASSWORD_AUTH_ENABLED = "true";
     expect(findIsolationProblems(entries)).toEqual([
-      "web: env.staging: staging needs vars.AUTH_EMAIL_FROM on @araute.app, whatever the flags",
+      'web: env.staging: staging needs vars.AUTH_EMAIL_FROM on @araute.app (empty only while vars.EMAIL_PASSWORD_AUTH_ENABLED is not "true")',
     ]);
   });
 
