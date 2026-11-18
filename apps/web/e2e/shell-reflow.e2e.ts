@@ -567,7 +567,7 @@ for (const [width, fontPixels] of [
   }
 }
 
-/** The header at its tightest: the eye, the chip and the account side by side, the chip giving way before anything is cut. */
+/** The header at its tightest: the eye, the chip and the account side by side, the chip whole and nothing cut. */
 for (const [width, fontPixels] of [
   [320, 20],
   [360, 16],
@@ -593,9 +593,7 @@ for (const [width, fontPixels] of [
       expect(right(eyeBox)).toBeLessThanOrEqual((accountBox?.x ?? 0) + SLACK);
       expect(right(accountBox)).toBeLessThanOrEqual(width);
       expect(eyeBox?.width).toBeGreaterThanOrEqual(36);
-      await assertNothingClipped(header, {
-        allowScroll: [".sync-status-short"],
-      });
+      await assertNothingClipped(header);
       await assertNoPageScroll(page);
     }
   );
