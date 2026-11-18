@@ -12,8 +12,9 @@ const NAME_FIELD = "Digite o nome do produto para confirmar";
 const CANCEL_DONE = /^Venda cancelada\. O estoque foi devolvido item a item/;
 
 /**
- * Excluir produto arquivado, na pilha de verdade: o produto arquivado e sem estoque sai da lista e a vaga volta; a venda
- * antiga continua abrindo e aceitando devolução; o arquivado com saldo é recusado e fica como estava.
+ * Excluir produto arquivado, na pilha de verdade: o produto arquivado e sem estoque sai da lista e a vaga volta; as vendas
+ * antigas continuam no Histórico, abrem com o nome guardado e aceitam cancelamento e devolução; "Mais vendidos" mostra o
+ * excluído sem link; o arquivado com saldo é recusado e fica como estava.
  */
 test("excluir produto arquivado: sai da lista, libera a vaga, a venda antiga segue e o de saldo é recusado", async ({
   browser,
@@ -128,12 +129,10 @@ test("excluir produto arquivado: sai da lista, libera a vaga, a venda antiga seg
   await expect(saleLink(saleId)).toContainText("Confirmada");
   await expect(saleLink(cancelledSaleId)).toContainText("Confirmada");
   await saleLink(cancelledSaleId).click();
+  await expect(page).toHaveURL(new RegExp(`saleId=${cancelledSaleId}`));
   await expect(page.getByText("Garrafa térmica").first()).toBeVisible();
-  await page
-    .getByRole("region", { name: "Cancelar venda" })
-    .getByRole("button", { name: "Cancelar venda" })
-    .click();
   const cancelPanel = page.getByRole("region", { name: "Cancelar venda" });
+  await cancelPanel.getByRole("button", { name: "Cancelar venda" }).click();
   await cancelPanel
     .getByRole("button", { name: "Revisar cancelamento" })
     .click();
@@ -170,5 +169,6 @@ test("excluir produto arquivado: sai da lista, libera a vaga, a venda antiga seg
   const ranking = page.getByRole("region", { name: "Mais vendidos do mês" });
   await expect(ranking).toContainText("Garrafa térmica");
   await expect(ranking.getByRole("listitem")).toHaveCount(1);
+  await expect(ranking).toContainText("2 un.");
   await expect(ranking.getByRole("link")).toHaveCount(0);
 });
