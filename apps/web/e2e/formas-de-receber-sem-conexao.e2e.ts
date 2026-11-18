@@ -69,6 +69,9 @@ const title = (page: Page) =>
 interface Scene {
   /** While true the list read and the health probe fail, as a network that is gone. */
   cut: { value: boolean };
+  healthProbes: () => number;
+  /** With `startCut`, the first list read waits here: it fails only once the test says the page is offline. */
+  holdFirstRead: { release: () => void };
   listReads: () => number;
   /** Every call of `paymentProfile/*` other than `list` that reached the network layer. */
   writes: string[];
@@ -81,6 +84,13 @@ async function openScreen(
   const cut = { value: startCut };
   const writes: string[] = [];
   let reads = 0;
+  let probes = 0;
+  let release: () => void = () => undefined;
+  const firstReadHeld = startCut
+    ? new Promise<void>((resolve) => {
+        release = resolve;
+      })
+    : Promise.resolve();
   await page.route("**/api/auth/get-session", (route) =>
     route.fulfill({
       body: JSON.stringify({ session: { id: "s" }, user: { id: "u" } }),
@@ -89,7 +99,11 @@ async function openScreen(
     })
   );
   await serveHealth(page, () => cut.value);
-  await page.route("**/rpc/**", (route: Route) => {
+  await page.route("**/health", (route) => {
+    probes += 1;
+    return route.fallback();
+  });
+  await page.route("**/rpc/**", async (route: Route) => {
     const procedure = new URL(route.request().url()).pathname.replace(
       "/rpc/",
       ""
@@ -102,6 +116,9 @@ async function openScreen(
     }
     if (procedure === "paymentProfile/list") {
       reads += 1;
+      if (reads === 1) {
+        await firstReadHeld;
+      }
       return cut.value
         ? route.abort("internetdisconnected")
         : route.fulfill(rpc({ profiles: [MACHINE] }));
@@ -117,7 +134,13 @@ async function openScreen(
   await page.clock.setFixedTime(NOW);
   await page.goto("/payment-profiles");
   await expect(title(page)).toBeVisible();
-  return { cut, listReads: () => reads, writes };
+  return {
+    cut,
+    healthProbes: () => probes,
+    holdFirstRead: { release },
+    listReads: () => reads,
+    writes,
+  };
 }
 
 const strip = (page: Page) =>
@@ -253,16 +276,23 @@ test("a rede volta: a lista que não carregava é lida de novo, sem recarregar a
   page,
 }) => {
   const scene = await openScreen(page, { startCut: true });
+  // the first read is in flight and held: the page goes offline before it fails, so `readWithRetry` has no second try
+  // to give and only the return of the connection can read the list again
+  await expect.poll(scene.listReads).toBe(1);
   await page.context().setOffline(true);
+  await expect(strip(page)).toBeVisible();
+  scene.holdFirstRead.release();
+  // "não carregaram" shows while the read is still loading offline: it is settled once the probe of `workerAnswers` ran
+  await expect.poll(scene.healthProbes).toBeGreaterThan(0);
+  await settled(page);
   await expect(page.getByText(NOT_LOADED)).toBeVisible();
-  const readsWhileCut = scene.listReads();
-  expect(readsWhileCut).toBeGreaterThan(0);
+  expect(scene.listReads()).toBe(1);
 
   await goOnline(page, scene);
   await expect(page.getByText("Maquininha da loja")).toBeVisible();
   await expect(page.getByText(NOT_LOADED)).toHaveCount(0);
   await expect(page.getByText(STRIP_TEXT)).toHaveCount(0);
-  expect(scene.listReads()).toBeGreaterThan(readsWhileCut);
+  expect(scene.listReads()).toBe(2);
   await expect(
     page.getByRole("button", { name: "Arquivar perfil Maquininha da loja" })
   ).not.toHaveAttribute("aria-disabled", "true");
