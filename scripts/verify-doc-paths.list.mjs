@@ -18,12 +18,6 @@ export const DOC_PATHS_LIST = {
   },
   "docs/adr/0040-service-worker-do-app-shell.md → apps/web/scripts/generate-pwa-icons.mjs":
     { count: 1, reason: BEFORE_THE_RULE },
-  "docs/adr/0101-adaptador-asaas-porta-de-saida-e-releitura-do-recurso.md → 0087-referencia-do-provedor-em-todo-fato.md":
-    { count: 1, reason: BEFORE_THE_RULE },
   "docs/adr/0103-base-de-componentes-shadcn-base-ui-e-tailwind-4.md → apps/web/src/styles/preflight.css":
     { count: 1, reason: BEFORE_THE_RULE },
-  "docs/runbooks/rls-hyperdrive-gate.md → apps/web/wrangler.pr11.jsonc": {
-    count: 1,
-    reason: BEFORE_THE_RULE,
-  },
 };

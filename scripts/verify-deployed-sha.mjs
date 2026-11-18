@@ -48,6 +48,21 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 export const ATTEMPTS = 3;
 export const WRANGLER_TIMEOUT_MS = 20_000;
 export const PAUSE_MS = 5000;
+// `deployments status` and `versions view`: the two reads of checkWorker
+export const WRANGLER_CALLS_PER_TRY = 2;
+
+/**
+ * Longest the whole check can take: every call of every try hits WRANGLER_TIMEOUT_MS and the pauses run in full.
+ * `workers` is the list checked (or how many).
+ */
+export function worstCaseMs(workers = STAGING_WORKERS) {
+  const count = Array.isArray(workers) ? workers.length : workers;
+  return (
+    count *
+    (ATTEMPTS * WRANGLER_CALLS_PER_TRY * WRANGLER_TIMEOUT_MS +
+      (ATTEMPTS - 1) * PAUSE_MS)
+  );
+}
 
 /** A gradual rollout has no single commit. */
 function activeVersionId(deployment) {

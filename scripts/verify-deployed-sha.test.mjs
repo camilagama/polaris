@@ -19,7 +19,9 @@ import {
   runWrangler,
   STAGING_WORKERS,
   verifyDeployedSha,
+  WRANGLER_CALLS_PER_TRY,
   WRANGLER_TIMEOUT_MS,
+  worstCaseMs,
   workersFromArgs,
 } from "./verify-deployed-sha.mjs";
 
@@ -469,11 +471,28 @@ wait
   });
 
   it("keeps the worst case of the whole check at about 390 s, as the runbook says", () => {
-    const callsPerTry = 2;
-    const perWorker =
-      ATTEMPTS * callsPerTry * WRANGLER_TIMEOUT_MS + (ATTEMPTS - 1) * PAUSE_MS;
     expect(WRANGLER_TIMEOUT_MS).toBe(20_000);
-    expect(STAGING_WORKERS.length * perWorker).toBe(390_000);
+    expect(worstCaseMs(STAGING_WORKERS)).toBe(390_000);
+    expect(worstCaseMs(STAGING_WORKERS.length)).toBe(390_000);
+  });
+
+  it("makes as many wrangler calls per try as the worst case counts", async () => {
+    const wranglerJson = vi.fn(async (_app, _worker, args) =>
+      args[0] === "deployments"
+        ? single(WEB_VERSION)
+        : version(WEB_VERSION, SHA)
+    );
+    expect(await checkWorker(STAGING_WORKERS[0], SHA, wranglerJson)).toBeNull();
+    expect(wranglerJson).toHaveBeenCalledTimes(WRANGLER_CALLS_PER_TRY);
+  });
+
+  it("worstCaseMs grows with the Workers, the tries, the calls per try and the pauses", () => {
+    const perWorker =
+      ATTEMPTS * WRANGLER_CALLS_PER_TRY * WRANGLER_TIMEOUT_MS +
+      (ATTEMPTS - 1) * PAUSE_MS;
+    expect(perWorker).toBe(130_000);
+    expect(worstCaseMs(5)).toBe(5 * perWorker);
+    expect(worstCaseMs(0)).toBe(0);
   });
 
   it("never passes what wrangler wrote on stderr to its own output", () => {

@@ -15,7 +15,7 @@ const RESTOCKED_QUANTITY = 1;
 const KEPT_QUANTITY = 3;
 const CANCELLED_QUANTITY = 1;
 const CANCEL_DONE =
-  /^Venda cancelada\. O estoque foi devolvido item a item \(0 itens\)\.$/;
+  /^Venda cancelada\. Nenhum item voltou ao estoque, porque os produtos desta venda foram removidos\.$/;
 
 /**
  * Excluir produto arquivado, na pilha de verdade: o produto arquivado e sem estoque sai da lista e a vaga volta; as vendas
