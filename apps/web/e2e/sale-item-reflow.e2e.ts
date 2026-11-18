@@ -13,9 +13,10 @@ import { serveLabWorker, WORKER_MARK } from "./worker-mark";
 
 /**
  * The fields of an item of the sale (Quantidade, Preço cobrado, Preço de tabela) choose their disposition by the width
- * of the item, not by the window: three columns from 27 rem, the phone's two-and-one from 16.25 rem, and one column
+ * of the item, not by the window: three columns from 27 rem, the phone's two-and-one from 18.25 rem, and one column
  * below that. The cuts were measured on the item at the widths the labels and the longest common value, `99.999,99`,
- * stop fitting; the rem is the real font size of the page (`Page.setFontSizes`), as in `breakpoints-rem.e2e.ts`.
+ * stop fitting (typed as `99999,99`, the price of five digits fits beside Quantidade from 17.94 rem); the rem is the
+ * real font size of the page (`Page.setFontSizes`), as in `breakpoints-rem.e2e.ts`.
  */
 
 test.skip(
@@ -23,7 +24,7 @@ test.skip(
   "`Page.setFontSizes` is a Chrome DevTools command"
 );
 
-const STACKED_FROM_REM = 16.25;
+const STACKED_FROM_REM = 18.25;
 const THREE_COLUMNS_FROM_REM = 27;
 const NARROWEST_REM = 9.5;
 const LONGEST_VALUE = "99.999,99";
@@ -101,23 +102,8 @@ function expectedLayout(rem: number) {
   return rem >= STACKED_FROM_REM ? "celular" : "empilhada";
 }
 
-/**
- * Below 18.25 rem, in the disposition with Quantidade and Preço cobrado side by side, the price field is narrower
- * than the longest common value. The cut stays at 16.25 rem because 320 px with the default font (16.5 rem) must keep
- * that disposition, so "Preço cobrado" is the only field whose value may scroll, and only in that range.
- */
-const VALUE_SCROLLS_BELOW_REM = 18.25;
-
 function problems(geometry: ItemGeometry) {
-  const rem = remOf(geometry);
-  const valueMayScroll =
-    expectedLayout(rem) === "celular" && rem < VALUE_SCROLLS_BELOW_REM;
-  return [
-    ...geometry.clipped.filter(
-      (text) => !(valueMayScroll && text === "Preço cobrado: valor com rolagem")
-    ),
-    ...geometry.overlaps,
-  ];
+  return [...geometry.clipped, ...geometry.overlaps];
 }
 
 for (const pixels of [16, 20]) {
@@ -142,7 +128,7 @@ for (const pixels of [16, 20]) {
     );
 
     reflowTest(
-      "nas larguras de janela de 320 a 1280 px nada fica cortado nem sobreposto, e 320, 360 e 390 px com letra de 16 px seguem na disposição do celular",
+      "nas larguras de janela de 320 a 1280 px nada fica cortado nem sobreposto, e 360 e 390 px com letra de 16 px seguem na disposição do celular, enquanto 320 px empilha com o preço inteiro",
       async ({ page }) => {
         const item = await openItem(page, pixels);
         await fillValues(item);
@@ -155,7 +141,10 @@ for (const pixels of [16, 20]) {
           expect(layoutOf(geometry), `${width} px`).toBe(
             expectedLayout(remOf(geometry))
           );
-          if (pixels === 16 && width <= 390) {
+          if (pixels === 16 && width === 320) {
+            expect(layoutOf(geometry), `${width} px`).toBe("empilhada");
+          }
+          if (pixels === 16 && width >= 360 && width <= 390) {
             const { Quantidade, "Preço cobrado": charged } = geometry.boxes;
             const listed = geometry.boxes["Preço de tabela"];
             expect(layoutOf(geometry), `${width} px`).toBe("celular");
