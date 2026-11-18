@@ -425,12 +425,16 @@ function checkStagingExposure(app, where, staging, production, problems) {
 }
 
 // Password sign-in is on in staging by decision of the user (ADR 0100), open to anyone because the
-// data is synthetic. Every e-mail the Worker sends goes through the one RESEND_API_KEY, so each sender and
-// reply-to is checked whatever the flags say: a sender of another domain would send from a verified domain of
-// production or of a third party the day any flag turns on. The password e-mails and the closure notices
-// share AUTH_EMAIL_FROM and the optional AUTH_EMAIL_REPLY_TO; the tips series has its own sender,
-// ACTIVATION_EMAIL_FROM, and replies to BILLING_SUPPORT_EMAIL (checked by the billing check). Name and
-// address, or the bare address.
+// data is synthetic. What every e-mail of the Worker shares is the one RESEND_API_KEY, so a sender of another
+// domain would send from a verified domain of production or of a third party the day its e-mail turns on:
+// a sender or reply-to that is there is checked whatever the flags say. AUTH_EMAIL_FROM is the sender of three
+// kinds (the password e-mails, the closure notices and the billing e-mails) and AUTH_EMAIL_REPLY_TO is the
+// reply-to of the first two only; the billing e-mails reply to BILLING_SUPPORT_EMAIL, as does the tips series,
+// whose sender is its own ACTIVATION_EMAIL_FROM. An empty value is another matter: it turns that e-mail off,
+// so the check refuses it in three cases only: AUTH_EMAIL_FROM while the password is on, ACTIVATION_EMAIL_FROM
+// while the tips series is on, and BILLING_SUPPORT_EMAIL while the billing is on (in the billing check). An
+// empty AUTH_EMAIL_FROM passes with the closure notices or the billing on, and an empty BILLING_SUPPORT_EMAIL
+// passes with the tips series on, although those e-mails then stay off. Name and address, or the bare address.
 const STAGING_SENDER =
   /^(?:[^<>@\r\n]*<[A-Za-z0-9._+-]+@araute\.app>|[A-Za-z0-9._+-]+@araute\.app)$/i;
 
