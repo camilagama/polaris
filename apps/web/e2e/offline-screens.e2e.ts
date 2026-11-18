@@ -1374,7 +1374,10 @@ for (const mode of ["offline", "mentindo"] as const) {
       await openLab(page, `user-${crypto.randomUUID()}`, "payment-profiles");
       await rede(page, mode);
       await page.getByRole("button", { exact: true, name: "Iniciar" }).click();
-      await expect(page.getByText(WITH_FORM)).toBeVisible({ timeout: 15_000 });
+      await expect(page.getByText(WITHOUT_FORM)).toBeVisible({
+        timeout: 15_000,
+      });
+      await expect(page.getByText(WITH_FORM)).toHaveCount(0);
       await expect(
         page.getByText(
           "Os perfis não carregaram. Eles aparecem quando a conexão voltar."
@@ -1412,6 +1415,7 @@ for (const mode of ["offline", "mentindo"] as const) {
       await expect(page.getByText(WITH_FORM)).toHaveCount(0, {
         timeout: 20_000,
       });
+      await expect(page.getByText(WITHOUT_FORM)).toHaveCount(0);
       await expect(page.getByText("Nenhum perfil cadastrado")).toBeVisible();
       expect(server.creates).toBe(0);
       await expect(page.getByLabel("Nome do perfil")).toHaveValue("Maquininha");

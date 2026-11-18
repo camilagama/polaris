@@ -550,7 +550,6 @@ describe("resolveRoute", () => {
 
   it("tells the connection notice which online-only screens hold a form to type in", () => {
     for (const [path, search] of [
-      ["/configuracoes", ""],
       ["/expenses", ""],
       ["/products", "?aba=categorias"],
     ] as const) {
@@ -558,8 +557,10 @@ describe("resolveRoute", () => {
         connectionForm: true,
       });
     }
-    // the catalog declares its form once it loaded; the sale detail is read first
+    // the catalog and Formas de receber declare their form once they loaded; the sale detail is read first
     for (const [path, search] of [
+      ["/configuracoes", ""],
+      ["/configuracoes", "?aba=formas-de-receber"],
       ["/configuracoes", "?aba=catalogo-publico"],
       ["/sales/detail", ""],
     ] as const) {
