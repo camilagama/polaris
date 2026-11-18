@@ -221,6 +221,22 @@ for (const [app, levels] of reportLevelsByApp) {
   }
 }
 
+const eventsEmittedByApp = new Map<string, Map<string, Set<string>>>();
+for (const [file, text] of sourceTexts) {
+  const app = appOf(file);
+  const events = eventsEmittedByApp.get(app) ?? new Map<string, Set<string>>();
+  for (const { event, level } of emittedCalls(
+    text,
+    file,
+    reportLevelByApp.get(app)
+  )) {
+    const levels = events.get(event) ?? new Set<string>();
+    levels.add(level ?? "");
+    events.set(event, levels);
+  }
+  eventsEmittedByApp.set(app, events);
+}
+
 const emittedAtErrorLevel = new Set(
   sourceTexts.flatMap(([file, text]) =>
     errorLevelEvents(text, file, reportLevelByApp.get(appOf(file)))
@@ -848,6 +864,10 @@ describe("alert signals", () => {
       expect(emittedAtErrorLevel.has("catalog_media_object_missing")).toBe(
         true
       );
+      expect(
+        [...(eventsEmittedByApp.get("apps/admin")?.get("admin_error") ?? [])],
+        "apps/admin emits admin_error, and only at the level its report is wired to"
+      ).toEqual(["warn"]);
       expect(emittedAtErrorLevel.has("admin_error")).toBe(false);
       expect(
         reportLevelsWired(
@@ -896,15 +916,17 @@ describe("alert signals", () => {
     expect(signal?.notify).toBe("report");
   });
 
-  it("leave the purges held on purpose and the first failure of a step out of the purge signal", () => {
+  it("leave the purges held on purpose and the step failure that stalled already counted once out of the purge signal", () => {
     const signal = alertSignals.find(
       (candidate) => candidate.id === "purge-parado"
     );
 
-    expect(signal?.source.events).toContain("organization_purge_step_failed");
-    expect(signal?.source.where).toContain('outcome != "rejected"');
-    expect(signal?.source.where).toContain("attempt >= 3");
-    expect(signal?.source.where).toContain("organization_purge_step_failed");
+    expect(signal?.source).toEqual({
+      events: [
+        "organization_purge_stalled",
+        "organization_purge_failure_not_recorded",
+      ],
+    });
   });
 
   it("have a positive window and a threshold that can fire", () => {
