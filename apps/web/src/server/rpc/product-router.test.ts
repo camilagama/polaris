@@ -967,9 +967,7 @@ describe("product RPCs", () => {
     });
 
     expect(requests).toHaveLength(1);
-    expect(requests[0]?.isolationLevel ?? "read committed").toBe(
-      "read committed"
-    );
+    expect(requests[0]).not.toHaveProperty("isolationLevel");
   });
 
   it("maps a category tombstone blocked by products to a conflict", async () => {
