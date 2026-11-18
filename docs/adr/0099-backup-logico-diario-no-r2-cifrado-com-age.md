@@ -40,7 +40,7 @@ O Neon Free ([ADR 0076](0076-teto-de-custo-e-free-tier-primeiro.md)) guarda 6 ho
 Decisão de 18/11/2026: o ADR passa a `accepted`, com escopo staging.
 
 - **Backup:** o primeiro job diário do staging passou no run 43742485132, com `snapshot_at` 2026-11-15T17:41:53Z e pacote de 3.943.560 B (relatório do Juan).
-- **Restauração:** o ensaio de ponta a ponta, feito pelo Arrascaeta em 15/11, por volta das 15:20 BRT (18:20Z), com a identidade do cofre do servidor, terminou com `rc 0`, `ok: true` e `checks: []`: 84 tabelas e 64.337 linhas, as contagens de cada tabela iguais às do manifest.
+- **Restauração:** o ensaio de ponta a ponta, feito pelo Arrascaeta em 15/11, por volta das 15:20 BRT (18:20Z), com a identidade do cofre do servidor, teve o `pg_restore` saindo com `rc 1`, só com os 2 erros de ACL padrão da plataforma (`ALTER DEFAULT PRIVILEGES FOR ROLE cloud_admin`, que o Neon recusa), aceitos por `restoreOutcome` em `scripts/backup/restore-lib.mjs`; o ensaio terminou `ok: true` e `checks: []`: 84 tabelas e 64.337 linhas, as contagens de cada tabela iguais às do manifest.
 - **RTO de dados:** 23 s (passo 3 do [ensaio](../runbooks/backup.md#ensaio-de-restauração)).
 - **RPO medido:** cerca de 38 min (instante do ensaio menos o `snapshot_at` do backup).
 - **O RPO de desenho não muda:** continua "até um dia mais o atraso do agendador" (Consequências); os 38 min são a medida deste ensaio, não uma garantia.
