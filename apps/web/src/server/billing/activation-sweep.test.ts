@@ -119,8 +119,13 @@ describe("the switch of the activation series", () => {
 
   it("refuses the name of a Resend secret as key or value and whsec_ anywhere in wrangler.jsonc, comments included, and lets a comment that only names a Resend secret pass", () => {
     expect(secretsIn(readFileSync(wranglerPath, "utf8"))).toEqual([]);
-    const withVar = (entry: string) =>
-      `{ "vars": { ${entry} }, "env": { "staging": { "vars": { ${entry} } } } }`;
+    const placements = {
+      "env.production": (entry: string) =>
+        `{ "vars": {}, "env": { "production": { "vars": { ${entry} } } } }`,
+      "env.staging": (entry: string) =>
+        `{ "vars": {}, "env": { "staging": { "vars": { ${entry} } } } }`,
+      top: (entry: string) => `{ "vars": { ${entry} } }`,
+    };
     for (const entry of [
       '"RESEND_API_KEY": "x"',
       '"RESEND_WEBHOOK_SECRET": "x"',
@@ -128,7 +133,11 @@ describe("the switch of the activation series", () => {
       '"SOME_VAR": "RESEND_WEBHOOK_SECRET"',
       '"SOME_VAR": "whsec_x"',
     ]) {
-      expect(secretsIn(withVar(entry)), entry).not.toEqual([]);
+      for (const [position, place] of Object.entries(placements)) {
+        expect(secretsIn(place(entry)), `${entry} in ${position}`).not.toEqual(
+          []
+        );
+      }
     }
     expect(secretsIn('{ "vars": {} } // whsec_x')).not.toEqual([]);
     expect(
