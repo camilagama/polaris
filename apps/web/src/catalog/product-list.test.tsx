@@ -1,7 +1,10 @@
+// @vitest-environment happy-dom
 import type { CategoryReadModel, ProductReadModel } from "@polaris/contracts";
+import { cleanup, render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import type { ComponentProps } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { MediaThumbsFlagProvider } from "../lib/media-thumbs-flag";
 import type { PendingProduct } from "../offline/product-create";
 import { lockedReasonFor, ProductList } from "./product-list";
@@ -11,8 +14,8 @@ import { ThumbnailLoader } from "./thumbnail-queue";
 
 /**
  * The list of the products screen, drawn without a browser: what each state says and what each row carries. The
- * menu opens in a popup (Base UI), so its items are proved in the browser (e2e/products-screen.e2e.ts); here is the
- * trigger, its name and whether it is off.
+ * static drawing shows the menu's trigger, its name and whether it is off; the items of the popup (Base UI) are
+ * opened in a DOM below, and the e2e (e2e/products-screen.e2e.ts) proves them in the browser.
  */
 const product = (
   n: number,
@@ -423,5 +426,64 @@ describe("a capa na lista, atrás da flag", () => {
     const off = html({ products: [saved], syncStates, total: 1 });
     expect(on).toContain("pb-2.5 pl-13");
     expect(off).toContain("pb-2.5 pl-12");
+  });
+});
+
+describe("itens do menu de Excluir…", () => {
+  afterEach(cleanup);
+
+  const user = userEvent.setup();
+  const NAME = "Jaqueta";
+
+  async function openMenu(props: Partial<Props>) {
+    render(<ProductList {...base} {...props} />);
+    await user.click(
+      screen.getByRole("button", { name: `Mais ações para ${NAME}` })
+    );
+  }
+
+  const row = (status: "active" | "archived") => [
+    product(1, { name: NAME, status }),
+  ];
+
+  it("o produto arquivado tem Excluir… no menu, com Restaurar e sem Arquivar", async () => {
+    await openMenu({ products: row("archived"), status: "archived", total: 1 });
+    expect(screen.getByRole("menuitem", { name: "Excluir…" })).toBeTruthy();
+    expect(screen.getByRole("menuitem", { name: "Restaurar" })).toBeTruthy();
+    expect(screen.queryByRole("menuitem", { name: "Arquivar" })).toBeNull();
+  });
+
+  it("o produto ativo não tem Excluir… no menu", async () => {
+    await openMenu({ products: row("active"), total: 1 });
+    expect(screen.getByRole("menuitem", { name: "Arquivar" })).toBeTruthy();
+    expect(screen.queryByRole("menuitem", { name: "Excluir…" })).toBeNull();
+  });
+
+  it("sem conexão o Excluir… fica desligado", async () => {
+    await openMenu({
+      isOffline: true,
+      products: row("archived"),
+      status: "archived",
+      total: 1,
+    });
+    expect(
+      screen
+        .getByRole("menuitem", { name: "Excluir…" })
+        .getAttribute("aria-disabled")
+    ).toBe("true");
+  });
+
+  it("com conexão o Excluir… liga e chama onDelete com o produto", async () => {
+    const asked: string[] = [];
+    await openMenu({
+      onDelete: (asking) => asked.push(asking.name),
+      products: row("archived"),
+      status: "archived",
+      total: 1,
+    });
+    const item = screen.getByRole("menuitem", { name: "Excluir…" });
+    expect(item.getAttribute("aria-disabled")).not.toBe("true");
+    await user.click(item);
+    expect(asked).toEqual([NAME]);
   });
 });
