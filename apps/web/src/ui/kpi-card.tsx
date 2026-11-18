@@ -5,6 +5,9 @@ import {
   type CSSProperties,
   type ReactNode,
   useCallback,
+  useLayoutEffect,
+  useRef,
+  useState,
 } from "react";
 import { formatBrlAmount } from "@/lib/format";
 import { MASKED_SPOKEN, maskMoney, useHiddenValues } from "@/lib/hidden-values";
@@ -370,9 +373,54 @@ const TILE_SPARK =
 const TILE_TITLE_ROW = "touch:min-h-11";
 const TILE_SUPPORT =
   "flex min-h-5 min-w-0 flex-wrap items-center gap-x-2 text-muted-foreground text-xs leading-4";
-/* the warning row is one line: the sign comes first and never shrinks, and the detail (the days) is the last item, which is
-   cut with an ellipsis at the end of the same line when the column is narrow, never wrapped out of sight */
+/* the warning row is one line: the sign comes first and never shrinks, and the detail (the days) is the last item, which
+   `WarningDetail` shows whole or not at all, never wrapped out of sight and never cut with an ellipsis */
 const TILE_WARNING = "h-5 flex-nowrap overflow-hidden";
+
+/**
+ * The detail of a warning, shown only when its whole text fits in the room the row leaves after the sign. It is measured
+ * on the real box (the width of the tile and the size of the letter both move it), not decided by a count of characters;
+ * what does not fit stays in the layout but invisible and out of the reading, so a resize can bring it back, and the (i)
+ * of the tile says it.
+ */
+function WarningDetail({ children }: { children: ReactNode }) {
+  const box = useRef<HTMLSpanElement>(null);
+  const text = useRef<HTMLSpanElement>(null);
+  const [fits, setFits] = useState(true);
+  useLayoutEffect(() => {
+    const outer = box.current;
+    const inner = text.current;
+    if (!(outer && inner)) {
+      return;
+    }
+    const measure = () => {
+      setFits(
+        inner.getBoundingClientRect().width <=
+          outer.getBoundingClientRect().width + 0.05
+      );
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(outer);
+    observer.observe(inner);
+    return () => observer.disconnect();
+  }, []);
+  return (
+    <span
+      aria-hidden={fits ? undefined : true}
+      className={cn(
+        "min-w-0 flex-1 overflow-hidden whitespace-nowrap",
+        !fits && "invisible"
+      )}
+      data-kpi-warning-detail=""
+      ref={box}
+    >
+      <span className="inline-block" ref={text}>
+        {children}
+      </span>
+    </span>
+  );
+}
 
 export function KpiTile({
   action,
@@ -413,7 +461,7 @@ export function KpiTile({
   value: ReactNode;
   /** The sign of a warning that must stay in sight: it opens the support line, which stays one line tall. */
   warning?: ReactNode;
-  /** What the sign says more (the days with no cost): last on the line, shown whole or cut at the end with an ellipsis, never wrapped out of sight. */
+  /** What the sign says more (the days with no cost): last on the line, shown whole or not at all (`WarningDetail`), never cut with an ellipsis nor wrapped out of sight. */
   warningDetail?: ReactNode;
 }) {
   return (
@@ -458,11 +506,7 @@ export function KpiTile({
         ) : null}
         {note}
         {action}
-        {warningDetail ? (
-          <span className="min-w-0 truncate" data-kpi-warning-detail="">
-            {warningDetail}
-          </span>
-        ) : null}
+        {warningDetail ? <WarningDetail>{warningDetail}</WarningDetail> : null}
       </div>
       {notice ? (
         <div className={TILE_SUPPORT} data-kpi-notice="">

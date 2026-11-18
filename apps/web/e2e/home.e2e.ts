@@ -5492,8 +5492,8 @@ const PLAN_REGIONS = [
 interface PlanServer {
   answered: number;
   gate: Promise<void> | null;
-  refuse: boolean;
   reads: number;
+  refuse: boolean;
   state: string;
   use: { images: number; variants: number };
 }
@@ -5501,8 +5501,8 @@ interface PlanServer {
 const newPlanServer = (variants: number, images = 0): PlanServer => ({
   answered: 0,
   gate: null,
-  refuse: false,
   reads: 0,
+  refuse: false,
   state: "free",
   use: { images, variants },
 });
@@ -6244,8 +6244,10 @@ test.describe("os dias sem custo de um mês de outro ano, no período digitado d
         const result = region(page, "Resultado estimado");
         const unknown = result.locator("[data-kpi-unknown]");
         await expect(unknown).toHaveText("maio de 2025: 1 de 1 dia sem custo");
-        if (size.width === 360) {
-          // at 320 px with the letter at 20 px the detail of the tile truncates by design: the (i) says the whole count
+        if (size.width === 320) {
+          await expect(unknown, "não cabe: só no (i)").toBeHidden();
+        } else {
+          await expect(unknown).toBeVisible();
           expect(
             await unknown.evaluate((node) => {
               const row = node.closest("[data-kpi-warning-detail]");
@@ -6271,6 +6273,88 @@ test.describe("os dias sem custo de um mês de outro ano, no período digitado d
         await expect(
           page.getByRole("dialog").or(page.getByRole("tooltip")).first()
         ).toContainText("Maio de 2025: 1 de 2 dias ainda sem custo informado.");
+        await assertNoPageScroll(page);
+      }
+    );
+  }
+});
+
+test.describe("a contagem dos dias sem custo no cartão do Resultado do Início só aparece inteira", () => {
+  const FROM_SEPTEMBER_24 = "2026-09-24";
+  const SIXTEEN_DAYS_OF_THIRTY: Record<string, null> = Object.fromEntries(
+    Array.from({ length: 16 }, (_, index) => [
+      addDays(FROM_SEPTEMBER_24, index),
+      null,
+    ])
+  );
+  const SIXTEEN_UNKNOWN: Scenario = {
+    ...SOLD,
+    results: SIXTEEN_DAYS_OF_THIRTY,
+  };
+  const PERIODS = [
+    { count: "9 de 23 dias sem custo", shortcut: "Este mês" },
+    { count: "16 de 30 dias sem custo", shortcut: "Últimos 30 dias" },
+  ] as const;
+
+  const readDetail = (result: Locator) =>
+    result.evaluate((card) => {
+      const row = card.querySelector("[data-kpi-note-row]");
+      const sign = card.querySelector("[data-kpi-incomplete]");
+      const detail = card.querySelector("[data-kpi-warning-detail]");
+      if (!(row && sign && detail)) {
+        return null;
+      }
+      const rowBox = row.getBoundingClientRect();
+      const signBox = sign.getBoundingClientRect();
+      return {
+        detailAriaHidden: detail.getAttribute("aria-hidden") === "true",
+        signInsideRow:
+          signBox.left >= rowBox.left - 0.5 &&
+          signBox.right <= rowBox.right + 0.5,
+        signWhole: sign.scrollWidth <= sign.clientWidth + 1,
+      };
+    });
+
+  for (const size of [
+    { fontPixels: 20, height: 740, whole: false, width: 320 },
+    { fontPixels: 16, height: 740, whole: true, width: 360 },
+  ]) {
+    reflowTest(
+      `a ${size.width} px com a letra em ${size.fontPixels} px: ${size.whole ? "a contagem cabe e aparece inteira" : "a contagem não cabe e vai só ao (i), sem reticências"}`,
+      async ({ page }) => {
+        await openReflowViewport(page, size);
+        await openHome(page, new FakeServer(SIXTEEN_UNKNOWN));
+        await expectReflowFont(page, size.fontPixels);
+        const result = region(page, "Resultado estimado");
+        for (const period of PERIODS) {
+          // biome-ignore lint/performance/noAwaitInLoops: one period at a time, on the same page
+          await choosePeriod(page, period.shortcut);
+          await expect(result.locator("[data-kpi-incomplete]")).toHaveText(
+            "Incompleta"
+          );
+          const unknown = result.locator("[data-kpi-unknown]");
+          await expect(unknown).toHaveText(period.count);
+          if (size.whole) {
+            await expect(unknown, `${period.shortcut}: inteira`).toBeVisible();
+          } else {
+            await expect(
+              unknown,
+              `${period.shortcut}: fora da linha, sem corte`
+            ).toBeHidden();
+          }
+          await expect
+            .poll(async () => (await readDetail(result))?.detailAriaHidden)
+            .toBe(!size.whole);
+          const read = await readDetail(result);
+          await assertNoEllipsis(result.locator("[data-kpi-note-row]"));
+          expect(read?.signInsideRow, "o selo está na linha").toBe(true);
+          expect(read?.signWhole, "o selo não é cortado").toBe(true);
+          await result.getByRole("button", { name: SOBRE }).click();
+          await expect(
+            page.getByRole("dialog").or(page.getByRole("tooltip")).first()
+          ).toContainText(period.count.replace(" sem ", " ainda sem "));
+          await page.keyboard.press("Escape");
+        }
         await assertNoPageScroll(page);
       }
     );
