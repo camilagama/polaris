@@ -14,6 +14,7 @@ import {
 import { Alert, AlertDescription } from "@/ui/alert";
 import { Button } from "@/ui/button";
 import { HelpTip } from "@/ui/help-tip";
+import { useConnectionNoticeForm } from "../app-shell/connection-required-notice";
 import { useConnectionReturn, workerAnswers } from "../lib/browser-connection";
 import { useCurrentOrganization } from "../lib/current-organization";
 import { focusLater } from "../lib/focus";
@@ -241,7 +242,10 @@ export function PaymentProfilesPage() {
   const originRef = useRef<() => HTMLElement | null>(() => null);
   // the list stays on screen while it is read again after a save; "Carregando perfis…" is for the first read
   const readOnce = useRef<boolean>(false);
+  const [listRead, setListRead] = useState(false);
   const profilesRequest = useRef(0);
+  // offline the notice says the typed text stays only when there is a form (it shows once the list was read)
+  useConnectionNoticeForm(listRead);
   useHoldSwap(
     !pending &&
       profileDraftKey(draft) !==
@@ -280,6 +284,7 @@ export function PaymentProfilesPage() {
       setProfiles(result.profiles);
       setNotLoaded(false);
       readOnce.current = true;
+      setListRead(true);
     } catch (cause) {
       if (!isLatest()) {
         return;
@@ -296,6 +301,10 @@ export function PaymentProfilesPage() {
         setLoading(false);
       }
     }
+  }, [organizationId]);
+  // another store's list is not the one that was read
+  useEffect(() => {
+    setListRead(false);
   }, [organizationId]);
   useEffect(() => {
     loadProfiles().catch(() => undefined);

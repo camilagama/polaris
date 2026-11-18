@@ -9,8 +9,11 @@ const RETURNED_BOTTLE = /^Devolvido: Garrafa térmica/;
 const RESTOCKED_BOTTLE = /^Volta ao estoque: Garrafa térmica/;
 const MORE_ACTIONS = /^Mais ações/;
 const NAME_FIELD = "Digite o nome do produto para confirmar";
+const BOTTLE_STOCK = 4;
+const KEPT_QUANTITY = 3;
+const CANCELLED_QUANTITY = 1;
 const CANCEL_DONE =
-  /^Venda cancelada\. Nenhum item voltou ao estoque, porque os produtos desta venda foram removidos\./;
+  /^Venda cancelada\. Nenhum item voltou ao estoque, porque os produtos desta venda foram removidos\.$/;
 
 /**
  * Excluir produto arquivado, na pilha de verdade: o produto arquivado e sem estoque sai da lista e a vaga volta; as vendas
@@ -41,18 +44,31 @@ test("excluir produto arquivado: sai da lista, libera a vaga, a venda antiga seg
     "Caneca esmaltada",
     "19.90"
   );
-  await seedStock(rpc, organizationId, bottle.variantId, 4, "20.00", today);
+  await seedStock(
+    rpc,
+    organizationId,
+    bottle.variantId,
+    BOTTLE_STOCK,
+    "20.00",
+    today
+  );
   await seedStock(rpc, organizationId, mug.variantId, 3, "8.00", today);
   const saleId = await seedCashSale(
     rpc,
     organizationId,
-    [{ price: "45.90", quantity: 3, variantId: bottle.variantId }],
+    [{ price: "45.90", quantity: KEPT_QUANTITY, variantId: bottle.variantId }],
     new Date(runT0()).toISOString()
   );
   const cancelledSaleId = await seedCashSale(
     rpc,
     organizationId,
-    [{ price: "45.90", quantity: 1, variantId: bottle.variantId }],
+    [
+      {
+        price: "45.90",
+        quantity: CANCELLED_QUANTITY,
+        variantId: bottle.variantId,
+      },
+    ],
     new Date(runT0()).toISOString()
   );
   const liveVariants = async () =>
@@ -65,6 +81,27 @@ test("excluir produto arquivado: sai da lista, libera a vaga, a venda antiga seg
       )
     ).rows[0]?.n;
   expect(await liveVariants()).toBe(2);
+  const cancellationRecords = async () =>
+    (
+      await sql.query<{ n: number }>(
+        "SELECT count(*)::int AS n FROM sale_cancellations WHERE sale_id = $1",
+        [cancelledSaleId]
+      )
+    ).rows[0]?.n;
+  const bottleStock = async () =>
+    (
+      await sql.query<{ balance: number; cancellations: number }>(
+        `SELECT (SELECT quantity::int FROM inventory_balances WHERE variant_id = $1) AS balance,
+                (SELECT count(*)::int FROM stock_movements
+                  WHERE variant_id = $1 AND movement_type = 'sale_cancellation') AS cancellations`,
+        [bottle.variantId]
+      )
+    ).rows[0];
+  const stockAfterSales = BOTTLE_STOCK - KEPT_QUANTITY - CANCELLED_QUANTITY;
+  expect(await bottleStock()).toEqual({
+    balance: stockAfterSales,
+    cancellations: 0,
+  });
 
   await page.goto("/products");
   const rowOf = (name: string) =>
@@ -141,6 +178,12 @@ test("excluir produto arquivado: sai da lista, libera a vaga, a venda antiga seg
     .getByRole("button", { name: "Confirmar cancelamento" })
     .click();
   await expect(page.getByText(CANCEL_DONE)).toBeVisible();
+  // produto excluído tem saldo congelado: o cancelamento fica registrado e nenhuma unidade volta ao saldo
+  expect(await cancellationRecords()).toBe(1);
+  expect(await bottleStock()).toEqual({
+    balance: stockAfterSales,
+    cancellations: 0,
+  });
   await page.goto("/sales/history");
   await expect(saleLink(cancelledSaleId)).toContainText("Cancelada");
   await expect(saleLink(saleId)).toContainText("Confirmada");
@@ -164,6 +207,10 @@ test("excluir produto arquivado: sai da lista, libera a vaga, a venda antiga seg
     [saleId]
   );
   expect(rows[0]?.returned).toBe(1);
+  expect(await bottleStock()).toEqual({
+    balance: stockAfterSales,
+    cancellations: 0,
+  });
 
   // Mais vendidos mostra o produto excluído pelo nome guardado, sem link para um painel que não existe mais
   await page.goto("/");
