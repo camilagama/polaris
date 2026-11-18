@@ -62,6 +62,10 @@ describe("adrNumberProblems", () => {
     "0107-sem-extensao",
     "0107.md",
     "README.md",
+    "0107-a--b.md",
+    "0107-a-.md",
+    "0107-a.MD",
+    "0107-a.md.bak",
   ])("names the file outside the pattern: %s", (name) => {
     const problems = adrNumberProblems(["0001-valido.md", name]);
     expect(problems).toHaveLength(1);
