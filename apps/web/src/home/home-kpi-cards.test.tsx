@@ -14,6 +14,7 @@ import type { HomeFigures } from "./use-home";
  */
 
 const TODAY = "2026-10-23";
+const TRUNCATED_DETAIL = /truncate[^>]*data-kpi-warning-detail/;
 
 interface Day {
   costs: string | null;
@@ -290,7 +291,8 @@ describe("o cartão do Resultado estimado", () => {
     expect(result).not.toContain("estimativa incompleta");
     expect(result.match(/data-kpi-note-row/g)).toHaveLength(1);
     expect(result).toContain("h-5 flex-nowrap overflow-hidden");
-    expect(result).toContain(`min-w-0 truncate" data-kpi-warning-detail`);
+    expect(result).toContain('data-kpi-warning-detail=""');
+    expect(result).not.toMatch(TRUNCATED_DETAIL);
     expect(result).not.toContain("data-kpi-delta=");
   });
 });
