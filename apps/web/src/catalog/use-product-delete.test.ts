@@ -1,4 +1,6 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
+import { dirname, join, relative, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import type { ProductReadModel } from "@polaris/contracts";
 import { MAX_PRODUCT_VARIANTS } from "@polaris/domain/catalog/product";
 import { describe, expect, it, vi } from "vitest";
@@ -12,7 +14,7 @@ const LIST_BALANCES_LIMIT =
 const HOOK = new URL("./use-product-delete.ts", import.meta.url);
 
 const IMPORT = /^import\s+([^;]*?)\s+from\s+"([^"]+)";/gm;
-// Textual: a queue reached through a name outside these words and outside the static imports is not seen, nor is one named only inside a string (`stores["outbox"]`).
+// Textual and complementary to the import graph: a queue named only inside a string (`stores["outbox"]`) or reached without any of these words is not seen here.
 const OFFLINE_WORDS = /outbox|enqueue|createOffline|stores\b/gi;
 const QUOTED_OR_COMMENT =
   /"(?:\\.|[^"\\\n])*"|'(?:\\.|[^'\\\n])*'|\/\*[\s\S]*?\*\/|\/\/[^\n]*|[\s\S]/y;
@@ -20,6 +22,15 @@ const TEMPLATE_TEXT = /(?:\\[\s\S]|[^`\\$]|\$(?!\{))*/y;
 const DYNAMIC_IMPORT = /(?<!\btypeof\s+)\bimport\s*\(/g;
 const TYPE_KEYWORD = /\btype\s+/g;
 const BRACES = /[{}]/g;
+
+const SRC = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const HOOK_PATH = join(SRC, "catalog/use-product-delete.ts");
+const GRAPH_IMPORT =
+  /(?:^|[\s;}])(import|export)\s+(type\s+)?(?:[^"'`;]*?\s+from\s*)?["']([^"']+)["']|\bimport\s*\(\s*(?:["']([^"']+)["']|([^)]*))\)/g;
+const SOURCE_EXTENSIONS = ["", ".ts", ".tsx", "/index.ts", "/index.tsx"];
+const SRC_ALIAS = /^@\/(lib|ui)\//;
+const BUNDLER_LOADERS =
+  /\bimport\.meta\.glob(?:Eager)?\s*\(|new\s+URL\s*\([^)]*import\.meta\.url/g;
 
 /** Source without comments; quoted strings and template text stay whole, so a `//`, `/*` or quote inside one does not cut or shift what follows. */
 function withoutComments(source: string): string {
@@ -94,6 +105,102 @@ function dynamicImports(source: string): string[] {
 
 function offlineWords(source: string): string[] {
   return liveCode(source).match(OFFLINE_WORDS) ?? [];
+}
+
+/** What the hook may reach under `offline/`: the session-ended signal the server client raises and the cache cleanup it triggers. Any other module there (a command builder, the outbox, the sync runner, the stores) is a way into the queue. */
+const REACHABLE_OFFLINE_FILES = [
+  "offline/runtime/leave-browser.ts",
+  "offline/runtime/session-ended.ts",
+];
+/** The graph stops here: it is the module of `keepLocalRow` (the single local write after the server answered, proven by behavior below) and of the create path, which does use the queue. The hook's names from it are pinned by `ALLOWED_IMPORTS`. */
+const GRAPH_BOUNDARY = "catalog/product-commands.ts";
+const QUEUE_PATH = /outbox|sync-runner/;
+
+type SourceReader = (absolutePath: string) => string | undefined;
+
+function readFromDisk(path: string): string | undefined {
+  return existsSync(path) && statSync(path).isFile()
+    ? readFileSync(path, "utf8")
+    : undefined;
+}
+
+function resolveSource(
+  from: string,
+  specifier: string,
+  read: SourceReader
+): string | undefined {
+  const aliased = SRC_ALIAS.test(specifier)
+    ? join(SRC, specifier.slice(2))
+    : undefined;
+  if (!(aliased || specifier.startsWith("."))) {
+    return;
+  }
+  const base = aliased ?? resolve(dirname(from), specifier);
+  return SOURCE_EXTENSIONS.map((extension) => base + extension).find(
+    (candidate) => read(candidate) !== undefined
+  );
+}
+
+/** Runtime import graph of `entry` inside `src`: static imports, `export ... from`, side-effect imports and `import("x")`; `import type` is erased at build time and does not load anything. What cannot be followed is reported as `unresolved`: a dynamic import whose argument is not a string literal, a relative or `@/` specifier that resolves to no file, `import.meta.glob` and `new URL(..., import.meta.url)`. */
+function runtimeGraph(
+  entry: string,
+  read: SourceReader,
+  boundary?: string
+): { files: string[]; unresolved: string[] } {
+  const files = new Set<string>();
+  const unresolved: string[] = [];
+  const visit = (file: string) => {
+    if (files.has(file)) {
+      return;
+    }
+    files.add(file);
+    if (file === boundary) {
+      return;
+    }
+    const source = withoutComments(read(file) ?? "");
+    for (const match of source.matchAll(GRAPH_IMPORT)) {
+      if (match[2]) {
+        continue;
+      }
+      const specifier = match[3] ?? match[4];
+      if (specifier === undefined) {
+        unresolved.push(`${relative(SRC, file)}: import(${match[5]?.trim()})`);
+        continue;
+      }
+      const target = resolveSource(file, specifier, read);
+      if (target) {
+        visit(target);
+      } else if (specifier.startsWith(".") || SRC_ALIAS.test(specifier)) {
+        unresolved.push(`${relative(SRC, file)}: ${specifier}`);
+      }
+    }
+    for (const loader of source.match(BUNDLER_LOADERS) ?? []) {
+      unresolved.push(`${relative(SRC, file)}: ${loader}`);
+    }
+  };
+  visit(entry);
+  return { files: [...files], unresolved };
+}
+
+/** The modules a graph reaches that lead to the offline queue, plus every dynamic import it could not follow. */
+function queueReach(
+  entry: string,
+  read: SourceReader,
+  boundary?: string
+): string[] {
+  const { files, unresolved } = runtimeGraph(entry, read, boundary);
+  const reached = files
+    .map((file) => relative(SRC, file))
+    .filter(
+      (file) =>
+        QUEUE_PATH.test(file) ||
+        (file.startsWith("offline/") && !REACHABLE_OFFLINE_FILES.includes(file))
+    );
+  return [...reached, ...unresolved].sort();
+}
+
+function virtualSources(sources: Record<string, string>): SourceReader {
+  return (path) => sources[relative(SRC, path)] ?? readFromDisk(path);
 }
 
 /** Everything the delete hook may import: the server's client, the one local write after the server answered, and the refusal texts. */
@@ -224,6 +331,165 @@ describe("o detector de import dinâmico do hook de Excluir", () => {
   });
 });
 
+describe("o grafo de imports do hook de Excluir não chega à fila guardada no aparelho", () => {
+  const hookSource = readFileSync(HOOK_PATH, "utf8");
+  const withHook = (extra: string, more: Record<string, string> = {}) =>
+    virtualSources({
+      "catalog/use-product-delete.ts": `${hookSource}\n${extra}`,
+      ...more,
+    });
+
+  it("o hook de hoje, seguido até a fronteira, só alcança o que a lista permite", () => {
+    const { files, unresolved } = runtimeGraph(
+      HOOK_PATH,
+      readFromDisk,
+      join(SRC, GRAPH_BOUNDARY)
+    );
+    expect(unresolved).toEqual([]);
+    expect(files.map((file) => relative(SRC, file))).toContain(GRAPH_BOUNDARY);
+    expect(
+      queueReach(HOOK_PATH, readFromDisk, join(SRC, GRAPH_BOUNDARY))
+    ).toEqual([]);
+    const offlineReached = files
+      .map((file) => relative(SRC, file))
+      .filter((file) => file.startsWith("offline/"))
+      .sort();
+    expect(offlineReached).toEqual(REACHABLE_OFFLINE_FILES);
+  });
+
+  it("import() dinâmico que leva à fila reprova", () => {
+    const reached = queueReach(
+      HOOK_PATH,
+      withHook('const m = await import("../offline/outbox/outbox");'),
+      join(SRC, GRAPH_BOUNDARY)
+    );
+    expect(reached).toContain("offline/outbox/outbox.ts");
+  });
+
+  it("módulo intermediário com outro nome que importa a fila reprova", () => {
+    const reached = queueReach(
+      HOOK_PATH,
+      withHook('import { relay } from "./product-relay";', {
+        "catalog/product-relay.ts":
+          'import { Outbox } from "../offline/outbox/outbox";\nexport const relay = Outbox;',
+      }),
+      join(SRC, GRAPH_BOUNDARY)
+    );
+    expect(reached).toContain("offline/outbox/outbox.ts");
+  });
+
+  it("a fila alcançada de mais longe, fora da pasta offline, também reprova", () => {
+    const reached = queueReach(
+      HOOK_PATH,
+      withHook('import { a } from "./step-a";', {
+        "catalog/step-a.ts": 'export { b } from "../lib/step-b";',
+        "lib/step-b.ts":
+          'import "../offline/sync-runner";\nexport const b = 1;',
+      }),
+      join(SRC, GRAPH_BOUNDARY)
+    );
+    expect(reached).toContain("offline/sync-runner.ts");
+  });
+
+  it("módulo de comando guardado do aparelho reprova mesmo sem a palavra outbox", () => {
+    const reached = queueReach(
+      HOOK_PATH,
+      withHook(
+        'import { createOfflineProduct } from "../offline/product-create";'
+      ),
+      join(SRC, GRAPH_BOUNDARY)
+    );
+    expect(reached).toContain("offline/product-create.ts");
+  });
+
+  it("import() com argumento que não é texto literal reprova por não poder ser seguido", () => {
+    const reached = queueReach(
+      HOOK_PATH,
+      withHook("const m = await import(modulePath);"),
+      join(SRC, GRAPH_BOUNDARY)
+    );
+    expect(reached.some((entry) => entry.includes("import("))).toBe(true);
+  });
+
+  it("import type e comentário não contam, e o alias @/lib é seguido", () => {
+    expect(
+      queueReach(
+        HOOK_PATH,
+        withHook(
+          'import type { Outbox } from "../offline/outbox/outbox";\n// import("../offline/outbox/outbox")'
+        ),
+        join(SRC, GRAPH_BOUNDARY)
+      )
+    ).toEqual([]);
+    expect(
+      queueReach(
+        HOOK_PATH,
+        withHook('import { x } from "@/lib/aliased";', {
+          "lib/aliased.ts": 'import "../offline/outbox/outbox";',
+        }),
+        join(SRC, GRAPH_BOUNDARY)
+      )
+    ).toContain("offline/outbox/outbox.ts");
+  });
+
+  it("export *, pasta com index.ts, import em várias linhas, alias @/ui são seguidos, e import() com crase reprova", () => {
+    const boundary = join(SRC, GRAPH_BOUNDARY);
+    const outbox = "offline/outbox/outbox.ts";
+    const via = (extra: string, more: Record<string, string>) =>
+      queueReach(HOOK_PATH, withHook(extra, more), boundary);
+    expect(
+      via('export * from "./star";', {
+        "catalog/star.ts": 'export * from "../offline/outbox/outbox";',
+      })
+    ).toContain(outbox);
+    expect(
+      via('import { r } from "./pasta";', {
+        "catalog/pasta/index.ts":
+          'import { Outbox } from "../../offline/outbox/outbox";\nexport const r = Outbox;',
+      })
+    ).toContain(outbox);
+    expect(
+      via('import {\n  a,\n  b,\n} from "./multi";', {
+        "catalog/multi.ts":
+          'export { Outbox as a, Outbox as b } from "../offline/outbox/outbox";',
+      })
+    ).toContain(outbox);
+    expect(
+      via('import { u } from "@/ui/viaui";', {
+        "ui/viaui.ts":
+          'import "../offline/outbox/outbox";\nexport const u = 1;',
+      })
+    ).toContain(outbox);
+    expect(
+      via("const m = await import(`../offline/outbox/outbox`);", {})
+    ).toHaveLength(1);
+  });
+
+  it("especificador relativo que não resolve, import.meta.glob e new URL com import.meta.url reprovam por não poderem ser seguidos", () => {
+    const boundary = join(SRC, GRAPH_BOUNDARY);
+    const reach = (extra: string) =>
+      queueReach(HOOK_PATH, withHook(extra), boundary);
+    expect(reach('import "../offline/outbox/outbox?worker";')).toEqual([
+      "catalog/use-product-delete.ts: ../offline/outbox/outbox?worker",
+    ]);
+    expect(reach('import "../offline/outbox/outbox.js";')).toHaveLength(1);
+    expect(
+      reach('const all = import.meta.glob("../offline/*.ts", { eager: true });')
+    ).toHaveLength(1);
+    expect(
+      reach(
+        'const w = new Worker(new URL("../offline/w.ts", import.meta.url));'
+      )
+    ).toHaveLength(1);
+  });
+
+  it("sem a fronteira o grafo chega ao construtor de comandos pelo módulo de criar", () => {
+    expect(queueReach(HOOK_PATH, readFromDisk)).toContain(
+      "offline/product-create.ts"
+    );
+  });
+});
+
 describe("Excluir produto nunca vira comando guardado no aparelho (AC-2.7)", () => {
   const source = readFileSync(HOOK, "utf8");
 
@@ -233,6 +499,12 @@ describe("Excluir produto nunca vira comando guardado no aparelho (AC-2.7)", () 
 
   it("o hook não toca a fila nem a loja local", () => {
     expect(offlineWords(source)).toEqual([]);
+  });
+
+  it("nenhum módulo que o hook alcança é da fila guardada no aparelho", () => {
+    expect(
+      queueReach(HOOK_PATH, readFromDisk, join(SRC, GRAPH_BOUNDARY))
+    ).toEqual([]);
   });
 
   it("o hook não carrega módulo nenhum com import() dinâmico", () => {

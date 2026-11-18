@@ -154,6 +154,55 @@ describe("what the screen says when a call fails", () => {
     }
   });
 
+  it("na conferência de repetidos, a conta sem acesso e o contato inválido têm texto próprio, não o da conferência", () => {
+    const forbidden = customerErrorMessage(
+      refusal("FORBIDDEN"),
+      "duplicate-check"
+    );
+    expect(forbidden).toBe(
+      "Sua conta não tem acesso a esta loja ou a esta ação."
+    );
+    expect(forbidden).not.toContain("repetidos");
+
+    const badRequest = customerErrorMessage(
+      refusal("BAD_REQUEST"),
+      "duplicate-check"
+    );
+    expect(badRequest).toBe(
+      "Confira o nome e informe ao menos um telefone ou email válido."
+    );
+    expect(badRequest).not.toContain("repetidos");
+  });
+
+  it("na conferência de repetidos, a sessão que acabou diz o que não aconteceu, não o texto da conferência", () => {
+    const message = customerErrorMessage(
+      refusal("UNAUTHORIZED"),
+      "duplicate-check"
+    );
+    expect(message).toBe("Não foi possível conferir se o cliente já existe.");
+    expect(message).not.toContain("repetidos");
+  });
+
+  it("na conferência de repetidos, CONFLICT e NOT_FOUND mantêm o texto de escrita", () => {
+    // read-only call: the server does not raise these two, so this pins the
+    // order of the branches and not a state the screen is expected to reach
+    const conflict = customerErrorMessage(
+      refusal("CONFLICT"),
+      "duplicate-check"
+    );
+    expect(conflict).toBe(
+      "Os dados do cliente mudaram em outra solicitação. Atualize a lista e tente novamente."
+    );
+    expect(conflict).not.toContain("repetidos");
+
+    const notFound = customerErrorMessage(
+      refusal("NOT_FOUND"),
+      "duplicate-check"
+    );
+    expect(notFound).toBe("O cliente não existe mais nesta loja.");
+    expect(notFound).not.toContain("repetidos");
+  });
+
   it("sends a customer with a command waiting to Pendências", () => {
     expect(
       customerErrorMessage(new Error("customer_has_pending_command"), "archive")

@@ -26,8 +26,9 @@ import { unsubscribeLink } from "../../tips-stop/unsubscribe-token";
  * The "Dicas para começar" e-mails (ADR 0106): A1, A2 for a store with no product (S0) or with one (S1), and A3 with
  * one fixed sentence per state. The layout and the corporate name are the billing ones, with no image, pixel, tracking
  * parameter or redirect: every link is absolute, on the app's own origin, with no store and no token, except the stop
- * link, which carries the token of the person. The store's name, cut at 24 and only in the body, is the one fact of
- * the store or the person in the message; the subject never has it.
+ * link, which carries the token of the person. The store's name, cut at 24, is the one fact of the store or the person
+ * in the message. It is in the footer of every variant, and in the first paragraph of A1 and A3 and in their preview
+ * (the preview is the first sentence of that paragraph); A2 has it only in the footer. The subject never has it.
  */
 
 export type ActivationNoticeVariant =
