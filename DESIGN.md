@@ -149,7 +149,7 @@ Os gráficos são os componentes do **Bklit UI como o registry os distribui** (`
 
   | Papel | Mouse (desktop) | Toque (celular) | Como se faz |
   |---|---|---|---|
-  | Controle comum (botão, aba, item) | 32 px | 36 px | `h-ctl-md`, o padrão do `Button`, das abas e dos seletores; área de toque de 44 px por `touch-hit` |
+  | Controle comum (botão, aba, item) | 32 px | 36 px | `h-ctl-md`, o padrão do `Button` e das abas; área de toque de 44 px por `touch-hit` |
   | Ação principal da tela (Confirmar venda, Nova venda, Salvar de formulário) | 36 px | 44 px | `Button size="xl"` (`h-ctl-xl`, token `--h-xl`) |
   | Controles em grupo (ações de linha, filtros, segmentos) | até 24 px | até 24 px | sem área de toque extra, com 8 px de espaço entre alvos (WCAG 2.2 AA, 2.5.8); o contêiner leva `data-target-group` |
   | Campo de texto e seletor | 32 px | 44 px | `Input` e `InputGroup` (`h-ctl-md touch:h-11`) e `Select` (`min-h-ctl-md touch:min-h-11`); a caixa de texto de várias linhas (`h-auto touch:h-auto`) cresce com o texto |
