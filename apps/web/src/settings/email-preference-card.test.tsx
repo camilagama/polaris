@@ -265,3 +265,127 @@ describe("the read of the card", () => {
     expect(toggle.getAttribute("aria-checked")).toBe("false");
   });
 });
+
+describe("the retry of a failed read", () => {
+  function failingThenReading() {
+    const read = vi
+      .fn<() => Promise<EmailPreference>>()
+      .mockRejectedValueOnce(new Error("falhou"))
+      .mockResolvedValue({ sent: 1, tips: true });
+    const calls = callsOf({ sent: 1, tips: true }, { read });
+    return { calls, read };
+  }
+
+  it("draws Tentar novamente under the error, and a touch reads again and draws the switch", async () => {
+    const { calls, read } = failingThenReading();
+    render(<EmailPreferenceCard calls={calls} online />);
+    await screen.findByRole("alert");
+    expect(screen.queryByRole("switch")).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Tentar novamente" }));
+    const toggle = await screen.findByRole("switch", {
+      name: "Dicas para começar",
+    });
+    expect(toggle.getAttribute("aria-checked")).toBe("true");
+    expect(read).toHaveBeenCalledTimes(2);
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "Tentar novamente" })
+    ).toBeNull();
+  });
+
+  it("sends one read for two touches, and says it is busy while it waits", async () => {
+    const pending = deferredRead();
+    const read = vi
+      .fn<() => Promise<EmailPreference>>()
+      .mockRejectedValueOnce(new Error("falhou"))
+      .mockImplementation(pending.read);
+    render(
+      <EmailPreferenceCard
+        calls={callsOf({ sent: 0, tips: true }, { read })}
+        online
+      />
+    );
+    await screen.findByRole("alert");
+    const retry = screen.getByRole("button", { name: "Tentar novamente" });
+    await user.click(retry);
+    await user.click(retry);
+    expect(read).toHaveBeenCalledTimes(2);
+    expect(retry.getAttribute("aria-busy")).toBe("true");
+    await answer(() => pending.resolve({ sent: 0, tips: true }));
+    await screen.findByRole("switch", { name: "Dicas para começar" });
+  });
+
+  it("keeps the error and the button when the new read fails too", async () => {
+    const read = vi.fn(() => Promise.reject(new Error("falhou")));
+    render(
+      <EmailPreferenceCard
+        calls={callsOf({ sent: 0, tips: true }, { read })}
+        online
+      />
+    );
+    await screen.findByRole("alert");
+    await user.click(screen.getByRole("button", { name: "Tentar novamente" }));
+    await waitFor(() => expect(read).toHaveBeenCalledTimes(2));
+    await waitFor(() =>
+      expect(
+        screen
+          .getByRole("button", { name: "Tentar novamente" })
+          .getAttribute("aria-busy")
+      ).toBe("false")
+    );
+    expect(screen.getByRole("alert")).toBeTruthy();
+    expect(screen.queryByRole("switch")).toBeNull();
+  });
+
+  it("offline the button is aria-disabled, described by the strip, and a touch reads nothing", async () => {
+    const { calls, read } = failingThenReading();
+    render(<EmailPreferenceCard calls={calls} online={false} />);
+    await screen.findByRole("alert");
+    const retry = screen.getByRole("button", { name: "Tentar novamente" });
+    expect(retry.getAttribute("aria-disabled")).toBe("true");
+    expect(retry.getAttribute("aria-describedby")).toContain(
+      "connection-required-text"
+    );
+    await user.click(retry);
+    expect(read).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("switch")).toBeNull();
+  });
+
+  it("does not read again by itself when the connection comes back", async () => {
+    const { calls, read } = failingThenReading();
+    const { rerender } = render(
+      <EmailPreferenceCard calls={calls} online={false} />
+    );
+    await screen.findByRole("alert");
+    rerender(<EmailPreferenceCard calls={calls} online />);
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(read).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("switch")).toBeNull();
+  });
+
+  it("drops an answer of the retry that a newer read of other calls has replaced", async () => {
+    const late = deferredRead();
+    const first = callsOf(
+      { sent: 0, tips: true },
+      {
+        read: vi
+          .fn<() => Promise<EmailPreference>>()
+          .mockRejectedValueOnce(new Error("falhou"))
+          .mockImplementation(late.read),
+      }
+    );
+    const second = callsOf({ sent: 0, tips: false });
+    const { rerender } = render(<EmailPreferenceCard calls={first} online />);
+    await screen.findByRole("alert");
+    await user.click(screen.getByRole("button", { name: "Tentar novamente" }));
+    rerender(<EmailPreferenceCard calls={second} online />);
+    const toggle = await screen.findByRole("switch", {
+      name: "Dicas para começar",
+    });
+    expect(toggle.getAttribute("aria-checked")).toBe("false");
+    await answer(() => late.resolve({ sent: 0, tips: true }));
+    expect(toggle.getAttribute("aria-checked")).toBe("false");
+  });
+});
