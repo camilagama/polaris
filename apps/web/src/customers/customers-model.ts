@@ -112,6 +112,9 @@ function unauthorizedText(action?: CustomerFailure): string {
   }
 }
 
+const DUPLICATE_CHECK_FAILED =
+  "Não foi possível verificar possíveis clientes repetidos. Tente novamente antes de salvar.";
+
 export function customerErrorMessage(
   error: unknown,
   action?: CustomerFailure
@@ -153,8 +156,8 @@ export function customerErrorMessage(
   if (code === "NOT_FOUND") {
     return "O cliente não existe mais nesta loja.";
   }
-  if (code === "SERVICE_UNAVAILABLE" && action === "duplicate-check") {
-    return "Não foi possível verificar possíveis clientes repetidos. Tente novamente antes de salvar.";
+  if (action === "duplicate-check") {
+    return DUPLICATE_CHECK_FAILED;
   }
   if (code === "SERVICE_UNAVAILABLE") {
     return action === "load"
