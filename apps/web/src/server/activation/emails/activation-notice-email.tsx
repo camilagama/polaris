@@ -85,7 +85,7 @@ const BIDI_CONTROLS = /[\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]/g;
 // what reads as nothing: a name of only these would leave a blank where the store goes
 const INVISIBLE = /[\p{Cf}\p{Z}\u3164\u115f\u1160\u2800]/gu;
 
-/** The store's name as the body reads it: one line, no bidirectional control, at most 24 characters and "…". */
+/** The store's name as the body reads it: one line, no bidirectional control, at most 24 graphemes and "…". */
 export function activationStoreName(name: string): string {
   const cut = subjectStore(name.replaceAll(BIDI_CONTROLS, ""));
   if (cut.replaceAll(INVISIBLE, "").length === 0) {
