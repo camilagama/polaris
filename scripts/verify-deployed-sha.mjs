@@ -11,6 +11,7 @@ import { pathToFileURL } from "node:url";
 export const STAGING_WORKERS = [
   { app: "web", worker: "polaris-web-staging" },
   { app: "catalog", worker: "polaris-catalog-staging" },
+  { app: "admin", worker: "polaris-admin-staging" },
 ];
 
 // the names of env.production in apps/web and apps/catalog (the test reads them back from the wrangler.jsonc)
