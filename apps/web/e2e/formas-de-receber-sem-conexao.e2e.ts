@@ -225,7 +225,10 @@ test("sem conexão ao abrir: a lista não carregou, não aparece como vazia e a 
   await page.context().setOffline(true);
   await expect(strip(page)).toBeVisible();
   await expect(strip(page)).toContainText(STRIP_TEXT);
-  await expect(strip(page)).toContainText("O que você digitou fica aqui");
+  await expect(strip(page)).toContainText(
+    "Ela carrega sozinha quando a conexão voltar."
+  );
+  await expect(strip(page)).not.toContainText("O que você digitou fica aqui");
   await expect(page.getByText(NOT_LOADED)).toBeVisible();
   await expect(page.getByText("Nenhum perfil cadastrado")).toHaveCount(0);
   await expect(page.getByText("Maquininha da loja")).toHaveCount(0);
