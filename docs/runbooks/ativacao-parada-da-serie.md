@@ -138,6 +138,19 @@ SELECT count(*) FROM public.activation_email_suppressions
 
 Zero: a antiga pode sair. Linhas vencidas com a chave antiga não contam (a conferência as ignora e ninguém as lê).
 
+**Antes de gravar a chave nova no Worker, confira o `key_id` dela.** O `key_id` tem 4 bytes (8 caracteres hexadecimais: `KEY_ID_BYTES` em `suppression.ts`), então uma chave nova pode, raramente, ter o mesmo `key_id` da atual. Nesse caso a contagem acima não separa as linhas da chave antiga das da nova, e a retirada da `PREVIOUS` ficaria sem prova; além disso, com a `PREVIOUS` configurada, `activation_address_suppressed` recusa com `22023` (`invalid_address`) quando os dois `key_id` são iguais. Por isso:
+
+1. Calcule o `key_id` do segredo novo (HMAC-SHA-256 do texto fixo `activation-suppression-key-id:v1`, chave = o segredo em UTF-8, primeiros 8 caracteres hexadecimais; o mesmo que `activationSuppressionKeyId`). Leia o segredo sem eco e sem colocá-lo no comando, para que só o `key_id` apareça na tela:
+
+   ```bash
+   read -rs NOVO_SEGREDO
+   NOVO_SEGREDO="$NOVO_SEGREDO" node -e 'const c=require("node:crypto");console.log(c.createHmac("sha256",process.env.NOVO_SEGREDO).update("activation-suppression-key-id:v1").digest("hex").slice(0,8))'
+   unset NOVO_SEGREDO
+   ```
+
+2. Compare com o `key_id` da chave atual (o mesmo cálculo sobre o valor atual).
+3. **Se coincidirem, descarte o segredo novo e gere outro** (volte ao passo 1 com ele); com `key_id` diferente, grave `ACTIVATION_SUPPRESSION_HMAC_SECRET_PREVIOUS` e `ACTIVATION_SUPPRESSION_HMAC_SECRET` no Worker. Nunca grave um segredo cujo `key_id` seja igual ao da chave atual.
+
 ## Rotação do segredo do webhook
 
 Ordem: trocar o segredo no painel do Resend, depois `wrangler secret put RESEND_WEBHOOK_SECRET` no Worker, dentro da janela. Se o Resend não assinar com os dois segredos durante a troca, o pior caso é `401` e o **reenvio** do Resend: atraso, não perda (a caixa de entrada cobre o reenvio). Não há `_PREVIOUS` do segredo do webhook.
