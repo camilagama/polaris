@@ -103,7 +103,7 @@ Primeiro backup e primeiro ensaio de restauração do staging, que levaram o [AD
 | Quando e quem | 15/11/2026: backup e leitura do pacote, relatório do Juan; restauração de ponta a ponta feita pelo Arrascaeta por volta das 15:20 BRT (18:20Z), de um servidor com TCP ao Neon |
 | `snapshot_at` | 2026-11-15T17:41:53Z |
 | Tamanho do pacote | 3.943.560 B (3,9 MB), `daily/20261115T174143Z.tar.age`; decifrado: `dump` 3.906.562 B, `roles.sql` 18.405 B, `manifest.json` 5.150 B |
-| Restauração de ponta a ponta | `rc 0`, `ok: true`, `checks: []`; o log do `pg_restore` teve 2 erros de restauração da ACL padrão (`ALTER DEFAULT PRIVILEGES FOR ROLE cloud_admin`, que o Neon recusa), aceitos pela classe que `restoreOutcome` (`PLATFORM_DEFAULT_ACL`, em `scripts/backup/restore-lib.mjs`) reconhece; o resultado não muda |
+| Restauração de ponta a ponta | `pg_restore` com `rc 1`, só os 2 erros de ACL padrão da plataforma (`ALTER DEFAULT PRIVILEGES FOR ROLE cloud_admin`, que o Neon recusa; classe `PLATFORM_DEFAULT_ACL`, aceita por `restoreOutcome` em `scripts/backup/restore-lib.mjs`, que só a admite com `rc 1`), `ok: true`, `checks: []` |
 | Tabelas e linhas restauradas | 84 tabelas, 64.337 linhas |
 | RTO de dados (passo 3) | 23 s |
 | RPO medido | cerca de 38 min (cerca de 18:20Z menos o `snapshot_at` de 17:41:53Z) |
