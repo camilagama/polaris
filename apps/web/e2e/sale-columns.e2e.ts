@@ -379,6 +379,97 @@ for (const pixels of [16, 20]) {
 const INSTALLMENTS_TWO_FROM_REM = 24.5;
 const ADJUSTMENT_THREE_FROM_REM = 26.5;
 
+interface PointerRecord {
+  buttonTop: number | null;
+  clientX: number | null;
+  clientY: number | null;
+  scrollY: number;
+  target: string;
+  time: number;
+  type: string;
+}
+
+interface AddAdjustmentLog {
+  console: string[];
+  pageErrors: string[];
+}
+
+let addAdjustmentLog: AddAdjustmentLog | null = null;
+
+// diagnóstico do FLAKE-SALE-COLUMNS-383; sai quando a causa for provada
+function watchAddAdjustment(page: Page) {
+  const log: AddAdjustmentLog = {
+    console: [],
+    pageErrors: [],
+  };
+  page.on("console", (message) =>
+    log.console.push(`${message.type()}: ${message.text()}`)
+  );
+  page.on("pageerror", (error) => log.pageErrors.push(error.message));
+  addAdjustmentLog = log;
+  return page.evaluate(() => {
+    const records: PointerRecord[] = [];
+    (
+      window as unknown as { __addAdjustmentLog?: PointerRecord[] }
+    ).__addAdjustmentLog = records;
+    const record = (event: Event) => {
+      const element = event.target instanceof Element ? event.target : null;
+      const label = (
+        element?.getAttribute("aria-label") ??
+        element?.textContent ??
+        ""
+      )
+        .trim()
+        .slice(0, 40);
+      const button = [...document.querySelectorAll("button")].find(
+        (candidate) => candidate.textContent?.trim() === "Adicionar ajuste"
+      );
+      const pointer = event instanceof MouseEvent ? event : null;
+      records.push({
+        buttonTop: button ? button.getBoundingClientRect().top : null,
+        clientX: pointer ? pointer.clientX : null,
+        clientY: pointer ? pointer.clientY : null,
+        scrollY: window.scrollY,
+        target: `${element?.tagName.toLowerCase() ?? "?"} ${label}`,
+        time: Math.round(performance.now()),
+        type: event.type,
+      });
+    };
+    for (const type of ["pointerdown", "pointerup", "click", "scroll"]) {
+      document.addEventListener(type, record, { capture: true, passive: true });
+    }
+  });
+}
+
+test.afterEach(async ({ page }, testInfo) => {
+  const log = addAdjustmentLog;
+  addAdjustmentLog = null;
+  if (!log || testInfo.status === testInfo.expectedStatus) {
+    return;
+  }
+  const collected = await page
+    .evaluate(
+      () =>
+        (window as unknown as { __addAdjustmentLog?: PointerRecord[] })
+          .__addAdjustmentLog ?? null
+    )
+    .then(
+      (events) =>
+        events
+          ? { events }
+          : { collectError: "registro ausente na página", events: null },
+      (error: unknown) => ({ collectError: String(error), events: null })
+    );
+  await testInfo.attach("diag-adicionar-ajuste", {
+    body: JSON.stringify(
+      { console: log.console, ...collected, pageErrors: log.pageErrors },
+      null,
+      2
+    ),
+    contentType: "application/json",
+  });
+});
+
 for (const pixels of [16, 20]) {
   test(`letra de ${pixels} px: as parcelas e o ajuste seguem a largura do cartão e nenhum campo corta o valor`, async ({
     page,
@@ -386,6 +477,7 @@ for (const pixels of [16, 20]) {
     await openLabSale(page, pixels, 1280);
     await page.getByRole("radio", { name: "Crédito" }).check();
     await page.getByRole("button", { name: "Alterar data e ajustes" }).click();
+    await watchAddAdjustment(page);
     await page.getByRole("button", { name: "Adicionar ajuste" }).click();
     await page
       .getByRole("combobox", { exact: true, name: "Tipo de ajuste" })

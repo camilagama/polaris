@@ -38,19 +38,20 @@ export function ShellHeader({
     >
       {/* the header measures its own width: with a very large text the window is narrow, and then it keeps
           only the initials of the store and tighter room, so nothing passes its edge */}
-      <div className="flex h-full items-center gap-2 pr-2 pl-(--gutter) md:@max-[30rem]/header:px-2 md:pr-4 md:pl-4">
+      <div className="flex h-full items-center @max-[16.5rem]/header:gap-1 gap-2 pr-2 pl-(--gutter) md:@max-[30rem]/header:px-2 md:pr-4 md:pl-4">
         <a
           className="touch-hit focus-ring flex shrink-0 items-center gap-2 rounded-sm font-semibold text-foreground tracking-tight"
           href="/"
         >
           <Logo className="size-5" />
-          {/* with a very large text the row has no room for the word beside the eye, the chip and the account: the
-              mark stays and the name is still the link's, for the screen reader */}
-          <span className="@max-[13rem]/header:sr-only">Polaris</span>
+          {/* the longest chip text ("Envio pausado", "Ocupado · 999") needs a header of 19.72 rem beside the word,
+              the eye (2.5 rem below 47.5 rem) and the account: below 19.75 rem the mark stays and the name is still the
+              link's, for the screen reader */}
+          <span className="@max-[19.75rem]/header:sr-only">Polaris</span>
         </a>
         {/* from 1024 px, beside the brand: only the options of the column fold, never the brand */}
         <SidebarTrigger />
-        <div className="ml-auto flex min-w-0 items-center gap-2 md:@max-[30rem]/header:gap-1 md:gap-3">
+        <div className="ml-auto flex min-w-0 items-center @max-[16.5rem]/header:gap-1 gap-2 md:@max-[30rem]/header:gap-1 md:gap-3">
           <SyncStatus onlineOnly={onlineOnly} />
           <HideValuesButton />
           <StoreMenu

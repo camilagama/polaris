@@ -3441,7 +3441,7 @@ Origem: achado B do Diego no Pixel 6 (28/10): a venda montada em Vender sumia ao
 
 | Item | Estado | Detalhe |
 | --- | --- | --- |
-| Modelos (AC-7c.4, AC-7c.11) | Em revisão | `server/activation/emails/activation-notice-email.tsx`: A1, A2-S0, A2-S1 e A3 (S0 e S1) com o texto aprovado; assunto até 40 caracteres sem a loja; A1 e A2 com um botão, A3 sem botão e com o link de texto "Abrir a loja"; loja cortada em 24 grafemas, escapada, só no corpo e no rodapé. Snapshots do HTML e do texto em `__golden__/`. |
+| Modelos (AC-7c.4, AC-7c.11) | Em revisão | `server/activation/emails/activation-notice-email.tsx`: A1, A2-S0, A2-S1 e A3 (S0 e S1) com o texto aprovado; assunto até 40 caracteres, nunca com a loja; A1 e A2 com um botão, A3 sem botão e com o link de texto "Abrir a loja"; loja cortada em 24 grafemas e escapada, no corpo, no rodapé e no preview (A1 e A3 S0/S1; o preview do A2 é fixo, sem a loja), nunca no assunto. Snapshots do HTML e do texto em `__golden__/`. |
 | Rodapé (AC-7c.5) | Em revisão | Por que recebe (com a loja), "Parar de receber estas dicas" (16 px, sublinhado, cor do texto), os avisos da conta continuam, a razão social da cobrança, o suporte e a Política de Privacidade. Nenhum e-mail diz "série", "descadastro", "opt-out", "ativação" ou "trial"; cobrança e encerramento não têm o link. |
 | Links (AC-7c.6) | Em revisão | Absolutos na origem do app, sem `<img`, `utm_`, query nem ID de loja; só o link de parar leva o token. |
 | Cabeçalhos e sender (AC-7c.9, lado modelo e sender) | Em revisão | `List-Unsubscribe` e `List-Unsubscribe-Post` só nas dicas; `createResendClosureNoticeSender` aceita `headers` só com os dois, em ASCII visível, e lança antes do envio; sem `headers` o corpo ao Resend não tem o campo. |

@@ -689,11 +689,9 @@ export function unknownDaysText(missing: MissingDays): string {
 /**
  * The most characters the support line of a card holds for "N de M dias sem custo" with the month named ("setembro de
  * 2025: 31 de 31 dias sem taxa" is 40). Counted in text, not in digits: a month named in full is what makes the line wider
- * than the digits say. The count is a ceiling on length, not a promise that the text fits unclipped: it fits whole at 360
- * px with the letter at 16 px (the Início e2e asserts that), but in the Início tile the detail is `truncate`
- * (`kpi-card.tsx`), and at 320 px with the letter at 20 px a text at the ceiling (about 248 px) is cut at the 141 px the
- * detail has there (a measurement on the real tile, which no test asserts). The Início tile's (i) still says the whole
- * count in words with the month (`resultHelp`).
+ * than the digits say. It is a ceiling on length only: the Início tile still measures the real box and shows the count whole
+ * or not at all (`WarningDetail` in `kpi-card.tsx`), and the Resultado tile wraps it. What is not shown is in the (i)
+ * (`resultHelp`), with the month.
  */
 const UNKNOWN_DAYS_MAX_CHARS = 34;
 

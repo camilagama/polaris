@@ -18,8 +18,8 @@ import { gitEnvironment } from "./exact-count-list.mjs";
  * ops/backup/recipients-staging.txt), the neutral wrangler module
  * (scripts/lib/wrangler-config.mjs) that the scripts listed here import
  * (ci-changed.test.mjs fails if an importer is missing here), the migration
- * compatibility check, the flaky-test report (only the e2e-real job runs it),
- * the real-device runner, and the staging deploy workflow. Listed one by one,
+ * compatibility check, the ADR number check, the flaky-test report (only the
+ * e2e-real job runs it), the real-device runner, and the staging deploy workflow. Listed one by one,
  * never with a wildcard over scripts/ or ops/: a new file is relevant until
  * someone proves otherwise.
  * ci-changed.test.mjs reads the imports and configs of apps/web (Playwright
@@ -38,6 +38,7 @@ export const OPERATIONS_FILES = [
   "scripts/verify-no-map-published.test.mjs",
   "scripts/verify-migration-compat.mjs",
   "scripts/verify-migration-compat.test.mjs",
+  "scripts/verify-adr-numbers.test.mjs",
   "scripts/admin-production-guard.test.mjs",
   "scripts/verify-production-build.mjs",
   "scripts/verify-production-build.test.mjs",
