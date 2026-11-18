@@ -99,11 +99,14 @@ Primeiro backup e primeiro ensaio de restauração do staging, que levaram o [AD
 
 | Item | Resultado |
 | --- | --- |
-| Backup | run 43742485132 do job diário do staging |
+| Backup | run 43742485132 do job diário do staging (disparo manual, 17:41Z a 17:43Z) |
+| Quando e quem | 15/11/2026: backup e leitura do pacote, relatório do Juan; restauração de ponta a ponta feita pelo Arrascaeta por volta das 15:20 BRT (18:20Z), de um servidor com TCP ao Neon |
+| `snapshot_at` | 2026-11-15T17:41:53Z |
+| Tamanho do pacote | 3.943.560 B (3,9 MB), `daily/20261115T174143Z.tar.age`; decifrado: `dump` 3.906.562 B, `roles.sql` 18.405 B, `manifest.json` 5.150 B |
 | Restauração de ponta a ponta | `rc 0`, `ok: true`, `checks: []` |
 | Tabelas e linhas restauradas | 84 tabelas, 64.337 linhas |
 | RTO de dados (passo 3) | 23 s |
-| RPO medido | cerca de 38 min (instante do ensaio menos `snapshot_at`) |
+| RPO medido | cerca de 38 min (18:20Z menos o `snapshot_at` de 17:41:53Z) |
 
 O RPO de desenho continua "até um dia mais o atraso do agendador": os 38 min são a medida deste ensaio.
 
