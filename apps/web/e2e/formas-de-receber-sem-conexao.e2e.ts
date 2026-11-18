@@ -69,7 +69,8 @@ const title = (page: Page) =>
 interface Scene {
   /** While true the list read and the health probe fail, as a network that is gone. */
   cut: { value: boolean };
-  healthProbes: () => number;
+  /** The `/health` calls that started after `holdFirstRead.release()`: the ones before it are no proof of the probe of `workerAnswers`. */
+  probesSinceRelease: () => number;
   /** With `startCut`, the first list read waits here: it fails only once the test says the page is offline. */
   holdFirstRead: { release: () => void };
   listReads: () => number;
@@ -85,10 +86,14 @@ async function openScreen(
   const writes: string[] = [];
   let reads = 0;
   let probes = 0;
+  let probesAtRelease = 0;
   let release: () => void = () => undefined;
   const firstReadHeld = startCut
     ? new Promise<void>((resolve) => {
-        release = resolve;
+        release = () => {
+          probesAtRelease = probes;
+          resolve();
+        };
       })
     : Promise.resolve();
   await page.route("**/api/auth/get-session", (route) =>
@@ -136,9 +141,9 @@ async function openScreen(
   await expect(title(page)).toBeVisible();
   return {
     cut,
-    healthProbes: () => probes,
     holdFirstRead: { release },
     listReads: () => reads,
+    probesSinceRelease: () => probes - probesAtRelease,
     writes,
   };
 }
@@ -282,8 +287,9 @@ test("a rede volta: a lista que não carregava é lida de novo, sem recarregar a
   await page.context().setOffline(true);
   await expect(strip(page)).toBeVisible();
   scene.holdFirstRead.release();
-  // "não carregaram" shows while the read is still loading offline: it is settled once the probe of `workerAnswers` ran
-  await expect.poll(scene.healthProbes).toBeGreaterThan(0);
+  // "não carregaram" shows while the read is still loading offline: it is settled once the probe of `workerAnswers` ran,
+  // and the probes the connection scheduled before the release (2 s after the cut, 4 s on a slow call) do not count
+  await expect.poll(scene.probesSinceRelease).toBeGreaterThan(0);
   await settled(page);
   await expect(page.getByText(NOT_LOADED)).toBeVisible();
   expect(scene.listReads()).toBe(1);

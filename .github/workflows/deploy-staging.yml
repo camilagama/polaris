@@ -327,11 +327,11 @@ jobs:
           # --no-install: only the wrangler of the lockfile, never a download
           (cd apps/web && bunx --no-install wrangler deploy --message "$HEAD_SHA")
           (cd apps/catalog && bunx --no-install wrangler deploy --message "$HEAD_SHA")
-          node scripts/verify-deployed-sha.mjs
           # the Admin last, from its source block (the isolation check proved env.staging: one Custom Domain behind
-          # Access, workers.dev and previews off, its own Hyperdrive); a failure here leaves the web and the catalog
-          # already published and confirmed
+          # Access, workers.dev and previews off, its own Hyperdrive); the version check comes after it and reads
+          # the three Workers, so a failure of the Admin deploy leaves the web and the catalog already published
           (cd apps/admin && bunx --no-install wrangler deploy --env staging --message "$HEAD_SHA")
+          node scripts/verify-deployed-sha.mjs
       # the job decide looks for this step name to find the last real deploy (urgent swap marker, ADR 0041)
       - if: steps.tip.outputs.deploy == 'true'
         name: Smoke

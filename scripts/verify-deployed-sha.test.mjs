@@ -27,6 +27,7 @@ const SHA = "0123456789abcdef0123456789abcdef01234567";
 const OTHER = "fedcba9876543210fedcba9876543210fedcba98";
 const WEB_VERSION = "11111111-1111-4111-8111-111111111111";
 const CATALOG_VERSION = "22222222-2222-4222-8222-222222222222";
+const ADMIN_VERSION = "33333333-3333-4333-8333-333333333333";
 const noPause = () => Promise.resolve();
 
 const deployment = (versions) => ({ id: "d", versions });
@@ -36,12 +37,13 @@ const version = (id, message) => ({
   id,
 });
 
-/** A host that serves `SHA` on both Workers; `override` replaces one Worker's answer by its name. */
+/** A host that serves `SHA` on the three Workers; `override` replaces one Worker's answer by its name. */
 function fakeWrangler(override = {}) {
   const calls = [];
   const fn = (app, worker, args) => {
     calls.push({ app, args, worker });
     const ids = {
+      "polaris-admin-staging": ADMIN_VERSION,
       "polaris-catalog-staging": CATALOG_VERSION,
       "polaris-web-staging": WEB_VERSION,
     };
@@ -67,7 +69,7 @@ describe("the deployed version check", () => {
     vi.restoreAllMocks();
   });
 
-  it("passes when both Workers serve a single version whose message is the commit", async () => {
+  it("passes when the three Workers serve a single version whose message is the commit", async () => {
     const wrangler = fakeWrangler();
     expect(await verifyDeployedSha(SHA, wrangler, noPause)).toEqual([]);
     expect(wrangler.calls.map(({ args, worker }) => [worker, ...args])).toEqual(
@@ -82,14 +84,29 @@ describe("the deployed version check", () => {
           CATALOG_VERSION,
           "--json",
         ],
+        ["polaris-admin-staging", "deployments", "status", "--json"],
+        ["polaris-admin-staging", "versions", "view", ADMIN_VERSION, "--json"],
       ]
     );
   });
 
-  it("only ever asks about the two staging Workers, by the names written in the script", () => {
+  it("only ever asks about the three staging Workers, by the names of env.staging in their wrangler.jsonc", () => {
+    const stagingName = (app) =>
+      parseJsonc(
+        readFileSync(
+          new URL(`../apps/${app}/wrangler.jsonc`, import.meta.url),
+          "utf8"
+        )
+      ).env.staging.name;
     expect(STAGING_WORKERS).toEqual([
-      { app: "web", worker: "polaris-web-staging" },
-      { app: "catalog", worker: "polaris-catalog-staging" },
+      { app: "web", worker: stagingName("web") },
+      { app: "catalog", worker: stagingName("catalog") },
+      { app: "admin", worker: stagingName("admin") },
+    ]);
+    expect(STAGING_WORKERS.map(({ worker }) => worker)).toEqual([
+      "polaris-web-staging",
+      "polaris-catalog-staging",
+      "polaris-admin-staging",
     ]);
   });
 
@@ -146,6 +163,52 @@ describe("the deployed version check", () => {
     const failures = await verifyDeployedSha(SHA, wrangler, noPause);
     expect(failures).toHaveLength(1);
     expect(failures[0].startsWith("polaris-catalog-staging:")).toBe(true);
+  });
+
+  it("fails on an Admin that did not move, with the web and the catalog updated", async () => {
+    const wrangler = fakeWrangler({
+      "polaris-admin-staging": { version: version(ADMIN_VERSION, OTHER) },
+    });
+    expect(await verifyDeployedSha(SHA, wrangler, noPause)).toEqual([
+      "polaris-admin-staging: the active version carries the commit fedcba987654, expected the commit 0123456789ab",
+    ]);
+  });
+
+  it("fails on an Admin with no message, a split or a version read back that is not the active one", async () => {
+    const cases = [
+      [
+        { version: version(ADMIN_VERSION, undefined) },
+        "the active version carries no message, expected the commit 0123456789ab",
+      ],
+      [
+        {
+          deployment: deployment([
+            { percentage: 50, version_id: ADMIN_VERSION },
+            { percentage: 50, version_id: WEB_VERSION },
+          ]),
+        },
+        "the active deployment is not a single version (2 versions listed)",
+      ],
+      [
+        {
+          deployment: deployment([
+            { percentage: 90, version_id: ADMIN_VERSION },
+          ]),
+        },
+        "the active version does not take 100% of the traffic",
+      ],
+      [
+        { version: version(WEB_VERSION, SHA) },
+        "the version read back is not the active one",
+      ],
+    ];
+    for (const [answer, reason] of cases) {
+      const wrangler = fakeWrangler({ "polaris-admin-staging": answer });
+      // biome-ignore lint/performance/noAwaitInLoops: each case on its own, for a clear failure
+      expect(await verifyDeployedSha(SHA, wrangler, noPause)).toEqual([
+        `polaris-admin-staging: ${reason}`,
+      ]);
+    }
   });
 
   it("does not echo a message that is not a commit SHA, and treats a prefix or a case change as a mismatch", async () => {
@@ -300,6 +363,7 @@ echo "::error::stderr of wrangler" >&2
 case "$*" in
   *polaris-web-staging*) id=${WEB_VERSION} ;;
   *polaris-catalog-staging*) id=${CATALOG_VERSION} ;;
+  *polaris-admin-staging*) id=${ADMIN_VERSION} ;;
   *"--name polaris-web") id=${WEB_VERSION} ;;
   *"--name polaris-catalog") id=${CATALOG_VERSION} ;;
   *) echo "unexpected worker" >&2; exit 2 ;;
@@ -330,10 +394,10 @@ esac
       },
     });
 
-  it("reads each Worker through wrangler in its app directory and exits 0 when both carry the commit", () => {
+  it("reads each Worker through wrangler in its app directory and exits 0 when the three carry the commit", () => {
     const result = run(SHA);
     expect(result.stdout).toBe(
-      "ok polaris-web-staging: active version is 0123456789ab\nok polaris-catalog-staging: active version is 0123456789ab\n"
+      "ok polaris-web-staging: active version is 0123456789ab\nok polaris-catalog-staging: active version is 0123456789ab\nok polaris-admin-staging: active version is 0123456789ab\n"
     );
     expect(result.status).toBe(0);
     const calls = readFileSync(join(bin, "calls.log"), "utf8")
@@ -344,7 +408,12 @@ esac
       "apps/web",
       "apps/catalog",
       "apps/catalog",
+      "apps/admin",
+      "apps/admin",
     ]);
+    expect(calls[4]).toBe(
+      "apps/admin --no-install wrangler deployments status --json --name polaris-admin-staging"
+    );
     expect(calls[0]).toBe(
       "apps/web --no-install wrangler deployments status --json --name polaris-web-staging"
     );
@@ -399,12 +468,12 @@ wait
     });
   });
 
-  it("keeps the worst case of the whole check at about 260 s, as the runbook says", () => {
+  it("keeps the worst case of the whole check at about 390 s, as the runbook says", () => {
     const callsPerTry = 2;
     const perWorker =
       ATTEMPTS * callsPerTry * WRANGLER_TIMEOUT_MS + (ATTEMPTS - 1) * PAUSE_MS;
     expect(WRANGLER_TIMEOUT_MS).toBe(20_000);
-    expect(STAGING_WORKERS.length * perWorker).toBe(260_000);
+    expect(STAGING_WORKERS.length * perWorker).toBe(390_000);
   });
 
   it("never passes what wrangler wrote on stderr to its own output", () => {

@@ -241,6 +241,11 @@ function FooterNotes({
       </p>
     );
   }
+  // With `notice` a string (empty included) the status region stays mounted:
+  // a live region that is already in the tree is what makes the screen reader
+  // announce the money warning when it arrives. The warning takes the note
+  // line while that line is empty and fits on one line; with a note it is
+  // one extra line above it.
   return (
     <div
       className="grid min-h-5 text-muted-foreground text-support"
