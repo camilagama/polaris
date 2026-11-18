@@ -21,9 +21,13 @@ const rpc = (json: unknown, status = 200) => ({
   status,
 });
 
+const NOW = new Date(Date.UTC(2026, 10, 18, 15));
+const DAY = 24 * 60 * 60 * 1000;
+const CREATED = new Date(NOW.getTime() - 30 * DAY).toISOString();
+
 const MACHINE = {
   archivedAt: null,
-  createdAt: "2026-10-01T12:00:00.000Z",
+  createdAt: CREATED,
   id: "0199c2d0-0000-7000-8000-0000000000c1",
   name: "Maquininha da loja",
   organizationId: ORGANIZATION.id,
@@ -43,7 +47,7 @@ const MACHINE = {
     },
   ],
   status: "active",
-  updatedAt: "2026-10-01T12:00:00.000Z",
+  updatedAt: CREATED,
   version: 1,
 };
 
@@ -110,6 +114,7 @@ async function openScreen(
     }
     return route.abort("internetdisconnected");
   });
+  await page.clock.setFixedTime(NOW);
   await page.goto("/payment-profiles");
   await expect(title(page)).toBeVisible();
   return { cut, listReads: () => reads, writes };
