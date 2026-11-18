@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Button } from "@/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/ui/card";
 import { FieldError } from "@/ui/field";
 import { Label } from "@/ui/label";
@@ -52,13 +53,19 @@ function useEmailPreference(calls: EmailPreferenceCalls) {
   // a read sent before a save would answer with the state from before it
   const latestRead = useRef(0);
 
-  useEffect(() => {
+  const reading = useRef<boolean>(false);
+  const [readingNow, setReadingNow] = useState(false);
+
+  const load = useCallback(() => {
     latestRead.current += 1;
     const read = latestRead.current;
+    reading.current = true;
+    setReadingNow(true);
     calls
       .read()
       .then((answer) => {
         if (read === latestRead.current) {
+          setLoadError(null);
           setPreference(answer);
         }
       })
@@ -66,11 +73,29 @@ function useEmailPreference(calls: EmailPreferenceCalls) {
         if (read === latestRead.current) {
           setLoadError(calls.readRefusal(error));
         }
+      })
+      .finally(() => {
+        if (read === latestRead.current) {
+          reading.current = false;
+          setReadingNow(false);
+        }
       });
+  }, [calls]);
+
+  useEffect(() => {
+    load();
     return () => {
       latestRead.current += 1;
+      reading.current = false;
     };
-  }, [calls]);
+  }, [load]);
+
+  // a second touch lands before React draws the busy state
+  const retry = useCallback(() => {
+    if (!reading.current) {
+      load();
+    }
+  }, [load]);
 
   const choose = useCallback(
     (on: boolean) => {
@@ -96,7 +121,7 @@ function useEmailPreference(calls: EmailPreferenceCalls) {
     [calls]
   );
 
-  return { choose, loadError, outcome, preference, saving };
+  return { choose, loadError, outcome, preference, readingNow, retry, saving };
 }
 
 /**
@@ -111,8 +136,14 @@ export function EmailPreferenceCard({
   calls: EmailPreferenceCalls;
   online: boolean;
 }) {
-  const { choose, loadError, outcome, preference, saving } =
+  const { choose, loadError, outcome, preference, readingNow, retry, saving } =
     useEmailPreference(calls);
+
+  const handleRetry = useCallback(() => {
+    if (online) {
+      retry();
+    }
+  }, [online, retry]);
 
   const handleChange = useCallback(
     (checked: boolean) => {
@@ -156,7 +187,21 @@ export function EmailPreferenceCard({
           </div>
         ) : null}
         {preference || loadError ? null : <Skeleton className="h-10 w-full" />}
-        {loadError ? <FieldError>{loadError}</FieldError> : null}
+        {loadError ? (
+          <div className="grid justify-items-start gap-2">
+            <FieldError>{loadError}</FieldError>
+            <Button
+              aria-busy={readingNow}
+              onClick={handleRetry}
+              size="sm"
+              type="button"
+              variant="outline"
+              {...connectionControlProps(online)}
+            >
+              Tentar novamente
+            </Button>
+          </div>
+        ) : null}
         {preference && preference.sent > 0 ? (
           <p className="text-muted-foreground">
             Enviados até agora: {preference.sent} de 3.
