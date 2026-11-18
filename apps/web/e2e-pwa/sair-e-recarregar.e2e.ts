@@ -1,5 +1,13 @@
 /// <reference lib="dom" />
-import type { Browser, BrowserContext, Page, Request } from "@playwright/test";
+import { EventEmitter } from "node:events";
+import type {
+  Browser,
+  BrowserContext,
+  ConsoleMessage,
+  Frame,
+  Page,
+  Request,
+} from "@playwright/test";
 import { expect } from "@playwright/test";
 import {
   attachTraces,
@@ -183,45 +191,60 @@ async function watchBootRetry(page: Page, trace: Trace) {
     window.addEventListener("pagehide", () => tell("pagehide"));
     window.addEventListener("load", () => tell("load"));
   }, RELOAD_MARKS);
-  const scripts = new Set<Request>();
-  page.on("request", (request) => {
-    if (request.resourceType() === "script") {
-      scripts.add(request);
-    }
-  });
-  return { retries, scripts, trace };
+  return { retries, trace };
 }
 
 /**
- * What the page did since the test began to watch it. A script request that the page's own reload cancelled is the
- * reload working, not a file that failed: the scripts requested before the reload was asked (`scripts` is kept from the
- * page's first load, so the ones asked while the page was still leaving count) and the ones the old document still
- * asked until the new one committed are `leaving`, and only a cancelled script outside them is a failure of the page
- * the reload opened.
+ * What the page did in one round, from the moment the round starts watching it (`stop` ends it). A script request that
+ * the page's own reload cancelled is the reload working, not a file that failed: the scripts requested since the round
+ * began (the sign-out leaves the page while its scripts are still on the way) and the ones the old document still asked
+ * until the new one committed are `leaving`, and only a cancelled script outside them is a failure of the page the
+ * reload opened. A round starts its own watch, so the scripts of the rounds before are not in `leaving`. The window that
+ * stays open until `framenavigated` forgives only what the old document asked: Chromium reports the commit before it
+ * parses the new document, so the new document asks for no script ahead of that report (300 reloads of a page with three
+ * scripts each showed none).
  */
-function watch(page: Page, started: ReadonlySet<Request>) {
+function watch(page: Page) {
+  const started = new Set<Request>();
   let leaving = new Set<Request>();
   let committing = false;
+  let reloadAsked = false;
   const seen = {
     askedReload() {
       leaving = new Set(started);
       committing = true;
+      reloadAsked = true;
     },
     console: [] as string[],
     documents: [] as string[],
+    stop() {
+      page.off("framenavigated", onNavigated);
+      page.off("console", onConsole);
+      page.off("pageerror", onPageError);
+      page.off("requestfailed", onRequestFailed);
+      page.off("request", onRequest);
+    },
   };
-  page.on("framenavigated", (frame) => {
+  const onNavigated = (frame: Frame) => {
     if (frame === page.mainFrame()) {
       committing = false;
     }
-  });
-  page.on("console", (message) => {
-    if (message.type() === "error" && !REFUSED_SESSION.test(message.text())) {
+  };
+  const onConsole = (message: ConsoleMessage) => {
+    if (
+      reloadAsked &&
+      message.type() === "error" &&
+      !REFUSED_SESSION.test(message.text())
+    ) {
       seen.console.push(message.text());
     }
-  });
-  page.on("pageerror", (error) => seen.console.push(String(error)));
-  page.on("requestfailed", (request) => {
+  };
+  const onPageError = (error: Error) => {
+    if (reloadAsked) {
+      seen.console.push(String(error));
+    }
+  };
+  const onRequestFailed = (request: Request) => {
     if (request.resourceType() !== "script") {
       return;
     }
@@ -229,15 +252,23 @@ function watch(page: Page, started: ReadonlySet<Request>) {
     if (!(cancelled && leaving.has(request))) {
       seen.console.push(`script failed: ${request.url()}`);
     }
-  });
-  page.on("request", (request) => {
-    if (request.resourceType() === "script" && committing) {
-      leaving.add(request);
+  };
+  const onRequest = (request: Request) => {
+    if (request.resourceType() === "script") {
+      started.add(request);
+      if (committing) {
+        leaving.add(request);
+      }
     }
-    if (request.resourceType() === "document") {
+    if (reloadAsked && request.resourceType() === "document") {
       seen.documents.push(new URL(request.url()).pathname);
     }
-  });
+  };
+  page.on("framenavigated", onNavigated);
+  page.on("console", onConsole);
+  page.on("pageerror", onPageError);
+  page.on("requestfailed", onRequestFailed);
+  page.on("request", onRequest);
   return seen;
 }
 
@@ -310,14 +341,10 @@ async function reloadNow(page: Page, seen: ReturnType<typeof watch>) {
 /** Returns how many times the reload was asked: more than one means it met the page already leaving. */
 async function reloadAndExpectSignIn(
   page: Page,
-  {
-    retries,
-    scripts,
-    trace,
-  }: { retries: string[]; scripts: ReadonlySet<Request>; trace: Trace },
+  { retries, trace }: { retries: string[]; trace: Trace },
+  seen: ReturnType<typeof watch>,
   round: number
 ) {
-  const seen = watch(page, scripts);
   const from = trace.lines.length;
   const { attempts, documentsBefore } = await reloadNow(page, seen);
   const happened = () =>
@@ -346,6 +373,7 @@ async function reloadAndExpectSignIn(
     `round ${round}: sign-in documents since the last reload (${seen.documents.join(" ")})`
   ).toBeLessThanOrEqual(1);
   expect(seen.console, `round ${round}: the browser log`).toEqual([]);
+  seen.stop();
   return attempts;
 }
 
@@ -393,9 +421,10 @@ test.describe("recarregar logo depois de sair", () => {
         .toBe(true);
       for (let round = 1; round <= ROUNDS; round += 1) {
         state.signedIn = true;
+        const seen = watch(page);
         // biome-ignore lint/performance/noAwaitInLoops: each round starts from the page the round before left
         await signInAndOut(page, trace, round);
-        if ((await reloadAndExpectSignIn(page, spy, round)) > 1) {
+        if ((await reloadAndExpectSignIn(page, spy, seen, round)) > 1) {
           repeated += 1;
         }
         expect(
@@ -433,8 +462,9 @@ test.describe("recarregar logo depois de sair", () => {
       );
       try {
         const spy = await watchBootRetry(page, trace);
+        const seen = watch(page);
         await signInAndOut(page, trace, round);
-        if ((await reloadAndExpectSignIn(page, spy, round)) > 1) {
+        if ((await reloadAndExpectSignIn(page, spy, seen, round)) > 1) {
           repeated += 1;
         }
         traces.delete(`primeira-visita-${round}`);
@@ -446,5 +476,79 @@ test.describe("recarregar logo depois de sair", () => {
       description: `${repeated} of ${ROUNDS}`,
       type: REPEATED_RELOAD,
     });
+  });
+});
+
+test.describe("o vigia da recarga", () => {
+  const MAIN_FRAME = {};
+
+  function fakePage() {
+    const events = new EventEmitter();
+    const page = Object.assign(events, { mainFrame: () => MAIN_FRAME });
+    return {
+      ask: (request: Request) => events.emit("request", request),
+      commit: () => events.emit("framenavigated", MAIN_FRAME),
+      fail: (request: Request) => events.emit("requestfailed", request),
+      page: page as unknown as Page,
+    };
+  }
+
+  const script = (name: string, errorText = CANCELLED) =>
+    ({
+      failure: () => ({ errorText }),
+      resourceType: () => "script",
+      url: () => `http://app.test/${name}.js`,
+    }) as unknown as Request;
+
+  test("perdoa o script cancelado que o documento antigo pediu antes da recarga e durante a janela de commit", () => {
+    const { page, ask, commit, fail } = fakePage();
+    const seen = watch(page);
+    const beforeAsk = script("antes");
+    const duringCommit = script("durante");
+    ask(beforeAsk);
+    seen.askedReload();
+    ask(duringCommit);
+    fail(beforeAsk);
+    fail(duringCommit);
+    commit();
+    expect(seen.console).toEqual([]);
+  });
+
+  test("reprova o script cancelado que só foi pedido depois do commit do documento novo", () => {
+    const { page, ask, commit, fail } = fakePage();
+    const seen = watch(page);
+    seen.askedReload();
+    commit();
+    const afterCommit = script("depois");
+    ask(afterCommit);
+    fail(afterCommit);
+    expect(seen.console).toEqual(["script failed: http://app.test/depois.js"]);
+  });
+
+  test("reprova o script que falhou por outro motivo, mesmo o do documento antigo", () => {
+    const { page, ask, fail } = fakePage();
+    const seen = watch(page);
+    const broken = script("quebrado", "net::ERR_CONNECTION_RESET");
+    ask(broken);
+    seen.askedReload();
+    fail(broken);
+    expect(seen.console).toEqual([
+      "script failed: http://app.test/quebrado.js",
+    ]);
+  });
+
+  test("os scripts da rodada anterior não entram no que a rodada nova perdoa", () => {
+    const { page, ask, fail } = fakePage();
+    const earlier = watch(page);
+    const ofEarlierRound = script("rodada-1");
+    ask(ofEarlierRound);
+    earlier.stop();
+    const next = watch(page);
+    next.askedReload();
+    fail(ofEarlierRound);
+    expect(next.console).toEqual([
+      "script failed: http://app.test/rodada-1.js",
+    ]);
+    expect(earlier.console).toEqual([]);
   });
 });

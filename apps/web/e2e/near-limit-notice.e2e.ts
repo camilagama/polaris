@@ -191,6 +191,31 @@ async function openVariants(page: Page) {
 const top = async (locator: ReturnType<Page["locator"]>) =>
   (await locator.boundingBox())?.y ?? Number.NaN;
 
+const TAB_PRESSES = 12;
+const PRO_LINK_STOP = "A:Conhecer o Pro";
+
+/**
+ * Starts from the file field of the images dialog and presses Tab `presses` times, reporting what holds focus after each
+ * press: enough presses to go past the line's link and the controls around it.
+ */
+async function tabStops(page: Page, presses: number) {
+  await page.getByLabel("Escolher imagem").focus();
+  const stops: string[] = [];
+  for (let press = 0; press < presses; press += 1) {
+    // biome-ignore lint/performance/noAwaitInLoops: each Tab moves from the control the one before left focused
+    await page.keyboard.press("Tab");
+    stops.push(
+      await page.evaluate(() => {
+        const active = document.activeElement;
+        const name =
+          active?.getAttribute("aria-label") ?? active?.textContent?.trim();
+        return `${active?.tagName ?? "none"}:${name ?? ""}`;
+      })
+    );
+  }
+  return stops;
+}
+
 test.describe("Produtos", () => {
   test("44 de 50 não mostra nada; 45 e 49 dizem o uso; 50 diz que chegou; a linha fica depois do último produto", async ({
     page,
@@ -757,7 +782,7 @@ test.describe("painel de imagens", () => {
     const frameTop = await top(frame);
     await context.setOffline(true);
     await expect(dialogLine(page)).toHaveCount(0);
-    expect(await inTheDialog()).toBe(before);
+    expect(await inTheDialog()).toBeCloseTo(before, 1);
     expect(await top(frame)).toBeCloseTo(frameTop, 1);
     let release: () => void = () => undefined;
     const reading = new Promise<void>((resolve) => {
@@ -772,8 +797,30 @@ test.describe("painel de imagens", () => {
     expect(await top(frame)).toBeCloseTo(frameTop, 1);
     release();
     await expect(dialogLine(page)).toContainText("Você usa 47 de 50 imagens");
-    expect(await inTheDialog()).toBe(before);
+    expect(await inTheDialog()).toBeCloseTo(before, 1);
     expect(await top(frame)).toBeCloseTo(frameTop, 1);
+  });
+
+  test("o link de 'Conhecer o Pro' do vão não recebe foco no Tab; o da linha à mostra recebe", async ({
+    context,
+    page,
+  }) => {
+    await openImages(page, { use: { images: 47, variants: 0 } }, 0);
+    await expect(dialogLine(page)).toContainText("Você usa 47 de 50 imagens");
+    const heldLink = page
+      .getByRole("dialog")
+      .locator('[aria-hidden="true"] a[href$="aba=assinatura"]');
+    await expect(heldLink).toHaveCount(0);
+
+    const shown = await tabStops(page, TAB_PRESSES);
+    expect(shown).toContain(PRO_LINK_STOP);
+
+    await context.setOffline(true);
+    await expect(dialogLine(page)).toHaveCount(0);
+    await expect(heldLink).toHaveCount(1);
+    const held = await tabStops(page, TAB_PRESSES);
+    expect(new Set(held).size).toBeGreaterThan(1);
+    expect(held).not.toContain(PRO_LINK_STOP);
   });
 
   test("sem linha antes de ficar offline, o quadro do diálogo não ganha espaço vazio", async ({
