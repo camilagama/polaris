@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { act, type RenderHookResult, renderHook } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { useHomePlanLimit } from "./use-home-plan-limit";
 
 const store = { id: "org-a", online: true };
 const readPlan = vi.fn();
@@ -20,8 +21,6 @@ vi.mock("../lib/orpc", () => ({
     billing: { readPlan: (input: unknown) => readPlan(input) },
   },
 }));
-
-const { useHomePlanLimit } = await import("./use-home-plan-limit");
 
 const planWith = (variants: number) => ({
   limits: { goals: 1, images: 50, variants: 50 },
@@ -54,9 +53,12 @@ function mount() {
   view = renderHook(() => useHomePlanLimit());
 }
 
-beforeEach(() => {
+afterEach(() => {
   view?.unmount();
   view = null;
+});
+
+beforeEach(() => {
   store.id = "org-a";
   store.online = true;
   readPlan.mockReset();
