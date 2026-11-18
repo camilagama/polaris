@@ -198,6 +198,24 @@ describe("the outcome of confirming on the device", () => {
       expect(outcome.submission.failure.message).toContain("Nada foi guardado");
     }
   });
+
+  it("says the sale has a date of its own, not that saving failed, and keeps the attempt", async () => {
+    const { outbox, stores } = await setup();
+    const dated = prepared();
+    dated.request.recordedAt = "2026-10-14T12:30:05.000Z";
+    const outcome = await confirmOnDevice(dated, stores, labels);
+    expect(outcome.completed).toBe(false);
+    expect(outcome.attempt).toBe(dated.attempt);
+    expect(outcome.submission.phase).toBe("failed");
+    if (outcome.submission.phase === "failed") {
+      expect(outcome.submission.failure.message).toContain("tem data própria");
+      expect(outcome.submission.failure.message).toContain("com conexão");
+      expect(outcome.submission.failure.message).not.toContain(
+        "Não foi possível guardar a venda"
+      );
+    }
+    expect((await outbox.snapshot()).commands).toHaveLength(0);
+  });
 });
 
 describe("a sale with a payment profile", () => {

@@ -580,10 +580,13 @@ async function run() {
         "a policy TO PUBLIC fails the comparison with the expected list"
       );
     } finally {
+      // A failed ROLLBACK can leave the transaction open with the planted policy: destroy the connection instead of pooling it.
+      let rolledBack = false;
       try {
         await toPublic.query("ROLLBACK");
+        rolledBack = true;
       } finally {
-        toPublic.release();
+        toPublic.release(!rolledBack);
       }
     }
     const afterRollback =

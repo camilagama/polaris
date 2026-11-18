@@ -1833,9 +1833,9 @@ Quinto passo da Fase 12 ([ADR 0094](../docs/adr/0094-tracing-e-amostragem-do-wor
 | Limites | Registrados | Sem medida em nuvem; `environment`, CPU do evlog e o destino das exceções com `invocation_logs` desligado ficam para a Fase 14; traces e logs dividem a cota diária (ADR). |
 
 
-### Fase 12F — alertas operacionais definidos no código e nos docs (PR119; implementação local concluída; nenhum alerta, cron, token ou conta criados)
+### Fase 12F — alertas operacionais definidos no código e nos docs (PR119; implementação local concluída; no staging, 5 monitores da Cloudflare; cron, token e conta do Resend não criados)
 
-Sexto passo da Fase 12 ([ADR 0095](../docs/adr/0095-onde-os-alertas-operacionais-vao-rodar.md); o número pode mudar): os sinais são código revisável; o lugar onde rodam depende da aprovação do responsável e do ambiente (Fase 14).
+Sexto passo da Fase 12 ([ADR 0095](../docs/adr/0095-onde-os-alertas-operacionais-vao-rodar.md); o número pode mudar): os sinais são código revisável; o ADR está `accepted` com escopo staging (emenda de 18/11/2026): lá os sinais que acordam disparam pelos monitores `custom_analytics` da Cloudflare, e a produção segue sem alerta, para a Fase 14 e a conta separada ([ADR 0097](../docs/adr/0097-staging-fixo-e-producao-em-conta-separada.md)).
 
 | Subetapa | Status | Evidência / dependência |
 | --- | --- | --- |
@@ -1843,8 +1843,8 @@ Sexto passo da Fase 12 ([ADR 0095](../docs/adr/0095-onde-os-alertas-operacionais
 | Eventos novos | Concluído | `http_request_timed` (evento largo só nas rotas críticas, para a latência), `sync_push_command_rejected` (um por comando rejeitado, com o código em `reason`) e `sqlState` no `server_error`. Sem dado pessoal. |
 | Teste | Concluído | `packages/observability/src/alerts.test.ts` lê as fontes (AST) e exige que todo evento do registro seja emitido, que cada sinal tenha seção no runbook citando seus eventos e que só `critical` acorde alguém; testes do middleware, do `sqlState` e da rejeição do sync ao lado do código. |
 | Runbook | Concluído | [docs/runbooks/alertas.md](../docs/runbooks/alertas.md): significado, consulta nos Workers Logs ou no banco e ação de cada sinal. |
-| Onde rodam | Proposto | ADR 0095 recomenda uma consulta agendada (cron do Worker) com e-mail pelo Resend: US$ 0, dentro do teto de US$ 10 (ADR 0076); Cloudflare Notifications ficam de complemento e o Sentry espera o plano de estudante. Depende da aprovação do responsável. |
-| Criação real | Pendente (Fase 14) | Cron, token de leitura do Workers Observability e conta do Resend para alertas não foram criados; sem ambiente nenhum alerta dispara. |
+| Onde rodam | Aceito para o staging (emenda de 18/11/2026) | Cinco políticas `custom_analytics` da Cloudflare, o máximo da conta, cobrem os sinais que acordam e só `loja-encerrada-parada` dos `report`; o aviso é o e-mail da Cloudflare ao dono da conta, a 1 ou mais evento em 1 minuto (a política do `outbox-parado`, por ausência em 3 h), sem os filtros, janelas e limiares do registro. O agrupamento e o estado de cada sinal estão em [docs/runbooks/alertas.md](../docs/runbooks/alertas.md). Produção: sem alerta, fica para ADR ou emenda própria. A consulta agendada com Resend (cron do Worker) segue só como recomendação do ADR 0095, não aprovada: US$ 0, dentro do teto de US$ 10 (ADR 0076); o Sentry espera o plano de estudante. |
+| Criação real | Parcial (staging) | Monitores criados no painel da Cloudflare pelo responsável, anotados no runbook; o disparo só foi provado no da política 1 (V14). Cron, token de leitura do Workers Observability e conta do Resend para alertas não foram criados; os sinais `report` (fora `loja-encerrada-parada`) e a produção não têm alerta, e não há resumo diário. |
 | Limites | Registrados | Limiares e limites de latência são um primeiro chute sem medida; o endpoint e a permissão da consulta do Workers Observability no Free não foram confirmados; a idade do evento pendente mais antigo do outbox não é um evento (o banco não a expõe sem uma função nova, área db): o sinal usa a ausência do job e o runbook traz a consulta SQL; taxa de 5xx é contagem por janela, sem denominador; o `http_request_timed` soma um evento por requisição às rotas críticas ao volume do ADR 0094 (estimado em 0,5 KB por evento, sem medida; a Fase 14 mede). |
 
 ### Fase 12G — Sentry no navegador (PR118, POL-53; implementação local concluída; nenhum projeto, DSN ou token criados)
@@ -3441,7 +3441,7 @@ Origem: achado B do Diego no Pixel 6 (28/10): a venda montada em Vender sumia ao
 
 | Item | Estado | Detalhe |
 | --- | --- | --- |
-| Modelos (AC-7c.4, AC-7c.11) | Em revisão | `server/activation/emails/activation-notice-email.tsx`: A1, A2-S0, A2-S1 e A3 (S0 e S1) com o texto aprovado; assunto até 40 caracteres sem a loja; A1 e A2 com um botão, A3 sem botão e com o link de texto "Abrir a loja"; loja cortada em 24 grafemas, escapada, só no corpo e no rodapé. Snapshots do HTML e do texto em `__golden__/`. |
+| Modelos (AC-7c.4, AC-7c.11) | Em revisão | `server/activation/emails/activation-notice-email.tsx`: A1, A2-S0, A2-S1 e A3 (S0 e S1) com o texto aprovado; assunto até 40 caracteres, nunca com a loja; A1 e A2 com um botão, A3 sem botão e com o link de texto "Abrir a loja"; loja cortada em 24 grafemas e escapada, no corpo, no rodapé e no preview (A1 e A3 S0/S1; o preview do A2 é fixo, sem a loja), nunca no assunto. Snapshots do HTML e do texto em `__golden__/`. |
 | Rodapé (AC-7c.5) | Em revisão | Por que recebe (com a loja), "Parar de receber estas dicas" (16 px, sublinhado, cor do texto), os avisos da conta continuam, a razão social da cobrança, o suporte e a Política de Privacidade. Nenhum e-mail diz "série", "descadastro", "opt-out", "ativação" ou "trial"; cobrança e encerramento não têm o link. |
 | Links (AC-7c.6) | Em revisão | Absolutos na origem do app, sem `<img`, `utm_`, query nem ID de loja; só o link de parar leva o token. |
 | Cabeçalhos e sender (AC-7c.9, lado modelo e sender) | Em revisão | `List-Unsubscribe` e `List-Unsubscribe-Post` só nas dicas; `createResendClosureNoticeSender` aceita `headers` só com os dois, em ASCII visível, e lança antes do envio; sem `headers` o corpo ao Resend não tem o campo. |
