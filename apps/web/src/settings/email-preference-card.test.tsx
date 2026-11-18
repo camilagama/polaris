@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
@@ -172,5 +172,96 @@ describe("the card of the e-mails the person receives", () => {
     );
     expect(screen.queryByRole("switch")).toBeNull();
     expect(screen.getByText("Avisos da conta e da cobrança")).toBeTruthy();
+  });
+});
+
+function deferredRead() {
+  let resolve: (value: EmailPreference) => void = () => undefined;
+  const read = vi.fn(
+    () =>
+      new Promise<EmailPreference>((done) => {
+        resolve = done;
+      })
+  );
+  return { read, resolve: (value: EmailPreference) => resolve(value) };
+}
+
+function answer(settle: () => void) {
+  return act(() => {
+    settle();
+    return Promise.resolve();
+  });
+}
+
+describe("the read of the card", () => {
+  it("draws the skeleton in the place of the switch while the read is pending, then the read state (AC-1.1)", async () => {
+    const pending = deferredRead();
+    const { container } = render(
+      <EmailPreferenceCard
+        calls={callsOf({ sent: 0, tips: true }, { read: pending.read })}
+        online
+      />
+    );
+    expect(container.querySelector('[data-slot="skeleton"]')).not.toBeNull();
+    expect(screen.queryByRole("switch")).toBeNull();
+    expect(screen.queryByText("Salvo.")).toBeNull();
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(
+      screen.getByRole("heading", { name: "E-mails que você recebe" })
+    ).toBeTruthy();
+    expect(screen.getByText("Avisos da conta e da cobrança")).toBeTruthy();
+
+    await answer(() => pending.resolve({ sent: 0, tips: false }));
+    const toggle = await screen.findByRole("switch", {
+      name: "Dicas para começar",
+    });
+    expect(toggle.getAttribute("aria-checked")).toBe("false");
+    expect(container.querySelector('[data-slot="skeleton"]')).toBeNull();
+  });
+
+  it("reads once with the same calls, however many times online changes and the parent draws again (AC-1.2)", async () => {
+    const read = vi.fn(() => Promise.resolve({ sent: 0, tips: true }));
+    const calls = callsOf({ sent: 0, tips: true }, { read });
+    const { rerender } = render(<EmailPreferenceCard calls={calls} online />);
+    await screen.findByRole("switch", { name: "Dicas para começar" });
+
+    rerender(<EmailPreferenceCard calls={calls} online={false} />);
+    rerender(<EmailPreferenceCard calls={calls} online />);
+    rerender(<EmailPreferenceCard calls={calls} online={false} />);
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(read).toHaveBeenCalledTimes(1);
+    expect(
+      screen
+        .getByRole("switch", { name: "Dicas para começar" })
+        .getAttribute("aria-checked")
+    ).toBe("true");
+  });
+
+  it("drops a late read that was sent before a save, keeping the saved state (AC-1.3)", async () => {
+    const first = callsOf({ sent: 0, tips: true });
+    const late = deferredRead();
+    const second = callsOf(
+      { sent: 0, tips: true },
+      {
+        read: late.read,
+        setTips: (on) => Promise.resolve({ sent: 0, tips: on }),
+      }
+    );
+    const { rerender } = render(<EmailPreferenceCard calls={first} online />);
+    const toggle = await screen.findByRole("switch", {
+      name: "Dicas para começar",
+    });
+
+    rerender(<EmailPreferenceCard calls={second} online />);
+    expect(late.read).toHaveBeenCalledTimes(1);
+    await user.click(toggle);
+    await screen.findByText("Salvo.");
+    expect(toggle.getAttribute("aria-checked")).toBe("false");
+
+    await answer(() => late.resolve({ sent: 0, tips: true }));
+    expect(toggle.getAttribute("aria-checked")).toBe("false");
   });
 });
