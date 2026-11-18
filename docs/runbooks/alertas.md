@@ -38,7 +38,7 @@
 | [`aviso-de-encerramento-falhando`](#aviso-de-encerramento-falhando) | `closure_notice_email_failed` | 24 h | 1 | warning | não |
 | [`checkout-pago-no-encerramento`](#checkout-pago-no-encerramento) | `billing_closure_paid_checkout_refund_pending` | 24 h | 1 | warning | não |
 | [`rede-de-reembolso-parada`](#rede-de-reembolso-parada) | `billing_refund_rearm_exhausted` | 60 min | 1 | critical | sim |
-| [`incidente-de-reembolso-nao-gravado`](#incidente-de-reembolso-nao-gravado) | `billing_refund_pending_incident_failed`, `billing_amount_mismatch_incident_failed` | 60 min | 1 | critical | sim |
+| [`incidente-de-reembolso-nao-gravado`](#incidente-de-reembolso-nao-gravado) | `billing_refund_pending_incident_failed` (Worker `polaris-web`), `billing_amount_mismatch_incident_failed` (Worker `polaris-admin`) | 60 min | 1 | critical | sim |
 | [`pix-revogacao-nao-mostrada`](#pix-revogacao-nao-mostrada) | `billing_woovi_revocation_not_shown` | 24 h | 1 | warning | não |
 | [`comando-de-cobranca-do-operador`](#comando-de-cobranca-do-operador) | `billing_operator_command` (Worker `polaris-admin`) | 15 min | 1 | critical | sim |
 | [`revelacoes-por-hora`](#revelacoes-por-hora) | `admin_reveal_rate_limited` (Worker `polaris-admin`) | 60 min | 1 | warning | não |
@@ -55,7 +55,7 @@ O que existe e o que falta no painel (Observability, Alertas, Monitores). A cont
 - **O que a Cloudflare conta é menos que o registro.** A anotação do Arrascaeta descreve as políticas 2 a 4 como 1 ou mais evento em 1 minuto, sem os filtros do registro (como `httpStatus >= 500`) e sem as janelas e limiares dele; a política 5 é a ausência do registro (menos de 1 em 3 h, avaliada a cada 10 min). Pela anotação, a política 1 tem limiar de 1 ou mais evento, avaliada a cada 1 min (não verificado no painel). Quem lê o e-mail de uma política agrupada olha o evento no Workers Logs para saber qual sinal disparou. Nenhum desses eventos, fora o V14, foi provocado ainda para provar o disparo.
 - **A política 4 deixa de fora `billing_woovi_reconcile_failed`,** que falha de hora em hora até a Woovi voltar a responder (conferir AppID e disponibilidade, como em [billing-providers.md](./billing-providers.md)); nenhum sinal do registro o cita.
 - **A conta está no limite de políticas.** Os sinais `pendente` não ganham política própria: criar monitor para eles pede agrupar numa política existente ou mudar o limite da conta, escolha que não é deste texto.
-- **Worker:** as consultas valem para o Worker `polaris-web`, salvo as dos sinais que citam `polaris-admin`; a anotação do Arrascaeta não cita filtro de Worker nas políticas. `catalog_media_read_failed`, de `r2-e-midia`, só é emitido em `apps/catalog` (o Worker do catálogo); o nome do Worker no painel do staging não foi conferido aqui.
+- **Worker:** as consultas valem para o Worker `polaris-web`, salvo o que a linha do sinal atribui a `polaris-admin`; a anotação do Arrascaeta não cita filtro de Worker nas políticas. `catalog_media_read_failed`, de `r2-e-midia`, só é emitido em `apps/catalog` (o Worker do catálogo); o nome do Worker no painel do staging não foi conferido aqui.
 - Nenhum monitor, token ou conta é criado por este texto.
 
 | Política | Consulta (Workers Logs) | Limiar na Cloudflare | Sinais que cobre | Estado |
@@ -75,7 +75,7 @@ O que existe e o que falta no painel (Observability, Alertas, Monitores). A cont
 | [`registro-de-acesso`](#registro-de-acesso) | `event = "auth_access_log_write_failed"` | 15 min | 3 | sim | coberto pela política 1 |
 | [`apagamento-automatico`](#apagamento-automatico) | `event = "closure_auto_purge_volume_high"` | 24 h | 1 | sim | coberto pela política 2 |
 | [`rede-de-reembolso-parada`](#rede-de-reembolso-parada) | `event = "billing_refund_rearm_exhausted"` | 60 min | 1 | sim | coberto pela política 4 |
-| [`incidente-de-reembolso-nao-gravado`](#incidente-de-reembolso-nao-gravado) | `event in ("billing_refund_pending_incident_failed", "billing_amount_mismatch_incident_failed")` | 60 min | 1 | sim | coberto pela política 4 |
+| [`incidente-de-reembolso-nao-gravado`](#incidente-de-reembolso-nao-gravado) | `event in ("billing_refund_pending_incident_failed", "billing_amount_mismatch_incident_failed")`; `billing_refund_pending_incident_failed` no Worker `polaris-web` e `billing_amount_mismatch_incident_failed` no Worker `polaris-admin` | 60 min | 1 | sim | coberto pela política 4 |
 | [`comando-de-cobranca-do-operador`](#comando-de-cobranca-do-operador) | `event = "billing_operator_command"`; Worker `polaris-admin` | 15 min | 1 | sim | coberto pela política 4 |
 | [`latencia-p95`](#latencia-p95) | `event = "http_request_timed"`; `route in criticalRoutes and outcome != "rejected"` | 30 min | p95 acima do limite da rota (20 requisições, no mínimo) | não | pendente |
 | [`dlq`](#dlq) | `event in ("queue_dead_letter_recorded", "queue_dead_letter_not_recorded", "queue_dead_letter_send_failed", "outbox_events_exhausted")` | 60 min | 3 | não | pendente |
