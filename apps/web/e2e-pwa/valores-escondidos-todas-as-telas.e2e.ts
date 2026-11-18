@@ -7,6 +7,7 @@ import { expect, test } from "@playwright/test";
 import { skipOutsideChromium } from "../e2e/reflow";
 import { screenKeys } from "../src/app-shell/navigation-model";
 import { json, settle } from "./ui-entry-states";
+import { historyStates } from "./ui-history-states";
 import { repricedDraft } from "./ui-sale-draft-states";
 import { SCREENS } from "./ui-screens";
 import { serveHealth } from "./worker-mark";
@@ -149,6 +150,17 @@ const REPRICED_DRAFT: Case = {
     ).toBeVisible(),
 };
 
+/** The history with the period pill alone: the footer is the server's net total of the period, which no other state of the history shows. */
+const HISTORY_PERIOD_TOTAL: Case = {
+  name: "histórico só com período",
+  open: historyStates.periodTotal,
+  shows: async (page) => {
+    const footer = page.locator("[data-list-total]");
+    await expect(footer).toContainText("Vendas líquidas do período");
+    await expect(footer.locator("[data-masked-money]").first()).toBeAttached();
+  },
+};
+
 const HELP: Case = {
   name: "ajuda",
   open: async (page) => {
@@ -242,7 +254,7 @@ const COVERED: Readonly<Record<string, readonly Case[]>> = {
     "detalhe da venda aberto",
     "detalhe da venda cancelamento revisado"
   ),
-  "sale-history": states("histórico lista"),
+  "sale-history": [...states("histórico lista"), HISTORY_PERIOD_TOTAL],
   "settings:aparelhos": states("aparelhos lista"),
   "settings:assinatura": [
     stateOf("assinatura oferta com Pix", { planPrices: true }),

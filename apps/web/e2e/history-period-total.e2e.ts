@@ -273,6 +273,30 @@ for (const viewport of FORM_VIEWPORTS) {
       await expect(footer).not.toContainText(PERIOD_LABEL);
       expect(summary.asked).toEqual([]);
     });
+
+    test("a conexão cai depois da leitura: o líquido do servidor sai do rodapé, que volta ao total na tela com a frase de aviso, sem nova chamada", async ({
+      page,
+    }) => {
+      const summary: Summary = { asked: [], fail: false };
+      await openHistory(page, summary);
+      await chooseSevenDays(page);
+      const footer = footerOf(page);
+      await expect(footer).toContainText(PERIOD_LABEL);
+      await expect(footer).toContainText(NET);
+      expect(summary.asked).toHaveLength(1);
+
+      await page.context().setOffline(true);
+      await expect(page.getByText("Sem conexão.").first()).toBeVisible({
+        timeout: 20_000,
+      });
+      await expect(footer).toContainText(SCREEN_LABEL);
+      await expect(footer).toContainText(
+        "Sem conexão: total das vendas guardadas neste aparelho."
+      );
+      await expect(footer).not.toContainText(PERIOD_LABEL);
+      await expect(footer).not.toContainText(NET);
+      expect(summary.asked, "a leitura online não se repete").toHaveLength(1);
+    });
   });
 }
 
