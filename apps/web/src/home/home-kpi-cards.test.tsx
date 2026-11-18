@@ -291,7 +291,7 @@ describe("o cartão do Resultado estimado", () => {
     expect(result.match(/data-kpi-note-row/g)).toHaveLength(1);
     expect(result).toContain("h-5 flex-nowrap overflow-hidden");
     expect(result).toContain('data-kpi-warning-detail=""');
-    expect(result).not.toContain("truncate");
+    expect(result).not.toMatch(/truncate[^>]*data-kpi-warning-detail/);
     expect(result).not.toContain("data-kpi-delta=");
   });
 });

@@ -5492,8 +5492,8 @@ const PLAN_REGIONS = [
 interface PlanServer {
   answered: number;
   gate: Promise<void> | null;
-  reads: number;
   refuse: boolean;
+  reads: number;
   state: string;
   use: { images: number; variants: number };
 }
@@ -5501,8 +5501,8 @@ interface PlanServer {
 const newPlanServer = (variants: number, images = 0): PlanServer => ({
   answered: 0,
   gate: null,
-  reads: 0,
   refuse: false,
+  reads: 0,
   state: "free",
   use: { images, variants },
 });
@@ -6280,10 +6280,13 @@ test.describe("os dias sem custo de um mês de outro ano, no período digitado d
 });
 
 test.describe("a contagem dos dias sem custo no cartão do Resultado do Início só aparece inteira", () => {
-  const FROM_SEPTEMBER_24 = "2026-09-24";
+  const THIRTY_DAYS_AGO = addDays(
+    new Date(NOON).toISOString().slice(0, 10),
+    -29
+  );
   const SIXTEEN_DAYS_OF_THIRTY: Record<string, null> = Object.fromEntries(
     Array.from({ length: 16 }, (_, index) => [
-      addDays(FROM_SEPTEMBER_24, index),
+      addDays(THIRTY_DAYS_AGO, index),
       null,
     ])
   );
@@ -6355,8 +6358,59 @@ test.describe("a contagem dos dias sem custo no cartão do Resultado do Início 
           ).toContainText(period.count.replace(" sem ", " ainda sem "));
           await page.keyboard.press("Escape");
         }
+        if (!size.whole) {
+          await page.setViewportSize({ height: 740, width: 360 });
+          await page.evaluate(() => {
+            document.documentElement.style.fontSize = "16px";
+          });
+          await expect(
+            result.locator("[data-kpi-unknown]"),
+            "com espaço de novo, a contagem volta"
+          ).toBeVisible();
+          await expect(
+            result.locator("[data-kpi-warning-detail]")
+          ).not.toHaveAttribute("aria-hidden", "true");
+        }
         await assertNoPageScroll(page);
       }
     );
   }
+
+  reflowTest(
+    "a 320 px com a letra em 20 px: sem custo conhecido, “Sem custo informado” não é cortada e o (i) diz que não dá para estimar",
+    async ({ page }) => {
+      await openReflowViewport(page, {
+        fontPixels: 20,
+        height: 740,
+        width: 320,
+      });
+      await openHome(
+        page,
+        new FakeServer({
+          ...SOLD,
+          results: {
+            "2026-10-02": null,
+            "2026-10-18": null,
+            "2026-10-20": null,
+            "2026-10-23": null,
+          },
+          soldWithoutCost: 12,
+        })
+      );
+      await expectReflowFont(page, 20);
+      const result = region(page, "Resultado estimado");
+      await expect(result.locator("[data-kpi-no-cost]")).toContainText(
+        "Sem custo informado"
+      );
+      await expect(result.locator("[data-kpi-no-cost]")).toBeHidden();
+      await expect(result.locator("[data-kpi-incomplete]")).toBeVisible();
+      await assertNoEllipsis(result.locator("[data-kpi-note-row]"));
+      const read = await readDetail(result);
+      expect(read?.signWhole, "o selo não é cortado").toBe(true);
+      await result.getByRole("button", { name: SOBRE }).click();
+      await expect(
+        page.getByRole("dialog").or(page.getByRole("tooltip")).first()
+      ).toContainText("Sem custo informado: não dá para estimar.");
+    }
+  );
 });
