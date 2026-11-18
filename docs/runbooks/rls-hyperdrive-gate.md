@@ -33,7 +33,7 @@ try {
 }
 ```
 
-The bootstrap stores the runtime password in the Cloudflare Hyperdrive resource; it does not write a database URL or password to the repository or print them. The generated password is part of the short-lived Node child process `--body` argument and may be visible in host process listings while the command runs. The password is random, belongs only to this fixture role, and should be used on a host where unrelated users cannot inspect processes. The bootstrap updates `apps/web/wrangler.pr11.jsonc` with the non-secret resource ID.
+The bootstrap stores the runtime password in the Cloudflare Hyperdrive resource; it does not write a database URL or password to the repository or print them. The generated password is part of the short-lived Node child process `--body` argument and may be visible in host process listings while the command runs. The password is random, belongs only to this fixture role, and should be used on a host where unrelated users cannot inspect processes. The bootstrap updates `apps/web/poc/wrangler.pr11.jsonc` with the non-secret resource ID.
 
 If Hyperdrive creation fails after the database fixture is prepared, a retry is allowed only when the project contains exactly the expected `rls_poc_operations` table, policy, runtime role, and two synthetic seed rows. The bootstrap validates that full state, rotates the runtime password, and resumes without dropping objects. Any other existing database state is rejected and left unchanged. If a Hyperdrive resource was created but writing its ID to Wrangler config failed, inspect the reported ID with `cf hyperdrive get <hyperdrive-id>` and confirm the exact test resource name and caching settings before deleting it manually and retrying.
 
@@ -50,7 +50,7 @@ $env:CLOUDFLARE_ACCOUNT_ID = $cfIdentity.accounts[0].id
 try {
   bunx wrangler whoami --account $env:CLOUDFLARE_ACCOUNT_ID
   if ($LASTEXITCODE -ne 0) { throw "Authenticate Wrangler to the same Cloudflare account first." }
-  bunx wrangler dev --remote --config wrangler.pr11.jsonc
+  bunx wrangler dev --remote --config poc/wrangler.pr11.jsonc
 } finally {
   Remove-Item Env:CLOUDFLARE_ACCOUNT_ID -ErrorAction SilentlyContinue
 }
