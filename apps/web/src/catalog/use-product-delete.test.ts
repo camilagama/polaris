@@ -1,9 +1,13 @@
 import { readFileSync } from "node:fs";
 import type { ProductReadModel } from "@polaris/contracts";
+import { MAX_PRODUCT_VARIANTS } from "@polaris/domain/catalog/product";
 import { describe, expect, it, vi } from "vitest";
 vi.mock("../lib/orpc", () => ({ orpcClient: {} }));
 
 import { keepLocalRow } from "./product-commands";
+
+const LIST_BALANCES_LIMIT =
+  /inventory\.listBalances\(\{[^}]*?\blimit:\s*(\d+)/s;
 
 const HOOK = new URL("./use-product-delete.ts", import.meta.url);
 
@@ -259,5 +263,28 @@ describe("Excluir produto nunca vira comando guardado no aparelho (AC-2.7)", () 
     } as unknown as ProductReadModel);
     expect(upsert).toHaveBeenCalledTimes(1);
     expect(queueCalls).not.toHaveBeenCalled();
+  });
+});
+
+describe("a leitura do saldo cabe nas variantes do produto", () => {
+  it("a página única de listBalances é do tamanho do teto de variantes por produto ou maior", () => {
+    const found = LIST_BALANCES_LIMIT.exec(
+      withoutComments(readFileSync(HOOK, "utf8"))
+    );
+    expect(found, "listBalances sem limit numérico literal").not.toBeNull();
+    expect(Number(found?.[1])).toBeGreaterThanOrEqual(MAX_PRODUCT_VARIANTS);
+  });
+
+  it("o leitor do limite enxerga o valor e some se a chamada mudar de forma", () => {
+    expect(
+      LIST_BALANCES_LIMIT.exec(
+        "await orpcClient.inventory.listBalances({ limit: 7, organizationId })"
+      )?.[1]
+    ).toBe("7");
+    expect(
+      LIST_BALANCES_LIMIT.exec(
+        "await orpcClient.inventory.listBalances({ organizationId })"
+      )
+    ).toBeNull();
   });
 });

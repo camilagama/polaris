@@ -1357,7 +1357,12 @@ test("o diálogo de Excluir diz o que acontece, pede o nome e só habilita com o
   await expect(page.getByRole("dialog")).toHaveCount(0);
 });
 
-for (const how of ["Esc", "Manter arquivado"] as const) {
+for (const how of [
+  "Esc",
+  "Manter arquivado",
+  "Fechar",
+  "clique fora",
+] as const) {
   test(`${how} fecha o diálogo de Excluir sem excluir e devolve o foco ao menu do produto (AC-2.2, AC-2.10)`, async ({
     page,
   }) => {
@@ -1370,6 +1375,8 @@ for (const how of ["Esc", "Manter arquivado"] as const) {
       .fill(JACKET);
     if (how === "Esc") {
       await page.keyboard.press("Escape");
+    } else if (how === "clique fora") {
+      await page.mouse.click(2, 2);
     } else {
       await dialog.getByRole("button", { name: how }).click();
     }

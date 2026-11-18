@@ -118,11 +118,11 @@ Cada assunto possui uma fonte de verdade, e cada documento declara sua própria 
 | [0092](adr/0092-registro-de-acesso-a-aplicacao.md) | Registro de acesso a aplicação (Marco Civil, art. 15) | aceito |
 | [0093](adr/0093-funcoes-security-definer-e-privilegios-padrao.md) | Funções SECURITY DEFINER e privilégios padrão do banco | aceito |
 | [0094](adr/0094-tracing-e-amostragem-do-workers-observability.md) | Tracing e amostragem do Workers Observability | aceito |
-| [0095](adr/0095-onde-os-alertas-operacionais-vao-rodar.md) | Onde os alertas operacionais vão rodar | proposto |
+| [0095](adr/0095-onde-os-alertas-operacionais-vao-rodar.md) | Onde os alertas operacionais vão rodar | aceito (staging) |
 | [0096](adr/0096-migrations-compativeis-com-a-versao-anterior-do-worker.md) | Migrations compatíveis com a versão anterior do Worker (expand/contract) | aceito |
 | [0097](adr/0097-staging-fixo-e-producao-em-conta-separada.md) | Staging fixo na conta atual e produção em conta separada | aceito |
 | [0098](adr/0098-sentry-no-navegador-so-erros-e-sanitizado.md) | Sentry no navegador: só erros, sanitizado, com source maps escondidos | aceito |
-| [0099](adr/0099-backup-logico-diario-no-r2-cifrado-com-age.md) | Backup lógico diário do banco no R2, cifrado com age, provado primeiro no staging | proposto |
+| [0099](adr/0099-backup-logico-diario-no-r2-cifrado-com-age.md) | Backup lógico diário do banco no R2, cifrado com age, provado primeiro no staging | aceito (escopo staging) |
 | [0100](adr/0100-tela-de-entrada-senha-atras-de-flag-bloqueio-e-aceite-legal.md) | Tela de entrada: e-mail e senha atrás de flag, bloqueio de conta no banco e aceite legal registrado | aceito |
 | [0101](adr/0101-adaptador-asaas-porta-de-saida-e-releitura-do-recurso.md) | Adaptador Asaas: porta de saída, releitura do recurso e período pelo vencimento original | aceito |
 | [0102](adr/0102-apagamento-automatico-da-loja-encerrada.md) | Apagamento automático da loja encerrada, sem caso de privacidade | aceito |

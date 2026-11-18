@@ -186,6 +186,26 @@ export const historyStates = {
     await showScreenAlone(page);
   },
 
+  /** The period pill alone, with the server's net total of the period in the footer (the other pills take it away). */
+  async periodTotal(page: Page) {
+    await page.route("**/rpc/report/periodSummary", (route: Route) =>
+      route.fulfill(rpc({ cards: { netSales: "123.40", salesCount: 3 } }))
+    );
+    await openHistoryLab(page, true);
+    await page.getByText("Ângela Souza").waitFor();
+    const period = await addFilter(page, "Período");
+    await period.locator('button[data-day="2026-10-12"]').click();
+    await period.locator('button[data-day="2026-10-05"]').click();
+    await applyEditor(page, period);
+    await period.waitFor({ state: "hidden" });
+    const footer = page.locator("[data-list-total]");
+    await footer.getByText("Vendas líquidas do período").waitFor();
+    await footer.locator("[data-list-total-skeleton]").waitFor({
+      state: "detached",
+    });
+    await showScreenAlone(page);
+  },
+
   /** The bar with three pills (Período, Situação, Cliente) and "Limpar tudo", every editor closed. */
   async filters(page: Page) {
     await openHistoryLab(page, true);
