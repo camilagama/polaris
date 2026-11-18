@@ -36,6 +36,12 @@ import {
   smokeChecks,
   USER_AGENT,
 } from "./smoke-staging.mjs";
+import {
+  ATTEMPTS,
+  PAUSE_MS,
+  STAGING_WORKERS,
+  WRANGLER_TIMEOUT_MS,
+} from "./verify-deployed-sha.mjs";
 
 const origins = {
   admin: "https://admin.araute.app",
@@ -1936,5 +1942,125 @@ describe("the worst case of the smoke against the timeout of its step", () => {
     expect(() =>
       smokeStepMinutes("jobs:\n  x:\n    steps:\n      - name: Other\n")
     ).toThrow("the step Smoke");
+  });
+});
+
+const JOB_NAME = /^ {4}name: Migrate, deploy and smoke$/m;
+const JOB_SPLIT = /\n {2}(?=[\w-]+:\n)/;
+const JOB_TIMEOUT_PATTERN = /^ {4}timeout-minutes: (\d+)$/m;
+const WRANGLER_CALLS_PER_TRY = 2;
+// checkout, runtime setup, bun install, artifact download, isolation check, staging:verify-database, db:migrate and
+// the three `wrangler deploy` have no time proof of their own; this is what the job keeps for them beyond the two
+// worst cases
+const REST_OF_THE_JOB_SECONDS = 240;
+
+function deployJobMinutes(workflow) {
+  const job = workflow.split(JOB_SPLIT).find((part) => JOB_NAME.test(part));
+  if (!job) {
+    throw new Error(
+      "the job Migrate, deploy and smoke was not found in deploy-staging.yml"
+    );
+  }
+  return numberAfter(job, JOB_TIMEOUT_PATTERN, "timeout-minutes of the job");
+}
+
+function verifyWorstCaseSeconds(workerCount) {
+  return (
+    workerCount *
+    (ATTEMPTS * WRANGLER_CALLS_PER_TRY * (WRANGLER_TIMEOUT_MS / 1000) +
+      (ATTEMPTS - 1) * (PAUSE_MS / 1000))
+  );
+}
+
+function jobBudgetVerdict({
+  smokeChecks: smokeCheckCount,
+  workers,
+  jobMinutes,
+  restSeconds,
+}) {
+  const smoke =
+    worstCaseSeconds(smokeCheckCount, smokeTiming()) + STARTUP_SLACK_SECONDS;
+  const verify = verifyWorstCaseSeconds(workers);
+  const limit = jobMinutes * 60;
+  if (smoke + verify + restSeconds <= limit) {
+    return null;
+  }
+  return (
+    `the job Migrate, deploy and smoke needs ${smoke} s of smoke (${smokeCheckCount} checks) + ` +
+    `${verify} s of verify-deployed-sha (${workers} Workers) + ${restSeconds} s for the rest = ` +
+    `${smoke + verify + restSeconds} s, but deploy-staging.yml allows ${limit} s (timeout-minutes: ${jobMinutes}). ` +
+    "Raise timeout-minutes of the job in deploy-staging.yml, or cut a check or a Worker."
+  );
+}
+
+describe("the worst cases of the smoke and of verify-deployed-sha against the timeout of the deploy job", () => {
+  const smokeCheckCount = () =>
+    smokeChecks(origins, {
+      release: RELEASE,
+      shell: { index: "", serviceWorker: "" },
+    }).length;
+  const budget = (overrides = {}) =>
+    jobBudgetVerdict({
+      jobMinutes: deployJobMinutes(DEPLOY_WORKFLOW),
+      restSeconds: REST_OF_THE_JOB_SECONDS,
+      smokeChecks: smokeCheckCount(),
+      workers: STAGING_WORKERS.length,
+      ...overrides,
+    });
+
+  it("reads the timeout of the job, not the one of the step Smoke", () => {
+    const job = deployJobMinutes(DEPLOY_WORKFLOW);
+    expect(job).toBeGreaterThan(smokeStepMinutes(DEPLOY_WORKFLOW));
+    expect(job * 60).toBeGreaterThan(
+      worstCaseSeconds(smokeCheckCount(), smokeTiming()) +
+        verifyWorstCaseSeconds(STAGING_WORKERS.length)
+    );
+  });
+
+  it("fits in the timeout-minutes of the job Migrate, deploy and smoke", () => {
+    expect(budget()).toBeNull();
+  });
+
+  it("control: five Workers in the version check overflow the job, and the message says both sums and the limit", () => {
+    const verdict = budget({ workers: 5 });
+    expect(verdict).toContain(
+      `${verifyWorstCaseSeconds(5)} s of verify-deployed-sha (5 Workers)`
+    );
+    expect(verdict).toContain(
+      `${worstCaseSeconds(smokeCheckCount(), smokeTiming()) + STARTUP_SLACK_SECONDS} s of smoke`
+    );
+    expect(verdict).toContain(
+      `allows ${deployJobMinutes(DEPLOY_WORKFLOW) * 60} s`
+    );
+    expect(verdict).toContain("Raise timeout-minutes of the job");
+    expect(verdict).toContain(
+      `= ${worstCaseSeconds(smokeCheckCount(), smokeTiming()) + STARTUP_SLACK_SECONDS + verifyWorstCaseSeconds(5) + REST_OF_THE_JOB_SECONDS} s`
+    );
+  });
+
+  it("control: a job of 18 minutes overflows", () => {
+    const verdict = budget({ jobMinutes: 18 });
+    expect(verdict).toContain("allows 1080 s (timeout-minutes: 18)");
+    expect(verdict).toContain(
+      `${verifyWorstCaseSeconds(STAGING_WORKERS.length)} s of verify-deployed-sha (${STAGING_WORKERS.length} Workers)`
+    );
+  });
+
+  it("control: a rest of the job that no longer fits the margin overflows", () => {
+    const margin =
+      deployJobMinutes(DEPLOY_WORKFLOW) * 60 -
+      worstCaseSeconds(smokeCheckCount(), smokeTiming()) -
+      STARTUP_SLACK_SECONDS -
+      verifyWorstCaseSeconds(STAGING_WORKERS.length);
+    expect(budget({ restSeconds: margin })).toBeNull();
+    expect(budget({ restSeconds: margin + 1 })).toContain("for the rest");
+  });
+
+  it("control: a workflow without the job is refused", () => {
+    expect(() =>
+      deployJobMinutes(
+        "jobs:\n  other:\n    name: Other\n    timeout-minutes: 5\n"
+      )
+    ).toThrow("the job Migrate, deploy and smoke");
   });
 });
