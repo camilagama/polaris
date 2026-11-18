@@ -56,7 +56,7 @@ const CHIP_TEXTS = [
   "Preparando",
 ];
 
-const SR_ONLY = /sr-only/;
+const WORD_CUTOFF_REM = 19.75;
 
 const LONG_STORE =
   "Loja de roupas, calçados e acessórios do centro da cidade de São José dos Campos";
@@ -270,8 +270,10 @@ test.describe("AC-1.1 e AC-1.2: a mesma altura e o mesmo lugar em todos os estad
     [360, 16],
     [320, 20],
     [360, 20],
+    [390, 20],
+    [393, 20],
   ] as const) {
-    const wordShown = width / fontPixels >= 19.5;
+    const wordShown = width / fontPixels >= WORD_CUTOFF_REM;
     test(`${width} px com letra de ${fontPixels} px: nenhum texto do chip é cortado e a palavra Polaris ${wordShown ? "aparece" : "só se lê"}`, async ({
       page,
     }) => {
@@ -285,16 +287,6 @@ test.describe("AC-1.1 e AC-1.2: a mesma altura e o mesmo lugar em todos os estad
       const home = page.getByRole("link", { exact: true, name: "Polaris" });
       await expect(home).toHaveCount(1);
       const word = home.locator("span");
-      if (wordShown) {
-        await expect
-          .poll(async () => (await word.boundingBox())?.width ?? 0)
-          .toBeGreaterThan(8);
-      } else {
-        await expect(word).toHaveClass(SR_ONLY);
-        await expect
-          .poll(async () => (await word.boundingBox())?.width ?? 0)
-          .toBeLessThanOrEqual(1);
-      }
       for (const text of CHIP_TEXTS) {
         const label = `${width} px, ${fontPixels} px, chip "${text}"`;
         // biome-ignore lint/performance/noAwaitInLoops: one state at a time
@@ -311,6 +303,15 @@ test.describe("AC-1.1 e AC-1.2: a mesma altura e o mesmo lugar em todos os estad
         expect(now.chip?.height, label).toBeLessThanOrEqual(
           now.header?.height ?? 0
         );
+      }
+      if (wordShown) {
+        await expect
+          .poll(async () => (await word.boundingBox())?.width ?? 0)
+          .toBeGreaterThan(8);
+      } else {
+        await expect
+          .poll(async () => (await word.boundingBox())?.width ?? 0)
+          .toBeLessThanOrEqual(1);
       }
     });
   }

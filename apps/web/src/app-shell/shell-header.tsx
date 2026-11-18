@@ -44,9 +44,10 @@ export function ShellHeader({
           href="/"
         >
           <Logo className="size-5" />
-          {/* the longest chip text ("Envio pausado", "Ocupado · 999") needs a header of 19.5 rem beside the word, the
-              eye and the account: below it the mark stays and the name is still the link's, for the screen reader */}
-          <span className="@max-[19.5rem]/header:sr-only">Polaris</span>
+          {/* the longest chip text ("Envio pausado", "Ocupado · 999") needs a header of 19.72 rem beside the word,
+              the eye (2.5 rem below 47.5 rem) and the account: below 19.75 rem the mark stays and the name is still the
+              link's, for the screen reader */}
+          <span className="@max-[19.75rem]/header:sr-only">Polaris</span>
         </a>
         {/* from 1024 px, beside the brand: only the options of the column fold, never the brand */}
         <SidebarTrigger />
