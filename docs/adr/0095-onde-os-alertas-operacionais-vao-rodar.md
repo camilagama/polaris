@@ -1,14 +1,14 @@
 ---
-status: proposed
+status: accepted
 ---
 
 # Onde os alertas operacionais vão rodar
 
-> O número deste ADR (0095) é o próximo livre na `main` e nos PRs abertos no momento da escrita (o 0094 é o do tracing, já na `main`); pode mudar se outro entrar antes. O status é `proposed` porque a escolha do lugar onde os alertas rodam depende da aprovação do responsável; a definição dos sinais (abaixo) já está no código.
+> O número deste ADR (0095) é o próximo livre na `main` e nos PRs abertos no momento da escrita (o 0094 é o do tracing, já na `main`); pode mudar se outro entrar antes. O status é `accepted` com escopo staging: a definição dos sinais (abaixo) está no código, e o lugar onde os alertas rodam no staging é o da [emenda de 18/11/2026](#emenda-18112026-os-monitores-da-cloudflare-são-o-lugar-dos-alertas-no-staging); o cron com Resend, descrito em "Onde rodam", segue como recomendação para depois, e a produção não está coberta.
 
 ## Contexto
 
-O plano da Fase 12 (PR 119) pede alertas de 5xx, latência, DLQ, outbox parado, falha de reconcile da cobrança, erros de banco, falha de R2 ou mídia e pico de rejeição do sync. Os dados existem: o logger tipado ([ADR 0089](0089-evlog-e-logger-tipado-no-backend.md)), os eventos de nome e campos canônicos ([ADR 0091](0091-esquema-canonico-de-eventos-largos.md)) e os logs a 100% no Workers Logs ([ADR 0094](0094-tracing-e-amostragem-do-workers-observability.md)). Falta dizer quais sinais valem, em que limiar, e quem os lê. Ainda não há ambiente (a Fase 14 o cria), e o teto de custo é de US$ 10 por mês, tudo no plano grátis ([ADR 0076](0076-teto-de-custo-e-free-tier-primeiro.md)).
+O plano da Fase 12 (PR 119) pede alertas de 5xx, latência, DLQ, outbox parado, falha de reconcile da cobrança, erros de banco, falha de R2 ou mídia e pico de rejeição do sync. Os dados existem: o logger tipado ([ADR 0089](0089-evlog-e-logger-tipado-no-backend.md)), os eventos de nome e campos canônicos ([ADR 0091](0091-esquema-canonico-de-eventos-largos.md)) e os logs a 100% no Workers Logs ([ADR 0094](0094-tracing-e-amostragem-do-workers-observability.md)). Falta dizer quais sinais valem, em que limiar, e quem os lê. Ainda não há ambiente (a Fase 14 o cria; o staging passou a existir depois, e a emenda de 18/11/2026 trata dele), e o teto de custo é de US$ 10 por mês, tudo no plano grátis ([ADR 0076](0076-teto-de-custo-e-free-tier-primeiro.md)).
 
 ## Decisão
 
@@ -27,6 +27,14 @@ O plano da Fase 12 (PR 119) pede alertas de 5xx, latência, DLQ, outbox parado, 
 ## Consequências
 
 - Os sinais ficam versionados e revisáveis em PR, com teste; mudar um limiar é mudar uma linha do registro e a seção do runbook.
-- Sem o cron de alertas (Fase 14), nenhum alerta dispara: o runbook é lido à mão, com as consultas do Workers Logs. O estado de entrega está em `doc/status-implementacao.md`.
+- No staging, os sinais que acordam disparam pelos monitores da Cloudflare (emenda de 18/11/2026); os sinais `report`, fora `loja-encerrada-parada`, e todo o resto (produção inclusive) não têm alerta, e o runbook é lido à mão, com as consultas do Workers Logs. O cron de alertas (Fase 14) e o resumo diário não existem. O estado de entrega está em `doc/status-implementacao.md`.
 - O sinal de outbox parado usa a ausência de `scheduled_job_run` do `outbox.dispatch` com sucesso, e não a idade do evento pendente mais antigo, porque o banco não expõe essa idade sem uma função nova (migration, área db). O runbook traz a consulta SQL para conferir à mão; expor a idade como evento é um acompanhamento da área db.
 - O registro conta eventos; a taxa de 5xx é uma contagem por janela, sem denominador (não há evento por requisição fora das rotas críticas). Com o tráfego real, trocar por taxa sobre as rotas críticas (`http_request_timed`) é mudança de uma linha.
+
+## Emenda (18/11/2026): os monitores da Cloudflare são o lugar dos alertas no staging
+
+- **Decisão.** Para o staging, o lugar onde os sinais `wake` rodam são os monitores `custom_analytics` do painel da Cloudflare (Observability, Alertas, Monitores), e não o cron com Resend de "Onde rodam". O responsável deste ADR (Arrascaeta) aceitou essa forma em 18/11/2026, e o status passa a `accepted`, com **escopo staging**. A produção não entra: ficará para um ADR ou emenda própria, junto com a conta separada do [ADR 0097](0097-staging-fixo-e-producao-em-conta-separada.md).
+- **O que roda hoje.** Cinco políticas `custom_analytics`, o máximo que a conta aceita (erro 17204). Uma política vale por vários sinais; na data desta emenda, a 1 cobre `registro-de-acesso`; a 2, `apagamento-automatico` e `loja-encerrada-parada`; a 3, `http-5xx`, `erros-de-banco`, `serie-falhando` e `email-de-acesso-falhando`; a 4, os sinais de cobrança que acordam; a 5, a ausência de `outbox-parado`. A seção "Monitores no staging" de [docs/runbooks/alertas.md](../runbooks/alertas.md) é a fonte do agrupamento e do estado de cada sinal, e vale se divergir deste resumo. O aviso sai por **e-mail da própria Cloudflare ao dono da conta** (como descreveu o responsável ao aceitar a forma): não há token de leitura do Workers Observability, nem Resend, nem cron.
+- **O que a Cloudflare conta é menos que o registro.** Cada política dispara com 1 ou mais evento em 1 minuto (a 5, com menos de 1 em 3 horas), sem os filtros, as janelas e os limiares do registro `alertSignals`, e o limite de um e-mail por sinal a cada 6 horas não existe. O registro continua sendo a definição do sinal; quem recebe o e-mail de uma política agrupada confere no Workers Logs qual sinal disparou.
+- **O que continua sem existir.** O cron do Worker que lê os eventos e aplica o registro; o resumo diário dos sinais `report` (os sinais `report`, fora `loja-encerrada-parada`, estão `pendente` no runbook, porque a conta já usa as 5 políticas); o token de leitura e a conta do Resend para alertas. Nada disso é criado por esta emenda: criar qualquer um segue dependendo do responsável.
+- **Efeito nas outras seções.** "Onde rodam" e "Limites a conferir antes de implementar" valem para o cron, se ele for feito. O custo do staging não muda (US$ 0, dentro do [ADR 0076](0076-teto-de-custo-e-free-tier-primeiro.md)), e as Notificações da Cloudflare citadas em "Alternativas" seguem como estão.

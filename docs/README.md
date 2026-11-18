@@ -118,7 +118,7 @@ Cada assunto possui uma fonte de verdade, e cada documento declara sua própria 
 | [0092](adr/0092-registro-de-acesso-a-aplicacao.md) | Registro de acesso a aplicação (Marco Civil, art. 15) | aceito |
 | [0093](adr/0093-funcoes-security-definer-e-privilegios-padrao.md) | Funções SECURITY DEFINER e privilégios padrão do banco | aceito |
 | [0094](adr/0094-tracing-e-amostragem-do-workers-observability.md) | Tracing e amostragem do Workers Observability | aceito |
-| [0095](adr/0095-onde-os-alertas-operacionais-vao-rodar.md) | Onde os alertas operacionais vão rodar | proposto |
+| [0095](adr/0095-onde-os-alertas-operacionais-vao-rodar.md) | Onde os alertas operacionais vão rodar | aceito (staging) |
 | [0096](adr/0096-migrations-compativeis-com-a-versao-anterior-do-worker.md) | Migrations compatíveis com a versão anterior do Worker (expand/contract) | aceito |
 | [0097](adr/0097-staging-fixo-e-producao-em-conta-separada.md) | Staging fixo na conta atual e produção em conta separada | aceito |
 | [0098](adr/0098-sentry-no-navegador-so-erros-e-sanitizado.md) | Sentry no navegador: só erros, sanitizado, com source maps escondidos | aceito |
