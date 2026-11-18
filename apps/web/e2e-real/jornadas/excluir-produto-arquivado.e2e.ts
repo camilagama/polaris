@@ -9,6 +9,7 @@ const RETURNED_BOTTLE = /^Devolvido: Garrafa térmica/;
 const RESTOCKED_BOTTLE = /^Volta ao estoque: Garrafa térmica/;
 const MORE_ACTIONS = /^Mais ações/;
 const NAME_FIELD = "Digite o nome do produto para confirmar";
+const CANCEL_DONE = /^Venda cancelada\. O estoque foi devolvido item a item/;
 
 /**
  * Excluir produto arquivado, na pilha de verdade: o produto arquivado e sem estoque sai da lista e a vaga volta; a venda
@@ -38,12 +39,18 @@ test("excluir produto arquivado: sai da lista, libera a vaga, a venda antiga seg
     "Caneca esmaltada",
     "19.90"
   );
-  await seedStock(rpc, organizationId, bottle.variantId, 3, "20.00", today);
+  await seedStock(rpc, organizationId, bottle.variantId, 4, "20.00", today);
   await seedStock(rpc, organizationId, mug.variantId, 3, "8.00", today);
   const saleId = await seedCashSale(
     rpc,
     organizationId,
     [{ price: "45.90", quantity: 3, variantId: bottle.variantId }],
+    new Date(runT0()).toISOString()
+  );
+  const cancelledSaleId = await seedCashSale(
+    rpc,
+    organizationId,
+    [{ price: "45.90", quantity: 1, variantId: bottle.variantId }],
     new Date(runT0()).toISOString()
   );
   const liveVariants = async () =>
@@ -112,6 +119,32 @@ test("excluir produto arquivado: sai da lista, libera a vaga, a venda antiga seg
   await expect(rowOf("Garrafa térmica")).toHaveCount(0);
   await expect.poll(liveVariants).toBe(1);
 
+  // o Histórico segue listando as vendas do produto excluído; a venda abre com o nome guardado e aceita cancelamento
+  await page.goto("/sales/history");
+  const sales = page.getByRole("list", { name: "Vendas" });
+  await expect(sales.getByRole("listitem")).toHaveCount(2);
+  const saleLink = (id: string) =>
+    sales.locator(`a[href="/sales/detail?saleId=${id}"]`);
+  await expect(saleLink(saleId)).toContainText("Confirmada");
+  await expect(saleLink(cancelledSaleId)).toContainText("Confirmada");
+  await saleLink(cancelledSaleId).click();
+  await expect(page.getByText("Garrafa térmica").first()).toBeVisible();
+  await page
+    .getByRole("region", { name: "Cancelar venda" })
+    .getByRole("button", { name: "Cancelar venda" })
+    .click();
+  const cancelPanel = page.getByRole("region", { name: "Cancelar venda" });
+  await cancelPanel
+    .getByRole("button", { name: "Revisar cancelamento" })
+    .click();
+  await cancelPanel
+    .getByRole("button", { name: "Confirmar cancelamento" })
+    .click();
+  await expect(page.getByText(CANCEL_DONE)).toBeVisible();
+  await page.goto("/sales/history");
+  await expect(saleLink(cancelledSaleId)).toContainText("Cancelada");
+  await expect(saleLink(saleId)).toContainText("Confirmada");
+
   // a venda antiga abre com o nome de quando foi vendida e aceita devolução
   await page.goto(`/sales/detail?saleId=${saleId}`);
   await expect(page.getByText("Garrafa térmica").first()).toBeVisible();
@@ -131,4 +164,11 @@ test("excluir produto arquivado: sai da lista, libera a vaga, a venda antiga seg
     [saleId]
   );
   expect(rows[0]?.returned).toBe(1);
+
+  // Mais vendidos mostra o produto excluído pelo nome guardado, sem link para um painel que não existe mais
+  await page.goto("/");
+  const ranking = page.getByRole("region", { name: "Mais vendidos do mês" });
+  await expect(ranking).toContainText("Garrafa térmica");
+  await expect(ranking.getByRole("listitem")).toHaveCount(1);
+  await expect(ranking.getByRole("link")).toHaveCount(0);
 });
