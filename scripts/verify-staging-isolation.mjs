@@ -20,7 +20,7 @@ import {
  * - a staging value is still a PLACEHOLDER, or a staging id, queue, bucket or rate limit namespace is
  *   shared with production or the top level, or does not say `staging`;
  * - two staging roles share a Hyperdrive configuration (the billing role of the Admin is the one exception);
- * - the deployed name does not end in `-staging`, previews are on, or the sender, the tips sender (empty only while the series is off) or reply-to of e-mail is outside araute.app (whatever the flags), or an e-mail flag is neither "true" nor "false";
+ * - the deployed name does not end in `-staging`, previews are on, or the sender or reply-to of e-mail that is set is outside araute.app (whatever the flags; an empty `AUTH_EMAIL_FROM` passes only while `EMAIL_PASSWORD_AUTH_ENABLED` is not "true", and an empty `ACTIVATION_EMAIL_FROM` only while `ACTIVATION_EMAILS_ENABLED` is not "true"), or an e-mail flag is neither "true" nor "false";
  * - the web of staging is not at exactly https://dash.araute.app and the catalog not at exactly https://catalogo.araute.app, each with workers_dev off, or production names or reaches a host of staging (a variable, a route, a wildcard route);
  * - the Admin of staging is reachable other than through its Access application: workers_dev or previews on, any
  *   route (its Custom Domain at admin.araute.app is created outside the config), an Access team or audience missing, malformed

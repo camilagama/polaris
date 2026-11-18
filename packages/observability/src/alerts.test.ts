@@ -10,6 +10,7 @@ import {
   alertSignals,
   alertSourceEvents,
   criticalRoutes,
+  errorEventsWithoutSignal,
   isCriticalRoute,
 } from "./alerts";
 
@@ -94,27 +95,38 @@ function identifier(node: unknown): string | undefined {
  * and of `report(...)`, the injected reporter of the catalog and the Admin
  * (which hand the name to `logger.error` / `logger.warn`).
  */
-function emittedEvents(source: string, filename: string): string[] {
+function emittedCalls(
+  source: string,
+  filename: string,
+  reportLevel?: string
+): { event: string; level: string | undefined }[] {
   const { errors, program } = parseSync(filename, source);
   expect(errors, `${filename} must parse`).toEqual([]);
-  const events: string[] = [];
+  const events: { event: string; level: string | undefined }[] = [];
   walk(program, (node) => {
     if (node.type !== "CallExpression" || !isNode(node.callee)) {
       return;
     }
     const { callee } = node;
     let emits = false;
+    let level: string | undefined;
     if (callee.type === "MemberExpression") {
       const method = identifier(callee.property);
-      emits =
-        (identifier(callee.object) === "logger" &&
-          method !== undefined &&
-          levelMethods.has(method)) ||
-        method === "report";
+      const isLogger =
+        identifier(callee.object) === "logger" &&
+        method !== undefined &&
+        levelMethods.has(method);
+      if (isLogger) {
+        level = method;
+      } else if (method === "report") {
+        level = reportLevel;
+      }
+      emits = isLogger || method === "report";
     } else {
       const name = identifier(callee);
       emits =
         name !== undefined && (eventFunctions.has(name) || name === "report");
+      level = name === "report" ? reportLevel : undefined;
     }
     const [first] = node.arguments as unknown[];
     if (
@@ -123,10 +135,37 @@ function emittedEvents(source: string, filename: string): string[] {
       first.type === "Literal" &&
       typeof first.value === "string"
     ) {
-      events.push(first.value);
+      events.push({ event: first.value, level });
     }
   });
   return events;
+}
+
+function emittedEvents(source: string, filename: string): string[] {
+  return emittedCalls(source, filename).map(({ event }) => event);
+}
+
+/**
+ * The level an app's injected `report` writes at, read from the place that
+ * wires it to the logger (`report: (...) => logger.<level>(...)`), so a
+ * `report("<name>")` call counts as the level the app really emits it at.
+ */
+const reportWiringPattern =
+  /\breport:\s*\([^)]*\)\s*=>\s*logger\.(debug|error|info|warn)\(/g;
+
+function reportLevelsWired(text: string): string[] {
+  return [...text.matchAll(reportWiringPattern)].map((match) => match[1] ?? "");
+}
+
+/** The event names a source emits at the error level: `logger.error("<name>", ...)` and `report("<name>")` where the app wires `report` to `logger.error`. */
+function errorLevelEvents(
+  source: string,
+  filename: string,
+  reportLevel?: string
+): string[] {
+  return emittedCalls(source, filename, reportLevel)
+    .filter(({ level }) => level === "error")
+    .map(({ event }) => event);
 }
 
 function sourceFiles(directory: string): string[] {
@@ -147,13 +186,59 @@ function sourceFiles(directory: string): string[] {
   return files;
 }
 
-const emitted = new Set(
-  sourceRoots.flatMap((sourceRoot) =>
-    sourceFiles(path.join(root, sourceRoot)).flatMap((file) =>
-      emittedEvents(readFileSync(file, "utf8"), file)
-    )
+const sourceTexts = sourceRoots.flatMap((sourceRoot) =>
+  sourceFiles(path.join(root, sourceRoot)).map(
+    (file) => [file, readFileSync(file, "utf8")] as const
   )
 );
+
+const emitted = new Set(
+  sourceTexts.flatMap(([file, text]) => emittedEvents(text, file))
+);
+
+function appOf(file: string): string {
+  return path.relative(root, file).split(path.sep).slice(0, 2).join("/");
+}
+
+const reportLevelsByApp = new Map<string, Set<string>>();
+const appsCallingReport = new Set<string>();
+for (const [file, text] of sourceTexts) {
+  const app = appOf(file);
+  if (/\breport\(\s*"/.test(text)) {
+    appsCallingReport.add(app);
+  }
+  const levels = reportLevelsByApp.get(app) ?? new Set<string>();
+  for (const level of reportLevelsWired(text)) {
+    levels.add(level);
+  }
+  reportLevelsByApp.set(app, levels);
+}
+
+const reportLevelByApp = new Map<string, string>();
+for (const [app, levels] of reportLevelsByApp) {
+  if (levels.size === 1) {
+    reportLevelByApp.set(app, [...levels][0] ?? "");
+  }
+}
+
+const emittedAtErrorLevel = new Set(
+  sourceTexts.flatMap(([file, text]) =>
+    errorLevelEvents(text, file, reportLevelByApp.get(appOf(file)))
+  )
+);
+
+/** The error events that have neither a signal nor an entry with a reason, sorted. */
+function errorEventsWithoutDestination(
+  errorEvents: ReadonlySet<string>,
+  signals: readonly SignalLike[],
+  exceptions: readonly { event: string; reason: string }[]
+): string[] {
+  const routed = new Set([
+    ...signals.flatMap((signal) => signal.source.events),
+    ...exceptions.map(({ event }) => event),
+  ]);
+  return [...errorEvents].filter((event) => !routed.has(event)).sort();
+}
 
 const runbook = readFileSync(
   path.join(root, "docs", "runbooks", "alertas.md"),
@@ -179,7 +264,7 @@ const dlqRowPattern = /(\| \[`dlq`\].*\n)/;
 const monitorDate = String.raw`(?:0[1-9]|[12]\d|3[01])\/(?:0[1-9]|1[0-2])\/\d{4}`;
 const signalStatePattern = /^(?:pendente|coberto pela política ([1-9]\d*))$/;
 const policyStatePattern = new RegExp(
-  `^(?:criada em ${monitorDate} por \\S.*|V14, provada em ${monitorDate} \\(registro do \\S+\\))$`
+  `^(?:criada em ${monitorDate} por \\S.*|V14, provada em ${monitorDate} \\(anotação do \\S+\\))$`
 );
 const monitorLinkPattern = /\(#([^)]+)\)/;
 const policyRowPattern = /^\| [1-9]\d* \|/;
@@ -587,6 +672,211 @@ describe("alert signals", () => {
     }
   });
 
+  it("watch the three failures of the activation series in one signal that wakes, at the first one in an hour", () => {
+    const signal = alertSignals.find(
+      (candidate) => candidate.id === "serie-falhando"
+    );
+
+    expect(signal?.source.events).toEqual([
+      "activation_notice_email_misconfigured",
+      "activation_notice_failed",
+      "activation_sweep_failed",
+    ]);
+    expect(signal?.threshold).toEqual({ atLeast: 1, kind: "count" });
+    expect(signal?.windowMinutes).toBe(60);
+    expect(signal?.notify).toBe("wake");
+  });
+
+  it("wake someone at the first refund incident, rejected provider key and abandoned billing event", () => {
+    for (const event of [
+      "billing_refund_pending_incident",
+      "billing_provider_rejected",
+      "billing_webhook_unresolved_given_up",
+    ]) {
+      const signals = alertSignals.filter((candidate) =>
+        (candidate.source.events as readonly string[]).includes(event)
+      );
+      expect(signals, event).toHaveLength(1);
+      expect(signals[0]?.source.events, event).toEqual([event]);
+      expect(signals[0]?.threshold).toEqual({ atLeast: 1, kind: "count" });
+      expect(signals[0]?.notify).toBe("wake");
+    }
+  });
+
+  it("wake someone at the first failed access e-mail, with a window of one hour", () => {
+    const signal = alertSignals.find(
+      (candidate) => candidate.id === "email-de-acesso-falhando"
+    );
+
+    expect(signal?.source.events).toEqual(["auth_email_delivery_failed"]);
+    expect(signal?.threshold).toEqual({ atLeast: 1, kind: "count" });
+    expect(signal?.notify).toBe("wake");
+    expect(signal?.severity).toBe("critical");
+    expect(signal?.windowMinutes).toBe(60);
+  });
+
+  it("only report the eight error events the classification keeps out of the wake", () => {
+    for (const event of [
+      "activation_notice_delivery_window_passed",
+      "billing_notice_delivery_window_passed",
+      "billing_notice_failed",
+      "billing_trial_fact_without_claim",
+      "billing_webhook_state_not_shown",
+      "billing_webhook_fact_event_malformed",
+      "billing_provider_response_malformed",
+      "rate_limit_unavailable",
+    ]) {
+      const signals = alertSignals.filter((candidate) =>
+        (candidate.source.events as readonly string[]).includes(event)
+      );
+      expect(signals, event).toHaveLength(1);
+      expect(signals[0]?.notify, event).toBe("report");
+    }
+  });
+
+  it("give every event emitted with logger.error a signal or an exception with a reason", () => {
+    expect(emittedAtErrorLevel.has("activation_notice_failed")).toBe(true);
+    expect(emittedAtErrorLevel.has("server_error")).toBe(true);
+    expect(
+      errorEventsWithoutDestination(
+        emittedAtErrorLevel,
+        alertSignals,
+        errorEventsWithoutSignal
+      )
+    ).toEqual([]);
+  });
+
+  it("name in the exceptions only error events that exist, have no signal and carry a reason", () => {
+    const events = errorEventsWithoutSignal.map(({ event }) => event);
+
+    expect(new Set(events).size).toBe(events.length);
+    for (const { event, reason } of errorEventsWithoutSignal) {
+      expect(emittedAtErrorLevel.has(event), `${event} is emitted`).toBe(true);
+      expect(alertSourceEvents(), `${event} has a signal`).not.toContain(event);
+      expect(reason.trim().length, `${event} has a reason`).toBeGreaterThan(20);
+    }
+  });
+
+  describe("the error event guard (control cases)", () => {
+    const withoutRegistered = (event: string) =>
+      alertSignals.map((signal) => ({
+        ...signal,
+        source: {
+          ...signal.source,
+          events: signal.source.events.filter((name) => name !== event),
+        },
+      }));
+
+    it("names a new error event of the series that has no signal", () => {
+      const found = new Set([...emittedAtErrorLevel, "activation_novo_erro"]);
+
+      expect(
+        errorEventsWithoutDestination(
+          found,
+          alertSignals,
+          errorEventsWithoutSignal
+        )
+      ).toEqual(["activation_novo_erro"]);
+    });
+
+    it("names a series event whose signal was dropped, and one whose exception was dropped", () => {
+      expect(
+        errorEventsWithoutDestination(
+          emittedAtErrorLevel,
+          withoutRegistered("activation_sweep_failed"),
+          errorEventsWithoutSignal
+        )
+      ).toEqual(["activation_sweep_failed"]);
+      expect(
+        errorEventsWithoutDestination(
+          emittedAtErrorLevel,
+          alertSignals,
+          errorEventsWithoutSignal.filter(
+            ({ event }) => event !== "queue_ledger_not_recorded"
+          )
+        )
+      ).toEqual(["queue_ledger_not_recorded"]);
+    });
+
+    it("reads the level: a warn event is not an error event", () => {
+      const snippet = [
+        'logger.error("a_error", {});',
+        'logger.warn("b_warn", {});',
+        'report("c_report");',
+        'dependencies.report("d_report");',
+      ].join("\n");
+
+      expect(errorLevelEvents(snippet, "snippet.ts")).toEqual(["a_error"]);
+      expect(errorLevelEvents(snippet, "snippet.ts", "warn")).toEqual([
+        "a_error",
+      ]);
+      expect(errorLevelEvents(snippet, "snippet.ts", "error")).toEqual([
+        "a_error",
+        "c_report",
+        "d_report",
+      ]);
+    });
+
+    it("wires the injected report of each app that calls it to exactly one level", () => {
+      expect([...appsCallingReport].sort()).toEqual([
+        "apps/admin",
+        "apps/catalog",
+      ]);
+      for (const app of appsCallingReport) {
+        expect(
+          [...(reportLevelsByApp.get(app) ?? [])],
+          `${app} wires report to one logger level`
+        ).toHaveLength(1);
+      }
+    });
+
+    it("reads each way the report wiring can be written, and none that it cannot", () => {
+      expect(reportLevelsWired("report: (a, b) => logger.warn(a, b)")).toEqual([
+        "warn",
+      ]);
+      expect(
+        reportLevelsWired("report: x,\n other: (y) => logger.error(y)")
+      ).toEqual([]);
+      expect(reportLevelsWired("report: logger.error.bind(logger)")).toEqual(
+        []
+      );
+    });
+
+    it("reads the injected report at the level its app wires it to", () => {
+      expect(reportLevelByApp.get("apps/catalog")).toBe("error");
+      expect(reportLevelByApp.get("apps/admin")).toBe("warn");
+      expect(emittedAtErrorLevel.has("catalog_media_object_missing")).toBe(
+        true
+      );
+      expect(emittedAtErrorLevel.has("admin_error")).toBe(false);
+      expect(
+        reportLevelsWired(
+          "report: (message, error) =>\n  logger.error(message, error)"
+        )
+      ).toEqual(["error"]);
+    });
+
+    it("names a catalog media event that has no signal", () => {
+      const withoutMedia = alertSignals.map((signal) => ({
+        ...signal,
+        source: {
+          ...signal.source,
+          events: signal.source.events.filter(
+            (name) => name !== "catalog_media_authorization_failed"
+          ),
+        },
+      }));
+
+      expect(
+        errorEventsWithoutDestination(
+          emittedAtErrorLevel,
+          withoutMedia,
+          errorEventsWithoutSignal
+        )
+      ).toEqual(["catalog_media_authorization_failed"]);
+    });
+  });
+
   it("count the two billing 503s of an unconfirmed provider apart, with the threshold of the reconcile signal", () => {
     const reconcile = alertSignals.find(
       (candidate) => candidate.id === "cobranca-reconcile"
@@ -604,6 +894,17 @@ describe("alert signals", () => {
     expect(signal?.threshold).toEqual(reconcile?.threshold);
     expect(signal?.windowMinutes).toBe(reconcile?.windowMinutes);
     expect(signal?.notify).toBe("report");
+  });
+
+  it("leave the purges held on purpose and the first failure of a step out of the purge signal", () => {
+    const signal = alertSignals.find(
+      (candidate) => candidate.id === "purge-parado"
+    );
+
+    expect(signal?.source.events).toContain("organization_purge_step_failed");
+    expect(signal?.source.where).toContain('outcome != "rejected"');
+    expect(signal?.source.where).toContain("attempt >= 3");
+    expect(signal?.source.where).toContain("organization_purge_step_failed");
   });
 
   it("have a positive window and a threshold that can fire", () => {
@@ -710,7 +1011,7 @@ describe("the monitors section of the runbook", () => {
       ]);
       expect(drift(swap("http-5xx", { notify: "report" }))).toEqual([
         'http-5xx: runbook says wakes "sim", registry says "não"',
-        "comando-de-cobranca-do-operador: a waking signal after one that does not",
+        "email-de-acesso-falhando: a waking signal after one that does not",
       ]);
     });
 
@@ -778,7 +1079,13 @@ describe("the monitors section of the runbook", () => {
       expect(
         drift(
           swap("http-5xx", {
-            source: { events: ["server_error"], where: "httpStatus >= 400" },
+            source: {
+              events: [
+                ...(alertSignals.find((s) => s.id === "http-5xx")?.source
+                  .events ?? []),
+              ],
+              where: "httpStatus >= 400",
+            },
           })
         )
       ).toEqual(["http-5xx: query lacks the filter of the registry"]);
@@ -802,7 +1109,7 @@ describe("the monitors section of the runbook", () => {
     it("rejects a policy state that is not one of the two forms, and an impossible date", () => {
       const badState = inSection((text) =>
         text.replace(
-          "| V14, provada em 09/11/2026 (registro do Arrascaeta) |",
+          "| V14, provada em 09/11/2026 (anotação do Arrascaeta) |",
           "| a confirmar (V14) |"
         )
       );
@@ -820,7 +1127,7 @@ describe("the monitors section of the runbook", () => {
 
     it("rejects a policy query that lacks an event, adds a second event clause or starts with something else, and a filter the signals do not have", () => {
       const lacks = inSection((text) =>
-        text.replace(', "queue_ledger_unavailable")`', ")`")
+        text.replace('"queue_ledger_unavailable", ', "")
       );
       const second = inSection((text) =>
         text.replace(
@@ -866,7 +1173,7 @@ describe("the monitors section of the runbook", () => {
       const v14Elsewhere = inSection((text) =>
         text.replace(
           "| criada em 17/11/2026 por Arrascaeta |\n| 3 |",
-          "| V14, provada em 09/11/2026 (registro do Arrascaeta) |\n| 3 |"
+          "| V14, provada em 09/11/2026 (anotação do Arrascaeta) |\n| 3 |"
         )
       );
       const numberNine = inSection((text) =>
@@ -877,8 +1184,8 @@ describe("the monitors section of the runbook", () => {
       );
       const bareId = inSection((text) =>
         text.replace(
-          "`http-5xx`, `erros-de-banco` |",
-          "`http-5xx`, erros-de-banco |"
+          "`http-5xx`, `erros-de-banco`, `serie-falhando`, `email-de-acesso-falhando` |",
+          "`http-5xx`, erros-de-banco, `serie-falhando`, `email-de-acesso-falhando` |"
         )
       );
 
@@ -893,6 +1200,7 @@ describe("the monitors section of the runbook", () => {
         "policy 3: signals column has text outside backticks",
         "policy 3: query names scheduler_state_unavailable, which the registry does not",
         "policy 3: query names queue_ledger_unavailable, which the registry does not",
+        "policy 3: query names legal_acceptance_unavailable, which the registry does not",
         "erros-de-banco: the signal line says policy 3 and the policy table says none",
       ]);
     });
@@ -908,7 +1216,10 @@ describe("the monitors section of the runbook", () => {
         text.replace("`outbox-parado` |", "`outbox-parado`, `sinal-solto` |")
       );
       const dropped = inSection((text) =>
-        text.replace("`http-5xx`, `erros-de-banco` |", "`http-5xx` |")
+        text.replace(
+          "`http-5xx`, `erros-de-banco`, `serie-falhando`, `email-de-acesso-falhando` |",
+          "`http-5xx`, `serie-falhando`, `email-de-acesso-falhando` |"
+        )
       );
       const wrongPolicy = inSection((text) =>
         text.replace(http5xxStatePattern, "$1coberto pela política 2 |")
@@ -926,6 +1237,7 @@ describe("the monitors section of the runbook", () => {
       expect(monitorDrift(dropped, alertSignals)).toEqual([
         "policy 3: query names scheduler_state_unavailable, which the registry does not",
         "policy 3: query names queue_ledger_unavailable, which the registry does not",
+        "policy 3: query names legal_acceptance_unavailable, which the registry does not",
         "erros-de-banco: the signal line says policy 3 and the policy table says none",
       ]);
       expect(monitorDrift(wrongPolicy, alertSignals)).toEqual([
@@ -940,7 +1252,10 @@ describe("the monitors section of the runbook", () => {
       );
       const wrongLink = inSection((text) => text.replace("(#dlq)", "(#outro)"));
       const noFilter = inSection((text) =>
-        text.replace("; `httpStatus >= 500`", "")
+        text.replace(
+          "; `httpStatus >= 500, or the event is not server_error`",
+          ""
+        )
       );
 
       expect(monitorDrift(stray, alertSignals)).toEqual([
