@@ -4,7 +4,7 @@
 
 **Por quê:** o Neon Free guarda só 6 horas de histórico. O backup cobre o desastre maior (projeto apagado, conta perdida, corrupção percebida tarde): um `pg_dump` diário, cifrado fora do Neon, guardado 35 dias (o prazo de `provider_backups` do [ADR 0079](../adr/0079-retencao-por-classe-de-dado.md)). A decisão e as alternativas estão no [ADR 0099](../adr/0099-backup-logico-diario-no-r2-cifrado-com-age.md). O staging roda o mesmo mecanismo da produção, com outros nomes, para que ele chegue ao go-live já provado.
 
-> **Estado:** os scripts e as checagens existem no repositório, mas o login, o bucket, o token, o Environment `staging-backup` e o rótulo existem desde 12/11/2026 e o workflow `backup-staging.yml` (só o staging) está no repositório. O workflow `backup.yml`, com um job por ambiente (`staging` e `production`), cada um só rodando com a variável do seu ambiente (`STAGING_BACKUP_ENABLED`, `PRODUCTION_BACKUP_ENABLED`, do responsável), está **pendente**: vem no patch `t1195-workflow.patch`, que o Arrascaeta aplica (o dev não altera `.github/workflows`), e substitui o `backup-staging.yml`. Até lá, o que vale no repositório é o `backup-staging.yml`, e tudo abaixo que cita o `backup.yml` descreve o estado depois do patch. A produção nasce desligada e sem chave: a [seção de produção](#produção-go-live) diz o que falta. Os passos marcados **a provar** são o primeiro ensaio do staging; o resultado de cada um entra neste runbook, como no [restore e deletion ledger](./deletion-ledger-restore.md).
+> **Estado:** os scripts e as checagens existem no repositório, mas o login, o bucket, o token, o Environment `staging-backup` e o rótulo existem desde 12/11/2026 e o workflow `backup-staging.yml` (só o staging) está no repositório. O workflow `backup.yml`, com um job por ambiente (`staging` e `production`), cada um só rodando com a variável do seu ambiente (`STAGING_BACKUP_ENABLED`, `PRODUCTION_BACKUP_ENABLED`, do responsável), está **pendente**: vem no patch `t1195-workflow.patch`, que o Arrascaeta aplica (o dev não altera `.github/workflows`), e substitui o `backup-staging.yml`. Até lá, o que vale no repositório é o `backup-staging.yml`, e tudo abaixo que cita o `backup.yml` descreve o estado depois do patch. A produção nasce desligada e sem chave: a [seção de produção](#produção-go-live) diz o que falta. O primeiro backup e o primeiro ensaio do staging passaram em 15/11/2026 ([resultado abaixo](#ensaio-de-15112026-staging)); a produção repete os dois no go-live.
 
 ## Quem faz o quê
 
@@ -36,7 +36,7 @@ A chave privada nunca vai ao GitHub nem ao R2. Por decisão do dono de 12/11/202
 
 Tudo na conta Cloudflare e no projeto Neon do staging. Registre o resultado de cada passo (sem senha nem chave).
 
-1. **A provar primeiro (decide o desenho).** Com o dono (`neondb_owner`) e a URL direta, criar o login pelo SQL, **nunca pelo console** (que põe o papel em `neon_superuser`), lendo a senha de um arquivo `umask 077` como no [runbook do staging, seção 1.4](./staging.md#1-banco-responsável):
+1. **Criar o login (decide o desenho; provado no ensaio de 15/11/2026).** Com o dono (`neondb_owner`) e a URL direta, criar o login pelo SQL, **nunca pelo console** (que põe o papel em `neon_superuser`), lendo a senha de um arquivo `umask 077` como no [runbook do staging, seção 1.4](./staging.md#1-banco-responsável):
 
    ```sql
    CREATE ROLE polaris_backup_reader LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION BYPASSRLS NOINHERIT
@@ -45,9 +45,9 @@ Tudo na conta Cloudflare e no projeto Neon do staging. Registre o resultado de c
    ALTER ROLE polaris_backup_reader SET default_transaction_read_only = on;
    ```
 
-   O `pg_read_all_data` também dá leitura aos catálogos, `pg_authid` incluído: quem tiver a senha desse login lê os verificadores SCRAM dos outros logins (não servem para entrar, só para tentar adivinhar a senha fora do banco; as senhas dos logins são aleatórias e longas). Por isso a senha dele fica só no Environment e se troca junto com qualquer suspeita de vazamento. Sem `idle_in_transaction_session_timeout` nesse login: a sessão que segura o snapshot fica ociosa em transação enquanto o `pg_dump` roda. **A provar:** se o `neondb_owner` consegue dar `BYPASSRLS` (o PostgreSQL 16+ exige que quem cria o tenha) e o `GRANT pg_read_all_data` (exige `ADMIN` nesse papel). Se não conseguir, pare: o desenho volta à revisão de segurança, porque a alternativa é usar o dono. Por que `BYPASSRLS`: com RLS forçado, o `pg_dump` liga `row_security = off` e **falha** numa tabela que a política filtraria, então um dump incompleto sem erro não acontece, mas sem o atributo o dump não sai.
-2. **Conferir o login.** `bun run --filter @polaris/db staging:verify-database after-migrate` (com a URL do migrador) tem de listar `login polaris_backup_reader: pg_read_all_data, BYPASSRLS, read-only, owns nothing`. Qualquer outro atributo, pertença, objeto, grant ou política com o login, ou alguém que possa virar ele, reprova o deploy do staging, de propósito. **A provar:** que o Neon não acrescenta pertença nem dependência ao papel (se acrescentar, levar ao Rodrigo antes de afrouxar a checagem).
-3. **Bucket e token.** Bucket privado `polaris-backup-staging`, sem ciclo de vida e sem acesso público. Token R2 "Object Read & Write" só nesse bucket, com validade. **A provar:** se o bucket lock (retenção por prefixo) de 7 dias em `daily/` é grátis no plano Free; se for, ligar.
+   O `pg_read_all_data` também dá leitura aos catálogos, `pg_authid` incluído: quem tiver a senha desse login lê os verificadores SCRAM dos outros logins (não servem para entrar, só para tentar adivinhar a senha fora do banco; as senhas dos logins são aleatórias e longas). Por isso a senha dele fica só no Environment e se troca junto com qualquer suspeita de vazamento. Sem `idle_in_transaction_session_timeout` nesse login: a sessão que segura o snapshot fica ociosa em transação enquanto o `pg_dump` roda. **Provado em 15/11/2026:** o `neondb_owner` consegue dar `BYPASSRLS` (o PostgreSQL 16+ exige que quem cria o tenha) e o `GRANT pg_read_all_data` (exige `ADMIN` nesse papel), e o dump do primeiro backup saiu com esse login. Se um ambiente novo não conseguir, pare: o desenho volta à revisão de segurança, porque a alternativa é usar o dono. Por que `BYPASSRLS`: com RLS forçado, o `pg_dump` liga `row_security = off` e **falha** numa tabela que a política filtraria, então um dump incompleto sem erro não acontece, mas sem o atributo o dump não sai.
+2. **Conferir o login.** `bun run --filter @polaris/db staging:verify-database after-migrate` (com a URL do migrador) tem de listar `login polaris_backup_reader: pg_read_all_data, BYPASSRLS, read-only, owns nothing`. Qualquer outro atributo, pertença, objeto, grant ou política com o login, ou alguém que possa virar ele, reprova o deploy do staging, de propósito. **Em aberto (o ensaio de 15/11/2026 não registrou):** que o Neon não acrescenta pertença nem dependência ao papel (se acrescentar, levar ao Rodrigo antes de afrouxar a checagem).
+3. **Bucket e token.** Bucket privado `polaris-backup-staging`, sem ciclo de vida e sem acesso público. Token R2 "Object Read & Write" só nesse bucket, com validade. **Em aberto (o ensaio de 15/11/2026 não registrou):** se o bucket lock (retenção por prefixo) de 7 dias em `daily/` é grátis no plano Free; se for, ligar.
 4. **Chave.** O titular gera a identidade: `age-keygen -o staging.key`. A identidade vai para o cofre do servidor OpenBot (0400, fora do repositório; decisão de 12/11/2026, ver acima), não para cópia offline, e `staging.key` é apagado da máquina onde foi gerada. A chave pública (`age-keygen -y staging.key` antes de apagar) vai num PR para `ops/backup/recipients-staging.txt`, uma linha `age1…`. Sem chave nesse arquivo o job recusa selar.
 5. **Environment `staging-backup`**, restrito à branch `main`, sem revisor obrigatório (travaria o cron). Os segredos ficam **só** no Environment, nunca no repositório: o `if` do job é texto do próprio workflow, e quem tem escrita pode tirá-lo num branch; o que barra um `workflow_dispatch` de outro branch é a restrição do Environment. Crie e restrinja o Environment à `main` **antes** de gravar qualquer segredo nele, e confira a política de branches na tela do Environment (só `main`). Disparar o workflow de outro branch não prova a restrição, porque o `if` do job já o pula antes do Environment; ela só vale para quem editar o `if` num branch. Segredos: `BACKUP_PGPASSWORD` (a senha do login), `R2_BACKUP_ACCESS_KEY_ID` e `R2_BACKUP_SECRET_ACCESS_KEY`. Variáveis: `BACKUP_PGHOST` (host **direto** do projeto, sem `-pooler`), `BACKUP_PGDATABASE` (`neondb`), `R2_BACKUP_ENDPOINT` (`https://<id da conta>.r2.cloudflarestorage.com`) e `BACKUP_RECIPIENTS_SHA256` (`sha256sum ops/backup/recipients-staging.txt` da `main`, depois do PR da chave). O bucket fica escrito no workflow (`polaris-backup-staging`): um backup do staging nunca vai a outro bucket.
 6. **Rótulo** `backup-staging` no repositório (a issue de falha usa ele).
@@ -92,6 +92,28 @@ Quem: o responsável pelo servidor onde a identidade está (o titular não preci
 5. **Apagar** a branch (responsável) e o arquivo baixado. A identidade volta ao cofre.
 
 **O que o ensaio não faz:** os passos 0, 1, 3 e 4 do [restore e deletion ledger](./deletion-ledger-restore.md) (ler o ledger da origem desde o backup, carregar e reaplicar os tombstones posteriores). Num ensaio o banco restaurado nunca é aberto, então eles não se aplicam; numa restauração de verdade são obrigatórios, à mão, antes de reabrir o ambiente, e o script vem antes deles. Também não restaura papéis num projeto novo (`roles.sql` vai no pacote para esse caso, de perda total, que segue o passo 2 daquele runbook) nem aponta Hyperdrive para o banco restaurado.
+
+## Ensaio de 15/11/2026 (staging)
+
+Primeiro backup e primeiro ensaio de restauração do staging, que levaram o [ADR 0099](../adr/0099-backup-logico-diario-no-r2-cifrado-com-age.md) a `accepted` (escopo staging). Só números e nomes.
+
+| Item | Resultado |
+| --- | --- |
+| Backup | run 43742485132 do job diário do staging |
+| Restauração de ponta a ponta | `rc 0`, `ok: true`, `checks: []` |
+| Tabelas e linhas restauradas | 84 tabelas, 64.337 linhas |
+| RTO de dados (passo 3) | 23 s |
+| RPO medido | cerca de 38 min (instante do ensaio menos `snapshot_at`) |
+
+O RPO de desenho continua "até um dia mais o atraso do agendador": os 38 min são a medida deste ensaio.
+
+Comando usado (passo 3 acima, com as variáveis `PG*` da branch descartável e a identidade do cofre; os valores não entram aqui):
+
+```bash
+node scripts/backup/restore.mjs --environment staging --archive <stamp>.tar.age --identity <caminho da identidade no cofre> --sha256 <hash do log do run>
+```
+
+Limites: o ledger tinha 0 linhas, então a consulta final do passo 5 do [restore e deletion ledger](./deletion-ledger-restore.md) não exercitou nada; PITR e produção não foram provados. A produção repete o primeiro backup e o primeiro ensaio no go-live ([release-checklist](./release-checklist.md#5-pendências-de-ambiente-do-go-live-block)).
 
 ## Produção (go-live)
 
