@@ -568,7 +568,7 @@ export const errorEventsWithoutSignal = [
   {
     event: "auth_email_delivery_failed",
     reason:
-      "left out of the classification of the unsignaled error events, so it still has no decision between wake and report; the screen answer does not change and the failure shows only in the log",
+      "no decision between wake and report is recorded for it; the screen answer does not change and the failure shows only in the log",
   },
   {
     event: "billing_woovi_reconcile_failed",
