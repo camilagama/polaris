@@ -99,8 +99,11 @@ interface Deferred {
   resolve: (value: unknown) => void;
 }
 
+let heldNow: Deferred | null = null;
+
 function holdTheServer(): Deferred {
   const held: Deferred = { resolve: () => undefined };
+  heldNow = held;
   deleteCall.mockImplementation(
     () =>
       new Promise((resolve) => {
@@ -139,7 +142,14 @@ beforeEach(() => {
   keepLocalRow.mockResolvedValue(undefined);
 });
 
-afterEach(cleanup);
+afterEach(async () => {
+  await act(async () => {
+    heldNow?.resolve({ product: product(1) });
+    await Promise.resolve();
+  });
+  heldNow = null;
+  cleanup();
+});
 
 describe("Excluir produto: a chamada em andamento", () => {
   it("trava o campo e põe aria-busy no botão que diz Excluindo…", async () => {
@@ -301,6 +311,10 @@ describe("Excluir produto: o diálogo sozinho com a chamada em curso", () => {
     await waitFor(() => expect(onCancel).toHaveBeenCalledTimes(1));
     await user.click(screen.getByRole("button", { name: "Manter arquivado" }));
     expect(onCancel).toHaveBeenCalledTimes(2);
+    await user.click(
+      document.querySelector(CLOSE_BUTTON_SELECTOR) as HTMLElement
+    );
+    expect(onCancel).toHaveBeenCalledTimes(3);
   });
 
   it("com a chamada em curso, Esc e Manter arquivado não chamam onCancel e o × some", async () => {
@@ -323,7 +337,8 @@ describe("Excluir produto: o diálogo sozinho com a chamada em curso", () => {
     const user = userEvent.setup();
     await screen.findByLabelText(NAME_FIELD);
     const overlay = document.querySelector('[data-slot="dialog-overlay"]');
-    await user.click((overlay ?? document.body) as HTMLElement);
+    expect(overlay).not.toBeNull();
+    await user.click(overlay as HTMLElement);
     await waitFor(() => expect(onCancel).toHaveBeenCalled());
   });
 
@@ -332,7 +347,8 @@ describe("Excluir produto: o diálogo sozinho com a chamada em curso", () => {
     const user = userEvent.setup();
     await screen.findByLabelText(NAME_FIELD);
     const overlay = document.querySelector('[data-slot="dialog-overlay"]');
-    await user.click((overlay ?? document.body) as HTMLElement);
+    expect(overlay).not.toBeNull();
+    await user.click(overlay as HTMLElement);
     expect(onCancel).not.toHaveBeenCalled();
   });
 });
