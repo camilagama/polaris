@@ -447,16 +447,22 @@ test.afterEach(async ({ page }, testInfo) => {
   if (!log || testInfo.status === testInfo.expectedStatus) {
     return;
   }
-  const events = await page
+  const collected = await page
     .evaluate(
       () =>
         (window as unknown as { __addAdjustmentLog?: PointerRecord[] })
-          .__addAdjustmentLog ?? []
+          .__addAdjustmentLog ?? null
     )
-    .catch(() => []);
+    .then(
+      (events) =>
+        events
+          ? { events }
+          : { collectError: "registro ausente na página", events: null },
+      (error: unknown) => ({ collectError: String(error), events: null })
+    );
   await testInfo.attach("diag-adicionar-ajuste", {
     body: JSON.stringify(
-      { console: log.console, events, pageErrors: log.pageErrors },
+      { console: log.console, ...collected, pageErrors: log.pageErrors },
       null,
       2
     ),
