@@ -304,6 +304,35 @@ describe("the retry of a failed read", () => {
     await waitFor(() => expect(document.activeElement).toBe(toggle));
   });
 
+  it("moves the focus to the switch when the second touch is the one that reads", async () => {
+    const read = vi
+      .fn<() => Promise<EmailPreference>>()
+      .mockRejectedValueOnce(new Error("falhou"))
+      .mockRejectedValueOnce(new Error("falhou de novo"))
+      .mockResolvedValue({ sent: 1, tips: true });
+    render(
+      <EmailPreferenceCard
+        calls={callsOf({ sent: 1, tips: true }, { read })}
+        online
+      />
+    );
+    await screen.findByRole("alert");
+    await user.click(screen.getByRole("button", { name: "Tentar novamente" }));
+    await waitFor(() => expect(read).toHaveBeenCalledTimes(2));
+    await waitFor(() =>
+      expect(
+        screen
+          .getByRole("button", { name: "Tentar novamente" })
+          .getAttribute("aria-busy")
+      ).toBe("false")
+    );
+    await user.click(screen.getByRole("button", { name: "Tentar novamente" }));
+    const toggle = await screen.findByRole("switch", {
+      name: "Dicas para começar",
+    });
+    await waitFor(() => expect(document.activeElement).toBe(toggle));
+  });
+
   it("does not move the focus to the switch on the first read", async () => {
     const { toggle } = await opened({ sent: 0, tips: true });
     expect(document.activeElement).not.toBe(toggle);
