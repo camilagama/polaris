@@ -14,7 +14,8 @@ const ORGANIZATION = {
   role: "owner",
   timezone: "America/Sao_Paulo",
 };
-const DAY = "2026-10-14T12:00:00.000Z";
+const NOW = new Date("2026-10-14T12:00:00-03:00");
+const DAY = NOW.toISOString();
 
 const rpc = (json: unknown, status = 200) => ({
   body: JSON.stringify({ json, meta: [] }),
@@ -47,6 +48,7 @@ const customer = (n: number, name: string) => ({
 });
 
 async function openCustomers(page: Page, answers: Record<string, Handler>) {
+  await page.clock.setFixedTime(NOW);
   await page.route("**/api/auth/get-session", (route) =>
     route.fulfill({
       body: JSON.stringify({ session: { id: "s" }, user: { id: "u" } }),
@@ -91,7 +93,7 @@ test("Clientes: a lista que não carrega diz o motivo, não é uma lista vazia e
   // three tries (the wait between them is ~1.5 s and ~4 s) before the screen gives up
   const alert = page.getByRole("alert");
   await expect(alert).toContainText(LOAD_FAILED, { timeout: 15_000 });
-  expect(reads).toBe(3);
+  await expect.poll(() => reads).toBe(3);
   await expect(page.getByText(EMPTY_LIST)).toHaveCount(0);
   await expect(page.getByText("Ana Lima")).toHaveCount(0);
 
@@ -99,7 +101,7 @@ test("Clientes: a lista que não carrega diz o motivo, não é uma lista vazia e
   await expect(page.getByText("Ana Lima")).toBeVisible();
   await expect(page.getByRole("alert")).toHaveCount(0);
   await expect(page.getByText(EMPTY_LIST)).toHaveCount(0);
-  expect(reads).toBe(4);
+  await expect.poll(() => reads).toBe(4);
 });
 
 test("Clientes: a primeira leitura da lista com um 503 repete sozinha e abre sem o aviso", async ({
@@ -131,7 +133,7 @@ test("Clientes: a primeira leitura da lista com um 503 repete sozinha e abre sem
         (window as unknown as { alertSeen: { alert: boolean } }).alertSeen.alert
     )
   ).toBe(false);
-  expect(reads).toBe(2);
+  await expect.poll(() => reads).toBe(2);
 });
 
 test("Clientes: a conferência de repetidos que falha diz que não conferiu, não salva e o que foi digitado fica", async ({
