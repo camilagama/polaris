@@ -314,8 +314,9 @@ function ChosenItemFields({
           {stockWarning}
         </p>
       ) : null}
+      {/* 18.25 rem: o preço cobrado de cinco dígitos com centavos (99999,99) só cabe ao lado da Quantidade a partir de 17,94 rem de item; abaixo disso os campos empilham */}
       <div className="@container">
-        <div className="grid @[16.25rem]:grid-cols-[min-content_minmax(0,1fr)] @[27rem]:grid-cols-[min-content_minmax(0,1fr)_minmax(0,1fr)] grid-cols-1 items-start gap-x-3 gap-y-4 @max-[16.25rem]:[&>:first-child]:justify-self-start">
+        <div className="grid @[18.25rem]:grid-cols-[min-content_minmax(0,1fr)] @[27rem]:grid-cols-[min-content_minmax(0,1fr)_minmax(0,1fr)] grid-cols-1 items-start gap-x-3 gap-y-4 @max-[18.25rem]:[&>:first-child]:justify-self-start">
           <QuantityStepper
             error={errors[itemFieldKey(item.draftId, "quantity")]}
             id={`${prefix}-quantity`}
@@ -340,7 +341,7 @@ function ChosenItemFields({
           />
           <TextField
             addon="R$"
-            className="@[16.25rem]:col-span-2 @[27rem]:col-span-1"
+            className="@[18.25rem]:col-span-2 @[27rem]:col-span-1"
             error={errors[itemFieldKey(item.draftId, "listedUnitPrice")]}
             id={`${prefix}-listed`}
             inputMode="decimal"
