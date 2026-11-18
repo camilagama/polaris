@@ -1,7 +1,10 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import type pg from "pg";
 import { createDatabase } from "../src/client";
-import { readOwnerPlanTenantFacts } from "../src/plan-read-repository";
+import {
+  type OwnerPlanTenantFacts,
+  readOwnerPlanTenantFacts,
+} from "../src/plan-read-repository";
 import { withAuthorizedTenantTransaction } from "../src/tenant-transaction";
 import { assertAllowedGateUrl, localCiHosts } from "./gate-hosts";
 import { assertDisposableEnvironment, type MarkerClient } from "./gate-target";
@@ -48,6 +51,17 @@ const BASE_STORE = { products: 1279, sales: 4109, variants: 1280 };
 const LARGER_FACTOR = 10;
 const MIN_RUNS = 30;
 const HISTORY_DAYS = 366;
+/** At least one discarded run, so the first measured one does not carry the opening of the connection. */
+const DEFAULT_WARMUP = 5;
+const SEEDED_TABLES = [
+  "public.products",
+  "public.product_variants",
+  "public.inventory_balances",
+  "public.sales",
+  "public.goals",
+  "public.media_assets",
+  "public.product_media",
+];
 
 /** Refuses anything but the local PostgreSQL (and a URL that names it but connects elsewhere). Never connects. */
 export function assertLocalMeasureUrl(raw: string | undefined, ci: boolean) {
@@ -69,6 +83,14 @@ export function runsOf(raw: string | undefined): number {
     );
   }
   return runs;
+}
+
+export function warmupOf(raw: string | undefined): number {
+  const warmup = Number(raw ?? DEFAULT_WARMUP);
+  if (!Number.isInteger(warmup) || warmup < 1) {
+    throw new Error("MEASURE_WARMUP must be a whole number of at least 1");
+  }
+  return warmup;
 }
 
 /** Nearest rank: the smallest value with at least `fraction` of the values at or below it. */
@@ -97,12 +119,7 @@ interface TimedQuery {
   values: unknown[];
 }
 
-const GROUPS = [
-  "catalogs",
-  "usageCounts",
-  "salesCount",
-  "rest",
-] as const;
+const GROUPS = ["catalogs", "usageCounts", "salesCount", "rest"] as const;
 type Group = (typeof GROUPS)[number];
 
 const FIRST_USAGE_COUNT = /count\(distinct "products"\."id"\)/i;
@@ -311,6 +328,7 @@ interface MeasureContext {
 async function timedRead(context: MeasureContext, fixture: TenantFixture) {
   let readMs = 0;
   let queries: TimedQuery[] = [];
+  let facts: OwnerPlanTenantFacts | undefined;
   const started = performance.now();
   await withAuthorizedTenantTransaction(
     context.db,
@@ -323,7 +341,7 @@ async function timedRead(context: MeasureContext, fixture: TenantFixture) {
       const readStarted = performance.now();
       context.recorder.start();
       try {
-        await readOwnerPlanTenantFacts(transaction, {
+        facts = await readOwnerPlanTenantFacts(transaction, {
           organizationId: identity.organizationId,
         });
       } finally {
@@ -332,7 +350,7 @@ async function timedRead(context: MeasureContext, fixture: TenantFixture) {
       readMs = performance.now() - readStarted;
     }
   );
-  return { callMs: performance.now() - started, queries, readMs };
+  return { callMs: performance.now() - started, facts, queries, readMs };
 }
 
 async function measureStore(
@@ -343,7 +361,7 @@ async function measureStore(
 ) {
   const seedStarted = performance.now();
   const fixture = await seedStore(admin, label, size);
-  await admin.query("VACUUM (ANALYZE)");
+  await admin.query(`VACUUM (ANALYZE) ${SEEDED_TABLES.join(", ")}`);
   const seedSeconds = round((performance.now() - seedStarted) / 1000);
   for (let run = 0; run < context.warmup; run += 1) {
     // biome-ignore lint/performance/noAwaitInLoops: runs are timed one after the other
@@ -354,6 +372,7 @@ async function measureStore(
   const byGroup = new Map<Group, number[]>(GROUPS.map((group) => [group, []]));
   const byQuery: number[][] = [];
   let lastQueries: TimedQuery[] = [];
+  let lastFacts: OwnerPlanTenantFacts | undefined;
   for (let run = 0; run < context.runs; run += 1) {
     // biome-ignore lint/performance/noAwaitInLoops: runs are timed one after the other
     const timed = await timedRead(context, fixture);
@@ -370,6 +389,7 @@ async function measureStore(
       byGroup.get(group)?.push(totals.get(group) ?? 0);
     }
     lastQueries = timed.queries;
+    lastFacts = timed.facts;
   }
   const groups = groupQueries(lastQueries);
   const perQuery = lastQueries.map((query, index) => ({
@@ -401,6 +421,8 @@ async function measureStore(
     call: summary(calls),
     counts: await storeCounts(admin, fixture.organizationId),
     explains,
+    // what the read itself answered, next to the raw rows above: a seed that drifts from the read's rules shows here
+    facts: lastFacts && { kept: lastFacts.kept, usage: lastFacts.usage },
     groups: Object.fromEntries(
       GROUPS.map((group) => [group, summary(byGroup.get(group) ?? [])])
     ),
@@ -416,7 +438,7 @@ async function main() {
   const adminUrl = process.env.POLARIS_MEASURE_DATABASE_URL;
   assertLocalMeasureUrl(adminUrl, process.env.CI === "true");
   const runs = runsOf(process.env.MEASURE_RUNS);
-  const warmup = Number(process.env.MEASURE_WARMUP ?? 5);
+  const warmup = warmupOf(process.env.MEASURE_WARMUP);
   const admin = createDatabase(adminUrl as string, { maxConnections: 2 });
   // the host says nothing about the database behind it: a marked one is refused before any write
   await assertDisposableEnvironment(admin.pool as unknown as MarkerClient);
@@ -457,7 +479,7 @@ async function main() {
       // biome-ignore lint/performance/noAwaitInLoops: sequential on purpose
       const measured = await measureStore(context, admin.pool, label, size);
       stores.push(measured);
-      console.error(JSON.stringify(measured));
+      console.error(`${label}: call p50 ${measured.call.p50Ms} ms`);
     }
     const { rows } = await admin.pool.query<{ version: string }>(
       "SELECT current_setting('server_version') AS version"
@@ -472,7 +494,12 @@ async function main() {
   } finally {
     await runtime?.pool.end();
     if (roleCreated) {
-      await admin.pool.query(`DROP ROLE IF EXISTS "${loginRole}"`);
+      // a failed drop is reported without hiding the error of the measure itself
+      await admin.pool
+        .query(`DROP ROLE IF EXISTS "${loginRole}"`)
+        .catch(() =>
+          console.error(`could not drop the login role ${loginRole}`)
+        );
     }
     await admin.pool.end();
   }

@@ -4,10 +4,12 @@ import {
   groupQueries,
   percentile,
   runsOf,
+  warmupOf,
 } from "./measure-plan-read";
 
 const SHAPE_CHANGED = /changed its queries/;
 const AT_LEAST_30 = /at least 30/;
+const AT_LEAST_1 = /at least 1$/;
 const LOCAL = "postgresql://owner:x@localhost:5432/polaris_gate";
 const NEON =
   "postgresql://owner:x@ep-quiet-bird-a1b2c3d4.c-2.sa-east-1.aws.neon.tech/neondb";
@@ -55,6 +57,16 @@ describe("runsOf", () => {
   });
 });
 
+describe("warmupOf", () => {
+  it("defaults to 5 and refuses no warm-up at all", () => {
+    expect(warmupOf(undefined)).toBe(5);
+    expect(warmupOf("1")).toBe(1);
+    expect(() => warmupOf("0")).toThrow(AT_LEAST_1);
+    expect(() => warmupOf("-2")).toThrow(AT_LEAST_1);
+    expect(() => warmupOf("abc")).toThrow(AT_LEAST_1);
+  });
+});
+
 describe("percentile", () => {
   it("takes the nearest rank", () => {
     const values = Array.from({ length: 20 }, (_, index) => 20 - index);
@@ -66,6 +78,8 @@ describe("percentile", () => {
   });
 });
 
+// The shape of the SQL `readOwnerPlanTenantFacts` sends, cut short; the run on the database is what proves the
+// patterns against drizzle's real text, and it refuses to report when they stop matching.
 const READ = [
   'select "amount" from "billing_prices"',
   'select "key" from "plan_entitlements"',
