@@ -314,7 +314,7 @@ function ChosenItemFields({
           {stockWarning}
         </p>
       ) : null}
-      {/* 18.25 rem: o preço cobrado de cinco dígitos com centavos (99999,99) só cabe ao lado da Quantidade a partir de 17,94 rem de item; abaixo disso os campos empilham */}
+      {/* 18.25 rem: a price of five digits with cents (99999,99) only fits beside Quantidade from 17.94 rem of item; below that the fields stack */}
       <div className="@container">
         <div className="grid @[18.25rem]:grid-cols-[min-content_minmax(0,1fr)] @[27rem]:grid-cols-[min-content_minmax(0,1fr)_minmax(0,1fr)] grid-cols-1 items-start gap-x-3 gap-y-4 @max-[18.25rem]:[&>:first-child]:justify-self-start">
           <QuantityStepper
