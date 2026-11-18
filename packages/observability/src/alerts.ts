@@ -399,11 +399,8 @@ export const alertSignals = [
     source: {
       events: [
         "organization_purge_stalled",
-        "organization_purge_step_failed",
         "organization_purge_failure_not_recorded",
       ],
-      where:
-        'outcome != "rejected", and attempt >= 3 when the event is organization_purge_step_failed',
     },
     threshold: { atLeast: 1, kind: "count" },
     title:
@@ -591,5 +588,10 @@ export const errorEventsWithoutSignal = [
     event: "billing_woovi_reconcile_incomplete",
     reason:
       "the partial form of billing_woovi_reconcile_failed, the same reason and the same destination",
+  },
+  {
+    event: "organization_purge_step_failed",
+    reason:
+      "from the 3rd attempt the job emits organization_purge_stalled with it, which purge-parado reads; counting both would double the alert",
   },
 ] as const satisfies readonly { event: string; reason: string }[];
