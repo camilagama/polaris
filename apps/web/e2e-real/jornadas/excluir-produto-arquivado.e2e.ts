@@ -9,7 +9,8 @@ const RETURNED_BOTTLE = /^Devolvido: Garrafa térmica/;
 const RESTOCKED_BOTTLE = /^Volta ao estoque: Garrafa térmica/;
 const MORE_ACTIONS = /^Mais ações/;
 const NAME_FIELD = "Digite o nome do produto para confirmar";
-const CANCEL_DONE = /^Venda cancelada\. O estoque foi devolvido item a item/;
+const CANCEL_DONE =
+  /^Venda cancelada\. Nenhum item voltou ao estoque, porque os produtos desta venda foram removidos\./;
 
 /**
  * Excluir produto arquivado, na pilha de verdade: o produto arquivado e sem estoque sai da lista e a vaga volta; as vendas
