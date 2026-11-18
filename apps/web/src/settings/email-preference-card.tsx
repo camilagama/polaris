@@ -86,6 +86,7 @@ function useEmailPreference(calls: EmailPreferenceCalls) {
     load();
     return () => {
       latestRead.current += 1;
+      reading.current = false;
     };
   }, [load]);
 

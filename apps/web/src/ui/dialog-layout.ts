@@ -113,9 +113,15 @@ function openAtTop(popup: HTMLElement): () => void {
     popup.addEventListener(name, markTouched, { capture: true, passive: true });
   }
   popup.addEventListener("scroll", putBack, { passive: true });
-  const release = setTimeout(markTouched, TOP_HOLD_MS);
+  // the scroll event of the focus is dispatched before the animation-frame callbacks of the same frame, so a main
+  // thread that stalls past the deadline still has that scroll put back before the hold ends
+  let frame = 0;
+  const release = setTimeout(() => {
+    frame = requestAnimationFrame(markTouched);
+  }, TOP_HOLD_MS);
   return () => {
     clearTimeout(release);
+    cancelAnimationFrame(frame);
     for (const name of TOUCHED_EVENTS) {
       popup.removeEventListener(name, markTouched, { capture: true });
     }
