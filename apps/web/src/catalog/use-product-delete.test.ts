@@ -268,10 +268,11 @@ describe("Excluir produto nunca vira comando guardado no aparelho (AC-2.7)", () 
 
 describe("a leitura do saldo cabe nas variantes do produto", () => {
   it("a página única de listBalances é do tamanho do teto de variantes por produto ou maior", () => {
-    const limit = Number(
-      LIST_BALANCES_LIMIT.exec(withoutComments(readFileSync(HOOK, "utf8")))?.[1]
+    const found = LIST_BALANCES_LIMIT.exec(
+      withoutComments(readFileSync(HOOK, "utf8"))
     );
-    expect(limit).toBeGreaterThanOrEqual(MAX_PRODUCT_VARIANTS);
+    expect(found, "listBalances sem limit numérico literal").not.toBeNull();
+    expect(Number(found?.[1])).toBeGreaterThanOrEqual(MAX_PRODUCT_VARIANTS);
   });
 
   it("o leitor do limite enxerga o valor e some se a chamada mudar de forma", () => {

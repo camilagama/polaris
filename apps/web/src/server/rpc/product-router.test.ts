@@ -937,7 +937,7 @@ describe("product RPCs", () => {
     });
   });
 
-  it("never asks for REPEATABLE READ on the deletion path", async () => {
+  it("leaves the isolation level of the deletion path to the default, never REPEATABLE READ", async () => {
     const requests: Record<string, unknown>[] = [];
     const router = createRpcRouter({
       deleteProduct: async () => ({
