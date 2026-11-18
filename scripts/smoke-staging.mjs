@@ -31,8 +31,8 @@ const RELEASE_HEADER = "x-polaris-release";
 
 /**
  * The ingest origin of a Sentry DSN, with the same host pattern as `INGEST_HOST` in
- * `apps/web/src/observability/sentry-dsn.ts` (a copy: this script runs on plain Node and cannot import the `.ts` of
- * the app; `smoke-staging.test.mjs` fails when the two patterns differ). The build opens it in the `connect-src` of the
+ * `apps/web/src/observability/sentry-dsn.ts` (a deliberate copy, so the smoke imports no code of the app;
+ * `smoke-staging.test.mjs` fails when the two patterns differ). The build opens it in the `connect-src` of the
  * app shell only when it was made with a valid `VITE_SENTRY_DSN` and a valid `VITE_SENTRY_ENVIRONMENT`
  * (`apps/web/pwa/sentry-build.ts`), so its presence in the CSP of the shell proves the DSN reached the build that is
  * on the air.
