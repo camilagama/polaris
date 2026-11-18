@@ -425,10 +425,12 @@ function checkStagingExposure(app, where, staging, production, problems) {
 }
 
 // Password sign-in is on in staging by decision of the user (ADR 0100), open to anyone because the
-// data is synthetic. The sender and the reply-to are shared by every e-mail the Worker sends (the password
-// ones, the closure notices and the tips series, with the one RESEND_API_KEY), so they are checked whatever the flags say: a
-// sender of another domain would send from a verified domain of production or of a third party the day any
-// flag turns on. Name and address, or the bare address.
+// data is synthetic. Every e-mail the Worker sends goes through the one RESEND_API_KEY, so each sender and
+// reply-to is checked whatever the flags say: a sender of another domain would send from a verified domain of
+// production or of a third party the day any flag turns on. The password e-mails and the closure notices
+// share AUTH_EMAIL_FROM and the optional AUTH_EMAIL_REPLY_TO; the tips series has its own sender,
+// ACTIVATION_EMAIL_FROM, and replies to BILLING_SUPPORT_EMAIL (checked by the billing check). Name and
+// address, or the bare address.
 const STAGING_SENDER =
   /^(?:[^<>@\r\n]*<[A-Za-z0-9._+-]+@araute\.app>|[A-Za-z0-9._+-]+@araute\.app)$/i;
 
