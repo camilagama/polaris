@@ -458,7 +458,7 @@ function checkStagingEmail(where, staging, problems) {
   const from = (vars.AUTH_EMAIL_FROM ?? "").trim();
   if (from === "" ? passwordOn : !STAGING_SENDER.test(from)) {
     problems.push(
-      `${where}: staging needs vars.AUTH_EMAIL_FROM on @araute.app, whatever the flags`
+      `${where}: staging needs vars.AUTH_EMAIL_FROM on @araute.app (empty only while vars.EMAIL_PASSWORD_AUTH_ENABLED is not "true")`
     );
   }
   // The tips series sends through the same RESEND_API_KEY with its own sender, so an empty one is only
