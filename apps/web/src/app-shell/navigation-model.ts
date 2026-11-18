@@ -453,10 +453,11 @@ const ONLINE_ONLY_ROUTES: readonly RouteId[] = [
 
 /**
  * Online-only screens that show nothing to type until they load: offline, the connection notice says the
- * screen loads by itself instead of "o que você digitou fica aqui". The public catalog declares its form
- * once it loaded (`useConnectionNoticeForm`).
+ * screen loads by itself instead of "o que você digitou fica aqui". The public catalog and Formas de receber
+ * declare their form once they loaded (`useConnectionNoticeForm`).
  */
 const ONLINE_ONLY_WITHOUT_FORM: readonly RouteId[] = [
+  "payment-profiles",
   "public-catalog",
   "sale-detail",
   // never a plan of before (AS-8): offline it shows nothing, and loads by itself on the return
