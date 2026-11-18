@@ -145,6 +145,19 @@ export const alertSignals = [
     windowMinutes: 60,
   },
   {
+    // the screen answer is the same on purpose, so a revoked key or an unverified sender domain
+    // breaks sign-up and recovery with nothing to see; sign-up traffic is low, so one occurrence is enough
+    id: "email-de-acesso-falhando",
+    notify: "wake",
+    severity: "critical",
+    source: {
+      events: ["auth_email_delivery_failed"],
+    },
+    threshold: { atLeast: 1, kind: "count" },
+    title: "E-mail de acesso (verificação, senha, desbloqueio) não saiu",
+    windowMinutes: 60,
+  },
+  {
     id: "latencia-p95",
     notify: "report",
     severity: "warning",
@@ -288,6 +301,8 @@ export const alertSignals = [
         "media_removed_asset_failed",
         "media_removed_asset_not_finalized",
         "media_removed_reconciliation_incomplete",
+        "catalog_media_authorization_failed",
+        "catalog_media_object_missing",
         "catalog_media_read_failed",
       ],
     },
@@ -564,11 +579,6 @@ export const errorEventsWithoutSignal = [
     event: "queue_ledger_not_recorded",
     reason:
       "the work was done and the next delivery finds the handler idempotent; nobody has to act",
-  },
-  {
-    event: "auth_email_delivery_failed",
-    reason:
-      "no decision between wake and report is recorded for it; the screen answer does not change and the failure shows only in the log",
   },
   {
     event: "billing_woovi_reconcile_failed",

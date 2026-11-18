@@ -97,7 +97,8 @@ function identifier(node: unknown): string | undefined {
  */
 function emittedCalls(
   source: string,
-  filename: string
+  filename: string,
+  reportLevel?: string
 ): { event: string; level: string | undefined }[] {
   const { errors, program } = parseSync(filename, source);
   expect(errors, `${filename} must parse`).toEqual([]);
@@ -115,12 +116,17 @@ function emittedCalls(
         identifier(callee.object) === "logger" &&
         method !== undefined &&
         levelMethods.has(method);
-      level = isLogger ? method : undefined;
+      if (isLogger) {
+        level = method;
+      } else if (method === "report") {
+        level = reportLevel;
+      }
       emits = isLogger || method === "report";
     } else {
       const name = identifier(callee);
       emits =
         name !== undefined && (eventFunctions.has(name) || name === "report");
+      level = name === "report" ? reportLevel : undefined;
     }
     const [first] = node.arguments as unknown[];
     if (
@@ -139,9 +145,25 @@ function emittedEvents(source: string, filename: string): string[] {
   return emittedCalls(source, filename).map(({ event }) => event);
 }
 
-/** The event names a source emits with `logger.error("<name>", ...)` itself (not through `report`, which hides the level). */
-function errorLevelEvents(source: string, filename: string): string[] {
-  return emittedCalls(source, filename)
+/**
+ * The level an app's injected `report` writes at, read from the place that
+ * wires it to the logger (`report: (...) => logger.<level>(...)`), so a
+ * `report("<name>")` call counts as the level the app really emits it at.
+ */
+const reportWiringPattern =
+  /\breport:\s*\([^)]*\)\s*=>\s*logger\.(debug|error|info|warn)\(/g;
+
+function reportLevelsWired(text: string): string[] {
+  return [...text.matchAll(reportWiringPattern)].map((match) => match[1] ?? "");
+}
+
+/** The event names a source emits at the error level: `logger.error("<name>", ...)` and `report("<name>")` where the app wires `report` to `logger.error`. */
+function errorLevelEvents(
+  source: string,
+  filename: string,
+  reportLevel?: string
+): string[] {
+  return emittedCalls(source, filename, reportLevel)
     .filter(({ level }) => level === "error")
     .map(({ event }) => event);
 }
@@ -174,8 +196,35 @@ const emitted = new Set(
   sourceTexts.flatMap(([file, text]) => emittedEvents(text, file))
 );
 
+function appOf(file: string): string {
+  return path.relative(root, file).split(path.sep).slice(0, 2).join("/");
+}
+
+const reportLevelsByApp = new Map<string, Set<string>>();
+const appsCallingReport = new Set<string>();
+for (const [file, text] of sourceTexts) {
+  const app = appOf(file);
+  if (/\breport\(\s*"/.test(text)) {
+    appsCallingReport.add(app);
+  }
+  const levels = reportLevelsByApp.get(app) ?? new Set<string>();
+  for (const level of reportLevelsWired(text)) {
+    levels.add(level);
+  }
+  reportLevelsByApp.set(app, levels);
+}
+
+const reportLevelByApp = new Map<string, string>();
+for (const [app, levels] of reportLevelsByApp) {
+  if (levels.size === 1) {
+    reportLevelByApp.set(app, [...levels][0] ?? "");
+  }
+}
+
 const emittedAtErrorLevel = new Set(
-  sourceTexts.flatMap(([file, text]) => errorLevelEvents(text, file))
+  sourceTexts.flatMap(([file, text]) =>
+    errorLevelEvents(text, file, reportLevelByApp.get(appOf(file)))
+  )
 );
 
 /** The error events that have neither a signal nor an entry with a reason, sorted. */
@@ -654,6 +703,18 @@ describe("alert signals", () => {
     }
   });
 
+  it("wake someone at the first failed access e-mail, with a window of one hour", () => {
+    const signal = alertSignals.find(
+      (candidate) => candidate.id === "email-de-acesso-falhando"
+    );
+
+    expect(signal?.source.events).toEqual(["auth_email_delivery_failed"]);
+    expect(signal?.threshold).toEqual({ atLeast: 1, kind: "count" });
+    expect(signal?.notify).toBe("wake");
+    expect(signal?.severity).toBe("critical");
+    expect(signal?.windowMinutes).toBe(60);
+  });
+
   it("only report the eight error events the classification keeps out of the wake", () => {
     for (const event of [
       "activation_notice_delivery_window_passed",
@@ -742,9 +803,77 @@ describe("alert signals", () => {
         'logger.error("a_error", {});',
         'logger.warn("b_warn", {});',
         'report("c_report");',
+        'dependencies.report("d_report");',
       ].join("\n");
 
       expect(errorLevelEvents(snippet, "snippet.ts")).toEqual(["a_error"]);
+      expect(errorLevelEvents(snippet, "snippet.ts", "warn")).toEqual([
+        "a_error",
+      ]);
+      expect(errorLevelEvents(snippet, "snippet.ts", "error")).toEqual([
+        "a_error",
+        "c_report",
+        "d_report",
+      ]);
+    });
+
+    it("wires the injected report of each app that calls it to exactly one level", () => {
+      expect([...appsCallingReport].sort()).toEqual([
+        "apps/admin",
+        "apps/catalog",
+      ]);
+      for (const app of appsCallingReport) {
+        expect(
+          [...(reportLevelsByApp.get(app) ?? [])],
+          `${app} wires report to one logger level`
+        ).toHaveLength(1);
+      }
+    });
+
+    it("reads each way the report wiring can be written, and none that it cannot", () => {
+      expect(reportLevelsWired("report: (a, b) => logger.warn(a, b)")).toEqual([
+        "warn",
+      ]);
+      expect(
+        reportLevelsWired("report: x,\n other: (y) => logger.error(y)")
+      ).toEqual([]);
+      expect(reportLevelsWired("report: logger.error.bind(logger)")).toEqual(
+        []
+      );
+    });
+
+    it("reads the injected report at the level its app wires it to", () => {
+      expect(reportLevelByApp.get("apps/catalog")).toBe("error");
+      expect(reportLevelByApp.get("apps/admin")).toBe("warn");
+      expect(emittedAtErrorLevel.has("catalog_media_object_missing")).toBe(
+        true
+      );
+      expect(emittedAtErrorLevel.has("admin_error")).toBe(false);
+      expect(
+        reportLevelsWired(
+          "report: (message, error) =>\n  logger.error(message, error)"
+        )
+      ).toEqual(["error"]);
+    });
+
+    it("names a catalog media event that has no signal", () => {
+      const withoutMedia = alertSignals.map((signal) => ({
+        ...signal,
+        source: {
+          ...signal.source,
+          events: signal.source.events.filter(
+            (name) => name !== "catalog_media_authorization_failed"
+          ),
+        },
+      }));
+
+      expect(
+        errorEventsWithoutDestination(
+          emittedAtErrorLevel,
+          withoutMedia,
+          errorEventsWithoutSignal
+        )
+      ).toEqual(["catalog_media_authorization_failed"]);
     });
   });
 
@@ -871,7 +1000,7 @@ describe("the monitors section of the runbook", () => {
       ]);
       expect(drift(swap("http-5xx", { notify: "report" }))).toEqual([
         'http-5xx: runbook says wakes "sim", registry says "não"',
-        "serie-falhando: a waking signal after one that does not",
+        "email-de-acesso-falhando: a waking signal after one that does not",
       ]);
     });
 
