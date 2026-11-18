@@ -34,7 +34,9 @@ vi.mock("react", () => {
     },
     useRef: <T>(initial: T) => slot(() => ({ current: initial })),
     useState: <T>(initial: T) => {
-      const box = slot(() => ({ value: initial }));
+      const box = slot(() => ({
+        value: typeof initial === "function" ? (initial as () => T)() : initial,
+      }));
       const set = (next: T | ((previous: T) => T)) => {
         box.value =
           typeof next === "function"
@@ -95,6 +97,24 @@ describe("useSaleHistory: Carregar mais", () => {
     runtime.cleanup = undefined;
     runtime.effect = undefined;
     saleList.mockReset();
+  });
+
+  it("antes da 1ª resposta, o estado é o inicial: carregando e sem vendas", async () => {
+    const first = deferred<SalePage>();
+    saleList.mockReturnValueOnce(first.promise);
+    const { render, runEffect } = mount();
+
+    expect(render().state.list).toBe("loading");
+    expect(render().state.sales).toEqual([]);
+    runEffect();
+    expect(saleList).toHaveBeenCalledTimes(1);
+    expect(render().state.list).toBe("loading");
+    expect(render().state.sales).toEqual([]);
+
+    first.resolve(page(false, "a"));
+    await first.promise;
+    expect(render().state.list).toBe("ready");
+    expect(idsOf(render)).toEqual(["a"]);
   });
 
   it("sem troca de filtro, a 2ª página é anexada à lista", async () => {
@@ -173,6 +193,12 @@ describe("useSaleHistory: Carregar mais", () => {
     oldSecond.reject(new Error("sem rede"));
     await oldSecond.promise.catch(() => undefined);
     expect(render().state.moreError).toBeNull();
-    expect(render().state.loadingMore).toBe(true);
+    expect(idsOf(render)).toEqual(["a", "b"]);
+
+    newFirst.resolve(page(false, "x"));
+    await newFirst.promise;
+    expect(idsOf(render)).toEqual(["x"]);
+    expect(render().state.moreError).toBeNull();
+    expect(render().state.list).toBe("ready");
   });
 });
