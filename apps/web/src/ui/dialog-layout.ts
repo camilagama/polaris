@@ -81,6 +81,8 @@ export function followVisualViewport(
 
 const TOUCHED_EVENTS = ["keydown", "pointerdown", "touchstart", "wheel"];
 
+const TOP_HOLD_MS = 400;
+
 const TEXT_CONTROL = "input, textarea, select, [contenteditable]";
 
 /**
@@ -89,7 +91,9 @@ const TEXT_CONTROL = "input, textarea, select, [contenteditable]";
  * out of sight (the focus inside a field near the top does not do that). Until the person touches the dialog (key,
  * pointer, touch or wheel) any scroll is put back at the top in the same frame, before it is painted, unless the focus
  * is in a field (it has to be in view, the keyboard of a phone opens on it); after that the focus may scroll to the
- * control as usual, so Tab still reveals what it reaches.
+ * control as usual, so Tab still reveals what it reaches. The hold also ends by itself `TOP_HOLD_MS` after the
+ * opening, once the initial focus has settled: a screen reader (swipe to the next item, three-finger scroll) or a
+ * voice command scrolls the popup without any of those events reaching the page, and would stay stuck at the top.
  */
 function openAtTop(popup: HTMLElement): () => void {
   let touched = false;
@@ -109,7 +113,9 @@ function openAtTop(popup: HTMLElement): () => void {
     popup.addEventListener(name, markTouched, { capture: true, passive: true });
   }
   popup.addEventListener("scroll", putBack, { passive: true });
+  const release = setTimeout(markTouched, TOP_HOLD_MS);
   return () => {
+    clearTimeout(release);
     for (const name of TOUCHED_EVENTS) {
       popup.removeEventListener(name, markTouched, { capture: true });
     }

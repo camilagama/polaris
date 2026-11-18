@@ -151,6 +151,7 @@ const fakePopup = () => {
 describe("Dialog, segue a janela visível (teclado aberto)", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
+    vi.useRealTimers();
   });
 
   it("grava altura, topo e centro da parte visível, de novo a cada resize e scroll, e solta os ouvintes", () => {
@@ -202,6 +203,32 @@ describe("Dialog, segue a janela visível (teclado aberto)", () => {
       expect(count()).toBe(0);
     }
   );
+
+  it("passado o prazo da abertura, a rolagem sem nenhum gesto fica onde está", () => {
+    vi.useFakeTimers();
+    vi.stubGlobal("window", {});
+    const { count, fire, popup, scroll } = fakePopup();
+    const cleanup = followVisualViewport(popup);
+    vi.advanceTimersByTime(399);
+    scroll.scrollTop = 29;
+    fire("scroll");
+    expect(scroll.scrollTop).toBe(0);
+    vi.advanceTimersByTime(1);
+    scroll.scrollTop = 29;
+    fire("scroll");
+    expect(scroll.scrollTop).toBe(29);
+    cleanup?.();
+    expect(count()).toBe(0);
+  });
+
+  it("fechar o diálogo antes do prazo cancela o temporizador", () => {
+    vi.useFakeTimers();
+    vi.stubGlobal("window", {});
+    const { popup } = fakePopup();
+    const cleanup = followVisualViewport(popup);
+    cleanup?.();
+    expect(vi.getTimerCount()).toBe(0);
+  });
 
   it("não devolve ao topo a rolagem que levou o foco a um campo", () => {
     vi.stubGlobal("window", {});
