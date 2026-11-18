@@ -6,6 +6,9 @@ vi.mock("../lib/orpc", () => ({ orpcClient: {} }));
 
 import { keepLocalRow } from "./product-commands";
 
+const LIST_BALANCES_LIMIT =
+  /inventory\.listBalances\(\{[^}]*?\blimit:\s*(\d+)/s;
+
 const HOOK = new URL("./use-product-delete.ts", import.meta.url);
 
 const IMPORT = /^import\s+([^;]*?)\s+from\s+"([^"]+)";/gm;
@@ -264,9 +267,6 @@ describe("Excluir produto nunca vira comando guardado no aparelho (AC-2.7)", () 
 });
 
 describe("a leitura do saldo cabe nas variantes do produto", () => {
-  const LIST_BALANCES_LIMIT =
-    /inventory\.listBalances\(\{[^}]*?\blimit:\s*(\d+)/s;
-
   it("a página única de listBalances é do tamanho do teto de variantes por produto ou maior", () => {
     const limit = Number(
       LIST_BALANCES_LIMIT.exec(withoutComments(readFileSync(HOOK, "utf8")))?.[1]
