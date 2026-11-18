@@ -162,4 +162,20 @@ describe("o rodapé do Histórico", () => {
     );
     expect(html).toContain("Sem conexão: total das vendas guardadas");
   });
+
+  it("a região de status existe vazia sem aviso e traz o texto quando há aviso", () => {
+    const markup = (notice: string) =>
+      renderToStaticMarkup(
+        <ListTotalFooter
+          count="1 venda"
+          note=""
+          notice={notice}
+          value="R$ 10,00"
+        />
+      );
+    expect(markup("")).toContain('<p role="status"></p>');
+    expect(markup("Não foi possível ler o total do período agora.")).toContain(
+      '<p role="status">Não foi possível ler o total do período agora.</p>'
+    );
+  });
 });

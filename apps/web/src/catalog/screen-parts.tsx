@@ -241,6 +241,9 @@ function FooterNotes({
       </p>
     );
   }
+  // With `notice` a string (empty included) the status region stays mounted:
+  // the footer keeps its height when the money warning arrives, and a region
+  // that is already in the tree is what makes the screen reader announce it.
   return (
     <div
       className="grid min-h-5 text-muted-foreground text-support"
