@@ -377,9 +377,8 @@ export function ProductVariantConfigurationForm({
   const limitHelp = useLimitHelp();
   const saveErrorRef = useRef<HTMLDivElement>(null);
   const focusLimit = useLimitFocus(saveErrorRef);
-  // the warning that the limit is close reads the use again after each save
-  const [savedCount, setSavedCount] = useState(0);
-  const nearLimit = useNearLimit("variants", savedCount);
+  // a save swaps this form for the saved variants, so the warning is read once; the list behind the dialog reads its own
+  const nearLimit = useNearLimit("variants");
   const freeableLine = useFreeableLine();
   // a failure of the warning's button, said under the warning
   const [clearError, setClearError] = useState<string | null>(null);
@@ -535,7 +534,6 @@ export function ProductVariantConfigurationForm({
         });
         // saved: nothing typed is left to keep
         onDraftChange(product.id, null);
-        setSavedCount((count) => count + 1);
         onConfigured(result.configuration, result.product);
       } catch (error: unknown) {
         setSaveError(variantErrorMessage(error));

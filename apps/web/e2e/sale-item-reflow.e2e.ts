@@ -15,7 +15,7 @@ import { serveLabWorker, WORKER_MARK } from "./worker-mark";
  * The fields of an item of the sale (Quantidade, Preço cobrado, Preço de tabela) choose their disposition by the width
  * of the item, not by the window: three columns from 27 rem, the phone's two-and-one from 18.25 rem, and one column
  * below that. The cuts were measured on the item at the widths the labels and the longest common value, `99.999,99`,
- * stop fitting (typed as `99999,99`, the price of five digits fits beside Quantidade from 17.94 rem); the rem is the
+ * stop fitting (typed as `99.999,99`, the price of five digits fits beside Quantidade from 17.94 rem); the rem is the
  * real font size of the page (`Page.setFontSizes`), as in `breakpoints-rem.e2e.ts`.
  */
 
