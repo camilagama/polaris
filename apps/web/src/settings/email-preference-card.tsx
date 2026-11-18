@@ -1,4 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  type RefObject,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { Button } from "@/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/ui/card";
 import { FieldError } from "@/ui/field";
@@ -43,7 +49,10 @@ function describedBy(online: boolean) {
 
 type Outcome = "failed" | "saved" | null;
 
-function useEmailPreference(calls: EmailPreferenceCalls) {
+function useEmailPreference(
+  calls: EmailPreferenceCalls,
+  retryButton: RefObject<HTMLButtonElement | null>
+) {
   const [preference, setPreference] = useState<EmailPreference | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -55,6 +64,9 @@ function useEmailPreference(calls: EmailPreferenceCalls) {
 
   const reading = useRef<boolean>(false);
   const [readingNow, setReadingNow] = useState(false);
+  // the button disappears with the error, so whether it held the focus has to be read before the answer is drawn
+  const retryRead = useRef<number | null>(null);
+  const focusSwitchOnDraw = useRef(false);
 
   const load = useCallback(() => {
     latestRead.current += 1;
@@ -65,6 +77,10 @@ function useEmailPreference(calls: EmailPreferenceCalls) {
       .read()
       .then((answer) => {
         if (read === latestRead.current) {
+          focusSwitchOnDraw.current =
+            retryRead.current === read &&
+            retryButton.current !== null &&
+            document.activeElement === retryButton.current;
           setLoadError(null);
           setPreference(answer);
         }
@@ -80,7 +96,7 @@ function useEmailPreference(calls: EmailPreferenceCalls) {
           setReadingNow(false);
         }
       });
-  }, [calls]);
+  }, [calls, retryButton]);
 
   useEffect(() => {
     load();
@@ -94,6 +110,7 @@ function useEmailPreference(calls: EmailPreferenceCalls) {
   const retry = useCallback(() => {
     if (!reading.current) {
       load();
+      retryRead.current = latestRead.current;
     }
   }, [load]);
 
@@ -121,7 +138,16 @@ function useEmailPreference(calls: EmailPreferenceCalls) {
     [calls]
   );
 
-  return { choose, loadError, outcome, preference, readingNow, retry, saving };
+  return {
+    choose,
+    focusSwitchOnDraw,
+    loadError,
+    outcome,
+    preference,
+    readingNow,
+    retry,
+    saving,
+  };
 }
 
 /**
@@ -136,8 +162,25 @@ export function EmailPreferenceCard({
   calls: EmailPreferenceCalls;
   online: boolean;
 }) {
-  const { choose, loadError, outcome, preference, readingNow, retry, saving } =
-    useEmailPreference(calls);
+  const retryButton = useRef<HTMLButtonElement>(null);
+  const tipsSwitch = useRef<HTMLButtonElement>(null);
+  const {
+    choose,
+    focusSwitchOnDraw,
+    loadError,
+    outcome,
+    preference,
+    readingNow,
+    retry,
+    saving,
+  } = useEmailPreference(calls, retryButton);
+
+  useEffect(() => {
+    if (preference && focusSwitchOnDraw.current) {
+      focusSwitchOnDraw.current = false;
+      tipsSwitch.current?.focus();
+    }
+  }, [focusSwitchOnDraw, preference]);
 
   const handleRetry = useCallback(() => {
     if (online) {
@@ -182,6 +225,7 @@ export function EmailPreferenceCard({
               checked={preference.tips}
               id={TIPS_ID}
               onCheckedChange={handleChange}
+              ref={tipsSwitch}
               {...describedBy(online)}
             />
           </div>
@@ -193,6 +237,7 @@ export function EmailPreferenceCard({
             <Button
               aria-busy={readingNow}
               onClick={handleRetry}
+              ref={retryButton}
               size="sm"
               type="button"
               variant="outline"
