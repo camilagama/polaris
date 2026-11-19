@@ -5,6 +5,7 @@ import {
   isDefiniteRpcRejection,
   isLegalAcceptanceRefusal,
   isOrganizationClosedRefusal,
+  isSessionChangedRefusal,
   isPlatformCut,
   isTransientReadFailure,
   rpcErrorCode,
@@ -84,9 +85,14 @@ export interface RuntimeApi {
   sessionUserId: () => Promise<string | null>;
   /**
    * The reads of the sync (pull, bootstrap). `signal` ends the ones still going when someone is waiting for the
-   * queue to be sent: a read held by the tab's read gate (a 429 pause) must not hold "Sair".
+   * queue to be sent: a read held by the tab's read gate (a 429 pause) must not hold "Sair". `expectedUserId` is the
+   * user of the lease the tab reads under: the pull is refused (`session_changed`) when the session is another user's.
    */
-  source: (organizationId: string, signal?: AbortSignal) => BootstrapSource;
+  source: (
+    organizationId: string,
+    signal?: AbortSignal,
+    expectedUserId?: string
+  ) => BootstrapSource;
 }
 
 /** The own lease ended and could not be renewed: the offline access expired (not a refused session). */
@@ -1484,7 +1490,7 @@ export class OfflineRuntime {
     let bootstrapped = isLocalStoreReady(meta);
     if (!bootstrapped && this.dependencies.isOnline()) {
       await bootstrapLocalStore(
-        this.dependencies.api.source(organizationId),
+        this.dependencies.api.source(organizationId, undefined, userId),
         stores.writer
       );
       bootstrapped = true;
@@ -2033,7 +2039,8 @@ export class OfflineRuntime {
       }
       const source = this.dependencies.api.source(
         organizationId,
-        pullAbort.signal
+        pullAbort.signal,
+        userId
       );
       this.mark("sync:phase:push");
       // the catch-up comes below, once: the chip counts what is left as soon as the push answered
@@ -2240,6 +2247,28 @@ export class OfflineRuntime {
   }
 
   /** What a sync that threw leaves: paused for the acceptance, a refused session, no answer, or a failure. */
+  /**
+   * The pull was refused because the session is another user's than the lease in use: the confirmation is void and
+   * the session is read again, which closes the stores as `session_changed` when it really changed. The queue is not
+   * touched. When the reading still names this user (the other window went back, or the server could not say), the
+   * next sync tries again.
+   */
+  private async reReadSessionAfterRefusedPull(run: RunScope): Promise<void> {
+    this.lastOutcome = "answered";
+    this.sessionConfirmedAt = null;
+    if (await this.sessionChangedHands(run)) {
+      return;
+    }
+    this.set({
+      ...this.snapshot,
+      online: this.dependencies.isOnline(),
+      reason: null,
+      sessionRefused: false,
+      syncing: false,
+    });
+    await this.refreshCounts();
+  }
+
   private async syncFailed(run: RunScope, error: unknown): Promise<void> {
     // before the session refusal (it is a FORBIDDEN too): only the sync pauses. The batch went back to
     // waiting, nothing was rejected, and the collections, the lease and the device stay (ADR 0100)
@@ -2264,6 +2293,10 @@ export class OfflineRuntime {
         forgetDevice: false,
         organizationClosed: true,
       });
+      return;
+    }
+    if (isSessionChangedRefusal(error)) {
+      await this.reReadSessionAfterRefusedPull(run);
       return;
     }
     if (isSessionRefusal(error)) {

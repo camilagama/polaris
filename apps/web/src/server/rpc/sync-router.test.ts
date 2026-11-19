@@ -149,6 +149,49 @@ describe("sync.pull", () => {
     expect(pullSyncChanges).not.toHaveBeenCalled();
   });
 
+  it("refuses with session_changed, reading nothing, when the expected user is not the session's", async () => {
+    const pullSyncChanges = vi.fn();
+    const client = createClient({
+      pullSyncChanges,
+      withTenantRequestContext: tenantContext(),
+    });
+    await expect(
+      client.sync.pull({ expectedUserId: "another-user", organizationId })
+    ).rejects.toMatchObject({
+      code: "FORBIDDEN",
+      data: { reason: "session_changed" },
+    });
+    expect(pullSyncChanges).not.toHaveBeenCalled();
+  });
+
+  it("pulls when the expected user is the session's", async () => {
+    const pullSyncChanges = vi.fn(() =>
+      Promise.resolve({ changes: [], hasMore: false, nextCursor: 3 })
+    );
+    const client = createClient({
+      pullSyncChanges,
+      withTenantRequestContext: tenantContext(),
+    });
+    const result = await client.sync.pull({
+      expectedUserId: identity.userId,
+      organizationId,
+    });
+    expect(pullSyncChanges).toHaveBeenCalledTimes(1);
+    expect(result.nextCursor).toBe("3");
+  });
+
+  it("pulls when no expected user is sent (a cached client from before the field)", async () => {
+    const pullSyncChanges = vi.fn(() =>
+      Promise.resolve({ changes: [], hasMore: false, nextCursor: 0 })
+    );
+    const client = createClient({
+      pullSyncChanges,
+      withTenantRequestContext: tenantContext(),
+    });
+    await client.sync.pull({ organizationId });
+    expect(pullSyncChanges).toHaveBeenCalledTimes(1);
+  });
+
   it("maps a cursor the repository refuses to a bad request", async () => {
     const client = createClient({
       pullSyncChanges: () => Promise.reject(new InvalidSyncCursorError()),

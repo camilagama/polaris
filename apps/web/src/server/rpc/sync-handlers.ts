@@ -1,4 +1,4 @@
-import { implement } from "@orpc/server";
+import { ORPCError, implement } from "@orpc/server";
 import { polarisContract } from "@polaris/contracts";
 import type { readBootstrapPage } from "@polaris/db/bootstrap-repository";
 import type { runSyncCommand } from "@polaris/db/sync-command-repository";
@@ -12,6 +12,9 @@ import { offlineLeaseKeys } from "../offline-lease-service";
 import { syncPayloadHashKeys } from "../sync/payload-hash";
 import { pushCommands, type SyncCommandHandler } from "../sync/push";
 import type { withTenantRequestContext } from "../tenant-request-context";
+
+/** The stable code of a refusal because the session is another user's than the one the tab holds the copy for. */
+const SESSION_CHANGED_REASON = "session_changed";
 
 interface SyncRpcContext {
   bindings: WorkerBindings;
@@ -115,6 +118,15 @@ export function createSyncRpcHandlers(dependencies: SyncRpcDependencies) {
         bindings: context.bindings,
         capability: "sync:read",
         operation: async (transaction, identity) => {
+          // the lease the tab reads under belongs to another user than the session of this request: nothing is read
+          if (
+            input.expectedUserId !== undefined &&
+            input.expectedUserId !== identity.userId
+          ) {
+            throw new ORPCError("FORBIDDEN", {
+              data: { reason: SESSION_CHANGED_REASON },
+            });
+          }
           const result = await pullRepository(transaction, identity, {
             cursor: input.cursor ?? null,
             limit: input.limit,

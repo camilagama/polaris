@@ -60,6 +60,7 @@ function world(options: { leaseHours?: number } = {}) {
     sessionUser: 0,
   };
   const labels: (string | null)[] = [];
+  const expectedUsers: (string | undefined)[] = [];
   const owners = new Map<string, string>();
   const session: { signedIn: boolean; user: string } = {
     signedIn: true,
@@ -82,6 +83,10 @@ function world(options: { leaseHours?: number } = {}) {
     pushData?: Record<string, unknown> | undefined;
     /** The server answers every pushed command as rejected, with this code. */
     rejectCode?: string | undefined;
+    /** What every pull throws, after `beforePullError` ran, if anything. */
+    pullError?: unknown;
+    /** Runs inside the pull that is about to fail (the session or the queue changes while it is on its way). */
+    beforePullError?: (() => Promise<void> | void) | undefined;
   } = {
     deviceIsMine: false,
     issueLease: [],
@@ -164,6 +169,10 @@ function world(options: { leaseHours?: number } = {}) {
   countedSource.pull = async (cursor, limit) => {
     calls.pull += 1;
     await gates.pull;
+    if (failures.pullError !== undefined) {
+      await failures.beforePullError?.();
+      throw failures.pullError;
+    }
     const release = await gates.readGate?.acquire(pullSignal);
     try {
       return await server.pull(cursor, limit);
@@ -233,7 +242,8 @@ function world(options: { leaseHours?: number } = {}) {
         ? Promise.reject(failures.sessionUser)
         : Promise.resolve(session.signedIn ? session.user : null);
     },
-    source: (_organizationId, signal) => {
+    source: (_organizationId, signal, expectedUserId) => {
+      expectedUsers.push(expectedUserId);
       pullSignal = signal;
       return countedSource;
     },
@@ -315,6 +325,7 @@ function world(options: { leaseHours?: number } = {}) {
     calls,
     closed,
     disk,
+    expectedUsers,
     failures,
     /** Fires every live timer that is due by the clock, as the browser would. */
     fireDueTimers: () => {
@@ -660,6 +671,77 @@ describe("starting", () => {
     expect(w.wiped).toEqual([]);
     const kept = w.stores.get(`${userId}-${organizationId}`);
     expect((await kept?.outbox.snapshot())?.commands).toHaveLength(1);
+  });
+
+  it("the pull names the user of the lease in use as the expected one", async () => {
+    const w = world();
+    const runtime = w.make();
+    await runtime.start(organizationId);
+    w.expectedUsers.length = 0;
+    await runtime.syncNow();
+    expect(w.expectedUsers).toEqual([userId]);
+  });
+
+  it.each([
+    ["with an empty queue, even inside the confirmation window", false],
+    ["with a command queued while the pull was on its way", true],
+  ])(
+    "a pull refused for another session takes the session changed path %s, keeping the queue",
+    async (_name, queued) => {
+      const w = world();
+      const runtime = w.make();
+      await runtime.start(organizationId);
+      const sessionReads = w.calls.sessionUser;
+      w.failures.pullError = Object.assign(new Error("forbidden"), {
+        code: "FORBIDDEN",
+        data: { reason: "session_changed" },
+      });
+      w.failures.beforePullError = async () => {
+        w.session.user = "user-2"; // signed in in another window after the confirmation
+        if (queued) {
+          await queueProduct(runtime, "Do primeiro usuário", 1);
+        }
+      };
+      await runtime.syncNow();
+
+      expect(w.calls.sessionUser).toBe(sessionReads + 1); // the window skipped the read before the pull; the refusal forced one
+      expect(runtime.getSnapshot()).toMatchObject({
+        phase: "unavailable",
+        reason: "session_changed",
+        sessionRefused: true,
+      });
+      expect(w.keyValues.read("polaris.offline.session-user")).toBe("user-2");
+      expect(w.purged).toEqual([]);
+      expect(w.wiped).toEqual([]);
+      const kept = w.stores.get(`${userId}-${organizationId}`);
+      expect((await kept?.outbox.snapshot())?.commands).toHaveLength(
+        queued ? 1 : 0
+      );
+    }
+  );
+
+  it("a pull refused for another session while the reading still names this user ends the sync quietly and the next one tries again", async () => {
+    const w = world();
+    const runtime = w.make();
+    await runtime.start(organizationId);
+    w.failures.pullError = Object.assign(new Error("forbidden"), {
+      code: "FORBIDDEN",
+      data: { reason: "session_changed" },
+    });
+    await runtime.syncNow();
+
+    expect(runtime.getSnapshot()).toMatchObject({
+      phase: "ready",
+      reason: null,
+      sessionRefused: false,
+      syncing: false,
+    });
+    expect(w.purged).toEqual([]);
+    w.failures.pullError = undefined;
+    const pulls = w.calls.pull;
+    await runtime.syncNow();
+    expect(w.calls.pull).toBe(pulls + 1);
+    expect(runtime.getSnapshot().lastSyncAt).not.toBeNull();
   });
 
   it("when the server answers about the session with something unusable, it never falls back to the remembered user; with no connection at all it does", async () => {

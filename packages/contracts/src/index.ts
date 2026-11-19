@@ -2879,6 +2879,8 @@ export const polarisContract = {
       .input(
         z.object({
           cursor: syncCursorText.nullish(),
+          // The user the tab holds the local copy for. Optional while a cached client may not send it.
+          expectedUserId: z.string().trim().min(1).max(255).optional(),
           limit: z.number().int().min(1).max(500).default(200),
           organizationId: organizationIdInput,
         })
