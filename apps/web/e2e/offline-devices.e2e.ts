@@ -23,6 +23,10 @@ const LEASE_KEY = {
   secret: "teste-secret-teste-secret-teste-secret-0123456789",
 };
 const HOUR = 3_600_000;
+/** `14/10/2026` at 15:00 in São Paulo, after every device date below; the lease it signs is valid for 72 h from here. */
+const NOW = new Date("2026-10-14T15:00:00-03:00");
+const hoursAgo = (hours: number) =>
+  new Date(NOW.getTime() - hours * HOUR).toISOString();
 const REVOKE_BUTTON = /^Revogar o aparelho/;
 const CONFIRM_ONE = "Sim, revogar este aparelho";
 const CONFIRM_ALL = "Sim, revogar e encerrar as outras sessões";
@@ -35,7 +39,7 @@ const SECRET_IN_CONSOLE = /cookie|token|session[-_ ]?id|set-cookie/i;
 const uuid = (n: number) =>
   `0199c2d0-0000-7000-8000-${n.toString(16).padStart(12, "0")}`;
 const device = (n: number, label: string | null, lastSeen: string) => ({
-  createdAt: "2026-10-01T12:00:00.000Z",
+  createdAt: hoursAgo(318),
   id: uuid(n),
   label,
   lastSeenAt: lastSeen,
@@ -101,12 +105,12 @@ function scenario(overrides: Partial<Scenario> = {}): Scenario {
 }
 
 const twoDevices = () => [
-  device(1, "Caixa da loja", "2026-10-14T10:00:00.000Z"),
-  device(2, "Celular da Ana", "2026-10-13T10:00:00.000Z"),
+  device(1, "Caixa da loja", hoursAgo(8)),
+  device(2, "Celular da Ana", hoursAgo(32)),
 ];
 const threeDevices = () => [
   ...twoDevices(),
-  device(3, "Tablet do estoque", "2026-10-12T10:00:00.000Z"),
+  device(3, "Tablet do estoque", hoursAgo(56)),
 ];
 
 const inputOf = (route: { request: () => { postDataJSON: () => unknown } }) =>
@@ -118,6 +122,7 @@ const inputOf = (route: { request: () => { postDataJSON: () => unknown } }) =>
  * the app asks and is not here is unreachable.
  */
 async function serve(page: Page, state: Scenario) {
+  await page.clock.setFixedTime(NOW);
   const refused = () => rpcError(401, "UNAUTHORIZED");
   await serveHealth(page, () => state.down);
   // everything else the offline runtime asks for is unreachable here
@@ -172,7 +177,7 @@ async function serve(page: Page, state: Scenario) {
     }
     await route.fulfill(
       json({
-        device: { ...gone, revokedAt: "2026-10-14T13:00:00.000Z" },
+        device: { ...gone, revokedAt: hoursAgo(5) },
         endedCurrentSession,
         endedSessionCount: answer.endedSessionCount ?? 0,
         revokedGrantIds: [uuid(900)],
@@ -215,7 +220,7 @@ async function serve(page: Page, state: Scenario) {
       deviceId: string;
       organizationId: string;
     };
-    const issuedAt = new Date();
+    const issuedAt = new Date(NOW);
     const expiresAt = new Date(issuedAt.getTime() + 72 * HOUR);
     const lease = await signOfflineLease(
       buildOfflineLeaseClaims({

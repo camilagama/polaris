@@ -269,6 +269,18 @@ describe("list state", () => {
     expect(state.moreError).toContain("Não foi possível carregar");
   });
 
+  it("rereading the first page drops the next page in flight and keeps the list", () => {
+    const inFlight = stockMoreStarted(ready([entry(1), entry(2)], "cursor-1"));
+    expect(inFlight.loadingMore).toBe(true);
+
+    const state = stockLoading(inFlight);
+    expect(state.loadingMore).toBe(false);
+    expect(state.status).toBe("ready");
+    expect(state.entries).toEqual(inFlight.entries);
+    expect(state.nextCursor).toBe("cursor-1");
+    expect(canLoadMoreStock(state)).toBe(true);
+  });
+
   it("turns a failed first load into an error that says only what failed (the notice says the rest)", () => {
     const state = stockLoadFailed(initialStockListState(), {
       code: "UNAUTHORIZED",

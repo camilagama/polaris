@@ -3564,3 +3564,18 @@ Origem: achado B do Diego no Pixel 6 (28/10): a venda montada em Vender sumia ao
 | Provas | Em revisão | `session-lookup.test.ts` (10 s e 10 s + 1 ms, início da leitura, `forget`, falha e recusa), `offline-runtime.test.ts` (início com memória, o resto fresco), `e2e/offline-runtime-api.e2e.ts` (abertura: 1, antes 2) e `e2e/subscription-screen.e2e.ts` (Assinatura e volta: 1, antes 4). |
 | Fora | Pendente | O `get-session` de cada tick de pull (item 3 do corte). |
 
+### Entrada da transação de tenant num statement (t1363; migration 0136, provisória)
+
+| Parte | Estado | O que há |
+| --- | --- | --- |
+| Banco | Em revisão | `0136_entrada_do_tenant_num_statement.sql`: `begin_tenant_request` (SECURITY INVOKER, `search_path` fixo, `EXECUTE` só de `polaris_pr11_runtime`) faz timeouts, `app.user_id`, membership, papel contra a lista do domínio, `app.organization_id` e loja ativa/encerrada, na ordem de antes, e recusa com `42501` e o código de `TenantAuthorizationError`. Só expande (ADR 0096). |
+| Worker | Em revisão | `withAuthorizedTenantTransaction` manda `BEGIN` + a função (antes, 6 statements de entrada); `rolesWithCapability` no domínio. API e erros iguais para os chamadores. |
+| Provas | Em revisão | `tenant-transaction.test.ts` (SQL gerado com 1, 2 e 0 papéis; conversão de erro), gate `tenant-context` (catálogo, recusas diretas, timeouts inválidos, membro removido, loja suspensa, três mutantes), `closed-organization-readonly` (capability antes do encerramento), `STATEMENT_COUNTS` (`sync/pull` 10 → 6, `goal/list` 41 → 25, `billing/readPlan` 24 → 20). Falta a prova no Neon (`gate2-runtime`) antes da liberação. |
+
+### Perf de 19/11: o tique do sync cresce sem trabalho e aba escondida não puxa (t1355; sem migration)
+
+| Item | Estado | Detalhe |
+| --- | --- | --- |
+| Agendador | Em revisão | `offline/runtime/sync-scheduler.ts`: o tique dobra de 60 s até 300 s a cada pull sem trabalho e volta a 60 s com trabalho, comando na fila, volta à frente, "Tentar agora", volta da conexão, falha ou tentativa sem resposta; aba escondida não puxa. Emenda de 19/11 do ADR 0043. |
+| Runtime | Em revisão | `OfflineRuntime.lastPullWasIdle()`: a última sincronização completa foi respondida, não enviou comando e o cursor não andou; falha, sem resposta, corte do pull e rodada só de envio não contam. O envio da fila não mudou. |
+| Provas | Em revisão | `sync-scheduler.test.ts` (relógio injetado: 60→120→240→300→300, volta a 60, aba escondida, mutações) e `offline-runtime.test.ts`. |

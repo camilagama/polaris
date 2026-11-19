@@ -7,6 +7,7 @@ import { clearOrganizationsClosedHere } from "../../lib/organization-closed";
 import { clearPaymentProfileCaches } from "../../lib/payment-profile-cache";
 import { clearPeriodSummaryCaches } from "../../lib/period-summary-cache";
 import { forgetSessionLookups } from "../../lib/session-lookup";
+import { notifyPlanUsageChanged } from "../../lib/plan-usage-changes";
 import { writeSessionMarker } from "../../lib/session-marker";
 import { clearClosedStores } from "../../organization/closed-stores-memory";
 import { markSigningOut } from "../../lib/sign-out";
@@ -41,6 +42,8 @@ export function clearSessionCaches(): void {
   clearPaymentProfileCaches(browserStorage());
   clearPeriodSummaryCaches(browserStorage());
   clearPlanNotice();
+  // the plan's reading of the session that ended (`planRead` listens; the module is not imported here: it needs the client)
+  notifyPlanUsageChanged();
   clearFirstSteps();
   clearSaleDrafts(sessionStorageOrNull());
   clearSaleAttempts(sessionStorageOrNull());
