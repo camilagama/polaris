@@ -71,8 +71,9 @@ export function initialHistoryState(): HistoryState {
 
 /** Starts a (re)load of the first page; a showing list stays visible. */
 export function historyLoading(state: HistoryState): HistoryState {
+  // Re-reading the first page makes an in-flight page 2 stale: its answer is ignored.
   return state.list === "ready"
-    ? { ...state, moreError: null }
+    ? { ...state, loadingMore: false, moreError: null }
     : { ...state, list: "loading", listError: null };
 }
 
