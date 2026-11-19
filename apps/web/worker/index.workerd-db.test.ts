@@ -83,9 +83,10 @@ const UUID = /^[0-9a-f-]{36}$/;
  * settings of the transaction (the platform counts every one against the daily quota of the Hyperdrive). They are the
  * numbers the routes send today, not a goal: a route that sends one more fails here, and the one that sends fewer
  * lowers its number in the same change. They are the fixed cost of a call on a store with no goals, products or sales:
- * what a row adds is not counted.
+ * what a row adds is not counted. `billing/readPlan` is measured with BILLING_SELF_SERVICE_ENABLED on (off, it answers
+ * 404 before any statement); the other routes run with the bindings as the wrangler file has them.
  */
-const STATEMENT_CEILINGS: Record<string, number> = {
+const STATEMENT_COUNTS: Record<string, number> = {
   "auth get-session": 2,
   "billing/readPlan": 24,
   "goal/list": 41,
@@ -915,7 +916,7 @@ describe("the e-mail and password flows of the web worker", () => {
     expect(network.strangers).toEqual([]);
   });
 
-  it("sends no more statements to the database than the ceiling of each of the most frequent routes (the Hyperdrive counts every one)", async () => {
+  it("sends exactly the recorded number of statements to the database on each of the most frequent routes (the Hyperdrive counts every one)", async () => {
     const network = fakeNetwork();
     const address = email("statements");
     const ip = "198.51.100.21";
@@ -941,8 +942,10 @@ describe("the e-mail and password flows of the web worker", () => {
     const { nextCursor } = (
       (await firstPull.json()) as { json: { nextCursor: string } }
     ).json;
+    // the dates do not change the count: the store has no sale, and the 31 days stay under the ceiling of the period
     const period = { from: "2026-10-01", organizationId, to: "2026-10-31" };
     const routes: {
+      bindings?: Bindings;
       body?: unknown;
       method?: string;
       name: string;
@@ -959,6 +962,7 @@ describe("the e-mail and password flows of the web worker", () => {
         path: "/rpc/sync/pull",
       },
       {
+        bindings: { BILLING_SELF_SERVICE_ENABLED: "true" },
         body: { json: { organizationId } },
         name: "billing/readPlan",
         path: "/rpc/billing/readPlan",
@@ -994,7 +998,7 @@ describe("the e-mail and password flows of the web worker", () => {
       try {
         const response = await call(route.path, {
           ...(route.body === undefined ? {} : { body: route.body }),
-          bindings: { BILLING_SELF_SERVICE_ENABLED: "true" },
+          ...(route.bindings ? { bindings: route.bindings } : {}),
           cookie,
           ip,
           ...(route.method ? { method: route.method } : {}),
@@ -1029,7 +1033,7 @@ describe("the e-mail and password flows of the web worker", () => {
     expect(
       counted,
       `statements per call, in order:\n${detail.join("\n")}\nRaise a number only for a route that must send more; lower it when the route sends fewer.`
-    ).toEqual(STATEMENT_CEILINGS);
+    ).toEqual(STATEMENT_COUNTS);
     expect(network.strangers).toEqual([]);
   });
 
