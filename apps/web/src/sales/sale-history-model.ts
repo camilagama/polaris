@@ -532,7 +532,8 @@ function cancellationView(
   }
   rows.push({
     label: "Estoque",
-    value: "Devolvido item a item, pelo custo registrado em cada item.",
+    value:
+      "Voltou item a item, pelo custo registrado em cada item, exceto item de produto removido.",
   });
   return { rows };
 }

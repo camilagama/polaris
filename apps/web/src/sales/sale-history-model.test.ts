@@ -548,6 +548,9 @@ describe("sale detail", () => {
     ]);
     expect(view.cancellation?.rows[1]?.value).toBe("Outro");
     expect(view.cancellation?.rows[2]?.value).toBe("Troca de loja");
+    expect(view.cancellation?.rows[3]?.value).toBe(
+      "Voltou item a item, pelo custo registrado em cada item, exceto item de produto removido."
+    );
     expect(view.sale.items).toHaveLength(1);
     expect(view.sale.totals.at(-1)?.value).toBe("R$ 88,82");
   });

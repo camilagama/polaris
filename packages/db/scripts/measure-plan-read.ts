@@ -36,7 +36,9 @@ import { markQaStoreInternal, type QueryClient } from "./seed-qa-store";
  * The rows are written with SQL as the database owner, with `session_replication_role = replica` (the triggers that
  * ask a confirmed sale for its items and the ledger for its movements are skipped): the read counts rows and never
  * looks at items, payments or movements, so only the rows it counts are written. That is a fixture of a disposable
- * database, never something to do with real data. The stores stay; the login role of the run is dropped.
+ * database, never something to do with real data. The stores stay; the login role of the run is dropped. The report
+ * starts with the number of organizations in the database and of `qa-medida-plano-*` stores among them, counted
+ * before this run seeds anything: a database recreated since the last run shows zero stores.
  *
  * After the seed it runs `VACUUM (ANALYZE)`, the state autovacuum leaves a table in: without it the visibility map is
  * empty and every index-only count fetches each heap row, which a store whose rows are older than the last vacuum
@@ -53,6 +55,7 @@ const MIN_RUNS = 30;
 const HISTORY_DAYS = 366;
 /** At least one discarded run, so the first measured one does not carry the opening of the connection. */
 const DEFAULT_WARMUP = 5;
+const QA_STORE_NAME_PREFIX = "qa-medida-plano-";
 const SEEDED_TABLES = [
   "public.products",
   "public.product_variants",
@@ -214,12 +217,12 @@ async function seedStore(admin: pg.Pool, label: string, size: StoreSize) {
       [
         fixture.userId,
         "qa medida",
-        `qa-medida-plano-${fixture.userId}@example.invalid`,
+        `${QA_STORE_NAME_PREFIX}${fixture.userId}@example.invalid`,
       ]
     );
     await client.query(
       "INSERT INTO public.organizations (id, name, timezone) VALUES ($1, $2, 'America/Sao_Paulo')",
-      [fixture.organizationId, `qa-medida-plano-${label}`]
+      [fixture.organizationId, `${QA_STORE_NAME_PREFIX}${label}`]
     );
     await client.query(
       "INSERT INTO public.memberships (organization_id, user_id, role, status) VALUES ($1, $2, 'owner', 'active')",
@@ -315,6 +318,31 @@ async function storeCounts(admin: pg.Pool, organizationId: string) {
     [organizationId]
   );
   return rows[0];
+}
+
+export interface OrganizationTotals {
+  qaMedidaPlanoOrganizations: number;
+  totalOrganizations: number;
+}
+
+/**
+ * Reads, without writing, how many organizations the database holds and how many of them are the stores this script
+ * left behind in earlier runs. Taken before the first seed, so a database recreated between runs shows zero here.
+ */
+export async function readOrganizationTotals(
+  client: Pick<pg.Pool, "query">
+): Promise<OrganizationTotals> {
+  const { rows } = await client.query<{ qa: number; total: number }>(
+    `SELECT count(*)::int AS total,
+            (count(*) FILTER (WHERE starts_with(name, $1)))::int AS qa
+       FROM public.organizations`,
+    [QA_STORE_NAME_PREFIX]
+  );
+  const [row] = rows;
+  return {
+    qaMedidaPlanoOrganizations: row?.qa ?? 0,
+    totalOrganizations: row?.total ?? 0,
+  };
 }
 
 interface MeasureContext {
@@ -470,6 +498,7 @@ async function main() {
       sales: BASE_STORE.sales * LARGER_FACTOR,
       variants: BASE_STORE.variants * LARGER_FACTOR,
     };
+    const totals = await readOrganizationTotals(admin.pool);
     const stores: unknown[] = [];
     for (const [label, size] of [
       ["ano-366", BASE_STORE],
@@ -486,7 +515,7 @@ async function main() {
     );
     console.log(
       JSON.stringify(
-        { postgres: rows[0]?.version, runs, stores, warmup },
+        { ...totals, postgres: rows[0]?.version, runs, stores, warmup },
         null,
         2
       )
