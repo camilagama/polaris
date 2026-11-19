@@ -189,6 +189,7 @@ export const saleDetailAnswers = ({
   withFee?: boolean;
   withReturn: boolean;
 }): Readonly<Record<string, unknown>> => ({
+  "customer/get": customer(CUSTOMER_ANGELA, "Ângela Souza"),
   "customer/list": SALE_CUSTOMERS,
   "sale/get": saleDetailRead(withReturn, withFee),
   "sale/getCustomerLink": SALE_CUSTOMER_LINK,

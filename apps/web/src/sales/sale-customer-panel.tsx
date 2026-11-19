@@ -30,6 +30,10 @@ import {
   availableActions,
   beginLinkSubmission,
   buildLinkCommand,
+  currentCustomerId,
+  currentCustomerLoaded,
+  currentCustomerLoadFailed,
+  currentCustomerLoading,
   currentCustomerView,
   customersLoaded,
   customersLoadFailed,
@@ -305,6 +309,8 @@ interface CustomerActionsProps {
   hintId: string;
   /** Sends the action; true when the link was saved. */
   onAction: (action: LinkAction) => Promise<boolean>;
+  /** The choice of customer opened: the list is read now, not when the sale opens. */
+  onOpenChoice: () => void;
   onSelect: (customerId: string) => void;
   selectedId: string;
   status: ReturnType<typeof submissionView>;
@@ -321,6 +327,7 @@ function CustomerActions({
   actions,
   hintId,
   onAction,
+  onOpenChoice,
   onSelect,
   selectedId,
   status,
@@ -337,7 +344,8 @@ function CustomerActions({
       setAsking(chooseAction.action);
     }
     setChoosing(true);
-  }, [chooseAction]);
+    onOpenChoice();
+  }, [chooseAction, onOpenChoice]);
   // only "Cancelar" throws the customer picked away (once the dialog has closed); Esc and "Fechar" keep it
   const discard = useRef<boolean>(false);
   const handleCancel = useCallback(() => {
@@ -444,6 +452,7 @@ export function SaleCustomerPanel({
   const inFlight = useRef<boolean>(false);
   const linkSequence = useRef<RequestSequence>({ current: 0 });
   const customersSequence = useRef<RequestSequence>({ current: 0 });
+  const currentCustomerSequence = useRef<RequestSequence>({ current: 0 });
 
   const loadLink = useCallback(async () => {
     const token = nextRequestToken(linkSequence.current);
@@ -481,10 +490,42 @@ export function SaleCustomerPanel({
     }
   }, [organizationId]);
 
+  const loadCurrentCustomer = useCallback(
+    async (customerId: string) => {
+      const token = nextRequestToken(currentCustomerSequence.current);
+      setState((current) => currentCustomerLoading(current, customerId));
+      try {
+        const customer = await readWithRetry(
+          () => orpcClient.customer.get({ id: customerId, organizationId }),
+          {
+            isCurrent: () =>
+              isLatestRequest(currentCustomerSequence.current, token),
+          }
+        );
+        if (isLatestRequest(currentCustomerSequence.current, token)) {
+          setState((current) => currentCustomerLoaded(current, customer));
+        }
+      } catch (error) {
+        if (isLatestRequest(currentCustomerSequence.current, token)) {
+          setState((current) =>
+            currentCustomerLoadFailed(current, customerId, error)
+          );
+        }
+      }
+    },
+    [organizationId]
+  );
+
   useEffect(() => {
     loadLink().catch(() => undefined);
-    loadCustomers().catch(() => undefined);
-  }, [loadCustomers, loadLink]);
+  }, [loadLink]);
+
+  const linkedCustomerId = currentCustomerId(state);
+  useEffect(() => {
+    if (linkedCustomerId !== null) {
+      loadCurrentCustomer(linkedCustomerId).catch(() => undefined);
+    }
+  }, [linkedCustomerId, loadCurrentCustomer]);
 
   /** Sends the action; true when the link was saved (the dialog that asked closes only then). */
   const handleAction = useCallback(
@@ -528,10 +569,17 @@ export function SaleCustomerPanel({
       setState((current) => selectCustomer(current, customerId)),
     []
   );
+  const handleOpenChoice = useCallback(() => {
+    loadCustomers().catch(() => undefined);
+  }, [loadCustomers]);
   const handleRetry = useCallback(() => {
     loadLink().catch(() => undefined);
-    loadCustomers().catch(() => undefined);
-  }, [loadCustomers, loadLink]);
+  }, [loadLink]);
+  const handleRetryName = useCallback(() => {
+    if (linkedCustomerId !== null) {
+      loadCurrentCustomer(linkedCustomerId).catch(() => undefined);
+    }
+  }, [linkedCustomerId, loadCurrentCustomer]);
 
   const hintId = useId();
   const Heading = headingLevel === 2 ? "h2" : "h3";
@@ -573,9 +621,27 @@ export function SaleCustomerPanel({
               <dt className="text-muted-foreground text-support">
                 Cliente atual
               </dt>
-              <dd className="font-medium [overflow-wrap:anywhere]">
-                {currentView.label}
-              </dd>
+              {currentView.kind === "customer-error" ? (
+                <dd className="flex flex-wrap items-center gap-x-3 gap-y-1 text-destructive">
+                  {currentView.label}
+                  <Button
+                    onClick={handleRetryName}
+                    size="sm"
+                    type="button"
+                    variant="link"
+                  >
+                    <RefreshCwIcon
+                      aria-hidden="true"
+                      data-icon="inline-start"
+                    />
+                    Tentar novamente
+                  </Button>
+                </dd>
+              ) : (
+                <dd className="font-medium [overflow-wrap:anywhere]">
+                  {currentView.label}
+                </dd>
+              )}
             </div>
             {currentView.detail ? (
               <div className="grid gap-0.5">
@@ -590,6 +656,7 @@ export function SaleCustomerPanel({
             actions={actions}
             hintId={hintId}
             onAction={handleAction}
+            onOpenChoice={handleOpenChoice}
             onSelect={handleSelect}
             selectedId={state.selectedCustomerId}
             status={status}

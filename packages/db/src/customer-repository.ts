@@ -119,6 +119,27 @@ export async function listCustomers(
     .orderBy(asc(customers.name), asc(customers.id));
 }
 
+export async function getCustomer(
+  transaction: TenantRequestTransaction,
+  identity: TenantRequestIdentity,
+  customerId: string
+) {
+  const [customer] = await transaction
+    .select(customerColumns)
+    .from(customers)
+    .where(
+      and(
+        eq(customers.organizationId, identity.organizationId),
+        eq(customers.id, customerId)
+      )
+    )
+    .limit(1);
+  if (!customer) {
+    throw new CustomerNotFoundError();
+  }
+  return customer;
+}
+
 export async function findPossibleCustomerDuplicates(
   transaction: TenantRequestTransaction,
   identity: TenantRequestIdentity,

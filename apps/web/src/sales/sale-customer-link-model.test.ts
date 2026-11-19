@@ -7,6 +7,10 @@ import {
   availableActions,
   beginLinkSubmission,
   buildLinkCommand,
+  currentCustomerId,
+  currentCustomerLoaded,
+  currentCustomerLoadFailed,
+  currentCustomerLoading,
   currentCustomerView,
   customersLoaded,
   customersLoadFailed,
@@ -118,10 +122,11 @@ describe("sale identifier", () => {
 });
 
 describe("load states", () => {
-  it("starts with the sale and the customers loading", () => {
+  it("starts with the sale loading and the list of customers not asked for", () => {
     const state = initialLinkPanelState();
     expect(state.link.status).toBe("loading");
-    expect(state.customers.status).toBe("loading");
+    expect(state.currentCustomer.status).toBe("idle");
+    expect(state.customers.status).toBe("idle");
     expect(currentCustomerView(state).kind).toBe("loading");
     expect(pickerView(state).kind).toBe("loading");
     expect(availableActions(state)).toEqual([]);
@@ -529,13 +534,109 @@ describe("views", () => {
     ]);
   });
 
-  it("shows an unavailable customer for an unknown id, and loading while customers load", () => {
-    const unknown = ready(link(gone, 1), customers);
-    expect(currentCustomerView(unknown).label).toBe("Cliente indisponível");
+  it("shows loading while the customer is read, and its error on the name line when the read fails", () => {
     const loading = linkLoaded(initialLinkPanelState(), link(ana, 1));
     expect(currentCustomerView(loading).label).toBe("Carregando cliente…");
-    const failed = customersLoadFailed(loading, new Error("x"));
-    expect(currentCustomerView(failed).label).toBe("Cliente indisponível");
+    const reading = currentCustomerLoading(loading, ana);
+    expect(currentCustomerView(reading).kind).toBe("loading");
+    const failed = currentCustomerLoadFailed(reading, ana, new Error("x"));
+    expect(currentCustomerView(failed)).toEqual({
+      detail: "Versão 1 da atribuição.",
+      kind: "customer-error",
+      label: "Não foi possível carregar o cliente da venda. Tente novamente.",
+    });
+    expect(availableActions(failed).map((action) => action.action)).toEqual([
+      "reassign",
+      "unassign",
+    ]);
+  });
+
+  it("names the customer read alone, and ignores a name read for another customer", () => {
+    const base = linkLoaded(initialLinkPanelState(), link(ana, 1));
+    const named = currentCustomerLoaded(base, customer(ana, "Ana Atual"));
+    expect(currentCustomerView(named).label).toBe("Ana Atual");
+    expect(named.customers.status).toBe("idle");
+    const archived = currentCustomerLoaded(
+      base,
+      customer(ana, "Ana", "archived")
+    );
+    expect(currentCustomerView(archived).label).toBe("Ana (arquivado)");
+    const other = currentCustomerLoaded(
+      linkLoaded(initialLinkPanelState(), link(bruno, 1)),
+      customer(ana, "Ana Atual")
+    );
+    expect(currentCustomerView(other).label).toBe("Carregando cliente…");
+  });
+
+  it("keeps a name already read while the same customer is read again, and drops it for another", () => {
+    const named = currentCustomerLoaded(
+      linkLoaded(initialLinkPanelState(), link(ana, 1)),
+      customer(ana, "Ana Atual")
+    );
+    expect(currentCustomerLoading(named, ana)).toBe(named);
+    expect(currentCustomerLoading(named, bruno).currentCustomer).toEqual({
+      customerId: bruno,
+      status: "loading",
+    });
+  });
+
+  it("keeps a name already read when reading it again fails", () => {
+    const named = currentCustomerLoaded(
+      linkLoaded(initialLinkPanelState(), link(ana, 1)),
+      customer(ana, "Ana Atual")
+    );
+    const failed = currentCustomerLoadFailed(named, ana, new Error("x"));
+    expect(currentCustomerView(failed).label).toBe("Ana Atual");
+  });
+
+  it("asks for no name when the sale has no customer", () => {
+    expect(currentCustomerId(neverAssigned())).toBeNull();
+    expect(currentCustomerId(assignedToAna())).toBe(ana);
+    expect(currentCustomerId(initialLinkPanelState())).toBeNull();
+  });
+
+  it("leaves the history without a name for a customer nobody has read, and names it once the list is read", () => {
+    const history: SaleCustomerLinkReadModel["history"] = [
+      {
+        action: "assign",
+        createdAt: "2026-05-01T12:00:00.000Z",
+        customerId: ana,
+        version: 1,
+      },
+      {
+        action: "reassign",
+        createdAt: "2026-05-02T12:00:00.000Z",
+        customerId: bruno,
+        version: 2,
+      },
+    ];
+    const unread = currentCustomerLoaded(
+      linkLoaded(initialLinkPanelState(), link(bruno, 2, history)),
+      customer(bruno, "Bruno")
+    );
+    expect(historyRows(unread).map((row) => row.text)).toEqual([
+      "Cliente trocado: Bruno",
+      "Cliente associado",
+    ]);
+    const listed = customersLoaded(unread, customers);
+    expect(historyRows(listed).map((row) => row.text)).toEqual([
+      "Cliente trocado: Bruno",
+      "Cliente associado: Ana",
+    ]);
+    const missing = customersLoaded(unread, [customer(bruno, "Bruno")]);
+    expect(historyRows(missing)[1]?.text).toBe(
+      "Cliente associado: Cliente indisponível"
+    );
+  });
+
+  it("asks for the list when the choice opens: idle shows loading, then the options", () => {
+    const state = linkLoaded(initialLinkPanelState(), link(null, 0));
+    expect(pickerView(state)).toEqual({
+      kind: "loading",
+      message: "Carregando clientes…",
+    });
+    expect(pickerView(customersLoading(state)).kind).toBe("loading");
+    expect(pickerView(customersLoaded(state, customers)).kind).toBe("ready");
   });
 
   it("describes a sale that never had a customer", () => {

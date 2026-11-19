@@ -118,8 +118,17 @@ type LinkSubmission =
   | { failure: LinkFailure; phase: "error" }
   | { changed: boolean; message: string; phase: "success" };
 
+/** The sale's current customer, read alone by ID: it names the customer without reading the whole list. */
+type CurrentCustomerLoad =
+  | { status: "idle" }
+  | { customerId: string; status: "loading" }
+  | { customerId: string; message: string; status: "error" }
+  | { customerId: string; status: "ready"; value: CustomerReadModel };
+
 export interface LinkPanelState {
-  customers: Loadable<readonly CustomerReadModel[]>;
+  currentCustomer: CurrentCustomerLoad;
+  /** The whole list is read only once the choice of customer opens: until then it is idle. */
+  customers: Loadable<readonly CustomerReadModel[]> | { status: "idle" };
   link: Loadable<SaleCustomerLinkReadModel>;
   selectedCustomerId: string;
   submission: LinkSubmission;
@@ -127,7 +136,8 @@ export interface LinkPanelState {
 
 export function initialLinkPanelState(): LinkPanelState {
   return {
-    customers: { status: "loading" },
+    currentCustomer: { status: "idle" },
+    customers: { status: "idle" },
     link: { status: "loading" },
     selectedCustomerId: "",
     submission: { phase: "idle" },
@@ -163,6 +173,61 @@ export function customersLoading(state: LinkPanelState): LinkPanelState {
   return state.customers.status === "ready"
     ? state
     : { ...state, customers: { status: "loading" } };
+}
+
+/** The ID of the customer the sale has now, once the link is loaded. */
+export function currentCustomerId(state: LinkPanelState): string | null {
+  return state.link.status === "ready"
+    ? state.link.value.current.customerId
+    : null;
+}
+
+/** Starts the read of the customer's name; a name already loaded for the same customer stays while it refreshes. */
+export function currentCustomerLoading(
+  state: LinkPanelState,
+  customerId: string
+): LinkPanelState {
+  const { currentCustomer } = state;
+  return currentCustomer.status === "ready" &&
+    currentCustomer.customerId === customerId
+    ? state
+    : { ...state, currentCustomer: { customerId, status: "loading" } };
+}
+
+export function currentCustomerLoaded(
+  state: LinkPanelState,
+  customer: CustomerReadModel
+): LinkPanelState {
+  return {
+    ...state,
+    currentCustomer: {
+      customerId: customer.id,
+      status: "ready",
+      value: customer,
+    },
+  };
+}
+
+export function currentCustomerLoadFailed(
+  state: LinkPanelState,
+  customerId: string,
+  error: unknown
+): LinkPanelState {
+  const { currentCustomer } = state;
+  if (
+    currentCustomer.status === "ready" &&
+    currentCustomer.customerId === customerId
+  ) {
+    return state;
+  }
+  return {
+    ...state,
+    currentCustomer: {
+      customerId,
+      message: loadErrorMessage(error, "o cliente da venda"),
+      status: "error",
+    },
+  };
 }
 
 /**
@@ -571,30 +636,57 @@ export function mapLinkError(error: unknown): LinkFailure {
 /* Views                                                                      */
 /* -------------------------------------------------------------------------- */
 
-function customerName(
-  customers: Loadable<readonly CustomerReadModel[]>,
-  customerId: string
-): string {
-  if (customers.status === "loading") {
-    return "Carregando cliente…";
-  }
-  if (customers.status === "error") {
-    return "Cliente indisponível";
-  }
-  const customer = customers.value.find(
-    (candidate) => candidate.id === customerId
-  );
-  if (!customer) {
-    return "Cliente indisponível";
-  }
+function customerLabel(customer: CustomerReadModel): string {
   return customer.status === "archived"
     ? `${customer.name} (arquivado)`
     : customer.name;
 }
 
+/** A customer whose data is in hand: from the list once it was read, else the one read alone for the current customer. */
+function knownCustomer(
+  state: LinkPanelState,
+  customerId: string
+): CustomerReadModel | undefined {
+  const fromList =
+    state.customers.status === "ready"
+      ? state.customers.value.find((candidate) => candidate.id === customerId)
+      : undefined;
+  if (fromList) {
+    return fromList;
+  }
+  const { currentCustomer } = state;
+  return currentCustomer.status === "ready" &&
+    currentCustomer.customerId === customerId
+    ? currentCustomer.value
+    : undefined;
+}
+
+/**
+ * What a history row says about a customer, or null when only the action is known: a customer that is not the current
+ * one has no name until the list has been read (the choice of customer opens it).
+ */
+function historyCustomerText(
+  state: LinkPanelState,
+  customerId: string
+): string | null {
+  const known = knownCustomer(state, customerId);
+  if (known) {
+    return customerLabel(known);
+  }
+  if (customerId === currentCustomerId(state)) {
+    return state.currentCustomer.status === "error"
+      ? "Cliente indisponível"
+      : "Carregando cliente…";
+  }
+  return state.customers.status === "ready" ||
+    state.customers.status === "error"
+    ? "Cliente indisponível"
+    : null;
+}
+
 export interface CurrentCustomerView {
   detail: string | null;
-  kind: "customer" | "error" | "loading" | "none";
+  kind: "customer" | "customer-error" | "error" | "loading" | "none";
   label: string;
 }
 
@@ -619,11 +711,19 @@ export function currentCustomerView(
       label: "Sem cliente",
     };
   }
-  return {
-    detail: `Versão ${current.version} da atribuição.`,
-    kind: "customer",
-    label: customerName(state.customers, current.customerId),
-  };
+  const detail = `Versão ${current.version} da atribuição.`;
+  const known = knownCustomer(state, current.customerId);
+  if (known) {
+    return { detail, kind: "customer", label: customerLabel(known) };
+  }
+  const { currentCustomer } = state;
+  if (
+    currentCustomer.status === "error" &&
+    currentCustomer.customerId === current.customerId
+  ) {
+    return { detail, kind: "customer-error", label: currentCustomer.message };
+  }
+  return { detail, kind: "loading", label: "Carregando cliente…" };
 }
 
 export type PickerView =
@@ -634,7 +734,10 @@ export type PickerView =
 
 /** Only active customers can be newly linked; the current one is left out. */
 export function pickerView(state: LinkPanelState): PickerView {
-  if (state.customers.status === "loading") {
+  if (
+    state.customers.status === "loading" ||
+    state.customers.status === "idle"
+  ) {
     return { kind: "loading", message: "Carregando clientes…" };
   }
   if (state.customers.status === "error") {
@@ -675,6 +778,10 @@ function formatInstant(value: string): string {
   return Number.isNaN(date.getTime()) ? value : instantFormatter.format(date);
 }
 
+function historyText(actionLabel: string, customer: string | null): string {
+  return customer === null ? actionLabel : `${actionLabel}: ${customer}`;
+}
+
 /** The version history, newest first, with customer names resolved. */
 export function historyRows(state: LinkPanelState): HistoryRow[] {
   if (state.link.status !== "ready") {
@@ -696,7 +803,7 @@ export function historyRows(state: LinkPanelState): HistoryRow[] {
       text:
         subjectId === null
           ? actionLabel
-          : `${actionLabel}: ${customerName(state.customers, subjectId)}`,
+          : historyText(actionLabel, historyCustomerText(state, subjectId)),
       version: entry.version,
     });
     previousCustomerId = entry.customerId;
