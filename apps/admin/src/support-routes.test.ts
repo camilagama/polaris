@@ -7,7 +7,7 @@ import {
   OrganizationPurgeRefusedError,
   organizationPurgeRefusalMessage,
 } from "@polaris/domain/privacy/organization-purge";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   type AdminBindings,
   type AdminDependencies,
@@ -29,9 +29,24 @@ const principal = {
 };
 const caseId = "0199a0a0-0000-7000-8000-0000000000c1";
 
-/** An ISO instant in UTC, this many days from now (a day only counts whole: the tests stay away from the edges). */
+const NOW = new Date("2026-12-01T02:30:00.000Z");
+const DAY_MS = 86_400_000;
+
+beforeEach(() => {
+  vi.useFakeTimers({ now: NOW, toFake: ["Date"] });
+});
+
+afterEach(() => {
+  vi.useRealTimers();
+});
+
+/** An ISO instant in UTC, this many milliseconds after the fixed `NOW`. */
+function msFromNow(ms: number): string {
+  return new Date(NOW.getTime() + ms).toISOString();
+}
+
 function daysFromNow(days: number): string {
-  return new Date(Date.now() + days * 86_400_000).toISOString();
+  return msFromNow(days * DAY_MS);
 }
 const customerId = "0199a0a0-0000-7000-8000-0000000000d1";
 const grantId = "0199a0a0-0000-7000-8000-0000000000e1";
@@ -1192,6 +1207,8 @@ describe("suspension and billing commands", () => {
       // a day only, in the past, now, and past the limit
       daysFromNow(10).slice(0, 10),
       daysFromNow(-1),
+      msFromNow(0),
+      msFromNow(366 * DAY_MS + 1),
       daysFromNow(367),
     ];
     for (const reviewAt of bad) {
@@ -1204,11 +1221,15 @@ describe("suspension and billing commands", () => {
       expect(await refused.json()).toEqual({ error: "invalid_review_at" });
     }
     expect(calls.legalHold).not.toHaveBeenCalled();
-    const edge = await send("POST", path, {
-      organizationId: "org_1",
-      reviewAt: daysFromNow(365),
-    });
-    expect(edge.status).toBe(200);
+    for (const reviewAt of [msFromNow(1), daysFromNow(365), daysFromNow(366)]) {
+      // biome-ignore lint/performance/noAwaitInLoops: each value is answered in turn.
+      const accepted = await send("POST", path, {
+        organizationId: "org_1",
+        reviewAt,
+      });
+      expect(accepted.status).toBe(200);
+    }
+    expect(calls.legalHold).toHaveBeenCalledTimes(3);
   });
 
   it("lists the legal holds in force, read only, with the capability and a page", async () => {

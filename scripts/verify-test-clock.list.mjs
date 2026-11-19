@@ -7,10 +7,6 @@ const BEFORE_THE_RULE =
   "anterior à checagem; ao mexer neste teste, fixe o relógio e derive as datas dele";
 
 export const TEST_CLOCK_LIST = {
-  "apps/admin/src/support-routes.test.ts": {
-    count: 1,
-    reason: BEFORE_THE_RULE,
-  },
   "apps/web/e2e-pwa/sale-draft.e2e.ts": { count: 2, reason: BEFORE_THE_RULE },
   "apps/web/e2e-pwa/support.ts": { count: 1, reason: BEFORE_THE_RULE },
   "apps/web/e2e-pwa/update-moments.e2e.ts": {
@@ -55,10 +51,6 @@ export const TEST_CLOCK_LIST = {
   "apps/web/e2e/offline-screens.e2e.ts": { count: 9, reason: BEFORE_THE_RULE },
   "apps/web/e2e/offline-sync-cadence.e2e.ts": {
     count: 3,
-    reason: BEFORE_THE_RULE,
-  },
-  "apps/web/src/lib/read-wait-text.test.ts": {
-    count: 1,
     reason: BEFORE_THE_RULE,
   },
   "apps/web/src/offline/runtime/offline-runtime.test.ts": {
