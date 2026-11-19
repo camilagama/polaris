@@ -142,7 +142,11 @@ export function OfflineRuntimeProvider({ children }: { children: ReactNode }) {
         connection: browserConnection,
         isLeader: leadership.isLeader,
         isVisible,
-        onVisible: onPageVisible,
+        onVisible: (listener) =>
+          onPageVisible(() => {
+            runtime.pageReturned();
+            listener();
+          }),
         random: Math.random,
         runtime,
         schedule: timerSchedule,
