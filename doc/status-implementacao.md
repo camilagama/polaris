@@ -3555,3 +3555,11 @@ Origem: achado B do Diego no Pixel 6 (28/10): a venda montada em Vender sumia ao
 | Frases | Em revisão | "sem taxa informada" / "sem taxa" no lugar de "sem custo informado" / "sem custo": tabela, hachura, leitura, resumo do `role="img"`, frase de apoio, aviso dos cartões do Resultado e do Início, "sem taxa neste dia" e o (i). |
 | Mês nomeado | Em revisão | Em período por mês com os dias desconhecidos num só mês: "novembro: 1 de 7 dias sem custo informado" (cartões, (i), frase de apoio e leitura do mês); dois meses ou mais mantêm a contagem do período. |
 | Provas | Em revisão | Testes de `result-series`, `result-kpis`, `result-chart`, `result-cards` e `home-kpis`. Fora: voltar/avançar entre períodos (a regra do `replaceAddress` fica). |
+
+### Entrada da transação de tenant num statement (t1363; migration 0136, provisória)
+
+| Parte | Estado | O que há |
+| --- | --- | --- |
+| Banco | Em revisão | `0136_entrada_do_tenant_num_statement.sql`: `begin_tenant_request` (SECURITY INVOKER, `search_path` fixo, `EXECUTE` só de `polaris_pr11_runtime`) faz timeouts, `app.user_id`, membership, papel contra a lista do domínio, `app.organization_id` e loja ativa/encerrada, na ordem de antes, e recusa com `42501` e o código de `TenantAuthorizationError`. Só expande (ADR 0096). |
+| Worker | Em revisão | `withAuthorizedTenantTransaction` manda `BEGIN` + a função (antes, 6 statements de entrada); `rolesWithCapability` no domínio. API e erros iguais para os chamadores. |
+| Provas | Em revisão | `tenant-transaction.test.ts` (SQL gerado com 1, 2 e 0 papéis; conversão de erro), gate `tenant-context` (catálogo, recusas diretas, timeouts inválidos, membro removido, loja suspensa, três mutantes), `closed-organization-readonly` (capability antes do encerramento), `STATEMENT_COUNTS` (`sync/pull` 10 → 6, `goal/list` 41 → 25, `billing/readPlan` 24 → 20). Falta a prova no Neon (`gate2-runtime`) antes da liberação. |
