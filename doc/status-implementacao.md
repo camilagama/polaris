@@ -3564,6 +3564,14 @@ Origem: achado B do Diego no Pixel 6 (28/10): a venda montada em Vender sumia ao
 | Reserva | Em revisão | O `report.dailySales` do período anterior só é lido quando o chip de resultado não pode existir (`resultChipPeriod` nulo) ou quando a leitura do `periodSummary` do período anterior falhou ou veio com forma errada: o chip de Vendas não some por causa de uma leitura que não era a dele. Os chips de Vendas e Ticket passam a esperar o motor, junto com o de resultado (Q-1, Petković); o número do cartão não espera nenhum dos dois. |
 | Provas | Em revisão | `dashboard/use-comparison-reads.test.ts` (uma leitura, reserva por erro e por resposta sem forma, falha de um período não vale para o outro); `e2e/dashboard.e2e.ts` (contagem por procedimento nos dois casos e o caso da leitura do período anterior recusada). |
 
+### Chamadas automáticas: a abertura pula o `device.check` da mesma sessão ligada há menos de 12 h (t1362; sem migration)
+
+| Parte | Estado | O que é |
+| --- | --- | --- |
+| Marcador da sessão | Em revisão | `offline-runtime.ts`: depois de `device.check` "meu" ou de `device.register` (o `issueLease` só renova o da mesma sessão), `polaris.offline.device-checked` guarda `{ deviceId, userId, sessionId, checkedAt }` (id da sessão, nunca o token); a abertura com o `get-session` do servidor na hora, mesma sessão, usuário e aparelho, menos de 12 h e licença a 12 h ou mais do fim não chama o `device.check`. Apagado no Sair, em `session_changed`, aparelho recusado e sessão diferente. Emenda de 19/11 do [ADR 0048](../docs/adr/0048-tela-de-aparelhos.md). |
+| Provas | Em revisão | `offline-runtime.test.ts` (o pulo e cada caso que chama, a revogação vista pelo `get-session` sem `device.check`, 13 mutações reprovadas) e `runtime-api.test.ts` (`session.id` sem o token, leitura sempre no servidor). |
+| Fora | Pendente | Com a memória de 10 s do `get-session` (t1360), a leitura que decide o pulo continua a do servidor na hora. |
+
 ### Entrada da transação de tenant num statement (t1363; migration 0136, provisória)
 
 | Parte | Estado | O que há |
