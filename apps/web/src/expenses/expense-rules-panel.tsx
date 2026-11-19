@@ -30,6 +30,8 @@ import { useFormDialog } from "./use-form-dialog";
 interface ExpenseRulesPanelProps {
   /** Every category, archived ones included. */
   categories: readonly ExpenseCategoryReadModel[];
+  /** False until the part has been in front once: no read of the rules before. */
+  enabled: boolean;
   /**
    * Called after a rule changed (or turned out stale): the page reloads the
    * expense list, because the server generates the occurrences that fell due
@@ -303,11 +305,12 @@ function ruleFormOrigin(next: ExpenseRuleReadModel | "new") {
 /** The Recorrentes part of the Despesas tab: rules that launch an expense every week, month or year. */
 export function ExpenseRulesPanel({
   categories,
+  enabled,
   onChanged,
   organizationId,
   today,
 }: ExpenseRulesPanelProps) {
-  const { reload, state, upsert } = useExpenseRules(organizationId);
+  const { reload, state, upsert } = useExpenseRules(organizationId, enabled);
   const { busy, clearFeedback, feedback, save, toggle } = useRuleCommands({
     onChanged,
     organizationId,
