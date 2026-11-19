@@ -53,7 +53,7 @@ describe("the review notices, set back into the card", () => {
     expect(html).not.toMatch(RING);
     expect(html).toContain("Confirme o cancelamento");
     expect(html).toContain(
-      "A venda será marcada como cancelada sem motivo informado, o estoque voltará item a item e isso não poderá ser desfeito."
+      "A venda será marcada como cancelada sem motivo informado, o estoque voltará item a item, exceto item de produto removido, e isso não poderá ser desfeito."
     );
   });
 });

@@ -66,7 +66,8 @@ export function CancelReviewNotice({
         {reasonCode === ""
           ? " sem motivo informado"
           : ` (motivo: ${cancellationReasonLabel(reasonCode)})`}
-        , o estoque voltará item a item e isso não poderá ser desfeito.
+        , o estoque voltará item a item, exceto item de produto removido, e isso
+        não poderá ser desfeito.
       </AlertDescription>
     </Alert>
   );
