@@ -7,6 +7,7 @@ import {
 } from "cloudflare:test";
 import { env, exports } from "cloudflare:workers";
 import { createDatabase } from "@polaris/db/client";
+import { recordStatements } from "@polaris/db/statement-counter-testing";
 import { LEGAL_DOCUMENTS } from "@polaris/domain/legal/legal-documents";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { WorkerBindings } from "../src/server/environment";
@@ -76,6 +77,25 @@ interface Fixture {
 }
 
 const UUID = /^[0-9a-f-]{36}$/;
+
+/**
+ * Statements one call of each of the most frequent routes sends to the database, with BEGIN, COMMIT and the
+ * settings of the transaction (the platform counts every one against the daily quota of the Hyperdrive). They are the
+ * numbers the routes send today, not a goal: a route that sends one more fails here, and the one that sends fewer
+ * lowers its number in the same change. They are the fixed cost of a call on a store with no goals, products or sales:
+ * what a row adds is not counted. `billing/readPlan` is measured with BILLING_SELF_SERVICE_ENABLED on (off, it answers
+ * 404 before any statement); the other routes run with the bindings as the wrangler file has them.
+ */
+const STATEMENT_COUNTS: Record<string, number> = {
+  "auth get-session": 2,
+  "billing/readPlan": 20,
+  "goal/list": 25,
+  "inventory/listBalances": 6,
+  "organization/listMine": 8,
+  "report/dailySales": 6,
+  "report/periodSummary": 6,
+  "sync/pull": 6,
+};
 
 const fixture = JSON.parse(env.TEST_WEB_FIXTURE ?? "{}") as Fixture;
 const HYPERDRIVES: Binding[] = [
@@ -677,6 +697,7 @@ describe("the e-mail and password flows of the web worker", () => {
   async function call(
     path: string,
     options: {
+      bindings?: Bindings;
       body?: unknown;
       cookie?: string;
       ip: string;
@@ -715,7 +736,7 @@ describe("the e-mail and password flows of the web worker", () => {
         headers,
         method,
       } as RequestInit),
-      bindingsWith(AUTH_BINDINGS),
+      bindingsWith({ ...AUTH_BINDINGS, ...options.bindings }),
       context
     );
     await waitOnExecutionContext(context);
@@ -892,6 +913,127 @@ describe("the e-mail and password flows of the web worker", () => {
         seq: expect.any(Number),
       });
     }
+    expect(network.strangers).toEqual([]);
+  });
+
+  it("sends exactly the recorded number of statements to the database on each of the most frequent routes (the Hyperdrive counts every one)", async () => {
+    const network = fakeNetwork();
+    const address = email("statements");
+    const ip = "198.51.100.21";
+    await verifiedUser(network, address, ip);
+    const cookie = await signedInCookie(address, PASSWORD, ip);
+    const created = await call("/rpc/organization/createInitial", {
+      body: {
+        json: { name: "Loja dos statements", timezone: "America/Sao_Paulo" },
+      },
+      cookie,
+      ip,
+    });
+    expect(created.status).toBe(200);
+    const organizationId = (
+      (await created.json()) as { json: { organization: { id: string } } }
+    ).json.organization.id;
+    const firstPull = await call("/rpc/sync/pull", {
+      body: { json: { limit: 200, organizationId } },
+      cookie,
+      ip,
+    });
+    expect(firstPull.status).toBe(200);
+    const { nextCursor } = (
+      (await firstPull.json()) as { json: { nextCursor: string } }
+    ).json;
+    // the dates do not change the count: the store has no sale, and the 31 days stay under the ceiling of the period
+    const period = { from: "2026-10-01", organizationId, to: "2026-10-31" };
+    const routes: {
+      bindings?: Bindings;
+      body?: unknown;
+      method?: string;
+      name: string;
+      path: string;
+    }[] = [
+      {
+        method: "GET",
+        name: "auth get-session",
+        path: "/api/auth/get-session",
+      },
+      {
+        body: { json: { cursor: nextCursor, limit: 200, organizationId } },
+        name: "sync/pull",
+        path: "/rpc/sync/pull",
+      },
+      {
+        bindings: { BILLING_SELF_SERVICE_ENABLED: "true" },
+        body: { json: { organizationId } },
+        name: "billing/readPlan",
+        path: "/rpc/billing/readPlan",
+      },
+      {
+        body: { json: { organizationId } },
+        name: "goal/list",
+        path: "/rpc/goal/list",
+      },
+      {
+        body: { json: period },
+        name: "report/periodSummary",
+        path: "/rpc/report/periodSummary",
+      },
+      {
+        body: { json: period },
+        name: "report/dailySales",
+        path: "/rpc/report/dailySales",
+      },
+      {
+        body: { json: { organizationId } },
+        name: "inventory/listBalances",
+        path: "/rpc/inventory/listBalances",
+      },
+      {
+        body: { json: {} },
+        name: "organization/listMine",
+        path: "/rpc/organization/listMine",
+      },
+    ];
+    const measure = async (route: (typeof routes)[number]) => {
+      const recorder = recordStatements();
+      try {
+        const response = await call(route.path, {
+          ...(route.body === undefined ? {} : { body: route.body }),
+          ...(route.bindings ? { bindings: route.bindings } : {}),
+          cookie,
+          ip,
+          ...(route.method ? { method: route.method } : {}),
+        });
+        expect(response.status, route.name).toBe(200);
+        await response.text();
+      } finally {
+        recorder.stop();
+      }
+      return recorder.statements;
+    };
+
+    // the first call of each route warms what a later call of the isolate finds ready; only the second one is counted
+    for (const route of routes) {
+      // biome-ignore lint/performance/noAwaitInLoops: one route at a time, so the statements of two calls never mix
+      await measure(route);
+    }
+    const counted: Record<string, number> = {};
+    const detail: string[] = [];
+    for (const route of routes) {
+      // biome-ignore lint/performance/noAwaitInLoops: one route at a time, so the statements of two calls never mix
+      const statements = await measure(route);
+      counted[route.name] = statements.length;
+      detail.push(
+        `${route.name}: ${statements.length}`,
+        ...statements.map(
+          (statement, index) =>
+            `  ${index + 1}. [${statement.kind}] ${statement.text.replaceAll(/\s+/g, " ").slice(0, 120)}`
+        )
+      );
+    }
+    expect(
+      counted,
+      `statements per call, in order:\n${detail.join("\n")}\nRaise a number only for a route that must send more; lower it when the route sends fewer.`
+    ).toEqual(STATEMENT_COUNTS);
     expect(network.strangers).toEqual([]);
   });
 

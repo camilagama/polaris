@@ -101,6 +101,17 @@ describe("list load states", () => {
     expect(historyLoading(state).moreError).toBeNull();
   });
 
+  it("re-reading the first page drops a load-more in flight and keeps the list", () => {
+    const busy = loadMoreStarted(loaded([entry(2), entry(1)], true));
+    expect(busy.loadingMore).toBe(true);
+    const state = historyLoading(busy);
+    expect(state.loadingMore).toBe(false);
+    expect(state.list).toBe("ready");
+    expect(state.hasMore).toBe(true);
+    expect(state.sales.map((sale) => sale.id)).toEqual([id(2), id(1)]);
+    expect(canLoadMore(state)).toBe(true);
+  });
+
   it("keeps the list in the server order, newest first", () => {
     const rows = historyRows(loaded([entry(3), entry(2), entry(1)]));
     expect(rows.map((row) => row.id)).toEqual([id(3), id(2), id(1)]);

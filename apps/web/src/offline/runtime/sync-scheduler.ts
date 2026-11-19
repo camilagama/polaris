@@ -8,7 +8,11 @@ import type { RuntimeSnapshot } from "./offline-runtime";
  *
  * - every 60 s while the page is visible, in ONE tab of the browser per store (the one holding the lock
  *   of `isLeader`, Web Locks): the other tabs hear its pull through the data channel. One real try,
- *   even with the connection not proven (an answer of the Worker to it is what proves it again);
+ *   even with the connection not proven (an answer of the Worker to it is what proves it again). A hidden page
+ *   never pulls on the tick. After a tick that found nothing (an answered, empty pull and an empty queue) the interval
+ *   doubles, 60, 120, 240 and 300 s at most; anything that is work (a pull with changes, a send, a queued
+ *   command, a return to the page, "Tentar agora", the connection back) brings it back to 60 s. Sending a queued
+ *   command never waits for the interval;
  * - at start and on the return to the page (`refresh`): the same try, unless some tab of this browser
  *   pulled the store less than 60 s ago and nothing is queued. Each screen is its own page load, so
  *   without this every change of screen was a pull (the ~2.5 s pulls seen in QA);
@@ -34,6 +38,9 @@ interface SchedulerRuntime {
    * sent; without it every start and return syncs.
    */
   isFresh?: (maxAgeMs: number) => Promise<boolean>;
+  /** Whether the last full sync was answered and found nothing to send or pull; without it the interval never grows. */
+  lastPullWasIdle?: () => boolean;
+  subscribe?: (listener: () => void) => () => void;
   syncNow: () => Promise<void>;
 }
 
@@ -67,6 +74,7 @@ export interface SyncScheduler {
 }
 
 export const TICK_MS = 60_000;
+export const MAX_TICK_MS = 300_000;
 const BACK_ONLINE_MS = 1000;
 const RETRY_STEPS_MS = [2000, 4000, 8000, 20_000, 40_000, 60_000] as const;
 
@@ -80,6 +88,9 @@ export function startSyncScheduler(
   let cancelRetry: (() => void) | null = null;
   let cancelReturn: (() => void) | null = null;
   let cancelTick: (() => void) | null = null;
+  let tickMs = TICK_MS;
+  let tickSyncing = false;
+  let busyDuringTick = false;
   let online = connection.isOnline();
 
   const clearRetry = () => {
@@ -141,17 +152,64 @@ export function startSyncScheduler(
   };
 
   const isLeader = dependencies.isLeader ?? (() => true);
+  const queued = () => {
+    const { counts } = runtime.getSnapshot();
+    return counts.pending + counts.sending > 0;
+  };
+  const idleAfterSync = () =>
+    !(
+      failedLoudly(runtime.getSnapshot()) ||
+      runtime.retriesQuietly() ||
+      queued()
+    ) && runtime.lastPullWasIdle?.() === true;
   const tick = () => {
+    cancelTick?.();
     cancelTick = schedule(() => {
-      if (dependencies.isVisible() && isLeader()) {
-        sync().catch(() => undefined);
+      cancelTick = null;
+      if (stopped) {
+        return;
       }
+      if (!(dependencies.isVisible() && isLeader())) {
+        tick();
+        return;
+      }
+      tickSyncing = true;
+      busyDuringTick = false;
+      sync()
+        .catch(() => undefined)
+        .then(() => {
+          tickSyncing = false;
+          if (stopped) {
+            return;
+          }
+          tickMs =
+            idleAfterSync() && !busyDuringTick
+              ? Math.min(tickMs * 2, MAX_TICK_MS)
+              : TICK_MS;
+          tick();
+        });
+    }, tickMs);
+  };
+  const backToBusyInterval = () => {
+    busyDuringTick = true;
+    if (tickMs === TICK_MS) {
+      return;
+    }
+    tickMs = TICK_MS;
+    if (!(tickSyncing || stopped)) {
       tick();
-    }, TICK_MS);
+    }
   };
   tick();
 
+  const stopQueue = runtime.subscribe?.(() => {
+    if (queued()) {
+      backToBusyInterval();
+    }
+  });
+
   const stopVisible = dependencies.onVisible(() => {
+    backToBusyInterval();
     refresh().catch(() => undefined);
   });
 
@@ -165,6 +223,7 @@ export function startSyncScheduler(
     cancelReturn?.();
     cancelReturn = null;
     if (now) {
+      backToBusyInterval();
       cancelReturn = schedule(
         () => {
           cancelReturn = null;
@@ -182,9 +241,13 @@ export function startSyncScheduler(
       clearRetry();
       cancelReturn?.();
       cancelTick?.();
+      stopQueue?.();
       stopVisible();
       stopConnection();
     },
-    syncNow: sync,
+    syncNow: () => {
+      backToBusyInterval();
+      return sync();
+    },
   };
 }

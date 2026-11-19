@@ -449,3 +449,57 @@ describe("expense RPCs", () => {
     ).rejects.toMatchObject({ code });
   });
 });
+
+describe("expense read RPCs open one tenant context", () => {
+  it.each([
+    [
+      "expense.list",
+      {
+        expenseRepository: {
+          listExpenses: vi.fn(async () => ({
+            count: 0,
+            expenses: [],
+            nextCursor: null,
+            total: "0.00",
+          })),
+        },
+      },
+      (client: ExpenseClient) => client.expense.list({ organizationId }),
+    ],
+    [
+      "expense.listCategories",
+      {
+        expenseRepository: {
+          listExpenseCategories: vi.fn(async () => [categoryRow]),
+        },
+      },
+      (client: ExpenseClient) =>
+        client.expense.listCategories({ organizationId }),
+    ],
+    [
+      "expense.listRules",
+      { expenseRepository: { listExpenseRules: vi.fn(async () => []) } },
+      (client: ExpenseClient) => client.expense.listRules({ organizationId }),
+    ],
+  ])(
+    "%s uses exactly one expense:create context",
+    async (procedure, overrides, call) => {
+      const capabilities: string[] = [];
+      const client = createRpcClient(
+        createRpcRouter({
+          ...overrides,
+          withTenantRequestContext: tenantStub((capability) =>
+            capabilities.push(capability)
+          ),
+        } as unknown as NonNullable<Parameters<typeof createRpcRouter>[0]>)
+      );
+
+      await call(client);
+
+      expect(
+        capabilities,
+        `${procedure} opened ${capabilities.length} tenant contexts, expected 1`
+      ).toEqual(["expense:create"]);
+    }
+  );
+});

@@ -172,7 +172,10 @@ function createRpcClient(
   });
 
   return createORPCClient(link) as unknown as {
-    sale: { confirm: (input: unknown) => Promise<ConfirmedSaleReadModel> };
+    sale: {
+      confirm: (input: unknown) => Promise<ConfirmedSaleReadModel>;
+      list: (input: unknown) => Promise<unknown>;
+    };
   };
 }
 
@@ -567,5 +570,24 @@ describe("sale.confirm RPC", () => {
         processingFee: { amount: "0.00", mode: "none" },
       },
     });
+  });
+});
+
+describe("sale.list RPC", () => {
+  it("opens exactly one sale:read tenant context", async () => {
+    const observed: Array<{ capability: string; org: string }> = [];
+    const client = createRpcClient(
+      createRpcRouter({
+        listSales: vi.fn(async () => ({ hasMore: false, sales: [] })),
+        withTenantRequestContext: tenantStub((call) => observed.push(call)),
+      })
+    );
+
+    await client.sale.list({ organizationId });
+
+    expect(
+      observed,
+      `sale.list opened ${observed.length} tenant contexts, expected 1`
+    ).toEqual([{ capability: "sale:read", org: organizationId }]);
   });
 });
