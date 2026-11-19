@@ -86,7 +86,8 @@ export interface RuntimeApi {
   /**
    * The reads of the sync (pull, bootstrap). `signal` ends the ones still going when someone is waiting for the
    * queue to be sent: a read held by the tab's read gate (a 429 pause) must not hold "Sair". `expectedUserId` is the
-   * user of the lease the tab reads under: the pull is refused (`session_changed`) when the session is another user's.
+   * user of the lease the tab reads under: the pull of a sync is refused (`session_changed`) when the session is
+   * another user's. The first load of a copy leaves it out: it has just read the session itself.
    */
   source: (
     organizationId: string,
@@ -1490,7 +1491,7 @@ export class OfflineRuntime {
     let bootstrapped = isLocalStoreReady(meta);
     if (!bootstrapped && this.dependencies.isOnline()) {
       await bootstrapLocalStore(
-        this.dependencies.api.source(organizationId, undefined, userId),
+        this.dependencies.api.source(organizationId),
         stores.writer
       );
       bootstrapped = true;
@@ -2246,7 +2247,6 @@ export class OfflineRuntime {
     );
   }
 
-  /** What a sync that threw leaves: paused for the acceptance, a refused session, no answer, or a failure. */
   /**
    * The pull was refused because the session is another user's than the lease in use: the confirmation is void and
    * the session is read again, which closes the stores as `session_changed` when it really changed. The queue is not
@@ -2254,6 +2254,9 @@ export class OfflineRuntime {
    * next sync tries again.
    */
   private async reReadSessionAfterRefusedPull(run: RunScope): Promise<void> {
+    if (run.generation !== this.generation) {
+      return;
+    }
     this.lastOutcome = "answered";
     this.sessionConfirmedAt = null;
     if (await this.sessionChangedHands(run)) {
@@ -2269,6 +2272,7 @@ export class OfflineRuntime {
     await this.refreshCounts();
   }
 
+  /** What a sync that threw leaves: paused for the acceptance, a refused session, no answer, or a failure. */
   private async syncFailed(run: RunScope, error: unknown): Promise<void> {
     // before the session refusal (it is a FORBIDDEN too): only the sync pauses. The batch went back to
     // waiting, nothing was rejected, and the collections, the lease and the device stay (ADR 0100)
