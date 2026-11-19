@@ -102,7 +102,7 @@ Um comando guardado no aparelho antes do encerramento leva a concessão com que 
 
 ## Emenda (19/11/2026): o tique cresce sem trabalho
 
-O Free tem 100 mil consultas por dia pelo Hyperdrive e cada `sync/pull` autenticado custa cerca de 12; uma aba esquecida aberta 24 h faz 1.440 pulls (~17 mil consultas). O tique de 60 s fica só enquanto há trabalho.
+O Free tem 100 mil consultas por dia pelo Hyperdrive e cada `sync/pull` autenticado custa 6 (medido no `STATEMENT_COUNTS` de `apps/web/worker/index.workerd-db.test.ts`: 2 da sessão, BEGIN, a entrada do tenant, a leitura e COMMIT); uma aba esquecida aberta 24 h faz 1.440 pulls (~8,6 mil consultas, 1.440 × 6). O tique de 60 s fica só enquanto há trabalho.
 
 - **Aba escondida não puxa.** O tique só puxa com a página visível (e líder); ao voltar à frente a sincronização roda na hora, pelas regras de `isFresh` da emenda de 26/10.
 - **O intervalo dobra sem trabalho:** 60, 120, 240 e 300 s no máximo, contado a cada tique cuja sincronização foi respondida, não enviou nada, puxou sem mudança (o cursor volta igual) e deixou a fila local vazia (`OfflineRuntime.lastPullWasIdle`). Um pull com mudanças, um envio, comando na fila, a volta à frente, o "Tentar agora", a volta da conexão, uma falha, uma tentativa sem resposta ou um pull cortado devolvem o intervalo a 60 s.
