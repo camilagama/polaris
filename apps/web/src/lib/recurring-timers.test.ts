@@ -228,6 +228,17 @@ function bodyOf(code: string, header: string): string {
   return "";
 }
 
+const WORK_SOURCE_HEADER = "workSource(): PendingWorkSource {";
+
+/** The body of `workSource()`, so the `read` is found from it and not as the first `read: async () => {` of the file. */
+function workSourceBody(runtime: string): string {
+  expect(
+    runtime.split(WORK_SOURCE_HEADER),
+    `âncora ausente ou duplicada: ${WORK_SOURCE_HEADER}`
+  ).toHaveLength(2);
+  return bodyOf(runtime, WORK_SOURCE_HEADER);
+}
+
 describe("timers recorrentes de apps/web/src", () => {
   it("todo setInterval( está registrado, com motivo, e nenhum chama o servidor", () => {
     const files = readSources();
@@ -265,12 +276,13 @@ describe("timers recorrentes de apps/web/src", () => {
     const runtime = codeOnly(
       files.get("offline/runtime/offline-runtime.ts") ?? ""
     );
+    const workSource = workSourceBody(runtime);
     const chain = [
       ["refreshWork", bodyOf(store, "async refreshWork() {"), "readWork()"],
       ["readWork", bodyOf(store, "async function readWork()"), "source.read()"],
       [
         "workSource.read",
-        bodyOf(runtime, "read: async () => {"),
+        bodyOf(workSource, "read: async () => {"),
         "this.refreshCounts()",
       ],
       [
@@ -296,6 +308,26 @@ describe("timers recorrentes de apps/web/src", () => {
     "new WebSocket(u)",
   ])("o detector de servidor vê %s", (call) => {
     expect(SERVER_CALL.test(codeOnly(`const f = () => ${call};`))).toBe(true);
+  });
+
+  describe("âncora do workSource (código em memória)", () => {
+    const decoy = "decoy() { return { read: async () => { fetch(u); } }; }\n";
+    const real = `${WORK_SOURCE_HEADER} return { read: async () => { await this.refreshCounts(); } }; }\n`;
+
+    it("um read parecido antes do workSource não é o que se confere", () => {
+      const body = bodyOf(workSourceBody(decoy + real), "read: async () => {");
+      expect(body).toContain("this.refreshCounts()");
+      expect(SERVER_CALL.test(body)).toBe(false);
+    });
+
+    it("cabeçalho ausente ou duplicado reprova", () => {
+      expect(() => workSourceBody(decoy)).toThrow(
+        "âncora ausente ou duplicada"
+      );
+      expect(() => workSourceBody(real + real)).toThrow(
+        "âncora ausente ou duplicada"
+      );
+    });
   });
 
   describe("controles plantados (arquivos em memória)", () => {

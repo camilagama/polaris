@@ -289,6 +289,8 @@ describe("Better Auth session configuration", () => {
       secret: testSecret,
     });
 
+    // the start of the offline runtime skips `device.check` on the strength of this: with the cache on, get-session
+    // would not see a session that revoking the device deleted (ADR 0048)
     expect(auth.options.session?.cookieCache?.enabled).toBe(false);
   });
 });

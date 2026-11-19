@@ -83,10 +83,22 @@ export interface RuntimeApi {
    */
   sessionUserId: () => Promise<string | null>;
   /**
+   * The session as the server sees it in this very call (never a remembered answer): the user and the id of the
+   * session row, never its token. The same answers and errors as `sessionUserId`. Without it, or without an id in the
+   * answer, every online start asks `deviceIsMine`.
+   */
+  signedInSession?: () => Promise<SignedInSession | null>;
+  /**
    * The reads of the sync (pull, bootstrap). `signal` ends the ones still going when someone is waiting for the
    * queue to be sent: a read held by the tab's read gate (a 429 pause) must not hold "Sair".
    */
   source: (organizationId: string, signal?: AbortSignal) => BootstrapSource;
+}
+
+export interface SignedInSession {
+  /** The id of the session row; null when the answer did not carry one. */
+  sessionId: string | null;
+  userId: string;
 }
 
 /** The own lease ended and could not be renewed: the offline access expired (not a refused session). */
@@ -342,14 +354,28 @@ const SESSION_USER_KEY = "polaris.offline.session-user";
 const AUTHORIZATION_REVOKED = "authorization_revoked";
 const RENEW_BEFORE_MS = 12 * 3_600_000;
 /**
- * A confirmation of who is signed in is reused by the syncs that follow it, so a
- * burst of syncs (reconnect, return to the app) costs one get-session, not one
- * each. Never reused when something is queued: the push must not leave under
- * somebody else's session (the server would refuse and record that for good).
- * It only bounds how long a first user's runtime may keep reading and queueing
- * after somebody else signed in.
+ * The session that `deviceIsMine` (or a lease) last linked to the remembered device: the server links a session to the
+ * device on those calls, and revoking the device deletes the linked sessions. While the start's own get-session
+ * still finds that same session, the link stands, and the start does not ask again. Holds the session id, never its
+ * token.
  */
-const SESSION_RECHECK_MS = 30_000;
+const DEVICE_CHECK_KEY = "polaris.offline.device-checked";
+/**
+ * How long one check spares the next ones: the cadence of the lease renewal. It bounds how stale "last seen" gets on
+ * the Aparelhos screen.
+ */
+const DEVICE_CHECK_REUSE_MS = RENEW_BEFORE_MS;
+/**
+ * A confirmation of who is signed in is reused by the syncs that follow it, so
+ * the ticks of an idle tab cost one get-session per window, not one each. Never
+ * reused when something is queued: the push must not leave under somebody
+ * else's session (the server would refuse and record that for good). It only
+ * bounds how long a first user's runtime may keep reading and queueing after
+ * somebody else signed in. The server reads the session on every request, so the
+ * window only governs a pull with nothing queued; the opening is what opens it,
+ * and a change of the connection or the return to the page forgets it.
+ */
+const SESSION_RECHECK_MS = 300_000;
 const EMPTY_COUNTS: PendingWork = { pending: 0, rejected: 0, sending: 0 };
 
 /** What one sync run was started for, so a late answer never acts on whoever opened after it. */
@@ -467,6 +493,8 @@ export class OfflineRuntime {
   private failedAt = 0;
   /** When the server last confirmed the session user of the open namespace; null forces a new look. */
   private sessionConfirmedAt: number | null = null;
+  /** The session id the server gave the start of this run (a fresh read): what a check or lease is recorded for. */
+  private checkedSession: string | null = null;
   /** Bumped by every start and stop so a late answer of an old run is dropped. */
   private generation = 0;
   /** Cancels the timer at the lease's `exp`, while one is set. */
@@ -586,10 +614,16 @@ export class OfflineRuntime {
 
   /** The connection state changed: the screens are told at once (the sync, if any, follows from the host). */
   connectionChanged(): void {
+    this.sessionConfirmedAt = null;
     const online = this.dependencies.isOnline();
     if (online !== this.snapshot.online) {
       this.set({ ...this.snapshot, online });
     }
+  }
+
+  /** The page came back to the front: whoever is signed in now is looked at again by the next sync. */
+  pageReturned(): void {
+    this.sessionConfirmedAt = null;
   }
 
   /**
@@ -931,6 +965,7 @@ export class OfflineRuntime {
     }
     this.organizationId = null;
     this.userId = null;
+    this.checkedSession = null;
     this.lease = null;
     this.set({
       ...this.snapshot,
@@ -1071,6 +1106,7 @@ export class OfflineRuntime {
   /** What the session gave this browser: the lease and the remembered user, never the device id. */
   private forgetSessionCopy() {
     this.dependencies.keyValues.remove(SESSION_USER_KEY);
+    this.forgetDeviceCheck();
     this.forgetLease();
     this.lease = null;
   }
@@ -1178,6 +1214,7 @@ export class OfflineRuntime {
     if (known) {
       // Somebody else's device (or a revoked one): never reuse it or its lease.
       keyValues.remove(DEVICE_KEY);
+      this.forgetDeviceCheck();
       this.forgetLease();
     }
     if (!this.dependencies.isOnline()) {
@@ -1187,6 +1224,7 @@ export class OfflineRuntime {
       clampLabel(this.dependencies.deviceLabel)
     );
     keyValues.write(DEVICE_KEY, id);
+    this.rememberDeviceCheck(id, userId);
     return id;
   }
 
@@ -1200,8 +1238,15 @@ export class OfflineRuntime {
     if (!this.dependencies.isOnline()) {
       return true;
     }
+    if (this.checkStillStands(deviceId, userId)) {
+      return true;
+    }
     try {
-      return await this.dependencies.api.deviceIsMine(deviceId);
+      const mine = await this.dependencies.api.deviceIsMine(deviceId);
+      if (mine) {
+        this.rememberDeviceCheck(deviceId, userId);
+      }
+      return mine;
     } catch (error) {
       // the server answered, and the device is fine: it only waits for the acceptance, never forget it
       if (isLegalAcceptanceRefusal(error)) {
@@ -1209,6 +1254,110 @@ export class OfflineRuntime {
       }
       return this.leaseProvesDevice(deviceId, userId);
     }
+  }
+
+  /**
+   * Whether the session of this start was already linked to the device by a check or a lease of the last 12 h, so
+   * asking again proves nothing new: only with the session id of a fresh server answer (`checkedSession`), and never
+   * with this user's lease for the store missing or within 12 h of its end (the renewal asks the server anyway). A
+   * record of another session, user or device is dropped: it is the first start after a sign-in or a change of hands.
+   */
+  private checkStillStands(deviceId: string, userId: string): boolean {
+    const session = this.checkedSession;
+    const record = this.deviceCheck();
+    if (!(session && record)) {
+      return false;
+    }
+    if (
+      record.sessionId !== session ||
+      record.userId !== userId ||
+      record.deviceId !== deviceId
+    ) {
+      this.forgetDeviceCheck();
+      return false;
+    }
+    const now = this.now().getTime();
+    const age = now - record.checkedAt;
+    // a clock that went back counts as no check
+    if (!(age >= 0 && age < DEVICE_CHECK_REUSE_MS && this.organizationId)) {
+      return false;
+    }
+    const cached = this.cachedLease(userId, this.organizationId);
+    return (
+      cached !== null &&
+      this.leaseIsUsable(cached.lease, userId, this.organizationId, deviceId) &&
+      new Date(cached.expiresAt).getTime() - now >= RENEW_BEFORE_MS
+    );
+  }
+
+  private deviceCheck(): {
+    checkedAt: number;
+    deviceId: string;
+    sessionId: string;
+    userId: string;
+  } | null {
+    try {
+      const parsed: unknown = JSON.parse(
+        this.dependencies.keyValues.read(DEVICE_CHECK_KEY) ?? "null"
+      );
+      if (typeof parsed !== "object" || parsed === null) {
+        return null;
+      }
+      const { checkedAt, deviceId, sessionId, userId } = parsed as Record<
+        string,
+        unknown
+      >;
+      return typeof checkedAt === "number" &&
+        typeof deviceId === "string" &&
+        typeof sessionId === "string" &&
+        typeof userId === "string"
+        ? { checkedAt, deviceId, sessionId, userId }
+        : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * A lease links the session too, but only renews a record this session already has: the first record of a session
+   * comes from its own check (or register), the call that also makes the device its own (ADR 0048), and a lease
+   * taken under a session that another tab replaced never writes over the record of the new one.
+   */
+  private renewDeviceCheck(deviceId: string, userId: string) {
+    const record = this.deviceCheck();
+    if (
+      record?.sessionId === this.checkedSession &&
+      record?.userId === userId &&
+      record?.deviceId === deviceId
+    ) {
+      this.rememberDeviceCheck(deviceId, userId);
+    }
+  }
+
+  /** The server just linked the session of this start to the device: a check said "mine", or it registered it. */
+  private rememberDeviceCheck(deviceId: string, userId: string) {
+    const sessionId = this.checkedSession;
+    if (!sessionId) {
+      return;
+    }
+    const record = {
+      checkedAt: this.now().getTime(),
+      deviceId,
+      sessionId,
+      userId,
+    };
+    try {
+      this.dependencies.keyValues.write(
+        DEVICE_CHECK_KEY,
+        JSON.stringify(record)
+      );
+    } catch {
+      // a full or blocked storage only means the next start asks again
+    }
+  }
+
+  private forgetDeviceCheck() {
+    this.dependencies.keyValues.remove(DEVICE_CHECK_KEY);
   }
 
   /** Whether this user's own cached lease names the device, i.e. the server once issued it to them for it. */
@@ -1226,12 +1375,23 @@ export class OfflineRuntime {
    * offline start), the last remembered one otherwise or when the server cannot
    * be asked. A session that is over, or never was known, has no one to open.
    */
-  private async sessionUser(): Promise<{ confirmed: boolean; userId: string }> {
+  private async sessionUser(): Promise<{
+    confirmed: boolean;
+    sessionId: string | null;
+    userId: string;
+  }> {
     const { api, isOnline, keyValues } = this.dependencies;
     let userId: string | null | undefined;
+    let sessionId: string | null = null;
     if (isOnline()) {
       try {
-        userId = await api.sessionUserId();
+        if (api.signedInSession) {
+          const session = await api.signedInSession();
+          userId = session?.userId ?? null;
+          sessionId = session?.sessionId ?? null;
+        } else {
+          userId = await api.sessionUserId();
+        }
       } catch (error) {
         if (!(error instanceof SessionUnreachableError)) {
           throw error; // the server answered, and not with a session: never guess who it is
@@ -1245,13 +1405,13 @@ export class OfflineRuntime {
     }
     if (userId !== undefined) {
       keyValues.write(SESSION_USER_KEY, userId);
-      return { confirmed: true, userId };
+      return { confirmed: true, sessionId, userId };
     }
     const remembered = keyValues.read(SESSION_USER_KEY);
     if (!remembered) {
       throw new Error("no_session_offline");
     }
-    return { confirmed: false, userId: remembered };
+    return { confirmed: false, sessionId: null, userId: remembered };
   }
 
   /**
@@ -1399,17 +1559,19 @@ export class OfflineRuntime {
       leaseKey(userId, organizationId),
       JSON.stringify(issued)
     );
+    this.renewDeviceCheck(deviceId, userId);
     return issued.lease;
   }
 
   private async boot(organizationId: string, generation: number) {
-    const { confirmed, userId } = await this.sessionUser();
+    const { confirmed, sessionId, userId } = await this.sessionUser();
     if (generation !== this.generation) {
       return;
     }
     this.userId = userId;
     // only the server's own answer opens the window; a remembered user does not
     this.sessionConfirmedAt = confirmed ? this.now().getTime() : null;
+    this.checkedSession = confirmed ? sessionId : null;
     this.sweepLegacyLeases();
     const deviceId = await this.ensureDevice(userId);
     try {
@@ -1436,6 +1598,7 @@ export class OfflineRuntime {
       // The remembered device may belong to another user of this browser:
       // forget it and register again, once.
       this.dependencies.keyValues.remove(DEVICE_KEY);
+      this.forgetDeviceCheck();
       const fresh = await this.ensureDevice(userId);
       const lease = await this.ensureLease(userId, organizationId, fresh);
       await this.open(userId, organizationId, fresh, lease, generation);
@@ -1764,6 +1927,7 @@ export class OfflineRuntime {
     const queued = (await stores.outbox.snapshot()).commands.length > 0;
     await this.closeStores();
     this.forgetLease();
+    this.forgetDeviceCheck();
     this.lease = null;
     if (forgetDevice) {
       this.dependencies.keyValues.remove(DEVICE_KEY);
@@ -1951,9 +2115,11 @@ export class OfflineRuntime {
     } else {
       this.dependencies.keyValues.write(SESSION_USER_KEY, current);
     }
+    this.forgetDeviceCheck();
     if (run.generation !== this.generation) {
       return true;
     }
+    this.checkedSession = null;
     await this.closeStores();
     this.lease = null;
     this.set({
