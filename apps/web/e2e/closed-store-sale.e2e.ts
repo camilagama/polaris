@@ -20,6 +20,7 @@ const VARIANT_ID = "0199c2d0-0000-7000-8000-0000000000b1";
 const DRAFT_KEY = `polaris.sale.draft.v1:${ORGANIZATION.id}`;
 const SHIRT_OPTION = /Camiseta do teste · Azul/;
 const REOPENED_URL = /reaberta=1/;
+const NOW = new Date("2026-10-14T12:00:00-03:00");
 const DAY = 86_400_000;
 const SALE_REFUSED = "A venda que você acabou de confirmar não foi registrada.";
 const SALE_UNKNOWN =
@@ -37,7 +38,7 @@ const SHIRT_ENTRY = {
   productStatus: "active",
   quantity: 5,
   sku: "CAM-AZ-M",
-  updatedAt: "2026-10-14T12:00:00.000Z",
+  updatedAt: NOW.toISOString(),
   values: [{ optionName: "color", optionValueName: "Azul" }],
   variantId: VARIANT_ID,
   version: 1,
@@ -62,7 +63,7 @@ const closedRefusal = rpc(
 );
 
 function closedStore() {
-  const now = Date.now();
+  const now = NOW.getTime();
   return {
     canRecover: true,
     deletableFrom: new Date(now + 90 * DAY).toISOString(),
@@ -90,6 +91,7 @@ class Store {
   loseFirstConfirm = false as boolean;
 
   async install(page: Page) {
+    await page.clock.setFixedTime(NOW);
     await serveHealth(page);
     await page.route("**/api/auth/get-session", (route) =>
       route.fulfill({
@@ -197,6 +199,10 @@ test.describe("venda recusada com a loja encerrada", () => {
     await notice(page)
       .getByRole("link", { name: "Ver a loja encerrada" })
       .click();
+    await expect(page.locator("dl")).toContainText("Desfazer até");
+    await expect(page.locator("dl")).toContainText(
+      "3 de novembro de 2026, às 12:00 · faltam 20 dias"
+    );
     await page.getByRole("button", { name: "Desfazer encerramento" }).click();
     await page.getByRole("button", { name: "Sim, desfazer" }).click();
     await expect(page).toHaveURL(REOPENED_URL);

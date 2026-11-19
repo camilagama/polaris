@@ -452,7 +452,7 @@ Responsabilidades do Worker:
 
 
 
-Não haverá um `apps/api` separado na V1.
+Não haverá um apps/api separado na V1.
 
 
 
