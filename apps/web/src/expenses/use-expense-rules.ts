@@ -13,9 +13,11 @@ export interface ExpenseRulesState {
 /**
  * Every recurring rule of the organization, paused ones included. Reading the
  * rules makes the server generate the occurrences that fell due, so the
- * "next occurrence" of each rule is always current.
+ * "next occurrence" of each rule is always current. `enabled` false reads
+ * nothing (the state stays "loading"): the Recorrentes part asks for the rules
+ * only once it has been in front.
  */
-export function useExpenseRules(organizationId: string) {
+export function useExpenseRules(organizationId: string, enabled: boolean) {
   const [state, setState] = useState<ExpenseRulesState>({
     error: null,
     isLoading: true,
@@ -51,11 +53,14 @@ export function useExpenseRules(organizationId: string) {
   }, [organizationId]);
 
   useEffect(() => {
+    if (!enabled) {
+      return;
+    }
     reload();
     return () => {
       sequence.current += 1;
     };
-  }, [reload]);
+  }, [enabled, reload]);
 
   /** Puts a rule the server just returned into the list, replacing its older version. */
   const upsert = useCallback((rule: ExpenseRuleReadModel) => {

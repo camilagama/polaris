@@ -140,6 +140,11 @@ export function ExpensesPage() {
   const { organization, organizationId } = useCurrentOrganization();
   const today = useStoreToday(organization.timezone);
   const [view, selectView] = useExpenseView();
+  // the rules are read the first time Recorrentes is in front and kept after that
+  const [rulesAsked, setRulesAsked] = useState(view === "recorrentes");
+  if (view === "recorrentes" && !rulesAsked) {
+    setRulesAsked(true);
+  }
   const [choices, setChoices] = useState<ExpenseChoices>({
     categoryId: "",
     chosenMonth: null,
@@ -423,6 +428,7 @@ export function ExpensesPage() {
         <TabsContent keepMounted value="recorrentes">
           <ExpenseRulesPanel
             categories={categories.state.categories}
+            enabled={rulesAsked}
             onChanged={handleRulesChanged}
             organizationId={organizationId}
             today={today}
