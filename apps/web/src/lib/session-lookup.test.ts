@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   createSessionLookup,
+  forgetSessionLookups,
   SESSION_MEMORY_MS,
   type SessionLookup,
 } from "./session-lookup";
@@ -123,6 +124,60 @@ describe("the session lookup of a tab", () => {
     await before;
     gate.t.lookup.read();
     expect(gate.t.load).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([
+    ["401", () => new Response("{}", { status: 401 })],
+    ["403", () => new Response("{}", { status: 403 })],
+    ["the 'no session' answer", () => Response.json(null)],
+  ])(
+    "a fresh read that proves there is no session (%s) drops the remembered one",
+    async (_name, ended) => {
+      let answer: () => Response = () =>
+        Response.json({ user: { id: "user-1" } });
+      const t = setup(() => answer());
+      await t.lookup.read();
+      answer = ended;
+      await t.lookup.read({ fresh: true });
+      expect(t.load).toHaveBeenCalledTimes(2);
+      await t.lookup.read();
+      expect(t.load).toHaveBeenCalledTimes(3);
+    }
+  );
+
+  it("a fresh read that fails (no answer) keeps what was remembered", async () => {
+    const state: { fail: boolean } = { fail: false };
+    const t = setup(() =>
+      state.fail
+        ? Promise.reject(new TypeError("Failed to fetch"))
+        : Response.json({ user: { id: "user-1" } })
+    );
+    await t.lookup.read();
+    state.fail = true;
+    await t.lookup.read({ fresh: true }).catch(() => undefined);
+    await t.lookup.read();
+    expect(t.load).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps only the user of the body, never the session token", async () => {
+    const t = setup(() =>
+      Response.json({
+        session: { token: "secret" },
+        user: { email: "a@b.c", id: "user-1", name: "A", role: "x" },
+      })
+    );
+    expect(await t.lookup.read()).toEqual({
+      body: { user: { email: "a@b.c", id: "user-1", name: "A" } },
+      status: 200,
+    });
+  });
+
+  it("forgetSessionLookups drops what every lookup of the tab remembered", async () => {
+    const t = setup();
+    await t.lookup.read();
+    forgetSessionLookups();
+    await t.lookup.read();
+    expect(t.load).toHaveBeenCalledTimes(2);
   });
 
   it("a clock that went back counts as nothing remembered", async () => {

@@ -228,9 +228,9 @@ function world(options: { leaseHours?: number } = {}) {
       owners.set(id, session.user);
       return Promise.resolve(id);
     },
-    sessionUserId: (options) => {
+    sessionUserId: (lookup) => {
       calls.sessionUser += 1;
-      sessionFresh.push(options?.fresh === true);
+      sessionFresh.push(lookup?.fresh === true);
       return failures.sessionUser
         ? Promise.reject(failures.sessionUser)
         : Promise.resolve(session.signedIn ? session.user : null);

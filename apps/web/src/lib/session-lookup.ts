@@ -33,6 +33,28 @@ interface Dependencies {
   timeoutMs?: number;
 }
 
+const lookups = new Set<SessionLookup>();
+
+/** The session ended or changed hands in this tab: no lookup of it keeps what it remembered. */
+export function forgetSessionLookups(): void {
+  for (const lookup of lookups) {
+    lookup.forget();
+  }
+}
+
+/** The session token and the rest of the body are not needed by anyone and are not kept. */
+function onlyTheUser(body: unknown): unknown {
+  if (typeof body !== "object" || body === null) {
+    return body;
+  }
+  const { user } = body as { user?: unknown };
+  if (typeof user !== "object" || user === null) {
+    return {};
+  }
+  const { email, id, name } = user as Record<string, unknown>;
+  return { user: { email, id, name } };
+}
+
 /**
  * Held in memory, per tab, and never written to the device: the e-mail in the answer is "never kept on the device".
  * A failure, a non-2xx and the "no session" answer are not remembered, so a session that ended is seen at once.
@@ -51,7 +73,8 @@ export function createSessionLookup(dependencies: Dependencies): SessionLookup {
   let epoch = 0;
 
   async function ask(): Promise<SessionAnswer> {
-    const order = ++issued;
+    issued += 1;
+    const order = issued;
     const startedAt = now();
     const startedEpoch = epoch;
     const response = await load(SESSION_URL, {
@@ -60,18 +83,24 @@ export function createSessionLookup(dependencies: Dependencies): SessionLookup {
       signal: AbortSignal.timeout(timeoutMs),
     });
     const body = response.ok
-      ? await response.json().catch(() => undefined)
+      ? onlyTheUser(await response.json().catch(() => undefined))
       : undefined;
     const answer = { body, status: response.status };
-    // the age counts from the start of the lookup: the answer is no newer than that
     if (
-      response.ok &&
-      body !== undefined &&
-      body !== null &&
       startedEpoch === epoch &&
       (remembered === null || remembered.order < order)
     ) {
-      remembered = { answer, at: startedAt, order };
+      if (response.ok && body !== undefined && body !== null) {
+        // the age counts from the start of the lookup: the answer is no newer than that
+        remembered = { answer, at: startedAt, order };
+      } else if (
+        body === null ||
+        response.status === 401 ||
+        response.status === 403
+      ) {
+        // a newer answer that proves there is no session overrides the one remembered
+        remembered = null;
+      }
     }
     return answer;
   }
@@ -86,7 +115,7 @@ export function createSessionLookup(dependencies: Dependencies): SessionLookup {
     return lookup;
   }
 
-  return {
+  const lookup: SessionLookup = {
     forget() {
       epoch += 1;
       remembered = null;
@@ -106,4 +135,6 @@ export function createSessionLookup(dependencies: Dependencies): SessionLookup {
       return flying ?? start();
     },
   };
+  lookups.add(lookup);
+  return lookup;
 }
