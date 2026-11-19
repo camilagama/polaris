@@ -24,6 +24,7 @@ import {
   rangeProblem,
 } from "../dashboard/result-period";
 import { useCurrentOrganization } from "../lib/current-organization";
+import { useFocusTitleWhenGone } from "../lib/use-focus-title-when-gone";
 import { useLocalWorkspace } from "../offline/runtime/use-local-workspace";
 import { todayOr } from "../ui/date-values";
 import { SavedSalesCard } from "./offline-sale-panels";
@@ -38,6 +39,8 @@ import {
   loadMoreView,
   PERIOD_TOTAL_HELP,
   PERIOD_TOTAL_LABEL,
+  REFRESH_FAILED_TEXT,
+  REFRESHING_LIST_TEXT,
   type PeriodTotalRead,
   periodTotalPeriod,
   statusFromState,
@@ -161,14 +164,21 @@ export function SaleHistoryPage() {
     dropNavigationState(HISTORY_PERIOD_STATE);
     dropNavigationState(HISTORY_STATUS_STATE);
   }, []);
-  const { filters, loadMore, reload, reloadVersion, setFilters, state } =
-    useSaleHistory(organizationId, offlineWorkspace, {
-      ...emptyHistoryFilters,
-      ...(initialPeriod
-        ? { from: initialPeriod.from, to: initialPeriod.to }
-        : {}),
-      status: initialStatus,
-    });
+  const {
+    filters,
+    listKey,
+    loadMore,
+    reload,
+    reloadVersion,
+    setFilters,
+    state,
+  } = useSaleHistory(organizationId, offlineWorkspace, {
+    ...emptyHistoryFilters,
+    ...(initialPeriod
+      ? { from: initialPeriod.from, to: initialPeriod.to }
+      : {}),
+    status: initialStatus,
+  });
   const resultPeriod =
     offline || !hasCapabilityForRole(organization.role, "report:read")
       ? null
@@ -184,11 +194,14 @@ export function SaleHistoryPage() {
     () => setFilters(emptyHistoryFilters),
     [setFilters]
   );
-  const more = loadMoreView(state);
+  const more = loadMoreView(state, listKey);
+  const focus = useFocusTitleWhenGone<HTMLHeadingElement>(more.visible);
 
   return (
     <div className="grid gap-4 font-sans text-foreground text-sm antialiased">
-      <h1 className="text-title">Histórico de vendas</h1>
+      <h1 className="text-title" ref={focus.title} tabIndex={-1}>
+        Histórico de vendas
+      </h1>
       {offline ? <OfflineHistoryNotice /> : null}
       <SavedSalesCard countStyle="items" workspace={workspace} />
       <HistoryFiltersBar
@@ -197,6 +210,17 @@ export function SaleHistoryPage() {
         onChange={setFilters}
       />
       {resultPeriod ? <ResultLink period={resultPeriod} /> : null}
+      {more.refreshFailed ? (
+        <Alert variant="warning">
+          <AlertDescription className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            {REFRESH_FAILED_TEXT}
+            <Button onClick={reload} size="sm" type="button" variant="link">
+              <RefreshCwIcon aria-hidden="true" data-icon="inline-start" />
+              Tentar novamente
+            </Button>
+          </AlertDescription>
+        </Alert>
+      ) : null}
       {view.kind === "loading" ? (
         <>
           <LoadingCard message={view.message} />
@@ -253,6 +277,9 @@ export function SaleHistoryPage() {
         {more.busy ? (
           <p className="text-muted-foreground">Carregando mais vendas…</p>
         ) : null}
+        {more.refreshing && !offline ? (
+          <p className="text-muted-foreground">{REFRESHING_LIST_TEXT}</p>
+        ) : null}
       </div>
       {more.error ? (
         <Alert variant="destructive">
@@ -263,7 +290,9 @@ export function SaleHistoryPage() {
         <Button
           className="justify-self-start"
           disabled={more.busy}
+          onBlur={focus.onBlur}
           onClick={loadMore}
+          onFocus={focus.onFocus}
           type="button"
           variant="outline"
         >
