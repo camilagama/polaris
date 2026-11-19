@@ -1,4 +1,5 @@
 import { clearFirstSteps } from "../../app-shell/first-steps";
+import { browserSessionLookup } from "../../lib/browser-connection";
 import {
   browserStorage,
   clearOrganizationsCache,
@@ -33,6 +34,7 @@ export function forgetSessionCaches(): void {
  * has to be able to keep its copies anew.
  */
 export function clearSessionCaches(): void {
+  browserSessionLookup.forget();
   clearOrganizationsCache(browserStorage());
   clearClosedStores(browserStorage());
   clearOrganizationsClosedHere();

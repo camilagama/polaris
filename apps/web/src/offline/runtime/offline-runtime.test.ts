@@ -59,6 +59,7 @@ function world(options: { leaseHours?: number } = {}) {
     registerDevice: 0,
     sessionUser: 0,
   };
+  const sessionFresh: boolean[] = [];
   const labels: (string | null)[] = [];
   const owners = new Map<string, string>();
   const session: { signedIn: boolean; user: string } = {
@@ -227,8 +228,9 @@ function world(options: { leaseHours?: number } = {}) {
       owners.set(id, session.user);
       return Promise.resolve(id);
     },
-    sessionUserId: () => {
+    sessionUserId: (options) => {
       calls.sessionUser += 1;
+      sessionFresh.push(options?.fresh === true);
       return failures.sessionUser
         ? Promise.reject(failures.sessionUser)
         : Promise.resolve(session.signedIn ? session.user : null);
@@ -313,6 +315,7 @@ function world(options: { leaseHours?: number } = {}) {
       clock = new Date(clock.getTime() + hours * HOUR);
     },
     calls,
+    sessionFresh,
     closed,
     disk,
     failures,
@@ -767,6 +770,25 @@ describe("starting", () => {
     w.network.online = true;
     await runtime.syncNow();
     expect(w.calls.sessionUser).toBe(3);
+  });
+
+  it("asks the start's confirmation with the tab's memory allowed, and every later one fresh: with a queue, within the window, and when leaving", async () => {
+    const w = world();
+    const runtime = w.make();
+    await runtime.start(organizationId);
+    expect(w.sessionFresh).toEqual([false]);
+
+    w.network.online = false;
+    await queueProduct(runtime, "Camiseta", 1);
+    w.network.online = true;
+    await runtime.syncNow();
+    expect(w.calls.sessionUser).toBe(2);
+    expect(w.sessionFresh).toEqual([false, true]);
+
+    w.advance(0.02);
+    await runtime.syncNow();
+    expect(w.sessionFresh.slice(2).every(Boolean)).toBe(true);
+    expect(w.sessionFresh.length).toBe(w.calls.sessionUser);
   });
 
   it("sweeps the leases of the old layout of every organization at the first start, and only those", async () => {

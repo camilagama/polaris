@@ -79,9 +79,10 @@ export interface RuntimeApi {
    * is none (the server said so, or refused with 401/403). Throws
    * SessionUnreachableError when the server gave no answer (no connection, timeout,
    * 5xx, 429: the remembered user stands in), and any other error when it answered
-   * with something unusable.
+   * with something unusable. By default an answer of the last 10 s of this tab may be reused; `fresh` always asks
+   * the server (a queue to send, who is leaving).
    */
-  sessionUserId: () => Promise<string | null>;
+  sessionUserId: (options?: { fresh?: boolean }) => Promise<string | null>;
   /**
    * The reads of the sync (pull, bootstrap). `signal` ends the ones still going when someone is waiting for the
    * queue to be sent: a read held by the tab's read gate (a 429 pause) must not hold "Sair".
@@ -803,7 +804,7 @@ export class OfflineRuntime {
       return null;
     }
     try {
-      return await this.dependencies.api.sessionUserId();
+      return await this.dependencies.api.sessionUserId({ fresh: true });
     } catch {
       return null;
     }
@@ -1937,7 +1938,7 @@ export class OfflineRuntime {
     }
     let current: string | null;
     try {
-      current = await this.dependencies.api.sessionUserId();
+      current = await this.dependencies.api.sessionUserId({ fresh: true });
     } catch {
       return false; // the server could not say: the push will be refused if it matters
     }

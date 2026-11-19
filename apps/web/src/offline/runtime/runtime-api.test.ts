@@ -1,10 +1,14 @@
 import { ORPCError } from "@orpc/client";
 import type { PolarisRpcClient } from "@polaris/contracts";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SessionUnreachableError } from "./offline-runtime";
 import { createRpcRuntimeApi } from "./runtime-api";
 
-const api = createRpcRuntimeApi({} as PolarisRpcClient);
+let api = createRpcRuntimeApi({} as PolarisRpcClient);
+
+beforeEach(() => {
+  api = createRpcRuntimeApi({} as PolarisRpcClient);
+});
 
 function answerWith(response: Response | Error) {
   vi.stubGlobal(

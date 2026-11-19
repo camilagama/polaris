@@ -29,7 +29,7 @@ const LAB_KEY = {
   secret: "lab-secret-lab-secret-lab-secret-0123456789",
 };
 const HOUR = 3_600_000;
-// the lookup gives up after 4 s (runtime-api.ts): an answer that takes 30 s only
+// the lookup gives up after 4 s (session-lookup.ts): an answer that takes 30 s only
 // lets the app open within the chip's timeout if the app really stops waiting
 const SLOW_ANSWER_MS = 30_000;
 const DEVICE_KEY = "polaris.offline.device";
@@ -521,6 +521,15 @@ test.describe("createRpcRuntimeApi no app real, com o servidor interceptado", ()
     await expect
       .poll(() => stored(page, "polaris.offline.organizations"))
       .toBeNull();
+  });
+
+  test("a abertura com o runtime ligado (shell e runtime) lê o get-session uma vez (AC-2.1)", async ({
+    page,
+  }) => {
+    const user = `user-${crypto.randomUUID()}`;
+    const server = new RpcServer(user);
+    await openSales(page, server);
+    expect(server.sessionLookups).toBe(1);
   });
 
   test("get-session 429: o app segue com o usuário lembrado e o lease próprio, sem registrar outro aparelho", async ({

@@ -107,6 +107,7 @@ interface ScreenOptions {
 interface Calls {
   checkouts: Record<string, unknown>[];
   reads: number;
+  sessions: number;
 }
 
 async function openScreen(
@@ -119,14 +120,15 @@ async function openScreen(
     role = "owner",
   }: ScreenOptions = {}
 ): Promise<Calls> {
-  const calls: Calls = { checkouts: [], reads: 0 };
-  await page.route("**/api/auth/get-session", (route) =>
-    route.fulfill({
+  const calls: Calls = { checkouts: [], reads: 0, sessions: 0 };
+  await page.route("**/api/auth/get-session", (route) => {
+    calls.sessions += 1;
+    return route.fulfill({
       body: JSON.stringify({ session: { id: "s" }, user: SESSION_USER }),
       contentType: "application/json",
       headers: { ...WORKER_MARK },
-    })
-  );
+    });
+  });
   await serveHealth(page);
   await page.route("https://sandbox.asaas.com/**", (route) =>
     route.fulfill({
@@ -277,6 +279,17 @@ test("Free com o teste: plano, uso, oferta com o mensal marcado e o anual em des
   await expect(page.getByRole("link", { name: "Termos de Uso" })).toHaveCount(
     0
   );
+});
+
+test("abrir a Assinatura e voltar a ela depois de olhar outra aba faz um get-session só (AC-2.1)", async ({
+  page,
+}) => {
+  const calls = await openScreen(page);
+  await expect(planTitle(page)).toHaveText("Plano Free");
+  await openSettingsTab(page, "Formas de receber");
+  await openSettingsTab(page, "Assinatura");
+  await expect(planTitle(page)).toHaveText("Plano Free");
+  expect(calls.sessions).toBe(1);
 });
 
 test("o CPF digitado para o Pix continua lá depois de olhar outra aba de Configurações", async ({

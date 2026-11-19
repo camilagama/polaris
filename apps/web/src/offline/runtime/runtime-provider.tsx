@@ -2,6 +2,7 @@ import { type ReactNode, useEffect, useMemo, useRef } from "react";
 import {
   addConnectionTry,
   browserConnection,
+  browserSessionLookup,
   lockInBrowser,
   markInBrowser,
 } from "../../lib/browser-connection";
@@ -39,7 +40,7 @@ import { startSyncScheduler } from "./sync-scheduler";
  */
 function createBrowserRuntime(): OfflineRuntime {
   return new OfflineRuntime({
-    api: createRpcRuntimeApi(orpcClient, browserConnection.fetch),
+    api: createRpcRuntimeApi(orpcClient, browserSessionLookup),
     // No label: a User-Agent string is long and personal, and the server accepts at most 80 characters.
     deviceLabel: null,
     exclusive: lockInBrowser,

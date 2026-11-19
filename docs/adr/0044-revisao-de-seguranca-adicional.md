@@ -42,3 +42,12 @@ Nenhum segredo, chave ou connection string com credencial na árvore nem em todo
 - **Adicionar `'unsafe-eval'` à CSP:** abriria eval de JavaScript; `'wasm-unsafe-eval'` cobre só o WebAssembly.
 - **Apagar o namespace do usuário anterior ao detectar outro usuário:** destruiria trabalho não enviado que pertence a quem ainda pode voltar.
 - **Deixar a falha da troca de época derrubar a redefinição de senha:** a pessoa ficaria com a senha trocada e sessões antigas vivas.
+
+## Emenda (19/11/2026): uma leitura do `get-session` por abertura de aba
+
+A abertura de uma aba lia o `/api/auth/get-session` duas vezes (o rodapé do menu e o runtime) e a Assinatura e o primeiro acesso, uma terceira e uma quarta, cada uma com 2 a 3 consultas no papel de auth. `apps/web/src/lib/session-lookup.ts` guarda, **só em memória da aba** (nunca em `localStorage`: o e-mail "never kept on the device"), a última resposta com sessão por 10 s, contados do início da leitura, e junta as leituras em voo. O rodapé, a Assinatura, o primeiro acesso e o início do runtime (`sessionUser`) usam a memória.
+
+- O runtime pede **leitura nova** (`sessionUserId({ fresh: true })`) na conferência que antecede cada sincronização (`sessionChangedHands`, com ou sem fila) e na saída (`signedInUserForLogout`): a regra da janela de 30 s e a de nunca enviar a fila sobre uma confirmação reaproveitada ficam como estavam. A memória não passa de 10 s, menos que os 30 s, e só o início usa a resposta da memória: a confirmação de um início pode ter até 10 s a mais de idade.
+- Só resposta 2xx com sessão fica na memória: erro, recusa (401/403), 429, 5xx e "sem sessão" não ficam, então uma sessão acabada é vista na hora. Uma leitura nova vira a memória. A memória é esquecida junto com as cópias da sessão (`clearSessionCaches`: Sair e sessão recusada).
+- O rodapé passou a ler pelo `fetch` classificado da conexão (o do runtime): uma resposta que não é do Worker (portal) deixa a linha vazia como antes e agora também conta para o estado da conexão.
+

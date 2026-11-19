@@ -3555,3 +3555,12 @@ Origem: achado B do Diego no Pixel 6 (28/10): a venda montada em Vender sumia ao
 | Frases | Em revisão | "sem taxa informada" / "sem taxa" no lugar de "sem custo informado" / "sem custo": tabela, hachura, leitura, resumo do `role="img"`, frase de apoio, aviso dos cartões do Resultado e do Início, "sem taxa neste dia" e o (i). |
 | Mês nomeado | Em revisão | Em período por mês com os dias desconhecidos num só mês: "novembro: 1 de 7 dias sem custo informado" (cartões, (i), frase de apoio e leitura do mês); dois meses ou mais mantêm a contagem do período. |
 | Provas | Em revisão | Testes de `result-series`, `result-kpis`, `result-chart`, `result-cards` e `home-kpis`. Fora: voltar/avançar entre períodos (a regra do `replaceAddress` fica). |
+
+### Chamadas automáticas: uma leitura do get-session por abertura de aba (t1360; sem migration)
+
+| Parte | Estado | O que é |
+| --- | --- | --- |
+| Memória da aba | Em revisão | `lib/session-lookup.ts`: a última resposta com sessão por 10 s (do início da leitura), leituras em voo juntadas, sem `localStorage`; o rodapé, a Assinatura, o primeiro acesso e o início do runtime usam; `fresh` na conferência de cada sincronização e na saída. Emenda de 19/11 do [ADR 0044](../docs/adr/0044-revisao-de-seguranca-adicional.md). |
+| Provas | Em revisão | `session-lookup.test.ts` (10 s e 10 s + 1 ms, início da leitura, `forget`, falha e recusa), `offline-runtime.test.ts` (início com memória, o resto fresco), `e2e/offline-runtime-api.e2e.ts` (abertura: 1, antes 2) e `e2e/subscription-screen.e2e.ts` (Assinatura e volta: 1, antes 4). |
+| Fora | Pendente | O `get-session` de cada tick de pull (item 3 do corte). |
+
