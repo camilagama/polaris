@@ -71,6 +71,18 @@ describe("who is signed in, as the server answers", () => {
     answerWith(new Response("nope", { status: 404 }));
     await expect(api.sessionUserId()).rejects.toThrow("session_unavailable");
   });
+
+  it("reads the server again when the caller asks for a fresh answer", async () => {
+    const fetchMock = vi.fn(() =>
+      Promise.resolve(Response.json({ user: { id: "user-1" } }))
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    await api.sessionUserId();
+    await api.sessionUserId();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    await api.sessionUserId({ fresh: true });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
 });
 
 const deviceId = "0199c2d0-0000-7000-8000-0000000000d1";
