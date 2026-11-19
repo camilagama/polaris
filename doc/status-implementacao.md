@@ -3561,5 +3561,5 @@ Origem: achado B do Diego no Pixel 6 (28/10): a venda montada em Vender sumia ao
 | Parte | Estado | O que é |
 | --- | --- | --- |
 | Marcador da sessão | Em revisão | `offline-runtime.ts`: depois de `device.check` "meu" ou de `device.register` (o `issueLease` só renova o da mesma sessão), `polaris.offline.device-checked` guarda `{ deviceId, userId, sessionId, checkedAt }` (id da sessão, nunca o token); a abertura com o `get-session` do servidor na hora, mesma sessão, usuário e aparelho, menos de 12 h e licença a 12 h ou mais do fim não chama o `device.check`. Apagado no Sair, em `session_changed`, aparelho recusado e sessão diferente. Emenda de 19/11 do [ADR 0048](../docs/adr/0048-tela-de-aparelhos.md). |
-| Provas | Em revisão | `offline-runtime.test.ts` (o pulo e cada caso que chama, a revogação vista pelo `get-session` sem `device.check`, 14 mutações reprovadas) e `runtime-api.test.ts` (`session.id` sem o token, leitura sempre no servidor). |
+| Provas | Em revisão | `offline-runtime.test.ts` (o pulo e cada caso que chama, a revogação vista pelo `get-session` sem `device.check`, 13 mutações reprovadas) e `runtime-api.test.ts` (`session.id` sem o token, leitura sempre no servidor). |
 | Fora | Pendente | Com a memória de 10 s do `get-session` (t1360), a leitura que decide o pulo continua a do servidor na hora. |
