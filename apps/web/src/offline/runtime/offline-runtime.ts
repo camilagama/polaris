@@ -1215,6 +1215,7 @@ export class OfflineRuntime {
       clampLabel(this.dependencies.deviceLabel)
     );
     keyValues.write(DEVICE_KEY, id);
+    this.rememberDeviceCheck(id, userId);
     return id;
   }
 
@@ -1308,7 +1309,23 @@ export class OfflineRuntime {
     }
   }
 
-  /** The server just linked the session of this start to the device (a check said "mine", or it issued a lease). */
+  /**
+   * A lease links the session too, but only renews a record this session already has: the first record of a session
+   * comes from its own check (or register), the call that also makes the device its own (ADR 0048), and a lease
+   * taken under a session that another tab replaced never writes over the record of the new one.
+   */
+  private renewDeviceCheck(deviceId: string, userId: string) {
+    const record = this.deviceCheck();
+    if (
+      record?.sessionId === this.checkedSession &&
+      record?.userId === userId &&
+      record?.deviceId === deviceId
+    ) {
+      this.rememberDeviceCheck(deviceId, userId);
+    }
+  }
+
+  /** The server just linked the session of this start to the device: a check said "mine", or it registered it. */
   private rememberDeviceCheck(deviceId: string, userId: string) {
     const sessionId = this.checkedSession;
     if (!sessionId) {
@@ -1533,7 +1550,7 @@ export class OfflineRuntime {
       leaseKey(userId, organizationId),
       JSON.stringify(issued)
     );
-    this.rememberDeviceCheck(deviceId, userId);
+    this.renewDeviceCheck(deviceId, userId);
     return issued.lease;
   }
 

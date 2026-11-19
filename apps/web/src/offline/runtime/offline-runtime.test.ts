@@ -327,6 +327,7 @@ function world(options: { leaseHours?: number } = {}) {
     advance: (hours: number) => {
       clock = new Date(clock.getTime() + hours * HOUR);
     },
+    api,
     calls,
     closed,
     disk,
@@ -3503,6 +3504,18 @@ describe("the device check a start skips (the same session, linked in the last 1
     expect(w.calls.deviceIsMine).toBe(1);
   });
 
+  it("a cached lease that does not work for this device asks, whatever its expiry says", async () => {
+    const w = await linked();
+    const name = `polaris.offline.lease.${userId}.${organizationId}`;
+    const cached = JSON.parse(w.keyValues.read(name) ?? "{}");
+    w.keyValues.write(
+      name,
+      JSON.stringify({ ...cached, lease: "não.é.licença" })
+    );
+    await w.make().start(organizationId);
+    expect(w.calls.deviceIsMine).toBe(1);
+  });
+
   it("a session the server could not confirm (no answer, the remembered user) asks", async () => {
     const w = await linked();
     w.failures.sessionUser = new SessionUnreachableError("session_http_503");
@@ -3580,6 +3593,70 @@ describe("the device check a start skips (the same session, linked in the last 1
     expect(signedIn.getSnapshot().phase).toBe("ready");
     expect(signedIn.context()?.deviceId).toBe(uuid(702));
     expect(record(w)).toMatchObject({ deviceId: uuid(702), sessionId: "s-2" });
+  });
+
+  it("a session whose check got no answer is never recorded by a lease, so its next start asks again", async () => {
+    const w = await linked({ leaseHours: 20 });
+    w.advance(9); // the lease is due: this start renews it
+    w.session.id = "s-2";
+    w.failures.deviceIsMine = true; // the cached lease stands in for the check
+    const issued = w.calls.issueLease;
+    const runtime = w.make();
+    await runtime.start(organizationId);
+    expect(runtime.getSnapshot().phase).toBe("ready");
+    expect(w.calls.issueLease).toBe(issued + 1);
+    expect(record(w)).toBeNull();
+
+    w.failures.deviceIsMine = false;
+    await w.make().start(organizationId);
+    expect(w.calls.deviceIsMine).toBe(2);
+    expect(record(w)).toMatchObject({ sessionId: "s-2" });
+  });
+
+  it("a lease renewed under a session another tab replaced does not write over the record of the new one", async () => {
+    const w = await linked({ leaseHours: 20 });
+    const first = w.make();
+    await first.start(organizationId);
+    w.session.id = "s-2"; // the same user signed in again in another tab
+    const second = w.make();
+    await second.start(organizationId);
+    expect(record(w)).toMatchObject({ sessionId: "s-2" });
+
+    w.advance(9);
+    const issued = w.calls.issueLease;
+    await first.syncNow();
+    expect(w.calls.issueLease).toBe(issued + 1);
+    expect(record(w)).toMatchObject({ sessionId: "s-2" });
+  });
+
+  it("a lease renewed under the recorded session moves its instant", async () => {
+    const w = await linked({ leaseHours: 20 });
+    const runtime = w.make();
+    await runtime.start(organizationId);
+    w.advance(9);
+    await runtime.syncNow();
+    expect(record(w)).toMatchObject({
+      checkedAt: new Date("2026-10-14T21:00:00.000Z").getTime(),
+      sessionId: "s-1",
+    });
+  });
+
+  it("a session the server refuses on a push takes the record", async () => {
+    const w = await linked();
+    const runtime = w.make();
+    await runtime.start(organizationId);
+    await queueProduct(runtime, "Camiseta", 1);
+    w.failures.push = true;
+    w.failures.pushCode = "UNAUTHORIZED";
+    await runtime.syncNow();
+    expect(w.keyValues.read(CHECK_KEY)).toBeNull();
+  });
+
+  it("an api that cannot name the session asks at every start", async () => {
+    const w = await linked();
+    const { signedInSession: _unused, ...withoutSession } = w.api;
+    await w.make(null, { api: withoutSession }).start(organizationId);
+    expect(w.calls.deviceIsMine).toBe(1);
   });
 
   it("a failed write of the record does not fail the start", async () => {
