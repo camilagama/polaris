@@ -3,6 +3,7 @@ import {
   assertLocalMeasureUrl,
   groupQueries,
   percentile,
+  readOrganizationTotals,
   runsOf,
   warmupOf,
 } from "./measure-plan-read";
@@ -10,6 +11,8 @@ import {
 const SHAPE_CHANGED = /changed its queries/;
 const AT_LEAST_30 = /at least 30/;
 const AT_LEAST_1 = /at least 1$/;
+const SELECT_ONLY = /^SELECT/;
+const WRITES = /\b(INSERT|UPDATE|DELETE|TRUNCATE|DROP|ALTER)\b/i;
 const LOCAL = "postgresql://owner:x@localhost:5432/polaris_gate";
 const NEON =
   "postgresql://owner:x@ep-quiet-bird-a1b2c3d4.c-2.sa-east-1.aws.neon.tech/neondb";
@@ -114,5 +117,34 @@ describe("groupQueries", () => {
     expect(() => groupQueries(READ.filter((_, index) => index !== 9))).toThrow(
       SHAPE_CHANGED
     );
+  });
+});
+
+describe("readOrganizationTotals", () => {
+  it("returns the total and the qa-medida-plano count with one read-only query", async () => {
+    const calls: { text: string; values: unknown[] | undefined }[] = [];
+    const client = {
+      query: (text: string, values?: unknown[]) => {
+        calls.push({ text, values });
+        return Promise.resolve({ rows: [{ qa: 4, total: 11 }] });
+      },
+    };
+    const totals = await readOrganizationTotals(client as never);
+    expect(totals).toEqual({
+      qaMedidaPlanoOrganizations: 4,
+      totalOrganizations: 11,
+    });
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.text.trimStart()).toMatch(SELECT_ONLY);
+    expect(calls[0]?.text).not.toMatch(WRITES);
+    expect(calls[0]?.values).toEqual(["qa-medida-plano-"]);
+  });
+
+  it("reports zero for a database with no organizations", async () => {
+    const client = { query: () => Promise.resolve({ rows: [] }) };
+    expect(await readOrganizationTotals(client as never)).toEqual({
+      qaMedidaPlanoOrganizations: 0,
+      totalOrganizations: 0,
+    });
   });
 });
