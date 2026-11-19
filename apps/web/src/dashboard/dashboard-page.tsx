@@ -66,8 +66,7 @@ import {
   type ComparisonDays,
   type ComparisonSales,
   type PeriodSummaryState,
-  useComparisonDays,
-  useComparisonSales,
+  useComparisonReads,
   usePeriodSummary,
 } from "./use-period-summary";
 
@@ -384,8 +383,11 @@ export function DashboardPage() {
   const comparedResult = answeredSummary
     ? resultChipPeriod(answeredSummary, today)
     : null;
-  const comparison = useComparisonDays(organizationId, comparedResult);
-  const salesComparison = useComparisonSales(organizationId, compared);
+  const { comparison, salesComparison } = useComparisonReads(
+    organizationId,
+    compared,
+    comparedResult
+  );
   // "hoje" is the store's day on the server's clock, the same that cuts the series (AC-1, AC-10): when the device
   // disagrees, the periods are computed again once, from the server's day, and read again
   const serverToday =

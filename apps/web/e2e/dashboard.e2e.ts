@@ -427,6 +427,8 @@ class FakeReportServer {
   failure: { code: string; status: number } | null = null;
   /** When true only `report.dailySales` fails: the chips of Vendas and Ticket médio go, the rest stays. */
   salesFailure = false as boolean;
+  /** When true only the read of the period before by `report.periodSummary` fails: the screen's own read answers. */
+  comparisonFailure = false as boolean;
   /** When true the network is down: the request never gets an answer. */
   networkDown = false as boolean;
   /** The records of each month the answers are computed from. */
@@ -462,6 +464,9 @@ class FakeReportServer {
     const to = String(input.to);
     if (input.topProducts === undefined) {
       this.comparisons.push({ from, to });
+      if (this.comparisonFailure) {
+        return this.fail("INTERNAL_SERVER_ERROR", 500);
+      }
       if (this.failure) {
         return this.fail(this.failure.code, this.failure.status);
       }
@@ -682,15 +687,11 @@ test("mostra os quatro cartões (v7) e o passo a passo do mês atual", async ({
   await expect(
     card(page, CARD.netSales).locator("[data-kpi-delta]")
   ).toContainText("vs. setembro");
-  // the chips of sales and ticket read `dailySales`; the result's chip reads the summary of the same month
-  expect(server.salesComparisons).toContainEqual({
-    from: "2026-09-01",
-    to: "2026-09-30",
-  });
-  expect(server.comparisons).toContainEqual({
-    from: "2026-09-01",
-    to: "2026-09-30",
-  });
+  // the period before is read once, by the engine, for the three chips: `dailySales` is not asked for it
+  expect(server.comparisons).toEqual([
+    { from: "2026-09-01", to: "2026-09-30" },
+  ]);
+  expect(server.salesComparisons).toEqual([]);
 
   // the period asked for is this month, the first to the last day, and it is the one pressed
   expect(server.periods[0]).toEqual({ from: "2026-10-01", to: "2026-10-31" });
@@ -773,7 +774,10 @@ test("sem a leitura do dailySales, somem só os chips de Vendas e Ticket médio;
   server.salesFailure = true;
   await openDashboard(page, server);
   await expect(card(page, CARD.netSales)).toContainText("R$ 130,00");
+  await choosePreset(page, "Mês passado");
+  // the result of September cannot have a chip, so the sales chips are the ones of `dailySales`
   await expect.poll(() => server.salesComparisons.length).toBe(1);
+  await expect(card(page, CARD.netSales)).toContainText("Vendas em setembro");
   await expect(
     card(page, CARD.netSales).locator("[data-kpi-delta]")
   ).toHaveCount(0);
@@ -781,6 +785,30 @@ test("sem a leitura do dailySales, somem só os chips de Vendas e Ticket médio;
     0
   );
   await expect(card(page, CARD.netSales)).not.toContainText("vs. ");
+  await expect(chartRegion(page)).toBeVisible();
+});
+
+test("sem a leitura do período anterior pelo periodSummary, o chip de Vendas ainda aparece pelo dailySales e o de Resultado não", async ({
+  page,
+}) => {
+  const server = new FakeReportServer();
+  server.comparisonFailure = true;
+  await openDashboard(page, server);
+  await expect(card(page, CARD.netSales)).toContainText("R$ 130,00");
+  await expect(card(page, CARD.netSales)).toContainText("+30,0%");
+  await expect(card(page, CARD.netSales)).toContainText("vs. setembro");
+  await expect(card(page, CARD.ticket).locator("[data-kpi-delta]")).toHaveCount(
+    1
+  );
+  await expect(card(page, CARD.result).locator("[data-kpi-delta]")).toHaveCount(
+    0
+  );
+  expect(server.comparisons).toEqual([
+    { from: "2026-09-01", to: "2026-09-30" },
+  ]);
+  expect(server.salesComparisons).toEqual([
+    { from: "2026-09-01", to: "2026-09-30" },
+  ]);
   await expect(card(page, CARD.margin)).toContainText("52,69%");
   await expect(chartRegion(page)).toBeVisible();
 });

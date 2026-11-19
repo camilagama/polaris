@@ -366,14 +366,16 @@ const DEVICE_CHECK_KEY = "polaris.offline.device-checked";
  */
 const DEVICE_CHECK_REUSE_MS = RENEW_BEFORE_MS;
 /**
- * A confirmation of who is signed in is reused by the syncs that follow it, so a
- * burst of syncs (reconnect, return to the app) costs one get-session, not one
- * each. Never reused when something is queued: the push must not leave under
- * somebody else's session (the server would refuse and record that for good).
- * It only bounds how long a first user's runtime may keep reading and queueing
- * after somebody else signed in.
+ * A confirmation of who is signed in is reused by the syncs that follow it, so
+ * the ticks of an idle tab cost one get-session per window, not one each. Never
+ * reused when something is queued: the push must not leave under somebody
+ * else's session (the server would refuse and record that for good). It only
+ * bounds how long a first user's runtime may keep reading and queueing after
+ * somebody else signed in. The server reads the session on every request, so the
+ * window only governs a pull with nothing queued; the opening is what opens it,
+ * and a change of the connection or the return to the page forgets it.
  */
-const SESSION_RECHECK_MS = 30_000;
+const SESSION_RECHECK_MS = 300_000;
 const EMPTY_COUNTS: PendingWork = { pending: 0, rejected: 0, sending: 0 };
 
 /** What one sync run was started for, so a late answer never acts on whoever opened after it. */
@@ -612,10 +614,16 @@ export class OfflineRuntime {
 
   /** The connection state changed: the screens are told at once (the sync, if any, follows from the host). */
   connectionChanged(): void {
+    this.sessionConfirmedAt = null;
     const online = this.dependencies.isOnline();
     if (online !== this.snapshot.online) {
       this.set({ ...this.snapshot, online });
     }
+  }
+
+  /** The page came back to the front: whoever is signed in now is looked at again by the next sync. */
+  pageReturned(): void {
+    this.sessionConfirmedAt = null;
   }
 
   /**
