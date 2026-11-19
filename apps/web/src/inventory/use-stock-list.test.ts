@@ -1,6 +1,10 @@
 import type { InventoryBalanceEntryReadModel } from "@polaris/contracts";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { canLoadMoreStock, type StockPage } from "./stock-list-model";
+import {
+  canLoadMoreStock,
+  type StockPage,
+  stockMoreView,
+} from "./stock-list-model";
 import { useStockList } from "./use-stock-list";
 
 interface Runtime {
@@ -119,7 +123,47 @@ describe("useStockList: Carregar mais", () => {
     listBalances.mockReset();
   });
 
-  it("a 1ª página nova falhar com a seguinte em voo não deixa o botão preso em Carregando", async () => {
+  it("trocar o filtro com a 1ª página nova em voo esconde o Carregar mais e não usa o cursor da lista antiga", async () => {
+    const newFirst = deferred<StockPage>();
+    listBalances
+      .mockResolvedValueOnce(page("cursor-1", 1, 2))
+      .mockReturnValueOnce(newFirst.promise);
+    const { render, runEffect } = mount();
+
+    runEffect();
+    await vi.waitFor(() =>
+      expect(idsOf(render)).toEqual([variantId(1), variantId(2)])
+    );
+    expect(canLoadMoreStock(render().state, render().listKey)).toBe(true);
+    render().setFilters({ stock: "without_stock" });
+    render();
+    expect(stockMoreView(render().state, render().listKey).visible).toBe(false);
+    runEffect();
+    expect(listBalances).toHaveBeenCalledTimes(2);
+
+    const { listKey, loadMore, state } = render();
+    expect(idsOf(render)).toEqual([variantId(1), variantId(2)]);
+    expect(stockMoreView(state, listKey)).toMatchObject({
+      refreshing: true,
+      visible: false,
+    });
+    expect(canLoadMoreStock(state, listKey)).toBe(false);
+    loadMore();
+    expect(listBalances).toHaveBeenCalledTimes(2);
+
+    newFirst.resolve(page("cursor-9", 9));
+    await newFirst.promise;
+    const loaded = render();
+    expect(idsOf(render)).toEqual([variantId(9)]);
+    expect(stockMoreView(loaded.state, loaded.listKey).visible).toBe(true);
+    listBalances.mockResolvedValueOnce(page(null, 10));
+    loaded.loadMore();
+    expect(listBalances).toHaveBeenLastCalledWith(
+      expect.objectContaining({ cursor: "cursor-9", stock: "without_stock" })
+    );
+  });
+
+  it("a 1ª página do filtro novo falhar tira a lista antiga e mostra o erro da lista, sem Carregar mais", async () => {
     const oldSecond = deferred<StockPage>();
     const newFirst = deferred<StockPage>();
     listBalances
@@ -133,34 +177,68 @@ describe("useStockList: Carregar mais", () => {
       expect(idsOf(render)).toEqual([variantId(1), variantId(2)])
     );
     render().loadMore();
-    expect(listBalances).toHaveBeenCalledTimes(2);
-    expect(listBalances).toHaveBeenLastCalledWith(
-      expect.objectContaining({ cursor: "cursor-1" })
-    );
     expect(render().state.loadingMore).toBe(true);
-
     render().setFilters({ stock: "without_stock" });
     render();
     runEffect();
     expect(listBalances).toHaveBeenCalledTimes(3);
-    expect(listBalances).toHaveBeenLastCalledWith(
-      expect.objectContaining({ stock: "without_stock" })
-    );
-    expect(render().state.loadingMore).toBe(false);
 
     newFirst.reject(new Error("sem rede"));
-    await vi.waitFor(() => expect(render().state.moreError).not.toBeNull());
-
-    const { state } = render();
+    await vi.waitFor(() => expect(render().state.status).toBe("error"));
+    const { listKey, loadMore, state } = render();
+    expect(state.entries).toEqual([]);
     expect(state.loadingMore).toBe(false);
-    expect(state.moreError).not.toBeNull();
-    expect(state.status).toBe("ready");
-    expect(state.nextCursor).toBe("cursor-1");
-    expect(canLoadMoreStock(state)).toBe(true);
+    expect(stockMoreView(state, listKey).visible).toBe(false);
+    expect(canLoadMoreStock(state, listKey)).toBe(false);
+    loadMore();
+    expect(listBalances).toHaveBeenCalledTimes(3);
 
     oldSecond.resolve(page(null, 3));
     await oldSecond.promise;
+    expect(render().state.entries).toEqual([]);
+  });
+
+  it("a releitura com o mesmo filtro falhar mantém a lista com o aviso, sem Carregar mais, até uma 1ª página dar certo", async () => {
+    const again = deferred<StockPage>();
+    listBalances
+      .mockResolvedValueOnce(page("cursor-1", 1, 2))
+      .mockReturnValueOnce(again.promise)
+      .mockResolvedValueOnce(page("cursor-3", 3));
+    const { render, runEffect } = mount();
+
+    runEffect();
+    await vi.waitFor(() =>
+      expect(idsOf(render)).toEqual([variantId(1), variantId(2)])
+    );
+    render().reload();
+    render();
+    runEffect();
+    expect(stockMoreView(render().state, render().listKey)).toMatchObject({
+      refreshing: true,
+      visible: false,
+    });
+
+    again.reject(new Error("sem rede"));
+    await vi.waitFor(() => expect(render().state.refresh).toBe("failed"));
+    const failed = render();
     expect(idsOf(render)).toEqual([variantId(1), variantId(2)]);
-    expect(render().state.loadingMore).toBe(false);
+    expect(failed.state.status).toBe("ready");
+    expect(stockMoreView(failed.state, failed.listKey)).toMatchObject({
+      refreshFailed: true,
+      visible: false,
+    });
+    expect(canLoadMoreStock(failed.state, failed.listKey)).toBe(false);
+    failed.loadMore();
+    expect(listBalances).toHaveBeenCalledTimes(2);
+
+    failed.reload();
+    render();
+    runEffect();
+    await vi.waitFor(() => expect(idsOf(render)).toEqual([variantId(3)]));
+    const healed = render();
+    expect(stockMoreView(healed.state, healed.listKey)).toMatchObject({
+      refreshFailed: false,
+      visible: true,
+    });
   });
 });
