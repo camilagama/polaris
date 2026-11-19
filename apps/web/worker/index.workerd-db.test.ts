@@ -97,6 +97,23 @@ const STATEMENT_COUNTS: Record<string, number> = {
   "sync/pull": 6,
 };
 
+/**
+ * Statements of the first measured call of each route, in this test isolate: not a truly cold isolate. The sign-in, the
+ * creation of the store and a `sync/pull` (to get the cursor) run before it, and the routes warm one another in their
+ * fixed order, so the numbers hold for that order. They equal STATEMENT_COUNTS today; they exist so that a statement
+ * that only the first call sends (something a later call finds ready in the isolate) fails here and not there.
+ */
+const FIRST_CALL_STATEMENT_COUNTS: Record<string, number> = {
+  "auth get-session": 2,
+  "billing/readPlan": 20,
+  "goal/list": 25,
+  "inventory/listBalances": 6,
+  "organization/listMine": 8,
+  "report/dailySales": 6,
+  "report/periodSummary": 6,
+  "sync/pull": 6,
+};
+
 const fixture = JSON.parse(env.TEST_WEB_FIXTURE ?? "{}") as Fixture;
 const HYPERDRIVES: Binding[] = [
   "AUTH_HYPERDRIVE",
@@ -1011,28 +1028,34 @@ describe("the e-mail and password flows of the web worker", () => {
       return recorder.statements;
     };
 
-    // the first call of each route warms what a later call of the isolate finds ready; only the second one is counted
-    for (const route of routes) {
-      // biome-ignore lint/performance/noAwaitInLoops: one route at a time, so the statements of two calls never mix
-      await measure(route);
-    }
-    const counted: Record<string, number> = {};
-    const detail: string[] = [];
-    for (const route of routes) {
-      // biome-ignore lint/performance/noAwaitInLoops: one route at a time, so the statements of two calls never mix
-      const statements = await measure(route);
-      counted[route.name] = statements.length;
-      detail.push(
-        `${route.name}: ${statements.length}`,
-        ...statements.map(
-          (statement, index) =>
-            `  ${index + 1}. [${statement.kind}] ${statement.text.replaceAll(/\s+/g, " ").slice(0, 120)}`
-        )
-      );
-    }
+    const countRoutes = async () => {
+      const counted: Record<string, number> = {};
+      const detail: string[] = [];
+      for (const route of routes) {
+        // biome-ignore lint/performance/noAwaitInLoops: one route at a time, so the statements of two calls never mix
+        const statements = await measure(route);
+        counted[route.name] = statements.length;
+        detail.push(
+          `${route.name}: ${statements.length}`,
+          ...statements.map(
+            (statement, index) =>
+              `  ${index + 1}. [${statement.kind}] ${statement.text.replaceAll(/\s+/g, " ").slice(0, 120)}`
+          )
+        );
+      }
+      return { counted, detail };
+    };
+
+    // the first measured call of each route, in the fixed order of `routes`; not a truly cold isolate (see FIRST_CALL_STATEMENT_COUNTS)
+    const first = await countRoutes();
     expect(
-      counted,
-      `statements per call, in order:\n${detail.join("\n")}\nRaise a number only for a route that must send more; lower it when the route sends fewer.`
+      first.counted,
+      `statements per first call, in order:\n${first.detail.join("\n")}\nRaise a number only for a route that must send more on its first call; lower it when the route sends fewer.`
+    ).toEqual(FIRST_CALL_STATEMENT_COUNTS);
+    const second = await countRoutes();
+    expect(
+      second.counted,
+      `statements per call, in order:\n${second.detail.join("\n")}\nRaise a number only for a route that must send more; lower it when the route sends fewer.`
     ).toEqual(STATEMENT_COUNTS);
     expect(network.strangers).toEqual([]);
   });
