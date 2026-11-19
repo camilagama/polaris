@@ -3563,3 +3563,11 @@ Origem: achado B do Diego no Pixel 6 (28/10): a venda montada em Vender sumia ao
 | Marcador da sessão | Em revisão | `offline-runtime.ts`: depois de `device.check` "meu" ou de `device.register` (o `issueLease` só renova o da mesma sessão), `polaris.offline.device-checked` guarda `{ deviceId, userId, sessionId, checkedAt }` (id da sessão, nunca o token); a abertura com o `get-session` do servidor na hora, mesma sessão, usuário e aparelho, menos de 12 h e licença a 12 h ou mais do fim não chama o `device.check`. Apagado no Sair, em `session_changed`, aparelho recusado e sessão diferente. Emenda de 19/11 do [ADR 0048](../docs/adr/0048-tela-de-aparelhos.md). |
 | Provas | Em revisão | `offline-runtime.test.ts` (o pulo e cada caso que chama, a revogação vista pelo `get-session` sem `device.check`, 13 mutações reprovadas) e `runtime-api.test.ts` (`session.id` sem o token, leitura sempre no servidor). |
 | Fora | Pendente | Com a memória de 10 s do `get-session` (t1360), a leitura que decide o pulo continua a do servidor na hora. |
+
+### Perf de 19/11: o tique do sync cresce sem trabalho e aba escondida não puxa (t1355; sem migration)
+
+| Item | Estado | Detalhe |
+| --- | --- | --- |
+| Agendador | Em revisão | `offline/runtime/sync-scheduler.ts`: o tique dobra de 60 s até 300 s a cada pull sem trabalho e volta a 60 s com trabalho, comando na fila, volta à frente, "Tentar agora", volta da conexão, falha ou tentativa sem resposta; aba escondida não puxa. Emenda de 19/11 do ADR 0043. |
+| Runtime | Em revisão | `OfflineRuntime.lastPullWasIdle()`: a última sincronização completa foi respondida, não enviou comando e o cursor não andou; falha, sem resposta, corte do pull e rodada só de envio não contam. O envio da fila não mudou. |
+| Provas | Em revisão | `sync-scheduler.test.ts` (relógio injetado: 60→120→240→300→300, volta a 60, aba escondida, mutações) e `offline-runtime.test.ts`. |
