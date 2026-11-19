@@ -11,8 +11,9 @@ const SCRIPT_DRIVEN_SELECTOR = '[data-slot="filter-pill"]';
  * by itself; nor image decoding, which `getAnimations` does not list.
  *
  * The filter pills enter with a spring of `motion` that runs in script, so `getAnimations` does not list it and the
- * pill (an icon inside it with it) is measured while still scaled: their boxes must also stay unchanged for
- * `STABLE_FRAMES` frames in a row. The selector is not wider because other script-driven movement (the loading
+ * pill, and the icon inside it, would be measured while still scaled: their boxes must also stay unchanged for
+ * `STABLE_FRAMES` frames in a row. A screen with no pill yet counts as still, so the caller waits for its pills to be
+ * drawn before calling. The selector is not wider because other script-driven movement (the loading
  * shimmer of the charts) never stops.
  *
  * A finite animation still running, or a pill still moving, after `budgetMs` fails with its name and total duration:
