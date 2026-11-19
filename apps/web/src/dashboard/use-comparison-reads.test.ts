@@ -140,6 +140,33 @@ describe("useComparisonReads", () => {
     expect(result.current.salesComparison?.period).toEqual(OTHER);
   });
 
+  it("does not read dailySales again at the first render of a period that failed before", async () => {
+    dailySales.mockRejectedValueOnce(new Error("down"));
+    periodSummary.mockImplementation(({ from, to }: Period) =>
+      from === BEFORE.from
+        ? Promise.reject(new Error("engine down"))
+        : Promise.resolve(summaryDays({ from, to }))
+    );
+    const { rerender, result } = renderHook(
+      ({ period }: { period: Period }) =>
+        useComparisonReads("org-a", period, period),
+      { initialProps: { period: BEFORE } }
+    );
+    await waitFor(() => expect(dailySales).toHaveBeenCalledTimes(1));
+    rerender({ period: OTHER });
+    await waitFor(() =>
+      expect(result.current.comparison?.period).toEqual(OTHER)
+    );
+    periodSummary.mockImplementation(({ from, to }: Period) =>
+      Promise.resolve(summaryDays({ from, to }))
+    );
+    rerender({ period: BEFORE });
+    await waitFor(() =>
+      expect(result.current.comparison?.period).toEqual(BEFORE)
+    );
+    expect(dailySales).toHaveBeenCalledTimes(1);
+  });
+
   it("reads nothing before the screen's own read answered", () => {
     renderHook(() => useComparisonReads("org-a", null, null));
     expect(periodSummary).not.toHaveBeenCalled();

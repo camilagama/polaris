@@ -321,6 +321,7 @@ function useComparisonRead<Day>(
     const requestSequence = sequence.current;
     const isCurrent = () => requestSequence === sequence.current;
     const requestKey = `${organizationId}|${from}|${to}`;
+    setFailedKey(null);
     read(organizationId, { from, to }, isCurrent)
       .then((days) => {
         if (!isCurrent()) {
@@ -413,7 +414,12 @@ export function useComparisonReads(
     days.read.period.to === period.to
       ? days.read
       : null;
-  const readsSales = period !== null && (resultPeriod === null || days.failed);
+  const readsSales =
+    period !== null &&
+    (resultPeriod === null ||
+      resultPeriod.from !== period.from ||
+      resultPeriod.to !== period.to ||
+      days.failed);
   const sales = useComparisonRead(
     organizationId,
     readsSales ? period : null,
