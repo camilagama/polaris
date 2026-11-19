@@ -105,7 +105,7 @@ export function closureNoticeContent(
 ): ClosureNoticeContent {
   const store = delivery.organizationName;
   // a subject is one line: a name with a line break must not break the header
-  const subjectStore = store.replaceAll(/\s+/g, " ").trim();
+  const oneLineStore = store.replaceAll(/\s+/g, " ").trim();
   const requested = formatCalendarDate(
     localDate(delivery.requestedAt, delivery.timeZone)
   );
@@ -140,7 +140,7 @@ export function closureNoticeContent(
           `${signIn} Se você não reconhece este pedido, entre e desfaça o encerramento.`,
         ],
         preview: `O pedido de encerramento da loja ${store} foi recebido.`,
-        subject: `Recebemos o pedido de encerramento da sua loja ${subjectStore} no Polaris`,
+        subject: `Recebemos o pedido de encerramento da sua loja ${oneLineStore} no Polaris`,
       };
     case "d30":
       return {
@@ -152,7 +152,7 @@ export function closureNoticeContent(
           ...signInParagraph,
         ],
         preview: `Faltam 30 dias: os dados da loja ${store} podem ser apagados a partir de ${deletionDay}.`,
-        subject: `Faltam 30 dias: os dados da sua loja ${subjectStore} no Polaris podem ser apagados a partir de ${deletionDay}`,
+        subject: `Faltam 30 dias: os dados da sua loja ${oneLineStore} no Polaris podem ser apagados a partir de ${deletionDay}`,
       };
     case "d7": {
       // a d7 sent again counts from the day it is sent, so the number is the real one, not always 7
@@ -166,7 +166,7 @@ export function closureNoticeContent(
           ...signInParagraph,
         ],
         preview: `${daysLeft}: os dados da loja ${store} podem ser apagados a partir de ${firstDay}.`,
-        subject: `${daysLeft}: os dados da sua loja ${subjectStore} no Polaris podem ser apagados a partir de ${firstDay}`,
+        subject: `${daysLeft}: os dados da sua loja ${oneLineStore} no Polaris podem ser apagados a partir de ${firstDay}`,
       };
     }
     case "deletion_day":
@@ -179,7 +179,7 @@ export function closureNoticeContent(
           ...signInParagraph,
         ],
         preview: `Os dados da loja ${store} podem ser apagados a partir de hoje.`,
-        subject: `Os dados da sua loja ${subjectStore} no Polaris podem ser apagados a partir de hoje`,
+        subject: `Os dados da sua loja ${oneLineStore} no Polaris podem ser apagados a partir de hoje`,
       };
     case "rescheduled":
       return {
@@ -191,7 +191,7 @@ export function closureNoticeContent(
           ...signInParagraph,
         ],
         preview: `Os dados da loja ${store} podem ser apagados a partir de ${firstDay}.`,
-        subject: `Nova data para o apagamento dos dados da sua loja ${subjectStore} no Polaris`,
+        subject: `Nova data para o apagamento dos dados da sua loja ${oneLineStore} no Polaris`,
       };
     default:
       throw new RangeError("closure_notice_milestone_unknown");

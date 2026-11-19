@@ -9,11 +9,13 @@ const RETURNED_BOTTLE = /^Devolvido: Garrafa térmica/;
 const RESTOCKED_BOTTLE = /^Volta ao estoque: Garrafa térmica/;
 const MORE_ACTIONS = /^Mais ações/;
 const NAME_FIELD = "Digite o nome do produto para confirmar";
+const RETURN_REFUSED = /removido.*não podem voltar ao estoque/;
 const BOTTLE_STOCK = 4;
+const RESTOCKED_QUANTITY = 1;
 const KEPT_QUANTITY = 3;
 const CANCELLED_QUANTITY = 1;
 const CANCEL_DONE =
-  /^Venda cancelada\. O estoque foi devolvido item a item \(0 itens\)\.$/;
+  /^Venda cancelada\. Nenhum item voltou ao estoque, porque os produtos desta venda foram removidos\.$/;
 
 /**
  * Excluir produto arquivado, na pilha de verdade: o produto arquivado e sem estoque sai da lista e a vaga volta; as vendas
@@ -90,17 +92,31 @@ test("excluir produto arquivado: sai da lista, libera a vaga, a venda antiga seg
     ).rows[0]?.n;
   const bottleStock = async () =>
     (
-      await sql.query<{ balance: number; cancellations: number }>(
+      await sql.query<{
+        balance: number;
+        cancellations: number;
+        returns: number;
+      }>(
         `SELECT (SELECT quantity::int FROM inventory_balances WHERE variant_id = $1) AS balance,
                 (SELECT count(*)::int FROM stock_movements
-                  WHERE variant_id = $1 AND movement_type = 'sale_cancellation') AS cancellations`,
+                  WHERE variant_id = $1 AND movement_type = 'sale_cancellation') AS cancellations,
+                (SELECT count(*)::int FROM stock_movements
+                  WHERE variant_id = $1 AND movement_type = 'sale_return') AS returns`,
         [bottle.variantId]
       )
     ).rows[0];
+  const returnedQuantity = async () =>
+    (
+      await sql.query<{ returned: number | null }>(
+        "SELECT sum(returned_quantity)::int AS returned FROM sale_return_items WHERE sale_id = $1",
+        [saleId]
+      )
+    ).rows[0]?.returned;
   const stockAfterSales = BOTTLE_STOCK - KEPT_QUANTITY - CANCELLED_QUANTITY;
   expect(await bottleStock()).toEqual({
     balance: stockAfterSales,
     cancellations: 0,
+    returns: 0,
   });
 
   await page.goto("/products");
@@ -183,6 +199,7 @@ test("excluir produto arquivado: sai da lista, libera a vaga, a venda antiga seg
   expect(await bottleStock()).toEqual({
     balance: stockAfterSales,
     cancellations: 0,
+    returns: 0,
   });
   await page.goto("/sales/history");
   await expect(saleLink(cancelledSaleId)).toContainText("Cancelada");
@@ -197,19 +214,35 @@ test("excluir produto arquivado: sai da lista, libera a vaga, a venda antiga seg
     .click();
   const panel = page.getByRole("region", { name: "Registrar devolução" });
   await panel.getByLabel(RETURNED_BOTTLE).fill("1");
-  // o produto saiu do catálogo: a devolução não o devolve ao estoque
+  // o produto saiu do catálogo: tentar devolver 1 unidade ao estoque é recusado e nada é gravado
+  await panel.getByLabel(RESTOCKED_BOTTLE).fill(String(RESTOCKED_QUANTITY));
+  await panel.getByRole("button", { name: "Revisar devolução" }).click();
+  await panel.getByRole("button", { name: "Confirmar devolução" }).click();
+  await expect(panel.getByRole("alert")).toContainText(RETURN_REFUSED);
+  await expect(page.getByText(RETURN_REGISTERED)).toHaveCount(0);
+  expect(await returnedQuantity()).toBeNull();
+  expect(await bottleStock()).toEqual({
+    balance: stockAfterSales,
+    cancellations: 0,
+    returns: 0,
+  });
   await panel.getByLabel(RESTOCKED_BOTTLE).fill("0");
   await panel.getByRole("button", { name: "Revisar devolução" }).click();
   await panel.getByRole("button", { name: "Confirmar devolução" }).click();
   await expect(page.getByText(RETURN_REGISTERED)).toBeVisible();
-  const { rows } = await sql.query<{ returned: number }>(
-    "SELECT sum(returned_quantity)::int AS returned FROM sale_return_items WHERE sale_id = $1",
-    [saleId]
-  );
-  expect(rows[0]?.returned).toBe(1);
+  expect(await returnedQuantity()).toBe(1);
+  expect(
+    (
+      await sql.query<{ restocked: number }>(
+        "SELECT sum(restocked_quantity)::int AS restocked FROM sale_return_items WHERE sale_id = $1",
+        [saleId]
+      )
+    ).rows[0]?.restocked
+  ).toBe(0);
   expect(await bottleStock()).toEqual({
     balance: stockAfterSales,
     cancellations: 0,
+    returns: 0,
   });
 
   // Mais vendidos mostra o produto excluído pelo nome guardado, sem link para um painel que não existe mais

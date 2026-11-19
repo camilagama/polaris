@@ -312,6 +312,7 @@ function ReadyDetailPanels({
           onSaleChanged={onSaleChanged}
           organizationId={organizationId}
           saleId={saleId}
+          saleItemCount={detail.sale.items.length}
         />
       ) : null}
       <SaleCustomerPanel

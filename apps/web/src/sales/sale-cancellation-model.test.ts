@@ -278,7 +278,7 @@ describe("submission and idempotency", () => {
   });
 
   it("reports success and replay, and the flow closes", () => {
-    const done = cancelSucceeded(result(false));
+    const done = cancelSucceeded(result(false), 2);
     expect(done.step).toBe("closed");
     expect(done.submission).toMatchObject({
       message:
@@ -286,7 +286,57 @@ describe("submission and idempotency", () => {
       phase: "success",
       replayed: false,
     });
-    expect(cancelSuccessMessage(result(true))).toBe(
+    expect(cancelSuccessMessage(result(true), 2)).toBe(
+      "Esta venda já havia sido cancelada com este mesmo pedido. Nada foi duplicado."
+    );
+  });
+});
+
+describe("success message says what went back to stock", () => {
+  const withRestocked = (count: number): CancelSaleResult => ({
+    ...result(false),
+    restocked: result(false)
+      .restocked.concat(
+        Array.from({ length: 3 }, (_, index) => ({
+          position: index + 2,
+          quantity: 1,
+          variantId: "44444444-4444-4444-8444-444444444444",
+        }))
+      )
+      .slice(0, count),
+  });
+
+  it("keeps the item-by-item sentence when every item went back", () => {
+    expect(cancelSuccessMessage(withRestocked(2), 2)).toBe(
+      "Venda cancelada. O estoque foi devolvido item a item (2 itens)."
+    );
+    expect(cancelSuccessMessage(withRestocked(1), 1)).toBe(
+      "Venda cancelada. O estoque foi devolvido item a item (1 item)."
+    );
+  });
+
+  it("says nothing went back, and why, when no item has a movement", () => {
+    const message = cancelSuccessMessage(withRestocked(0), 2);
+    expect(message).toBe(
+      "Venda cancelada. Nenhum item voltou ao estoque, porque os produtos desta venda foram removidos."
+    );
+    expect(message).not.toContain("0 itens");
+    expect(message).not.toContain("item a item");
+  });
+
+  it("counts the items that went back out of the sale total", () => {
+    expect(cancelSuccessMessage(withRestocked(2), 3)).toBe(
+      "Venda cancelada. O estoque foi devolvido em 2 de 3 itens. Item de produto removido não volta ao estoque."
+    );
+    expect(cancelSuccessMessage(withRestocked(1), 3)).toBe(
+      "Venda cancelada. O estoque foi devolvido em 1 de 3 itens. Item de produto removido não volta ao estoque."
+    );
+  });
+
+  it("does not change the replay sentence", () => {
+    expect(
+      cancelSuccessMessage({ ...withRestocked(0), replayed: true }, 3)
+    ).toBe(
       "Esta venda já havia sido cancelada com este mesmo pedido. Nada foi duplicado."
     );
   });
@@ -438,7 +488,7 @@ describe("unknown-outcome lock", () => {
   });
 
   it("unlocks after a locked retry succeeds", () => {
-    expect(isCancelLocked(cancelSucceeded(result(true)))).toBe(false);
+    expect(isCancelLocked(cancelSucceeded(result(true), 2))).toBe(false);
   });
 });
 
