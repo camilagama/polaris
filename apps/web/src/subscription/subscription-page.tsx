@@ -9,6 +9,7 @@ import { canManageBilling } from "../lib/billing-access";
 import { useConnectionReturn, workerAnswers } from "../lib/browser-connection";
 import { useCurrentOrganization } from "../lib/current-organization";
 import { orpcClient } from "../lib/orpc";
+import { planRead } from "../lib/plan-read";
 import { isConnectionFailure } from "../lib/rpc-error";
 import { useNow } from "../lib/use-now";
 import { rememberPlanNotice } from "./plan-notice";
@@ -105,8 +106,10 @@ function usePlan(organizationId: string) {
     const read = latestRead.current;
     setLoading(true);
     try {
+      const token = planRead.begin();
       const next = await orpcClient.billing.readPlan({ organizationId });
       if (read === latestRead.current) {
+        planRead.remember(organizationId, next, token);
         setPlan(next);
         setLoadError(null);
         setStale(false);

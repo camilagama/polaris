@@ -2,6 +2,7 @@
 import { act, type RenderHookResult, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useHomePlanLimit } from "./use-home-plan-limit";
+import { planRead } from "../lib/plan-read";
 
 const store = { id: "org-a", online: true };
 const readPlan = vi.fn();
@@ -62,10 +63,11 @@ beforeEach(() => {
   store.id = "org-a";
   store.online = true;
   readPlan.mockReset();
+  planRead.clear();
 });
 
 describe("useHomePlanLimit: a linha por loja", () => {
-  it("A → B → A sem remontar: a linha de A volta, lida de novo, e nunca com o número de outra loja", async () => {
+  it("A → B → A sem remontar: a linha de A volta, da memória de 10 s, e nunca com o número de outra loja", async () => {
     readPlan.mockImplementation(
       ({ organizationId }: { organizationId: string }) =>
         Promise.resolve(planWith(organizationId === "org-a" ? 47 : 12))
@@ -86,7 +88,6 @@ describe("useHomePlanLimit: a linha por loja", () => {
     expect(readPlan.mock.calls.map(([input]) => input.organizationId)).toEqual([
       "org-a",
       "org-b",
-      "org-a",
     ]);
   });
 
@@ -127,7 +128,7 @@ describe("useHomePlanLimit: a linha por loja", () => {
     expect(shown()?.usage.used).toBe(46);
   });
 
-  it("limite conhecido, não requisito: A → B → A com a 1ª resposta de A atrasada, ela chega por último e é aceita no lugar da 2ª", async () => {
+  it("A → B → A com a leitura de A ainda em voo: a volta a A junta a mesma leitura, e a resposta é aceita uma vez", async () => {
     const answersA: Array<(plan: unknown) => void> = [];
     readPlan.mockImplementation(
       ({ organizationId }: { organizationId: string }) =>
@@ -140,15 +141,11 @@ describe("useHomePlanLimit: a linha por loja", () => {
     mount();
     switchTo("org-b");
     switchTo("org-a");
-    expect(answersA).toHaveLength(2);
+    expect(answersA).toHaveLength(1);
 
-    answersA[1]?.(planWith(46));
+    answersA[0]?.(planWith(46));
     await flush();
     expect(shown()?.usage.used).toBe(46);
-
-    answersA[0]?.(planWith(47));
-    await flush();
-    expect(shown()?.usage.used).toBe(47);
   });
 
   it("A lida, a conexão cai, A → B → A sem conexão e ela volta: não relê A e a linha some, sem o número de outra loja em nenhum passo", async () => {

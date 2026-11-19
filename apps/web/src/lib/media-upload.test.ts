@@ -5,6 +5,7 @@ import {
 import { describe, expect, it, vi } from "vitest";
 import { isMediaSessionEnded } from "../catalog/media-commands-model";
 import { createConnection, NoWorkerAnswerError } from "./connection";
+import { subscribePlanUsageChanges } from "./plan-usage-changes";
 import {
   type MediaUploadHttpError,
   mediaUploadMasterSize,
@@ -391,6 +392,51 @@ function asset(id: string, position: number) {
     width: 600,
   };
 }
+
+describe("as imagens mudam o uso do plano", () => {
+  it("enviar e remover imagem avisam quem guarda a leitura do plano, e ordenar não", async () => {
+    const heard = vi.fn();
+    const stop = subscribePlanUsageChanges(heard);
+    const ok = vi.fn(async () => jsonResponse({ removed: true, requestId }));
+    await removeProductMedia(
+      { assetId, organizationId: "org-1", origin, productId },
+      ok
+    );
+    expect(heard).toHaveBeenCalledTimes(1);
+
+    const down = vi.fn(() => Promise.reject(new Error("rede")));
+    await expect(
+      removeProductMedia(
+        { assetId, organizationId: "org-1", origin, productId },
+        down
+      )
+    ).rejects.toThrow("rede");
+    expect(heard).toHaveBeenCalledTimes(2);
+
+    await expect(
+      uploadProductMedia(
+        {
+          crop: { height: 1, width: 1, x: 0, y: 0 },
+          file: new File(["x"], "p.png", { type: "image/png" }),
+          organizationId: "org-1",
+          origin,
+          productId,
+          uploadCommandId: "de305d54-75b4-431b-adb2-eb6b9e546014",
+        },
+        down,
+        { renderMaster: fakeMaster() }
+      )
+    ).rejects.toThrow("rede");
+    expect(heard).toHaveBeenCalledTimes(3);
+
+    await reorderProductMedia(
+      { assetIds: [assetId], organizationId: "org-1", origin, productId },
+      vi.fn(async () => jsonResponse({ media: [], requestId }))
+    ).catch(() => undefined);
+    expect(heard).toHaveBeenCalledTimes(3);
+    stop();
+  });
+});
 
 describe("removeProductMedia", () => {
   it("sends a tenant-scoped DELETE for the image and returns the answer", async () => {

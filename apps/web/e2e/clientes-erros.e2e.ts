@@ -136,47 +136,65 @@ test("Clientes: a primeira leitura da lista com um 503 repete sozinha e abre sem
   await expect.poll(() => reads).toBe(2);
 });
 
-test("Clientes: a conferência de repetidos que falha diz que não conferiu, não salva e o que foi digitado fica", async ({
-  page,
-}) => {
-  let checks = 0;
-  let creates = 0;
-  await openCustomers(page, {
-    "customer/create": (route) => {
-      creates += 1;
-      return route.fulfill(rpc(customer(2, "Bia Souza")));
-    },
-    "customer/findPossibleDuplicates": (route) => {
-      checks += 1;
-      return checks === 1
-        ? route.fulfill(refusal("UNAUTHORIZED", 401))
-        : route.fulfill(rpc({ matches: [] }));
-    },
-    "customer/list": reply({ customers: [] }),
+const CHECK_UNAVAILABLE =
+  "Não foi possível verificar possíveis clientes repetidos. Tente novamente antes de salvar.";
+
+const FAILING_CHECKS = [
+  {
+    answer: refusal("UNAUTHORIZED", 401),
+    label: "a sessão que acabou (401)",
+    text: CHECK_FAILED,
+  },
+  {
+    answer: refusal("SERVICE_UNAVAILABLE", 503),
+    label: "o servidor indisponível (503)",
+    text: CHECK_UNAVAILABLE,
+  },
+];
+
+for (const failing of FAILING_CHECKS) {
+  test(`Clientes: a conferência de repetidos que falha com ${failing.label} diz que não conferiu, não salva e o que foi digitado fica`, async ({
+    page,
+  }) => {
+    let checks = 0;
+    let creates = 0;
+    await openCustomers(page, {
+      "customer/create": (route) => {
+        creates += 1;
+        return route.fulfill(rpc(customer(2, "Bia Souza")));
+      },
+      "customer/findPossibleDuplicates": (route) => {
+        checks += 1;
+        return checks === 1
+          ? route.fulfill(failing.answer)
+          : route.fulfill(rpc({ matches: [] }));
+      },
+      "customer/list": reply({ customers: [] }),
+    });
+    await page.getByRole("button", { name: "Novo cliente" }).click();
+    const name = page.getByLabel("Nome", { exact: true });
+    const phone = page.getByLabel("Telefone");
+    await name.fill("Bia Souza");
+    await phone.fill("11900000002");
+    await page.getByRole("button", { name: "Cadastrar cliente" }).click();
+
+    await expect(page.getByRole("alert")).toContainText(failing.text);
+    expect(checks).toBe(1);
+    expect(creates).toBe(0);
+    await expect(
+      page.getByRole("dialog", { name: "Novo cliente" })
+    ).toBeVisible();
+    await expect(name).toHaveValue("Bia Souza");
+    await expect(phone).toHaveValue("11900000002");
+
+    // the form is still open and the same button checks again; once the check answers, the customer is saved
+    await page.getByRole("button", { name: "Cadastrar cliente" }).click();
+    await expect(
+      page
+        .getByRole("status")
+        .filter({ hasText: "Cliente “Bia Souza” cadastrado." })
+    ).toBeVisible();
+    expect(checks).toBe(2);
+    expect(creates).toBe(1);
   });
-  await page.getByRole("button", { name: "Novo cliente" }).click();
-  const name = page.getByLabel("Nome", { exact: true });
-  const phone = page.getByLabel("Telefone");
-  await name.fill("Bia Souza");
-  await phone.fill("11900000002");
-  await page.getByRole("button", { name: "Cadastrar cliente" }).click();
-
-  await expect(page.getByRole("alert")).toContainText(CHECK_FAILED);
-  expect(checks).toBe(1);
-  expect(creates).toBe(0);
-  await expect(
-    page.getByRole("dialog", { name: "Novo cliente" })
-  ).toBeVisible();
-  await expect(name).toHaveValue("Bia Souza");
-  await expect(phone).toHaveValue("11900000002");
-
-  // the form is still open and the same button checks again; once the check answers, the customer is saved
-  await page.getByRole("button", { name: "Cadastrar cliente" }).click();
-  await expect(
-    page
-      .getByRole("status")
-      .filter({ hasText: "Cliente “Bia Souza” cadastrado." })
-  ).toBeVisible();
-  expect(checks).toBe(2);
-  expect(creates).toBe(1);
-});
+}
