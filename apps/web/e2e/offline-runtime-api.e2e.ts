@@ -623,7 +623,7 @@ test.describe("createRpcRuntimeApi no app real, com o servidor interceptado", ()
     expect(await stored(page, DEVICE_KEY)).toBe(device);
   });
 
-  test("device.check 500 para quem não tem lease do aparelho: falha fechada, o aparelho de outro usuário não é emprestado", async ({
+  test("device.check 500 para quem não tem lease do aparelho: falha fechada, o aparelho de outro usuário não é emprestado e nada é registrado", async ({
     page,
   }) => {
     const first = `user-${crypto.randomUUID()}`;
@@ -635,6 +635,17 @@ test.describe("createRpcRuntimeApi no app real, com o servidor interceptado", ()
     const second = `user-${crypto.randomUUID()}`;
     server.sessionUser = second;
     server.deviceCheckAnswer = "error";
+    await page.reload();
+    await expect(chip(page)).toContainText("Offline indisponível", {
+      timeout: 20_000,
+    });
+    expect(server.checked).toBeGreaterThan(0);
+    expect(server.registered).toBe(1);
+    expect(await stored(page, DEVICE_KEY)).toBe(device);
+    expect(server.devices.get(String(device))).toBe(first);
+
+    // the server back: it answers that the device is not this person's, and only then is a new one registered
+    server.deviceCheckAnswer = "ok";
     await page.reload();
     await expect(chip(page)).toContainText("Tudo sincronizado", {
       timeout: 20_000,
