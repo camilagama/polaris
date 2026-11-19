@@ -89,7 +89,7 @@ const UUID = /^[0-9a-f-]{36}$/;
  */
 const STATEMENT_COUNTS: Record<string, number> = {
   "auth get-session": 2,
-  "billing/readPlan": 20,
+  "billing/readPlan": 18,
   "category/list": 6,
   "device/check": 9,
   "expense/list": 8,
@@ -115,7 +115,7 @@ const STATEMENT_COUNTS: Record<string, number> = {
  */
 const FIRST_CALL_STATEMENT_COUNTS: Record<string, number> = {
   "auth get-session": 2,
-  "billing/readPlan": 20,
+  "billing/readPlan": 18,
   "category/list": 6,
   "device/check": 9,
   "expense/list": 8,
