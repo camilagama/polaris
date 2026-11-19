@@ -4343,7 +4343,7 @@ const STALE_COPY = "Não foi possível atualizar agora";
 const RPC_PATH = /\/rpc\/(.+)$/;
 
 const RPC_TABLE_HINT =
-  "chamadas /rpc por procedimento na abertura do Início: cada leitura a mais ou a menos gasta consultas do banco por aba; quem muda use-home.ts atualiza esta tabela";
+  "chamadas /rpc por procedimento na abertura do Início: cada leitura a mais ou a menos gasta consultas do banco por aba; quem muda use-home.ts ou o shell (as leituras que ele faz na abertura) atualiza esta tabela";
 
 /** Every /rpc request of the page, by procedure, whoever answers it (the simulated server or the stubs of the shell). */
 function countRpc(page: Page) {

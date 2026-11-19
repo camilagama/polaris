@@ -46,3 +46,24 @@ test("showScreenAlone: com esqueleto e animação de rolagem na tela a espera te
   expect(state.cardStates).toEqual(["finished"]);
   expect(state.skeletonStillRuns).toBe(true);
 });
+
+test("showScreenAlone: animação finita longa demais falha com o nome e a duração, sem esperar o timeout do teste", async ({
+  page,
+}) => {
+  await page.setContent(`
+<style>
+  @keyframes slow-reveal { from { opacity: 0; } to { opacity: 1; } }
+  .slow { animation: slow-reveal 60s both; height: 20px; background: #999; }
+</style>
+<div class="slow"></div>
+`);
+
+  const failure = await showScreenAlone(page, { budgetMs: 500 }).then(
+    () => null,
+    (error: Error) => error
+  );
+
+  expect(failure?.message).toContain("slow-reveal");
+  expect(failure?.message).toContain("60000 ms");
+  expect(failure?.message).toContain("500 ms");
+});
