@@ -124,7 +124,7 @@ O que existe e o que falta no painel (Observability, Alertas, Monitores). A cont
 
 **Como confirmar.** Workers Logs: `event = "server_error"` e `httpStatus >= 500`, agrupe por `route` e por `errorClass`/`errorCode`; os outros quatro eventos pelo próprio nome (o `auth_*` e o `better_auth_internal_error` no `polaris-web`, o `catalog_read_failed` no Worker do catálogo). Uma só rota ou um só `errorCode` aponta para a causa; vários indicam dependência (banco, R2). Veja também `http_request_timed` com `outcome = "failure"` nas rotas críticas. Cruze com um deploy recente.
 
-**O que fazer.** Mitigue primeiro: se começou com um deploy, desfaça-o (o responsável faz o deploy). Se o `sqlState` aparece, siga [erros-de-banco](#erros-de-banco). Se é uma rota de cobrança ou de mídia, siga o sinal dela. Registre a causa e abra a correção por PR.
+**O que fazer.** Mitigue primeiro: se começou com um deploy, desfaça-o (o responsável faz o deploy). Se o `sqlState` aparece, siga [erros-de-banco](#erros-de-banco). Se é uma rota de cobrança ou de mídia, siga o sinal dela. Se o 503 vem de todos os papéis ao mesmo tempo, com `/health` em 200, suspeite da cota diária de consultas do Hyperdrive e siga [Cota diária de consultas do Hyperdrive acabou](./staging.md#cota-diária-de-consultas-do-hyperdrive-acabou). Registre a causa e abra a correção por PR.
 
 <a id="latencia-p95"></a>
 
@@ -207,7 +207,7 @@ A rede de reembolso da manutenção grava outros eventos: `billing_refund_renewa
 
 **Como confirmar.** Workers Logs: `server_error` com `sqlState` existente, agrupado por `sqlState` e `route`; o `errorCode` de `08*` e `53*` é infraestrutura, `23*` (violação de restrição) e `42*` (permissão ou SQL) são bugs de código ou de migration. No console do Neon: se o compute está ativo, o uso do mês (60% de armazenamento ou 70% de computação é o gatilho do ADR 0076) e incidentes do provedor.
 
-**O que fazer.** Infraestrutura (`08*`, `53*`, `57*`): confirme o Neon e o Hyperdrive (binding, query caching desligado); no Free, o compute acorda sozinho e a primeira consulta pode falhar uma vez. `42501` (permissão negada): provável papel sem a concessão de uma migration recém-aplicada, ou migration não aplicada antes do Worker; aplique antes de qualquer deploy. `23*`: bug; abra a correção. Se o limite do plano foi atingido, a decisão é do responsável.
+**O que fazer.** Infraestrutura (`08*`, `53*`, `57*`): confirme o Neon e o Hyperdrive (binding, query caching desligado); no Free, o compute acorda sozinho e a primeira consulta pode falhar uma vez. `42501` (permissão negada): provável papel sem a concessão de uma migration recém-aplicada, ou migration não aplicada antes do Worker; aplique antes de qualquer deploy. `23*`: bug; abra a correção. Se o limite do plano foi atingido, a decisão é do responsável. Se tudo falha de uma vez, com `sqlState` `58000` ou sem `sqlState`, e com o Neon saudável, pode ser a cota diária de consultas do Hyperdrive: veja [Cota diária de consultas do Hyperdrive acabou](./staging.md#cota-diária-de-consultas-do-hyperdrive-acabou).
 
 <a id="agendador-falhando"></a>
 

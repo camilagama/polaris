@@ -464,6 +464,32 @@ Quando o deploy de produção existir, o passo de smoke dele chama o script com 
   Nunca uma rota de falha no código. O Admin (`polaris-admin-staging`) segue o mesmo procedimento desde 03/11, com a requisição feita por um operador logado em `https://admin.araute.app`; o go-live ainda prova o item 16 atrás do Access da produção.
 - **Gate 5 manual:** a build de staging tem `VITE_OFFLINE_RUNTIME_ENABLED=true`. O checklist do [runbook do Gate 5](./gate-5-offline.md) roda contra `https://dash.araute.app` com o login de teste, por BrowserStack (uma sessão por vez) ou aparelho físico.
 
+## Cota diária de consultas do Hyperdrive acabou
+
+O Workers Free dá ao Hyperdrive 100.000 consultas por dia e o contador reinicia às 00:00 UTC (21:00 em Brasília). Os números e o que é provado ou inferência estão na emenda de 19/11/2026 do [ADR 0076](../adr/0076-teto-de-custo-e-free-tier-primeiro.md).
+
+**Sintoma** (observado no incidente de 19/11/2026, a partir das 03:05Z):
+
+- 503 `server_error` em todos os papéis (goal/list, listBalances, periodSummary, device/register, organization/listMine), com `durationMs` perto de 5 e `APIError` com causas genéricas; 51 desses erros trouxeram `sqlState` `58000`, que a doc do Hyperdrive reserva para erro dele sem código PostgreSQL.
+- 500 `better_auth_internal_error` em `/api/auth/*` (o `get-session` às vezes responde 200 por cookie, sem tocar o banco).
+- `scheduled_job_claim_failed` em todos os jobs dos crons e do `outbox.dispatch`.
+- `catalog_read_failed` com `errorCode` `58000` no Worker do catálogo, que tinha só 56 consultas em 24 h (daí a **inferência** de que o limite é da conta e não de uma configuração).
+- **`/health` e `/ready` respondem 200**, porque não tocam o banco; não provam que o banco está acessível. O Neon responde por outro caminho (SQL por HTTP, `pg_stat_activity` do vigia) e mostra sessões normais, longe do teto do plano.
+- O cartão "Total de consultas" do painel do Hyperdrive mostrou 0 / 100.000 durante o incidente, **não confie nele**; a tabela por configuração (últimas 24 h) e a consulta `hyperdriveQueriesAdaptiveGroups` do GraphQL são as leituras úteis.
+
+**Como separar de outras causas:** sem `exceededCpu` nos Workers Logs e na analytics, deploy que rodou limpo antes da falha, 15 a 16 sessões no Neon (5 conexões por configuração, em auth, tenant e billing, e 1 no catálogo, abaixo do limite de ~20 por configuração do Hyperdrive) e erro que não cessa quando o tráfego cai (esgotamento de pool seria intermitente). **Inferência, não prova:** nada disso mostra a cota diretamente. O teste decisivo é a volta sozinha no reinício das 00:00 UTC de 20/11 (21:00 BRT de 19/11), sem mudança nenhuma; se não voltar, a causa cai. O resultado desse reinício entra aqui quando for medido.
+
+**Por que acontece:** cada consulta de cada papel conta, e uma chamada de tenant custa muitas. Medido no gate `web-worker` pelo teste de statements por rota (PR 1120, ainda aberto em 19/11/2026), contando BEGIN, COMMIT e `set_config`: uma chamada de tenant simples custa 10 statements, `sync/pull` 10, `billing/readPlan` 24 e `goal/list` 41. Pela estimativa do plano do Filipe, uma aba aberta consome cerca de 14 a 17 mil consultas por dia, sobretudo pelo `sync/pull` a cada 60 s; é estimativa, não medida no Hyperdrive real. No incidente, o painel somou 150,8 mil consultas em 24 h, com cerca de 7 mil chamadas `/rpc` entre 02:09 e 03:05Z; o instante em que o contador cruzou 100.000 **não está provado** (o painel só dá "últimas 24 h", que incluem parte de 18/11).
+
+**O que fazer:**
+
+1. **Esperar o reinício** (00:00 UTC = 21:00 BRT). Confirme a volta com `scheduled_job_run` com `outcome=success` no próximo `:17` ou `:19` e com um 200 numa rota que toque o banco (`/health` não serve).
+2. **Não fazer merge nem deploy até lá:** o migrate vai direto ao Neon pela URL do dono (`STAGING_MIGRATOR_DATABASE_URL`) e passa, então o deploy aplica a migration e publica os Workers, e só o smoke, que usa a cota, falha.
+3. Fechar as abas abertas do app de staging (cada uma gasta consultas continuamente) e não rodar carga nem ensaio longo no mesmo dia UTC; orce a carga em consultas, lendo o contador antes e depois de um bloco conhecido (o painel atrasa: espere a leitura mudar).
+4. Subir de plano (Workers Paid) é **decisão do usuário** ([ADR 0076](../adr/0076-teto-de-custo-e-free-tier-primeiro.md): Workers Paid não contratado); ninguém contrata sozinho.
+
+Alarme antes do teto: proposta, sem decisão, sem sinal registrado em [alertas](./alertas.md).
+
 ## Rollback ou forward-fix
 
 - Worker: `wrangler rollback --env staging` para a versão anterior. A migration fica, porque é compatível com o Worker anterior (ADR 0096).
