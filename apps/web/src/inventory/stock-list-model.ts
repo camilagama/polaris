@@ -136,8 +136,9 @@ export function initialStockListState(): StockListState {
 
 /** Starts a (re)load of the first page; a showing list stays visible. */
 export function stockLoading(state: StockListState): StockListState {
+  // Ao reler a 1ª página, a resposta da página seguinte em voo é descartada por ficar velha.
   return state.status === "ready"
-    ? { ...state, moreError: null }
+    ? { ...state, loadingMore: false, moreError: null }
     : { ...state, error: null, status: "loading" };
 }
 
