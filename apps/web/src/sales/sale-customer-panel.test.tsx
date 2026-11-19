@@ -153,4 +153,95 @@ describe("the customer panel of a sale", () => {
     expect(getCustomerLink).toHaveBeenCalledTimes(1);
     expect(listCustomers).not.toHaveBeenCalled();
   });
+
+  it("keeps the focus on the name line and says the result after Tentar novamente", async () => {
+    getCustomerLink.mockResolvedValue(link(ana));
+    getCustomer.mockRejectedValueOnce(refused());
+    renderPanel();
+    const retry = await screen.findByRole("button", {
+      name: "Tentar novamente",
+    });
+    retry.focus();
+    let release: (value: CustomerReadModel) => void = () => undefined;
+    getCustomer.mockReturnValueOnce(
+      new Promise<CustomerReadModel>((resolve) => {
+        release = resolve;
+      })
+    );
+    await userEvent.click(retry);
+    const line = (await screen.findByText("Cliente atual")).parentElement;
+    const name = line?.querySelector("dd");
+    expect(name).toBeTruthy();
+    expect(document.activeElement).toBe(name);
+    expect(document.activeElement).not.toBe(document.body);
+    expect(within(name as HTMLElement).getByRole("status").textContent).toBe(
+      "Carregando cliente…"
+    );
+    release(customer(ana, "Ana Atual"));
+    await waitFor(() =>
+      expect(within(name as HTMLElement).getByRole("status").textContent).toBe(
+        "Ana Atual"
+      )
+    );
+    expect(document.activeElement).toBe(name);
+  });
+
+  it("names a customer the sale no longer has in the history, reading the list when the panel opens", async () => {
+    getCustomerLink.mockResolvedValue({
+      current: { customerId: null, version: 2 },
+      history: [
+        {
+          action: "assign",
+          createdAt: "2026-05-01T12:00:00.000Z",
+          customerId: ana,
+          version: 1,
+        },
+        {
+          action: "unassign",
+          createdAt: "2026-05-02T12:00:00.000Z",
+          customerId: null,
+          version: 2,
+        },
+      ],
+      saleId,
+    });
+    renderPanel();
+    await screen.findByText("v2 · Cliente removido: Ana", { exact: false });
+    expect(
+      screen.getByText("v1 · Cliente associado: Ana", { exact: false })
+    ).toBeTruthy();
+    expect(listCustomers).toHaveBeenCalledTimes(1);
+    expect(getCustomer).not.toHaveBeenCalled();
+  });
+
+  it("says Cliente indisponível in the history when the list cannot be read, without opening the choice", async () => {
+    getCustomerLink.mockResolvedValue({
+      current: { customerId: bruno, version: 2 },
+      history: [
+        {
+          action: "assign",
+          createdAt: "2026-05-01T12:00:00.000Z",
+          customerId: ana,
+          version: 1,
+        },
+        {
+          action: "reassign",
+          createdAt: "2026-05-02T12:00:00.000Z",
+          customerId: bruno,
+          version: 2,
+        },
+      ],
+      saleId,
+    });
+    getCustomer.mockResolvedValue(customer(bruno, "Bruno"));
+    listCustomers.mockRejectedValue(refused());
+    renderPanel();
+    await screen.findByText("v1 · Cliente associado: Cliente indisponível", {
+      exact: false,
+    });
+    expect(
+      screen.getByText("v2 · Cliente trocado: Bruno", { exact: false })
+    ).toBeTruthy();
+    expect(listCustomers).toHaveBeenCalledTimes(1);
+  });
 });

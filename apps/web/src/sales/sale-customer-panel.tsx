@@ -38,6 +38,7 @@ import {
   customersLoaded,
   customersLoadFailed,
   customersLoading,
+  historyNeedsCustomerList,
   historyRows,
   initialLinkPanelState,
   isLatestRequest,
@@ -453,6 +454,7 @@ export function SaleCustomerPanel({
   const linkSequence = useRef<RequestSequence>({ current: 0 });
   const customersSequence = useRef<RequestSequence>({ current: 0 });
   const currentCustomerSequence = useRef<RequestSequence>({ current: 0 });
+  const nameLine = useRef<HTMLElement | null>(null);
 
   const loadLink = useCallback(async () => {
     const token = nextRequestToken(linkSequence.current);
@@ -527,6 +529,14 @@ export function SaleCustomerPanel({
     }
   }, [linkedCustomerId, loadCurrentCustomer]);
 
+  const needsCustomerList =
+    historyNeedsCustomerList(state) && state.customers.status === "idle";
+  useEffect(() => {
+    if (needsCustomerList) {
+      loadCustomers().catch(() => undefined);
+    }
+  }, [needsCustomerList, loadCustomers]);
+
   /** Sends the action; true when the link was saved (the dialog that asked closes only then). */
   const handleAction = useCallback(
     async (action: LinkAction): Promise<boolean> => {
@@ -576,6 +586,7 @@ export function SaleCustomerPanel({
     loadLink().catch(() => undefined);
   }, [loadLink]);
   const handleRetryName = useCallback(() => {
+    nameLine.current?.focus();
     if (linkedCustomerId !== null) {
       loadCurrentCustomer(linkedCustomerId).catch(() => undefined);
     }
@@ -621,9 +632,17 @@ export function SaleCustomerPanel({
               <dt className="text-muted-foreground text-support">
                 Cliente atual
               </dt>
-              {currentView.kind === "customer-error" ? (
-                <dd className="flex flex-wrap items-center gap-x-3 gap-y-1 text-destructive">
-                  {currentView.label}
+              <dd
+                className={
+                  currentView.kind === "customer-error"
+                    ? "focus-ring flex flex-wrap items-center gap-x-3 gap-y-1 rounded-sm text-destructive"
+                    : "focus-ring rounded-sm font-medium [overflow-wrap:anywhere]"
+                }
+                ref={nameLine}
+                tabIndex={-1}
+              >
+                <span role="status">{currentView.label}</span>
+                {currentView.kind === "customer-error" ? (
                   <Button
                     onClick={handleRetryName}
                     size="sm"
@@ -636,12 +655,8 @@ export function SaleCustomerPanel({
                     />
                     Tentar novamente
                   </Button>
-                </dd>
-              ) : (
-                <dd className="font-medium [overflow-wrap:anywhere]">
-                  {currentView.label}
-                </dd>
-              )}
+                ) : null}
+              </dd>
             </div>
             {currentView.detail ? (
               <div className="grid gap-0.5">

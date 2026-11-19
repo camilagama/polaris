@@ -661,14 +661,48 @@ function knownCustomer(
     : undefined;
 }
 
+interface HistorySubject {
+  entry: SaleCustomerLinkReadModel["history"][number];
+  subjectId: string | null;
+}
+
+/** The customer a history entry is about: the one it set, or, for a removal, the one the sale had before it. */
+function historySubjects(link: SaleCustomerLinkReadModel): HistorySubject[] {
+  const entries = [...link.history].sort(
+    (left, right) => left.version - right.version
+  );
+  const subjects: HistorySubject[] = [];
+  let previousCustomerId: string | null = null;
+  for (const entry of entries) {
+    subjects.push({
+      entry,
+      subjectId:
+        entry.action === "unassign" ? previousCustomerId : entry.customerId,
+    });
+    previousCustomerId = entry.customerId;
+  }
+  return subjects;
+}
+
 /**
- * What a history row says about a customer, or null when only the action is known: a customer that is not the current
- * one has no name until the list has been read (the choice of customer opens it).
+ * Whether the history names a customer that is not the current one: only then the list is read when the sale opens,
+ * to name it. A sale with no customer and no history, or with one customer never changed, reads no list.
  */
+export function historyNeedsCustomerList(state: LinkPanelState): boolean {
+  if (state.link.status !== "ready") {
+    return false;
+  }
+  const currentId = state.link.value.current.customerId;
+  return historySubjects(state.link.value).some(
+    ({ subjectId }) => subjectId !== null && subjectId !== currentId
+  );
+}
+
+/** What a history row says about a customer: its name, or why there is none yet. */
 function historyCustomerText(
   state: LinkPanelState,
   customerId: string
-): string | null {
+): string {
   const known = knownCustomer(state, customerId);
   if (known) {
     return customerLabel(known);
@@ -681,7 +715,7 @@ function historyCustomerText(
   return state.customers.status === "ready" ||
     state.customers.status === "error"
     ? "Cliente indisponível"
-    : null;
+    : "Carregando cliente…";
 }
 
 export interface CurrentCustomerView {
@@ -778,36 +812,26 @@ function formatInstant(value: string): string {
   return Number.isNaN(date.getTime()) ? value : instantFormatter.format(date);
 }
 
-function historyText(actionLabel: string, customer: string | null): string {
-  return customer === null ? actionLabel : `${actionLabel}: ${customer}`;
-}
-
 /** The version history, newest first, with customer names resolved. */
 export function historyRows(state: LinkPanelState): HistoryRow[] {
   if (state.link.status !== "ready") {
     return [];
   }
-  const entries = [...state.link.value.history].sort(
-    (left, right) => left.version - right.version
+  const rows: HistoryRow[] = historySubjects(state.link.value).map(
+    ({ entry, subjectId }) => {
+      const actionLabel = historyActionLabels[entry.action];
+      return {
+        actionLabel,
+        dateText: formatInstant(entry.createdAt),
+        key: `v${entry.version}`,
+        text:
+          subjectId === null
+            ? actionLabel
+            : `${actionLabel}: ${historyCustomerText(state, subjectId)}`,
+        version: entry.version,
+      };
+    }
   );
-  const rows: HistoryRow[] = [];
-  let previousCustomerId: string | null = null;
-  for (const entry of entries) {
-    const subjectId: string | null =
-      entry.action === "unassign" ? previousCustomerId : entry.customerId;
-    const actionLabel = historyActionLabels[entry.action];
-    rows.push({
-      actionLabel,
-      dateText: formatInstant(entry.createdAt),
-      key: `v${entry.version}`,
-      text:
-        subjectId === null
-          ? actionLabel
-          : historyText(actionLabel, historyCustomerText(state, subjectId)),
-      version: entry.version,
-    });
-    previousCustomerId = entry.customerId;
-  }
   return rows.reverse();
 }
 

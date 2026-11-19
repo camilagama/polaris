@@ -15,6 +15,7 @@ import {
   customersLoaded,
   customersLoadFailed,
   customersLoading,
+  historyNeedsCustomerList,
   historyRows,
   initialLinkPanelState,
   isLatestRequest,
@@ -595,7 +596,7 @@ describe("views", () => {
     expect(currentCustomerId(initialLinkPanelState())).toBeNull();
   });
 
-  it("leaves the history without a name for a customer nobody has read, and names it once the list is read", () => {
+  it("says the history is loading the name of a customer who is not the current one, then names it once the list is read", () => {
     const history: SaleCustomerLinkReadModel["history"] = [
       {
         action: "assign",
@@ -614,10 +615,15 @@ describe("views", () => {
       linkLoaded(initialLinkPanelState(), link(bruno, 2, history)),
       customer(bruno, "Bruno")
     );
+    expect(historyNeedsCustomerList(unread)).toBe(true);
     expect(historyRows(unread).map((row) => row.text)).toEqual([
       "Cliente trocado: Bruno",
-      "Cliente associado",
+      "Cliente associado: Carregando cliente…",
     ]);
+    const loading = customersLoading(unread);
+    expect(historyRows(loading)[1]?.text).toBe(
+      "Cliente associado: Carregando cliente…"
+    );
     const listed = customersLoaded(unread, customers);
     expect(historyRows(listed).map((row) => row.text)).toEqual([
       "Cliente trocado: Bruno",
@@ -627,6 +633,59 @@ describe("views", () => {
     expect(historyRows(missing)[1]?.text).toBe(
       "Cliente associado: Cliente indisponível"
     );
+    const failed = customersLoadFailed(unread, new Error("rede"));
+    expect(historyRows(failed)[1]?.text).toBe(
+      "Cliente associado: Cliente indisponível"
+    );
+  });
+
+  it("names the customer of a removal from the history, with no customer now", () => {
+    const history: SaleCustomerLinkReadModel["history"] = [
+      {
+        action: "assign",
+        createdAt: "2026-05-01T12:00:00.000Z",
+        customerId: ana,
+        version: 1,
+      },
+      {
+        action: "unassign",
+        createdAt: "2026-05-02T12:00:00.000Z",
+        customerId: null,
+        version: 2,
+      },
+    ];
+    const state = linkLoaded(initialLinkPanelState(), link(null, 2, history));
+    expect(historyNeedsCustomerList(state)).toBe(true);
+    expect(historyRows(state).map((row) => row.text)).toEqual([
+      "Cliente removido: Carregando cliente…",
+      "Cliente associado: Carregando cliente…",
+    ]);
+    expect(
+      historyRows(customersLoaded(state, customers)).map((row) => row.text)
+    ).toEqual(["Cliente removido: Ana", "Cliente associado: Ana"]);
+  });
+
+  it("asks for the list only when the history names a customer that is not the current one", () => {
+    const loading = initialLinkPanelState();
+    expect(historyNeedsCustomerList(loading)).toBe(false);
+    expect(historyNeedsCustomerList(linkLoaded(loading, link(null, 0)))).toBe(
+      false
+    );
+    expect(
+      historyNeedsCustomerList(
+        linkLoaded(
+          loading,
+          link(ana, 1, [
+            {
+              action: "assign",
+              createdAt: "2026-05-01T12:00:00.000Z",
+              customerId: ana,
+              version: 1,
+            },
+          ])
+        )
+      )
+    ).toBe(false);
   });
 
   it("asks for the list when the choice opens: idle shows loading, then the options", () => {
