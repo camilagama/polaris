@@ -109,8 +109,9 @@ const STATEMENT_COUNTS: Record<string, number> = {
 };
 
 /**
- * The same routes counted on their first call after the sign-in and the setup of the store (a cold isolate also
- * pays what the first call warms, so these are never below the numbers above). The test holds them exactly as well.
+ * The same routes counted on their first call in this store (after the sign-in and the creation of the store, on an
+ * isolate the earlier tests already warmed, so it is not a cold start). They differ from the numbers above only where
+ * the first call writes something the next one finds: the default expense categories. The test holds them exactly as well.
  */
 const FIRST_CALL_STATEMENT_COUNTS: Record<string, number> = {
   "auth get-session": 2,
@@ -136,7 +137,7 @@ const FIRST_CALL_STATEMENT_COUNTS: Record<string, number> = {
 /** The secret that signs the lease of `offline/issueLease`: a made-up value, long enough for the signer. */
 const LEASE_SECRET = "harness-offline-lease-secret-of-32-bytes-or-more";
 
-/** Makes the store Pro the way a paid charge does, through the billing login (it may insert the record, nothing else). */
+/** Makes the store Pro the way a paid charge does, through the insert the billing login has on that record. */
 async function upgradeToPro(connectionString: string, organizationId: string) {
   const { pool } = createDatabase(connectionString, { maxConnections: 1 });
   try {
