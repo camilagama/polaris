@@ -9,6 +9,9 @@ const BEFORE_THE_RULE =
 const ONE_TURN_AFTER_THE_CLICK =
   "o tempo é o comportamento testado: olha a tela um turno depois do clique, quando a saída animada ainda está montada; um sinal de que ela saiu provaria o contrário";
 
+const ABSENCE_IS_THE_TEST =
+  "o tempo é o comportamento testado: a espera prova a ausência (nada se repete sozinho, nada muda antes do prazo); um sinal positivo não provaria isso";
+
 export const BLIND_WAITS_LIST = {
   "apps/web/e2e-pwa/lazy-retry.e2e.ts": { count: 2, reason: BEFORE_THE_RULE },
   "apps/web/e2e-pwa/motion-level.e2e.ts": { count: 3, reason: BEFORE_THE_RULE },
@@ -70,7 +73,10 @@ export const BLIND_WAITS_LIST = {
   "apps/web/e2e/expenses.e2e.ts": { count: 1, reason: BEFORE_THE_RULE },
   "apps/web/e2e/home.e2e.ts": { count: 3, reason: BEFORE_THE_RULE },
   "apps/web/e2e/lote-2-telas.e2e.ts": { count: 2, reason: BEFORE_THE_RULE },
-  "apps/web/e2e/offline-devices.e2e.ts": { count: 3, reason: BEFORE_THE_RULE },
+  "apps/web/e2e/offline-devices.e2e.ts": {
+    count: 3,
+    reason: ABSENCE_IS_THE_TEST,
+  },
   "apps/web/e2e/offline-runtime-api.e2e.ts": {
     count: 1,
     reason: BEFORE_THE_RULE,
