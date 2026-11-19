@@ -154,7 +154,7 @@ Use fixtures sintéticas. Não clone dados de produção. O perfil autorizado n�
 - Email transacional escolheu Resend e templates minimalistas, mas domínio/credenciais permanecem configuração de outro gate; não é dependência da venda.
 - Atribuição de cliente, cancelamento e devolução ficam em PR44/PR45 e seguintes, conforme o plano.
 - Vários PRs anteriores permanecem drafts. O status exato de cada gate está em `doc/status-implementacao.md`; não assumir que estar na branch significa estar em `main`.
-- `docs/agents/issue-tracker.md` não existe neste checkout; revisão de PR42 usou o plano como spec. Se o fluxo de review exigir issue tracker, o responsável pode configurar `/setup-matt-pocock-skills`.
+- docs/agents/issue-tracker.md não existe neste checkout; revisão de PR42 usou o plano como spec. Se o fluxo de review exigir issue tracker, o responsável pode configurar `/setup-matt-pocock-skills`.
 - `rg` não está instalado neste ambiente; use `Select-String`, `Get-ChildItem` ou ferramentas equivalentes do PowerShell para buscar arquivos/texto.
 
 ## 8. Regras de colaboração e fechamento
