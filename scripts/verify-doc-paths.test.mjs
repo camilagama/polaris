@@ -164,7 +164,7 @@ describe("the repository", () => {
     "is exact: every entry of the list matches the tree",
     () => {
       expect(checkRepository()).toEqual([]);
-      expect(Object.keys(DOC_PATHS_LIST).length).toBeGreaterThan(0);
+      expect(DOC_PATHS_LIST).toEqual({});
     },
     REPOSITORY_WALK_TIMEOUT_MS
   );
