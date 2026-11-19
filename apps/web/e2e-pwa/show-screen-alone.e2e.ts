@@ -67,3 +67,47 @@ test("showScreenAlone: animação finita longa demais falha com o nome e a dura�
   expect(failure?.message).toContain("60000 ms");
   expect(failure?.message).toContain("500 ms");
 });
+
+function pillPage(scaleAt: string) {
+  return `
+<div data-slot="filter-pill" id="pill" style="width: 100px; height: 20px; transform: scale(0.95);"></div>
+<script>
+  const pill = document.getElementById("pill");
+  const startedAt = performance.now();
+  const step = () => {
+    const elapsed = performance.now() - startedAt;
+    pill.style.transform = "scale(" + (${scaleAt}) + ")";
+    requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+</script>
+`;
+}
+
+test("showScreenAlone: espera a pílula movida por script (fora de getAnimations) parar antes de devolver", async ({
+  page,
+}) => {
+  await page.setContent(pillPage("0.95 + 0.05 * Math.min(elapsed / 600, 1)"));
+
+  await showScreenAlone(page);
+
+  const width = await page.evaluate(
+    () => document.getElementById("pill")?.getBoundingClientRect().width
+  );
+  expect(width).toBe(100);
+});
+
+test("showScreenAlone: pílula que não para falha com o seletor e o orçamento, sem esperar o timeout do teste", async ({
+  page,
+}) => {
+  await page.setContent(pillPage("1 + 0.05 * Math.sin(elapsed / 50)"));
+
+  const failure = await showScreenAlone(page, { budgetMs: 500 }).then(
+    () => null,
+    (error: Error) => error
+  );
+
+  expect(failure?.message).toContain("filter-pill");
+  expect(failure?.message).toContain("caixa ainda mudando");
+  expect(failure?.message).toContain("500 ms");
+});
