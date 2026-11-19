@@ -19,6 +19,7 @@ import { useConnectionOnline } from "../lib/browser-connection";
 import { leaveForReturn } from "../lib/kept-for-return";
 import { useCurrentOrganization } from "../lib/current-organization";
 import { orpcClient } from "../lib/orpc";
+import { planRead } from "../lib/plan-read";
 import {
   LIMIT_ASK_OWNER,
   type LimitHelpView,
@@ -255,9 +256,10 @@ export function LimitHelp({
 }
 
 /**
- * The plan's warning of a cadastro screen (nearLimitFor): read when the screen opens and again when `version` changes
- * (after the person saved something that changes the use). No read offline, and none is kept: a read that fails, or the
- * connection going, takes the line away instead of leaving an old number. The latest read wins.
+ * The plan's warning of a cadastro screen (nearLimitFor): read when the screen opens, from the memory of the plan the
+ * screens share for 10 s (`planRead`), and again, fresh, when `version` of this screen changes (after the person saved
+ * something that changes the use). No read offline: a read that fails, or the connection going, takes the line away
+ * instead of leaving an old number. The latest read wins.
  */
 export function useNearLimit(
   subject: NearLimitSubject,
@@ -282,14 +284,21 @@ export function useNearLimitRead(
     view: NearLimitView | null;
   } | null>(null);
   const { role } = organization;
+  const askedVersion = useRef<number | null>(null);
   useEffect(() => {
+    if (!online) {
+      planRead.clear();
+    }
     if (!(online && canManageBilling(billingSelfService, role))) {
       setRead(null);
       return;
     }
     let current = true;
-    orpcClient.billing
-      .readPlan({ organizationId })
+    const fresh =
+      askedVersion.current !== null && askedVersion.current !== version;
+    askedVersion.current = version;
+    planRead
+      .get(organizationId, { fresh })
       .then((plan) => {
         if (current) {
           setRead({

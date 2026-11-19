@@ -4176,6 +4176,42 @@ test.describe("Ritmo de vendas (revisão de UI v7, § 3 item 10)", () => {
     ]);
   });
 
+  test("chamadas /rpc da abertura (loja com vendas): lista exata de procedimentos e o total", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 800, width: 1280 });
+    const rpc = countRpc(page);
+    await openHome(page, new FakeServer(SOLD));
+    await expect(atRest(page)).toHaveText(AT_REST);
+    await expect(region(page, "Meta")).toBeVisible();
+    await expect(region(page, "Precisa de ação")).toBeVisible();
+    await expect
+      .poll(rpc.byProcedure, { message: RPC_TABLE_HINT, timeout: 20_000 })
+      .toEqual(OPENING_WITH_SALES);
+    await expect.poll(rpc.inFlight).toBe(0);
+    expect(rpc.byProcedure(), RPC_TABLE_HINT).toEqual(OPENING_WITH_SALES);
+    expect(rpc.total(), RPC_TABLE_HINT).toBe(OPENING_WITH_SALES_TOTAL);
+  });
+
+  test("chamadas /rpc da abertura (loja sem vendas, lê o checklist): lista exata de procedimentos e o total", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 800, width: 1280 });
+    const rpc = countRpc(page);
+    await openHome(
+      page,
+      new FakeServer({ ...SOLD, days: {}, everSold: false })
+    );
+    await expect(region(page, "Primeiros passos")).toBeVisible();
+    await expect(region(page, "Meta")).toBeVisible();
+    await expect
+      .poll(rpc.byProcedure, { message: RPC_TABLE_HINT, timeout: 20_000 })
+      .toEqual(OPENING_WITHOUT_SALES);
+    await expect.poll(rpc.inFlight).toBe(0);
+    expect(rpc.byProcedure(), RPC_TABLE_HINT).toEqual(OPENING_WITHOUT_SALES);
+    expect(rpc.total(), RPC_TABLE_HINT).toBe(OPENING_WITHOUT_SALES_TOTAL);
+  });
+
   test("cache diário: a loja recusa os números e a série do dia não é servida de novo sem o servidor", async ({
     page,
   }) => {
@@ -4305,6 +4341,57 @@ async function watchFiguresError(page: Page) {
 const SLOW_READ = "Demorando mais que o normal…";
 const STALE_COPY = "Não foi possível atualizar agora";
 const RPC_PATH = /\/rpc\/(.+)$/;
+
+const RPC_TABLE_HINT =
+  "chamadas /rpc por procedimento na abertura do Início: cada leitura a mais ou a menos gasta consultas do banco por aba; quem muda use-home.ts atualiza esta tabela";
+
+/** Every /rpc request of the page, by procedure, whoever answers it (the simulated server or the stubs of the shell). */
+function countRpc(page: Page) {
+  const counts = new Map<string, number>();
+  let flying = 0;
+  const isRpc = (url: string) => RPC_PATH.test(new URL(url).pathname);
+  const done = (request: { url: () => string }) => {
+    if (isRpc(request.url())) {
+      flying -= 1;
+    }
+  };
+  page.on("request", (request) => {
+    const match = RPC_PATH.exec(new URL(request.url()).pathname);
+    if (match?.[1] !== undefined) {
+      flying += 1;
+      counts.set(match[1], (counts.get(match[1]) ?? 0) + 1);
+    }
+  });
+  page.on("requestfinished", done);
+  page.on("requestfailed", done);
+  return {
+    byProcedure: () => Object.fromEntries([...counts].sort()),
+    inFlight: () => flying,
+    total: () => [...counts.values()].reduce((sum, n) => sum + n, 0),
+  };
+}
+
+const OPENING_WITH_SALES: Record<string, number> = {
+  "device/register": 1,
+  "goal/list": 1,
+  "inventory/listBalances": 2,
+  "offline/issueLease": 1,
+  "organization/listMine": 1,
+  "report/dailySales": 1,
+  "report/periodSummary": 2,
+};
+const OPENING_WITH_SALES_TOTAL = 9;
+const OPENING_WITHOUT_SALES: Record<string, number> = {
+  "device/register": 1,
+  "goal/list": 1,
+  "inventory/listBalances": 4,
+  "offline/issueLease": 1,
+  "organization/listMine": 1,
+  "report/dailySales": 1,
+  "report/periodSummary": 2,
+  "sale/list": 1,
+};
+const OPENING_WITHOUT_SALES_TOTAL = 12;
 
 test.describe("paliativo dos 1102: leituras tentadas de novo, em fila e com freio", () => {
   test("(a) as duas primeiras respostas do periodSummary morrem por CPU: o Início abre sem 'Tentar novamente', em menos de 8 s, com o esqueleto no meio", async ({
