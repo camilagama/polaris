@@ -3555,3 +3555,11 @@ Origem: achado B do Diego no Pixel 6 (28/10): a venda montada em Vender sumia ao
 | Frases | Em revisão | "sem taxa informada" / "sem taxa" no lugar de "sem custo informado" / "sem custo": tabela, hachura, leitura, resumo do `role="img"`, frase de apoio, aviso dos cartões do Resultado e do Início, "sem taxa neste dia" e o (i). |
 | Mês nomeado | Em revisão | Em período por mês com os dias desconhecidos num só mês: "novembro: 1 de 7 dias sem custo informado" (cartões, (i), frase de apoio e leitura do mês); dois meses ou mais mantêm a contagem do período. |
 | Provas | Em revisão | Testes de `result-series`, `result-kpis`, `result-chart`, `result-cards` e `home-kpis`. Fora: voltar/avançar entre períodos (a regra do `replaceAddress` fica). |
+
+### Perf de 19/11: o tique do sync cresce sem trabalho e aba escondida não puxa (t1355; sem migration)
+
+| Item | Estado | Detalhe |
+| --- | --- | --- |
+| Agendador | Em revisão | `offline/runtime/sync-scheduler.ts`: o tique dobra de 60 s até 300 s a cada pull sem trabalho e volta a 60 s com trabalho, comando na fila, volta à frente, "Tentar agora", volta da conexão ou falha; aba escondida não puxa. Emenda de 19/11 do ADR 0043. |
+| Runtime | Em revisão | `OfflineRuntime.lastSyncHadWork()`: a última sincronização enviou comando ou o cursor andou. O envio da fila não mudou. |
+| Provas | Em revisão | `sync-scheduler.test.ts` (relógio injetado: 60→120→240→300→300, volta a 60, aba escondida, mutações) e `offline-runtime.test.ts`. |

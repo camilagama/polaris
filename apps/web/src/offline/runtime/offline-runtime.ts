@@ -460,6 +460,7 @@ export class OfflineRuntime {
   /** Whether the run in flight pulls (a full sync) or only pushes (`trySend`). */
   private inFlightPulls = true;
   private lastOutcome: SyncOutcome = "not_run";
+  private syncHadWork = false;
   /** The first of the transient failures in a row of the sync (ms), or null after a good one. */
   private failingSince: number | null = null;
   /** The last of those failures (ms): a gap longer than the quiet minute starts a new run of failures. */
@@ -1969,6 +1970,7 @@ export class OfflineRuntime {
 
   private async runSync(pull: boolean): Promise<void> {
     this.lastOutcome = "not_run";
+    this.syncHadWork = false;
     this.mark("sync:start");
     try {
       await this.runSyncSteps(pull);
@@ -2041,6 +2043,9 @@ export class OfflineRuntime {
         outbox: stores.outbox,
         push: this.dependencies.api.push(organizationId),
       });
+      if (summary.requests > 0) {
+        this.syncHadWork = true;
+      }
       if (await this.refusalEndsSync(run, summary, lease)) {
         return;
       }
@@ -2169,10 +2174,15 @@ export class OfflineRuntime {
       // accepted or dropped commands: the server's rows replace the optimistic ones; otherwise the others' changes
       const caughtUp = summary.accepted > 0 || summary.discarded > 0;
       this.mark(caughtUp ? "sync:phase:catchUp" : "sync:phase:pull");
-      await pullLocalChanges(source, stores.writer, meta.cursor);
+      const cursor = await pullLocalChanges(source, stores.writer, meta.cursor);
+      // an empty page answers with the cursor it was asked from
+      if (cursor !== meta.cursor) {
+        this.syncHadWork = true;
+      }
     } else {
       this.mark("sync:phase:pull");
       await bootstrapLocalStore(source, stores.writer);
+      this.syncHadWork = true;
     }
   }
 
@@ -2227,6 +2237,14 @@ export class OfflineRuntime {
     }
     this.failedAt = now;
     return now - this.failingSince < QUIET_FAILURE_MS;
+  }
+
+  /**
+   * Whether the last sync sent a command or brought changes (or a first snapshot): the scheduler keeps its
+   * 60 s interval after one that did, and lets the interval grow after one that did not.
+   */
+  lastSyncHadWork(): boolean {
+    return this.syncHadWork;
   }
 
   /** The last sync failed in a transient way and says nothing yet: the scheduler tries again in 2, 4 and 8 s. */

@@ -1206,6 +1206,52 @@ describe("syncing", () => {
   });
 });
 
+describe("whether the last sync had work (the scheduler stretches its interval by it)", () => {
+  it("is false after a sync that sent nothing and pulled nothing, true after a send, true after a pull with changes", async () => {
+    const w = world();
+    const runtime = w.make();
+    await runtime.start(organizationId);
+    await runtime.syncNow();
+    expect(runtime.lastSyncHadWork()).toBe(false);
+
+    await queueProduct(runtime, "Camiseta", 1);
+    await runtime.syncNow();
+    expect(runtime.lastSyncHadWork()).toBe(true);
+
+    await runtime.syncNow();
+    expect(runtime.lastSyncHadWork()).toBe(false);
+
+    w.server.inventory.set(uuid(301), {
+      productId: uuid(201),
+      quantity: 5,
+      updatedAt: "2026-10-14T12:30:00.000Z",
+      variantId: uuid(301),
+      version: 2,
+    });
+    w.server.changes.push({
+      entityId: uuid(301),
+      entityType: "inventory_balance",
+      seq: w.server.changes.length + 1,
+    });
+    await runtime.syncNow();
+    expect(runtime.lastSyncHadWork()).toBe(true);
+
+    await runtime.syncNow();
+    expect(runtime.lastSyncHadWork()).toBe(false);
+  });
+
+  it("is false after a sync that failed", async () => {
+    const w = world();
+    const runtime = w.make();
+    await runtime.start(organizationId);
+    await runtime.syncNow();
+    w.failures.push = true;
+    await queueProduct(runtime, "Camiseta", 1);
+    await runtime.syncNow();
+    expect(runtime.lastSyncHadWork()).toBe(false);
+  });
+});
+
 describe("whether the copy is fresh (the scheduler skips the sync of a page load by it)", () => {
   // the pull stamps the copy with the browser's clock: these runtimes read the same one, at the world's time
   const start = new Date("2026-10-14T12:00:00.000Z");
