@@ -670,6 +670,7 @@ test("leituras da abertura: 3 listBalances (a lista e as duas contagens de Preci
   await expect(page.locator('[data-slot="action-strip"]')).toContainText(
     "1 variante sem custo"
   );
+  await expect.poll(() => balanceReads().length).toBe(3);
   await page.route("**/__settled", (route) =>
     route.fulfill({ body: "", status: 204 })
   );
@@ -686,7 +687,6 @@ test("leituras da abertura: 3 listBalances (a lista e as duas contagens de Preci
     procedures.filter((name) => name !== "inventory/listBalances"),
     "as outras chamadas /rpc da abertura: só a sondagem do laboratório"
   ).toEqual(["__screens-lab"]);
-  expect(procedures, "total de /rpc da abertura").toHaveLength(4);
 });
 
 test("leituras de um movimento: registrar o recebimento relê as 2 contagens de Precisa de ação e não a lista", async ({
@@ -697,6 +697,7 @@ test("leituras de um movimento: registrar o recebimento relê as 2 contagens de 
   await expect(page.locator('[data-slot="action-strip"]')).toContainText(
     "1 variante sem custo"
   );
+  await expect.poll(() => balanceReads().length).toBe(3);
   await page.route("**/__settled", (route) =>
     route.fulfill({ body: "", status: 204 })
   );
@@ -714,7 +715,7 @@ test("leituras de um movimento: registrar o recebimento relê as 2 contagens de 
   await page.getByRole("button", { exact: true, name: "Revisar" }).click();
   await page.getByRole("button", { name: "Confirmar recebimento" }).click();
   await expect(page.getByText("Saldo: 15 unidades")).toBeVisible();
-  await expect.poll(() => attentionRequests.length).toBeGreaterThan(0);
+  await expect.poll(() => attentionRequests.length).toBe(2);
   await settled(page);
   expect(
     balanceReads(),
