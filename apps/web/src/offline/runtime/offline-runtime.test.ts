@@ -366,6 +366,31 @@ function world(options: { leaseHours?: number } = {}) {
   };
 }
 
+/** One lock per name across runtimes, `ifAvailable` like navigator.locks. */
+function sharedLock() {
+  const held = new Set<string>();
+  return async (name: string, task: () => Promise<void>) => {
+    if (held.has(name)) {
+      return false;
+    }
+    held.add(name);
+    try {
+      await task();
+      return true;
+    } finally {
+      held.delete(name);
+    }
+  };
+}
+
+function deferred() {
+  let release: () => void = () => undefined;
+  const promise = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  return { promise, release };
+}
+
 async function queueProduct(runtime: OfflineRuntime, name: string, n: number) {
   const context = runtime.context();
   if (!context) {
@@ -1369,6 +1394,58 @@ describe("whether the last pull was idle (the scheduler stretches its interval o
     expect(runtime.lastPullWasIdle()).toBe(true);
 
     await runtime.syncNow({ pull: false });
+    expect(runtime.lastPullWasIdle()).toBe(true);
+  });
+
+  it("is not idle after the sync that bootstraps a store opened offline, even with nothing to send", async () => {
+    const w = world();
+    const first = w.make();
+    await first.start(organizationId);
+    await first.stop();
+    const writer = w.stores.get(`${userId}-${organizationId}`)?.writer;
+    if (!writer) {
+      throw new Error("no stores");
+    }
+    writer.meta = null;
+    const flags = { proven: false };
+    const runtime = w.make(null, { isOnline: () => flags.proven });
+    await runtime.start(organizationId);
+    expect(runtime.getSnapshot()).toMatchObject({
+      bootstrapped: false,
+      phase: "ready",
+    });
+
+    flags.proven = true;
+    await runtime.syncNow();
+    expect(runtime.getSnapshot().bootstrapped).toBe(true);
+    expect(runtime.lastPullWasIdle()).toBe(false);
+
+    await runtime.syncNow();
+    expect(runtime.lastPullWasIdle()).toBe(true);
+  });
+
+  it("is not idle when the lock was held by another tab, whatever the pull before said", async () => {
+    const w = world();
+    const exclusive = sharedLock();
+    const runtime = w.make(null, { exclusive });
+    await runtime.start(organizationId);
+    await runtime.syncNow();
+    expect(runtime.lastPullWasIdle()).toBe(true);
+
+    const other = w.make(null, { exclusive });
+    await other.start(organizationId);
+    const gate = deferred();
+    w.gates.push = gate.promise;
+    await queueProduct(other, "Camiseta", 1);
+    const running = other.syncNow();
+    await vi.waitFor(() => expect(w.calls.push).toBe(1));
+
+    await runtime.syncNow();
+    expect(runtime.lastPullWasIdle()).toBe(false);
+
+    gate.release();
+    await running;
+    await runtime.syncNow();
     expect(runtime.lastPullWasIdle()).toBe(true);
   });
 });
@@ -3076,31 +3153,6 @@ describe("conexão com prova (F7)", () => {
     await runtime.start(organizationId);
     await queueProduct(runtime, "Camiseta", 1);
     return runtime;
-  }
-
-  /** One lock per name across runtimes, `ifAvailable` like navigator.locks. */
-  function sharedLock() {
-    const held = new Set<string>();
-    return async (name: string, task: () => Promise<void>) => {
-      if (held.has(name)) {
-        return false;
-      }
-      held.add(name);
-      try {
-        await task();
-        return true;
-      } finally {
-        held.delete(name);
-      }
-    };
-  }
-
-  function deferred() {
-    let release: () => void = () => undefined;
-    const promise = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    return { promise, release };
   }
 
   describe("an answer that did not come from the Worker is no refusal", () => {

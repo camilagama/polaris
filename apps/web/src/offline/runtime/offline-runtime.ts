@@ -1067,6 +1067,7 @@ export class OfflineRuntime {
     const ran = await exclusive(name, () => this.runSync(pull));
     if (!ran) {
       this.lastOutcome = "not_run";
+      this.pullIdle = false; // nothing was pulled: the idle verdict of the earlier pull must not stretch the next interval
     }
   }
 
@@ -2404,7 +2405,7 @@ export class OfflineRuntime {
 
   /**
    * Whether the last full sync (send and pull) was answered, sent nothing and pulled nothing new. A run that
-   * failed, got no answer, was cut at its pull or only pushed is not idle: the scheduler lets its interval grow
+   * failed, got no answer, did not get the lock (another tab was syncing), was cut at its pull or only pushed is not idle: the scheduler lets its interval grow
    * only after an idle one.
    */
   lastPullWasIdle(): boolean {

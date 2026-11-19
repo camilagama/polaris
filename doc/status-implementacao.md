@@ -3585,5 +3585,5 @@ Origem: achado B do Diego no Pixel 6 (28/10): a venda montada em Vender sumia ao
 | Item | Estado | Detalhe |
 | --- | --- | --- |
 | Agendador | Em revisão | `offline/runtime/sync-scheduler.ts`: o tique dobra de 60 s até 300 s a cada pull sem trabalho e volta a 60 s com trabalho, comando na fila, volta à frente, "Tentar agora", volta da conexão, falha ou tentativa sem resposta; aba escondida não puxa. Emenda de 19/11 do ADR 0043. |
-| Runtime | Em revisão | `OfflineRuntime.lastPullWasIdle()`: a última sincronização completa foi respondida, não enviou comando e o cursor não andou; falha, sem resposta, corte do pull e rodada só de envio não contam. O envio da fila não mudou. |
+| Runtime | Em revisão | `OfflineRuntime.lastPullWasIdle()`: a última sincronização completa foi respondida, não enviou comando e o cursor não andou; falha, sem resposta, corte do pull, tique sem o lock (outra aba sincroniza) e rodada só de envio não contam. O envio da fila não mudou. |
 | Provas | Em revisão | `sync-scheduler.test.ts` (relógio injetado: 60→120→240→300→300, volta a 60, aba escondida, mutações) e `offline-runtime.test.ts`. |
