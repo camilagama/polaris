@@ -30,7 +30,7 @@ O Hyperdrive no Workers Free tem **100.000 consultas por dia**, e conta "qualque
 - **Medido (painel e GraphQL em 19/11):** o painel do Hyperdrive mostrou 150,8 mil consultas em 24 h no incidente (tenant 112,96 mil, auth 34,86 mil, billing 2,28 mil, outbox 349, privacy 254, catalog 56, media-cleanup 23). A consulta `hyperdriveQueriesAdaptiveGroups` do GraphQL da Cloudflare deu 142.581 consultas em 19/11 UTC.
 - **Inferência, não provada:** que a cota esgotada às 03:05Z de 19/11 seja a causa dos 5xx. O que a sustenta: queda abrupta e total em todos os papéis, falha de ~5 ms, banco saudável por outro caminho, erro que continuou depois que a carga caiu e 150,8 mil acima de 100 mil. O texto exato do erro não foi visto (os logs só trazem a classe).
 - **Não provado:** o contador exato e se BEGIN, COMMIT e SET contam como consulta (a doc diz "qualquer statement", sem detalhar); o instante em que o contador cruzou 100.000; se o painel soma as consultas recusadas (150,8 mil acima de 100 mil sugere que sim, ou que o corte não é exato); e o cartão "Total de consultas" do painel, que mostrou 0 / 100.000 na mesma leitura e não deve ser usado como prova.
-- **Alerta antes do teto:** o aviso de 50 mil e o alerta de 70 mil são proposta do Filipe e não estão decididos aqui; este ADR não registra limiar de alarme. Subir de plano continua decisão do responsável, como no restante deste ADR.
+- **Alerta antes do teto:** proposta, sem decisão; este ADR não registra limiar de alarme. Subir de plano continua decisão do responsável, como no restante deste ADR.
 
 ## Consequências
 
