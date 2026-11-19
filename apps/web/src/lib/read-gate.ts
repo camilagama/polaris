@@ -11,7 +11,7 @@
  *   at most: trying again spends the same bucket of the server.
  * - **A hung read** (a mobile network that never answers) holds its slot 15 s at most; the call itself goes on.
  * - **Brakes on the retries** (`mayRetry`): at most 8 retries in any 10 s, and none for 15 s once more than half of
- *   the last 20 calls died on the platform (`server_failed`).
+ *   the last 20 calls died (`server_failed`, or the Worker's own transient 5xx: `connection.ts`).
  *
  * Writes never come here: they go out at once (the outbox has its own idempotency key and its own retries).
  * Per tab, with no coordination between tabs. TypeScript only, with the clock injected.
@@ -113,7 +113,7 @@ export interface ReadGateDependencies {
 export interface ReadGate {
   /** Waits for a slot; resolves with how to give it back (once, whatever happens). */
   acquire: (signal?: AbortSignal | null) => Promise<() => void>;
-  /** Whether the breaker is open now: more than half of the last 20 calls died on the platform, 15 s ago or less. */
+  /** Whether the breaker is open now: more than half of the last 20 calls died (the platform's or the Worker's own transient 5xx), 15 s ago or less. */
   breakerOpen: () => boolean;
   /** The reads in flight now (tests, the e2e's marks). */
   inFlight: () => number;
@@ -121,7 +121,7 @@ export interface ReadGate {
   mayRetry: () => boolean;
   /** Pauses every read until `ms` from now (the `Retry-After` of a 429). */
   pause: (ms: number) => void;
-  /** A call to the RPC ended: whether the platform killed it (`server_failed`), for the breaker. */
+  /** A call to the RPC ended: whether it died (the platform's cut or the Worker's own transient 5xx), for the breaker. */
   record: (died: boolean) => void;
   /** Runs the session lookup; the first one of the tab holds the reads until it ends. */
   session: <T>(task: () => Promise<T>) => Promise<T>;
