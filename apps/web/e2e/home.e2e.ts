@@ -5515,8 +5515,8 @@ const PLAN_REGIONS = [
 interface PlanServer {
   answered: number;
   gate: Promise<void> | null;
-  reads: number;
   refuse: boolean;
+  reads: number;
   state: string;
   use: { images: number; variants: number };
 }
@@ -5524,8 +5524,8 @@ interface PlanServer {
 const newPlanServer = (variants: number, images = 0): PlanServer => ({
   answered: 0,
   gate: null,
-  reads: 0,
   refuse: false,
+  reads: 0,
   state: "free",
   use: { images, variants },
 });
