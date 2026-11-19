@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 
 const WORKERS = ["web", "admin", "catalog"] as const;
 const PRODUCTION_TRACES_RATE = 0.05;
+const STAGING_TRACES_RATE = 0.1;
 
 interface Observability {
   enabled?: boolean;
@@ -55,6 +56,14 @@ describe.each(WORKERS)("the observability block of the %s Worker", (worker) => {
 
   it("stores only the structured events: invocation logs stay off", () => {
     expect(observability?.logs?.invocation_logs).toBe(false);
+  });
+
+  it("samples the staging traces at 10% and keeps its logs at 100%", () => {
+    const staging = config.env?.staging?.observability;
+    expect(staging?.traces?.enabled).toBe(true);
+    expect(staging?.traces?.head_sampling_rate).toBe(STAGING_TRACES_RATE);
+    expect(staging?.logs?.head_sampling_rate).toBe(1);
+    expect(staging?.logs?.invocation_logs).toBe(false);
   });
 
   // an environment block replaces the top-level one instead of merging with it, so it is checked on its own

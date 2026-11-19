@@ -72,7 +72,7 @@
           "head_sampling_rate": 1,
           "invocation_logs": false
         },
-        "traces": { "enabled": true, "head_sampling_rate": 1 }
+        "traces": { "enabled": true, "head_sampling_rate": 0.1 }
       },
       "r2_buckets": [
         { "binding": "MEDIA_BUCKET", "bucket_name": "polaris-media-staging" }
