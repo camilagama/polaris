@@ -10,6 +10,14 @@ import {
   runPrivacyMaintenance,
 } from "./maintenance";
 
+interface VarsConfig {
+  vars?: Record<string, string>;
+}
+
+interface WranglerConfig extends VarsConfig {
+  env?: Record<string, VarsConfig>;
+}
+
 const off = { autoPurgeEnabled: false };
 const on = { autoPurgeEnabled: true };
 
@@ -308,23 +316,15 @@ describe("the automatic schedule of the purge (ADR 0102, AC-62)", () => {
   });
 
   it("is on only in staging: the local top level and production stay off", () => {
-    const config = readFileSync(
-      new URL("../../../wrangler.jsonc", import.meta.url),
-      "utf8"
-    );
-    const stagingAt = config.indexOf('"staging": {');
-    const productionAt = config.indexOf('"production": {');
-    expect(stagingAt).toBeGreaterThan(-1);
-    expect(productionAt).toBeGreaterThan(stagingAt);
-    const valuesOf = (block: string) =>
-      [...block.matchAll(/"CLOSURE_AUTO_PURGE_ENABLED":\s*"([^"]*)"/g)].map(
-        (match) => match[1]
-      );
+    // wrangler.jsonc is JSON with comments and trailing commas, which is also a valid JavaScript expression
+    const config = new Function(
+      `return (${readFileSync(new URL("../../../wrangler.jsonc", import.meta.url), "utf8")});`
+    )() as WranglerConfig;
     expect({
-      production: valuesOf(config.slice(productionAt)),
-      staging: valuesOf(config.slice(stagingAt, productionAt)),
-      top: valuesOf(config.slice(0, stagingAt)),
-    }).toEqual({ production: ["false"], staging: ["true"], top: ["false"] });
+      production: config.env?.production?.vars?.CLOSURE_AUTO_PURGE_ENABLED,
+      staging: config.env?.staging?.vars?.CLOSURE_AUTO_PURGE_ENABLED,
+      top: config.vars?.CLOSURE_AUTO_PURGE_ENABLED,
+    }).toEqual({ production: "false", staging: "true", top: "false" });
   });
 });
 
