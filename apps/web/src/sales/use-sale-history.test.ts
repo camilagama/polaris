@@ -1,6 +1,10 @@
 import type { SaleListEntryReadModel } from "@polaris/contracts";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { SALES_PAGE_SIZE, type SalePage } from "./sale-history-model";
+import {
+  canLoadMore,
+  SALES_PAGE_SIZE,
+  type SalePage,
+} from "./sale-history-model";
 import { useSaleHistory } from "./use-sale-history";
 
 interface Runtime {
@@ -200,5 +204,32 @@ describe("useSaleHistory: Carregar mais", () => {
     expect(idsOf(render)).toEqual(["x"]);
     expect(render().state.moreError).toBeNull();
     expect(render().state.list).toBe("ready");
+  });
+
+  it("trocar o filtro com a 2ª página em voo e a 1ª página nova falhar destrava o Carregar mais", async () => {
+    const oldSecond = deferred<SalePage>();
+    const newFirst = deferred<SalePage>();
+    saleList
+      .mockResolvedValueOnce(page(true, "a", "b"))
+      .mockReturnValueOnce(oldSecond.promise)
+      .mockReturnValueOnce(newFirst.promise);
+    const { render, runEffect } = mount();
+
+    runEffect();
+    await vi.waitFor(() => expect(idsOf(render)).toEqual(["a", "b"]));
+    render().loadMore();
+    expect(render().state.loadingMore).toBe(true);
+    render().setFilters({ status: "cancelled" });
+    render();
+    runEffect();
+    expect(saleList).toHaveBeenCalledTimes(3);
+
+    newFirst.reject(new Error("sem rede"));
+    await vi.waitFor(() => expect(render().state.moreError).not.toBeNull());
+    const { state } = render();
+    expect(state.loadingMore).toBe(false);
+    expect(state.hasMore).toBe(true);
+    expect(idsOf(render)).toEqual(["a", "b"]);
+    expect(canLoadMore(state)).toBe(true);
   });
 });

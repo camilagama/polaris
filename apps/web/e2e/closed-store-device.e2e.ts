@@ -587,7 +587,7 @@ const DISCARDED = "Operações descartadas neste aparelho.";
 
 async function seedOtherStore(page: Page, userId: string) {
   return await page.evaluate(
-    async ({ organizationId, user }) => {
+    async ({ at, organizationId, user }) => {
       const material = `polaris:v1:${user.length}:${user}:${organizationId}`;
       const digest = new Uint8Array(
         await crypto.subtle.digest(
@@ -613,7 +613,6 @@ async function seedOtherStore(page: Page, userId: string) {
         opening.onerror = () => reject(opening.error);
       });
       const commandId = crypto.randomUUID();
-      const at = new Date().toISOString();
       await new Promise<void>((resolve, reject) => {
         const tx = database.transaction(["commands", "meta"], "readwrite");
         tx.objectStore("commands").put({
@@ -646,7 +645,7 @@ async function seedOtherStore(page: Page, userId: string) {
       );
       return { commandId, name };
     },
-    { organizationId: OTHER_STORE, user: userId }
+    { at: NOW.toISOString(), organizationId: OTHER_STORE, user: userId }
   );
 }
 

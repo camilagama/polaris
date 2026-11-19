@@ -3555,3 +3555,27 @@ Origem: achado B do Diego no Pixel 6 (28/10): a venda montada em Vender sumia ao
 | Frases | Em revisão | "sem taxa informada" / "sem taxa" no lugar de "sem custo informado" / "sem custo": tabela, hachura, leitura, resumo do `role="img"`, frase de apoio, aviso dos cartões do Resultado e do Início, "sem taxa neste dia" e o (i). |
 | Mês nomeado | Em revisão | Em período por mês com os dias desconhecidos num só mês: "novembro: 1 de 7 dias sem custo informado" (cartões, (i), frase de apoio e leitura do mês); dois meses ou mais mantêm a contagem do período. |
 | Provas | Em revisão | Testes de `result-series`, `result-kpis`, `result-chart`, `result-cards` e `home-kpis`. Fora: voltar/avançar entre períodos (a regra do `replaceAddress` fica). |
+
+### Chamadas automáticas: a abertura pula o `device.check` da mesma sessão ligada há menos de 12 h (t1362; sem migration)
+
+| Parte | Estado | O que é |
+| --- | --- | --- |
+| Marcador da sessão | Em revisão | `offline-runtime.ts`: depois de `device.check` "meu" ou de `device.register` (o `issueLease` só renova o da mesma sessão), `polaris.offline.device-checked` guarda `{ deviceId, userId, sessionId, checkedAt }` (id da sessão, nunca o token); a abertura com o `get-session` do servidor na hora, mesma sessão, usuário e aparelho, menos de 12 h e licença a 12 h ou mais do fim não chama o `device.check`. Apagado no Sair, em `session_changed`, aparelho recusado e sessão diferente. Emenda de 19/11 do [ADR 0048](../docs/adr/0048-tela-de-aparelhos.md). |
+| Provas | Em revisão | `offline-runtime.test.ts` (o pulo e cada caso que chama, a revogação vista pelo `get-session` sem `device.check`, 13 mutações reprovadas) e `runtime-api.test.ts` (`session.id` sem o token, leitura sempre no servidor). |
+| Fora | Pendente | Com a memória de 10 s do `get-session` (t1360), a leitura que decide o pulo continua a do servidor na hora. |
+
+### Entrada da transação de tenant num statement (t1363; migration 0136, provisória)
+
+| Parte | Estado | O que há |
+| --- | --- | --- |
+| Banco | Em revisão | `0136_entrada_do_tenant_num_statement.sql`: `begin_tenant_request` (SECURITY INVOKER, `search_path` fixo, `EXECUTE` só de `polaris_pr11_runtime`) faz timeouts, `app.user_id`, membership, papel contra a lista do domínio, `app.organization_id` e loja ativa/encerrada, na ordem de antes, e recusa com `42501` e o código de `TenantAuthorizationError`. Só expande (ADR 0096). |
+| Worker | Em revisão | `withAuthorizedTenantTransaction` manda `BEGIN` + a função (antes, 6 statements de entrada); `rolesWithCapability` no domínio. API e erros iguais para os chamadores. |
+| Provas | Em revisão | `tenant-transaction.test.ts` (SQL gerado com 1, 2 e 0 papéis; conversão de erro), gate `tenant-context` (catálogo, recusas diretas, timeouts inválidos, membro removido, loja suspensa, três mutantes), `closed-organization-readonly` (capability antes do encerramento), `STATEMENT_COUNTS` (`sync/pull` 10 → 6, `goal/list` 41 → 25, `billing/readPlan` 24 → 20). Falta a prova no Neon (`gate2-runtime`) antes da liberação. |
+
+### Perf de 19/11: o tique do sync cresce sem trabalho e aba escondida não puxa (t1355; sem migration)
+
+| Item | Estado | Detalhe |
+| --- | --- | --- |
+| Agendador | Em revisão | `offline/runtime/sync-scheduler.ts`: o tique dobra de 60 s até 300 s a cada pull sem trabalho e volta a 60 s com trabalho, comando na fila, volta à frente, "Tentar agora", volta da conexão, falha ou tentativa sem resposta; aba escondida não puxa. Emenda de 19/11 do ADR 0043. |
+| Runtime | Em revisão | `OfflineRuntime.lastPullWasIdle()`: a última sincronização completa foi respondida, não enviou comando e o cursor não andou; falha, sem resposta, corte do pull e rodada só de envio não contam. O envio da fila não mudou. |
+| Provas | Em revisão | `sync-scheduler.test.ts` (relógio injetado: 60→120→240→300→300, volta a 60, aba escondida, mutações) e `offline-runtime.test.ts`. |

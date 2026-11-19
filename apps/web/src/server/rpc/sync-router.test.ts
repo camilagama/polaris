@@ -113,6 +113,22 @@ describe("sync.pull", () => {
     });
   });
 
+  it("opens exactly one sync:read tenant context", async () => {
+    const withTenantRequestContext = tenantContext();
+    const client = createClient({
+      pullSyncChanges: () =>
+        Promise.resolve({ changes: [], hasMore: false, nextCursor: 0 }),
+      withTenantRequestContext,
+    });
+
+    await client.sync.pull({ organizationId });
+
+    expect(
+      withTenantRequestContext.mock.calls.map(([input]) => input.capability),
+      `sync.pull opened ${withTenantRequestContext.mock.calls.length} tenant contexts, expected 1`
+    ).toEqual(["sync:read"]);
+  });
+
   it("defaults the limit and treats a missing cursor as the start", async () => {
     const pullSyncChanges = vi.fn(() =>
       Promise.resolve({ changes: [], hasMore: false, nextCursor: 0 })
