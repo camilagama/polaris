@@ -149,7 +149,7 @@ describe("useStockList: Carregar mais", () => {
     expect(render().state.loadingMore).toBe(false);
 
     newFirst.reject(new Error("sem rede"));
-    await newFirst.promise.catch(() => undefined);
+    await vi.waitFor(() => expect(render().state.moreError).not.toBeNull());
 
     const { state } = render();
     expect(state.loadingMore).toBe(false);
