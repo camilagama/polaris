@@ -3587,3 +3587,11 @@ Origem: achado B do Diego no Pixel 6 (28/10): a venda montada em Vender sumia ao
 | Agendador | Em revisão | `offline/runtime/sync-scheduler.ts`: o tique dobra de 60 s até 300 s a cada pull sem trabalho e volta a 60 s com trabalho, comando na fila, volta à frente, "Tentar agora", volta da conexão, falha ou tentativa sem resposta; aba escondida não puxa. Emenda de 19/11 do ADR 0043. |
 | Runtime | Em revisão | `OfflineRuntime.lastPullWasIdle()`: a última sincronização completa foi respondida, não enviou comando e o cursor não andou; falha, sem resposta, corte do pull e rodada só de envio não contam. O envio da fila não mudou. |
 | Provas | Em revisão | `sync-scheduler.test.ts` (relógio injetado: 60→120→240→300→300, volta a 60, aba escondida, mutações) e `offline-runtime.test.ts`. |
+
+### `goal.list` numa transação no caso comum (t1391; sem migration)
+
+| Item | Estado | Detalhe |
+| --- | --- | --- |
+| Handler | Em revisão | `server/rpc/goal-handlers.ts`: `goal.list` lê, numa transação repeatable read que nunca escreve, `evaluateActiveGoals`, `listGoals` e `listPausedGoalIds`. Só quando alguma meta pede liquidação abre uma segunda (read committed) com `settleGoals` e as duas leituras de novo, e a resposta sai delas; `create`, `update` e `cancel` também só abrem a transação de liquidação quando há o que liquidar. `goal.list` segue `read`. |
+| Medida | Em revisão | `STATEMENT_COUNTS["goal/list"]` 25 → 10 e, com uma meta ativa, 44 → 29 (gate `web-worker`, PostgreSQL 18 local). |
+| Provas | Em revisão | `goal-router.test.ts` (1 transação sem liquidação, 2 com, a resposta da 2ª, recusa de sessão e cada código de `TenantAuthorizationError` sem trabalho, tally zerado no retry, mutante "liquida sempre" reprova), gates `goals` e `home-writes`. |
