@@ -1,6 +1,7 @@
+import type { SQL } from "drizzle-orm";
+import { PgDialect } from "drizzle-orm/pg-core";
 import { describe, expect, it, vi } from "vitest";
 import type { createDatabase } from "./client";
-import { memberships, organizations } from "./schema/organization";
 import {
   TENANT_IDLE_IN_TRANSACTION_TIMEOUT_MS,
   TENANT_LOCK_TIMEOUT_MS,
@@ -13,57 +14,48 @@ import {
 
 type Database = ReturnType<typeof createDatabase>["db"];
 
-interface DatabaseStubOptions {
-  /** Whether the closed-organization status answers a row (the member owns a closed organization). */
-  closed?: boolean;
-  membership?: { role: string; status: string };
-  organization?: { status: string };
+const dialect = new PgDialect();
+const ROLES_ARRAY = /ARRAY\[[^\]]*\]::text\[\]/;
+
+const roleList = vi.hoisted(() => ({
+  override: undefined as readonly string[] | undefined,
+}));
+
+vi.mock("@polaris/domain/authorization/capabilities", async (original) => {
+  const actual =
+    await original<
+      typeof import("@polaris/domain/authorization/capabilities")
+    >();
+  return {
+    ...actual,
+    rolesWithCapability: (capability: string) =>
+      roleList.override ?? actual.rolesWithCapability(capability),
+  };
+});
+
+class FakeDatabaseError extends Error {
+  readonly code: string;
+
+  constructor(code: string, message: string) {
+    super(message);
+    this.code = code;
+  }
 }
 
-function createDatabaseStub(options: DatabaseStubOptions = {}) {
-  const events: string[] = [];
-  let selectedTable: unknown;
+/** What the entry function answers: a role, or the error it raises. */
+type Entry = { role: string } | { error: unknown };
 
-  const query = {
-    from: vi.fn((table: unknown) => {
-      selectedTable = table;
-      if (table === memberships) {
-        events.push("membership-select");
-      } else if (table === organizations) {
-        events.push("organization-select");
-      } else {
-        events.push("other-select");
-      }
-      return query;
-    }),
-    limit: vi.fn(() => {
-      if (selectedTable === memberships) {
-        return Promise.resolve(options.membership ? [options.membership] : []);
-      }
-      return Promise.resolve(
-        options.organization ? [options.organization] : []
-      );
-    }),
-    where: vi.fn(() => query),
-  };
-
-  let executeCalls = 0;
+function createDatabaseStub(entry: Entry = { role: "owner" }) {
+  const statements: SQL[] = [];
   const transaction = {
-    execute: vi.fn(async () => {
-      // the first statement of a tenant transaction sets the timeouts, the next two set contexts, and a fourth
-      // one asks whether a non-active organization is closed
-      let label = "closure-status";
-      if (executeCalls === 0) {
-        label = "set-local-guards";
-      } else if (executeCalls < 3) {
-        label = "set-local-context";
-      }
-      events.push(label);
-      executeCalls += 1;
+    execute: vi.fn(async (statement: SQL) => {
+      statements.push(statement);
       await Promise.resolve();
-      return { rows: label === "closure-status" && options.closed ? [{}] : [] };
+      if ("error" in entry) {
+        throw entry.error;
+      }
+      return { rows: [{ member_role: entry.role }] };
     }),
-    select: vi.fn(() => query),
   };
 
   const database = {
@@ -71,14 +63,11 @@ function createDatabaseStub(options: DatabaseStubOptions = {}) {
       <T>(
         callback: (transaction: TenantRequestTransaction) => Promise<T>,
         _options?: { isolationLevel?: string }
-      ) => {
-        executeCalls = 0;
-        return callback(transaction as unknown as TenantRequestTransaction);
-      }
+      ) => callback(transaction as unknown as TenantRequestTransaction)
     ),
   } as unknown as Database;
 
-  return { database, events, transaction };
+  return { database, statements, transaction };
 }
 
 function createInput(
@@ -96,12 +85,16 @@ function createInput(
   };
 }
 
+function rendered(statement: SQL | undefined) {
+  if (!statement) {
+    throw new Error("no statement was sent");
+  }
+  return dialect.sqlToQuery(statement);
+}
+
 describe("withAuthorizedTenantTransaction", () => {
-  it("sets the authenticated user before reading membership, then sets organization before tenant work", async () => {
-    const fixture = createDatabaseStub({
-      membership: { role: "owner", status: "active" },
-      organization: { status: "active" },
-    });
+  it("enters the tenant with one statement and hands the role the database read to the work", async () => {
+    const fixture = createDatabaseStub({ role: "owner" });
     const operation = vi.fn(
       async (
         _transaction: TenantRequestTransaction,
@@ -112,118 +105,143 @@ describe("withAuthorizedTenantTransaction", () => {
     await expect(
       withAuthorizedTenantTransaction(
         fixture.database,
-        createInput(),
+        { ...createInput(), sessionId: "session-1" },
         operation
       )
     ).resolves.toEqual({
       capability: "catalog:read",
       organizationId: "requested-organization",
       role: "owner",
+      sessionId: "session-1",
       userId: "authenticated-user",
     });
-
-    expect(fixture.events).toEqual([
-      "set-local-guards",
-      "set-local-context",
-      "membership-select",
-      "set-local-context",
-      "organization-select",
-    ]);
+    expect(fixture.statements).toHaveLength(1);
     expect(operation).toHaveBeenCalledOnce();
   });
 
-  it("denies a requested organization without the authenticated user's membership before setting organization context", async () => {
+  it("passes user, organization, the roles as one text[] and the three timeouts, in that order", async () => {
     const fixture = createDatabaseStub();
-    const operation = vi.fn(async () => undefined);
+    await withAuthorizedTenantTransaction(
+      fixture.database,
+      createInput({ capability: "sale:create" }),
+      async () => undefined
+    );
+    expect(rendered(fixture.statements[0])).toMatchObject({
+      params: [
+        "authenticated-user",
+        "requested-organization",
+        "owner",
+        TENANT_STATEMENT_TIMEOUT_MS,
+        TENANT_LOCK_TIMEOUT_MS,
+        TENANT_IDLE_IN_TRANSACTION_TIMEOUT_MS,
+      ],
+      sql: "SELECT member_role FROM public.begin_tenant_request($1, $2, ARRAY[$3]::text[], $4::integer, $5::integer, $6::integer)",
+    });
+    expect(TENANT_STATEMENT_TIMEOUT_MS).toBeGreaterThan(0);
+    expect(TENANT_LOCK_TIMEOUT_MS).toBeGreaterThan(0);
+    expect(TENANT_IDLE_IN_TRANSACTION_TIMEOUT_MS).toBeGreaterThan(0);
+  });
 
+  it("builds the array of roles element by element: one role, several roles and none", async () => {
+    const fixture = createDatabaseStub();
+    try {
+      const shapes: string[] = [];
+      for (const list of [["owner"], ["owner", "manager"], []]) {
+        roleList.override = list;
+        // biome-ignore lint/performance/noAwaitInLoops: one transaction at a time, so each statement is the one of its list
+        await withAuthorizedTenantTransaction(
+          fixture.database,
+          createInput(),
+          async () => undefined
+        );
+        const query = rendered(fixture.statements.at(-1));
+        shapes.push(ROLES_ARRAY.exec(query.sql)?.[0] ?? query.sql);
+        expect(query.params.slice(2, 2 + list.length)).toEqual(list);
+      }
+      expect(shapes).toEqual([
+        "ARRAY[$3]::text[]",
+        "ARRAY[$3, $4]::text[]",
+        "ARRAY[]::text[]",
+      ]);
+    } finally {
+      roleList.override = undefined;
+    }
+  });
+
+  it("sends no role for an unknown or inherited capability, so the database refuses it", async () => {
+    const fixture = createDatabaseStub();
+    for (const capability of ["unknown:read", "__proto__"]) {
+      // biome-ignore lint/performance/noAwaitInLoops: one transaction at a time, so each statement is the one of its capability
+      await withAuthorizedTenantTransaction(
+        fixture.database,
+        createInput({ capability }),
+        async () => undefined
+      );
+      expect(rendered(fixture.statements.at(-1)).sql).toContain(
+        "ARRAY[]::text[]"
+      );
+    }
+  });
+
+  it.each([
+    "tenant_access_denied",
+    "capability_denied",
+    "organization_closed",
+  ] as const)(
+    "turns the database refusal %s into the same TenantAuthorizationError code and runs nothing",
+    async (code) => {
+      const fixture = createDatabaseStub({
+        error: new Error("Failed query", {
+          cause: new FakeDatabaseError("42501", code),
+        }),
+      });
+      const operation = vi.fn(async () => undefined);
+      const outcome = withAuthorizedTenantTransaction(
+        fixture.database,
+        createInput(),
+        operation
+      );
+      await expect(outcome).rejects.toBeInstanceOf(TenantAuthorizationError);
+      await expect(outcome).rejects.toMatchObject({ code });
+      expect(operation).not.toHaveBeenCalled();
+    }
+  );
+
+  it("lets any other database error through untouched: a missing grant is not a polite refusal", async () => {
+    for (const error of [
+      new FakeDatabaseError(
+        "42501",
+        "permission denied for function begin_tenant_request"
+      ),
+      new FakeDatabaseError("22023", "tenant_access_denied"),
+      new FakeDatabaseError("22023", "invalid_tenant_timeout"),
+      new FakeDatabaseError("08006", "connection failure"),
+    ]) {
+      const fixture = createDatabaseStub({ error });
+      const operation = vi.fn(async () => undefined);
+      // biome-ignore lint/performance/noAwaitInLoops: one transaction at a time
+      await expect(
+        withAuthorizedTenantTransaction(
+          fixture.database,
+          createInput(),
+          operation
+        )
+      ).rejects.toBe(error);
+      expect(operation).not.toHaveBeenCalled();
+    }
+  });
+
+  it("refuses rather than runs the work when the entry answers no row", async () => {
+    const fixture = createDatabaseStub();
+    fixture.transaction.execute.mockResolvedValueOnce({ rows: [] });
+    const operation = vi.fn(async () => undefined);
     await expect(
       withAuthorizedTenantTransaction(
         fixture.database,
         createInput(),
         operation
       )
-    ).rejects.toBeInstanceOf(TenantAuthorizationError);
-    await expect(
-      withAuthorizedTenantTransaction(
-        fixture.database,
-        createInput(),
-        operation
-      )
-    ).rejects.toMatchObject({ code: "tenant_access_denied" });
-
-    expect(fixture.events).toEqual([
-      "set-local-guards",
-      "set-local-context",
-      "membership-select",
-      "set-local-guards",
-      "set-local-context",
-      "membership-select",
-    ]);
-    expect(operation).not.toHaveBeenCalled();
-  });
-
-  it("fails closed for unknown roles or capabilities before setting organization context", async () => {
-    const fixture = createDatabaseStub({
-      membership: { role: "unknown-role", status: "active" },
-    });
-    const operation = vi.fn(async () => undefined);
-
-    await expect(
-      withAuthorizedTenantTransaction(
-        fixture.database,
-        createInput({ capability: "catalog:read" }),
-        operation
-      )
-    ).rejects.toMatchObject({ code: "capability_denied" });
-
-    expect(fixture.events).toEqual([
-      "set-local-guards",
-      "set-local-context",
-      "membership-select",
-    ]);
-    expect(operation).not.toHaveBeenCalled();
-  });
-
-  it("denies a non-active organization even after membership and capability pass", async () => {
-    const fixture = createDatabaseStub({
-      membership: { role: "owner", status: "active" },
-      organization: { status: "suspended" },
-    });
-    const operation = vi.fn(async () => undefined);
-
-    await expect(
-      withAuthorizedTenantTransaction(
-        fixture.database,
-        createInput(),
-        operation
-      )
-    ).rejects.toMatchObject({ code: "tenant_access_denied" });
-
-    expect(fixture.events).toEqual([
-      "set-local-guards",
-      "set-local-context",
-      "membership-select",
-      "set-local-context",
-      "organization-select",
-      "closure-status",
-    ]);
-    expect(operation).not.toHaveBeenCalled();
-  });
-
-  it("tells a member that their organization is closed, and still runs nothing", async () => {
-    const fixture = createDatabaseStub({
-      closed: true,
-      membership: { role: "owner", status: "active" },
-    });
-    const operation = vi.fn(async () => undefined);
-
-    await expect(
-      withAuthorizedTenantTransaction(
-        fixture.database,
-        createInput({ capability: "sale:create" }),
-        operation
-      )
-    ).rejects.toMatchObject({ code: "organization_closed" });
+    ).rejects.toThrow("begin_tenant_request_without_role");
     expect(operation).not.toHaveBeenCalled();
   });
 
@@ -249,32 +267,8 @@ describe("withAuthorizedTenantTransaction", () => {
     expect(fixture.database.transaction).not.toHaveBeenCalled();
   });
 
-  it("sets the statement, lock and idle timeouts as the first statement of the transaction", async () => {
-    const fixture = createDatabaseStub({
-      membership: { role: "owner", status: "active" },
-      organization: { status: "active" },
-    });
-    await withAuthorizedTenantTransaction(
-      fixture.database,
-      createInput(),
-      async () => undefined
-    );
-    const [firstStatement] = fixture.transaction.execute.mock
-      .calls as unknown as [[{ queryChunks: unknown[] }]];
-    const rendered = JSON.stringify(firstStatement[0].queryChunks);
-    expect(rendered).toContain("statement_timeout");
-    expect(rendered).toContain("lock_timeout");
-    expect(rendered).toContain("idle_in_transaction_session_timeout");
-    expect(TENANT_STATEMENT_TIMEOUT_MS).toBeGreaterThan(0);
-    expect(TENANT_LOCK_TIMEOUT_MS).toBeGreaterThan(0);
-    expect(TENANT_IDLE_IN_TRANSACTION_TIMEOUT_MS).toBeGreaterThan(0);
-  });
-
   it("uses READ COMMITTED unless a read model asks for REPEATABLE READ", async () => {
-    const fixture = createDatabaseStub({
-      membership: { role: "owner", status: "active" },
-      organization: { status: "active" },
-    });
+    const fixture = createDatabaseStub();
     await withAuthorizedTenantTransaction(
       fixture.database,
       createInput(),

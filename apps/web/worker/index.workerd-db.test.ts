@@ -88,13 +88,13 @@ const UUID = /^[0-9a-f-]{36}$/;
  */
 const STATEMENT_COUNTS: Record<string, number> = {
   "auth get-session": 2,
-  "billing/readPlan": 24,
-  "goal/list": 41,
-  "inventory/listBalances": 10,
+  "billing/readPlan": 20,
+  "goal/list": 25,
+  "inventory/listBalances": 6,
   "organization/listMine": 8,
-  "report/dailySales": 10,
-  "report/periodSummary": 10,
-  "sync/pull": 10,
+  "report/dailySales": 6,
+  "report/periodSummary": 6,
+  "sync/pull": 6,
 };
 
 const fixture = JSON.parse(env.TEST_WEB_FIXTURE ?? "{}") as Fixture;
