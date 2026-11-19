@@ -711,7 +711,7 @@ Corredor único de gates (`packages/db/scripts/run-gates.ts`, suítes `gate3`, `
 
 ### Backlog registrado (não bloqueia a Fase 5)
 
-- Manutenibilidade: dividir `apps/web/src/server/router.ts`, `packages/contracts/src/index.ts`, `sale-form-model.ts` e `sale-page.tsx`; unificar os helpers de gates (`sales-gate-support.ts` e os scripts mais antigos).
+- Manutenibilidade: dividir `apps/web/src/server/rpc/router.ts`, `packages/contracts/src/index.ts`, `sale-form-model.ts` e `sale-page.tsx`; unificar os helpers de gates (`sales-gate-support.ts` e os scripts mais antigos).
 - Repositório de estoque: `recordStockMovement` é exportado apenas como ponto de teste dos gates; `getProductVariants` ainda lê com `FOR SHARE`; `inventory_quantity_limit` e `insufficient_stock` compartilham o mesmo status HTTP.
 - Capabilities: `expense:create` ainda não é usada por nenhum procedimento; algumas leituras exigem capabilities de escrita (`customer:update`, `organization:manage`) até a Fase de papéis finos.
 - `/offline-poc` continua empacotada fora do modo DEV; remover ou proteger antes de produção.
