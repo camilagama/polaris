@@ -5,7 +5,11 @@ import {
   type SessionLookup,
 } from "../../lib/session-lookup";
 import type { BootstrapSource } from "../bootstrap";
-import { type RuntimeApi, SessionUnreachableError } from "./offline-runtime";
+import {
+  type RuntimeApi,
+  type SignedInSession,
+  SessionUnreachableError,
+} from "./offline-runtime";
 
 /** 5xx and 429 say nothing about who is signed in: they are a server that could not answer, not a refusal. */
 function isNoAnswer(status: number): boolean {
@@ -34,10 +38,48 @@ export function createRpcRuntimeApi(
     now: () => Date.now(),
   })
 ): RuntimeApi {
+  const readSession = async (options?: {
+    fresh?: boolean;
+  }): Promise<SignedInSession | null> => {
+    let answer: SessionAnswer;
+    try {
+      answer = await session.read(options);
+    } catch (cause) {
+      throw new SessionUnreachableError("session_unreachable", { cause });
+    }
+    if (answer.status === 401 || answer.status === 403) {
+      return null; // the server said, in so many words, that there is no session for this cookie
+    }
+    if (isNoAnswer(answer.status)) {
+      // the server is down, overloaded or throttling: no answer, the same as having no connection
+      throw new SessionUnreachableError(`session_http_${answer.status}`);
+    }
+    if (answer.status < 200 || answer.status >= 300) {
+      throw new Error("session_unavailable");
+    }
+    if (answer.body === undefined) {
+      throw new Error("session_unavailable");
+    }
+    const body = answer.body as {
+      session?: { id?: unknown };
+      user?: { id?: unknown };
+    } | null;
+    const userId = body?.user?.id;
+    if (!(typeof userId === "string" && userId !== "")) {
+      return null;
+    }
+    const sessionId = body?.session?.id;
+    return {
+      sessionId:
+        typeof sessionId === "string" && sessionId !== "" ? sessionId : null,
+      userId,
+    };
+  };
   return {
     // `device.check` also links this session to the device, so revoking the
-    // device ends this session even if it never syncs (called at every online
-    // start). Revoked or unknown is "not mine"; any other failure is thrown.
+    // device ends this session even if it never syncs (called at an online
+    // start unless this same session was linked in the last 12 h). Revoked or
+    // unknown is "not mine"; any other failure is thrown.
     deviceIsMine: async (deviceId) => {
       try {
         await client.device.check({ deviceId });
@@ -62,29 +104,8 @@ export function createRpcRuntimeApi(
       const { device } = await client.device.register({ label });
       return device.id;
     },
-    sessionUserId: async (options) => {
-      let answer: SessionAnswer;
-      try {
-        answer = await session.read(options);
-      } catch (cause) {
-        throw new SessionUnreachableError("session_unreachable", { cause });
-      }
-      if (answer.status === 401 || answer.status === 403) {
-        return null; // the server said, in so many words, that there is no session for this cookie
-      }
-      if (isNoAnswer(answer.status)) {
-        // the server is down, overloaded or throttling: no answer, the same as having no connection
-        throw new SessionUnreachableError(`session_http_${answer.status}`);
-      }
-      if (answer.status < 200 || answer.status >= 300) {
-        throw new Error("session_unavailable");
-      }
-      if (answer.body === undefined) {
-        throw new Error("session_unavailable");
-      }
-      const id = (answer.body as { user?: { id?: unknown } } | null)?.user?.id;
-      return typeof id === "string" && id !== "" ? id : null;
-    },
+    sessionUserId: async (options) => (await readSession(options))?.userId ?? null,
+    signedInSession: () => readSession({ fresh: true }),
     source: (organizationId, signal): BootstrapSource => {
       const options = signal ? { signal } : undefined;
       return {

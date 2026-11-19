@@ -86,7 +86,9 @@ describe("o rodapé do Histórico", () => {
           list: "ready",
           listError: null,
           loadingMore: false,
+          listKey: "k",
           moreError: null,
+          refresh: "idle",
           sales,
         })}
       />

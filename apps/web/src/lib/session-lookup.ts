@@ -1,7 +1,7 @@
 /** A lie-fi connection must not hold the start of the app: after this, the lookup is given up. */
 const SESSION_LOOKUP_TIMEOUT_MS = 4000;
 
-/** How long the answer of this tab's last lookup is reused; the runtime's own recheck window is longer (30 s). */
+/** How long the answer of this tab's last lookup is reused; the runtime's own recheck window is longer (5 min). */
 export const SESSION_MEMORY_MS = 10_000;
 
 const SESSION_URL = "/api/auth/get-session";
@@ -42,17 +42,24 @@ export function forgetSessionLookups(): void {
   }
 }
 
-/** The session token and the rest of the body are not needed by anyone and are not kept. */
+/** Only the user and the id of the session row are kept: the token and the rest of the body are not needed by anyone. */
 function onlyTheUser(body: unknown): unknown {
   if (typeof body !== "object" || body === null) {
     return body;
   }
-  const { user } = body as { user?: unknown };
+  const { session, user } = body as { session?: unknown; user?: unknown };
   if (typeof user !== "object" || user === null) {
     return {};
   }
   const { email, id, name } = user as Record<string, unknown>;
-  return { user: { email, id, name } };
+  const sessionId =
+    typeof session === "object" && session !== null
+      ? (session as { id?: unknown }).id
+      : undefined;
+  const kept = { email, id, name };
+  return typeof sessionId === "string"
+    ? { session: { id: sessionId }, user: kept }
+    : { user: kept };
 }
 
 /**

@@ -159,11 +159,27 @@ describe("the session lookup of a tab", () => {
     expect(t.load).toHaveBeenCalledTimes(2);
   });
 
-  it("keeps only the user of the body, never the session token", async () => {
+  it("keeps only the user and the session id of the body, never the session token", async () => {
+    const t = setup(() =>
+      Response.json({
+        session: { id: "session-1", token: "secret" },
+        user: { email: "a@b.c", id: "user-1", name: "A", role: "x" },
+      })
+    );
+    expect(await t.lookup.read()).toEqual({
+      body: {
+        session: { id: "session-1" },
+        user: { email: "a@b.c", id: "user-1", name: "A" },
+      },
+      status: 200,
+    });
+  });
+
+  it("keeps no session when the body carries no id", async () => {
     const t = setup(() =>
       Response.json({
         session: { token: "secret" },
-        user: { email: "a@b.c", id: "user-1", name: "A", role: "x" },
+        user: { email: "a@b.c", id: "user-1", name: "A" },
       })
     );
     expect(await t.lookup.read()).toEqual({

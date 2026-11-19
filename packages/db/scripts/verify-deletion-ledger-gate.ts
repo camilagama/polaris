@@ -9,7 +9,7 @@ import {
   createCustomer,
 } from "../src/customer-repository";
 import { recordDeletionLedgerEntry } from "../src/deletion-ledger";
-import { withGateRole } from "./gate-roles";
+import { rollbackAndRelease, withGateRole } from "./gate-roles";
 import {
   createTenantFixture,
   disposableHostPattern,
@@ -564,8 +564,7 @@ async function run() {
           constraint
         );
       } finally {
-        await client.query("ROLLBACK");
-        client.release();
+        await rollbackAndRelease(client);
       }
     }
     assert.equal((await ledgerRows()).length, 2);
@@ -618,8 +617,7 @@ async function run() {
         assert.equal(none.rows.length, 0, "a later restore point lists none");
       });
     } finally {
-      await restore.query("ROLLBACK");
-      restore.release();
+      await rollbackAndRelease(restore);
     }
     tests.push(
       "the privacy owner, which the restore runbook assumes, lists every tombstone from the restore point on with only opaque IDs, the kinds and the time"
@@ -705,8 +703,7 @@ async function run() {
         "a customer that is not anonymized and an organization that still exists are listed"
       );
     } finally {
-      await simulated.query("ROLLBACK");
-      simulated.release();
+      await rollbackAndRelease(simulated);
     }
     assert.equal((await ledgerRows()).length, 2);
     tests.push(
@@ -780,8 +777,7 @@ async function run() {
         "running the backfill again adds nothing"
       );
     } finally {
-      await backfilled.query("ROLLBACK");
-      backfilled.release();
+      await rollbackAndRelease(backfilled);
     }
     assert.equal(
       (await ledgerRows()).length,
