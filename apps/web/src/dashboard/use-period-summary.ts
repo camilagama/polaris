@@ -298,12 +298,14 @@ function useComparisonRead<Day>(
   organizationId: string,
   period: Period | null,
   read: ReadDays<Day>
-): ComparisonDays<Day> | null {
+): { failed: boolean; read: ComparisonDays<Day> | null } {
   const from = period?.from ?? null;
   const to = period?.to ?? null;
   const [kept, setKept] = useState<
     (ComparisonDays<Day> & { organizationId: string }) | null
   >(null);
+  const [failedKey, setFailedKey] = useState<string | null>(null);
+  const key = `${organizationId}|${from}|${to}`;
   const sequence = useRef(0);
   const wanted =
     kept !== null &&
@@ -318,14 +320,23 @@ function useComparisonRead<Day>(
     sequence.current += 1;
     const requestSequence = sequence.current;
     const isCurrent = () => requestSequence === sequence.current;
+    const requestKey = `${organizationId}|${from}|${to}`;
     read(organizationId, { from, to }, isCurrent)
       .then((days) => {
-        if (isCurrent() && days) {
+        if (!isCurrent()) {
+          return;
+        }
+        if (days) {
           setKept({ days, organizationId, period: { from, to } });
+        } else {
+          setFailedKey(requestKey);
         }
       })
       .catch(() => {
         // no chip: the cards say their own numbers without a comparison
+        if (isCurrent()) {
+          setFailedKey(requestKey);
+        }
       });
     return () => {
       sequence.current += 1;
@@ -333,8 +344,11 @@ function useComparisonRead<Day>(
   }, [from, organizationId, read, to, wanted]);
 
   return useMemo(
-    () => (wanted ? { days: kept.days, period: kept.period } : null),
-    [kept, wanted]
+    () => ({
+      failed: !wanted && failedKey === key,
+      read: wanted ? { days: kept.days, period: kept.period } : null,
+    }),
+    [failedKey, key, kept, wanted]
   );
 }
 
@@ -373,23 +387,40 @@ const readSalesDays: ReadDays<ComparisonSales["days"][number]> = async (
 };
 
 /**
- * The daily series of the period before (`result-kpis.ts`, `comparisonPeriod`) with the result of each day, read by
- * `periodSummary` (the engine): what the chip of the result compares with.
+ * What the chips of the cards compare with, read once for the period before when both can exist: `periodSummary` (the
+ * engine) has the result of each day for the chip of the result and, in the same days, the net sales and the count of
+ * the chips of sales and ticket, so `dailySales` is not asked for the same period. It is the read of the sales chips
+ * only when the result chip cannot exist (`resultPeriod` is null: no read of the engine) or when the engine's read
+ * failed, so that a read that was not theirs never takes the chips of sales away. The sales chips then wait for the
+ * engine's read, as the chip of the result does; the number on the card never waits for either.
+ *
+ * `period` is `comparisonPeriod` of the period on screen and `resultPeriod` is `resultChipPeriod` of its figures (null,
+ * or the same period); both are null until the screen's own read answered.
  */
-export function useComparisonDays(
+export function useComparisonReads(
   organizationId: string,
-  period: Period | null
-): ComparisonDays | null {
-  return useComparisonRead(organizationId, period, readSummaryDays);
-}
-
-/**
- * The same period's net sales and sales count of each day, read by `dailySales` (a SQL `GROUP BY`, no engine): what the
- * chips of sales and ticket compare with.
- */
-export function useComparisonSales(
-  organizationId: string,
-  period: Period | null
-): ComparisonSales | null {
-  return useComparisonRead(organizationId, period, readSalesDays);
+  period: Period | null,
+  resultPeriod: Period | null
+): {
+  comparison: ComparisonDays | null;
+  salesComparison: ComparisonSales | null;
+} {
+  const days = useComparisonRead(organizationId, resultPeriod, readSummaryDays);
+  const salesFromDays =
+    period !== null &&
+    days.read !== null &&
+    days.read.period.from === period.from &&
+    days.read.period.to === period.to
+      ? days.read
+      : null;
+  const readsSales = period !== null && (resultPeriod === null || days.failed);
+  const sales = useComparisonRead(
+    organizationId,
+    readsSales ? period : null,
+    readSalesDays
+  );
+  return {
+    comparison: days.read,
+    salesComparison: salesFromDays ?? sales.read,
+  };
 }
