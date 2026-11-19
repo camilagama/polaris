@@ -56,3 +56,15 @@ export function hasCapabilityForRole(
 ): boolean {
   return capabilitiesForRole(role).some((assigned) => assigned === capability);
 }
+
+/**
+ * The roles whose permissions hold this capability, for the database to check the role of a membership without a
+ * copy of the map. An unknown capability (or an inherited key such as `__proto__`) gives no role, so it fails closed.
+ */
+export function rolesWithCapability(capability: string): readonly TenantRole[] {
+  return (Object.keys(capabilitiesByRole) as TenantRole[]).filter(
+    (role) =>
+      Object.hasOwn(capabilitiesByRole, role) &&
+      hasCapabilityForRole(role, capability)
+  );
+}

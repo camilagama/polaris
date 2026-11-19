@@ -3564,6 +3564,14 @@ Origem: achado B do Diego no Pixel 6 (28/10): a venda montada em Vender sumia ao
 | Provas | Em revisão | `offline-runtime.test.ts` (o pulo e cada caso que chama, a revogação vista pelo `get-session` sem `device.check`, 13 mutações reprovadas) e `runtime-api.test.ts` (`session.id` sem o token, leitura sempre no servidor). |
 | Fora | Pendente | Com a memória de 10 s do `get-session` (t1360), a leitura que decide o pulo continua a do servidor na hora. |
 
+### Entrada da transação de tenant num statement (t1363; migration 0136, provisória)
+
+| Parte | Estado | O que há |
+| --- | --- | --- |
+| Banco | Em revisão | `0136_entrada_do_tenant_num_statement.sql`: `begin_tenant_request` (SECURITY INVOKER, `search_path` fixo, `EXECUTE` só de `polaris_pr11_runtime`) faz timeouts, `app.user_id`, membership, papel contra a lista do domínio, `app.organization_id` e loja ativa/encerrada, na ordem de antes, e recusa com `42501` e o código de `TenantAuthorizationError`. Só expande (ADR 0096). |
+| Worker | Em revisão | `withAuthorizedTenantTransaction` manda `BEGIN` + a função (antes, 6 statements de entrada); `rolesWithCapability` no domínio. API e erros iguais para os chamadores. |
+| Provas | Em revisão | `tenant-transaction.test.ts` (SQL gerado com 1, 2 e 0 papéis; conversão de erro), gate `tenant-context` (catálogo, recusas diretas, timeouts inválidos, membro removido, loja suspensa, três mutantes), `closed-organization-readonly` (capability antes do encerramento), `STATEMENT_COUNTS` (`sync/pull` 10 → 6, `goal/list` 41 → 25, `billing/readPlan` 24 → 20). Falta a prova no Neon (`gate2-runtime`) antes da liberação. |
+
 ### Perf de 19/11: o tique do sync cresce sem trabalho e aba escondida não puxa (t1355; sem migration)
 
 | Item | Estado | Detalhe |
