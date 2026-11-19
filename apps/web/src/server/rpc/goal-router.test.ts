@@ -278,8 +278,8 @@ describe("goal RPCs", () => {
               },
             ]);
           },
-          listGoals: (transaction) => {
-            used("list", transaction);
+          listGoals: (transaction, _identity, options) => {
+            used(`list ${options?.status}`, transaction);
             return Promise.resolve([
               settled
                 ? {
@@ -303,7 +303,7 @@ describe("goal RPCs", () => {
           calls.push(input)
         ),
       })
-    ).goal.list({ organizationId });
+    ).goal.list({ organizationId, status: "active" });
 
     expect(calls).toEqual([
       { capability: "goal:manage", isolationLevel: "repeatable read" },
@@ -311,10 +311,10 @@ describe("goal RPCs", () => {
     ]);
     expect(used.mock.calls).toEqual([
       ["evaluate", { number: 1 }],
-      ["list", { number: 1 }],
+      ["list active", { number: 1 }],
       ["paused", { number: 1 }],
       ["settle", { number: 2 }],
-      ["list", { number: 2 }],
+      ["list active", { number: 2 }],
       ["paused", { number: 2 }],
     ]);
     expect(settleGoals).toHaveBeenCalledWith({ number: 2 }, identity, [
@@ -608,42 +608,78 @@ describe("goal RPCs: edits settle first", () => {
     version: 1,
   };
 
-  const updateAfter = async (progress: (typeof reached)[], order: string[]) => {
-    await client(
-      createRpcRouter({
-        goalRepository: {
-          evaluateActiveGoals: () => {
-            order.push("evaluate");
-            return Promise.resolve(progress);
-          },
-          settleGoals: () => {
-            order.push("settle");
-            return Promise.resolve([] as string[]);
-          },
-          updateGoal: () => {
-            order.push("update");
-            return Promise.resolve({ changed: true, goal: row });
-          },
-        },
-        withTenantRequestContext: tenantStub(),
-      })
-    ).goal.update({
-      expectedVersion: 1,
-      id: goalId,
-      organizationId,
-      target: "5",
-    });
+  const edit = {
+    cancel: (api: GoalClient) =>
+      api.goal.cancel({ expectedVersion: 1, id: goalId, organizationId }),
+    create: (api: GoalClient) =>
+      api.goal.create({
+        endsOn: "2026-10-31",
+        kind: "net_sales",
+        organizationId,
+        startsOn: "2026-10-01",
+        target: "10",
+      }),
+    update: (api: GoalClient) =>
+      api.goal.update({
+        expectedVersion: 1,
+        id: goalId,
+        organizationId,
+        target: "5",
+      }),
   };
 
-  it("updating settles a goal that reached its target before it changes anything", async () => {
-    const order: string[] = [];
-    await updateAfter([reached], order);
-    expect(order).toEqual(["evaluate", "settle", "update"]);
-  });
+  const order = async (
+    action: keyof typeof edit,
+    progress: (typeof reached)[]
+  ) => {
+    const steps: string[] = [];
+    await edit[action](
+      client(
+        createRpcRouter({
+          goalRepository: {
+            cancelGoal: () => {
+              steps.push("cancel");
+              return Promise.resolve({ changed: true, goal: row });
+            },
+            createGoal: () => {
+              steps.push("create");
+              return Promise.resolve(row);
+            },
+            evaluateActiveGoals: () => {
+              steps.push("evaluate");
+              return Promise.resolve(progress);
+            },
+            settleGoals: () => {
+              steps.push("settle");
+              return Promise.resolve([] as string[]);
+            },
+            updateGoal: () => {
+              steps.push("update");
+              return Promise.resolve({ changed: true, goal: row });
+            },
+          },
+          withTenantRequestContext: tenantStub(),
+        })
+      )
+    );
+    return steps;
+  };
 
-  it("updating with nothing to settle opens no settlement transaction", async () => {
-    const order: string[] = [];
-    await updateAfter([], order);
-    expect(order).toEqual(["evaluate", "update"]);
-  });
+  it.each(["create", "update", "cancel"] as const)(
+    "%s settles a goal that reached its target before it changes anything",
+    async (action) => {
+      expect(await order(action, [reached])).toEqual([
+        "evaluate",
+        "settle",
+        action,
+      ]);
+    }
+  );
+
+  it.each(["create", "update", "cancel"] as const)(
+    "%s with nothing to settle opens no settlement transaction",
+    async (action) => {
+      expect(await order(action, [])).toEqual(["evaluate", action]);
+    }
+  );
 });
