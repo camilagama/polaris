@@ -35,6 +35,7 @@ const LEASE_KEY = {
 /** Any amount in reais, as the page or a slider would say it. */
 const AN_AMOUNT = /R\$ -?\d/;
 const HOUR = 3_600_000;
+const RETURN_REFRESH_MS = 5 * 60_000 + 1000;
 const DAY = 24 * HOUR;
 const DEVICE = {
   createdAt: "2026-10-01T12:00:00.000Z",
@@ -2618,7 +2619,7 @@ test.describe("atualização (§ 5.1, relógio controlado)", () => {
     expect(periodCalls(server).at(-2)?.input.from).toBe("2026-10-01");
   });
 
-  test("ao voltar à aba relê, no máximo uma vez a cada 30 s", async ({
+  test("ao voltar à aba relê, no máximo uma vez a cada 5 min", async ({
     page,
   }) => {
     const server = new FakeServer(SOLD);
@@ -2627,12 +2628,34 @@ test.describe("atualização (§ 5.1, relógio controlado)", () => {
     const before = periodCalls(server).length;
     await page.evaluate(() => window.dispatchEvent(new Event("focus")));
     expect(periodCalls(server).length).toBe(before);
-    await page.clock.runFor(31_000);
+    await page.clock.runFor(4 * 60_000);
+    await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+    expect(periodCalls(server).length).toBe(before);
+    await page.clock.runFor(RETURN_REFRESH_MS - 4 * 60_000);
     server.scenario = {
       ...SOLD,
       days: { ...SOLD.days, "2026-10-23": [42_010, 3] },
     };
     await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+    await expect(region(page, "Vendas hoje")).toContainText("R$ 420,10");
+  });
+
+  test("a página volta do histórico (pageshow persistido): relê mesmo antes dos 5 min", async ({
+    page,
+  }) => {
+    const server = new FakeServer(SOLD);
+    await openHome(page, server);
+    await expect(region(page, "Vendas hoje")).toContainText("R$ 320,10");
+    await page.clock.runFor(60_000);
+    server.scenario = {
+      ...SOLD,
+      days: { ...SOLD.days, "2026-10-23": [42_010, 3] },
+    };
+    await page.evaluate(() =>
+      window.dispatchEvent(
+        new PageTransitionEvent("pageshow", { persisted: true })
+      )
+    );
     await expect(region(page, "Vendas hoje")).toContainText("R$ 420,10");
   });
 
@@ -2644,7 +2667,7 @@ test.describe("atualização (§ 5.1, relógio controlado)", () => {
     await expect(region(page, "Vendas hoje")).toContainText("R$ 320,10");
     const before = periodCalls(server).length;
     server.broken.set("report/periodSummary", "500");
-    await page.clock.runFor(31_000);
+    await page.clock.runFor(RETURN_REFRESH_MS);
     const failedRead = page.waitForResponse(
       (response) =>
         response.url().includes("/rpc/report/periodSummary") &&
@@ -2736,7 +2759,7 @@ test.describe("janela anterior do Início: uma leitura por dia da loja (relógio
     const server = new FakeServer(SOLD);
     await openHome(page, server);
     await expect(region(page, "Vendas hoje")).toContainText("R$ 320,10");
-    await page.clock.runFor(31_000);
+    await page.clock.runFor(RETURN_REFRESH_MS);
     await page.evaluate(() => window.dispatchEvent(new Event("focus")));
     await expect.poll(() => monthReads(server)).toBe(2);
     expect(beforeReads(server)).toBe(1);
@@ -2856,12 +2879,12 @@ test.describe("janela anterior do Início: uma leitura por dia da loja (relógio
     const server = new FakeServer(SOLD);
     await openWithCopy(page, server);
     server.broken.set("report/periodSummary", "403");
-    await page.clock.runFor(31_000);
+    await page.clock.runFor(RETURN_REFRESH_MS);
     await page.evaluate(() => window.dispatchEvent(new Event("focus")));
     await expect.poll(() => copyKeys(page)).toEqual([]);
 
     server.broken.delete("report/periodSummary");
-    await page.clock.runFor(31_000);
+    await page.clock.runFor(RETURN_REFRESH_MS);
     await page.evaluate(() => window.dispatchEvent(new Event("focus")));
     await expect(region(page, "Vendas hoje")).toContainText("R$ 320,10");
     expect(beforeReads(server)).toBe(2);
@@ -3072,7 +3095,7 @@ test.describe("sem conexão (§ 7, AC-28 a AC-31)", () => {
       page.getByText("Esta tela precisa de conexão.", { exact: false })
     ).toHaveCount(0);
     // no read while offline, not even when the tab comes back
-    await page.clock.runFor(31_000);
+    await page.clock.runFor(RETURN_REFRESH_MS);
     await page.evaluate(() => window.dispatchEvent(new Event("focus")));
     expect(server.calls.length).toBe(reads);
   });
@@ -3638,7 +3661,7 @@ test.describe("sem conexão (§ 7, AC-28 a AC-31)", () => {
     const server = new FakeServer(SOLD);
     await openWithCopy(page, server);
     server.broken.set("report/periodSummary", "403");
-    await page.clock.runFor(31_000);
+    await page.clock.runFor(RETURN_REFRESH_MS);
     await page.evaluate(() => window.dispatchEvent(new Event("focus")));
     await expect.poll(() => copyKeys(page)).toEqual([]);
     await page.context().setOffline(true);
@@ -4189,13 +4212,13 @@ test.describe("Ritmo de vendas (revisão de UI v7, § 3 item 10)", () => {
     expect(dailyCalls()).toBe(1);
 
     server.broken.set("report/periodSummary", "403");
-    await page.clock.runFor(31_000);
+    await page.clock.runFor(RETURN_REFRESH_MS);
     await page.evaluate(() => window.dispatchEvent(new Event("focus")));
     await expect.poll(() => copyKeys(page)).toEqual([]);
 
     // the access is back: the series of the day is asked of the server, not taken from the page or the device
     server.broken.delete("report/periodSummary");
-    await page.clock.runFor(31_000);
+    await page.clock.runFor(RETURN_REFRESH_MS);
     await page.evaluate(() => window.dispatchEvent(new Event("focus")));
     await expect.poll(dailyCalls).toBe(2);
     await expect(atRest(page)).toHaveText(AT_REST);
@@ -5492,8 +5515,8 @@ const PLAN_REGIONS = [
 interface PlanServer {
   answered: number;
   gate: Promise<void> | null;
-  refuse: boolean;
   reads: number;
+  refuse: boolean;
   state: string;
   use: { images: number; variants: number };
 }
@@ -5501,8 +5524,8 @@ interface PlanServer {
 const newPlanServer = (variants: number, images = 0): PlanServer => ({
   answered: 0,
   gate: null,
-  refuse: false,
   reads: 0,
+  refuse: false,
   state: "free",
   use: { images, variants },
 });
