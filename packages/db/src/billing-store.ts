@@ -3300,8 +3300,7 @@ export function createBillingStore(
       );
       const [row] = record.rows;
       // a claim reserved and not consumed is still the person's to take
-      const personTrialUsed =
-        row !== undefined && row.claim_consumed_at !== null;
+      const personTrialUsed = Boolean(row?.claim_consumed_at);
       if (!row?.has_record) {
         return {
           accessEndsAt: null,

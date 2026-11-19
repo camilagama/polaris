@@ -49,7 +49,7 @@ function answer(row: Record<string, unknown>) {
   mocks.query.mockResolvedValue({ rows: [row] });
 }
 
-describe("readOwnerPlan: the record and the person's trial in one statement", () => {
+describe("readOwnerPlan: the record and the person's trial come from one query", () => {
   beforeEach(() => {
     mocks.query.mockReset();
   });
