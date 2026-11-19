@@ -347,9 +347,11 @@ const RENEW_BEFORE_MS = 12 * 3_600_000;
  * each. Never reused when something is queued: the push must not leave under
  * somebody else's session (the server would refuse and record that for good).
  * It only bounds how long a first user's runtime may keep reading and queueing
- * after somebody else signed in.
+ * after somebody else signed in. The server reads the session on every request,
+ * so the window only governs a pull with nothing queued; the opening, the return
+ * of the connection and the return to the page forget it (`pageReturned`).
  */
-const SESSION_RECHECK_MS = 30_000;
+const SESSION_RECHECK_MS = 300_000;
 const EMPTY_COUNTS: PendingWork = { pending: 0, rejected: 0, sending: 0 };
 
 /** What one sync run was started for, so a late answer never acts on whoever opened after it. */
@@ -585,10 +587,16 @@ export class OfflineRuntime {
 
   /** The connection state changed: the screens are told at once (the sync, if any, follows from the host). */
   connectionChanged(): void {
+    this.sessionConfirmedAt = null;
     const online = this.dependencies.isOnline();
     if (online !== this.snapshot.online) {
       this.set({ ...this.snapshot, online });
     }
+  }
+
+  /** The page came back to the front: whoever is signed in now is looked at again by the next sync. */
+  pageReturned(): void {
+    this.sessionConfirmedAt = null;
   }
 
   /**

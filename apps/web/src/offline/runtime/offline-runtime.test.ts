@@ -312,6 +312,9 @@ function world(options: { leaseHours?: number } = {}) {
     advance: (hours: number) => {
       clock = new Date(clock.getTime() + hours * HOUR);
     },
+    advanceMs: (ms: number) => {
+      clock = new Date(clock.getTime() + ms);
+    },
     calls,
     closed,
     disk,
@@ -647,7 +650,7 @@ describe("starting", () => {
     await queueProduct(runtime, "Do primeiro usuário", 1);
 
     w.session.user = "user-2"; // somebody else signed in, in another tab
-    w.advance(0.02); // past the window in which the last confirmation is reused
+    w.advance(0.09); // past the window in which the last confirmation is reused
     await runtime.syncNow();
 
     expect(runtime.getSnapshot()).toMatchObject({
@@ -705,7 +708,7 @@ describe("starting", () => {
     await runtime.start(organizationId);
     await queueProduct(runtime, "Camiseta", 1);
     w.failures.sessionUser = new SessionUnreachableError("session_http_503");
-    w.advance(0.02);
+    w.advance(0.09);
 
     await runtime.syncNow();
 
@@ -756,7 +759,7 @@ describe("starting", () => {
     await runtime.syncNow();
     expect(w.calls.sessionUser).toBe(1);
 
-    w.advance(0.02);
+    w.advance(0.09);
     await runtime.syncNow();
     expect(w.calls.sessionUser).toBe(2);
     await runtime.syncNow();
@@ -767,6 +770,80 @@ describe("starting", () => {
     w.network.online = true;
     await runtime.syncNow();
     expect(w.calls.sessionUser).toBe(3);
+  });
+
+  it("a sync with nothing queued reuses the session confirmation for 5 minutes and looks again at exactly 5", async () => {
+    const w = world();
+    const runtime = w.make();
+    await runtime.start(organizationId);
+    expect(w.calls.sessionUser).toBe(1);
+
+    w.advanceMs(299_999);
+    await runtime.syncNow();
+    expect(w.calls.sessionUser).toBe(1);
+
+    w.advanceMs(1);
+    await runtime.syncNow();
+    expect(w.calls.sessionUser).toBe(2);
+
+    w.advanceMs(299_999);
+    await runtime.syncNow();
+    expect(w.calls.sessionUser).toBe(2);
+  });
+
+  it("with something queued the session is read again before the push, inside the window", async () => {
+    const w = world();
+    const runtime = w.make();
+    await runtime.start(organizationId);
+    await queueProduct(runtime, "Camiseta", 1);
+    const before = w.calls.sessionUser;
+
+    w.advanceMs(1000);
+    await runtime.syncNow();
+
+    expect(w.calls.sessionUser).toBe(before + 1);
+    expect(w.calls.push).toBe(1);
+  });
+
+  it("the return to the page and the change of the connection look at the session on the next sync, inside the window", async () => {
+    const w = world();
+    const runtime = w.make();
+    await runtime.start(organizationId);
+    expect(w.calls.sessionUser).toBe(1);
+
+    w.advanceMs(60_000);
+    runtime.pageReturned();
+    await runtime.syncNow();
+    expect(w.calls.sessionUser).toBe(2);
+
+    w.advanceMs(60_000);
+    await runtime.syncNow();
+    expect(w.calls.sessionUser).toBe(2);
+
+    w.network.online = false;
+    runtime.connectionChanged();
+    w.network.online = true;
+    runtime.connectionChanged();
+    await runtime.syncNow();
+    expect(w.calls.sessionUser).toBe(3);
+  });
+
+  it("somebody else signing in is seen by the first sync after the window, and not before it", async () => {
+    const w = world();
+    const runtime = w.make();
+    await runtime.start(organizationId);
+    w.session.user = "user-2";
+
+    w.advanceMs(299_999);
+    await runtime.syncNow();
+    expect(runtime.getSnapshot().reason).not.toBe("session_changed");
+
+    w.advanceMs(1);
+    await runtime.syncNow();
+    expect(runtime.getSnapshot()).toMatchObject({
+      phase: "unavailable",
+      reason: "session_changed",
+    });
   });
 
   it("sweeps the leases of the old layout of every organization at the first start, and only those", async () => {
@@ -1054,7 +1131,7 @@ describe("starting", () => {
     const runtime = w.make();
     await runtime.start(organizationId);
     w.session.user = "user-2";
-    w.advance(0.02);
+    w.advance(0.09);
     await runtime.syncNow();
     expect(w.keyValues.read("polaris.offline.session-user")).toBe("user-2");
   });
