@@ -9,7 +9,7 @@ import type { RuntimeSnapshot } from "./offline-runtime";
  * - every 60 s while the page is visible, in ONE tab of the browser per store (the one holding the lock
  *   of `isLeader`, Web Locks): the other tabs hear its pull through the data channel. One real try,
  *   even with the connection not proven (an answer of the Worker to it is what proves it again). A hidden page
- *   never pulls on the tick. After a tick that found nothing (an empty pull, an empty queue) the interval
+ *   never pulls on the tick. After a tick that found nothing (an answered, empty pull and an empty queue) the interval
  *   doubles, 60, 120, 240 and 300 s at most; anything that is work (a pull with changes, a send, a queued
  *   command, a return to the page, "Tentar agora", the connection back) brings it back to 60 s. Sending a queued
  *   command never waits for the interval;
@@ -38,8 +38,8 @@ interface SchedulerRuntime {
    * sent; without it every start and return syncs.
    */
   isFresh?: (maxAgeMs: number) => Promise<boolean>;
-  /** Whether the last sync sent a command or brought changes; without it, only the queue counts as work. */
-  lastSyncHadWork?: () => boolean;
+  /** Whether the last full sync was answered and found nothing to send or pull; without it the interval never grows. */
+  lastPullWasIdle?: () => boolean;
   subscribe?: (listener: () => void) => () => void;
   syncNow: () => Promise<void>;
 }
@@ -160,13 +160,15 @@ export function startSyncScheduler(
     !(
       failedLoudly(runtime.getSnapshot()) ||
       runtime.retriesQuietly() ||
-      queued() ||
-      runtime.lastSyncHadWork?.()
-    );
+      queued()
+    ) && runtime.lastPullWasIdle?.() === true;
   const tick = () => {
     cancelTick?.();
     cancelTick = schedule(() => {
       cancelTick = null;
+      if (stopped) {
+        return;
+      }
       if (!(dependencies.isVisible() && isLeader())) {
         tick();
         return;

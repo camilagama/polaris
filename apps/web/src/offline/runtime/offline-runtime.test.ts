@@ -1206,20 +1206,20 @@ describe("syncing", () => {
   });
 });
 
-describe("whether the last sync had work (the scheduler stretches its interval by it)", () => {
-  it("is false after a sync that sent nothing and pulled nothing, true after a send, true after a pull with changes", async () => {
+describe("whether the last pull was idle (the scheduler stretches its interval only after one)", () => {
+  it("is idle after an answered sync that sent and pulled nothing, not after a send or a pull with changes", async () => {
     const w = world();
     const runtime = w.make();
     await runtime.start(organizationId);
     await runtime.syncNow();
-    expect(runtime.lastSyncHadWork()).toBe(false);
+    expect(runtime.lastPullWasIdle()).toBe(true);
 
     await queueProduct(runtime, "Camiseta", 1);
     await runtime.syncNow();
-    expect(runtime.lastSyncHadWork()).toBe(true);
+    expect(runtime.lastPullWasIdle()).toBe(false);
 
     await runtime.syncNow();
-    expect(runtime.lastSyncHadWork()).toBe(false);
+    expect(runtime.lastPullWasIdle()).toBe(true);
 
     w.server.inventory.set(uuid(301), {
       productId: uuid(201),
@@ -1234,21 +1234,45 @@ describe("whether the last sync had work (the scheduler stretches its interval b
       seq: w.server.changes.length + 1,
     });
     await runtime.syncNow();
-    expect(runtime.lastSyncHadWork()).toBe(true);
+    expect(runtime.lastPullWasIdle()).toBe(false);
 
     await runtime.syncNow();
-    expect(runtime.lastSyncHadWork()).toBe(false);
+    expect(runtime.lastPullWasIdle()).toBe(true);
   });
 
-  it("is false after a sync that failed", async () => {
+  it("is not idle after a sync that failed or got no answer", async () => {
     const w = world();
     const runtime = w.make();
     await runtime.start(organizationId);
     await runtime.syncNow();
+    expect(runtime.lastPullWasIdle()).toBe(true);
+
     w.failures.push = true;
     await queueProduct(runtime, "Camiseta", 1);
     await runtime.syncNow();
-    expect(runtime.lastSyncHadWork()).toBe(false);
+    expect(runtime.lastPullWasIdle()).toBe(false);
+
+    w.failures.push = false;
+    await runtime.syncNow();
+    expect(runtime.lastPullWasIdle()).toBe(false);
+
+    await runtime.syncNow();
+    expect(runtime.lastPullWasIdle()).toBe(true);
+
+    w.network.online = false;
+    await runtime.syncNow();
+    expect(runtime.lastPullWasIdle()).toBe(false);
+  });
+
+  it("a run that only pushes leaves the verdict of the last pull alone", async () => {
+    const w = world();
+    const runtime = w.make();
+    await runtime.start(organizationId);
+    await runtime.syncNow();
+    expect(runtime.lastPullWasIdle()).toBe(true);
+
+    await runtime.syncNow({ pull: false });
+    expect(runtime.lastPullWasIdle()).toBe(true);
   });
 });
 

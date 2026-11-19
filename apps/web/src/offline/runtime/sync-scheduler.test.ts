@@ -35,8 +35,8 @@ function setup(options: Options = {}) {
     online: true,
     /** What `counts` of the snapshot says is waiting in the local queue. */
     pending: 0,
-    /** What `lastSyncHadWork` answers: the last sync brought changes or sent a command. */
-    hadWork: true,
+    /** What `lastPullWasIdle` answers: the last full sync was answered and found nothing. */
+    idle: false,
     /** The runtime keeps quiet about a transient failure (a Worker killed for CPU) for its first 60 s. */
     quiet: false,
     reason: null as string | null,
@@ -73,7 +73,7 @@ function setup(options: Options = {}) {
         reason: state.reason,
       }) as RuntimeSnapshot,
     isFresh,
-    lastSyncHadWork: () => state.hadWork,
+    lastPullWasIdle: () => state.idle,
     retriesQuietly: () => state.quiet,
     subscribe: (listener: () => void) => {
       snapshotListeners.add(listener);
@@ -221,7 +221,7 @@ describe("the 60 s tick and the return to the page", () => {
 describe("the interval grows while there is no work", () => {
   const idle = () => {
     const t = setup();
-    t.state.hadWork = false;
+    t.state.idle = true;
     return t;
   };
 
@@ -249,11 +249,11 @@ describe("the interval grows while there is no work", () => {
     await tickAfter(t, 60_000);
     await tickAfter(t, 120_000);
 
-    t.state.hadWork = true;
+    t.state.idle = false;
     await tickAfter(t, 240_000);
     await tickAfter(t, 60_000);
 
-    t.state.hadWork = false;
+    t.state.idle = true;
     await tickAfter(t, 60_000);
     await tickAfter(t, 120_000);
   });
@@ -315,6 +315,17 @@ describe("the interval grows while there is no work", () => {
     await tickAfter(t, 240_000);
     expect(t.liveDelays()).toContain(TICK_MS);
     expect(t.liveDelays()).not.toContain(MAX_TICK_MS);
+  });
+
+  it("a sync that got no answer or was cut is no idle pull: the interval stays at 60 s", async () => {
+    const t = idle();
+    await tickAfter(t, 60_000);
+    t.state.idle = false;
+    t.state.reason = null;
+
+    await tickAfter(t, 120_000);
+    await tickAfter(t, 60_000);
+    await tickAfter(t, 60_000);
   });
 
   it("a hidden page does not pull and does not stretch the interval; it pulls at once on the return", async () => {
