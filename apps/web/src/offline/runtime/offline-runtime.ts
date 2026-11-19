@@ -460,6 +460,7 @@ export class OfflineRuntime {
   /** Whether the run in flight pulls (a full sync) or only pushes (`trySend`). */
   private inFlightPulls = true;
   private lastOutcome: SyncOutcome = "not_run";
+  private pullIdle = false;
   /** The first of the transient failures in a row of the sync (ms), or null after a good one. */
   private failingSince: number | null = null;
   /** The last of those failures (ms): a gap longer than the quiet minute starts a new run of failures. */
@@ -1969,6 +1970,9 @@ export class OfflineRuntime {
 
   private async runSync(pull: boolean): Promise<void> {
     this.lastOutcome = "not_run";
+    if (pull) {
+      this.pullIdle = false;
+    }
     this.mark("sync:start");
     try {
       await this.runSyncSteps(pull);
@@ -2055,7 +2059,8 @@ export class OfflineRuntime {
         return;
       }
       pulling = true;
-      await this.catchUp({ source, stores, summary });
+      const brought = await this.catchUp({ source, stores, summary });
+      this.pullIdle = !brought && summary.requests === 0;
       this.lastOutcome = "answered";
       this.failingSince = null;
       this.set({
@@ -2162,18 +2167,20 @@ export class OfflineRuntime {
     source: BootstrapSource;
     stores: OpenedStores;
     summary: SyncOutboxSummary;
-  }): Promise<void> {
+  }): Promise<boolean> {
     const { source, stores, summary } = work;
     const meta = await stores.writer.readMeta();
     if (isLocalStoreReady(meta) && meta?.cursor) {
       // accepted or dropped commands: the server's rows replace the optimistic ones; otherwise the others' changes
       const caughtUp = summary.accepted > 0 || summary.discarded > 0;
       this.mark(caughtUp ? "sync:phase:catchUp" : "sync:phase:pull");
-      await pullLocalChanges(source, stores.writer, meta.cursor);
-    } else {
-      this.mark("sync:phase:pull");
-      await bootstrapLocalStore(source, stores.writer);
+      const cursor = await pullLocalChanges(source, stores.writer, meta.cursor);
+      // an empty page answers with the cursor it was asked from
+      return cursor !== meta.cursor;
     }
+    this.mark("sync:phase:pull");
+    await bootstrapLocalStore(source, stores.writer);
+    return true;
   }
 
   /**
@@ -2227,6 +2234,15 @@ export class OfflineRuntime {
     }
     this.failedAt = now;
     return now - this.failingSince < QUIET_FAILURE_MS;
+  }
+
+  /**
+   * Whether the last full sync (send and pull) was answered, sent nothing and pulled nothing new. A run that
+   * failed, got no answer, was cut at its pull or only pushed is not idle: the scheduler lets its interval grow
+   * only after an idle one.
+   */
+  lastPullWasIdle(): boolean {
+    return this.pullIdle;
   }
 
   /** The last sync failed in a transient way and says nothing yet: the scheduler tries again in 2, 4 and 8 s. */
