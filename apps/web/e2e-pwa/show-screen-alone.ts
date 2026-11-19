@@ -29,8 +29,7 @@ export async function showScreenAlone(page: Page) {
           !(animation.timeline instanceof DocumentTimeline) ||
           animation.effect?.getComputedTiming().iterations ===
             Number.POSITIVE_INFINITY ||
-          (animation.playState !== "running" &&
-            animation.playState !== "pending")
+          (animation.playState !== "running" && !animation.pending)
       )
   );
 }
