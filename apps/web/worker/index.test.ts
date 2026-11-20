@@ -1261,7 +1261,12 @@ describe("the queue consumer", () => {
   });
 
   it("runs the data export job for a data_export.requested message and acks it", async () => {
-    const sent = message(exportEvent);
+    const exportId = "0199a1b2-c3d4-7e5f-8a6b-ffffffffffff";
+    const sent = message({
+      ...exportEvent,
+      event: { exportId },
+      idempotencyKey: `data_export.requested:${exportId}`,
+    });
     await runQueue({ ...configured, ...privacy }, sent);
 
     expect(mocks.runDataExports).toHaveBeenCalledTimes(1);
@@ -1270,7 +1275,7 @@ describe("the queue consumer", () => {
       expect.objectContaining({
         sweep: false,
         target: {
-          exportId: "0199a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a2b",
+          exportId,
           organizationId: "org_1",
         },
       })

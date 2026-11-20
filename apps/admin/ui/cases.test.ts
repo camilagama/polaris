@@ -531,10 +531,13 @@ describe("the list of cases (AC-P1.4)", () => {
 describe("opening a case (AC-P1.5)", () => {
   const newContext = (overrides = {}) =>
     screenContext({ screen: "caso-novo", store: STORE, ...overrides });
-  const namePage = json({
-    next: null,
-    organizations: [summary({ id: STORE, name: "Loja da Ana" })],
-  });
+  const namePage: Answer = () =>
+    Promise.resolve(
+      json({
+        next: null,
+        organizations: [summary({ id: STORE, name: "Loja da Ana" })],
+      })
+    );
   const opened: OpenedSupportCase = {
     id: CASE,
     kind: "support",

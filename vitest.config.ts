@@ -21,6 +21,10 @@ export default defineConfig({
     ],
   },
   test: {
+    // Random file and test order exposes tests that lean on state another test
+    // left behind. The seed is printed on every run; replay a failure with
+    // `bun run test --sequence.seed=<seed>`.
+    sequence: { shuffle: { files: true, tests: true } },
     projects: [
       {
         extends: true,
