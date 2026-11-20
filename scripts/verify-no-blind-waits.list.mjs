@@ -16,8 +16,14 @@ const SIMULATED_LATENCY =
   "a espera é a latência de uma resposta simulada dentro de page.route: o tempo é o que o servidor falso leva para responder";
 
 export const BLIND_WAITS_LIST = {
-  "apps/web/e2e-pwa/motion-level.e2e.ts": { count: 3, reason: BEFORE_THE_RULE },
-  "apps/web/e2e-pwa/ui-charts.e2e.ts": { count: 6, reason: BEFORE_THE_RULE },
+  "apps/web/e2e-pwa/motion-level.e2e.ts": {
+    count: 1,
+    reason: ONE_TURN_AFTER_THE_CLICK,
+  },
+  "apps/web/e2e-pwa/ui-charts.e2e.ts": {
+    count: 1,
+    reason: ABSENCE_IS_THE_TEST,
+  },
   "apps/web/e2e-pwa/ui-date-pickers.e2e.ts": {
     count: 2,
     reason: BEFORE_THE_RULE,
