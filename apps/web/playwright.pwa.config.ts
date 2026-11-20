@@ -2,6 +2,7 @@ import { defineConfig, devices } from "@playwright/test";
 import {
   PWA_ORIGIN,
   PWA_PORT,
+  reportersFor,
   reuseExistingServer,
   workersFrom,
 } from "./e2e/run-settings";
@@ -64,7 +65,7 @@ export default defineConfig({
       use: { browserName: "chromium", connectOptions: visualConnectOptions() },
     },
   ],
-  reporter: inCI ? [["list"], ["github"]] : "list",
+  reporter: reportersFor("pwa"),
   retries: inCI ? 1 : 0,
   testDir: "./e2e-pwa",
   testMatch: "**/*.e2e.ts",
