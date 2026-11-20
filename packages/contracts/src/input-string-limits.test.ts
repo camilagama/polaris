@@ -287,7 +287,7 @@ describe("the input strings of the contract", () => {
     const ids = contractStrings.filter((entry) =>
       entry.path.endsWith(".organizationId")
     );
-    expect(ids).toHaveLength(93);
+    expect(ids).toHaveLength(94);
     expect(
       ids.filter((entry) => entry.max !== 255).map((entry) => entry.path)
     ).toEqual([]);

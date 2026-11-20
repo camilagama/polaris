@@ -78,6 +78,7 @@ function createRpcClient(router = createRpcRouter()) {
           matchedBy: Array<"email" | "phone">;
         }>;
       }>;
+      get: (input: unknown) => Promise<CustomerReadModel>;
       list: (input: unknown) => Promise<{ customers: CustomerReadModel[] }>;
       restore: (input: unknown) => Promise<{
         changed: boolean;
@@ -186,6 +187,38 @@ describe("customer RPCs", () => {
     expect(listCustomers).toHaveBeenCalledWith({}, identity, {
       status: "active",
     });
+  });
+
+  it("reads one customer by ID inside the authorized organization, through customer:update", async () => {
+    let observedCapability = "";
+    const getCustomer = vi.fn(async () => customerRow);
+    const client = createRpcClient(
+      createRpcRouter({
+        getCustomer,
+        withTenantRequestContext: createTenantRequestStub((capability) => {
+          observedCapability = capability;
+        }),
+      })
+    );
+
+    await expect(
+      client.customer.get({ id: customerRow.id, organizationId })
+    ).resolves.toMatchObject({ id: customerRow.id, name: "Ana Silva" });
+    expect(observedCapability).toBe("customer:update");
+    expect(getCustomer).toHaveBeenCalledWith({}, identity, customerRow.id);
+  });
+
+  it("answers NOT_FOUND for a customer that is not in the store", async () => {
+    const client = createRpcClient(
+      createRpcRouter({
+        getCustomer: () => Promise.reject(new CustomerNotFoundError()),
+        withTenantRequestContext: createTenantRequestStub(),
+      })
+    );
+
+    await expect(
+      client.customer.get({ id: customerRow.id, organizationId })
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
   });
 
   it("searches possible duplicates inside the authorized organization", async () => {
