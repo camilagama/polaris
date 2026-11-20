@@ -41,7 +41,6 @@ export const BLIND_WAITS_LIST = {
     count: 1,
     reason: BEFORE_THE_RULE,
   },
-  "apps/web/e2e-pwa/ui-screens.ts": { count: 3, reason: BEFORE_THE_RULE },
   "apps/web/e2e-pwa/update-moments.e2e.ts": {
     count: 7,
     reason: BEFORE_THE_RULE,
