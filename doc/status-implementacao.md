@@ -1827,8 +1827,8 @@ Quinto passo da Fase 12 ([ADR 0094](../docs/adr/0094-tracing-e-amostragem-do-wor
 | --- | --- | --- |
 | Configuração | Concluído | `apps/web`, `apps/admin` e `apps/catalog`: logs e traces ligados, `traces.head_sampling_rate` 0,05 (produção), `logs.head_sampling_rate` 1 e `invocation_logs` desligado. |
 | Erros 100% | Concluído | A amostragem da plataforma é por requisição e não tem taxa própria para erros; por isso os logs ficam a 100% e só os traces são amostrados (ADR 0094). |
-| Staging | Configurado (Fase 14) | `env.staging` repete o bloco com traces a 1 e logs a 1; `env.production` repete o de produção, com traces a 0,05 ([ADR 0097](../docs/adr/0097-staging-fixo-e-producao-em-conta-separada.md)). Nada implantado. |
-| Teste | Concluído | `packages/observability/src/tracing-config.test.ts` lê os três arquivos e exige observabilidade, logs e traces ligados, traces a 0,05 (no topo e em `env.production`), logs a 1 e `invocation_logs` desligado; um `env.*` não pode desligá-los nem baixar a taxa dos logs. |
+| Staging | Configurado (Fase 14) | `env.staging` repete o bloco com traces a 0,1 (desde 19/11/2026, teto de eventos do Free; ADR 0094, emenda; vale no próximo deploy do staging) e logs a 1; `env.production` repete o de produção, com traces a 0,05 ([ADR 0097](../docs/adr/0097-staging-fixo-e-producao-em-conta-separada.md)). Nada implantado. |
+| Teste | Concluído | `packages/observability/src/tracing-config.test.ts` lê os três arquivos e exige observabilidade, logs e traces ligados, traces a 0,05 (no topo e em `env.production`) e a 0,1 no `env.staging`, logs a 1 e `invocation_logs` desligado; um `env.*` não pode desligá-los nem baixar a taxa dos logs. |
 | Custo | Estimado | Cerca de 1 MB por dia hoje, contra 0,5 GB por dia de ingestão do Free (logs e traces somados, modelo de 1º/12/2026); US$ 0, dentro do teto de US$ 10 (ADR 0076); gatilho de revisão em 0,25 GB por dia. Medida real: Fase 14. |
 | Limites | Registrados | Sem medida em nuvem; `environment`, CPU do evlog e o destino das exceções com `invocation_logs` desligado ficam para a Fase 14; traces e logs dividem a cota diária (ADR). |
 

@@ -310,7 +310,7 @@
         // /health declares the commit of the Worker (X-Polaris-Release), read by the smoke (ADR 0098, amended)
         "RELEASE_HEADER_ENABLED": "true"
       },
-      // Staging has little traffic: traces at 100% help the first measurements (ADR 0094).
+      // Staging traces at 10% so a load test does not exhaust the account's daily ingestion cap and blind the logs; logs stay at 100% (ADR 0094).
       "observability": {
         "enabled": true,
         "logs": {
@@ -318,7 +318,7 @@
           "head_sampling_rate": 1,
           "invocation_logs": false
         },
-        "traces": { "enabled": true, "head_sampling_rate": 1 }
+        "traces": { "enabled": true, "head_sampling_rate": 0.1 }
       },
       // One configuration per database role, caching disabled, against the staging Neon project only.
       "hyperdrive": [
