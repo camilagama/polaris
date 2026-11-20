@@ -57,3 +57,19 @@ export function workersFrom(fallback: number, cap: number, spare = 0) {
   }
   return workers;
 }
+
+/**
+ * The reporters of a Playwright run: `list` (and `github` in the CI) as always, and, only in the CI, the JSON of the
+ * run in `test-timings/timings-<name>.json` for the time per file (`scripts/ci-timing.mjs --durations`). Not in
+ * `test-results/`: Playwright empties that folder at the start of every run, so the second run of a shard would erase
+ * the file of the first.
+ */
+export function reportersFor(name: string) {
+  return process.env.CI
+    ? ([
+        ["list"],
+        ["github"],
+        ["json", { outputFile: `test-timings/timings-${name}.json` }],
+      ] as const)
+    : "list";
+}

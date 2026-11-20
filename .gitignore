@@ -7,6 +7,7 @@ dist-fixture/
 coverage/
 playwright-report/
 test-results/
+test-timings/
 .wrangler/
 .dev.vars*
 .env
