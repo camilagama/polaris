@@ -1,7 +1,7 @@
 /** A lie-fi connection must not hold the start of the app: after this, the lookup is given up. */
 const SESSION_LOOKUP_TIMEOUT_MS = 4000;
 
-/** How long the answer of this tab's last lookup is reused; the runtime's own recheck window is longer (5 min). */
+/** How long the answer of this tab's last lookup is reused; the runtime's own recheck window is longer (6 min). */
 export const SESSION_MEMORY_MS = 10_000;
 
 const SESSION_URL = "/api/auth/get-session";

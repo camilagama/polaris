@@ -21,8 +21,10 @@ import {
   PLAN_REFUSED_REASON,
   type RuntimeApi,
   type RuntimeDependencies,
+  SESSION_RECHECK_MS,
   SessionUnreachableError,
 } from "./offline-runtime";
+import { MAX_TICK_MS } from "./sync-scheduler";
 import { syncStatusLabel } from "./sync-status";
 
 const key = { id: "k1", secret: "s".repeat(40) };
@@ -1175,7 +1177,7 @@ describe("starting", () => {
     await queueProduct(runtime, "Do primeiro usuário", 1);
 
     w.session.user = "user-2"; // somebody else signed in, in another tab
-    w.advance(0.09); // past the window in which the last confirmation is reused
+    w.advance(0.11); // past the window in which the last confirmation is reused
     await runtime.syncNow();
 
     expect(runtime.getSnapshot()).toMatchObject({
@@ -1304,7 +1306,7 @@ describe("starting", () => {
     await runtime.start(organizationId);
     await queueProduct(runtime, "Camiseta", 1);
     w.failures.sessionUser = new SessionUnreachableError("session_http_503");
-    w.advance(0.09);
+    w.advance(0.11);
 
     await runtime.syncNow();
 
@@ -1355,7 +1357,7 @@ describe("starting", () => {
     await runtime.syncNow();
     expect(w.calls.sessionUser).toBe(1);
 
-    w.advance(0.09);
+    w.advance(0.11);
     await runtime.syncNow();
     expect(w.calls.sessionUser).toBe(2);
     await runtime.syncNow();
@@ -1388,19 +1390,19 @@ describe("starting", () => {
     await runtime.syncNow();
     expect(w.calls.sessionUser).toBe(3);
 
-    w.advance(0.09);
+    w.advance(0.11);
     await runtime.syncNow();
     expect(w.sessionFresh.every(Boolean)).toBe(true);
     expect(w.sessionFresh.length).toBe(w.calls.sessionUser);
   });
 
-  it("a sync with nothing queued reuses the session confirmation for 5 minutes and looks again at exactly 5", async () => {
+  it("a sync with nothing queued reuses the session confirmation for 6 minutes and looks again at exactly 6", async () => {
     const w = world();
     const runtime = w.make();
     await runtime.start(organizationId);
     expect(w.calls.sessionUser).toBe(1);
 
-    w.advanceMs(299_999);
+    w.advanceMs(359_999);
     await runtime.syncNow();
     expect(w.calls.sessionUser).toBe(1);
 
@@ -1408,9 +1410,65 @@ describe("starting", () => {
     await runtime.syncNow();
     expect(w.calls.sessionUser).toBe(2);
 
-    w.advanceMs(299_999);
+    w.advanceMs(359_999);
     await runtime.syncNow();
     expect(w.calls.sessionUser).toBe(2);
+  });
+
+  it("keeps the recheck window above the idle tick ceiling and at a fixed 6 minutes", () => {
+    expect(SESSION_RECHECK_MS).toBeGreaterThan(MAX_TICK_MS);
+    expect(SESSION_RECHECK_MS).toBe(360_000);
+  });
+
+  it("an idle tab at the 300 s tick spares the get-session, and the tick at 600 s reads it again", async () => {
+    const w = world();
+    const runtime = w.make();
+    await runtime.start(organizationId);
+    expect(w.calls.sessionUser).toBe(1);
+
+    w.advanceMs(MAX_TICK_MS);
+    await runtime.syncNow();
+    expect(w.calls.sessionUser).toBe(1);
+
+    w.advanceMs(MAX_TICK_MS);
+    await runtime.syncNow();
+    expect(w.calls.sessionUser).toBe(2);
+    expect(w.sessionFresh.every(Boolean)).toBe(true);
+
+    w.advanceMs(MAX_TICK_MS);
+    await runtime.syncNow();
+    expect(w.calls.sessionUser).toBe(2);
+  });
+
+  it("the read is still fresh inside the window with something queued, after the return to the page and after the connection changed", async () => {
+    const w = world();
+    const runtime = w.make();
+    await runtime.start(organizationId);
+
+    await queueProduct(runtime, "Camiseta", 1);
+    let reads = w.calls.sessionUser;
+    w.advanceMs(MAX_TICK_MS);
+    await runtime.syncNow();
+    expect(w.calls.sessionUser).toBe(reads + 1);
+    reads = w.calls.sessionUser;
+
+    w.advanceMs(1000);
+    await runtime.syncNow();
+    expect(w.calls.sessionUser).toBe(reads);
+
+    runtime.pageReturned();
+    await runtime.syncNow();
+    expect(w.calls.sessionUser).toBe(reads + 1);
+    reads = w.calls.sessionUser;
+
+    w.advanceMs(1000);
+    await runtime.syncNow();
+    expect(w.calls.sessionUser).toBe(reads);
+
+    runtime.connectionChanged();
+    await runtime.syncNow();
+    expect(w.calls.sessionUser).toBe(reads + 1);
+    expect(w.sessionFresh.every(Boolean)).toBe(true);
   });
 
   it("with something queued the session is read again before the push, inside the window", async () => {
@@ -1456,7 +1514,7 @@ describe("starting", () => {
     await runtime.start(organizationId);
     w.session.user = "user-2";
 
-    w.advanceMs(299_999);
+    w.advanceMs(359_999);
     await runtime.syncNow();
     expect(runtime.getSnapshot().reason).not.toBe("session_changed");
 
@@ -1753,7 +1811,7 @@ describe("starting", () => {
     const runtime = w.make();
     await runtime.start(organizationId);
     w.session.user = "user-2";
-    w.advance(0.09);
+    w.advance(0.11);
     await runtime.syncNow();
     expect(w.keyValues.read("polaris.offline.session-user")).toBe("user-2");
   });
@@ -4313,7 +4371,7 @@ describe("the device check a start skips (the same session, linked in the last 1
     const runtime = w.make();
     await runtime.start(organizationId);
     w.session.user = "user-2";
-    w.advance(0.09);
+    w.advance(0.11);
     await runtime.syncNow();
     expect(runtime.getSnapshot().reason).toBe("session_changed");
     expect(w.keyValues.read(CHECK_KEY)).toBeNull();
