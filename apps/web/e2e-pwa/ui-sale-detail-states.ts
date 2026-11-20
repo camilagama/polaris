@@ -2,6 +2,7 @@
 // Only types from Playwright: `ui-screens.ts` is read under Vitest by the source rules.
 import type { Page, Route } from "@playwright/test";
 import { DETAIL_SALE_ID, saleDetailAnswers } from "./sale-detail-fixture";
+import { showScreenAlone } from "./show-screen-alone";
 import { serveLabWorker, WORKER_MARK } from "./worker-mark";
 
 /**
@@ -67,19 +68,6 @@ async function openSaleLab(
     // the customer panel is read: its current customer is on screen
     await page.getByText("Ângela Souza").first().waitFor();
   }
-}
-
-/** Hides the lab's own controls and waits for the fonts: what stays is the screen. */
-async function showScreenAlone(page: Page) {
-  await page.evaluate(() => {
-    for (const element of document.querySelectorAll("[data-lab-chrome]")) {
-      (element as HTMLElement).hidden = true;
-    }
-    (document.activeElement as HTMLElement | null)?.blur();
-    window.scrollTo(0, 0);
-  });
-  await page.evaluate(() => document.fonts.ready);
-  await page.waitForTimeout(300);
 }
 
 const openDetail = (page: Page, withReturn = true, withFee = false) =>

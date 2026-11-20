@@ -53,16 +53,20 @@ function world(options: { leaseHours?: number } = {}) {
   const disk = { failure: undefined as Error | undefined, outbox: false };
   let clock = new Date("2026-10-14T12:00:00.000Z");
   const calls = {
+    deviceIsMine: 0,
     issueLease: 0,
     pull: 0,
     push: 0,
     registerDevice: 0,
     sessionUser: 0,
   };
+  const sessionFresh: boolean[] = [];
   const labels: (string | null)[] = [];
   const expectedUsers: (string | undefined)[] = [];
   const owners = new Map<string, string>();
-  const session: { signedIn: boolean; user: string } = {
+  /** `id` is the session row the get-session names; null is an answer without one (the start never skips the check). */
+  const session: { id: string | null; signedIn: boolean; user: string } = {
+    id: null,
     signedIn: true,
     user: userId,
   };
@@ -182,6 +186,7 @@ function world(options: { leaseHours?: number } = {}) {
   };
   const api: RuntimeApi = {
     deviceIsMine: (deviceId) => {
+      calls.deviceIsMine += 1;
       if (failures.deviceIsMineError) {
         return Promise.reject(failures.deviceIsMineError);
       }
@@ -236,11 +241,24 @@ function world(options: { leaseHours?: number } = {}) {
       owners.set(id, session.user);
       return Promise.resolve(id);
     },
-    sessionUserId: () => {
+    sessionUserId: (lookup) => {
       calls.sessionUser += 1;
+      sessionFresh.push(lookup?.fresh === true);
       return failures.sessionUser
         ? Promise.reject(failures.sessionUser)
         : Promise.resolve(session.signedIn ? session.user : null);
+    },
+    signedInSession: () => {
+      calls.sessionUser += 1;
+      sessionFresh.push(true);
+      if (failures.sessionUser) {
+        return Promise.reject(failures.sessionUser);
+      }
+      return Promise.resolve(
+        session.signedIn
+          ? { sessionId: session.id, userId: session.user }
+          : null
+      );
     },
     source: (_organizationId, signal, expectedUserId) => {
       expectedUsers.push(expectedUserId);
@@ -322,7 +340,12 @@ function world(options: { leaseHours?: number } = {}) {
     advance: (hours: number) => {
       clock = new Date(clock.getTime() + hours * HOUR);
     },
+    advanceMs: (ms: number) => {
+      clock = new Date(clock.getTime() + ms);
+    },
+    api,
     calls,
+    sessionFresh,
     closed,
     disk,
     expectedUsers,
@@ -347,6 +370,10 @@ function world(options: { leaseHours?: number } = {}) {
     make,
     network,
     purged,
+    /** The server revokes the device: it is nobody's any more. */
+    revoke: (deviceId: string) => {
+      owners.delete(deviceId);
+    },
     server,
     session,
     stores,
@@ -658,7 +685,7 @@ describe("starting", () => {
     await queueProduct(runtime, "Do primeiro usuário", 1);
 
     w.session.user = "user-2"; // somebody else signed in, in another tab
-    w.advance(0.02); // past the window in which the last confirmation is reused
+    w.advance(0.09); // past the window in which the last confirmation is reused
     await runtime.syncNow();
 
     expect(runtime.getSnapshot()).toMatchObject({
@@ -787,7 +814,7 @@ describe("starting", () => {
     await runtime.start(organizationId);
     await queueProduct(runtime, "Camiseta", 1);
     w.failures.sessionUser = new SessionUnreachableError("session_http_503");
-    w.advance(0.02);
+    w.advance(0.09);
 
     await runtime.syncNow();
 
@@ -838,7 +865,7 @@ describe("starting", () => {
     await runtime.syncNow();
     expect(w.calls.sessionUser).toBe(1);
 
-    w.advance(0.02);
+    w.advance(0.09);
     await runtime.syncNow();
     expect(w.calls.sessionUser).toBe(2);
     await runtime.syncNow();
@@ -849,6 +876,106 @@ describe("starting", () => {
     w.network.online = true;
     await runtime.syncNow();
     expect(w.calls.sessionUser).toBe(3);
+  });
+
+  it("asks every confirmation of the server fresh: at the start, with a queue, within the window and past it", async () => {
+    const w = world();
+    const runtime = w.make();
+    await runtime.start(organizationId);
+    expect(w.sessionFresh).toEqual([true]);
+
+    w.network.online = false;
+    await queueProduct(runtime, "Camiseta", 1);
+    w.network.online = true;
+    await runtime.syncNow();
+    expect(w.calls.sessionUser).toBe(2);
+    expect(w.sessionFresh).toEqual([true, true]);
+
+    w.network.online = false;
+    await queueProduct(runtime, "Calça", 1);
+    w.network.online = true;
+    w.advance(0.02);
+    await runtime.syncNow();
+    expect(w.calls.sessionUser).toBe(3);
+
+    w.advance(0.09);
+    await runtime.syncNow();
+    expect(w.sessionFresh.every(Boolean)).toBe(true);
+    expect(w.sessionFresh.length).toBe(w.calls.sessionUser);
+  });
+
+  it("a sync with nothing queued reuses the session confirmation for 5 minutes and looks again at exactly 5", async () => {
+    const w = world();
+    const runtime = w.make();
+    await runtime.start(organizationId);
+    expect(w.calls.sessionUser).toBe(1);
+
+    w.advanceMs(299_999);
+    await runtime.syncNow();
+    expect(w.calls.sessionUser).toBe(1);
+
+    w.advanceMs(1);
+    await runtime.syncNow();
+    expect(w.calls.sessionUser).toBe(2);
+
+    w.advanceMs(299_999);
+    await runtime.syncNow();
+    expect(w.calls.sessionUser).toBe(2);
+  });
+
+  it("with something queued the session is read again before the push, inside the window", async () => {
+    const w = world();
+    const runtime = w.make();
+    await runtime.start(organizationId);
+    await queueProduct(runtime, "Camiseta", 1);
+    const before = w.calls.sessionUser;
+
+    w.advanceMs(1000);
+    await runtime.syncNow();
+
+    expect(w.calls.sessionUser).toBe(before + 1);
+    expect(w.calls.push).toBe(1);
+  });
+
+  it("the return to the page and the change of the connection look at the session on the next sync, inside the window", async () => {
+    const w = world();
+    const runtime = w.make();
+    await runtime.start(organizationId);
+    expect(w.calls.sessionUser).toBe(1);
+
+    w.advanceMs(60_000);
+    runtime.pageReturned();
+    await runtime.syncNow();
+    expect(w.calls.sessionUser).toBe(2);
+
+    w.advanceMs(60_000);
+    await runtime.syncNow();
+    expect(w.calls.sessionUser).toBe(2);
+
+    w.network.online = false;
+    runtime.connectionChanged();
+    w.network.online = true;
+    runtime.connectionChanged();
+    await runtime.syncNow();
+    expect(w.calls.sessionUser).toBe(3);
+  });
+
+  it("somebody else signing in is seen by the first sync after the window, and not before it", async () => {
+    const w = world();
+    const runtime = w.make();
+    await runtime.start(organizationId);
+    w.session.user = "user-2";
+
+    w.advanceMs(299_999);
+    await runtime.syncNow();
+    expect(runtime.getSnapshot().reason).not.toBe("session_changed");
+
+    w.advanceMs(1);
+    await runtime.syncNow();
+    expect(runtime.getSnapshot()).toMatchObject({
+      phase: "unavailable",
+      reason: "session_changed",
+    });
   });
 
   it("sweeps the leases of the old layout of every organization at the first start, and only those", async () => {
@@ -1136,7 +1263,7 @@ describe("starting", () => {
     const runtime = w.make();
     await runtime.start(organizationId);
     w.session.user = "user-2";
-    w.advance(0.02);
+    w.advance(0.09);
     await runtime.syncNow();
     expect(w.keyValues.read("polaris.offline.session-user")).toBe("user-2");
   });
@@ -1285,6 +1412,76 @@ describe("syncing", () => {
     const runtime = w.make();
     await runtime.syncNow();
     expect(w.calls.push).toBe(0);
+  });
+});
+
+describe("whether the last pull was idle (the scheduler stretches its interval only after one)", () => {
+  it("is idle after an answered sync that sent and pulled nothing, not after a send or a pull with changes", async () => {
+    const w = world();
+    const runtime = w.make();
+    await runtime.start(organizationId);
+    await runtime.syncNow();
+    expect(runtime.lastPullWasIdle()).toBe(true);
+
+    await queueProduct(runtime, "Camiseta", 1);
+    await runtime.syncNow();
+    expect(runtime.lastPullWasIdle()).toBe(false);
+
+    await runtime.syncNow();
+    expect(runtime.lastPullWasIdle()).toBe(true);
+
+    w.server.inventory.set(uuid(301), {
+      productId: uuid(201),
+      quantity: 5,
+      updatedAt: "2026-10-14T12:30:00.000Z",
+      variantId: uuid(301),
+      version: 2,
+    });
+    w.server.changes.push({
+      entityId: uuid(301),
+      entityType: "inventory_balance",
+      seq: w.server.changes.length + 1,
+    });
+    await runtime.syncNow();
+    expect(runtime.lastPullWasIdle()).toBe(false);
+
+    await runtime.syncNow();
+    expect(runtime.lastPullWasIdle()).toBe(true);
+  });
+
+  it("is not idle after a sync that failed or got no answer", async () => {
+    const w = world();
+    const runtime = w.make();
+    await runtime.start(organizationId);
+    await runtime.syncNow();
+    expect(runtime.lastPullWasIdle()).toBe(true);
+
+    w.failures.push = true;
+    await queueProduct(runtime, "Camiseta", 1);
+    await runtime.syncNow();
+    expect(runtime.lastPullWasIdle()).toBe(false);
+
+    w.failures.push = false;
+    await runtime.syncNow();
+    expect(runtime.lastPullWasIdle()).toBe(false);
+
+    await runtime.syncNow();
+    expect(runtime.lastPullWasIdle()).toBe(true);
+
+    w.network.online = false;
+    await runtime.syncNow();
+    expect(runtime.lastPullWasIdle()).toBe(false);
+  });
+
+  it("a run that only pushes leaves the verdict of the last pull alone", async () => {
+    const w = world();
+    const runtime = w.make();
+    await runtime.start(organizationId);
+    await runtime.syncNow();
+    expect(runtime.lastPullWasIdle()).toBe(true);
+
+    await runtime.syncNow({ pull: false });
+    expect(runtime.lastPullWasIdle()).toBe(true);
   });
 });
 
@@ -3452,5 +3649,292 @@ describe("conexão com prova (F7)", () => {
     proven = true;
     runtime.connectionChanged();
     expect(runtime.getSnapshot().online).toBe(true);
+  });
+});
+
+describe("the device check a start skips (the same session, linked in the last 12 h)", () => {
+  const CHECK_KEY = "polaris.offline.device-checked";
+  const record = (w: ReturnType<typeof world>) =>
+    JSON.parse(w.keyValues.read(CHECK_KEY) ?? "null") as Record<
+      string,
+      unknown
+    > | null;
+
+  /** A first start of session `s-1` (it registers and takes a lease), then a stop, as a closed tab. */
+  async function linked(options: { leaseHours?: number } = {}) {
+    const w = world(options);
+    w.session.id = "s-1";
+    await w.make().start(organizationId);
+    expect(w.calls.deviceIsMine).toBe(0);
+    return w;
+  }
+
+  it("a reopening of the same session within 12 h opens without asking whose the device is", async () => {
+    const w = await linked();
+    w.advance(11.9);
+    const runtime = w.make();
+    await runtime.start(organizationId);
+    expect(runtime.getSnapshot().phase).toBe("ready");
+    expect(runtime.context()?.deviceId).toBe(uuid(701));
+    expect(w.calls).toMatchObject({
+      deviceIsMine: 0,
+      issueLease: 1,
+      registerDevice: 1,
+    });
+  });
+
+  it("the record names the session by its id, with the user, the device and the instant, and nothing else", async () => {
+    const w = await linked();
+    expect(Object.keys(record(w) ?? {}).sort()).toEqual([
+      "checkedAt",
+      "deviceId",
+      "sessionId",
+      "userId",
+    ]);
+    expect(record(w)).toEqual({
+      checkedAt: new Date("2026-10-14T12:00:00.000Z").getTime(),
+      deviceId: uuid(701),
+      sessionId: "s-1",
+      userId,
+    });
+  });
+
+  it("a new session (the first start after a sign-in) asks, and the record moves to it", async () => {
+    const w = await linked();
+    w.session.id = "s-2";
+    const runtime = w.make();
+    await runtime.start(organizationId);
+    expect(runtime.getSnapshot().phase).toBe("ready");
+    expect(w.calls.deviceIsMine).toBe(1);
+    expect(record(w)).toMatchObject({ deviceId: uuid(701), sessionId: "s-2" });
+  });
+
+  it("a record of another user asks, even under the same session id", async () => {
+    const w = await linked();
+    w.keyValues.write(
+      CHECK_KEY,
+      JSON.stringify({ ...record(w), userId: "user-2" })
+    );
+    await w.make().start(organizationId);
+    expect(w.calls.deviceIsMine).toBe(1);
+  });
+
+  it("a session of another user asks, and never lends the first user's device", async () => {
+    const w = await linked();
+    w.session.user = "user-2";
+    const runtime = w.make();
+    await runtime.start(organizationId);
+    expect(w.calls.deviceIsMine).toBe(1);
+    expect(runtime.context()?.deviceId).not.toBe(uuid(701));
+  });
+
+  it("a record of another device asks", async () => {
+    const w = await linked();
+    w.keyValues.write(
+      CHECK_KEY,
+      JSON.stringify({ ...record(w), deviceId: uuid(799) })
+    );
+    await w.make().start(organizationId);
+    expect(w.calls.deviceIsMine).toBe(1);
+  });
+
+  it("a record of 12 h or more asks, and so does a clock that went back", async () => {
+    const w = await linked();
+    w.advance(12);
+    await w.make().start(organizationId);
+    expect(w.calls.deviceIsMine).toBe(1);
+
+    w.advance(-1);
+    await w.make().start(organizationId);
+    expect(w.calls.deviceIsMine).toBe(2);
+  });
+
+  it("a lease within 12 h of its end asks, even with a recent record", async () => {
+    const w = await linked({ leaseHours: 20 });
+    w.advance(9); // the record is 9 h old, the lease has 11 h left
+    await w.make().start(organizationId);
+    expect(w.calls.deviceIsMine).toBe(1);
+  });
+
+  it("without a lease of this store, the start asks", async () => {
+    const w = await linked();
+    w.keyValues.remove(`polaris.offline.lease.${userId}.${organizationId}`);
+    await w.make().start(organizationId);
+    expect(w.calls.deviceIsMine).toBe(1);
+  });
+
+  it("a cached lease that does not work for this device asks, whatever its expiry says", async () => {
+    const w = await linked();
+    const name = `polaris.offline.lease.${userId}.${organizationId}`;
+    const cached = JSON.parse(w.keyValues.read(name) ?? "{}");
+    w.keyValues.write(
+      name,
+      JSON.stringify({ ...cached, lease: "não.é.licença" })
+    );
+    await w.make().start(organizationId);
+    expect(w.calls.deviceIsMine).toBe(1);
+  });
+
+  it("a session the server could not confirm (no answer, the remembered user) asks", async () => {
+    const w = await linked();
+    w.failures.sessionUser = new SessionUnreachableError("session_http_503");
+    const runtime = w.make();
+    await runtime.start(organizationId);
+    expect(runtime.getSnapshot().phase).toBe("ready");
+    expect(w.calls.deviceIsMine).toBe(1);
+  });
+
+  it("an answer without a session id asks", async () => {
+    const w = await linked();
+    w.session.id = null;
+    await w.make().start(organizationId);
+    expect(w.calls.deviceIsMine).toBe(1);
+  });
+
+  it("after a session that changed hands the record is gone, and the next start asks", async () => {
+    const w = await linked();
+    const runtime = w.make();
+    await runtime.start(organizationId);
+    w.session.user = "user-2";
+    w.advance(0.09);
+    await runtime.syncNow();
+    expect(runtime.getSnapshot().reason).toBe("session_changed");
+    expect(w.keyValues.read(CHECK_KEY)).toBeNull();
+
+    w.session.user = userId;
+    await w.make().start(organizationId);
+    expect(w.calls.deviceIsMine).toBe(1);
+  });
+
+  it("a logout takes the record with the lease, and forgetting the device leaves nothing", async () => {
+    const w = await linked();
+    const runtime = w.make();
+    await runtime.start(organizationId);
+    const workspace = runtime.logoutWorkspace();
+    if (!workspace) {
+      throw new Error("no workspace");
+    }
+    expect(await attemptLogout([workspace])).toEqual({ status: "ready" });
+    expect(w.keyValues.read(CHECK_KEY)).toBeNull();
+    runtime.forgetDevice();
+    expect(w.keyValues.data.size).toBe(0);
+  });
+
+  it("forgetting the device takes the record", async () => {
+    const w = await linked();
+    const runtime = w.make();
+    runtime.forgetDevice();
+    expect(w.keyValues.read(CHECK_KEY)).toBeNull();
+  });
+
+  it("a device revoked between two starts: the next start finds no session and never asks; the next sign-in forgets the device", async () => {
+    const w = await linked();
+    // the revocation deletes the sessions linked to the device (`end_device_sessions`): get-session answers none
+    w.session.signedIn = false;
+    w.revoke(uuid(701));
+    const pulls = w.calls.pull;
+    const after = w.make();
+    await after.start(organizationId);
+    expect(after.getSnapshot()).toMatchObject({
+      phase: "unavailable",
+      reason: "no_session",
+    });
+    expect(after.context()).toBeNull();
+    expect(w.calls.deviceIsMine).toBe(0);
+    expect(w.calls.pull).toBe(pulls);
+
+    // a sign-in is a new session: it asks, the device is no longer the user's, and another is registered
+    w.session.signedIn = true;
+    w.session.id = "s-2";
+    const signedIn = w.make();
+    await signedIn.start(organizationId);
+    expect(w.calls.deviceIsMine).toBe(1);
+    expect(signedIn.getSnapshot().phase).toBe("ready");
+    expect(signedIn.context()?.deviceId).toBe(uuid(702));
+    expect(record(w)).toMatchObject({ deviceId: uuid(702), sessionId: "s-2" });
+  });
+
+  it("a session whose check got no answer is never recorded by a lease, so its next start asks again", async () => {
+    const w = await linked({ leaseHours: 20 });
+    w.advance(9); // the lease is due: this start renews it
+    w.session.id = "s-2";
+    w.failures.deviceIsMine = true; // the cached lease stands in for the check
+    const issued = w.calls.issueLease;
+    const runtime = w.make();
+    await runtime.start(organizationId);
+    expect(runtime.getSnapshot().phase).toBe("ready");
+    expect(w.calls.issueLease).toBe(issued + 1);
+    expect(record(w)).toBeNull();
+
+    w.failures.deviceIsMine = false;
+    await w.make().start(organizationId);
+    expect(w.calls.deviceIsMine).toBe(2);
+    expect(record(w)).toMatchObject({ sessionId: "s-2" });
+  });
+
+  it("a lease renewed under a session another tab replaced does not write over the record of the new one", async () => {
+    const w = await linked({ leaseHours: 20 });
+    const first = w.make();
+    await first.start(organizationId);
+    w.session.id = "s-2"; // the same user signed in again in another tab
+    const second = w.make();
+    await second.start(organizationId);
+    expect(record(w)).toMatchObject({ sessionId: "s-2" });
+
+    w.advance(9);
+    const issued = w.calls.issueLease;
+    await first.syncNow();
+    expect(w.calls.issueLease).toBe(issued + 1);
+    expect(record(w)).toMatchObject({ sessionId: "s-2" });
+  });
+
+  it("a lease renewed under the recorded session moves its instant", async () => {
+    const w = await linked({ leaseHours: 20 });
+    const runtime = w.make();
+    await runtime.start(organizationId);
+    w.advance(9);
+    await runtime.syncNow();
+    expect(record(w)).toMatchObject({
+      checkedAt: new Date("2026-10-14T21:00:00.000Z").getTime(),
+      sessionId: "s-1",
+    });
+  });
+
+  it("a session the server refuses on a push takes the record", async () => {
+    const w = await linked();
+    const runtime = w.make();
+    await runtime.start(organizationId);
+    await queueProduct(runtime, "Camiseta", 1);
+    w.failures.push = true;
+    w.failures.pushCode = "UNAUTHORIZED";
+    await runtime.syncNow();
+    expect(w.keyValues.read(CHECK_KEY)).toBeNull();
+  });
+
+  it("an api that cannot name the session asks at every start", async () => {
+    const w = await linked();
+    const { signedInSession: _unused, ...withoutSession } = w.api;
+    await w.make(null, { api: withoutSession }).start(organizationId);
+    expect(w.calls.deviceIsMine).toBe(1);
+  });
+
+  it("a failed write of the record does not fail the start", async () => {
+    const w = world();
+    w.session.id = "s-1";
+    const { write } = w.keyValues;
+    const runtime = w.make(null, {
+      keyValues: {
+        ...w.keyValues,
+        write: (name, value) => {
+          if (name === CHECK_KEY) {
+            throw new Error("QuotaExceededError");
+          }
+          write(name, value);
+        },
+      },
+    });
+    await runtime.start(organizationId);
+    expect(runtime.getSnapshot().phase).toBe("ready");
+    expect(w.keyValues.read(CHECK_KEY)).toBeNull();
   });
 });

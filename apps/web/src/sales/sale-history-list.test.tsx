@@ -43,7 +43,9 @@ function renderedRows(offline = false) {
         list: "ready",
         listError: null,
         loadingMore: false,
+        listKey: "k",
         moreError: null,
+        refresh: "idle",
         sales: SALES,
       })}
     />

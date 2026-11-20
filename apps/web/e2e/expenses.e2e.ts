@@ -1850,6 +1850,76 @@ test("o segmentado Lançamentos · Recorrentes · Categorias: nome acessível, e
   ).toBeChecked();
 });
 
+const callsOf = (server: FakeExpenseServer, procedure: string) =>
+  server.calls.filter((call) => call === procedure).length;
+
+/** A read that goes out after the ones under test: once the server has it, the earlier ones had their turn. */
+async function settleWithMonth(
+  page: Page,
+  server: FakeExpenseServer,
+  month: string
+) {
+  const before = callsOf(server, "expense/list");
+  await chooseMonth(page, month);
+  await expect.poll(() => callsOf(server, "expense/list")).toBe(before + 1);
+}
+
+const rulesList = (page: Page) =>
+  rulesPanel(page).locator('[aria-busy="false"]');
+
+test("as regras recorrentes só são lidas na primeira vez que a aba Recorrentes fica à vista", async ({
+  page,
+}) => {
+  const server = new FakeExpenseServer();
+  await openExpenses(page, server);
+  await expect(page.getByRole("tab", { name: "Lançamentos" })).toHaveAttribute(
+    "aria-selected",
+    "true"
+  );
+  await expect.poll(() => callsOf(server, "expense/list")).toBe(1);
+  await expect.poll(() => callsOf(server, "expense/listCategories")).toBe(1);
+  await settleWithMonth(page, server, "setembro de 2026");
+  expect(callsOf(server, "expense/listRules")).toBe(0);
+
+  await openRulesPanel(page);
+  await expect(rulesList(page)).toBeVisible();
+  expect(callsOf(server, "expense/listRules")).toBe(1);
+
+  await page.getByRole("tab", { name: "Categorias" }).click();
+  await openLaunches(page);
+  await openRulesPanel(page);
+  await openLaunches(page);
+  await settleWithMonth(page, server, "agosto de 2026");
+  expect(callsOf(server, "expense/listRules")).toBe(1);
+  expect(callsOf(server, "expense/listCategories")).toBe(1);
+});
+
+test("a tela aberta direto em Recorrentes lê as regras uma vez", async ({
+  page,
+}) => {
+  const server = new FakeExpenseServer();
+  await openExpenses(page, server, (current) =>
+    current.addInitScript(() => {
+      history.replaceState(
+        history.state,
+        "",
+        `${window.location.pathname}${window.location.search}${window.location.search ? "&" : "?"}ver=recorrentes`
+      );
+    })
+  );
+  await expect(page.getByRole("tab", { name: "Recorrentes" })).toHaveAttribute(
+    "aria-selected",
+    "true"
+  );
+  await expect(rulesList(page)).toBeVisible();
+  expect(callsOf(server, "expense/listRules")).toBe(1);
+  await openLaunches(page);
+  await openRulesPanel(page);
+  await openLaunches(page);
+  await settleWithMonth(page, server, "setembro de 2026");
+  expect(callsOf(server, "expense/listRules")).toBe(1);
+});
+
 test("o endereço abre o segmento, e um ?ver= inválido cai em Lançamentos sem passo no histórico", async ({
   page,
 }) => {

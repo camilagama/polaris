@@ -3,6 +3,7 @@ import {
   CAPABILITIES,
   capabilitiesForRole,
   hasCapabilityForRole,
+  rolesWithCapability,
 } from "./capabilities";
 
 describe("tenant capability map", () => {
@@ -56,5 +57,20 @@ describe("tenant capability map", () => {
     expect(Object.isFrozen(CAPABILITIES)).toBe(true);
     expect(Object.isFrozen(capabilitiesForRole("owner"))).toBe(true);
     expect(Object.isFrozen(capabilitiesForRole("unknown"))).toBe(true);
+  });
+
+  it("lists the roles that hold a capability, and none for an unknown or inherited one", () => {
+    for (const capability of CAPABILITIES) {
+      expect(rolesWithCapability(capability)).toEqual(["owner"]);
+    }
+    for (const capability of [
+      "unknown:read",
+      "__proto__",
+      "constructor",
+      "toString",
+      "",
+    ]) {
+      expect(rolesWithCapability(capability)).toEqual([]);
+    }
   });
 });

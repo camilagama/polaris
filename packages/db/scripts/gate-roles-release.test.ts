@@ -1,7 +1,15 @@
 import { inspect } from "node:util";
 import { describe, expect, it } from "vitest";
 import type { Pool } from "pg";
-import { queryAsFunctionOwner, withGateRole } from "./gate-roles";
+import {
+  inCommittedTransaction,
+  inRolledBackTransaction,
+  queryAsFunctionOwner,
+  queryAsGateRole,
+  rollbackAndRelease,
+  rollbackQuietly,
+  withGateRole,
+} from "./gate-roles";
 import { sqlState } from "./sales-gate-support";
 
 const READ_ONLY = "25006";
@@ -267,5 +275,175 @@ describe("queryAsFunctionOwner", () => {
     await queryAsFunctionOwner(pool, "f()", OWNER_STATEMENT);
     expect(connections).toHaveLength(1);
     expect(connections[0]?.released).toBe(false);
+  });
+});
+
+const NO_ROLE_ROW = /role check returned no row/;
+const ROLLBACK_FAILURE = /connection reset during ROLLBACK/;
+
+/**
+ * A pooled connection that records every statement and each release argument; the statements that start with a key of
+ * `refuse` fail with the error given.
+ */
+function fakePooled(refuse: Record<string, Error> = {}) {
+  const statements: string[] = [];
+  const releases: unknown[] = [];
+  const client = {
+    query: (text: string) => {
+      statements.push(text);
+      for (const [start, error] of Object.entries(refuse)) {
+        if (text.startsWith(start)) {
+          return Promise.reject(error);
+        }
+      }
+      return Promise.resolve({ rows: [] });
+    },
+    release: (destroy?: boolean) => {
+      releases.push(destroy);
+    },
+  };
+  return {
+    client,
+    pool: { connect: () => Promise.resolve(client) },
+    releases,
+    statements,
+  };
+}
+
+const rollbackError = () => new Error("connection reset during ROLLBACK");
+
+describe("rollbackAndRelease", () => {
+  it("returns a connection whose ROLLBACK worked to the pool", async () => {
+    const { client, releases, statements } = fakePooled();
+    await rollbackAndRelease(client);
+    expect(statements).toEqual(["ROLLBACK"]);
+    expect(releases).toEqual([false]);
+  });
+
+  it("destroys a connection whose ROLLBACK failed instead of pooling it", async () => {
+    const { client, releases } = fakePooled({ ROLLBACK: rollbackError() });
+    await rollbackAndRelease(client);
+    expect(releases).toEqual([true]);
+  });
+
+  it("keeps the error already in flight when the ROLLBACK fails in a finally", async () => {
+    const { client, releases } = fakePooled({ ROLLBACK: rollbackError() });
+    const original = new Error("the assertion of the gate");
+    const failure = await failureOf(async () => {
+      try {
+        throw original;
+      } finally {
+        await rollbackAndRelease(client);
+      }
+    });
+    expect(failure).toBe(original);
+    expect(releases).toEqual([true]);
+  });
+});
+
+describe("rollbackQuietly", () => {
+  it("says whether the ROLLBACK worked and never throws", async () => {
+    expect(await rollbackQuietly(fakePooled().client)).toBe(true);
+    expect(
+      await rollbackQuietly(fakePooled({ ROLLBACK: rollbackError() }).client)
+    ).toBe(false);
+  });
+});
+
+describe("queryAsGateRole", () => {
+  it("destroys the connection when the final ROLLBACK fails", async () => {
+    const { pool, releases } = fakePooled({ ROLLBACK: rollbackError() });
+    const failure = await failureOf(() =>
+      queryAsGateRole(pool as unknown as Pool, "polaris_x", "SELECT 1")
+    );
+    expect(String(failure)).toMatch(NO_ROLE_ROW);
+    expect(releases).toEqual([true]);
+  });
+});
+
+describe("inCommittedTransaction", () => {
+  it("commits and returns the connection to the pool", async () => {
+    const { pool, releases, statements } = fakePooled();
+    const result = await inCommittedTransaction(pool, async (client) => {
+      await client.query("INSERT");
+      return "done";
+    });
+    expect(result).toBe("done");
+    expect(statements).toEqual(["BEGIN", "INSERT", "COMMIT"]);
+    expect(releases).toEqual([undefined]);
+  });
+
+  it("rolls back and rethrows the error of the work, not the one of the ROLLBACK", async () => {
+    const { pool, releases, statements } = fakePooled({
+      ROLLBACK: rollbackError(),
+    });
+    const original = new Error("the INSERT was refused");
+    const failure = await failureOf(() =>
+      inCommittedTransaction(pool, () => Promise.reject(original))
+    );
+    expect(failure).toBe(original);
+    expect(statements).toEqual(["BEGIN", "ROLLBACK"]);
+    expect(releases).toEqual([true]);
+  });
+
+  it("returns the connection after a ROLLBACK that worked", async () => {
+    const { pool, releases } = fakePooled();
+    await failureOf(() =>
+      inCommittedTransaction(pool, () => Promise.reject(new Error("x")))
+    );
+    expect(releases).toEqual([false]);
+  });
+
+  it("destroys the connection when the COMMIT fails and the ROLLBACK does too", async () => {
+    const commit = new Error("COMMIT refused");
+    const { pool, releases } = fakePooled({
+      COMMIT: commit,
+      ROLLBACK: rollbackError(),
+    });
+    const failure = await failureOf(() =>
+      inCommittedTransaction(pool, () => Promise.resolve())
+    );
+    expect(failure).toBe(commit);
+    expect(releases).toEqual([true]);
+  });
+});
+
+describe("inRolledBackTransaction", () => {
+  it("always rolls back and returns the result of the work", async () => {
+    const { client, statements } = fakePooled();
+    const result = await inRolledBackTransaction(client, async () => {
+      await client.query("SELECT 1");
+      return 7;
+    });
+    expect(result).toBe(7);
+    expect(statements).toEqual(["BEGIN", "SELECT 1", "ROLLBACK"]);
+  });
+
+  it("rolls back after a failed work so the next BEGIN starts clean", async () => {
+    const { client, statements } = fakePooled();
+    const original = pgError(NO_PRIVILEGE);
+    const failure = await failureOf(() =>
+      inRolledBackTransaction(client, () => Promise.reject(original))
+    );
+    expect(failure).toBe(original);
+    expect(statements).toEqual(["BEGIN", "ROLLBACK"]);
+  });
+
+  it("keeps the error of the work when the ROLLBACK fails too", async () => {
+    const { client } = fakePooled({ ROLLBACK: rollbackError() });
+    const original = pgError(NO_PRIVILEGE);
+    const failure = await failureOf(() =>
+      inRolledBackTransaction(client, () => Promise.reject(original))
+    );
+    expect(failure).toBe(original);
+    expect(sqlState(failure)).toBe(NO_PRIVILEGE);
+  });
+
+  it("fails on a ROLLBACK that fails after work that passed, since the connection may still be in the transaction", async () => {
+    const { client } = fakePooled({ ROLLBACK: rollbackError() });
+    const failure = await failureOf(() =>
+      inRolledBackTransaction(client, () => Promise.resolve())
+    );
+    expect(String(failure)).toMatch(ROLLBACK_FAILURE);
   });
 });
