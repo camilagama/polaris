@@ -2033,16 +2033,15 @@ describe("the static assets", () => {
   });
 
   it("is declared in wrangler.jsonc: the binding, and the Worker first for /assets/*", () => {
-    for (const [, block] of wranglerBlocks(readWranglerConfig(webWrangler))) {
-      if (block.assets === undefined) {
+    for (const [name, block] of wranglerBlocks(
+      readWranglerConfig(webWrangler)
+    )) {
+      if (block.assets === undefined && name !== "top level") {
         continue;
       }
-      expect(block.assets.binding).toBe("ASSETS");
-      expect(block.assets.run_worker_first).toContain("/assets/*");
+      expect(block.assets?.binding).toBe("ASSETS");
+      expect(block.assets?.run_worker_first).toContain("/assets/*");
     }
-    const config = readWranglerConfig(webWrangler);
-    expect(config.assets?.binding).toBe("ASSETS");
-    expect(config.assets?.run_worker_first).toContain("/assets/*");
   });
 });
 
