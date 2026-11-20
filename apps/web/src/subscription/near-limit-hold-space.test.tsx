@@ -3,6 +3,7 @@ import { act, cleanup, render } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NearLimitNotice, useNearLimitRead } from "./limit-help";
 import type { NearLimitView } from "./limit-help-model";
+import { planRead } from "../lib/plan-read";
 
 const connection = { online: true };
 const readPlan = vi.fn();
@@ -122,6 +123,7 @@ async function settle(screen: ReturnType<typeof mountScreen>, version = 0) {
 beforeEach(() => {
   connection.online = true;
   readPlan.mockReset();
+  planRead.clear();
 });
 
 afterEach(cleanup);

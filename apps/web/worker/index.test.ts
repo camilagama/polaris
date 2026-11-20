@@ -7,6 +7,7 @@ import { queueForEventType } from "@polaris/domain/events/queue-envelope";
 import { SCHEDULER_LANES } from "@polaris/domain/scheduling/scheduled-jobs";
 import { logger } from "@polaris/observability/logger";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { parseWranglerConfig } from "../src/server/wrangler-config.testing";
 
 const mocks = vi.hoisted(() => ({
   activationRecipientsClose: vi.fn(),
@@ -2032,28 +2033,56 @@ describe("the static assets", () => {
   });
 
   it("is declared in wrangler.jsonc: the binding, and the Worker first for /assets/*", () => {
-    const config = readFileSync(
-      new URL("../wrangler.jsonc", import.meta.url),
-      "utf8"
-    );
-    expect(config).toContain('"binding": "ASSETS"');
-    expect(config).toMatch(RUN_WORKER_FIRST_ASSETS);
+    for (const [, block] of wranglerBlocks(readWranglerConfig(webWrangler))) {
+      if (block.assets === undefined) {
+        continue;
+      }
+      expect(block.assets.binding).toBe("ASSETS");
+      expect(block.assets.run_worker_first).toContain("/assets/*");
+    }
+    const config = readWranglerConfig(webWrangler);
+    expect(config.assets?.binding).toBe("ASSETS");
+    expect(config.assets?.run_worker_first).toContain("/assets/*");
   });
 });
 
-const RUN_WORKER_FIRST_ASSETS = /"run_worker_first": \[[^\]]*"\/assets\/\*"/;
-const CRONS_LIST = /"crons":\s*\[([^\]]*)\]/;
-const QUOTED = /"([^"]+)"/g;
+interface WranglerBlock {
+  assets?: { binding?: string; run_worker_first?: string[] | boolean };
+  triggers?: { crons?: string[] };
+  workflows?: unknown[];
+}
+
+interface WranglerConfig extends WranglerBlock {
+  env?: Record<string, WranglerBlock>;
+}
+
+const webWrangler = new URL("../wrangler.jsonc", import.meta.url);
+const appsDirectory = new URL("../../", import.meta.url);
+
+const readWranglerConfig = (url: URL) =>
+  parseWranglerConfig(readFileSync(url, "utf8")) as WranglerConfig;
+
+const wranglerBlocks = (config: WranglerConfig): [string, WranglerBlock][] => [
+  ["top level", config],
+  ...Object.entries(config.env ?? {}),
+];
+
+const otherWranglerWorkers = (excluded: string[]) =>
+  readdirSync(appsDirectory)
+    .filter((name) => !excluded.includes(name))
+    .filter((name) =>
+      existsSync(new URL(`${name}/wrangler.jsonc`, appsDirectory))
+    )
+    .map((name) => ({
+      blocks: wranglerBlocks(
+        readWranglerConfig(new URL(`${name}/wrangler.jsonc`, appsDirectory))
+      ),
+      name,
+    }));
 
 describe("the cron triggers", () => {
-  const declaredCrons = () => {
-    const config = readFileSync(
-      new URL("../wrangler.jsonc", import.meta.url),
-      "utf8"
-    );
-    const [, list] = CRONS_LIST.exec(config) ?? [];
-    return [...(list ?? "").matchAll(QUOTED)].map((match) => match[1]);
-  };
+  const declaredCrons = () =>
+    readWranglerConfig(webWrangler).triggers?.crons ?? [];
 
   it("declare exactly the crons of the scheduler's lanes: one tick per lane, not one trigger per job", () => {
     expect(declaredCrons().sort()).toEqual(
@@ -2062,15 +2091,11 @@ describe("the cron triggers", () => {
   });
 
   it("stay within the five Cron Triggers of the Workers Free plan, across every Worker of the account", () => {
-    const apps = new URL("../../", import.meta.url);
-    const others = readdirSync(apps)
-      .filter((name) => name !== "web")
-      .filter((name) => existsSync(new URL(`${name}/wrangler.jsonc`, apps)))
-      .filter((name) =>
-        readFileSync(new URL(`${name}/wrangler.jsonc`, apps), "utf8").includes(
-          '"crons"'
-        )
-      );
+    const others = otherWranglerWorkers(["web"])
+      .filter(({ blocks }) =>
+        blocks.some(([, block]) => block.triggers?.crons !== undefined)
+      )
+      .map(({ name }) => name);
     expect(others).toEqual([]);
     expect(declaredCrons().length).toBeLessThanOrEqual(5);
   });
@@ -2078,14 +2103,11 @@ describe("the cron triggers", () => {
 
 describe("Cloudflare Workflows", () => {
   it("are not bound by any Worker: on the Free plan a step gets 10 ms of CPU, less than the queue consumer (ADR 0088)", () => {
-    const apps = new URL("../../", import.meta.url);
-    const withWorkflows = readdirSync(apps)
-      .filter((name) => existsSync(new URL(`${name}/wrangler.jsonc`, apps)))
-      .filter((name) =>
-        readFileSync(new URL(`${name}/wrangler.jsonc`, apps), "utf8").includes(
-          '"workflows"'
-        )
-      );
+    const withWorkflows = otherWranglerWorkers([])
+      .filter(({ blocks }) =>
+        blocks.some(([, block]) => block.workflows !== undefined)
+      )
+      .map(({ name }) => name);
     expect(withWorkflows).toEqual([]);
   });
 });

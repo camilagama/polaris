@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { randomBytes, randomUUID } from "node:crypto";
 import {
+  CustomerNotFoundError,
   CustomerVersionConflictError,
   InvalidCustomerProfileError,
 } from "@polaris/domain/customers/customer";
@@ -11,6 +12,7 @@ import {
   CustomerIdConflictError,
   createCustomer,
   findPossibleCustomerDuplicates,
+  getCustomer,
   listCustomers,
   restoreCustomer,
   updateCustomer,
@@ -452,6 +454,41 @@ async function run() {
     );
     tests.push(
       "a client-supplied customer ID is kept; a duplicate (same or other tenant) is a clean conflict that does not abort the transaction"
+    );
+
+    const ownCustomerFromList = activeCustomers.find(
+      (customer) => customer.id === first.id
+    );
+    assert.ok(ownCustomerFromList);
+    const ownCustomer = await withTenant(
+      runtime.db,
+      tenantA,
+      (transaction, identity) => getCustomer(transaction, identity, first.id)
+    );
+    assert.deepEqual(ownCustomer, ownCustomerFromList);
+    const missingCustomerError = await withTenant(
+      runtime.db,
+      tenantB,
+      (transaction, identity) =>
+        getCustomer(transaction, identity, randomUUID()).then(
+          () => undefined,
+          (error: unknown) => error
+        )
+    );
+    assert.ok(missingCustomerError instanceof CustomerNotFoundError);
+    const foreignCustomerError = await withTenant(
+      runtime.db,
+      tenantB,
+      (transaction, identity) =>
+        getCustomer(transaction, identity, first.id).then(
+          () => undefined,
+          (error: unknown) => error
+        )
+    );
+    assert.ok(foreignCustomerError instanceof CustomerNotFoundError);
+    assert.equal(foreignCustomerError.message, missingCustomerError.message);
+    tests.push(
+      "getCustomer returns the own customer with the listing fields and answers another organization's customer ID with the same CustomerNotFoundError as a missing ID"
     );
 
     const archivedDuplicate = await withTenant(

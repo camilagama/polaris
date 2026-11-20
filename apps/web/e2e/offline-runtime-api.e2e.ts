@@ -33,6 +33,9 @@ const HOUR = 3_600_000;
 // lets the app open within the chip's timeout if the app really stops waiting
 const SLOW_ANSWER_MS = 30_000;
 const DEVICE_KEY = "polaris.offline.device";
+const DEVICE_CHECK_KEY = "polaris.offline.device-checked";
+/** The token get-session carries next to the session id: never kept on the device. */
+const SESSION_TOKEN = "token-da-sessao-nunca-guardado";
 const SESSION_USER_KEY = "polaris.offline.session-user";
 const SHIRT_OPTION = /Camiseta do laboratório · Azul/;
 const uuid = (n: number) =>
@@ -63,6 +66,8 @@ interface PushedCommand {
 class RpcServer {
   /** Who the session cookie belongs to; null is a session that ended. */
   sessionUser: string | null;
+  /** The id of the session row get-session names; a new one is a new sign-in on this browser. */
+  sessionId = "s";
   sessionAnswer: SessionAnswer = "ok";
   deviceCheckAnswer: DeviceCheckAnswer = "ok";
   pushAnswer: PushAnswer = "accept";
@@ -151,7 +156,10 @@ class RpcServer {
       return;
     }
     await route.fulfill({
-      body: JSON.stringify({ session: { id: "s" }, user: { id: user } }),
+      body: JSON.stringify({
+        session: { id: this.sessionId, token: SESSION_TOKEN },
+        user: { id: user },
+      }),
       contentType: "application/json",
       headers: { ...WORKER_MARK },
     });
@@ -572,6 +580,44 @@ test.describe("createRpcRuntimeApi no app real, com o servidor interceptado", ()
     await expect(page.getByLabel("Produto ou variante")).toBeVisible();
   });
 
+  // ADR 0048: the session was linked to the device by the first start; a reload of the same
+  // session within 12 h does not ask again, and a new sign-in does.
+  test("device.check: a mesma sessão recarrega sem perguntar; um login novo pergunta de novo, e o token nunca fica no aparelho", async ({
+    page,
+  }) => {
+    const user = `user-${crypto.randomUUID()}`;
+    const server = new RpcServer(user);
+    await openSales(page, server);
+    const device = await stored(page, DEVICE_KEY);
+    const { checked } = server;
+    expect(
+      JSON.parse((await stored(page, DEVICE_CHECK_KEY)) ?? "null")
+    ).toMatchObject({ deviceId: device, sessionId: "s", userId: user });
+
+    const lookups = server.sessionLookups;
+    await page.reload();
+    await expect(chip(page)).toContainText("Tudo sincronizado", {
+      timeout: 20_000,
+    });
+    expect(server.sessionLookups).toBeGreaterThan(lookups);
+    expect(server.checked).toBe(checked);
+    expect(await stored(page, DEVICE_KEY)).toBe(device);
+
+    server.sessionId = "s-2";
+    await page.reload();
+    await expect(chip(page)).toContainText("Tudo sincronizado", {
+      timeout: 20_000,
+    });
+    expect(server.checked).toBe(checked + 1);
+    expect(
+      JSON.parse((await stored(page, DEVICE_CHECK_KEY)) ?? "null")
+    ).toMatchObject({ deviceId: device, sessionId: "s-2", userId: user });
+    const everything = await page.evaluate(() =>
+      JSON.stringify({ ...window.localStorage })
+    );
+    expect(everything).not.toContain(SESSION_TOKEN);
+  });
+
   // ADR 0047 (emenda do 0044, L6): only an explicit refusal is "not mine". A
   // device the server does not know (404 NOT_FOUND) or one that belongs to
   // someone else (409 CONFLICT) is dropped with its lease, and the app registers
@@ -584,6 +630,8 @@ test.describe("createRpcRuntimeApi no app real, com o servidor interceptado", ()
     await openSales(page, server);
     const device = await stored(page, DEVICE_KEY);
 
+    // a refused device is only met by a new session: the one linked to it would have ended with the revocation
+    server.sessionId = "s-2";
     server.deviceCheckAnswer = "not-found";
     await page.reload();
     await expect(chip(page)).toContainText("Tudo sincronizado", {
@@ -613,6 +661,7 @@ test.describe("createRpcRuntimeApi no app real, com o servidor interceptado", ()
     await openSales(page, server);
     const device = await stored(page, DEVICE_KEY);
 
+    server.sessionId = "s-2"; // a new sign-in: the start asks whose the device is
     server.deviceCheckAnswer = "error";
     await page.reload();
     await expect(chip(page)).toContainText("Tudo sincronizado", {

@@ -8,12 +8,14 @@ const mocks = vi.hoisted(() => ({
   countFreeableArchivedProducts: vi.fn(),
   countOrganizationVariants: vi.fn(),
   listBillingPrices: vi.fn(),
+  readDatabaseNow: vi.fn(),
   readPlanCatalog: vi.fn(),
   resolveEffectiveEntitlements: vi.fn(),
 }));
 
 vi.mock("./billing-repository", () => ({
   listBillingPrices: mocks.listBillingPrices,
+  readDatabaseNow: mocks.readDatabaseNow,
   readPlanCatalog: mocks.readPlanCatalog,
   resolveEffectiveEntitlements: mocks.resolveEffectiveEntitlements,
 }));
@@ -44,12 +46,14 @@ function fakeTransaction(): TenantRequestTransaction {
 
 const scope = { organizationId: "7b9c212a-f90b-4e05-9e9a-0c0eb1c9c9b0" };
 const now = new Date("2026-11-15T12:00:00.000Z");
+const databaseClock = new Date("2026-11-15T15:30:00.000Z");
 
 describe("readOwnerPlanTenantFacts", () => {
   beforeEach(() => {
     vi.resetAllMocks();
     mocks.listBillingPrices.mockResolvedValue([]);
     mocks.readPlanCatalog.mockResolvedValue(INITIAL_PLAN_CATALOG);
+    mocks.readDatabaseNow.mockResolvedValue(databaseClock);
     mocks.resolveEffectiveEntitlements.mockResolvedValue({ values: {} });
     mocks.countActiveGoals.mockResolvedValue(1);
     mocks.countActiveImages.mockResolvedValue(2);
@@ -67,9 +71,28 @@ describe("readOwnerPlanTenantFacts", () => {
     expect(mocks.resolveEffectiveEntitlements).toHaveBeenCalledWith(
       expect.anything(),
       scope,
-      INITIAL_PLAN_CATALOG
+      INITIAL_PLAN_CATALOG,
+      databaseClock
     );
     expect(facts.proEntitlements).toBe(INITIAL_PLAN_CATALOG.pro);
+  });
+
+  it("reads the database clock once and hands that reading, not the caller's now, to the effective entitlements", async () => {
+    await readOwnerPlanTenantFacts(fakeTransaction(), scope, now);
+
+    expect(mocks.readDatabaseNow).toHaveBeenCalledTimes(1);
+    expect(mocks.resolveEffectiveEntitlements.mock.calls[0]?.[3]).toBe(
+      databaseClock
+    );
+  });
+
+  it("reads the database clock once also when the caller gives no now: the same reading dates the entitlements and the history", async () => {
+    await readOwnerPlanTenantFacts(fakeTransaction(), scope);
+
+    expect(mocks.readDatabaseNow).toHaveBeenCalledTimes(1);
+    expect(mocks.resolveEffectiveEntitlements.mock.calls[0]?.[3]).toBe(
+      databaseClock
+    );
   });
 
   it("puts what deleting would free into the usage, counted for the server's organization", async () => {

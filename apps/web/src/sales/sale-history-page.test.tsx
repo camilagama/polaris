@@ -62,13 +62,15 @@ vi.mock("./use-sale-history", async () => {
       );
       return {
         filters: initial,
+        listKey: "k",
         loadMore: () => undefined,
         reload: () => undefined,
         setFilters: () => undefined,
-        state: model.historyLoaded(model.initialHistoryState(), {
-          hasMore: false,
-          sales,
-        }),
+        state: model.historyLoaded(
+          model.initialHistoryState(),
+          { hasMore: false, sales },
+          "k"
+        ),
       };
     },
   };

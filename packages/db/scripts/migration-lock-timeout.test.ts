@@ -9,6 +9,8 @@ const drizzleDirectory = path.join(
   "drizzle"
 );
 const comment = /--[^\n]*/g;
+// the body of a function runs when the function is called, not when the migration creates it; a DO block runs now
+const functionBody = /\bAS\s+\$(\w*)\$[\s\S]*?\$\1\$/gi;
 // the migrator runs every pending migration in ONE transaction, so a SET LOCAL of a migration holds for the next ones
 const setStatement =
   /\bSET\s+(?:LOCAL\s+|SESSION\s+)?lock_timeout\b(?:\s*(?:=|\bTO\b)\s*([^;]*))?/gi;
@@ -51,7 +53,9 @@ function lockTimeoutEvents(text: string): LockTimeoutEvent[] {
 
 /** `set` or `reset`, in the order of the statements of the file, for every change of lock_timeout */
 function lockTimeoutChanges(sql: string): ("set" | "reset")[] {
-  return lockTimeoutEvents(sql.replace(comment, "")).map((event) => event.kind);
+  return lockTimeoutEvents(
+    sql.replace(comment, "").replace(functionBody, "")
+  ).map((event) => event.kind);
 }
 
 // DDL that takes a strong lock on a relation, even one created in the same migration; CREATE TABLE, functions, GRANT/REVOKE, views and COMMENT ON do not queue behind live traffic
@@ -73,7 +77,7 @@ const heavyDdl = new RegExp(
 
 /** why the migration breaks the lock_timeout pattern, or null when it follows it or has no heavy DDL */
 function lockTimeoutViolation(sql: string): string | null {
-  const text = sql.replace(comment, "");
+  const text = sql.replace(comment, "").replace(functionBody, "");
   const events = [
     ...lockTimeoutEvents(text),
     ...[...text.matchAll(heavyDdl)].map(
@@ -152,6 +156,19 @@ describe("lock_timeout across the migrations of one run", () => {
         "-- SET LOCAL lock_timeout = '1s'\nSET LOCAL lock_timeout = '10s';\nRESET lock_timeout;"
       )
     ).toEqual(["set", "reset"]);
+  });
+
+  it("ignores a set_config in the body of a function it creates, and still sees one in a DO block", () => {
+    expect(
+      lockTimeoutChanges(
+        "CREATE FUNCTION f(p integer) RETURNS void LANGUAGE plpgsql AS $function$\nBEGIN\n  PERFORM set_config('lock_timeout', p::text, true);\nEND;\n$function$;"
+      )
+    ).toEqual([]);
+    expect(
+      lockTimeoutChanges(
+        "DO $do$\nBEGIN\n  PERFORM set_config('lock_timeout', '1s', true);\nEND\n$do$;"
+      )
+    ).toEqual(["set"]);
   });
 
   it("requires SET LOCAL lock_timeout before the first heavy DDL and RESET at the end, from 0111 on", () => {
