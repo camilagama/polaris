@@ -141,3 +141,49 @@ describe("o foco do aviso de falha na releitura do Histórico", () => {
     );
   });
 });
+
+describe("o foco do erro de tela cheia do Histórico", () => {
+  const fullError = () =>
+    historyLoadFailed(initialHistoryState(), new Error("x"), "k");
+
+  it("vai ao título quando o erro some com o foco em Tentar novamente", () => {
+    history.state = fullError();
+    const { rerender } = render(page());
+    const retry = screen.getByRole("button", RETRY);
+    retry.focus();
+    fireEvent.focus(retry);
+    history.state = historyLoading(fullError());
+    rerender(page());
+    expect(screen.queryByRole("button", RETRY)).toBeNull();
+    expect(document.activeElement).toBe(
+      screen.getByRole("heading", { name: "Histórico de vendas" })
+    );
+  });
+
+  it("não mexe no foco de quem já foi a outro campo", () => {
+    history.state = fullError();
+    const { rerender } = render(page());
+    const retry = screen.getByRole("button", RETRY);
+    retry.focus();
+    fireEvent.focus(retry);
+    const other = screen
+      .getAllByRole("button")
+      .find((button) => button !== retry) as HTMLElement;
+    other.focus();
+    history.state = historyLoading(fullError());
+    rerender(page());
+    expect(document.activeElement).toBe(other);
+  });
+
+  it("não puxa o foco ao título quando quem o largou não foi a outro campo", () => {
+    history.state = fullError();
+    const { rerender } = render(page());
+    const retry = screen.getByRole("button", RETRY);
+    retry.focus();
+    fireEvent.focus(retry);
+    retry.blur();
+    history.state = historyLoading(fullError());
+    rerender(page());
+    expect(document.activeElement).toBe(document.body);
+  });
+});

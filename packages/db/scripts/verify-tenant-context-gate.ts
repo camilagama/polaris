@@ -20,7 +20,7 @@ import {
   withAuthorizedTenantTransaction,
 } from "../src/tenant-transaction";
 import { assertAllowedGateUrl, disposableHostPattern } from "./gate-hosts";
-import { becomeGateRole } from "./gate-roles";
+import { becomeGateRole, inRolledBackTransaction } from "./gate-roles";
 import { dropRlsGateFixture, recreateRlsGateFixture } from "./rls-gate-fixture";
 import { temporaryRuntimeUrl } from "./sales-gate-support";
 import { deleteOrganizationsWithAudit } from "./teardown-support";
@@ -29,7 +29,6 @@ import {
   checkTenantEntryCatalog,
   type EntryCall,
   entryOutcome,
-  inRolledBackTransaction,
   outcomeUnderMutant,
 } from "./tenant-entry-gate-checks";
 

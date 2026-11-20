@@ -25,6 +25,7 @@ import {
   raceBehindLock,
   rejections,
 } from "./concurrency-support";
+import { rollbackAndRelease } from "./gate-roles";
 import {
   createTenantFixture,
   disposableHostPattern,
@@ -447,11 +448,8 @@ async function run() {
       );
       await issuing.query("COMMIT");
       closedD = await waiting;
-    } catch (error) {
-      await issuing.query("ROLLBACK").catch(() => undefined);
-      throw error;
     } finally {
-      issuing.release();
+      await rollbackAndRelease(issuing);
     }
     assert.equal(
       closedD?.revokedLeases,

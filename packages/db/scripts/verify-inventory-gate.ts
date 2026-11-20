@@ -51,7 +51,7 @@ import {
 } from "./concurrency-support";
 import { runClock, storeDay, storeNoon } from "./gate-clock";
 import { assertAllowedGateUrl, disposableHostPattern } from "./gate-hosts";
-import { setLoginRole } from "./gate-roles";
+import { inRolledBackTransaction, setLoginRole } from "./gate-roles";
 import { archiveThenDeleteProduct } from "./product-lifecycle-support";
 import {
   confirmPlainSale,
@@ -264,17 +264,14 @@ async function withRuntimeGucs<T>(
   organizationId: string,
   operation: () => Promise<T>
 ): Promise<T> {
-  await client.query("BEGIN");
-  try {
+  return await inRolledBackTransaction(client, async () => {
     await client.query(
       "SELECT set_config('app.user_id', $1, true), " +
         "set_config('app.organization_id', $2, true)",
       [userId, organizationId]
     );
     return await operation();
-  } finally {
-    await client.query("ROLLBACK");
-  }
+  });
 }
 
 async function main(): Promise<void> {
