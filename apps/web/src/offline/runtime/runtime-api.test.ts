@@ -1,10 +1,14 @@
 import { ORPCError } from "@orpc/client";
 import type { PolarisRpcClient } from "@polaris/contracts";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SessionUnreachableError } from "./offline-runtime";
 import { createRpcRuntimeApi } from "./runtime-api";
 
-const api = createRpcRuntimeApi({} as PolarisRpcClient);
+let api = createRpcRuntimeApi({} as PolarisRpcClient);
+
+beforeEach(() => {
+  api = createRpcRuntimeApi({} as PolarisRpcClient);
+});
 
 function answerWith(response: Response | Error) {
   vi.stubGlobal(
@@ -67,6 +71,18 @@ describe("who is signed in, as the server answers", () => {
     answerWith(new Response("nope", { status: 404 }));
     await expect(api.sessionUserId()).rejects.toThrow("session_unavailable");
   });
+
+  it("reads the server again when the caller asks for a fresh answer", async () => {
+    const fetchMock = vi.fn(() =>
+      Promise.resolve(Response.json({ user: { id: "user-1" } }))
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    await api.sessionUserId();
+    await api.sessionUserId();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    await api.sessionUserId({ fresh: true });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
 });
 
 describe("the session of a start, as the server answers it now", () => {
@@ -103,6 +119,23 @@ describe("the session of a start, as the server answers it now", () => {
     vi.stubGlobal("fetch", fetchSpy);
     await api.signedInSession?.();
     await api.signedInSession?.();
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it("goes to the server even right after the tab's memory answered a start", async () => {
+    const fetchSpy = vi.fn(() =>
+      Promise.resolve(
+        Response.json({ session: { id: "s" }, user: { id: "u" } })
+      )
+    );
+    vi.stubGlobal("fetch", fetchSpy);
+    await api.sessionUserId();
+    await api.sessionUserId();
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(await api.signedInSession?.()).toEqual({
+      sessionId: "s",
+      userId: "u",
+    });
     expect(fetchSpy).toHaveBeenCalledTimes(2);
   });
 

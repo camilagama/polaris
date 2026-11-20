@@ -8,6 +8,7 @@ import {
   copyLine,
   copyStanding,
   endedInPastMonth,
+  FOCUS_REFRESH_MS,
   goalDaysLeftText,
   goalPeriodShort,
   goalProjection,
@@ -137,9 +138,12 @@ describe("the store's today and the turn of the day (§ 5.1)", () => {
     ).toBe("2026-10-24");
   });
 
-  it("re-reads on return at most once every 30 s", () => {
-    expect(shouldRefreshOnReturn(0, 29_999)).toBe(false);
-    expect(shouldRefreshOnReturn(0, 30_000)).toBe(true);
+  it("re-reads on return at most once every 5 min", () => {
+    expect(FOCUS_REFRESH_MS).toBe(300_000);
+    expect(shouldRefreshOnReturn(0, 30_000)).toBe(false);
+    expect(shouldRefreshOnReturn(0, 299_999)).toBe(false);
+    expect(shouldRefreshOnReturn(0, 300_000)).toBe(true);
+    expect(shouldRefreshOnReturn(1_000_000, 1_000_000 + 600_000)).toBe(true);
   });
 });
 

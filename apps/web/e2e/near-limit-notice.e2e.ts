@@ -614,15 +614,15 @@ test.describe("o número acompanha o que a pessoa grava", () => {
     );
     await openApp(page, "/products", store);
     await expect(line(page)).toContainText("Você usa 47 de 50 variantes");
-    // the shell's own notice of the grace reads the plan once, on its own copy (an hour): the other read is Produtos
-    await expect.poll(() => reads.plan).toBe(2);
+    // the shell's notice of the grace and Produtos share the memory of the plan: one read for both
+    await expect.poll(() => reads.plan).toBe(1);
 
     await openVariants(page);
     await expect(dialogLine(page)).toContainText("Você usa 47 de 50 variantes");
     await page.getByRole("tab", { name: "Imagens" }).click();
     await expect(page.getByText("Você usa 47 de 50 imagens")).toBeVisible();
     await page.getByRole("tab", { name: "Variantes" }).click();
-    expect(reads.plan).toBe(2);
+    expect(reads.plan).toBe(1);
 
     await page.getByRole("button", { name: "Adicionar combinação" }).click();
     await page.getByRole("combobox", { exact: true, name: "Cor" }).click();
@@ -631,7 +631,7 @@ test.describe("o número acompanha o que a pessoa grava", () => {
     await expect(behindTheDialog(page)).toContainText(
       "Você usa 48 de 50 variantes"
     );
-    expect(reads.plan).toBe(3);
+    expect(reads.plan).toBe(2);
   });
 
   test("cadastrar um produto lê o uso de novo na linha de Produtos", async ({

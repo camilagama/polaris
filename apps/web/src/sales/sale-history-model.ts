@@ -517,10 +517,6 @@ export interface LoadMoreView {
   visible: boolean;
 }
 
-export const REFRESHING_LIST_TEXT = "Atualizando a lista…";
-export const REFRESH_FAILED_TEXT =
-  "Não foi possível atualizar a lista. O que está na tela pode estar desatualizado.";
-
 /** The button is hidden, not disabled, until the list on screen was read for the filter in force. */
 export function loadMoreView(
   state: HistoryState,

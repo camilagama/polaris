@@ -285,6 +285,7 @@ export function useNearLimitRead(
   } | null>(null);
   const { role } = organization;
   const askedVersion = useRef<number | null>(null);
+  const clearedAtLastRead = useRef(0);
   useEffect(() => {
     if (!online) {
       planRead.clear();
@@ -297,8 +298,10 @@ export function useNearLimitRead(
     const fresh =
       askedVersion.current !== null && askedVersion.current !== version;
     askedVersion.current = version;
+    const since = clearedAtLastRead.current;
+    clearedAtLastRead.current = planRead.clearedAt;
     planRead
-      .get(organizationId, { fresh })
+      .get(organizationId, { fresh, since })
       .then((plan) => {
         if (current) {
           setRead({
