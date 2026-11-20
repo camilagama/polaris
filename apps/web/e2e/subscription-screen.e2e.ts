@@ -281,15 +281,16 @@ test("Free com o teste: plano, uso, oferta com o mensal marcado e o anual em des
   );
 });
 
-test("abrir a Assinatura e voltar a ela depois de olhar outra aba faz um get-session só (AC-2.1)", async ({
+test("abrir a Assinatura e voltar a ela depois de olhar outra aba não lê além dos 2 da abertura: rodapé pela memória, runtime fresco (AC-2.1)", async ({
   page,
 }) => {
   const calls = await openScreen(page);
   await expect(planTitle(page)).toHaveText("Plano Free");
+  await expect.poll(() => calls.sessions).toBe(2);
   await openSettingsTab(page, "Formas de receber");
   await openSettingsTab(page, "Assinatura");
   await expect(planTitle(page)).toHaveText("Plano Free");
-  expect(calls.sessions).toBe(1);
+  expect(calls.sessions).toBe(2);
 });
 
 test("o CPF digitado para o Pix continua lá depois de olhar outra aba de Configurações", async ({

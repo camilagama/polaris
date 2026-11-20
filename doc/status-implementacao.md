@@ -3577,7 +3577,7 @@ Origem: achado B do Diego no Pixel 6 (28/10): a venda montada em Vender sumia ao
 | Parte | Estado | O que é |
 | --- | --- | --- |
 | Memória da aba | Em revisão | `lib/session-lookup.ts`: a última resposta com sessão por 10 s (do início da leitura), leituras em voo juntadas, sem `localStorage`; o rodapé, a Assinatura e o primeiro acesso usam (o boot do runtime lê fresco, `signedInSession`); `fresh` na conferência de cada sincronização e na saída. Emenda de 19/11 do [ADR 0044](../docs/adr/0044-revisao-de-seguranca-adicional.md). |
-| Provas | Em revisão | `session-lookup.test.ts` (10 s e 10 s + 1 ms, início da leitura, `forget`, falha e recusa), `offline-runtime.test.ts` (início com memória, o resto fresco), `e2e/offline-runtime-api.e2e.ts` (abertura: exatamente 2 por desenho, rodapé pela memória e boot do runtime fresco, e entrar na Assinatura logo depois não lê de novo) e `e2e/subscription-screen.e2e.ts` (Assinatura e volta: 1, antes 4). |
+| Provas | Em revisão | `session-lookup.test.ts` (10 s e 10 s + 1 ms, início da leitura, `forget`, falha e recusa), `offline-runtime.test.ts` (início com memória, o resto fresco), `e2e/offline-runtime-api.e2e.ts` (abertura: exatamente 2 por desenho, rodapé pela memória e boot do runtime fresco, e entrar na Assinatura logo depois não lê de novo) e `e2e/subscription-screen.e2e.ts` (Assinatura e volta de outra aba: só os 2 da abertura, antes 4). |
 | Fora | Pendente | O `get-session` de cada tick de pull (item 3 do corte). |
 
 ### Entrada da transação de tenant num statement (t1363; migration 0136, provisória)
