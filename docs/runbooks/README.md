@@ -38,6 +38,8 @@ Testes (Fase 13): [Harness de teste dos Workers](./workers-test-harness.md), com
 
 Testes (interface, [ADR 0103](../adr/0103-base-de-componentes-shadcn-base-ui-e-tailwind-4.md)): [Verificações automáticas de tela](./testes-de-tela.md), com as seis medidas que o revisor de UX fazia à mão (nada sai do contêiner, alvo de toque, axe, só OKLCH e tokens, movimento, foco), cada uma só nos eixos (largura, ponteiro, tema) que podem mudar o resultado dela, os casos de controle e como acrescentar uma tela.
 
+Tempo do CI: [Medir o tempo do CI](./medir-o-ci.md), com o script de medição (espera, preparação e execução por job; p50 e p95; parede) e o tempo por arquivo de teste dos shards do gate de navegador.
+
 Testes (Fase 13): a [matriz de concorrência](../architecture/concurrency-matrix.md) lista cada corrida do sistema, a proteção, o gate que a prova e o que falta; a suíte `gates:concurrency` roda só essas corridas, repetidas (`POLARIS_CONCURRENCY_REPEAT`), num PostgreSQL 18 descartável.
 
 Testes (Fase 13): a [propriedade modelo × PostgreSQL](./gate-4-sales-core.md#propriedade-modelo--postgresql-estoque-e-devolução) (`stock-property`) gera sequências de comandos de estoque, venda e devolução e as compara com um modelo em memória; 20 sequências por PR, a execução longa por `POLARIS_PROPERTY_RUNS` (obrigatória em PR de estoque, venda, devolução, cancelamento ou custo médio) e a reprodução pela semente impressa.

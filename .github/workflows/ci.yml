@@ -280,6 +280,15 @@ jobs:
         working-directory: apps/web
       - run: bun run test:pwa --shard=${{ matrix.shard }}/4
         working-directory: apps/web
+      # The time per test file (timings-<name>.json of the two Playwright configs), read by
+      # scripts/ci-timing.mjs --durations. Uploaded even when a test failed.
+      - if: ${{ always() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: playwright-timings-shard-${{ matrix.shard }}
+          path: apps/web/test-timings/
+          retention-days: 3
+          if-no-files-found: ignore
       # The whole trace of the tab (rastro-*.txt of e2e-pwa/network-trace.ts) and the Playwright traces of the
       # failed tests: without this the files go away with the runner. Skipped when the shard is green.
       - if: ${{ failure() }}

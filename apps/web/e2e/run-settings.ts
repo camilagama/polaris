@@ -1,4 +1,5 @@
 import { availableParallelism, totalmem } from "node:os";
+import type { ReporterDescription } from "@playwright/test";
 
 /**
  * What a Playwright run takes from the environment, shared by the configs and the tests that name the app's origin.
@@ -56,4 +57,20 @@ export function workersFrom(fallback: number, cap: number, spare = 0) {
     );
   }
   return workers;
+}
+
+/**
+ * The reporters of a Playwright run: `list` (and `github` in the CI) as always, and, only in the CI, the JSON of the
+ * run in `test-timings/timings-<name>.json` for the time per file (`scripts/ci-timing.mjs --durations`). Not in
+ * `test-results/`: Playwright empties that folder at the start of every run, so the second run of a shard would erase
+ * the file of the first.
+ */
+export function reportersFor(name: string): ReporterDescription[] | "list" {
+  return process.env.CI
+    ? [
+        ["list"],
+        ["github"],
+        ["json", { outputFile: `test-timings/timings-${name}.json` }],
+      ]
+    : "list";
 }
