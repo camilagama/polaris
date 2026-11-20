@@ -60,6 +60,17 @@ doc/doc-inicial.md é material de origem; doc/plano-inicial.md rege a sequência
 - Entregar só com o CI do head verde, inclusive CodeQL e e2e-real. Se ficar vermelho, ler o log e corrigir na causa.
 - O PR diz só o que foi rodado e visto. Não afirmar que um check não executado passou; dizer o que só roda no CI (PostgreSQL 18, navegador).
 
+### Ganchos locais (opcionais)
+
+O `hk.pkl` da raiz antecipa o que o CI já checa; o CI não muda e nenhum gancho é instalado sozinho (nada no `postinstall`). Instalação opcional: tenha o [hk](https://hk.jdx.dev) (`mise use hk`, `brew install hk` ou `cargo install hk --locked`) e rode `hk install` na raiz. Os ganchos ficam no `.git` comum, valendo para todos os worktrees do clone. `git commit --no-verify` e `git push --no-verify` pulam o gancho, e o CI continua sendo a barreira.
+
+| Gancho | O que roda |
+| --- | --- |
+| `pre-commit` | `biome check --write --skip=source` só nos arquivos em stage (`.js`, `.jsx`, `.mjs`, `.cjs`, `.ts`, `.tsx`, `.mts`, `.cts`, `.json`, `.jsonc`, `.css`); o que o Biome corrige volta ao stage, e erro que ele não corrige barra o commit. Sem as ações de organização (`--skip=source`), que o CI não cobra e reordenariam chaves e importações fora do diff. |
+| `pre-push` | `bun run check:fast`: `lint`, `format:check`, `typecheck` e `test` (`vitest run`), na ordem e com os comandos do `check`, sem `boundaries`, `knip` nem os verificadores `verify-*`/`migrations:compat`/`comments:history`. Eles seguem no `bun run check` e no CI. |
+
+`bun run check:fast` leva vários minutos num computador de 2 núcleos (o `vitest run` domina); `bun run check` continua sendo o que se roda antes do push do PR.
+
 ### Regras que uma checagem garante
 
 Erros que voltaram de revisão em mais de um PR e que agora reprovam no `bun run check` e no CI (pelo `bun run test`, que roda o `.test.mjs` de cada uma). Onde a `main` já tinha o padrão, a checagem guarda uma lista exata por arquivo: só reprova o que acrescenta, e quem tira um uso baixa a lista no mesmo PR.
