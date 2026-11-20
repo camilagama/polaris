@@ -571,6 +571,22 @@ describe("starting", () => {
         "a 5xx with no oRPC code",
         () => Object.assign(new Error("bad gateway"), { status: 502 }),
       ],
+      [
+        "a 429",
+        () =>
+          Object.assign(new Error("slow down"), {
+            code: "TOO_MANY_REQUESTS",
+            status: 429,
+          }),
+      ],
+      [
+        "a 4xx outside the definite ones",
+        () =>
+          Object.assign(new Error("unprocessable"), {
+            code: "UNPROCESSABLE_CONTENT",
+            status: 422,
+          }),
+      ],
       ["a network failure", () => new TypeError("Failed to fetch")],
     ];
 
@@ -615,25 +631,33 @@ describe("starting", () => {
       expect(back.context()?.deviceId).toBe(device);
     });
 
-    it("an explicit refusal of the device still forgets it and registers another", async () => {
-      const { device, w } = await deviceWithoutLease();
-      const registered = w.calls.registerDevice;
-      const remove = vi.spyOn(w.keyValues, "remove");
-      w.failures.issueLease.push(
-        Object.assign(new Error("forbidden"), {
-          code: "FORBIDDEN",
-          status: 403,
-        })
-      );
+    it.each([
+      ["a CONFLICT with device_revoked", "CONFLICT", 409, "device_revoked"],
+      ["a NOT_FOUND", "NOT_FOUND", 404, undefined],
+      ["a FORBIDDEN", "FORBIDDEN", 403, undefined],
+    ] as const)(
+      "%s is an explicit refusal of the device: it is forgotten and another is registered",
+      async (_name, code, status, reason) => {
+        const { device, w } = await deviceWithoutLease();
+        const registered = w.calls.registerDevice;
+        const remove = vi.spyOn(w.keyValues, "remove");
+        w.failures.issueLease.push(
+          Object.assign(new Error("refused"), {
+            code,
+            data: reason ? { reason } : undefined,
+            status,
+          })
+        );
 
-      const runtime = w.make();
-      await runtime.start(organizationId);
+        const runtime = w.make();
+        await runtime.start(organizationId);
 
-      expect(remove).toHaveBeenCalledWith("polaris.offline.device");
-      expect(w.calls.registerDevice).toBe(registered + 1);
-      expect(w.keyValues.read("polaris.offline.device")).not.toBe(device);
-      expect(runtime.getSnapshot().phase).toBe("ready");
-    });
+        expect(remove).toHaveBeenCalledWith("polaris.offline.device");
+        expect(w.calls.registerDevice).toBe(registered + 1);
+        expect(w.keyValues.read("polaris.offline.device")).not.toBe(device);
+        expect(runtime.getSnapshot().phase).toBe("ready");
+      }
+    );
   });
 
   it("a plan refusal is the reason of the unavailable phase, and any other failure is not", async () => {
