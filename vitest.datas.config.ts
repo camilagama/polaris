@@ -33,8 +33,9 @@ export default defineConfig({
     ],
     name: "datas",
     // Random file and test order exposes tests that lean on state another test
-    // left behind. The seed is printed on every run; replay a failure with
-    // `node node_modules/vitest/vitest.mjs run --config vitest.datas.config.ts --sequence.seed=<seed>`
+    // left behind. The seed is printed on every run; replay a failure with the
+    // same clock, zone and file filters as the failed round:
+    // `POLARIS_TEST_NOW=<now> TZ=<zone> node node_modules/vitest/vitest.mjs run --config vitest.datas.config.ts --sequence.seed=<seed> [filters]`
     // (`bun run test:datas` takes no Vitest flags).
     sequence: { shuffle: { files: true, tests: true } },
     setupFiles: [
