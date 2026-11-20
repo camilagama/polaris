@@ -1,0 +1,149 @@
+# Testes protegidos (regra b do Rodrigo): um caminho ou glob por linha, relativo à raiz do repositório.
+# Esta lista só cresce. O CI (scripts/check-protegidos.ts) reprova o PR que:
+#   - tire uma linha daquela lista ou deixe um glob sem arquivo;
+#   - apague, renomeie para fora da lista ou enfraqueça (.skip/.only/.todo, retry, quarentena, menos expect/assert,
+#     menos casos de teste) um arquivo que ela cobre;
+#   - tire um arquivo protegido das globs de inclusão de uma config de Vitest/Playwright, ou acrescente exclusão,
+#     filtro ou retry que o alcance.
+# Só o commit com o trailer `Protegido-Aceito-Por: Rodrigo` libera, e o script imprime o que liberou.
+# Na dúvida, protegido: o teste que toca capacidade, papel, RLS, tenant, sessão, assinatura, PII, lease ou migração
+# e não está aqui fica protegido até o Rodrigo ler. Cada glob tem de casar com ao menos um arquivo.
+# Linhas em branco e linhas que começam com # são ignoradas; ** atravessa pastas, * não atravessa, {a,b} escolhe.
+
+# --- Classe: gates de banco (migração, RLS, concorrência): todos os arquivos da pasta ---
+packages/db/scripts/**
+
+# --- Classe: autorização (capacidade, papel, RLS, tenant) ---
+apps/web/src/server/rpc/**/*.test.ts
+apps/web/src/server/authenticated-request-context.test.ts
+apps/web/src/server/tenant-request-context.test.ts
+apps/web/src/server/use-cases/*.test.ts
+apps/web/worker/*.test.ts
+apps/web/e2e-real/pilha/*.e2e.ts
+apps/web/e2e-real/confinement.test.ts
+apps/web/e2e/closed-store*.e2e.ts
+packages/db/src/**/*.test.ts
+packages/domain/src/admin/*.test.ts
+packages/domain/src/organization/*.test.ts
+packages/domain/src/billing/grants.test.ts
+packages/domain/src/billing/entitlements*.test.ts
+apps/admin/src/**/*.test.ts
+apps/admin/ui/**/*.test.ts
+
+# --- Classe: privacidade (PII, anonimização, encerramento, apagamento, e-mails) ---
+apps/web/src/server/privacy/*.test.{ts,tsx}
+apps/web/src/server/routes/closed-exports.test.ts
+apps/web/src/server/routes/data-exports.test.ts
+apps/web/src/organization/**/*.test.{ts,tsx}
+apps/web/e2e-real/jornadas/encerramento*.e2e.ts
+apps/web/e2e/data-export-screen.e2e.ts
+packages/domain/src/privacy/*.test.ts
+scripts/backup/*.test.mjs
+
+# --- Classe: migração ---
+scripts/verify-migration-compat.test.mjs
+packages/domain/scripts/*.test.ts
+
+# --- Classe: concorrência (locks, idempotência, filas, corrida de abas) ---
+apps/web/src/server/queue/*.test.ts
+apps/web/src/server/sync/**/*.test.ts
+apps/web/src/offline/local-store-lock.test.ts
+apps/web/src/offline/sync-runner.test.ts
+apps/web/e2e/offline-local-store-open-lock.e2e.ts
+apps/web/e2e/offline-sync-cadence.e2e.ts
+apps/web/src/offline/runtime/sync-leader.test.ts
+apps/web/src/offline/runtime/sync-scheduler.test.ts
+packages/domain/src/events/*.test.ts
+
+# --- Grupo 1: sessão, login e senha ---
+apps/web/src/server/auth/*.test.{ts,tsx}
+apps/web/src/server/auth-link-routes.test.ts
+apps/web/src/server/auth.test.ts
+apps/web/src/server/client-ip.test.ts
+apps/web/src/server/routes/auth-methods.test.ts
+apps/web/src/sign-in/*.test.{ts,tsx}
+apps/web/src/offline/runtime/session-over.test.ts
+apps/web/src/offline/runtime/session-copies.test.ts
+apps/web/src/offline/runtime/logout-*.test.ts
+apps/web/src/offline/logout-*.test.{ts,tsx}
+apps/web/e2e/session-ended*.e2e.ts
+apps/web/e2e/offline-logout.e2e.ts
+apps/web/e2e/offline-sair.e2e.ts
+apps/web/e2e/password-screens.e2e.ts
+apps/web/e2e/turnstile-real.e2e.ts
+apps/web/e2e-real/jornadas/sair-e-recarregar.e2e.ts
+
+# --- Grupo 2: cobrança com assinatura (webhooks Asaas, Woovi, Resend; direito por plano) ---
+packages/billing/src/**/*.test.ts
+apps/web/src/server/billing/*.test.ts
+apps/web/src/server/routes/billing-webhooks.test.ts
+apps/web/src/server/routes/resend-webhooks.test.ts
+packages/domain/src/billing/*.test.ts
+apps/web/src/subscription/*.test.{ts,tsx}
+apps/web/e2e/plan-limits.e2e.ts
+apps/web/e2e/product-limit-plan.e2e.ts
+
+# --- Grupo 3: limites de taxa e abuso ---
+apps/web/src/server/middleware/rate-limit*.test.ts
+apps/web/src/server/middleware/origin-check.test.ts
+apps/web/src/server/auth/abuse-protection.test.ts
+
+# --- Grupo 4: CSP e cabeçalhos ---
+apps/web/src/server/middleware/security-headers.test.ts
+apps/web/scripts/static-headers.test.ts
+apps/web/e2e/offline-csp.e2e.ts
+apps/web/e2e-pwa/ui-csp.e2e.ts
+apps/catalog/e2e/csp.e2e.ts
+apps/catalog/src/server/security.test.ts
+packages/http-security/src/*.test.ts
+
+# --- Grupo 5: mídia e objetos (R2, Images) ---
+apps/web/src/server/routes/media.test.ts
+apps/web/src/server/media-*.test.ts
+apps/catalog/src/media.test.ts
+apps/catalog/src/server/media.test.ts
+packages/domain/src/catalog/media.test.ts
+apps/web/e2e/product-media-screen.e2e.ts
+
+# --- Grupo 6: LGPD (aceite legal, retenção, exportação, registro de acesso, limpeza de PII nos eventos) ---
+apps/web/src/server/legal-acceptance.test.ts
+apps/web/src/legal/*.test.{ts,tsx}
+packages/domain/src/legal/*.test.ts
+apps/web/e2e/legal-acceptance.e2e.ts
+apps/web/e2e-pwa/legal-pages.e2e.ts
+apps/web/src/server/auth/access-log.test.ts
+packages/observability/src/*.test.ts
+apps/web/src/observability/*.test.ts
+
+# --- Grupo 7: sync offline e catálogo público (lease, grants, authorization_revoked, namespace, public_catalog_*) ---
+packages/domain/src/offline/*.test.ts
+apps/web/src/offline/runtime/lease-standing.test.ts
+apps/web/src/offline/namespace.test.ts
+apps/web/src/offline/runtime/offline-access-expired.test.tsx
+apps/web/src/offline/runtime/offline-runtime.test.ts
+apps/web/src/offline/runtime/runtime-api.test.ts
+apps/web/e2e/offline-runtime*.e2e.ts
+apps/web/e2e/offline-devices.e2e.ts
+apps/web/e2e/offline-entry.e2e.ts
+apps/web/e2e/offline-outbox.e2e.ts
+apps/web/e2e/offline-poc.e2e.ts
+packages/domain/src/catalog/public-catalog.test.ts
+apps/catalog/src/**/*.test.{ts,tsx}
+apps/catalog/e2e/*.e2e.ts
+
+# --- Cadeia de suprimentos e produção: permissões de workflow, `uses` por SHA, isolamento de staging ---
+scripts/verify-production-workflow.test.mjs
+scripts/verify-backup-workflow.test.mjs
+scripts/verify-deployed-sha.test.mjs
+scripts/verify-staging-isolation.test.mjs
+scripts/verify-dependency-overrides.test.mjs
+scripts/admin-production-guard.test.mjs
+scripts/workerd-db-confinement.test.mjs
+scripts/workerd-harness.test.mjs
+scripts/verify-no-map-published.test.mjs
+scripts/verify-production-build.test.mjs
+scripts/smoke-staging.test.mjs
+
+# --- A própria checagem ---
+scripts/check-protegidos.ts
+scripts/check-protegidos.test.mjs
