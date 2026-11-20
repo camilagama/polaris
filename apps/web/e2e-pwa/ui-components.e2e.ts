@@ -2,7 +2,7 @@
 import type { Locator, Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 import { watchCspViolations } from "../e2e/csp-fixture";
-import { axeViolations } from "./ui-guardrails";
+import { axeViolations } from "./ui-guardrails/measures";
 
 /**
  * The components the sale uses (ADR 0103, section 8, item 3), in the gallery: each one is found by its role and

@@ -1311,7 +1311,7 @@ test("o destino de 'Entrar de novo' é a tela de entrada, com a frase do motivo 
   ).toBeVisible();
 });
 
-// the 44 px touch area is measured by the guardrails (check 2, e2e-pwa/ui-guardrails.e2e.ts); here, the visible height
+// the 44 px touch area is measured by the guardrails (check 2, e2e-pwa/ui-guardrails/); here, the visible height
 // the design gives a control with touch (36 px) and that nothing scrolls sideways in the dialog and the panel
 test("os controles têm a altura de toque de 36 px e nada rola na horizontal, a 360 px e no iPhone SE", async ({
   page,

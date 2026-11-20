@@ -3,7 +3,7 @@ import type { Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 import { watchCspViolations } from "../e2e/csp-fixture";
 import { expectMotionLevel } from "./motion-expect";
-import { axeViolations } from "./ui-guardrails";
+import { axeViolations } from "./ui-guardrails/measures";
 
 /**
  * The charts and the Tabs of src/ui/ in the gallery (ADR 0103, amendment "Gráficos"): the charts open from

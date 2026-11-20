@@ -8,7 +8,7 @@ import {
   skipOutsideChromium,
 } from "../e2e/reflow";
 import { expectWholeMonthWhileTyping } from "../e2e/date-pickers";
-import { axeFaults } from "./ui-guardrails";
+import { axeFaults } from "./ui-guardrails/measures";
 
 /**
  * "Digitar as datas" in the panel of the period picker, in the gallery ("hoje" is `24/10/2026`): the two fields take

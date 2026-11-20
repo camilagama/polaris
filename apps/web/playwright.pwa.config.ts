@@ -21,7 +21,7 @@ const VISUAL = ["**/ui-visual.e2e.ts"];
  */
 const DESKTOP_ONLY = [
   "**/recarga-com-worker.e2e.ts",
-  "**/ui-guardrails.e2e.ts",
+  "**/ui-guardrails/*.e2e.ts",
   "**/ui-sem-caixa-alta.e2e.ts",
   "**/ui-icones.e2e.ts",
   "**/ui-botao-atualizar.e2e.ts",
