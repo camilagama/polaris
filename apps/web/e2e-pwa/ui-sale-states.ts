@@ -1,6 +1,7 @@
 /// <reference lib="dom" />
 // Only types from Playwright: `ui-screens.ts` is read under Vitest by the source rules.
 import type { Locator, Page, Route } from "@playwright/test";
+import { showScreenAlone } from "./show-screen-alone";
 import { serveLabWorker, WORKER_MARK } from "./worker-mark";
 
 /**
@@ -202,25 +203,45 @@ async function openSaleLab(page: Page) {
     .waitFor();
 }
 
+const SETTLED_FRAMES = 15;
+const SETTLE_BUDGET_MS = 10_000;
+
 /**
- * Hides the lab's own controls and waits for the fonts: what stays is the screen. The page ends scrolled to the
- * bottom, where the bar with the total rests at the end of the form: anywhere else the bar floats over the
- * controls under it, and their touch areas meet the button's by design of a sticky bar.
+ * The screen alone (see `showScreenAlone`), then scrolled to the bottom, where the bar with the total rests at the end of
+ * the form: anywhere else the bar floats over the controls under it, and their touch areas meet the button's by design of
+ * a sticky bar. The stock lines and the summary settle after the last click without any animation (slower on a busy
+ * machine) and change the page height, so the scroll follows the height until it holds for `SETTLED_FRAMES` frames.
  */
-async function showScreenAlone(page: Page) {
-  await page.evaluate(() => {
-    for (const element of document.querySelectorAll("[data-lab-chrome]")) {
-      (element as HTMLElement).hidden = true;
-    }
-    (document.activeElement as HTMLElement | null)?.blur();
-    window.scrollTo(0, document.documentElement.scrollHeight);
-  });
-  await page.evaluate(() => document.fonts.ready);
-  // the stock lines and the summary settle after the last click (slower on a busy machine): scroll again once they have
-  await page.waitForTimeout(400);
-  await page.evaluate(() =>
-    window.scrollTo(0, document.documentElement.scrollHeight)
+async function showSaleScreenAlone(page: Page) {
+  await showScreenAlone(page);
+  const settled = await page.evaluate(
+    ({ budget, frames }) =>
+      new Promise<boolean>((resolve) => {
+        const startedAt = performance.now();
+        let height = -1;
+        let steady = 0;
+        const step = () => {
+          const now = document.documentElement.scrollHeight;
+          steady = now === height ? steady + 1 : 0;
+          height = now;
+          window.scrollTo(0, now);
+          if (steady >= frames) {
+            resolve(true);
+          } else if (performance.now() - startedAt > budget) {
+            resolve(false);
+          } else {
+            requestAnimationFrame(step);
+          }
+        };
+        step();
+      }),
+    { budget: SETTLE_BUDGET_MS, frames: SETTLED_FRAMES }
   );
+  if (!settled) {
+    throw new Error(
+      `showSaleScreenAlone: a altura da página não parou de mudar em ${SETTLE_BUDGET_MS} ms`
+    );
+  }
 }
 
 async function pick(
@@ -366,12 +387,12 @@ export const saleStates = {
     await payPix(page);
     await submit(page).click();
     await page.getByRole("region", { name: CONFIRMED_REGION }).waitFor();
-    await showScreenAlone(page);
+    await showSaleScreenAlone(page);
   },
 
   async empty(page: Page) {
     await openSaleLab(page);
-    await showScreenAlone(page);
+    await showSaleScreenAlone(page);
   },
 
   /** The confirm button pressed on an empty form: every message of the fields. */
@@ -379,7 +400,7 @@ export const saleStates = {
     await openSaleLab(page);
     await submit(page).click();
     await page.getByText("Escolha o método de pagamento").first().waitFor();
-    await showScreenAlone(page);
+    await showSaleScreenAlone(page);
   },
 
   /** Without a network, a sale kept on the device and the next one being filled from its catalog. */
@@ -395,7 +416,7 @@ export const saleStates = {
       .filter({ hasText: "Venda guardada neste aparelho" })
       .waitFor({ timeout: 15_000 });
     await pick(page, 1, "camiseta azul", LAB_SHIRT_OPTION);
-    await showScreenAlone(page);
+    await showSaleScreenAlone(page);
   },
   /** A credit card sale: installments, a profile and an adjustment (the tallest form). */
   async payment(page: Page) {
@@ -424,7 +445,7 @@ export const saleStates = {
       page.getByRole("option", { exact: true, name: "Desconto" })
     );
     await adjustment.getByLabel("Valor (R$)").fill("10,00");
-    await showScreenAlone(page);
+    await showSaleScreenAlone(page);
   },
 
   /** The items chosen and the method paid in Pix. */
@@ -432,6 +453,6 @@ export const saleStates = {
     await openSaleLab(page);
     await twoItems(page);
     await payPix(page);
-    await showScreenAlone(page);
+    await showSaleScreenAlone(page);
   },
 };

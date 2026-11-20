@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react";
-import { browserConnection } from "../lib/browser-connection";
+import { browserSessionLookup } from "../lib/browser-connection";
 
 /**
- * The e-mail of the person signed in, for the foot of the sidebar. Read once from the session, and nothing
- * when it cannot be read (offline, no session, any failure): the line is only a reminder of whose account it is,
- * never kept on the device.
+ * The e-mail of the person signed in, for the foot of the sidebar. Read from the tab's shared session lookup, and
+ * nothing when it cannot be read (offline, no session, any failure): the line is only a reminder of whose account
+ * it is, never kept on the device.
  */
 export function useSignedInEmail(): string | null {
   return useSignedInUser().email;
@@ -14,8 +14,8 @@ const text = (value: unknown) =>
   typeof value === "string" && value !== "" ? value : null;
 
 /**
- * The e-mail and the name of the person signed in, read once from the session (the Assinatura fills the payer of
- * Pix Automático with them); nothing when the session cannot be read.
+ * The e-mail and the name of the person signed in, from the tab's shared session lookup (the Assinatura fills the
+ * payer of Pix Automático with them); nothing when the session cannot be read.
  */
 export function useSignedInUser(): {
   email: string | null;
@@ -26,33 +26,25 @@ export function useSignedInUser(): {
     name: string | null;
   }>({ email: null, name: null });
   useEffect(() => {
-    const controller = new AbortController();
-    // a slow answer is no answer: the line stays empty (no AbortSignal.any, which Safari 16.4 lacks)
-    const timer = setTimeout(() => controller.abort(), 5000);
-    // the first lookup of the tab goes out before the screen's reads (`read-gate.ts`); its answer is only a reminder,
-    // never a proof of the connection, so it is not classified (a portal's page leaves the line empty, nothing more)
-    browserConnection
-      .sessionFirst(() =>
-        fetch("/api/auth/get-session", {
-          cache: "no-store",
-          credentials: "same-origin",
-          signal: controller.signal,
-        })
-      )
-      .then((response) => (response.ok ? response.json() : null))
-      .then(
-        (session: { user?: { email?: unknown; name?: unknown } } | null) => {
+    let live = true;
+    // the lookup is shared by the tab (the runtime, the Assinatura): its answer is only a reminder here, and a
+    // failure of any kind leaves the line empty
+    browserSessionLookup
+      .read()
+      .then((answer) => {
+        const session = answer.body as {
+          user?: { email?: unknown; name?: unknown };
+        } | null;
+        if (live && answer.status >= 200 && answer.status < 300) {
           setUser({
             email: text(session?.user?.email),
             name: text(session?.user?.name),
           });
         }
-      )
-      .catch(() => undefined)
-      .finally(() => clearTimeout(timer));
+      })
+      .catch(() => undefined);
     return () => {
-      clearTimeout(timer);
-      controller.abort();
+      live = false;
     };
   }, []);
   return user;

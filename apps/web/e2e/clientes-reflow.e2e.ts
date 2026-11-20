@@ -29,7 +29,8 @@ const ORGANIZATION = {
   role: "owner",
   timezone: "America/Sao_Paulo",
 };
-const DAY = "2026-10-14T12:00:00.000Z";
+const NOW = new Date("2026-10-14T12:00:00-03:00");
+const DAY = NOW.toISOString();
 const id = (n: number) => `0199c2d0-0000-7000-8000-0000000000${n}`;
 
 const LONG_NAME =
@@ -104,6 +105,7 @@ async function openCustomers(page: Page, width: number, fontPixels: number) {
     }
     return route.abort("internetdisconnected");
   });
+  await page.clock.setFixedTime(NOW);
   await page.goto("/customers");
   await expect(
     page.getByRole("heading", { exact: true, level: 1, name: "Clientes" })

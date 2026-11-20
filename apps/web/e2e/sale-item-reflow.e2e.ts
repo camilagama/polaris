@@ -24,6 +24,10 @@ test.skip(
   "`Page.setFontSizes` is a Chrome DevTools command"
 );
 
+const NOW = new Date("2026-10-14T12:00:00-03:00");
+const LAST_PRICE_DAY = new Intl.DateTimeFormat("en-CA", {
+  timeZone: "America/Sao_Paulo",
+}).format(new Date(NOW.getTime() - 13 * 86_400_000));
 const STACKED_FROM_REM = 18.25;
 const THREE_COLUMNS_FROM_REM = 27;
 const NARROWEST_REM = 9.5;
@@ -44,24 +48,25 @@ async function openItem(page: Page, pixels: number): Promise<Locator> {
   await page.setViewportSize({ height: 800, width: 1280 });
   await setBrowserFont(page, pixels);
   await page.addInitScript(
-    ([key, variant]) => {
+    ([key, variant, day]) => {
       window.localStorage.setItem(
         key as string,
         JSON.stringify({
           [variant as string]: {
             charged: "45.00",
             listed: "50.00",
-            on: "2026-10-01",
+            on: day,
           },
         })
       );
     },
-    [`polaris.sale.lastPrices.v1:${ORGANIZATION}`, SHIRT]
+    [`polaris.sale.lastPrices.v1:${ORGANIZATION}`, SHIRT, LAST_PRICE_DAY]
   );
   await page.route("**/rpc/paymentProfile/list", (route) =>
     route.fulfill(rpc({ profiles: [] }))
   );
   await serveLabWorker(page);
+  await page.clock.setFixedTime(NOW);
   await page.goto("/offline-screens-lab?screen=sale");
   await page.getByLabel("Usuário").fill(`user-${crypto.randomUUID()}`);
   await page.getByRole("button", { exact: true, name: "Iniciar" }).click();

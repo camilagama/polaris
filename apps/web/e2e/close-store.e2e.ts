@@ -73,7 +73,7 @@ async function serveRuntime(page: Page) {
     route.fulfill(rpc({ device: DEVICE, devices: [DEVICE] }))
   );
   await page.route("**/rpc/offline/issueLease", async (route) => {
-    const issuedAt = new Date();
+    const issuedAt = new Date(NOW);
     const expiresAt = new Date(issuedAt.getTime() + 72 * HOUR);
     const lease = await signOfflineLease(
       buildOfflineLeaseClaims({
@@ -202,7 +202,7 @@ async function waitForQueue(page: Page) {
 
 async function leaveOneRefused(page: Page) {
   await page.evaluate(
-    async ({ deviceId, organizationId }) => {
+    async ({ at, deviceId, organizationId }) => {
       const names = (await indexedDB.databases())
         .map(({ name }) => name ?? "")
         .filter((name) => name.startsWith("polaris-outbox-"));
@@ -216,7 +216,6 @@ async function leaveOneRefused(page: Page) {
               ["commands", "meta"],
               "readwrite"
             );
-            const at = new Date().toISOString();
             tx.objectStore("commands").put({
               attempts: 1,
               baseVersion: null,
@@ -242,7 +241,11 @@ async function leaveOneRefused(page: Page) {
         });
       }
     },
-    { deviceId: DEVICE.id, organizationId: ORGANIZATION.id }
+    {
+      at: NOW.toISOString(),
+      deviceId: DEVICE.id,
+      organizationId: ORGANIZATION.id,
+    }
   );
   await page.reload();
 }

@@ -27,7 +27,12 @@ import {
 import { stockProductLinks } from "../catalog/products-link-model";
 import { useCurrentOrganization } from "../lib/current-organization";
 import { focusLater } from "../lib/focus";
+import {
+  LIST_REFRESH_FAILED_TEXT,
+  LIST_REFRESHING_TEXT,
+} from "../lib/list-refresh-text";
 import { useMediaThumbsEnabled } from "../lib/media-thumbs-flag";
+import { useFocusTitleWhenGone } from "../lib/use-focus-title-when-gone";
 import { useStoreToday } from "../lib/use-store-today";
 import { useLocalWorkspace } from "../offline/runtime/use-local-workspace";
 import { LINK, StockActionStrip } from "./stock-action-strip";
@@ -276,6 +281,7 @@ export function InventoryPage() {
   const {
     applyBalance: applyListBalance,
     filters,
+    listKey,
     loadMore,
     reload: reloadList,
     setFilters,
@@ -316,11 +322,18 @@ export function InventoryPage() {
   }, [entryLink]);
   const today = useStoreToday(organization.timezone);
   const view = stockListView(state, filters, offline);
-  const more = stockMoreView(state);
+  const more = stockMoreView(state, listKey);
+  const focus = useFocusTitleWhenGone<HTMLHeadingElement>(more.visible);
   const coverIds = useMemo(() => stockCoverIds(state.entries), [state.entries]);
   useThumbnailSequence(coverIds);
-  const countText =
-    state.status === "ready" ? stockCountText(state, filters, offline) : null;
+  const countText = (() => {
+    if (state.status !== "ready") {
+      return null;
+    }
+    return more.refreshing && !offline
+      ? LIST_REFRESHING_TEXT
+      : stockCountText(state, filters, offline);
+  })();
 
   const handleQuery = useCallback(
     (query: string) => setFilters({ query }),
@@ -397,7 +410,9 @@ export function InventoryPage() {
     <div className="grid gap-4 font-sans text-foreground text-sm antialiased">
       <header className="grid gap-1">
         <div className="flex items-center gap-1">
-          <h1 className="text-title">Estoque</h1>
+          <h1 className="text-title" ref={focus.title} tabIndex={-1}>
+            Estoque
+          </h1>
           <HelpTip about="Estoque">
             Receber, contar e baixar mudam o saldo aqui. Venda e devolução mudam
             sozinhas.
@@ -464,6 +479,22 @@ export function InventoryPage() {
         </Card>
       ) : null}
 
+      {more.refreshFailed ? (
+        <Alert variant="warning">
+          <AlertDescription className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            {LIST_REFRESH_FAILED_TEXT}
+            <Button
+              onClick={handleReload}
+              size="sm"
+              type="button"
+              variant="link"
+            >
+              <RefreshCwIcon aria-hidden="true" data-icon="inline-start" />
+              Tentar novamente
+            </Button>
+          </AlertDescription>
+        </Alert>
+      ) : null}
       {view.kind === "loading" ? <LoadingCard message={view.message} /> : null}
       {view.kind === "error" ? (
         <Alert variant="destructive">
@@ -545,7 +576,9 @@ export function InventoryPage() {
         <Button
           className="justify-self-start"
           disabled={more.busy}
+          onBlur={focus.onBlur}
           onClick={loadMore}
+          onFocus={focus.onFocus}
           type="button"
           variant="outline"
         >

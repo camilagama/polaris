@@ -29,7 +29,7 @@ import { SaleDiscountExceedsSubtotalError } from "@polaris/domain/sales/sale-adj
 import { SaleOccurredTooOldError } from "@polaris/domain/sales/sale-dates";
 import { InvalidSalePaymentError } from "@polaris/domain/sales/sale-payment";
 import { logger } from "@polaris/observability/logger";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createServerApp } from "../app";
 import type { WorkerBindings } from "../environment";
 import { TenantRequestContextError } from "../request-context-error";
@@ -38,6 +38,16 @@ import {
   type TenantRequestContextInput,
 } from "../tenant-request-context";
 import { createRpcRouter } from "./router";
+
+const NOW = new Date("2026-11-19T02:50:00.000Z");
+
+beforeEach(() => {
+  vi.useFakeTimers({ now: NOW, toFake: ["Date"] });
+});
+
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 const organizationId = "7b9c212a-f90b-4e05-9e9a-0c0eb1c9c9b0";
 const otherOrganizationId = "11111111-f90b-4e05-9e9a-0c0eb1c9c9b0";
@@ -172,7 +182,10 @@ function createRpcClient(
   });
 
   return createORPCClient(link) as unknown as {
-    sale: { confirm: (input: unknown) => Promise<ConfirmedSaleReadModel> };
+    sale: {
+      confirm: (input: unknown) => Promise<ConfirmedSaleReadModel>;
+      list: (input: unknown) => Promise<unknown>;
+    };
   };
 }
 
@@ -419,7 +432,7 @@ describe("sale.confirm RPC", () => {
       "a session past its 30-day lifetime",
       {
         session: {
-          createdAt: new Date(Date.now() - 40 * 24 * 60 * 60 * 1000),
+          createdAt: new Date(NOW.getTime() - 40 * 24 * 60 * 60 * 1000),
           id: "s",
         },
         user: { id: "u" },
@@ -567,5 +580,24 @@ describe("sale.confirm RPC", () => {
         processingFee: { amount: "0.00", mode: "none" },
       },
     });
+  });
+});
+
+describe("sale.list RPC", () => {
+  it("opens exactly one sale:read tenant context", async () => {
+    const observed: Array<{ capability: string; org: string }> = [];
+    const client = createRpcClient(
+      createRpcRouter({
+        listSales: vi.fn(async () => ({ hasMore: false, sales: [] })),
+        withTenantRequestContext: tenantStub((call) => observed.push(call)),
+      })
+    );
+
+    await client.sale.list({ organizationId });
+
+    expect(
+      observed,
+      `sale.list opened ${observed.length} tenant contexts, expected 1`
+    ).toEqual([{ capability: "sale:read", org: organizationId }]);
   });
 });

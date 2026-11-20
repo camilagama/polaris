@@ -7,11 +7,6 @@ const BEFORE_THE_RULE =
   "anterior à checagem; ao mexer neste teste, fixe o relógio e derive as datas dele";
 
 export const TEST_CLOCK_LIST = {
-  "apps/admin/src/support-routes.test.ts": {
-    count: 1,
-    reason: BEFORE_THE_RULE,
-  },
-  "apps/web/e2e-pwa/sale-draft.e2e.ts": { count: 2, reason: BEFORE_THE_RULE },
   "apps/web/e2e-pwa/support.ts": { count: 1, reason: BEFORE_THE_RULE },
   "apps/web/e2e-pwa/update-moments.e2e.ts": {
     count: 1,
@@ -36,17 +31,7 @@ export const TEST_CLOCK_LIST = {
     reason:
       "o servidor simulado das specs da casca assina o lease com a hora real (ou a do relógio fixado por serveFoot) e grava o comando recusado na hora do navegador, que roda no relógio real nas specs que não o fixam; são as leituras que saíram de app-shell.e2e.ts, sem leitura nova",
   },
-  "apps/web/e2e/close-store.e2e.ts": { count: 2, reason: BEFORE_THE_RULE },
-  "apps/web/e2e/closed-store-device.e2e.ts": {
-    count: 1,
-    reason: BEFORE_THE_RULE,
-  },
-  "apps/web/e2e/closed-store-sale.e2e.ts": {
-    count: 1,
-    reason: BEFORE_THE_RULE,
-  },
   "apps/web/e2e/home.e2e.ts": { count: 4, reason: BEFORE_THE_RULE },
-  "apps/web/e2e/offline-devices.e2e.ts": { count: 1, reason: BEFORE_THE_RULE },
   "apps/web/e2e/offline-runtime-api.e2e.ts": {
     count: 1,
     reason: BEFORE_THE_RULE,
@@ -55,10 +40,6 @@ export const TEST_CLOCK_LIST = {
   "apps/web/e2e/offline-screens.e2e.ts": { count: 9, reason: BEFORE_THE_RULE },
   "apps/web/e2e/offline-sync-cadence.e2e.ts": {
     count: 3,
-    reason: BEFORE_THE_RULE,
-  },
-  "apps/web/src/lib/read-wait-text.test.ts": {
-    count: 1,
     reason: BEFORE_THE_RULE,
   },
   "apps/web/src/offline/runtime/offline-runtime.test.ts": {
@@ -74,43 +55,11 @@ export const TEST_CLOCK_LIST = {
     count: 1,
     reason: BEFORE_THE_RULE,
   },
-  "apps/web/src/server/auth/email.test.tsx": {
-    count: 1,
-    reason: BEFORE_THE_RULE,
-  },
   "apps/web/src/server/auth/get-session-single-read.test.ts": {
     count: 1,
     reason: BEFORE_THE_RULE,
   },
-  "apps/web/src/server/authenticated-request-context.test.ts": {
-    count: 4,
-    reason: BEFORE_THE_RULE,
-  },
   "apps/web/src/server/billing/asaas-adapter.test.ts": {
-    count: 2,
-    reason: BEFORE_THE_RULE,
-  },
-  "apps/web/src/server/rpc/account-router.test.ts": {
-    count: 3,
-    reason: BEFORE_THE_RULE,
-  },
-  "apps/web/src/server/rpc/billing-router.test.ts": {
-    count: 1,
-    reason: BEFORE_THE_RULE,
-  },
-  "apps/web/src/server/rpc/data-export-router.test.ts": {
-    count: 4,
-    reason: BEFORE_THE_RULE,
-  },
-  "apps/web/src/server/rpc/offline-router.test.ts": {
-    count: 4,
-    reason: BEFORE_THE_RULE,
-  },
-  "apps/web/src/server/rpc/organization-closure-router.test.ts": {
-    count: 2,
-    reason: BEFORE_THE_RULE,
-  },
-  "apps/web/src/server/rpc/product-import-router.test.ts": {
     count: 2,
     reason: BEFORE_THE_RULE,
   },
@@ -118,19 +67,6 @@ export const TEST_CLOCK_LIST = {
     count: 1,
     reason: BEFORE_THE_RULE,
   },
-  "apps/web/src/server/rpc/sale-router.test.ts": {
-    count: 1,
-    reason: BEFORE_THE_RULE,
-  },
-  "apps/web/src/server/rpc/sync-push-router.test.ts": {
-    count: 2,
-    reason: BEFORE_THE_RULE,
-  },
-  "apps/web/src/server/tenant-request-context.test.ts": {
-    count: 9,
-    reason: BEFORE_THE_RULE,
-  },
-  "apps/web/src/ui/date-values.test.ts": { count: 1, reason: BEFORE_THE_RULE },
   "apps/web/worker/index.workerd-db.test.ts": {
     count: 2,
     reason: BEFORE_THE_RULE,
@@ -143,30 +79,5 @@ export const TEST_CLOCK_LIST = {
     count: 3,
     reason: BEFORE_THE_RULE,
   },
-  "packages/db/src/billing-store-command-lock.test.ts": {
-    count: 2,
-    reason: BEFORE_THE_RULE,
-  },
-  "packages/domain/src/catalog/category.test.ts": {
-    count: 3,
-    reason: BEFORE_THE_RULE,
-  },
-  "packages/domain/src/catalog/product.test.ts": {
-    count: 3,
-    reason: BEFORE_THE_RULE,
-  },
-  "packages/domain/src/customers/customer.test.ts": {
-    count: 1,
-    reason: BEFORE_THE_RULE,
-  },
-  "packages/domain/src/privacy/retention.test.ts": {
-    count: 4,
-    reason: BEFORE_THE_RULE,
-  },
-  "packages/domain/src/scheduling/scheduled-jobs.test.ts": {
-    count: 2,
-    reason: BEFORE_THE_RULE,
-  },
   "scripts/test-clock/setup.test.mjs": { count: 10, reason: BEFORE_THE_RULE },
-  "scripts/verify-deployed-sha.test.mjs": { count: 2, reason: BEFORE_THE_RULE },
 };
