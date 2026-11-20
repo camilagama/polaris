@@ -74,7 +74,9 @@ async function replayMigration(client: PoolClient): Promise<void> {
   }
 }
 
-async function inRolledBackTransaction(
+// Takes its own connection from the pool and gives it back. The ROLLBACK is cleanup, not something the gate proves:
+// a failed one destroys the connection (rollbackAndRelease), and closing it ends the transaction on the server.
+async function withPooledConnectionQuietRollback(
   owner: ReturnType<typeof createDatabase>,
   body: (client: PoolClient) => Promise<void>
 ): Promise<void> {
@@ -192,7 +194,7 @@ async function proveCeilingsOnTheDatabase(
   owner: ReturnType<typeof createDatabase>,
   tenant: TenantFixture
 ) {
-  await inRolledBackTransaction(owner, async (client) => {
+  await withPooledConnectionQuietRollback(owner, async (client) => {
     const fixture = await createCatalogFixture(client, tenant);
     const value = (name: string) => setValue(client, fixture, name);
     const sku = (text: string | null) => setSku(client, fixture, text);
@@ -281,7 +283,7 @@ async function proveReplay(
   owner: ReturnType<typeof createDatabase>,
   tenant: TenantFixture
 ) {
-  await inRolledBackTransaction(owner, async (client) => {
+  await withPooledConnectionQuietRollback(owner, async (client) => {
     const fixture = await createCatalogFixture(client, tenant);
     await setValue(client, fixture, "Azul-marinho");
     await setSku(client, fixture, "SKU-ANTIGO");
@@ -305,7 +307,7 @@ async function proveReplay(
   ];
   for (const legacy of legacyCases) {
     // biome-ignore lint/performance/noAwaitInLoops: each case is its own rolled-back transaction
-    await inRolledBackTransaction(owner, async (client) => {
+    await withPooledConnectionQuietRollback(owner, async (client) => {
       const fixture = await createCatalogFixture(client, tenant);
       await client.query(
         `ALTER TABLE public.product_option_values DROP CONSTRAINT ${VALUE_CHECK}`
