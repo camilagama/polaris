@@ -8,9 +8,18 @@ export const PLAN_READ_TTL_MS = 10_000;
 interface PlanReadOptions {
   /** The person asked for a reading of now (a `version` of the screen moved): the memory is not used. */
   fresh?: boolean;
+  /**
+   * With `fresh`: the `clearedAt` this caller saw when it made its previous read. A read already on its way is joined
+   * only if a `clear()` came after that: `clear()` drops every read on its way, so what is flying began after it, and a
+   * write listed in `PLAN_USAGE_WRITES` clears before the `version` moves. Without `since`, or with no `clear()` since,
+   * the ask opens a read of its own (a `version` that moved without a clear may have a write the flying read predates).
+   */
+  since?: number;
 }
 
 export interface PlanRead {
+  /** Moves forward at every `clear()`: a caller that keeps the value it saw can tell whether a clear came after. */
+  readonly clearedAt: number;
   /** Lets go of every reading and of the reads on their way: the next ask goes to the server. */
   clear: () => void;
   get: (
@@ -99,6 +108,9 @@ export function createPlanRead(deps: {
   }
 
   return {
+    get clearedAt() {
+      return clearedAt;
+    },
     clear() {
       generation += 1;
       clearedAt = generation;
@@ -106,6 +118,10 @@ export function createPlanRead(deps: {
       flying.clear();
     },
     get(organizationId, options = {}) {
+      const joinsFlying =
+        options.fresh === true &&
+        options.since !== undefined &&
+        clearedAt > options.since;
       if (options.fresh !== true) {
         const entry = kept.get(organizationId);
         if (entry) {
@@ -116,6 +132,8 @@ export function createPlanRead(deps: {
           }
           kept.delete(organizationId);
         }
+      }
+      if (options.fresh !== true || joinsFlying) {
         const joined = flying.get(organizationId);
         if (joined) {
           return joined.promise;
