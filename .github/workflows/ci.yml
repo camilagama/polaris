@@ -1,15 +1,32 @@
 name: CI
 
+run-name: ${{ github.event_name == 'workflow_dispatch' && format('{0} PR #{1} {2}', inputs.full && 'CI completo' || 'CI', inputs.pr || '?', github.sha) || github.event.pull_request.title || github.event.head_commit.message || 'CI' }}
+
 on:
   pull_request:
   push:
     branches:
       - main
-  # A full run on demand, browser gate and dependency audit included.
+  # A full run on demand: every job runs, whatever the change touched. `pr` only names the run.
   workflow_dispatch:
+    inputs:
+      full:
+        description: Run every job (browser gate, Lighthouse, catalog CSP, e2e, audit), ignoring the changed areas
+        type: boolean
+        default: true
+      pr:
+        description: Pull request number (only for the name of the run)
+        type: string
+        required: false
 
 permissions:
   contents: read
+
+# "true" in a manual run with `full` and in a pull request with the `suite-completa` label: the aggregate gate below
+# then accepts nothing but success. scripts/ci-changed.mjs reports every area as changed in any manual run and
+# whenever CI_FULL is "true".
+env:
+  CI_FULL: ${{ (github.event_name == 'workflow_dispatch' && inputs.full) || contains(github.event.pull_request.labels.*.name, 'suite-completa') }}
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
@@ -338,15 +355,16 @@ jobs:
     steps:
       # green when every shard and the catalog CSP test passed, or when the change detection
       # skipped them on purpose (browser explicitly false); red on any failure, cancellation
-      # or any other skip
+      # or any other skip. A full run (CI_FULL) has no skipping on purpose: only success counts.
       - env:
           PARTS: ${{ needs.offline-poc-browser-part.result }}
           CATALOG: ${{ needs.offline-catalog-csp-browser.result }}
           CHANGES: ${{ needs.changes.result }}
           BROWSER: ${{ needs.changes.outputs.browser }}
         run: |
-          echo "parts=$PARTS catalog=$CATALOG changes=$CHANGES browser=$BROWSER"
+          echo "parts=$PARTS catalog=$CATALOG changes=$CHANGES browser=$BROWSER full=$CI_FULL"
           if [ "$PARTS" = success ] && [ "$CATALOG" = success ]; then exit 0; fi
+          if [ "$CI_FULL" = true ]; then exit 1; fi
           if [ "$PARTS" = skipped ] && [ "$CATALOG" = skipped ] && [ "$CHANGES" = success ] && [ "$BROWSER" = false ]; then exit 0; fi
           exit 1
 
