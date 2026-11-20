@@ -40,7 +40,15 @@ function datesOf(period: Period): string[] {
 
 function summary(
   period: Period,
-  { unknownCostLines = 0 } = {}
+  {
+    generatedAt = SERVER_NOW,
+    level = "complete",
+    unknownCostLines = 0,
+  }: {
+    generatedAt?: string;
+    level?: StoredPeriodSummary["quality"]["level"];
+    unknownCostLines?: number;
+  } = {}
 ): StoredPeriodSummary {
   return {
     cards: {
@@ -74,28 +82,31 @@ function summary(
       operatingResult: "1.00",
       salesCount: 1,
     })),
-    generatedAt: SERVER_NOW,
+    generatedAt,
     period,
     quality: {
       anticipationFeesUnknown: 0,
       itemLines: 2,
       itemLinesWithUnknownCost: unknownCostLines,
-      level: "complete",
+      level,
       linkedExpenses: 1,
       missing: [],
       operatingExpenses: 1,
       processingFeesUnknown: 0,
       salesCount: 2,
     },
-  } as StoredPeriodSummary;
+  };
 }
 
-function answered(value: StoredPeriodSummary | null): PeriodSummaryState {
+function answered(
+  value: StoredPeriodSummary | null,
+  source: PeriodSummaryState["source"] = "server"
+): PeriodSummaryState {
   return {
     error: null,
     isLoading: false,
     serverFailed: false,
-    source: "server",
+    source,
     summary: value,
   };
 }
@@ -150,5 +161,27 @@ describe("useHomePeriod liga os dois períodos de comparação", () => {
     const yesterday = { from: "2026-10-13", to: "2026-10-13" };
 
     expect(run(selection, "2026-10-13")).toEqual([ORG, yesterday, yesterday]);
+  });
+
+  it("o dia da loja é o do fuso dela: 23h de 14/10 em São Paulo já é 15/10 em UTC", () => {
+    const tomorrow = { from: "2026-10-15", to: "2026-10-15" };
+    summaryState = answered(
+      summary(tomorrow, { generatedAt: "2026-10-15T02:00:00.000Z" })
+    );
+    const selection: HomeSelection = { custom: tomorrow, preset: "custom" };
+
+    expect(run(selection)).toEqual([ORG, null, null]);
+  });
+
+  it("figuras da cópia do aparelho não pedem comparação", () => {
+    summaryState = answered(summary(SEPTEMBER), "cache");
+
+    expect(run(LAST_MONTH)).toEqual([ORG, null, null]);
+  });
+
+  it("período sem dados não pede comparação", () => {
+    summaryState = answered(summary(SEPTEMBER, { level: "no_data" }));
+
+    expect(run(LAST_MONTH)).toEqual([ORG, null, null]);
   });
 });
