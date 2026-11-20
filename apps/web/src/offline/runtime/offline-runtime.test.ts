@@ -1529,19 +1529,14 @@ describe("starting", () => {
     expect(w.calls.sessionUser).toBe(2);
   });
 
-  it("keeps the recheck window above the idle tick ceiling and at a fixed 6 minutes", () => {
-    expect(SESSION_RECHECK_MS).toBeGreaterThan(MAX_TICK_MS);
+  it("keeps the recheck window at a fixed 6 minutes, a literal that does not follow the tick", () => {
     expect(SESSION_RECHECK_MS).toBe(360_000);
   });
 
-  it("an idle tab at the 300 s tick spares the get-session, and the tick at 600 s reads it again", async () => {
+  it("an idle tab at the 600 s tick reads the get-session at every tick", async () => {
     const w = world();
     const runtime = w.make();
     await runtime.start(organizationId);
-    expect(w.calls.sessionUser).toBe(1);
-
-    w.advanceMs(MAX_TICK_MS);
-    await runtime.syncNow();
     expect(w.calls.sessionUser).toBe(1);
 
     w.advanceMs(MAX_TICK_MS);
@@ -1551,7 +1546,7 @@ describe("starting", () => {
 
     w.advanceMs(MAX_TICK_MS);
     await runtime.syncNow();
-    expect(w.calls.sessionUser).toBe(2);
+    expect(w.calls.sessionUser).toBe(3);
   });
 
   it("the read is still fresh inside the window with something queued, after the return to the page and after the connection changed", async () => {
