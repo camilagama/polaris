@@ -11,7 +11,6 @@ export const TEST_CLOCK_LIST = {
     count: 1,
     reason: BEFORE_THE_RULE,
   },
-  "apps/web/e2e-pwa/sale-draft.e2e.ts": { count: 2, reason: BEFORE_THE_RULE },
   "apps/web/e2e-pwa/support.ts": { count: 1, reason: BEFORE_THE_RULE },
   "apps/web/e2e-pwa/update-moments.e2e.ts": {
     count: 1,
@@ -65,43 +64,11 @@ export const TEST_CLOCK_LIST = {
     count: 1,
     reason: BEFORE_THE_RULE,
   },
-  "apps/web/src/server/auth/email.test.tsx": {
-    count: 1,
-    reason: BEFORE_THE_RULE,
-  },
   "apps/web/src/server/auth/get-session-single-read.test.ts": {
     count: 1,
     reason: BEFORE_THE_RULE,
   },
-  "apps/web/src/server/authenticated-request-context.test.ts": {
-    count: 4,
-    reason: BEFORE_THE_RULE,
-  },
   "apps/web/src/server/billing/asaas-adapter.test.ts": {
-    count: 2,
-    reason: BEFORE_THE_RULE,
-  },
-  "apps/web/src/server/rpc/account-router.test.ts": {
-    count: 3,
-    reason: BEFORE_THE_RULE,
-  },
-  "apps/web/src/server/rpc/billing-router.test.ts": {
-    count: 1,
-    reason: BEFORE_THE_RULE,
-  },
-  "apps/web/src/server/rpc/data-export-router.test.ts": {
-    count: 4,
-    reason: BEFORE_THE_RULE,
-  },
-  "apps/web/src/server/rpc/offline-router.test.ts": {
-    count: 4,
-    reason: BEFORE_THE_RULE,
-  },
-  "apps/web/src/server/rpc/organization-closure-router.test.ts": {
-    count: 2,
-    reason: BEFORE_THE_RULE,
-  },
-  "apps/web/src/server/rpc/product-import-router.test.ts": {
     count: 2,
     reason: BEFORE_THE_RULE,
   },
@@ -109,19 +76,6 @@ export const TEST_CLOCK_LIST = {
     count: 1,
     reason: BEFORE_THE_RULE,
   },
-  "apps/web/src/server/rpc/sale-router.test.ts": {
-    count: 1,
-    reason: BEFORE_THE_RULE,
-  },
-  "apps/web/src/server/rpc/sync-push-router.test.ts": {
-    count: 2,
-    reason: BEFORE_THE_RULE,
-  },
-  "apps/web/src/server/tenant-request-context.test.ts": {
-    count: 9,
-    reason: BEFORE_THE_RULE,
-  },
-  "apps/web/src/ui/date-values.test.ts": { count: 1, reason: BEFORE_THE_RULE },
   "apps/web/worker/index.workerd-db.test.ts": {
     count: 2,
     reason: BEFORE_THE_RULE,
@@ -132,30 +86,6 @@ export const TEST_CLOCK_LIST = {
   },
   "packages/billing/src/woovi/sandbox.integration.test.ts": {
     count: 3,
-    reason: BEFORE_THE_RULE,
-  },
-  "packages/db/src/billing-store-command-lock.test.ts": {
-    count: 2,
-    reason: BEFORE_THE_RULE,
-  },
-  "packages/domain/src/catalog/category.test.ts": {
-    count: 3,
-    reason: BEFORE_THE_RULE,
-  },
-  "packages/domain/src/catalog/product.test.ts": {
-    count: 3,
-    reason: BEFORE_THE_RULE,
-  },
-  "packages/domain/src/customers/customer.test.ts": {
-    count: 1,
-    reason: BEFORE_THE_RULE,
-  },
-  "packages/domain/src/privacy/retention.test.ts": {
-    count: 4,
-    reason: BEFORE_THE_RULE,
-  },
-  "packages/domain/src/scheduling/scheduled-jobs.test.ts": {
-    count: 2,
     reason: BEFORE_THE_RULE,
   },
   "scripts/test-clock/setup.test.mjs": { count: 10, reason: BEFORE_THE_RULE },

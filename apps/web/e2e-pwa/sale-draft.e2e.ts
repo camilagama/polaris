@@ -514,19 +514,20 @@ test("AC-3: trocar de loja apaga a venda da loja deixada e a tentativa resolvida
   await serveTwoStores(page, testInfo);
   await openSale(page);
   await buildCart(page);
+  await page.clock.setFixedTime(new Date(NOW));
   await page.evaluate(
-    (key) =>
+    ({ at, key }) =>
       window.sessionStorage.setItem(
         key,
         JSON.stringify({
           commandId: "0199c2d0-0000-7000-8000-0000000000e1",
-          occurredAt: new Date().toISOString(),
-          recordedAt: new Date().toISOString(),
+          occurredAt: at,
+          recordedAt: at,
           signature: "{}",
           unsettled: false,
         })
       ),
-    ATTEMPT_KEY
+    { at: NOW, key: ATTEMPT_KEY }
   );
 
   await chooseStore(page, "Outra loja");

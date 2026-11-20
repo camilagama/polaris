@@ -2,7 +2,7 @@ import { createORPCClient } from "@orpc/client";
 import { RPCLink } from "@orpc/client/fetch";
 import { buildOfflineLeaseClaims } from "@polaris/domain/offline/offline-lease";
 import { LEGAL_DOCUMENTS } from "@polaris/domain/legal/legal-documents";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { signOfflineLease } from "../../lib/offline-lease-token";
 import { createServerApp } from "../app";
 import { createAuthenticatedRequestContext } from "../authenticated-request-context";
@@ -15,13 +15,23 @@ import type { SyncCommandHandler } from "../sync/push";
 import { createTenantRequestContext } from "../tenant-request-context";
 import { createRpcRouter } from "./router";
 
+const NOW = new Date("2026-11-19T02:50:00.000Z");
+
+beforeEach(() => {
+  vi.useFakeTimers({ now: NOW, toFake: ["Date"] });
+});
+
+afterEach(() => {
+  vi.useRealTimers();
+});
+
 const organizationId = "7b9c212a-f90b-4e05-9e9a-0c0eb1c9c9b0";
 const deviceId = "0199c2d0-0000-7000-8000-0000000000d1";
 const requestId = "5f0a6c1e-3b9d-4f5e-8a7b-1c2d3e4f5a6b";
 const userId = "session-user-legal";
 const leaseSecret = "s".repeat(40);
 const session = {
-  session: { createdAt: new Date(), id: "session-row-legal" },
+  session: { createdAt: new Date(NOW), id: "session-row-legal" },
   user: { emailVerified: true, id: userId },
 };
 const pendingBoth = [
@@ -231,7 +241,7 @@ async function failureOf(promise: Promise<unknown>): Promise<ErrorView> {
 }
 
 async function lease() {
-  const issuedAt = new Date(Date.now() - 3_600_000);
+  const issuedAt = new Date(NOW.getTime() - 3_600_000);
   return await signOfflineLease(
     buildOfflineLeaseClaims({
       capabilities: ["customer:update"],
@@ -253,7 +263,7 @@ async function pushInput() {
       {
         baseVersion: null,
         commandId: uuid(1),
-        createdAt: new Date().toISOString(),
+        createdAt: NOW.toISOString(),
         deviceId,
         lease: await lease(),
         payload: { name: "Cliente 1" },
