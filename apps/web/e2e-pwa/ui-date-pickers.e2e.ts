@@ -3,7 +3,7 @@ import type { Locator, Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 import { watchCspViolations } from "../e2e/csp-fixture";
 import { expectMotionLevel } from "./motion-expect";
-import { axeFaults } from "./ui-guardrails";
+import { axeFaults } from "./ui-guardrails/measures";
 
 /**
  * The date pickers of src/ui/ in the gallery: the calendar chunk loads on demand; one date is chosen with a

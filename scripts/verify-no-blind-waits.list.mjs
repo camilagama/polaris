@@ -37,7 +37,7 @@ export const BLIND_WAITS_LIST = {
     count: 2,
     reason: ONE_TURN_AFTER_THE_CLICK,
   },
-  "apps/web/e2e-pwa/ui-guardrails.e2e.ts": {
+  "apps/web/e2e-pwa/ui-guardrails/controle-movimento.e2e.ts": {
     count: 1,
     reason: BEFORE_THE_RULE,
   },

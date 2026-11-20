@@ -70,7 +70,7 @@ const light = (viewport: UiContext["viewport"], touch: boolean): UiContext => ({
 
 /**
  * Each check runs only on the axes that can change its result, declared once here (docs/runbooks/testes-de-tela.md);
- * `ui-guardrails.e2e.ts` builds its tests from this map, one page load per distinct context, and runs on it every
+ * `ui-guardrails/screen-checks.ts` builds its tests from this map, one page load per distinct context, and runs on it every
  * check that lists the context. A new check, or a new axis for one, is a line here: the cost of the CI grows with
  * the contexts listed, not with the product of widths, themes and pointers.
  *

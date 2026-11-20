@@ -1,7 +1,7 @@
 /// <reference lib="dom" />
 import type { Page, Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
-import { axeFaults } from "./ui-guardrails";
+import { axeFaults } from "./ui-guardrails/measures";
 import { stockStates } from "./ui-stock-states";
 import { WORKER_MARK } from "./worker-mark";
 

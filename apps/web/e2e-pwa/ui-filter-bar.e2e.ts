@@ -4,7 +4,7 @@ import { expect, test } from "@playwright/test";
 import { watchCspViolations } from "../e2e/csp-fixture";
 import { applyEditor, onPhone } from "../e2e/filter-bar-editor";
 import { expectMotionLevel } from "./motion-expect";
-import { axeFaults, touchFaults } from "./ui-guardrails";
+import { axeFaults, touchFaults } from "./ui-guardrails/measures";
 
 /**
  * The filter bar of src/ui/ in the gallery, at 360 and 1280 px and with the bar open (the menu and the

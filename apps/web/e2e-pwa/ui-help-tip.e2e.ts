@@ -2,7 +2,7 @@
 import type { Locator, Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 import { watchCspViolations } from "../e2e/csp-fixture";
-import { axeFaults, touchFaults } from "./ui-guardrails";
+import { axeFaults, touchFaults } from "./ui-guardrails/measures";
 
 /**
  * The HelpTip in the gallery (`/ui-galeria`, section "Ajuda (i)"): it opens by click, touch, Enter and Space and never

@@ -1,7 +1,7 @@
 /// <reference lib="dom" />
 import type { Locator, Page, Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
-import { axeFaults } from "../e2e-pwa/ui-guardrails";
+import { axeFaults } from "../e2e-pwa/ui-guardrails/measures";
 import {
   datePickerButton,
   expectWholeMonthWhileTyping,

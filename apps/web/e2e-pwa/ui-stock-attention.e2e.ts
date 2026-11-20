@@ -2,7 +2,7 @@
 import type { Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 import { attentionStates } from "./ui-device-states";
-import { axeFaults } from "./ui-guardrails";
+import { axeFaults } from "./ui-guardrails/measures";
 import { stockStates } from "./ui-stock-states";
 
 /**
