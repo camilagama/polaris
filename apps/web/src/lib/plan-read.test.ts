@@ -105,6 +105,55 @@ describe("planRead: a memória de 10 s do plano", () => {
     expect(read).toHaveBeenCalledTimes(2);
   });
 
+  it("dois frescos juntos depois de um clear() viram uma leitura, e os dois recebem a mesma resposta", async () => {
+    const { answers, planRead, read } = setup();
+    const since = planRead.clearedAt;
+    planRead.clear();
+    const first = planRead.get("org-a", { fresh: true, since });
+    const second = planRead.get("org-a", { fresh: true, since });
+    expect(read).toHaveBeenCalledTimes(1);
+    answers[0]?.resolve(planWith(8));
+    expect(await first).toEqual(planWith(8));
+    expect(await second).toEqual(planWith(8));
+  });
+
+  it("dois frescos juntos sem clear() depois da leitura anterior de cada um abrem duas leituras", () => {
+    const { planRead, read } = setup();
+    const since = planRead.clearedAt;
+    planRead.get("org-a", { fresh: true, since });
+    planRead.get("org-a", { fresh: true, since });
+    expect(read).toHaveBeenCalledTimes(2);
+  });
+
+  it("fresco sem since nunca junta, mesmo depois de um clear()", () => {
+    const { planRead, read } = setup();
+    planRead.clear();
+    planRead.get("org-a", { fresh: true });
+    planRead.get("org-a", { fresh: true });
+    expect(read).toHaveBeenCalledTimes(2);
+  });
+
+  it("fresco cujo since é o do último clear() não entra na leitura em voo", () => {
+    const { planRead, read } = setup();
+    planRead.clear();
+    planRead.get("org-a");
+    planRead.get("org-a", { fresh: true, since: planRead.clearedAt });
+    expect(read).toHaveBeenCalledTimes(2);
+  });
+
+  it("a resposta de uma leitura que começou antes do clear() nunca chega a quem pediu fresco depois", async () => {
+    const { answers, planRead, read } = setup();
+    const since = planRead.clearedAt;
+    const before = planRead.get("org-a");
+    planRead.clear();
+    const after = planRead.get("org-a", { fresh: true, since });
+    expect(read).toHaveBeenCalledTimes(2);
+    answers[0]?.resolve(planWith(7));
+    answers[1]?.resolve(planWith(8));
+    expect(await before).toEqual(planWith(7));
+    expect(await after).toEqual(planWith(8));
+  });
+
   it("a resposta velha em voo que chega depois da fresca não a sobrescreve", async () => {
     const { answers, planRead } = setup();
     const old = planRead.get("org-a");
