@@ -27,3 +27,5 @@ node scripts/ci-timing.mjs --durations <id-da-execucao | pasta> [--out ci/test-d
 ```
 
 Com um id, baixa os artefatos da execução (precisa de `GITHUB_TOKEN`); com uma pasta, lê os `timings-*.json` dela. Soma a duração por arquivo, projeto e suíte (`pwa` ou `offline-poc`), contando todas as tentativas, e grava `ci/test-durations.json` ordenado e sem relógio, de modo que os mesmos relatórios dão sempre o mesmo arquivo. Use os relatórios de uma execução só: somar execuções diferentes soma o tempo delas.
+
+O `ci/test-durations.json` versionado vem da execução 44794598210 do CI (head 78aae3bc, 4 artefatos `playwright-timings-shard-N`, 221 linhas arquivo × projeto). Regere-o com o comando acima sobre uma execução verde mais recente quando a distribuição dos testes mudar.

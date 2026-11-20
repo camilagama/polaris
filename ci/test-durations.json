@@ -1,0 +1,1553 @@
+{
+  "entries": [
+    {
+      "file": "app-shell.e2e.ts",
+      "ms": 134310,
+      "project": "chromium-desktop",
+      "suite": "offline-poc",
+      "tests": 48
+    },
+    {
+      "file": "app-shell.e2e.ts",
+      "ms": 91097,
+      "project": "chromium-mobile-emulated",
+      "suite": "offline-poc",
+      "tests": 48
+    },
+    {
+      "file": "breakpoints-rem.e2e.ts",
+      "ms": 16827,
+      "project": "chromium-desktop",
+      "suite": "offline-poc",
+      "tests": 14
+    },
+    {
+      "file": "breakpoints-rem.e2e.ts",
+      "ms": 10,
+      "project": "chromium-mobile-emulated",
+      "suite": "offline-poc",
+      "tests": 14
+    },
+    {
+      "file": "carregando-so-leitor.e2e.ts",
+      "ms": 5239,
+      "project": "chromium-desktop",
+      "suite": "offline-poc",
+      "tests": 4
+    },
+    {
+      "file": "carregando-so-leitor.e2e.ts",
+      "ms": 4420,
+      "project": "chromium-mobile-emulated",
+      "suite": "offline-poc",
+      "tests": 4
+    },
+    {
+      "file": "clientes-erros.e2e.ts",
+      "ms": 16481,
+      "project": "chromium-desktop",
+      "suite": "offline-poc",
+      "tests": 5
+    },
+    {
+      "file": "clientes-erros.e2e.ts",
+      "ms": 12841,
+      "project": "chromium-mobile-emulated",
+      "suite": "offline-poc",
+      "tests": 5
+    },
+    {
+      "file": "close-store.e2e.ts",
+      "ms": 17457,
+      "project": "chromium-desktop",
+      "suite": "offline-poc",
+      "tests": 7
+    },
+    {
+      "file": "close-store.e2e.ts",
+      "ms": 11641,
+      "project": "chromium-mobile-emulated",
+      "suite": "offline-poc",
+      "tests": 7
+    },
+    {
+      "file": "closed-store-device.e2e.ts",
+      "ms": 158101,
+      "project": "chromium-desktop",
+      "suite": "offline-poc",
+      "tests": 14
+    },
+    {
+      "file": "closed-store-device.e2e.ts",
+      "ms": 106380,
+      "project": "chromium-mobile-emulated",
+      "suite": "offline-poc",
+      "tests": 14
+    },
+    {
+      "file": "closed-store-routing.e2e.ts",
+      "ms": 12297,
+      "project": "chromium-desktop",
+      "suite": "offline-poc",
+      "tests": 6
+    },
+    {
+      "file": "closed-store-routing.e2e.ts",
+      "ms": 9729,
+      "project": "chromium-mobile-emulated",
+      "suite": "offline-poc",
+      "tests": 6
+    },
+    {
+      "file": "closed-store-sale.e2e.ts",
+      "ms": 7259,
+      "project": "chromium-desktop",
+      "suite": "offline-poc",
+      "tests": 2
+    },
+    {
+      "file": "closed-store-sale.e2e.ts",
+      "ms": 5515,
+      "project": "chromium-mobile-emulated",
+      "suite": "offline-poc",
+      "tests": 2
+    },
+    {
+      "file": "closed-store.e2e.ts",
+      "ms": 42958,
+      "project": "chromium-desktop",
+      "suite": "offline-poc",
+      "tests": 31
+    },
+    {
+      "file": "closed-store.e2e.ts",
+      "ms": 29399,
+      "project": "chromium-mobile-emulated",
+      "suite": "offline-poc",
+      "tests": 31
+    },
+    {
+      "file": "dashboard.e2e.ts",
+      "ms": 834644,
+      "project": "chromium-desktop",
+      "suite": "offline-poc",
+      "tests": 126
+    },
+    {
+      "file": "dashboard.e2e.ts",
+      "ms": 556502,
+      "project": "chromium-mobile-emulated",
+      "suite": "offline-poc",
+      "tests": 126
+    },
+    {
+      "file": "data-export-screen.e2e.ts",
+      "ms": 15576,
+      "project": "chromium-desktop",
+      "suite": "offline-poc",
+      "tests": 10
+    },
+    {
+      "file": "data-export-screen.e2e.ts",
+      "ms": 14308,
+      "project": "chromium-mobile-emulated",
+      "suite": "offline-poc",
+      "tests": 10
+    },
+    {
+      "file": "despesas-primeira-tela.e2e.ts",
+      "ms": 15222,
+      "project": "chromium-desktop",
+      "suite": "offline-poc",
+      "tests": 13
+    },
+    {
+      "file": "despesas-primeira-tela.e2e.ts",
+      "ms": 11647,
+      "project": "chromium-mobile-emulated",
+      "suite": "offline-poc",
+      "tests": 13
+    },
+    {
+      "file": "email-preference.e2e.ts",
+      "ms": 7698,
+      "project": "chromium-desktop",
+      "suite": "offline-poc",
+      "tests": 7
+    },
+    {
+      "file": "email-preference.e2e.ts",
+      "ms": 7816,
+      "project": "chromium-mobile-emulated",
+      "suite": "offline-poc",
+      "tests": 7
+    },
+    {
+      "file": "expenses.e2e.ts",
+      "ms": 234414,
+      "project": "chromium-desktop",
+      "suite": "offline-poc",
+      "tests": 50
+    },
+    {
+      "file": "expenses.e2e.ts",
+      "ms": 126978,
+      "project": "chromium-mobile-emulated",
+      "suite": "offline-poc",
+      "tests": 50
+    },
+    {
+      "file": "formas-de-receber-sem-conexao.e2e.ts",
+      "ms": 5096,
+      "project": "chromium-desktop",
+      "suite": "offline-poc",
+      "tests": 4
+    },
+    {
+      "file": "formas-de-receber-sem-conexao.e2e.ts",
+      "ms": 3822,
+      "project": "chromium-mobile-emulated",
+      "suite": "offline-poc",
+      "tests": 4
+    },
+    {
+      "file": "goals.e2e.ts",
+      "ms": 133556,
+      "project": "chromium-desktop",
+      "suite": "offline-poc",
+      "tests": 33
+    },
+    {
+      "file": "goals.e2e.ts",
+      "ms": 90044,
+      "project": "chromium-mobile-emulated",
+      "suite": "offline-poc",
+      "tests": 33
+    },
+    {
+      "file": "history-period-total.e2e.ts",
+      "ms": 55300,
+      "project": "chromium-desktop",
+      "suite": "offline-poc",
+      "tests": 13
+    },
+    {
+      "file": "history-period-total.e2e.ts",
+      "ms": 40048,
+      "project": "chromium-mobile-emulated",
+      "suite": "offline-poc",
+      "tests": 13
+    },
+    {
+      "file": "history-period.e2e.ts",
+      "ms": 40020,
+      "project": "chromium-desktop",
+      "suite": "offline-poc",
+      "tests": 6
+    },
+    {
+      "file": "history-period.e2e.ts",
+      "ms": 25235,
+      "project": "chromium-mobile-emulated",
+      "suite": "offline-poc",
+      "tests": 6
+    },
+    {
+      "file": "history-total.e2e.ts",
+      "ms": 21509,
+      "project": "chromium-desktop",
+      "suite": "offline-poc",
+      "tests": 3
+    },
+    {
+      "file": "history-total.e2e.ts",
+      "ms": 17039,
+      "project": "chromium-mobile-emulated",
+      "suite": "offline-poc",
+      "tests": 3
+    },
+    {
+      "file": "home.e2e.ts",
+      "ms": 664076,
+      "project": "chromium-desktop",
+      "suite": "offline-poc",
+      "tests": 180
+    },
+    {
+      "file": "home.e2e.ts",
+      "ms": 500768,
+      "project": "chromium-mobile-emulated",
+      "suite": "offline-poc",
+      "tests": 180
+    },
+    {
+      "file": "legal-acceptance.e2e.ts",
+      "ms": 12553,
+      "project": "chromium-desktop",
+      "suite": "offline-poc",
+      "tests": 10
+    },
+    {
+      "file": "legal-acceptance.e2e.ts",
+      "ms": 9026,
+      "project": "chromium-mobile-emulated",
+      "suite": "offline-poc",
+      "tests": 10
+    },
+    {
+      "file": "leitor-de-tela-shell.e2e.ts",
+      "ms": 3397,
+      "project": "chromium-desktop",
+      "suite": "offline-poc",
+      "tests": 3
+    },
+    {
+      "file": "leitor-de-tela-shell.e2e.ts",
+      "ms": 2472,
+      "project": "chromium-mobile-emulated",
+      "suite": "offline-poc",
+      "tests": 3
+    },
+    {
+      "file": "lote-2-telas.e2e.ts",
+      "ms": 66026,
+      "project": "chromium-desktop",
+      "suite": "offline-poc",
+      "tests": 34
+    },
+    {
+      "file": "lote-2-telas.e2e.ts",
+      "ms": 36224,
+      "project": "chromium-mobile-emulated",
+      "suite": "offline-poc",
+      "tests": 34
+    },
+    {
+      "file": "near-limit-notice.e2e.ts",
+      "ms": 117548,
+      "project": "chromium-desktop",
+      "suite": "offline-poc",
+      "tests": 41
+    },
+    {
+      "file": "near-limit-notice.e2e.ts",
+      "ms": 76787,
+      "project": "chromium-mobile-emulated",
+      "suite": "offline-poc",
+      "tests": 41
+    },
+    {
+      "file": "offline-attention.e2e.ts",
+      "ms": 5750,
+      "project": "chromium-desktop",
+      "suite": "offline-poc",
+      "tests": 6
+    },
+    {
+      "file": "offline-attention.e2e.ts",
+      "ms": 4337,
+      "project": "chromium-mobile-emulated",
+      "suite": "offline-poc",
+      "tests": 6
+    },
+    {
+      "file": "offline-csp.e2e.ts",
+      "ms": 5423,
+      "project": "chromium-desktop",
+      "suite": "offline-poc",
+      "tests": 3
+    },
+    {
+      "file": "offline-csp.e2e.ts",
+      "ms": 4761,
+      "project": "chromium-mobile-emulated",
+      "suite": "offline-poc",
+      "tests": 3
+    },
+    {
+      "file": "offline-devices.e2e.ts",
+      "ms": 166436,
+      "project": "chromium-desktop",
+      "suite": "offline-poc",
+      "tests": 36
+    },
+    {
+      "file": "offline-devices.e2e.ts",
+      "ms": 112338,
+      "project": "chromium-mobile-emulated",
+      "suite": "offline-poc",
+      "tests": 36
+    },
+    {
+      "file": "offline-entry.e2e.ts",
+      "ms": 15796,
+      "project": "chromium-desktop",
+      "suite": "offline-poc",
+      "tests": 11
+    },
+    {
+      "file": "offline-entry.e2e.ts",
+      "ms": 11494,
+      "project": "chromium-mobile-emulated",
+      "suite": "offline-poc",
+      "tests": 11
+    },
+    {
+      "file": "offline-kill-reopen.e2e.ts",
+      "ms": 22389,
+      "project": "chromium-desktop",
+      "suite": "offline-poc",
+      "tests": 4
+    },
+    {
+      "file": "offline-local-collections.e2e.ts",
+      "ms": 35546,
+      "project": "chromium-desktop",
+      "suite": "offline-poc",
+      "tests": 6
+    },
+    {
+      "file": "offline-local-collections.e2e.ts",
+      "ms": 33087,
+      "project": "chromium-mobile-emulated",
+      "suite": "offline-poc",
+      "tests": 6
+    },
+    {
+      "file": "offline-local-store-open-lock.e2e.ts",
+      "ms": 5646,
+      "project": "chromium-desktop",
+      "suite": "offline-poc",
+      "tests": 1
+    },
+    {
+      "file": "offline-local-store-open-lock.e2e.ts",
+      "ms": 5965,
+      "project": "chromium-mobile-emulated",
+      "suite": "offline-poc",
+      "tests": 1
+    },
+    {
+      "file": "offline-logout.e2e.ts",
+      "ms": 6182,
+      "project": "chromium-desktop",
+      "suite": "offline-poc",
+      "tests": 6
+    },
+    {
+      "file": "offline-logout.e2e.ts",
+      "ms": 5183,
+      "project": "chromium-mobile-emulated",
+      "suite": "offline-poc",
+      "tests": 6
+    },
+    {
+      "file": "offline-outbox.e2e.ts",
+      "ms": 12286,
+      "project": "chromium-desktop",
+      "suite": "offline-poc",
+      "tests": 14
+    },
+    {
+      "file": "offline-outbox.e2e.ts",
+      "ms": 12495,
+      "project": "chromium-mobile-emulated",
+      "suite": "offline-poc",
+      "tests": 14
+    },
+    {
+      "file": "offline-poc.e2e.ts",
+      "ms": 14529,
+      "project": "chromium-desktop",
+      "suite": "offline-poc",
+      "tests": 8
+    },
+    {
+      "file": "offline-poc.e2e.ts",
+      "ms": 14932,
+      "project": "chromium-mobile-emulated",
+      "suite": "offline-poc",
+      "tests": 8
+    },
+    {
+      "file": "offline-runtime-api.e2e.ts",
+      "ms": 95398,
+      "project": "chromium-desktop",
+      "suite": "offline-poc",
+      "tests": 15
+    },
+    {
+      "file": "offline-runtime-api.e2e.ts",
+      "ms": 89213,
+      "project": "chromium-mobile-emulated",
+      "suite": "offline-poc",
+      "tests": 15
+    },
+    {
+      "file": "offline-runtime.e2e.ts",
+      "ms": 9007,
+      "project": "chromium-desktop",
+      "suite": "offline-poc",
+      "tests": 3
+    },
+    {
+      "file": "offline-runtime.e2e.ts",
+      "ms": 6231,
+      "project": "chromium-mobile-emulated",
+      "suite": "offline-poc",
+      "tests": 3
+    },
+    {
+      "file": "offline-sair.e2e.ts",
+      "ms": 61563,
+      "project": "chromium-desktop",
+      "suite": "offline-poc",
+      "tests": 14
+    },
+    {
+      "file": "offline-sair.e2e.ts",
+      "ms": 57055,
+      "project": "chromium-mobile-emulated",
+      "suite": "offline-poc",
+      "tests": 14
+    },
+    {
+      "file": "offline-screens-rede-em-voo.e2e.ts",
+      "ms": 2820,
+      "project": "chromium-desktop",
+      "suite": "offline-poc",
+      "tests": 1
+    },
+    {
+      "file": "offline-screens-rede-em-voo.e2e.ts",
+      "ms": 2869,
+      "project": "chromium-mobile-emulated",
+      "suite": "offline-poc",
+      "tests": 1
+    },
+    {
+      "file": "offline-screens.e2e.ts",
+      "ms": 176409,
+      "project": "chromium-desktop",
+      "suite": "offline-poc",
+      "tests": 50
+    },
+    {
+      "file": "offline-screens.e2e.ts",
+      "ms": 176144,
+      "project": "chromium-mobile-emulated",
+      "suite": "offline-poc",
+      "tests": 50
+    },
+    {
+      "file": "offline-sync-cadence.e2e.ts",
+      "ms": 85448,
+      "project": "chromium-desktop",
+      "suite": "offline-poc",
+      "tests": 2
+    },
+    {
+      "file": "offline-sync-cadence.e2e.ts",
+      "ms": 84010,
+      "project": "chromium-mobile-emulated",
+      "suite": "offline-poc",
+      "tests": 2
+    },
+    {
+      "file": "offline-thumbnails.e2e.ts",
+      "ms": 5021,
+      "project": "chromium-desktop",
+      "suite": "offline-poc",
+      "tests": 9
+    },
+    {
+      "file": "offline-thumbnails.e2e.ts",
+      "ms": 4950,
+      "project": "chromium-mobile-emulated",
+      "suite": "offline-poc",
+      "tests": 9
+    },
+    {
+      "file": "password-screens.e2e.ts",
+      "ms": 36723,
+      "project": "chromium-desktop",
+      "suite": "offline-poc",
+      "tests": 24
+    },
+    {
+      "file": "password-screens.e2e.ts",
+      "ms": 36611,
+      "project": "chromium-mobile-emulated",
+      "suite": "offline-poc",
+      "tests": 24
+    },
+    {
+      "file": "payment-profiles-screen.e2e.ts",
+      "ms": 41808,
+      "project": "chromium-desktop",
+      "suite": "offline-poc",
+      "tests": 20
+    },
+    {
+      "file": "payment-profiles-screen.e2e.ts",
+      "ms": 19477,
+      "project": "chromium-mobile-emulated",
+      "suite": "offline-poc",
+      "tests": 20
+    },
+    {
+      "file": "plan-limits.e2e.ts",
+      "ms": 22752,
+      "project": "chromium-desktop",
+      "suite": "offline-poc",
+      "tests": 9
+    },
+    {
+      "file": "plan-limits.e2e.ts",
+      "ms": 18617,
+      "project": "chromium-mobile-emulated",
+      "suite": "offline-poc",
+      "tests": 9
+    },
+    {
+      "file": "product-import.e2e.ts",
+      "ms": 170624,
+      "project": "chromium-desktop",
+      "suite": "offline-poc",
+      "tests": 14
+    },
+    {
+      "file": "product-import.e2e.ts",
+      "ms": 168947,
+      "project": "chromium-mobile-emulated",
+      "suite": "offline-poc",
+      "tests": 14
+    },
+    {
+      "file": "product-limit-plan.e2e.ts",
+      "ms": 16334,
+      "project": "chromium-desktop",
+      "suite": "offline-poc",
+      "tests": 3
+    },
+    {
+      "file": "product-limit-plan.e2e.ts",
+      "ms": 14253,
+      "project": "chromium-mobile-emulated",
+      "suite": "offline-poc",
+      "tests": 3
+    },
+    {
+      "file": "product-media-screen.e2e.ts",
+      "ms": 29391,
+      "project": "chromium-desktop",
+      "suite": "offline-poc",
+      "tests": 17
+    },
+    {
+      "file": "product-media-screen.e2e.ts",
+      "ms": 22309,
+      "project": "chromium-mobile-emulated",
+      "suite": "offline-poc",
+      "tests": 17
+    },
+    {
+      "file": "product-opening-stock.e2e.ts",
+      "ms": 35346,
+      "project": "chromium-desktop",
+      "suite": "offline-poc",
+      "tests": 23
+    },
+    {
+      "file": "product-opening-stock.e2e.ts",
+      "ms": 23303,
+      "project": "chromium-mobile-emulated",
+      "suite": "offline-poc",
+      "tests": 23
+    },
+    {
+      "file": "product-thumbnails-screens.e2e.ts",
+      "ms": 33241,
+      "project": "chromium-desktop",
+      "suite": "offline-poc",
+      "tests": 20
+    },
+    {
+      "file": "product-thumbnails-screens.e2e.ts",
+      "ms": 31526,
+      "project": "chromium-mobile-emulated",
+      "suite": "offline-poc",
+      "tests": 20
+    },
+    {
+      "file": "products-screen.e2e.ts",
+      "ms": 147347,
+      "project": "chromium-desktop",
+      "suite": "offline-poc",
+      "tests": 76
+    },
+    {
+      "file": "products-screen.e2e.ts",
+      "ms": 78780,
+      "project": "chromium-mobile-emulated",
+      "suite": "offline-poc",
+      "tests": 76
+    },
+    {
+      "file": "reflow-helper.e2e.ts",
+      "ms": 5690,
+      "project": "chromium-desktop",
+      "suite": "offline-poc",
+      "tests": 10
+    },
+    {
+      "file": "reflow-helper.e2e.ts",
+      "ms": 5892,
+      "project": "chromium-mobile-emulated",
+      "suite": "offline-poc",
+      "tests": 10
+    },
+    {
+      "file": "reflow-rotas.e2e.ts",
+      "ms": 205294,
+      "project": "chromium-desktop",
+      "suite": "offline-poc",
+      "tests": 103
+    },
+    {
+      "file": "reflow.ts",
+      "ms": 597014,
+      "project": "chromium-desktop",
+      "suite": "offline-poc",
+      "tests": 289
+    },
+    {
+      "file": "reflow.ts",
+      "ms": 251903,
+      "project": "chromium-mobile-emulated",
+      "suite": "offline-poc",
+      "tests": 289
+    },
+    {
+      "file": "sale-columns.e2e.ts",
+      "ms": 60007,
+      "project": "chromium-desktop",
+      "suite": "offline-poc",
+      "tests": 16
+    },
+    {
+      "file": "sale-columns.e2e.ts",
+      "ms": 468,
+      "project": "chromium-mobile-emulated",
+      "suite": "offline-poc",
+      "tests": 16
+    },
+    {
+      "file": "sale-draft-midnight.e2e.ts",
+      "ms": 5112,
+      "project": "chromium-desktop",
+      "suite": "offline-poc",
+      "tests": 4
+    },
+    {
+      "file": "sale-draft-midnight.e2e.ts",
+      "ms": 4731,
+      "project": "chromium-mobile-emulated",
+      "suite": "offline-poc",
+      "tests": 4
+    },
+    {
+      "file": "sale-item-reflow.e2e.ts",
+      "ms": 3330,
+      "project": "chromium-desktop",
+      "suite": "offline-poc",
+      "tests": 1
+    },
+    {
+      "file": "sale-item-reflow.e2e.ts",
+      "ms": 2066,
+      "project": "chromium-mobile-emulated",
+      "suite": "offline-poc",
+      "tests": 1
+    },
+    {
+      "file": "sale-screen.e2e.ts",
+      "ms": 33600,
+      "project": "chromium-desktop",
+      "suite": "offline-poc",
+      "tests": 9
+    },
+    {
+      "file": "sale-screen.e2e.ts",
+      "ms": 27038,
+      "project": "chromium-mobile-emulated",
+      "suite": "offline-poc",
+      "tests": 9
+    },
+    {
+      "file": "session-ended-screens.e2e.ts",
+      "ms": 7736,
+      "project": "chromium-desktop",
+      "suite": "offline-poc",
+      "tests": 6
+    },
+    {
+      "file": "session-ended-screens.e2e.ts",
+      "ms": 6911,
+      "project": "chromium-mobile-emulated",
+      "suite": "offline-poc",
+      "tests": 6
+    },
+    {
+      "file": "session-ended.e2e.ts",
+      "ms": 2547,
+      "project": "chromium-desktop",
+      "suite": "offline-poc",
+      "tests": 2
+    },
+    {
+      "file": "session-ended.e2e.ts",
+      "ms": 2162,
+      "project": "chromium-mobile-emulated",
+      "suite": "offline-poc",
+      "tests": 2
+    },
+    {
+      "file": "settings-groups.e2e.ts",
+      "ms": 61351,
+      "project": "chromium-desktop",
+      "suite": "offline-poc",
+      "tests": 49
+    },
+    {
+      "file": "settings-groups.e2e.ts",
+      "ms": 57077,
+      "project": "chromium-mobile-emulated",
+      "suite": "offline-poc",
+      "tests": 49
+    },
+    {
+      "file": "settings-tabs-draft.e2e.ts",
+      "ms": 5739,
+      "project": "chromium-desktop",
+      "suite": "offline-poc",
+      "tests": 5
+    },
+    {
+      "file": "settings-tabs-draft.e2e.ts",
+      "ms": 5917,
+      "project": "chromium-mobile-emulated",
+      "suite": "offline-poc",
+      "tests": 5
+    },
+    {
+      "file": "shell-header.e2e.ts",
+      "ms": 139088,
+      "project": "chromium-desktop",
+      "suite": "offline-poc",
+      "tests": 37
+    },
+    {
+      "file": "shell-header.e2e.ts",
+      "ms": 115930,
+      "project": "chromium-mobile-emulated",
+      "suite": "offline-poc",
+      "tests": 37
+    },
+    {
+      "file": "sign-in.e2e.ts",
+      "ms": 48212,
+      "project": "chromium-desktop",
+      "suite": "offline-poc",
+      "tests": 38
+    },
+    {
+      "file": "sign-in.e2e.ts",
+      "ms": 45722,
+      "project": "chromium-mobile-emulated",
+      "suite": "offline-poc",
+      "tests": 38
+    },
+    {
+      "file": "stock-panel-mount.e2e.ts",
+      "ms": 4752,
+      "project": "chromium-desktop",
+      "suite": "offline-poc",
+      "tests": 1
+    },
+    {
+      "file": "stock-panel-mount.e2e.ts",
+      "ms": 4791,
+      "project": "chromium-mobile-emulated",
+      "suite": "offline-poc",
+      "tests": 1
+    },
+    {
+      "file": "stock-screen.e2e.ts",
+      "ms": 117527,
+      "project": "chromium-desktop",
+      "suite": "offline-poc",
+      "tests": 42
+    },
+    {
+      "file": "stock-screen.e2e.ts",
+      "ms": 118437,
+      "project": "chromium-mobile-emulated",
+      "suite": "offline-poc",
+      "tests": 42
+    },
+    {
+      "file": "subscription-commands.e2e.ts",
+      "ms": 32663,
+      "project": "chromium-desktop",
+      "suite": "offline-poc",
+      "tests": 17
+    },
+    {
+      "file": "subscription-commands.e2e.ts",
+      "ms": 28688,
+      "project": "chromium-mobile-emulated",
+      "suite": "offline-poc",
+      "tests": 17
+    },
+    {
+      "file": "subscription-screen.e2e.ts",
+      "ms": 66509,
+      "project": "chromium-desktop",
+      "suite": "offline-poc",
+      "tests": 37
+    },
+    {
+      "file": "subscription-screen.e2e.ts",
+      "ms": 70404,
+      "project": "chromium-mobile-emulated",
+      "suite": "offline-poc",
+      "tests": 37
+    },
+    {
+      "file": "turnstile-real.e2e.ts",
+      "ms": 23452,
+      "project": "chromium-desktop",
+      "suite": "offline-poc",
+      "tests": 8
+    },
+    {
+      "file": "turnstile-real.e2e.ts",
+      "ms": 22476,
+      "project": "chromium-mobile-emulated",
+      "suite": "offline-poc",
+      "tests": 8
+    },
+    {
+      "file": "usabilidade-formularios.e2e.ts",
+      "ms": 10297,
+      "project": "chromium-desktop",
+      "suite": "offline-poc",
+      "tests": 3
+    },
+    {
+      "file": "usabilidade-formularios.e2e.ts",
+      "ms": 8547,
+      "project": "chromium-mobile-emulated",
+      "suite": "offline-poc",
+      "tests": 3
+    },
+    {
+      "file": "usabilidade-lote-1.e2e.ts",
+      "ms": 26005,
+      "project": "chromium-desktop",
+      "suite": "offline-poc",
+      "tests": 15
+    },
+    {
+      "file": "usabilidade-lote-1.e2e.ts",
+      "ms": 23630,
+      "project": "chromium-mobile-emulated",
+      "suite": "offline-poc",
+      "tests": 15
+    },
+    {
+      "file": "venda-trocar-preco.e2e.ts",
+      "ms": 55256,
+      "project": "chromium-desktop",
+      "suite": "offline-poc",
+      "tests": 12
+    },
+    {
+      "file": "venda-trocar-preco.e2e.ts",
+      "ms": 27797,
+      "project": "chromium-mobile-emulated",
+      "suite": "offline-poc",
+      "tests": 12
+    },
+    {
+      "file": "admin-waiting-alignment.e2e.ts",
+      "ms": 1343,
+      "project": "chromium-desktop",
+      "suite": "pwa",
+      "tests": 5
+    },
+    {
+      "file": "admin-waiting-alignment.e2e.ts",
+      "ms": 780,
+      "project": "chromium-mobile-emulated",
+      "suite": "pwa",
+      "tests": 5
+    },
+    {
+      "file": "app-shell.e2e.ts",
+      "ms": 27966,
+      "project": "chromium-desktop",
+      "suite": "pwa",
+      "tests": 7
+    },
+    {
+      "file": "app-shell.e2e.ts",
+      "ms": 19525,
+      "project": "chromium-mobile-emulated",
+      "suite": "pwa",
+      "tests": 7
+    },
+    {
+      "file": "boot-retry.e2e.ts",
+      "ms": 19911,
+      "project": "chromium-desktop",
+      "suite": "pwa",
+      "tests": 3
+    },
+    {
+      "file": "boot-retry.e2e.ts",
+      "ms": 18955,
+      "project": "chromium-mobile-emulated",
+      "suite": "pwa",
+      "tests": 3
+    },
+    {
+      "file": "dialog-voltar.e2e.ts",
+      "ms": 14878,
+      "project": "chromium-celular",
+      "suite": "pwa",
+      "tests": 7
+    },
+    {
+      "file": "home-offline.e2e.ts",
+      "ms": 26323,
+      "project": "chromium-desktop",
+      "suite": "pwa",
+      "tests": 2
+    },
+    {
+      "file": "home-offline.e2e.ts",
+      "ms": 16018,
+      "project": "chromium-mobile-emulated",
+      "suite": "pwa",
+      "tests": 2
+    },
+    {
+      "file": "lazy-retry.e2e.ts",
+      "ms": 9618,
+      "project": "chromium-desktop",
+      "suite": "pwa",
+      "tests": 2
+    },
+    {
+      "file": "lazy-retry.e2e.ts",
+      "ms": 10316,
+      "project": "chromium-mobile-emulated",
+      "suite": "pwa",
+      "tests": 2
+    },
+    {
+      "file": "legal-pages.e2e.ts",
+      "ms": 25243,
+      "project": "chromium-desktop",
+      "suite": "pwa",
+      "tests": 14
+    },
+    {
+      "file": "legal-pages.e2e.ts",
+      "ms": 19433,
+      "project": "chromium-mobile-emulated",
+      "suite": "pwa",
+      "tests": 14
+    },
+    {
+      "file": "motion-level.e2e.ts",
+      "ms": 34157,
+      "project": "chromium-celular",
+      "suite": "pwa",
+      "tests": 8
+    },
+    {
+      "file": "product-thumbnail.e2e.ts",
+      "ms": 7957,
+      "project": "chromium-desktop",
+      "suite": "pwa",
+      "tests": 5
+    },
+    {
+      "file": "product-thumbnail.e2e.ts",
+      "ms": 5200,
+      "project": "chromium-mobile-emulated",
+      "suite": "pwa",
+      "tests": 5
+    },
+    {
+      "file": "recarga-com-worker.e2e.ts",
+      "ms": 188655,
+      "project": "chromium-desktop",
+      "suite": "pwa",
+      "tests": 4
+    },
+    {
+      "file": "run-clock-for.e2e.ts",
+      "ms": 1287,
+      "project": "chromium-desktop",
+      "suite": "pwa",
+      "tests": 5
+    },
+    {
+      "file": "run-clock-for.e2e.ts",
+      "ms": 1326,
+      "project": "chromium-mobile-emulated",
+      "suite": "pwa",
+      "tests": 5
+    },
+    {
+      "file": "sair-e-recarregar.e2e.ts",
+      "ms": 133990,
+      "project": "chromium-desktop",
+      "suite": "pwa",
+      "tests": 7
+    },
+    {
+      "file": "sair-e-recarregar.e2e.ts",
+      "ms": 143320,
+      "project": "chromium-mobile-emulated",
+      "suite": "pwa",
+      "tests": 7
+    },
+    {
+      "file": "sale-detail-operations.e2e.ts",
+      "ms": 30612,
+      "project": "chromium-desktop",
+      "suite": "pwa",
+      "tests": 9
+    },
+    {
+      "file": "sale-detail-operations.e2e.ts",
+      "ms": 9836,
+      "project": "chromium-mobile-emulated",
+      "suite": "pwa",
+      "tests": 9
+    },
+    {
+      "file": "sale-detail-ordem.e2e.ts",
+      "ms": 19260,
+      "project": "chromium-desktop",
+      "suite": "pwa",
+      "tests": 3
+    },
+    {
+      "file": "sale-detail-ordem.e2e.ts",
+      "ms": 8746,
+      "project": "chromium-mobile-emulated",
+      "suite": "pwa",
+      "tests": 3
+    },
+    {
+      "file": "sale-draft.e2e.ts",
+      "ms": 78322,
+      "project": "chromium-desktop",
+      "suite": "pwa",
+      "tests": 16
+    },
+    {
+      "file": "sale-draft.e2e.ts",
+      "ms": 51003,
+      "project": "chromium-mobile-emulated",
+      "suite": "pwa",
+      "tests": 16
+    },
+    {
+      "file": "show-screen-alone.e2e.ts",
+      "ms": 3793,
+      "project": "chromium-desktop",
+      "suite": "pwa",
+      "tests": 5
+    },
+    {
+      "file": "show-screen-alone.e2e.ts",
+      "ms": 3797,
+      "project": "chromium-mobile-emulated",
+      "suite": "pwa",
+      "tests": 5
+    },
+    {
+      "file": "sign-in.e2e.ts",
+      "ms": 7733,
+      "project": "chromium-desktop",
+      "suite": "pwa",
+      "tests": 2
+    },
+    {
+      "file": "sign-in.e2e.ts",
+      "ms": 6562,
+      "project": "chromium-mobile-emulated",
+      "suite": "pwa",
+      "tests": 2
+    },
+    {
+      "file": "ui-acao-no-titulo.e2e.ts",
+      "ms": 62318,
+      "project": "chromium-desktop",
+      "suite": "pwa",
+      "tests": 11
+    },
+    {
+      "file": "ui-botao-atualizar.e2e.ts",
+      "ms": 192670,
+      "project": "chromium-desktop",
+      "suite": "pwa",
+      "tests": 33
+    },
+    {
+      "file": "ui-charts.e2e.ts",
+      "ms": 50263,
+      "project": "chromium-desktop",
+      "suite": "pwa",
+      "tests": 18
+    },
+    {
+      "file": "ui-charts.e2e.ts",
+      "ms": 44207,
+      "project": "chromium-mobile-emulated",
+      "suite": "pwa",
+      "tests": 18
+    },
+    {
+      "file": "ui-components.e2e.ts",
+      "ms": 23329,
+      "project": "chromium-desktop",
+      "suite": "pwa",
+      "tests": 10
+    },
+    {
+      "file": "ui-components.e2e.ts",
+      "ms": 20726,
+      "project": "chromium-mobile-emulated",
+      "suite": "pwa",
+      "tests": 10
+    },
+    {
+      "file": "ui-csp.e2e.ts",
+      "ms": 45777,
+      "project": "chromium-desktop",
+      "suite": "pwa",
+      "tests": 7
+    },
+    {
+      "file": "ui-csp.e2e.ts",
+      "ms": 28174,
+      "project": "chromium-mobile-emulated",
+      "suite": "pwa",
+      "tests": 7
+    },
+    {
+      "file": "ui-date-pickers-digitar.e2e.ts",
+      "ms": 93991,
+      "project": "chromium-desktop",
+      "suite": "pwa",
+      "tests": 21
+    },
+    {
+      "file": "ui-date-pickers-digitar.e2e.ts",
+      "ms": 77653,
+      "project": "chromium-mobile-emulated",
+      "suite": "pwa",
+      "tests": 21
+    },
+    {
+      "file": "ui-date-pickers-leitor-de-tela.e2e.ts",
+      "ms": 39345,
+      "project": "chromium-desktop",
+      "suite": "pwa",
+      "tests": 17
+    },
+    {
+      "file": "ui-date-pickers-leitor-de-tela.e2e.ts",
+      "ms": 30256,
+      "project": "chromium-mobile-emulated",
+      "suite": "pwa",
+      "tests": 17
+    },
+    {
+      "file": "ui-date-pickers.e2e.ts",
+      "ms": 134762,
+      "project": "chromium-desktop",
+      "suite": "pwa",
+      "tests": 45
+    },
+    {
+      "file": "ui-date-pickers.e2e.ts",
+      "ms": 112241,
+      "project": "chromium-mobile-emulated",
+      "suite": "pwa",
+      "tests": 45
+    },
+    {
+      "file": "ui-dialog-form.e2e.ts",
+      "ms": 19479,
+      "project": "chromium-desktop",
+      "suite": "pwa",
+      "tests": 6
+    },
+    {
+      "file": "ui-dialog-form.e2e.ts",
+      "ms": 13796,
+      "project": "chromium-mobile-emulated",
+      "suite": "pwa",
+      "tests": 6
+    },
+    {
+      "file": "ui-filter-bar-dialog.e2e.ts",
+      "ms": 57862,
+      "project": "chromium-desktop",
+      "suite": "pwa",
+      "tests": 15
+    },
+    {
+      "file": "ui-filter-bar-dialog.e2e.ts",
+      "ms": 47394,
+      "project": "chromium-mobile-emulated",
+      "suite": "pwa",
+      "tests": 15
+    },
+    {
+      "file": "ui-filter-bar.e2e.ts",
+      "ms": 111799,
+      "project": "chromium-desktop",
+      "suite": "pwa",
+      "tests": 34
+    },
+    {
+      "file": "ui-filter-bar.e2e.ts",
+      "ms": 86352,
+      "project": "chromium-mobile-emulated",
+      "suite": "pwa",
+      "tests": 34
+    },
+    {
+      "file": "ui-guardrails.e2e.ts",
+      "ms": 3111294,
+      "project": "chromium-desktop",
+      "suite": "pwa",
+      "tests": 1036
+    },
+    {
+      "file": "ui-help-tip.e2e.ts",
+      "ms": 17033,
+      "project": "chromium-desktop",
+      "suite": "pwa",
+      "tests": 11
+    },
+    {
+      "file": "ui-help-tip.e2e.ts",
+      "ms": 22986,
+      "project": "chromium-mobile-emulated",
+      "suite": "pwa",
+      "tests": 11
+    },
+    {
+      "file": "ui-history-line.e2e.ts",
+      "ms": 56568,
+      "project": "chromium-desktop",
+      "suite": "pwa",
+      "tests": 20
+    },
+    {
+      "file": "ui-history-line.e2e.ts",
+      "ms": 77288,
+      "project": "chromium-mobile-emulated",
+      "suite": "pwa",
+      "tests": 20
+    },
+    {
+      "file": "ui-icones.e2e.ts",
+      "ms": 382093,
+      "project": "chromium-desktop",
+      "suite": "pwa",
+      "tests": 120
+    },
+    {
+      "file": "ui-loading-skeleton.e2e.ts",
+      "ms": 9915,
+      "project": "chromium-desktop",
+      "suite": "pwa",
+      "tests": 3
+    },
+    {
+      "file": "ui-loading-skeleton.e2e.ts",
+      "ms": 246,
+      "project": "chromium-mobile-emulated",
+      "suite": "pwa",
+      "tests": 3
+    },
+    {
+      "file": "ui-mesmo-botao.e2e.ts",
+      "ms": 7760,
+      "project": "chromium-desktop",
+      "suite": "pwa",
+      "tests": 2
+    },
+    {
+      "file": "ui-money-mascara.e2e.ts",
+      "ms": 7486,
+      "project": "chromium-desktop",
+      "suite": "pwa",
+      "tests": 6
+    },
+    {
+      "file": "ui-money-mascara.e2e.ts",
+      "ms": 9906,
+      "project": "chromium-mobile-emulated",
+      "suite": "pwa",
+      "tests": 6
+    },
+    {
+      "file": "ui-sem-caixa-alta.e2e.ts",
+      "ms": 543203,
+      "project": "chromium-desktop",
+      "suite": "pwa",
+      "tests": 170
+    },
+    {
+      "file": "ui-shell-isolation.e2e.ts",
+      "ms": 61297,
+      "project": "chromium-desktop",
+      "suite": "pwa",
+      "tests": 49
+    },
+    {
+      "file": "ui-shell-isolation.e2e.ts",
+      "ms": 56961,
+      "project": "chromium-mobile-emulated",
+      "suite": "pwa",
+      "tests": 49
+    },
+    {
+      "file": "ui-sidebar-menu.e2e.ts",
+      "ms": 4781,
+      "project": "chromium-desktop",
+      "suite": "pwa",
+      "tests": 2
+    },
+    {
+      "file": "ui-sidebar-menu.e2e.ts",
+      "ms": 5443,
+      "project": "chromium-mobile-emulated",
+      "suite": "pwa",
+      "tests": 2
+    },
+    {
+      "file": "ui-stock-attention.e2e.ts",
+      "ms": 64465,
+      "project": "chromium-desktop",
+      "suite": "pwa",
+      "tests": 14
+    },
+    {
+      "file": "ui-stock-attention.e2e.ts",
+      "ms": 61109,
+      "project": "chromium-mobile-emulated",
+      "suite": "pwa",
+      "tests": 14
+    },
+    {
+      "file": "ui-stock-cost.e2e.ts",
+      "ms": 34887,
+      "project": "chromium-desktop",
+      "suite": "pwa",
+      "tests": 10
+    },
+    {
+      "file": "ui-stock-cost.e2e.ts",
+      "ms": 35822,
+      "project": "chromium-mobile-emulated",
+      "suite": "pwa",
+      "tests": 10
+    },
+    {
+      "file": "ui-vao-contagem.e2e.ts",
+      "ms": 25448,
+      "project": "chromium-desktop",
+      "suite": "pwa",
+      "tests": 3
+    },
+    {
+      "file": "ui-visual.e2e.ts",
+      "ms": 376954,
+      "project": "chromium-visual",
+      "suite": "pwa",
+      "tests": 118
+    },
+    {
+      "file": "update-moments.e2e.ts",
+      "ms": 81884,
+      "project": "chromium-desktop",
+      "suite": "pwa",
+      "tests": 6
+    },
+    {
+      "file": "update-moments.e2e.ts",
+      "ms": 81720,
+      "project": "chromium-mobile-emulated",
+      "suite": "pwa",
+      "tests": 6
+    },
+    {
+      "file": "update.e2e.ts",
+      "ms": 165484,
+      "project": "chromium-desktop",
+      "suite": "pwa",
+      "tests": 13
+    },
+    {
+      "file": "update.e2e.ts",
+      "ms": 180354,
+      "project": "chromium-mobile-emulated",
+      "suite": "pwa",
+      "tests": 13
+    },
+    {
+      "file": "valores-escondidos-todas-as-telas.e2e.ts",
+      "ms": 147602,
+      "project": "chromium-desktop",
+      "suite": "pwa",
+      "tests": 64
+    },
+    {
+      "file": "valores-escondidos-todas-as-telas.e2e.ts",
+      "ms": 202329,
+      "project": "chromium-mobile-emulated",
+      "suite": "pwa",
+      "tests": 64
+    },
+    {
+      "file": "valores-escondidos.e2e.ts",
+      "ms": 122809,
+      "project": "chromium-desktop",
+      "suite": "pwa",
+      "tests": 52
+    },
+    {
+      "file": "valores-escondidos.e2e.ts",
+      "ms": 175130,
+      "project": "chromium-mobile-emulated",
+      "suite": "pwa",
+      "tests": 52
+    }
+  ],
+  "unit": "ms",
+  "version": 1
+}
