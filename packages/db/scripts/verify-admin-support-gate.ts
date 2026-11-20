@@ -19,6 +19,7 @@ import {
   type SupportCaseSummary,
 } from "../src/admin-support-repository";
 import { createDatabase } from "../src/client";
+import { rollbackAndRelease } from "./gate-roles";
 import {
   createTenantFixture,
   disposableHostPattern,
@@ -321,8 +322,7 @@ async function verifyRevealLimit(context: RevealLimitContext) {
     }
     assert.equal(await revealRows(racer), REVEAL_LIMIT);
   } finally {
-    await holder.query("ROLLBACK").catch(() => undefined);
-    holder.release();
+    await rollbackAndRelease(holder);
   }
 
   // the hour: 30 reveals 59 minutes ago still count; the same 30, 61 minutes ago, do not
