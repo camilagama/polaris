@@ -1044,6 +1044,45 @@ describe("the stderr of a failed wrangler", () => {
     );
   });
 
+  it("keeps a 40-character lowercase hex commit SHA and still redacts every other long run", () => {
+    const sha = "0123456789abcdef0123456789abcdef01234567";
+    const kept = cleanStderr(`active version carries ${sha} (expected)`, {});
+    expect(kept).toContain(sha);
+
+    const mixedCase = "0123456789ABCDEF0123456789abcdef01234567";
+    const underscored = `${"a".repeat(20)}_${"b".repeat(20)}`;
+    const dashed = `${"c".repeat(20)}-${"d".repeat(20)}`;
+    const longer = `${sha}0`;
+    const shorter = "0123456789abcdef0123456789abcdef0123456";
+    const out = cleanStderr(
+      [
+        mixedCase,
+        underscored,
+        dashed,
+        longer,
+        `x${sha}`,
+        `-${sha}`,
+        `${sha}-`,
+        `token=${sha}`,
+      ].join("\n"),
+      {}
+    );
+    for (const value of [mixedCase, underscored, dashed, longer, sha]) {
+      expect(out).not.toContain(value);
+    }
+    expect(out.match(/\[redacted\]/g)).toHaveLength(8);
+    expect(cleanStderr(shorter, {})).toContain(shorter);
+  });
+
+  it("redacts the exact CLOUDFLARE_API_TOKEN even when it has the shape of a commit SHA", () => {
+    const shaShaped = "fedcba9876543210fedcba9876543210fedcba98";
+    const out = cleanStderr(`auth failed for ${shaShaped} here`, {
+      CLOUDFLARE_API_TOKEN: shaShaped,
+    });
+    expect(out).not.toContain(shaShaped);
+    expect(out).toContain("auth failed for [redacted] here");
+  });
+
   it("strips escape and control characters, keeps the tail of a long text and answers empty for nothing", () => {
     expect(cleanStderr("\u001b[31mred\u001b[0m\u0007bell", {})).toBe(
       "    wrangler: red bell"

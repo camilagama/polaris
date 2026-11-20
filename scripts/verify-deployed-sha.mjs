@@ -126,6 +126,9 @@ class ApiError extends Error {}
 /**
  * Lines of a failed read that are safe to print: control characters out, the token (exact value, `Bearer ...` and
  * Cloudflare token shapes) redacted, the tail kept, and every line indented so none starts a workflow command.
+ * Any other run of 40 or more id characters is redacted too, except a lowercase hex run of exactly 40: that is a
+ * commit SHA, the very value the check compares, and keeping it leaves the failure diagnosable. The exact-value
+ * replacement runs first, so a token that happens to look like a SHA is still redacted.
  */
 export function cleanStderr(text, env = process.env) {
   let clean = String(text);
@@ -142,7 +145,9 @@ export function cleanStderr(text, env = process.env) {
     .replace(/\bbearer\s+\S+/gi, "Bearer [redacted]")
     .replace(/(token|api[_-]?key)(\s*[:=]\s*)\S+/gi, "$1$2[redacted]")
     .replace(/\bcf[a-z]{2}_[A-Za-z0-9_-]{16,}/g, "[redacted]")
-    .replace(/\b[A-Za-z0-9_-]{40,}\b/g, "[redacted]")
+    .replace(/(?<![A-Za-z0-9_-])[A-Za-z0-9_-]{40,}(?![A-Za-z0-9_-])/g, (run) =>
+      SHA.test(run) ? run : "[redacted]"
+    )
     .trim();
   if (clean === "") {
     return "";
