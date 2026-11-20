@@ -64,16 +64,8 @@ export const GATE_ROLLBACK_LIST = {
     count: 2,
     reason: BEFORE_THE_RULE,
   },
-  "packages/db/scripts/verify-activation-candidates-gate.ts": {
-    count: 2,
-    reason: BEFORE_THE_RULE,
-  },
   "packages/db/scripts/verify-activation-funnel-gate.ts": {
     count: 3,
-    reason: BEFORE_THE_RULE,
-  },
-  "packages/db/scripts/verify-activation-returns-gate.ts": {
-    count: 2,
     reason: BEFORE_THE_RULE,
   },
   "packages/db/scripts/verify-audit-retention-gate.ts": {
@@ -118,10 +110,6 @@ export const GATE_ROLLBACK_LIST = {
   },
   "packages/db/scripts/verify-tenant-context-gate.ts": {
     count: 3,
-    reason: BEFORE_THE_RULE,
-  },
-  "packages/db/scripts/verify-unverified-user-purge-gate.ts": {
-    count: 2,
     reason: BEFORE_THE_RULE,
   },
 };
