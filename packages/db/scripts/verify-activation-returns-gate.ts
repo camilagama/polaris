@@ -3,7 +3,11 @@ import assert from "node:assert/strict";
 import { randomBytes, randomUUID } from "node:crypto";
 import { Client } from "pg";
 import { createDatabase } from "../src/client";
-import { setLoginRole, withGateRole } from "./gate-roles";
+import {
+  inRolledBackTransaction,
+  setLoginRole,
+  withGateRole,
+} from "./gate-roles";
 import {
   disposableHostPattern,
   expectSqlState,
@@ -424,17 +428,14 @@ async function run() {
     });
     await as(billingUrl, async (client) => {
       await setLoginRole(client, BILLING_RUNTIME, "session");
-      await client.query("BEGIN");
-      try {
+      await inRolledBackTransaction(client, async () => {
         await client.query(`SELECT * FROM ${FUNCTION}`);
         await expectSqlState(
           () => client.query("SELECT * FROM public.activation_return_weeks"),
           "42501",
           "the billing role does not read the frozen counts"
         );
-      } finally {
-        await client.query("ROLLBACK");
-      }
+      });
     });
     tests.push(
       "polaris_activation_owner is NOLOGIN NOINHERIT NOBYPASSRLS; of session it reads only user_id, created_at and updated_at (id, token, ip_address, user_agent and expires_at not readable, no table privilege, no write), it holds exactly its 23 column privileges and nothing of products, user, auth_access_log or devices, and no CREATE; its policy on session (SELECT, true) is its only one there and the tenant, billing, catalog, Admin and series roles have none; it has exactly its 8 policies and owns only activation_return_freeze, SECURITY DEFINER with search_path pg_catalog, public, pg_temp and no dynamic SQL; only the billing role executes it (a tenant login is refused, 42501), and only the owner reaches the frozen counts (the tenant and the billing role cannot read them, 42501)"
@@ -444,8 +445,7 @@ async function run() {
       work: (client: Client, week: Date) => Promise<T>
     ): Promise<T> =>
       as(adminUrl, async (client) => {
-        await client.query("BEGIN");
-        try {
+        return await inRolledBackTransaction(client, async () => {
           // the function must not lean on the session's zone: a database in São Paulo would hide a day of UTC
           await client.query("SET LOCAL TimeZone = 'UTC'");
           // the trigger stamps a new session with now(): the cases need sessions signed in on past days
@@ -465,9 +465,7 @@ async function run() {
           const start = week.rows[0]?.start;
           assert.ok(start instanceof Date);
           return await work(client, start);
-        } finally {
-          await client.query("ROLLBACK");
-        }
+        });
       });
     const newPerson = async (client: Client) => {
       const userId = randomUUID();

@@ -12,10 +12,6 @@ export const GATE_ROLLBACK_LIST = {
     count: 2,
     reason: BEFORE_THE_RULE,
   },
-  "apps/web/scripts/verify-access-log-login-gate.ts": {
-    count: 2,
-    reason: BEFORE_THE_RULE,
-  },
   "apps/web/scripts/verify-activation-sweep-gate.ts": {
     count: 3,
     reason: BEFORE_THE_RULE,
@@ -56,24 +52,12 @@ export const GATE_ROLLBACK_LIST = {
     count: 1,
     reason: BEFORE_THE_RULE,
   },
-  "packages/db/scripts/verify-access-log-gate.ts": {
-    count: 2,
-    reason: BEFORE_THE_RULE,
-  },
   "packages/db/scripts/verify-account-key-gate.ts": {
     count: 1,
     reason: BEFORE_THE_RULE,
   },
-  "packages/db/scripts/verify-activation-candidates-gate.ts": {
-    count: 2,
-    reason: BEFORE_THE_RULE,
-  },
   "packages/db/scripts/verify-activation-funnel-gate.ts": {
     count: 3,
-    reason: BEFORE_THE_RULE,
-  },
-  "packages/db/scripts/verify-activation-returns-gate.ts": {
-    count: 2,
     reason: BEFORE_THE_RULE,
   },
   "packages/db/scripts/verify-audit-retention-gate.ts": {
@@ -116,24 +100,8 @@ export const GATE_ROLLBACK_LIST = {
     count: 6,
     reason: BEFORE_THE_RULE,
   },
-  "packages/db/scripts/verify-period-summary-sql-gate.ts": {
-    count: 2,
-    reason: BEFORE_THE_RULE,
-  },
-  "packages/db/scripts/verify-renewal-cancellation-gate.ts": {
-    count: 2,
-    reason: BEFORE_THE_RULE,
-  },
-  "packages/db/scripts/verify-review-hardening-gate.ts": {
-    count: 2,
-    reason: BEFORE_THE_RULE,
-  },
   "packages/db/scripts/verify-tenant-context-gate.ts": {
     count: 3,
-    reason: BEFORE_THE_RULE,
-  },
-  "packages/db/scripts/verify-unverified-user-purge-gate.ts": {
-    count: 2,
     reason: BEFORE_THE_RULE,
   },
 };

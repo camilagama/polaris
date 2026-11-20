@@ -5,8 +5,8 @@ import {
   isDefiniteRpcRejection,
   isLegalAcceptanceRefusal,
   isOrganizationClosedRefusal,
-  isSessionChangedRefusal,
   isPlatformCut,
+  isSessionChangedRefusal,
   isTransientReadFailure,
   rpcErrorCode,
 } from "../../lib/rpc-error";
@@ -307,13 +307,18 @@ function isSessionRefusal(error: unknown): boolean {
   return code === "UNAUTHORIZED" || code === "FORBIDDEN";
 }
 
+function isWrongUserLease(error: unknown): boolean {
+  return error instanceof Error && error.message === "lease_wrong_user";
+}
+
 /**
- * The only failures of the start that say the remembered device is not this person's: the server's definite
- * refusal, or a lease that names somebody else. Whatever else went wrong (browser storage, an unreadable lease, no
- * answer, an unknown error) is no news about the device, and registering another one would not fix it.
+ * The only failures of asking for the lease that say the remembered device is not this person's: the server's
+ * definite refusal, or a readable lease that is not this user's, organization's and device's (an unreadable one says
+ * nothing about whose the device is). Whatever
+ * else went wrong (no answer, an unknown error) is no news about the device, and registering another one would not fix it.
  */
 function isDeviceForgettingFailure(error: unknown): boolean {
-  if (error instanceof Error && error.message === "lease_wrong_user") {
+  if (isWrongUserLease(error)) {
     return true;
   }
   return (
@@ -1713,6 +1718,10 @@ export class OfflineRuntime {
       if (usable) {
         return usable.lease;
       }
+      // an unreadable lease says nothing about whose the device is: it keeps the device
+      if (readUnverifiedOfflineLease(issued.lease) === null) {
+        throw new Error("lease_unreadable");
+      }
       throw new Error("lease_wrong_user");
     }
     this.dependencies.keyValues.write(
@@ -1734,28 +1743,53 @@ export class OfflineRuntime {
     this.checkedSession = confirmed ? sessionId : null;
     this.sweepLegacyLeases();
     const deviceId = await this.ensureDevice(userId);
+    let lease: string;
     try {
-      const lease = await this.ensureLease(userId, organizationId, deviceId);
-      await this.open(userId, organizationId, deviceId, lease, generation);
+      lease = await this.ensureLease(userId, organizationId, deviceId);
     } catch (error) {
       if (error instanceof OfflineAccessExpiredError) {
         // the device and the lease are this person's: only time ran out, so nothing is forgotten
         await this.openExpired(userId, organizationId, deviceId, generation);
         return;
       }
-      const forgetsDevice =
-        this.dependencies.isOnline() && isDeviceForgettingFailure(error);
-      if (!forgetsDevice) {
+      if (!this.forgetsDeviceAfter(error, isDeviceForgettingFailure)) {
         throw error;
       }
-      // The remembered device may belong to another user of this browser:
-      // forget it and register again, once.
-      this.dependencies.keyValues.remove(DEVICE_KEY);
-      this.forgetDeviceCheck();
-      const fresh = await this.ensureDevice(userId);
-      const lease = await this.ensureLease(userId, organizationId, fresh);
-      await this.open(userId, organizationId, fresh, lease, generation);
+      await this.openOnAnotherDevice(userId, organizationId, generation);
+      return;
     }
+    try {
+      await this.open(userId, organizationId, deviceId, lease, generation);
+    } catch (error) {
+      // a refusal of the first read says nothing about whose the device is: only a lease for somebody else does
+      if (!this.forgetsDeviceAfter(error, isWrongUserLease)) {
+        throw error;
+      }
+      await this.openOnAnotherDevice(userId, organizationId, generation);
+    }
+  }
+
+  private forgetsDeviceAfter(
+    error: unknown,
+    says: (error: unknown) => boolean
+  ): boolean {
+    return this.dependencies.isOnline() && says(error);
+  }
+
+  /**
+   * The remembered device may belong to another user of this browser:
+   * forget it and register again, once.
+   */
+  private async openOnAnotherDevice(
+    userId: string,
+    organizationId: string,
+    generation: number
+  ) {
+    this.dependencies.keyValues.remove(DEVICE_KEY);
+    this.forgetDeviceCheck();
+    const fresh = await this.ensureDevice(userId);
+    const lease = await this.ensureLease(userId, organizationId, fresh);
+    await this.open(userId, organizationId, fresh, lease, generation);
   }
 
   private async open(
