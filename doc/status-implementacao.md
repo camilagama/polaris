@@ -3570,7 +3570,15 @@ Origem: achado B do Diego no Pixel 6 (28/10): a venda montada em Vender sumia ao
 | --- | --- | --- |
 | Marcador da sessão | Em revisão | `offline-runtime.ts`: depois de `device.check` "meu" ou de `device.register` (o `issueLease` só renova o da mesma sessão), `polaris.offline.device-checked` guarda `{ deviceId, userId, sessionId, checkedAt }` (id da sessão, nunca o token); a abertura com o `get-session` do servidor na hora, mesma sessão, usuário e aparelho, menos de 12 h e licença a 12 h ou mais do fim não chama o `device.check`. Apagado no Sair, em `session_changed`, aparelho recusado e sessão diferente. Emenda de 19/11 do [ADR 0048](../docs/adr/0048-tela-de-aparelhos.md). |
 | Provas | Em revisão | `offline-runtime.test.ts` (o pulo e cada caso que chama, a revogação vista pelo `get-session` sem `device.check`, 13 mutações reprovadas) e `runtime-api.test.ts` (`session.id` sem o token, leitura sempre no servidor). |
-| Fora | Pendente | Com a memória de 10 s do `get-session` (t1360), a leitura que decide o pulo continua a do servidor na hora. |
+| Com a memória de 10 s | Em revisão | A leitura que decide o pulo (`signedInSession`) é `session.read({ fresh: true })`: vai ao servidor na hora, e o id da sessão vem do `session.id` que a memória guarda (nunca o token). |
+
+### Chamadas automáticas: memória de 10 s do get-session na aba (t1360; sem migration)
+
+| Parte | Estado | O que é |
+| --- | --- | --- |
+| Memória da aba | Em revisão | `lib/session-lookup.ts`: a última resposta com sessão por 10 s (do início da leitura), leituras em voo juntadas, sem `localStorage`; o rodapé, a Assinatura e o primeiro acesso usam (o boot do runtime lê fresco, `signedInSession`); `fresh` na conferência de cada sincronização e na saída. Emenda de 19/11 do [ADR 0044](../docs/adr/0044-revisao-de-seguranca-adicional.md). |
+| Provas | Em revisão | `session-lookup.test.ts` (10 s e 10 s + 1 ms, início da leitura, `forget`, falha e recusa), `offline-runtime.test.ts` (início com memória, o resto fresco), `e2e/offline-runtime-api.e2e.ts` (abertura: exatamente 2 por desenho, rodapé pela memória e boot do runtime fresco, e entrar na Assinatura logo depois não lê de novo) e `e2e/subscription-screen.e2e.ts` (Assinatura e volta de outra aba: só os 2 da abertura, antes 4). |
+| Fora | Pendente | O `get-session` de cada tick de pull (item 3 do corte). |
 
 ### Entrada da transação de tenant num statement (t1363; migration 0136, provisória)
 
