@@ -245,7 +245,7 @@ describe("the interval grows while there is no work", () => {
     expect(MAX_TICK_MS).toBe(600_000);
   });
 
-  it("an idle visible tab pulls 8 times in the first hour and 146 in 24 h, and rereads the session as often as the pulls allow", async () => {
+  it("an idle visible tab pulls 8 times in the first hour and 146 in 24 h, and the session rule rereads on 6 of the 8 and 144 of the 146", async () => {
     const t = idle();
     let confirmedAt = 0;
     let pulls = 0;
