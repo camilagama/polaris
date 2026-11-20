@@ -5,14 +5,16 @@ import type { MissingInput } from "../dashboard/missing-input";
 import { unknownDaysFit, unknownDaysText } from "./home-kpis";
 
 /**
- * `e2e/dashboard.e2e.ts` writes the rule of the "N de M dias sem custo" line (the limit and the text) by hand, because
+ * `e2e/dashboard/reflow-320.e2e.ts` writes the rule of the "N de M dias sem custo" line (the limit and the text) by hand, because
  * importing `home/home-kpis.ts` from `e2e/` pulls the `@/` alias in, which the `tsconfig.node.json` that type-checks that
  * folder does not have. This test reads the copy from the source and holds it to the app: the limit is the one
  * `unknownDaysFit` enforces and the text is the one `unknownDaysText` writes, so the e2e cannot keep proving a rule the
  * app no longer has.
  */
 const E2E_SOURCE = readFileSync(
-  fileURLToPath(new URL("../../e2e/dashboard.e2e.ts", import.meta.url)),
+  fileURLToPath(
+    new URL("../../e2e/dashboard/reflow-320.e2e.ts", import.meta.url)
+  ),
   "utf8"
 );
 
