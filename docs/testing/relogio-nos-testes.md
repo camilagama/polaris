@@ -25,7 +25,7 @@ Tudo vive na raiz, num helper só:
 - `scripts/test-datas.mjs`: o comando, que roda `vitest.datas.config.ts` uma vez por instante e fuso e imprime o resumo.
 - `scripts/test-clock/instants.mjs`: os instantes, os fusos e `parseNow`.
 - `scripts/test-clock/setup.mjs`: o `setupFile` que lê `POLARIS_TEST_NOW`.
-- `vitest.datas.config.ts`: uma config só, com o `include` do projeto `node` da raiz (`apps/**` e `packages/**`) e `packages/db/**` no `exclude`; app novo entra sozinho, e o teste reprova se o `include` se afastar do da raiz.
+- `vitest.datas.config.ts`: uma config só, com o `include` do projeto `node` da raiz (`apps/**` e `packages/**`) e `packages/db/**` no `exclude`; app novo entra sozinho, e o teste reprova se o `include` se afastar do da raiz. Como a raiz, roda em ordem aleatória (arquivos e testes): a semente sai na saída (`Running tests with seed`) e se repete com `node node_modules/vitest/vitest.mjs run --config vitest.datas.config.ts --sequence.seed=<semente>`; o `bun run test:datas` não repassa flags do Vitest.
 
 Regras do setup:
 
