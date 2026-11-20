@@ -1120,8 +1120,8 @@ test.describe("pé do menu: primeiros passos e teste grátis", () => {
       );
       expect(cut).toBe(false);
     }
-    // one read for the foot (kept, as state only) and one for the limit notice at the end of Produtos (after the screen, hence expect.poll)
-    await expect.poll(() => reads.plan).toBe(2);
+    // the foot and the limit notice at the end of Produtos share the memory of the plan: one read for both (after the screen, hence expect.poll)
+    await expect.poll(() => reads.plan).toBe(1);
     await trialLink(page).click();
     await page.waitForURL("**/configuracoes?aba=assinatura");
     await expect(trialLink(page)).toBeVisible();
