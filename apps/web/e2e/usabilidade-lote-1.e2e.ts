@@ -313,7 +313,11 @@ test("U-24 e U-28: cliente sem contato — o erro fica junto do botão, os campo
   // U-28: the 3 px halo of the field in focus clears the text of the error under it (6 px between the two)
   await page.locator("#customer-phone").fill("");
   await page.getByRole("button", { name: "Cadastrar cliente" }).click();
+  // the save moves the focus to the phone in a timer: clearing the name before it fires sends the Delete key to the phone and the name keeps its old value
+  await expect(error).toBeVisible();
+  await expect(page.locator("#customer-phone")).toBeFocused();
   await page.locator("#customer-name").fill("");
+  await expect(page.locator("#customer-name")).toHaveValue("");
   await page.getByRole("button", { name: "Cadastrar cliente" }).click();
   const nameError = page.locator("#customer-name-error");
   await expect(nameError).toHaveText("Informe o nome do cliente.");
