@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { randomBytes, randomInt, randomUUID } from "node:crypto";
 import { Client } from "pg";
 import { createDatabase } from "../src/client";
-import { queryAsFunctionOwner } from "./gate-roles";
+import { inRolledBackTransaction, queryAsFunctionOwner } from "./gate-roles";
 import {
   disposableHostPattern,
   expectSqlState,
@@ -332,16 +332,16 @@ async function run() {
       }
     }
     // the tenant runtime with a user context sees nothing either: it is refused before any row
-    await tenantClient.query("BEGIN");
-    await tenantClient.query("SELECT set_config('app.user_id', $1, true)", [
-      userA,
-    ]);
-    await expectSqlState(
-      () => tenantClient.query(`SELECT * FROM ${TABLE}`),
-      "42501",
-      "a tenant runtime with app.user_id still has no access"
-    );
-    await tenantClient.query("ROLLBACK");
+    await inRolledBackTransaction(tenantClient, async () => {
+      await tenantClient.query("SELECT set_config('app.user_id', $1, true)", [
+        userA,
+      ]);
+      await expectSqlState(
+        () => tenantClient.query(`SELECT * FROM ${TABLE}`),
+        "42501",
+        "a tenant runtime with app.user_id still has no access"
+      );
+    });
     tests.push(
       "no runtime reaches the table: the authentication, Admin and tenant runtimes, logged in, are refused SELECT, INSERT, UPDATE and DELETE (42501), and a tenant context (app.user_id) changes nothing"
     );
@@ -967,12 +967,12 @@ async function run() {
     }
     // and a rolled-back read leaves no audit behind
     const auditBeforeRollback = (await auditRows()).length;
-    await adminClient.query("BEGIN");
-    assert.equal(
-      (await read(adminClient, operator, { user: userA })).result,
-      "ok"
-    );
-    await adminClient.query("ROLLBACK");
+    await inRolledBackTransaction(adminClient, async () => {
+      assert.equal(
+        (await read(adminClient, operator, { user: userA })).result,
+        "ok"
+      );
+    });
     assert.equal(
       (await auditRows()).length,
       auditBeforeRollback,
