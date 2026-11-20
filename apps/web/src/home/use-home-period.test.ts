@@ -16,12 +16,24 @@ const AUGUST: Period = { from: "2026-08-01", to: "2026-08-31" };
 const LAST_MONTH: HomeSelection = { custom: null, preset: "last-month" };
 
 const comparisonReads = vi.fn();
+let echoReads = false;
 let summaryState: PeriodSummaryState;
 
 vi.mock("../dashboard/use-period-summary", () => ({
-  useComparisonReads: (...args: unknown[]) => {
-    comparisonReads(...args);
-    return { comparison: null, salesComparison: null };
+  useComparisonReads: (
+    organizationId: string,
+    compared: Period | null,
+    comparedResult: Period | null
+  ) => {
+    comparisonReads(organizationId, compared, comparedResult);
+    return echoReads
+      ? {
+          comparison: compared ? { days: [], period: compared } : null,
+          salesComparison: comparedResult
+            ? { days: [], period: comparedResult }
+            : null,
+        }
+      : { comparison: null, salesComparison: null };
   },
   usePeriodSummary: () => ({ refresh: () => undefined, state: summaryState }),
 }));
@@ -43,10 +55,12 @@ function summary(
   {
     generatedAt = SERVER_NOW,
     level = "complete",
+    unknownCostAfter = null,
     unknownCostLines = 0,
   }: {
     generatedAt?: string;
     level?: StoredPeriodSummary["quality"]["level"];
+    unknownCostAfter?: string | null;
     unknownCostLines?: number;
   } = {}
 ): StoredPeriodSummary {
@@ -74,14 +88,17 @@ function summary(
       processingFees: "4.50",
       returns: "10.00",
     },
-    daily: datesOf(period).map((date) => ({
-      costs: "1.00",
-      date,
-      netSales: "1.00",
-      operatingExpenses: "0.00",
-      operatingResult: "1.00",
-      salesCount: 1,
-    })),
+    daily: datesOf(period).map((date) => {
+      const unknownCost = unknownCostAfter !== null && date > unknownCostAfter;
+      return {
+        costs: unknownCost ? null : "1.00",
+        date,
+        netSales: "1.00",
+        operatingExpenses: "0.00",
+        operatingResult: unknownCost ? null : "1.00",
+        salesCount: 1,
+      };
+    }),
     generatedAt,
     period,
     quality: {
@@ -111,8 +128,8 @@ function answered(
   };
 }
 
-function run(selection: HomeSelection, today = DEVICE_TODAY) {
-  renderHook(() =>
+function runHook(selection: HomeSelection, today = DEVICE_TODAY) {
+  const { result } = renderHook(() =>
     useHomePeriod({
       enabled: true,
       organizationId: ORG,
@@ -121,12 +138,17 @@ function run(selection: HomeSelection, today = DEVICE_TODAY) {
       today,
     })
   );
-  return comparisonReads.mock.lastCall;
+  return { hook: result.current, reads: comparisonReads.mock.lastCall };
+}
+
+function run(selection: HomeSelection, today = DEVICE_TODAY) {
+  return runHook(selection, today).reads;
 }
 
 describe("useHomePeriod liga os dois períodos de comparação", () => {
   beforeEach(() => {
     comparisonReads.mockClear();
+    echoReads = false;
     summaryState = answered(null);
   });
 
@@ -183,5 +205,36 @@ describe("useHomePeriod liga os dois períodos de comparação", () => {
     summaryState = answered(summary(SEPTEMBER, { level: "no_data" }));
 
     expect(run(LAST_MONTH)).toEqual([ORG, null, null]);
+  });
+
+  describe("o dia da resposta decide o chip de resultado, não o do aparelho", () => {
+    const WINDOW: Period = { from: "2026-10-10", to: "2026-10-20" };
+    const BEFORE_WINDOW: Period = { from: "2026-09-29", to: "2026-10-09" };
+    const selection: HomeSelection = { custom: WINDOW, preset: "custom" };
+
+    it("aparelho adiante do servidor: os dias de custo desconhecido depois do dia da loja não tiram o chip", () => {
+      echoReads = true;
+      summaryState = answered(
+        summary(WINDOW, { unknownCostAfter: "2026-10-14" })
+      );
+
+      const { hook, reads } = runHook(selection, "2026-10-20");
+
+      expect(reads).toEqual([ORG, BEFORE_WINDOW, BEFORE_WINDOW]);
+      expect(hook.source?.salesComparison?.period).toEqual(BEFORE_WINDOW);
+    });
+
+    it("aparelho atrás do servidor: o custo desconhecido no dia da loja tira o chip", () => {
+      echoReads = true;
+      summaryState = answered(
+        summary(WINDOW, { unknownCostAfter: "2026-10-13" })
+      );
+
+      const { hook, reads } = runHook(selection, "2026-10-13");
+
+      expect(reads).toEqual([ORG, BEFORE_WINDOW, null]);
+      expect(hook.source?.comparison?.period).toEqual(BEFORE_WINDOW);
+      expect(hook.source?.salesComparison).toBeNull();
+    });
   });
 });
