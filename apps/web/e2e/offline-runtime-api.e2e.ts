@@ -36,6 +36,7 @@ const DEVICE_KEY = "polaris.offline.device";
 const DEVICE_CHECK_KEY = "polaris.offline.device-checked";
 /** The token get-session carries next to the session id: never kept on the device. */
 const SESSION_TOKEN = "token-da-sessao-nunca-guardado";
+const SETTLE_PAST_SESSION_MEMORY_MS = 15_000;
 const SESSION_USER_KEY = "polaris.offline.session-user";
 const SHIRT_OPTION = /Camiseta do laboratório · Azul/;
 const uuid = (n: number) =>
@@ -570,6 +571,17 @@ test.describe("createRpcRuntimeApi no app real, com o servidor interceptado", ()
     const user = `user-${crypto.randomUUID()}`;
     const server = new RpcServer(user);
     server.billingSelfService = true;
+    await page.clock.install();
+    let inFlight = 0;
+    page.on("request", () => {
+      inFlight += 1;
+    });
+    page.on("requestfinished", () => {
+      inFlight -= 1;
+    });
+    page.on("requestfailed", () => {
+      inFlight -= 1;
+    });
     await server.install(page);
     await page.goto("/sales");
     // the second read is the runtime's, fresh: its answer is the memory the Assinatura finds, so go there at once
@@ -587,6 +599,12 @@ test.describe("createRpcRuntimeApi no app real, com o servidor interceptado", ()
     await expect(chip(page)).toContainText("Tudo sincronizado", {
       timeout: 20_000,
     });
+    // a late read would come after the memory of the lookup (10 s) ran out: take the page's clock past it, let
+    // the network settle, and only then count
+    await page.clock.fastForward(SETTLE_PAST_SESSION_MEMORY_MS);
+    // the round trip delivers every request event the fast-forward caused before the count below
+    await page.evaluate(() => 0);
+    await expect.poll(() => inFlight).toBe(0);
     expect(server.sessionLookups).toBe(2);
   });
 
