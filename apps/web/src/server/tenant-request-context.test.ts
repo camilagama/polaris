@@ -22,7 +22,6 @@ import {
 type Database = ReturnType<typeof createDatabase>["db"];
 
 const NOW = new Date("2026-11-19T02:50:00.000Z");
-const DAY_MS = 24 * 60 * 60 * 1000;
 
 beforeEach(() => {
   vi.useFakeTimers({ now: NOW, toFake: ["Date"] });
@@ -231,9 +230,6 @@ describe("tenant request context", () => {
     ["exactly 30 days old", "2026-10-20T02:50:00.000Z"],
     ["30 days and 1 ms old", "2026-10-20T02:49:59.999Z"],
   ])("refuses a session %s", async (_label, createdAt) => {
-    expect(NOW.getTime() - new Date("2026-10-20T02:50:00.000Z").getTime()).toBe(
-      30 * DAY_MS
-    );
     const fixture = createFixture({
       session: { createdAt: new Date(createdAt), id: "session-1" },
       user: { id: "session-user-42" },

@@ -514,6 +514,7 @@ test("AC-3: trocar de loja apaga a venda da loja deixada e a tentativa resolvida
   await serveTwoStores(page, testInfo);
   await openSale(page);
   await buildCart(page);
+  await page.clock.setFixedTime(new Date(NOW));
   await page.evaluate(
     ({ at, key }) =>
       window.sessionStorage.setItem(
