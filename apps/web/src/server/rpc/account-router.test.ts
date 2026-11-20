@@ -128,6 +128,10 @@ function setup(
     createAuth: (() => ({
       api: { getSession: vi.fn(async () => session) },
     })) as never,
+    createAuthDatabase: (() => ({
+      db: {},
+      pool: { end: poolEnd, query: poolQuery },
+    })) as never,
     createDatabase: (() => ({
       db: {},
       pool: { end: poolEnd, query: poolQuery },
