@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
 import { Pool } from "pg";
 import { assertAllowedGateUrl, isLocalGateHost } from "./gate-hosts";
+import { rollbackAndRelease } from "./gate-roles";
 
 const adminConnectionString = process.env.POLARIS_RLS_ADMIN_DATABASE_URL;
 const expectedHostname = process.env.POLARIS_RLS_EXPECTED_HOSTNAME;
@@ -334,11 +335,8 @@ try {
     );
     await ownerClient.query("COMMIT");
     assert.equal(operationRows.rows[0]?.count, 1);
-  } catch (error) {
-    await ownerClient.query("ROLLBACK");
-    throw error;
   } finally {
-    ownerClient.release();
+    await rollbackAndRelease(ownerClient);
   }
 
   console.log(

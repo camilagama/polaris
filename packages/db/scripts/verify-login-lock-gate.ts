@@ -3,7 +3,11 @@ import assert from "node:assert/strict";
 import { createHash, createHmac, randomBytes, randomUUID } from "node:crypto";
 import { Client } from "pg";
 import { createDatabase } from "../src/client";
-import { replaceFunctionAsOwner, withGateRole } from "./gate-roles";
+import {
+  inRolledBackTransaction,
+  replaceFunctionAsOwner,
+  withGateRole,
+} from "./gate-roles";
 import {
   disposableHostPattern,
   expectSqlState,
@@ -753,8 +757,7 @@ async function run() {
         );
         const mutated = original.replace(from, to);
         assert.notEqual(mutated, original);
-        await mutationClient.query("BEGIN");
-        try {
+        await inRolledBackTransaction(mutationClient, async () => {
           // the mutant is written by the functions' owner role and probed as it, the role that alone reaches the table
           await replaceFunctionAsOwner(mutationClient, signature, mutated);
           const probe = probes[index];
@@ -772,9 +775,7 @@ async function run() {
               `the probes catch the mutation: ${label}`
             );
           });
-        } finally {
-          await mutationClient.query("ROLLBACK");
-        }
+        });
         assert.equal(
           await definitionOf(mutationClient, signature),
           original,

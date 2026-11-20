@@ -4,6 +4,7 @@ import { createDatabase } from "../src/client";
 import { requestDataExport } from "../src/data-export-repository";
 import { createOutboxClient, type ProcessingKey } from "../src/outbox-dispatch";
 import { createPrivacyMaintenanceClient } from "../src/privacy-maintenance";
+import { rollbackAndRelease } from "./gate-roles";
 import {
   createTenantFixture,
   disposableHostPattern,
@@ -654,8 +655,7 @@ async function run() {
         );
       } finally {
         // a failed assertion must not return a connection that still holds the lock
-        await holder.query("ROLLBACK").catch(() => undefined);
-        holder.release();
+        await rollbackAndRelease(holder);
       }
       await owner.pool.query(vanish, [
         racingKey.organizationId,
