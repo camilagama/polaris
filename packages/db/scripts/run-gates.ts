@@ -959,11 +959,8 @@ async function vacuumRoleCatalogs(input: {
       url: input.superuserUrl,
     });
     try {
-      const started = Date.now();
       await admin.query(ROLE_CATALOGS_VACUUM);
-      console.log(
-        `--- ${ROLE_CATALOGS_VACUUM} in ${((Date.now() - started) / 1000).toFixed(1)}s`
-      );
+      console.log(`--- ${ROLE_CATALOGS_VACUUM}`);
     } finally {
       await admin.end();
     }
