@@ -10,7 +10,7 @@ import type { RuntimeSnapshot } from "./offline-runtime";
  *   of `isLeader`, Web Locks): the other tabs hear its pull through the data channel. One real try,
  *   even with the connection not proven (an answer of the Worker to it is what proves it again). A hidden page
  *   never pulls on the tick. After a tick that found nothing (an answered, empty pull and an empty queue) the interval
- *   doubles, 60, 120, 240 and 300 s at most; anything that is work (a pull with changes, a send, a queued
+ *   doubles, 60, 120, 240, 480 and 600 s at most; anything that is work (a pull with changes, a send, a queued
  *   command, a return to the page, "Tentar agora", the connection back) brings it back to 60 s. Sending a queued
  *   command never waits for the interval;
  * - at start and on the return to the page (`refresh`): the same try, unless some tab of this browser
@@ -74,7 +74,7 @@ export interface SyncScheduler {
 }
 
 export const TICK_MS = 60_000;
-export const MAX_TICK_MS = 300_000;
+export const MAX_TICK_MS = 600_000;
 const BACK_ONLINE_MS = 1000;
 const RETRY_STEPS_MS = [2000, 4000, 8000, 20_000, 40_000, 60_000] as const;
 
