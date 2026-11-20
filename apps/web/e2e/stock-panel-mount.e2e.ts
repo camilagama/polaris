@@ -8,8 +8,8 @@ import { serveLabWorker, WORKER_MARK } from "./worker-mark";
  * rows still on screen off: they would read a reason that is nowhere on the page. When the search is cleared the row
  * and its panel come back, and the other rows go back off.
  */
-const NOW = new Date("2026-10-14T12:00:00-03:00");
 const PANEL_OPEN_REASON = "Feche o painel aberto para usar os botões.";
+const NOW = new Date("2026-10-14T12:00:00-03:00");
 
 const SHIRT = {
   isDefaultVariant: false,

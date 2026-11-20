@@ -25,9 +25,9 @@ test.skip(
 );
 
 const NOW = new Date("2026-10-14T12:00:00-03:00");
-const LAST_PRICE_DAY = new Date(NOW.getTime() - 13 * 86_400_000)
-  .toISOString()
-  .slice(0, 10);
+const LAST_PRICE_DAY = new Intl.DateTimeFormat("en-CA", {
+  timeZone: "America/Sao_Paulo",
+}).format(new Date(NOW.getTime() - 13 * 86_400_000));
 const STACKED_FROM_REM = 18.25;
 const THREE_COLUMNS_FROM_REM = 27;
 const NARROWEST_REM = 9.5;
