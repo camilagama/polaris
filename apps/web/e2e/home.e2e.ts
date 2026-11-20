@@ -5809,13 +5809,15 @@ test.describe("a linha do plano no fim do Início (item 2 do aviso de limite)", 
     await expect(page.locator(PLAN_LINE)).toHaveText(
       "Você usa 46 de 50 imagens no plano Free. Conhecer o Pro"
     );
+    await readsEnded(page);
     expect(plan.reads).toBe(1);
     await page.evaluate(() => window.dispatchEvent(new Event("focus")));
     await page.evaluate(() =>
       document.dispatchEvent(new Event("visibilitychange"))
     );
+    await readsEnded(page);
     await page.clock.runFor(4 * 60_000);
-    await settled(page);
+    await readsEnded(page);
     expect(plan.reads).toBe(1);
     await page.reload();
     await expect(page.locator(PLAN_LINE)).toBeVisible();
@@ -5831,7 +5833,7 @@ test.describe("a linha do plano no fim do Início (item 2 do aviso de limite)", 
     await page.context().setOffline(true);
     await expect(page.locator(PLAN_LINE)).toHaveCount(0);
     await page.context().setOffline(false);
-    await settled(page);
+    await readsEnded(page);
     await expect(page.locator(PLAN_LINE)).toHaveCount(0);
     expect(plan.reads).toBe(1);
   });
@@ -5845,7 +5847,7 @@ test.describe("a linha do plano no fim do Início (item 2 do aviso de limite)", 
       waitForBlocks: false,
     });
     expect(await page.evaluate(() => navigator.onLine)).toBe(false);
-    await settled(page);
+    await readsEnded(page);
     await expect(page.locator(PLAN_LINE)).toHaveCount(0);
     expect(plan.reads).toBe(0);
     await page.evaluate(() => {

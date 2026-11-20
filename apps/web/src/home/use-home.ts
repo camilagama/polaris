@@ -772,7 +772,11 @@ export function useHome(
   }, [loadAll]);
 
   const [reloading, setReloading] = useState(false);
-  /** "Atualizar": every block is read again, and B and the month both come from the server, never from the copy. */
+  /**
+   * "Atualizar": the figures, the goals, the checklist and the stock are read again, and B and the month both come
+   * from the server, never from the copy. The map takes the series kept on the device for the store's today when there
+   * is one; only its own "Tentar novamente" reads past it.
+   */
   const reload = useCallback(() => {
     if (isSessionOver()) {
       return;

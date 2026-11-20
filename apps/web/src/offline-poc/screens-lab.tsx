@@ -308,6 +308,7 @@ export function ScreensLab() {
         onVisible: (listener) => {
           const onVisibility = () => {
             if (document.visibilityState === "visible") {
+              runtime.pageReturned();
               listener();
             }
           };
