@@ -86,9 +86,11 @@ describe("customer lifecycle", () => {
       changed: true,
       lifecycle: "archived",
     });
-    expect(
-      transitionCustomerLifecycle(archivedAt, "archive", AT)
-    ).toEqual({ archivedAt, changed: false, lifecycle: "archived" });
+    expect(transitionCustomerLifecycle(archivedAt, "archive", AT)).toEqual({
+      archivedAt,
+      changed: false,
+      lifecycle: "archived",
+    });
     expect(transitionCustomerLifecycle(archivedAt, "restore")).toEqual({
       archivedAt: null,
       changed: true,
