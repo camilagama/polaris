@@ -178,9 +178,19 @@ function changedFiles() {
   return result.stdout.split("\n");
 }
 
+/**
+ * A run that must not skip anything: every manual dispatch (a branch has no base commit to compare with, so the
+ * last commit alone would say nothing about the others) and a pull request that carries the `suite-completa` label
+ * (the workflow passes `CI_FULL=true`).
+ */
+export function fullSuiteRequested(env) {
+  return (
+    env.CI_FULL === "true" || env.GITHUB_EVENT_NAME === "workflow_dispatch"
+  );
+}
+
 function main() {
-  const manual = process.env.GITHUB_EVENT_NAME === "workflow_dispatch";
-  const files = manual ? null : changedFiles();
+  const files = fullSuiteRequested(process.env) ? null : changedFiles();
   const result = {
     ...classifyChanges(files),
     reloads: reloadSentinelRuns(files),
