@@ -35,6 +35,7 @@ const FORBIDDEN_SPECIFIERS = [
   /^vitest(\/|$)/,
   /^cloudflare:test$/,
   /^@cloudflare\/vitest-plugin/,
+  /^@polaris\/db\/statement-counter-testing$/,
 ];
 
 /** The files that may name a marker: the test configuration, the tests, the gates that feed them, the docs. */
@@ -163,6 +164,14 @@ describe("the Workers test fixtures stay in the test configuration", () => {
         expect(leaks([{ path, text: `x ${marker} y` }])).toEqual([path]);
       }
     }
+  });
+
+  it("refuses the statement counter, which patches the driver, as a specifier of a Worker (control case)", () => {
+    expect(
+      FORBIDDEN_SPECIFIERS.some((forbidden) =>
+        forbidden.test("@polaris/db/statement-counter-testing")
+      )
+    ).toBe(true);
   });
 
   it("knows the files that make up the simulation (a rename must not shrink the check)", () => {

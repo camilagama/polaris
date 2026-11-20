@@ -26,8 +26,9 @@ import { commandSeed, startCommandIds } from "./seed";
  * The fixture of the journeys (T-125a): one user, one organization and one browser context per test and attempt.
  * The session is made here, in Node, with Better Auth's `testUtils` and the run secret (the same the preview signs
  * with); the Worker never loads `testUtils` (e2e-real/confinement.test.ts). The data of a journey enters through
- * the Worker's own commands (`rpc`), never by SQL; `sql` is the owner connection of the run database, for the
- * oracle only (it ignores RLS, so it never proves isolation).
+ * the Worker's own commands (`rpc`); only a state that `rpc` cannot produce (a billing row, a recurring expense's
+ * `starts_on` moved to today) enters by SQL, and nothing else does. `sql` is the owner connection of the run database,
+ * for that and for the oracle (it ignores RLS, so it never proves isolation).
  */
 
 interface AuthHelpers {

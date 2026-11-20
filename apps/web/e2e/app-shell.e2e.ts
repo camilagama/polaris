@@ -1085,6 +1085,7 @@ test.describe("pé do menu: primeiros passos e teste grátis", () => {
     page,
   }) => {
     await page.setViewportSize({ height: 800, width: 1280 });
+    await page.clock.install();
     const reads = await serveFoot(page, {});
     await page.goto("/products");
     await expect(stepsLink(page)).toBeVisible();
@@ -1120,8 +1121,18 @@ test.describe("pé do menu: primeiros passos e teste grátis", () => {
       );
       expect(cut).toBe(false);
     }
-    // one read for the foot (kept, as state only) and one for the limit notice at the end of Produtos (after the screen, hence expect.poll)
-    await expect.poll(() => reads.plan).toBe(2);
+    // the foot and the limit notice at the end of Produtos share the memory of the plan: one read for both (after the screen, hence expect.poll)
+    await expect.poll(() => reads.plan).toBe(1);
+    // and no second one later: two frames, the page's clock 11 s ahead (a read late by a timer or by the 10 s of the memory fires), then the network idle, and the count is still 1
+    await page.evaluate(
+      () =>
+        new Promise<void>((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+        )
+    );
+    await page.clock.runFor(11_000);
+    await page.waitForLoadState("networkidle");
+    expect(reads.plan).toBe(1);
     await trialLink(page).click();
     await page.waitForURL("**/configuracoes?aba=assinatura");
     await expect(trialLink(page)).toBeVisible();

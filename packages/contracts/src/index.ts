@@ -1873,6 +1873,15 @@ export const polarisContract = {
         })
       )
       .output(z.object({ matches: z.array(customerDuplicateMatch) })),
+    // One customer by ID, archived or anonymized included: the sale detail reads the current name of its customer without the whole list.
+    get: readProcedure
+      .input(
+        z.object({
+          id: z.string().uuid(),
+          organizationId: organizationIdInput,
+        })
+      )
+      .output(customer),
     list: readProcedure
       .input(
         z.object({
@@ -2879,6 +2888,8 @@ export const polarisContract = {
       .input(
         z.object({
           cursor: syncCursorText.nullish(),
+          // The user the tab holds the local copy for. Optional while a cached client may not send it.
+          expectedUserId: z.string().trim().min(1).max(255).optional(),
           limit: z.number().int().min(1).max(500).default(200),
           organizationId: organizationIdInput,
         })

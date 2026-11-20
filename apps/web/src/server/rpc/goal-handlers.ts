@@ -77,6 +77,23 @@ function addReads(tally: GoalReadTally, reads: PeriodReadCounts): void {
   }
 }
 
+function settlementsOf(
+  progress: Awaited<ReturnType<GoalRepository["evaluateActiveGoals"]>>
+) {
+  return progress.flatMap((entry) =>
+    entry.settlement
+      ? [
+          {
+            achievedValue: entry.evaluation.progress,
+            expectedVersion: entry.version,
+            goalId: entry.goalId,
+            settlement: entry.settlement,
+          },
+        ]
+      : []
+  );
+}
+
 type GoalRow = Awaited<ReturnType<GoalRepository["createGoal"]>>;
 
 interface Progress {
@@ -112,9 +129,10 @@ function goalReadModel(
 
 /**
  * Goals. Every operation needs `goal:manage`. Listing evaluates the active
- * goals over their period in one repeatable-read snapshot (the economics need
- * it) and then settles, in a second short transaction, the ones that reached
- * their target or whose period ended: that is how a completed goal stays
+ * goals over their period and reads the goals in one repeatable-read
+ * transaction that never writes (the economics need the snapshot). Only when
+ * a goal reached its target or its period ended, a second short transaction
+ * settles it and reads the goals again: that is how a completed goal stays
  * completed.
  */
 export function createGoalRpcHandlers(dependencies: GoalRpcDependencies) {
@@ -148,52 +166,28 @@ export function createGoalRpcHandlers(dependencies: GoalRpcDependencies) {
     dependencies.requestAuditId(context.requestId);
 
   /**
-   * Evaluates the active goals in one snapshot and settles what it says in a
-   * second short transaction. Run before editing or cancelling too, so a goal
-   * that already reached its target (or whose period ended) is settled instead
-   * of being changed under the person's feet.
+   * Evaluates the active goals in one snapshot and, only when it asks for a
+   * settlement, settles it in a second short transaction. Run before editing
+   * or cancelling too, so a goal that already reached its target (or whose
+   * period ended) is settled instead of being changed under the person's feet.
    */
   const evaluateAndSettle = async (
     context: GoalRpcContext,
-    organizationId: string,
-    tally?: GoalReadTally
+    organizationId: string
   ) => {
     const progress = await run(
       context,
       organizationId,
-      (transaction, identity) => {
-        if (tally) {
-          // a retried transaction counts again from zero
-          Object.assign(tally, emptyTally(), {
-            organizationId: identity.organizationId,
-          });
-        }
-        return repository.evaluateActiveGoals(
-          transaction,
-          identity,
-          tally ? (reads) => addReads(tally, reads) : undefined
-        );
-      },
+      (transaction, identity) =>
+        repository.evaluateActiveGoals(transaction, identity),
       "repeatable read"
     );
-    await run(context, organizationId, (transaction, identity) =>
-      repository.settleGoals(
-        transaction,
-        identity,
-        progress.flatMap((entry) =>
-          entry.settlement
-            ? [
-                {
-                  achievedValue: entry.evaluation.progress,
-                  expectedVersion: entry.version,
-                  goalId: entry.goalId,
-                  settlement: entry.settlement,
-                },
-              ]
-            : []
-        )
-      )
-    );
+    const settlements = settlementsOf(progress);
+    if (settlements.length > 0) {
+      await run(context, organizationId, (transaction, identity) =>
+        repository.settleGoals(transaction, identity, settlements)
+      );
+    }
     return progress;
   };
 
@@ -205,26 +199,58 @@ export function createGoalRpcHandlers(dependencies: GoalRpcDependencies) {
     async ({ context, input }) => {
       const started = Date.now();
       const tally = emptyTally();
-      const progress = await evaluateAndSettle(
+      const snapshot = await run(
         context,
         input.organizationId,
-        tally
+        async (transaction, identity) => {
+          // a retried transaction counts again from zero
+          Object.assign(tally, emptyTally(), {
+            organizationId: identity.organizationId,
+          });
+          const evaluated = await repository.evaluateActiveGoals(
+            transaction,
+            identity,
+            (reads) => addReads(tally, reads)
+          );
+          return {
+            goals: await repository.listGoals(transaction, identity, {
+              status: input.status,
+            }),
+            paused: await repository.listPausedGoalIds(transaction, identity),
+            progress: evaluated,
+          };
+        },
+        "repeatable read"
       );
-      // the goals as they are now (progress belongs to the version it was measured at)
-      const goals = await run(
-        context,
-        input.organizationId,
-        (transaction, identity) =>
-          repository.listGoals(transaction, identity, {
-            status: input.status,
-          })
-      );
+      const { progress } = snapshot;
+      const settlements = settlementsOf(progress);
+      // only a settlement opens a second transaction, and the goals are then read as they are after it
+      const current =
+        settlements.length === 0
+          ? snapshot
+          : await run(
+              context,
+              input.organizationId,
+              async (transaction, identity) => {
+                await repository.settleGoals(
+                  transaction,
+                  identity,
+                  settlements
+                );
+                return {
+                  goals: await repository.listGoals(transaction, identity, {
+                    status: input.status,
+                  }),
+                  paused: await repository.listPausedGoalIds(
+                    transaction,
+                    identity
+                  ),
+                };
+              }
+            );
+      const { goals } = current;
       const byGoal = new Map(progress.map((entry) => [entry.goalId, entry]));
-      const paused = new Set(
-        await run(context, input.organizationId, (transaction, identity) =>
-          repository.listPausedGoalIds(transaction, identity)
-        )
-      );
+      const paused = new Set(current.paused);
       const output = {
         goals: goals.map((row) => {
           const entry = byGoal.get(row.id);
@@ -251,7 +277,7 @@ export function createGoalRpcHandlers(dependencies: GoalRpcDependencies) {
         reads: { ...tally.reads },
         requestId: context.requestId,
         responseBytes: encoder.encode(JSON.stringify(output)).byteLength,
-        settlementsAsked: progress.filter((entry) => entry.settlement).length,
+        settlementsAsked: settlements.length,
       });
       return output;
     }

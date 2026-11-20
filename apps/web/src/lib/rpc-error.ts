@@ -47,6 +47,18 @@ export function isOrganizationClosedRefusal(error: unknown): boolean {
   );
 }
 
+/**
+ * The server refused the pull because the session is another user's than the one the tab expected (the lease in use).
+ * It is a FORBIDDEN with its own reason, and it is NOT a refused session: nothing local is dropped, the tab looks at
+ * the session again and the queue stays.
+ */
+export function isSessionChangedRefusal(error: unknown): boolean {
+  return (
+    rpcErrorCode(error) === "FORBIDDEN" &&
+    rpcErrorReason(error) === "session_changed"
+  );
+}
+
 const LEGAL_ACCEPTANCE_MISSING =
   "falta aceitar os Termos de Uso e a Política de Privacidade.";
 

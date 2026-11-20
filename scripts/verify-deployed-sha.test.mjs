@@ -14,15 +14,16 @@ import { parseJsonc } from "./lib/wrangler-config.mjs";
 import {
   ATTEMPTS,
   checkWorker,
-  PAUSE_MS,
+  PAUSES_MS,
   PRODUCTION_WORKERS,
+  RETRY_WINDOW_MS,
   runWrangler,
   STAGING_WORKERS,
   verifyDeployedSha,
   WRANGLER_CALLS_PER_TRY,
   WRANGLER_TIMEOUT_MS,
-  worstCaseMs,
   workersFromArgs,
+  worstCaseMs,
 } from "./verify-deployed-sha.mjs";
 
 const SHA = "0123456789abcdef0123456789abcdef01234567";
@@ -31,6 +32,44 @@ const WEB_VERSION = "11111111-1111-4111-8111-111111111111";
 const CATALOG_VERSION = "22222222-2222-4222-8222-222222222222";
 const ADMIN_VERSION = "33333333-3333-4333-8333-333333333333";
 const noPause = () => Promise.resolve();
+
+/** A clock that only moves when the check pauses or a read takes `readMs`, so no test sleeps. */
+function fakeClock(readMs = 0) {
+  let elapsed = 0;
+  const pauses = [];
+  return {
+    now: () => elapsed,
+    pause: (ms) => {
+      pauses.push(ms);
+      elapsed += ms;
+      return Promise.resolve();
+    },
+    pauses,
+    read: () => {
+      elapsed += readMs;
+    },
+    waited: () => pauses.reduce((sum, ms) => sum + ms, 0),
+  };
+}
+
+/** Serves `OTHER` on the web Worker until its `rightFrom`-th pair of reads, then `SHA` (never, when 0). */
+function lateWrangler(clock, rightFrom) {
+  let deploymentReads = 0;
+  return (app, worker, args) => {
+    if (args[0] === "deployments") {
+      clock.read();
+      if (worker === "polaris-web-staging") {
+        deploymentReads += 1;
+      }
+    }
+    const late =
+      worker === "polaris-web-staging" &&
+      (rightFrom === 0 || deploymentReads < rightFrom);
+    return fakeWrangler(
+      late ? { [worker]: { version: version(WEB_VERSION, OTHER) } } : {}
+    )(app, worker, args);
+  };
+}
 
 const deployment = (versions) => ({ id: "d", versions });
 const single = (id) => deployment([{ percentage: 100, version_id: id }]);
@@ -303,7 +342,7 @@ describe("the deployed version check", () => {
     expect(pause).toHaveBeenCalledOnce();
   });
 
-  it("reports a read that keeps failing by its class only, after three attempts", async () => {
+  it("reports a read that keeps failing by its class only, after every attempt", async () => {
     const wrangler = vi.fn((app, worker, args) =>
       worker === "polaris-catalog-staging"
         ? Promise.reject(new TypeError("token abc123"))
@@ -317,16 +356,110 @@ describe("the deployed version check", () => {
       wrangler.mock.calls.filter(
         ([, worker]) => worker === "polaris-catalog-staging"
       )
-    ).toHaveLength(3);
+    ).toHaveLength(ATTEMPTS);
   });
 
-  it("keeps a mismatch after the retries, so a stale deployment never passes", async () => {
-    const wrangler = fakeWrangler({
-      "polaris-web-staging": { version: version(WEB_VERSION, OTHER) },
-    });
-    const pause = vi.fn(noPause);
-    expect(await verifyDeployedSha(SHA, wrangler, pause)).toHaveLength(1);
-    expect(pause).toHaveBeenCalledTimes(2);
+  it("keeps a mismatch after the whole window, so a stale deployment never passes", async () => {
+    const clock = fakeClock();
+    const wrangler = lateWrangler(clock, 0);
+    const failures = await verifyDeployedSha(
+      SHA,
+      wrangler,
+      clock.pause,
+      STAGING_WORKERS,
+      clock.now
+    );
+    expect(failures).toEqual([
+      "polaris-web-staging: the active version carries the commit fedcba987654, expected the commit 0123456789ab",
+    ]);
+    expect(clock.pauses).toEqual(PAUSES_MS);
+    expect(clock.waited()).toBe(RETRY_WINDOW_MS);
+    expect(clock.waited()).toBeLessThanOrEqual(75_000);
+  });
+
+  it("passes when the right commit shows up only on the 4th read, pausing 5, 10 and 15 s", async () => {
+    const clock = fakeClock();
+    const wrangler = lateWrangler(clock, 4);
+    expect(
+      await verifyDeployedSha(
+        SHA,
+        wrangler,
+        clock.pause,
+        STAGING_WORKERS,
+        clock.now
+      )
+    ).toEqual([]);
+    expect(clock.pauses).toEqual([5000, 10_000, 15_000]);
+  });
+
+  it("gives each Worker its own window, so a slow first one does not take the retries of the next", async () => {
+    const clock = fakeClock();
+    let catalogReads = 0;
+    const wrangler = (app, worker, args) => {
+      if (worker === "polaris-catalog-staging" && args[0] === "deployments") {
+        catalogReads += 1;
+      }
+      const ids = {
+        "polaris-catalog-staging": CATALOG_VERSION,
+        "polaris-web-staging": WEB_VERSION,
+      };
+      const stale =
+        worker === "polaris-web-staging" ||
+        (worker === "polaris-catalog-staging" && catalogReads < 4);
+      return fakeWrangler(
+        stale ? { [worker]: { version: version(ids[worker], OTHER) } } : {}
+      )(app, worker, args);
+    };
+    const failures = await verifyDeployedSha(
+      SHA,
+      wrangler,
+      clock.pause,
+      STAGING_WORKERS,
+      clock.now
+    );
+    expect(failures).toHaveLength(1);
+    expect(failures[0].startsWith("polaris-web-staging:")).toBe(true);
+    expect(clock.waited()).toBe(RETRY_WINDOW_MS + 5000 + 10_000 + 15_000);
+  });
+
+  it("stops retrying once reads that take long have used the window, and cuts the last pause to what is left", async () => {
+    const clock = fakeClock(12_000);
+    const wrangler = lateWrangler(clock, 0);
+    const failures = await verifyDeployedSha(
+      SHA,
+      wrangler,
+      clock.pause,
+      [STAGING_WORKERS[0]],
+      clock.now
+    );
+    expect(failures).toHaveLength(1);
+    expect(clock.pauses).toEqual([5000, 10_000, 9000]);
+    expect(clock.now()).toBe(72_000);
+  });
+
+  it("logs each attempt with the Worker, what it read and the seconds since the start", async () => {
+    const clock = fakeClock();
+    const wrangler = lateWrangler(clock, 3);
+    await verifyDeployedSha(
+      SHA,
+      wrangler,
+      clock.pause,
+      [STAGING_WORKERS[0]],
+      clock.now
+    );
+    const lines = console.log.mock.calls.map(([line]) => line);
+    expect(lines).toEqual([
+      `try 1/${ATTEMPTS} polaris-web-staging: the active version carries the commit fedcba987654, expected the commit 0123456789ab (0 s since the check started)`,
+      `try 2/${ATTEMPTS} polaris-web-staging: the active version carries the commit fedcba987654, expected the commit 0123456789ab (5 s since the check started)`,
+      `try 3/${ATTEMPTS} polaris-web-staging: active version is 0123456789ab (15 s since the check started)`,
+      "ok polaris-web-staging: active version is 0123456789ab",
+    ]);
+  });
+
+  it("pins the schedule of the pauses and of the window", () => {
+    expect(PAUSES_MS).toEqual([5000, 10_000, 15_000, 30_000]);
+    expect(ATTEMPTS).toBe(5);
+    expect(RETRY_WINDOW_MS).toBe(60_000);
   });
 
   it("refuses an expected commit that is not a full lowercase SHA, before any read", async () => {
@@ -385,6 +518,9 @@ esac
     rmSync(bin, { force: true, recursive: true });
   });
 
+  const withoutTimes = (text) =>
+    text.replace(/ \(\d+ s since the check started\)/g, "");
+
   const run = (headSha, args = []) =>
     spawnSync(process.execPath, ["scripts/verify-deployed-sha.mjs", ...args], {
       cwd: root,
@@ -398,8 +534,8 @@ esac
 
   it("reads each Worker through wrangler in its app directory and exits 0 when the three carry the commit", () => {
     const result = run(SHA);
-    expect(result.stdout).toBe(
-      "ok polaris-web-staging: active version is 0123456789ab\nok polaris-catalog-staging: active version is 0123456789ab\nok polaris-admin-staging: active version is 0123456789ab\n"
+    expect(withoutTimes(result.stdout)).toBe(
+      "try 1/5 polaris-web-staging: active version is 0123456789ab\nok polaris-web-staging: active version is 0123456789ab\ntry 1/5 polaris-catalog-staging: active version is 0123456789ab\nok polaris-catalog-staging: active version is 0123456789ab\ntry 1/5 polaris-admin-staging: active version is 0123456789ab\nok polaris-admin-staging: active version is 0123456789ab\n"
     );
     expect(result.status).toBe(0);
     const calls = readFileSync(join(bin, "calls.log"), "utf8")
@@ -423,8 +559,8 @@ esac
 
   it("with --env production reads only the production Workers", () => {
     const result = run(SHA, ["--env", "production"]);
-    expect(result.stdout).toBe(
-      "ok polaris-web: active version is 0123456789ab\nok polaris-catalog: active version is 0123456789ab\n"
+    expect(withoutTimes(result.stdout)).toBe(
+      "try 1/5 polaris-web: active version is 0123456789ab\nok polaris-web: active version is 0123456789ab\ntry 1/5 polaris-catalog: active version is 0123456789ab\nok polaris-catalog: active version is 0123456789ab\n"
     );
     expect(result.status).toBe(0);
     const calls = readFileSync(join(bin, "calls.log"), "utf8")
@@ -470,10 +606,10 @@ wait
     });
   });
 
-  it("keeps the worst case of the whole check at about 390 s, as the runbook says", () => {
+  it("keeps the worst case of the whole check at 300 s, as the runbook says", () => {
     expect(WRANGLER_TIMEOUT_MS).toBe(20_000);
-    expect(worstCaseMs(STAGING_WORKERS)).toBe(390_000);
-    expect(worstCaseMs(STAGING_WORKERS.length)).toBe(390_000);
+    expect(worstCaseMs(STAGING_WORKERS)).toBe(300_000);
+    expect(worstCaseMs(STAGING_WORKERS.length)).toBe(300_000);
   });
 
   it("makes as many wrangler calls per try as the worst case counts", async () => {
@@ -486,11 +622,10 @@ wait
     expect(wranglerJson).toHaveBeenCalledTimes(WRANGLER_CALLS_PER_TRY);
   });
 
-  it("worstCaseMs grows with the Workers, the tries, the calls per try and the pauses", () => {
+  it("worstCaseMs grows with the Workers, the window and the calls of the last try", () => {
     const perWorker =
-      ATTEMPTS * WRANGLER_CALLS_PER_TRY * WRANGLER_TIMEOUT_MS +
-      (ATTEMPTS - 1) * PAUSE_MS;
-    expect(perWorker).toBe(130_000);
+      RETRY_WINDOW_MS + WRANGLER_CALLS_PER_TRY * WRANGLER_TIMEOUT_MS;
+    expect(perWorker).toBe(100_000);
     expect(worstCaseMs(5)).toBe(5 * perWorker);
     expect(worstCaseMs(0)).toBe(0);
   });

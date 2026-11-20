@@ -13,14 +13,25 @@ import { memberships, organizations } from "../src/schema/organization";
 import { tenantAuditEvents } from "../src/schema/tenant-audit";
 import { recordTenantAuditEvent } from "../src/tenant-audit";
 import {
+  TENANT_IDLE_IN_TRANSACTION_TIMEOUT_MS,
+  TENANT_LOCK_TIMEOUT_MS,
+  TENANT_STATEMENT_TIMEOUT_MS,
   TenantAuthorizationError,
   withAuthorizedTenantTransaction,
 } from "../src/tenant-transaction";
 import { assertAllowedGateUrl, disposableHostPattern } from "./gate-hosts";
 import { becomeGateRole } from "./gate-roles";
-import { temporaryRuntimeUrl } from "./sales-gate-support";
 import { dropRlsGateFixture, recreateRlsGateFixture } from "./rls-gate-fixture";
+import { temporaryRuntimeUrl } from "./sales-gate-support";
 import { deleteOrganizationsWithAudit } from "./teardown-support";
+import {
+  checkOtherRuntimeCannotEnter,
+  checkTenantEntryCatalog,
+  type EntryCall,
+  entryOutcome,
+  inRolledBackTransaction,
+  outcomeUnderMutant,
+} from "./tenant-entry-gate-checks";
 
 const gateDatabase =
   process.env.POLARIS_GATE_DATABASE ??
@@ -770,6 +781,258 @@ async function main() {
       "capability_denied"
     );
 
+    // ------------------------------------------- the entry in one statement (begin_tenant_request)
+    await checkTenantEntryCatalog(adminPool);
+    const ownCall = {
+      organization: initialA.organization.id,
+      roles: ["owner"],
+      user: userA,
+    };
+    await checkOtherRuntimeCannotEnter(adminPool, ownCall);
+    const directOutcomes = await inRolledBackTransaction(
+      runtimeClient,
+      async () => {
+        const outcomes: Record<string, string> = {};
+        const cases: [string, EntryCall][] = [
+          ["owner", ownCall],
+          ["empty roles", { ...ownCall, roles: [] }],
+          ["null roles", { ...ownCall, roles: null }],
+          ["null role in the list", { ...ownCall, roles: [null] }],
+          ["role without the capability", { ...ownCall, roles: ["manager"] }],
+          ["empty user", { ...ownCall, user: "" }],
+          ["null user", { ...ownCall, user: null }],
+          ["null organization", { ...ownCall, organization: null }],
+          [
+            "not a member, no role",
+            { ...ownCall, organization: initialB.organization.id, roles: [] },
+          ],
+        ];
+        for (const invalid of [null, 0, -1]) {
+          for (const [slot, setting] of [
+            "statement",
+            "lock",
+            "idle",
+          ].entries()) {
+            const timeouts: [number | null, number | null, number | null] = [
+              TENANT_STATEMENT_TIMEOUT_MS,
+              TENANT_LOCK_TIMEOUT_MS,
+              TENANT_IDLE_IN_TRANSACTION_TIMEOUT_MS,
+            ];
+            timeouts[slot] = invalid;
+            cases.push([
+              `${setting} timeout ${String(invalid)}`,
+              { ...ownCall, timeouts },
+            ]);
+          }
+        }
+        for (const [name, call] of cases) {
+          // biome-ignore lint/performance/noAwaitInLoops: one savepoint at a time on the one connection
+          outcomes[name] = await entryOutcome(runtimeClient, call);
+        }
+        return outcomes;
+      }
+    );
+    const invalidTimeout = "22023:invalid_tenant_timeout";
+    assert.deepEqual(directOutcomes, {
+      "empty roles": "42501:capability_denied",
+      "empty user": "42501:tenant_access_denied",
+      "not a member, no role": "42501:tenant_access_denied",
+      "null organization": "42501:tenant_access_denied",
+      "null role in the list": "42501:capability_denied",
+      "null roles": "42501:capability_denied",
+      "null user": "42501:tenant_access_denied",
+      owner: "ok:owner",
+      "role without the capability": "42501:capability_denied",
+      ...Object.fromEntries(
+        ["statement", "lock", "idle"].flatMap((setting) =>
+          ["null", "0", "-1"].map((invalid) => [
+            `${setting} timeout ${invalid}`,
+            invalidTimeout,
+          ])
+        )
+      ),
+    });
+
+    // a refusal aborts the transaction: nothing runs after it, and the organization context never stays
+    await runtimeClient.query("BEGIN");
+    try {
+      await expectSqlState(
+        runtimeClient.query(
+          "SELECT member_role FROM public.begin_tenant_request($1, $2, '{}'::text[], 30000, 20000, 60000)",
+          [userA, initialA.organization.id]
+        ),
+        "42501",
+        "the entry without roles"
+      );
+      await expectSqlState(
+        runtimeClient.query("SELECT 1"),
+        "25P02",
+        "a statement after a refused entry"
+      );
+    } finally {
+      await runtimeClient.query("ROLLBACK");
+    }
+
+    const sessionSettings = async () =>
+      (
+        await runtimeClient.query<Record<string, string | null>>(
+          `SELECT (SELECT setting FROM pg_settings WHERE name = 'statement_timeout') AS statement_timeout,
+                  (SELECT setting FROM pg_settings WHERE name = 'lock_timeout') AS lock_timeout,
+                  (SELECT setting FROM pg_settings WHERE name = 'idle_in_transaction_session_timeout') AS idle_timeout,
+                  NULLIF(current_setting('app.user_id', true), '') AS user_id,
+                  NULLIF(current_setting('app.organization_id', true), '') AS organization_id,
+                  current_setting('search_path') AS search_path`
+        )
+      ).rows[0];
+    const before = await sessionSettings();
+    assert.equal(before?.user_id, null);
+    assert.equal(before?.organization_id, null);
+    const inside = await withAuthorizedTenantTransaction(
+      runtimeDb,
+      {
+        authenticatedUserId: userA,
+        capability: "catalog:read",
+        requestedOrganizationId: initialA.organization.id,
+      },
+      () => sessionSettings()
+    );
+    assert.deepEqual(inside, {
+      idle_timeout: String(TENANT_IDLE_IN_TRANSACTION_TIMEOUT_MS),
+      lock_timeout: String(TENANT_LOCK_TIMEOUT_MS),
+      organization_id: initialA.organization.id,
+      // the pinned search_path of the function is given back on return; the work runs with the session's
+      search_path: before?.search_path,
+      statement_timeout: String(TENANT_STATEMENT_TIMEOUT_MS),
+      user_id: userA,
+    });
+    assert.deepEqual(await sessionSettings(), before);
+
+    await expectTenantAuthorizationError(
+      withAuthorizedTenantTransaction(
+        runtimeDb,
+        {
+          authenticatedUserId: userA,
+          capability: "__proto__",
+          requestedOrganizationId: initialB.organization.id,
+        },
+        async () => "must not execute"
+      ),
+      "tenant_access_denied"
+    );
+    await expectTenantAuthorizationError(
+      withAuthorizedTenantTransaction(
+        runtimeDb,
+        {
+          authenticatedUserId: userA,
+          capability: "catalog:read",
+          requestedOrganizationId: randomUUID(),
+        },
+        async () => "must not execute"
+      ),
+      "tenant_access_denied"
+    );
+
+    // a member removed after a call that passed: the next call is refused
+    const userRemoved = await createUser("PR22 tenant context removed");
+    const initialRemoved = await createInitialOrganization(
+      userRemoved,
+      "PR22 tenant context removed"
+    );
+    const removedCall = {
+      authenticatedUserId: userRemoved,
+      capability: "catalog:read",
+      requestedOrganizationId: initialRemoved.organization.id,
+    };
+    assert.equal(
+      await withAuthorizedTenantTransaction(runtimeDb, removedCall, () =>
+        Promise.resolve("entered")
+      ),
+      "entered"
+    );
+    await adminPool.query(
+      "DELETE FROM public.memberships WHERE organization_id = $1 AND user_id = $2",
+      [initialRemoved.organization.id, userRemoved]
+    );
+    await expectTenantAuthorizationError(
+      withAuthorizedTenantTransaction(
+        runtimeDb,
+        removedCall,
+        async () => "must not execute"
+      ),
+      "tenant_access_denied"
+    );
+
+    // a suspended organization: refused, and the capability is still checked before the status of the organization
+    const userSuspended = await createUser("PR22 tenant context suspended");
+    const initialSuspended = await createInitialOrganization(
+      userSuspended,
+      "PR22 tenant context suspended"
+    );
+    await adminPool.query(
+      "UPDATE public.organizations SET status = 'suspended' WHERE id = $1",
+      [initialSuspended.organization.id]
+    );
+    for (const [capability, code] of [
+      ["catalog:read", "tenant_access_denied"],
+      ["__proto__", "capability_denied"],
+    ] as const) {
+      // biome-ignore lint/performance/noAwaitInLoops: one transaction at a time on the one connection
+      await expectTenantAuthorizationError(
+        withAuthorizedTenantTransaction(
+          runtimeDb,
+          {
+            authenticatedUserId: userSuspended,
+            capability,
+            requestedOrganizationId: initialSuspended.organization.id,
+          },
+          async () => "must not execute"
+        ),
+        code
+      );
+    }
+
+    // each probe tells the real body from one without its check (the definition replaced and rolled back)
+    const mutants: [string, string, EntryCall, string, string][] = [
+      [
+        "IF v_status IS DISTINCT FROM 'active' THEN",
+        "IF FALSE THEN",
+        { ...ownCall, organization: initialB.organization.id },
+        "42501:tenant_access_denied",
+        // without C1 the hidden membership of the other organization reads as no role
+        "42501:capability_denied",
+      ],
+      [
+        "IF (v_role = ANY (p_roles)) IS NOT TRUE THEN",
+        "IF FALSE THEN",
+        { ...ownCall, roles: [] },
+        "42501:capability_denied",
+        "ok:owner",
+      ],
+      [
+        "IF NOT EXISTS (",
+        "IF FALSE AND NOT EXISTS (",
+        {
+          organization: initialSuspended.organization.id,
+          roles: ["owner"],
+          user: userSuspended,
+        },
+        "42501:tenant_access_denied",
+        "ok:owner",
+      ],
+    ];
+    for (const [fragment, replacement, call, real, mutated] of mutants) {
+      // biome-ignore lint/performance/noAwaitInLoops: one replaced definition at a time
+      const realOutcome = await inRolledBackTransaction(runtimeClient, () =>
+        entryOutcome(runtimeClient, call)
+      );
+      assert.equal(realOutcome, real, fragment);
+      assert.equal(
+        await outcomeUnderMutant(adminPool, fragment, replacement, call),
+        mutated,
+        `without ${fragment} the probe answers what that check stopped`
+      );
+    }
+
     const crossTenantToken = `pr22-${randomUUID()}`;
     fixtureOperationTokens.push(crossTenantToken);
     await expectSqlState(
@@ -1034,6 +1297,15 @@ async function main() {
           rollbackWithMutation: "passed",
           runtimeSelect: "denied",
           unsafeEntityId: "denied",
+        },
+        tenantEntry: {
+          catalog: "invoker_pinned_runtime_only",
+          directRefusals: "passed",
+          mutantsCaught: mutants.length,
+          refusalAbortsTransaction: "passed",
+          removedMember: "denied",
+          settingsLocalToTransaction: "passed",
+          suspendedOrganization: "denied_after_capability",
         },
         transactionRollback: "passed",
         updateAndDeleteGrants: "denied",

@@ -7,8 +7,7 @@ import {
 } from "../dashboard/result-period";
 import {
   type ComparisonDays,
-  useComparisonDays,
-  useComparisonSales,
+  useComparisonReads,
   usePeriodSummary,
 } from "../dashboard/use-period-summary";
 import { calendarDayInTimezone } from "../lib/dates";
@@ -76,8 +75,11 @@ export function useHomePeriod({
     ? resultChipPeriod(answeredSummary, shownToday)
     : null;
   const compared = answered ? comparisonPeriod(period, shownToday) : null;
-  const comparison = useComparisonDays(organizationId, comparedResult);
-  const salesComparison = useComparisonSales(organizationId, compared);
+  const { comparison, salesComparison } = useComparisonReads(
+    organizationId,
+    compared,
+    comparedResult
+  );
   const shown = state.summary?.period ?? period;
   const onScreenComparison = onScreen(comparison, shown, shownToday);
   const onScreenSales = onScreen(salesComparison, shown, shownToday);

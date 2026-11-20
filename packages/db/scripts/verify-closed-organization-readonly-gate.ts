@@ -566,6 +566,16 @@ async function run() {
         error.code === "tenant_access_denied",
       "someone who is not a member learns nothing"
     );
+    await assert.rejects(
+      () =>
+        withTenantAs(runtimeDb, asOwnerOf(orgA), "__proto__", () =>
+          Promise.resolve(1)
+        ),
+      (error: unknown) =>
+        error instanceof TenantAuthorizationError &&
+        error.code === "capability_denied",
+      "the capability is checked before the status of the organization, as before the entry in one statement"
+    );
     const orgSuspended = await fixture("suspended");
     await owner.pool.query(
       "UPDATE public.organizations SET status = 'suspended' WHERE id = $1",
@@ -582,7 +592,7 @@ async function run() {
       "a suspension is not a closure"
     );
     tests.push(
-      `every one of the ${CAPABILITIES.length} capabilities of the map is refused to the owner of a closed organization with organization_closed (none runs); someone who is not a member, and the owner of a suspended organization, still get tenant_access_denied`
+      `every one of the ${CAPABILITIES.length} capabilities of the map is refused to the owner of a closed organization with organization_closed (none runs); someone who is not a member, and the owner of a suspended organization, still get tenant_access_denied, and a capability outside the map is capability_denied before the closure is told`
     );
 
     // ------------------------------------------------- 4. asking for a copy
