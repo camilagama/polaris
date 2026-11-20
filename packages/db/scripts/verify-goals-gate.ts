@@ -148,6 +148,7 @@ async function run() {
           capability: "goal:manage",
           isolationLevel: "repeatable read",
           requestedOrganizationId: tenant.organizationId,
+          requireLegalAcceptance: false,
         },
         async (tx, identity) =>
           (await evaluateActiveGoals(tx, identity)).progress

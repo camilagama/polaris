@@ -166,6 +166,7 @@ async function measureStore(
         capability,
         isolationLevel: "repeatable read",
         requestedOrganizationId: fixture.organizationId,
+        requireLegalAcceptance: false,
       },
       operation
     );

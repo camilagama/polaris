@@ -200,6 +200,7 @@ async function run() {
           {
             authenticatedUserId: tenant.userId,
             capability,
+            requireLegalAcceptance: false,
             ...(isolationLevel ? { isolationLevel } : {}),
             requestedOrganizationId: tenant.organizationId,
           },

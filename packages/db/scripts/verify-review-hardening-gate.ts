@@ -200,6 +200,7 @@ async function run() {
         capability: "sale:read",
         isolationLevel: "repeatable read",
         requestedOrganizationId: tenantA.organizationId,
+        requireLegalAcceptance: false,
       },
       async (transaction) => {
         const { rows } = await transaction.execute<{

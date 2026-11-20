@@ -1,7 +1,11 @@
 import { createORPCClient } from "@orpc/client";
 import { RPCLink } from "@orpc/client/fetch";
 import { buildOfflineLeaseClaims } from "@polaris/domain/offline/offline-lease";
-import { LEGAL_DOCUMENTS } from "@polaris/domain/legal/legal-documents";
+import { LegalAcceptancePendingError } from "@polaris/db/tenant-transaction";
+import {
+  LEGAL_DOCUMENTS,
+  pendingLegalDocuments,
+} from "@polaris/domain/legal/legal-documents";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { signOfflineLease } from "../../lib/offline-lease-token";
 import { createServerApp } from "../app";
@@ -74,6 +78,8 @@ const uuid = (n: number) =>
 function setup(
   options: {
     accepted?: Accepted;
+    /** A failure of the check at the entry of the tenant transaction (the database, a missing grant). */
+    entryFailure?: Error;
     readAccepted?: typeof readAcceptedLegalVersions;
     workerBindings?: WorkerBindings;
   } = {}
@@ -90,13 +96,24 @@ function setup(
       return Promise.resolve("recorded" as const);
     }
   );
+  // the entry of the transaction as the database does it (begin_tenant_request): when asked, the acceptance first,
+  // from the same record the gate reads, before any work
   const tenantTransaction = vi.fn(
-    (
+    async (
       _database: unknown,
-      input: { capability: string },
+      input: { capability: string; requireLegalAcceptance: boolean },
       operation: (transaction: unknown, identity: unknown) => Promise<unknown>
-    ) =>
-      operation(
+    ) => {
+      if (input.requireLegalAcceptance) {
+        if (options.entryFailure) {
+          throw options.entryFailure;
+        }
+        const pending = pendingLegalDocuments(accepted);
+        if (pending.length > 0) {
+          throw new LegalAcceptancePendingError(pending);
+        }
+      }
+      return await operation(
         {},
         {
           capability: input.capability,
@@ -104,7 +121,8 @@ function setup(
           role: "owner",
           userId,
         }
-      )
+      );
+    }
   );
   const dependencies = {
     createAuth: (() => ({
@@ -286,11 +304,13 @@ describe("the legal acceptance control through the router", () => {
         pending: pendingBoth,
         reason: "legal_acceptance_required",
       });
-      expect(t.readAccepted).toHaveBeenCalledWith(
-        expect.objectContaining({ query: expect.any(Function) }),
-        userId
+      // checked at the entry of the tenant transaction, not read again at the gate
+      expect(t.readAccepted).not.toHaveBeenCalled();
+      expect(t.tenantTransaction).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ requireLegalAcceptance: true }),
+        expect.any(Function)
       );
-      expect(t.tenantTransaction).not.toHaveBeenCalled();
       expect(t.listSales).not.toHaveBeenCalled();
     });
 
@@ -304,7 +324,6 @@ describe("the legal acceptance control through the router", () => {
         pending: pendingBoth,
         reason: "legal_acceptance_required",
       });
-      expect(t.tenantTransaction).not.toHaveBeenCalled();
       expect(t.runSyncCommand).not.toHaveBeenCalled();
     });
 
@@ -469,17 +488,31 @@ describe("the legal acceptance control through the router", () => {
       });
     });
 
-    it("fails closed when the acceptance cannot be read: SERVICE_UNAVAILABLE, nothing runs", async () => {
+    it("fails closed when the gate cannot read the acceptance: SERVICE_UNAVAILABLE, nothing runs", async () => {
       const t = setup({
         readAccepted: () => Promise.reject(new Error("db down")),
+      });
+
+      const error = await failureOf(t.client.device.check({ deviceId }));
+
+      expect(error.code).toBe("SERVICE_UNAVAILABLE");
+      expect(error.data?.reason).toBeUndefined();
+      expect(JSON.stringify(error)).not.toContain("db down");
+      expect(t.touchDevice).not.toHaveBeenCalled();
+    });
+
+    it("fails closed when the entry cannot check it: the 503 of an unexpected fault, never a refusal of the session, nothing runs", async () => {
+      const t = setup({
+        entryFailure: new Error(
+          "permission denied for function legal_acceptance_pending"
+        ),
       });
 
       const error = await failureOf(t.client.sale.list({ organizationId }));
 
       expect(error.code).toBe("SERVICE_UNAVAILABLE");
-      expect(error.data?.reason).toBeUndefined();
-      expect(JSON.stringify(error)).not.toContain("db down");
-      expect(t.tenantTransaction).not.toHaveBeenCalled();
+      expect(error.data?.reason).toBe("server_busy");
+      expect(JSON.stringify(error)).not.toContain("permission denied");
       expect(t.listSales).not.toHaveBeenCalled();
     });
   });

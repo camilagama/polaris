@@ -184,6 +184,31 @@ async function run() {
     tests.push(
       `all ${definers.rows[0]?.count} SECURITY DEFINER functions fix a search_path that ends in pg_temp and none is executable by PUBLIC; none of the ${runtimeRoles.rows[0]?.count} runtime roles has TEMPORARY on the database or CREATE on schema public`
     );
+    // the one DEFINER the tenant runtime calls inside its entry (begin_tenant_request): among those checked above, and
+    // with exactly its owner, its pinned path and the tenant runtime as the only executor
+    const pendingHelper = await client.query<{
+      config: string[] | null;
+      executors: string[];
+      owner: string;
+    }>(
+      `SELECT p.proconfig AS config, p.proowner::regrole::text AS owner,
+              ARRAY(
+                SELECT a.grantee::regrole::text FROM aclexplode(p.proacl) AS a
+                 WHERE a.privilege_type = 'EXECUTE' AND a.grantee <> p.proowner ORDER BY 1
+              ) AS executors
+         FROM pg_proc p
+        WHERE p.oid = 'public.legal_acceptance_pending(text, integer, integer)'::regprocedure AND p.prosecdef`
+    );
+    assert.deepEqual(pendingHelper.rows, [
+      {
+        config: ["search_path=pg_catalog, pg_temp"],
+        executors: ["polaris_pr11_runtime"],
+        owner: "polaris_legal_acceptance_owner",
+      },
+    ]);
+    tests.push(
+      "legal_acceptance_pending, the DEFINER the tenant entry calls, is one of them: owned by polaris_legal_acceptance_owner, search_path = pg_catalog, pg_temp, EXECUTE for polaris_pr11_runtime only"
+    );
 
     // the gate can fail: a definer function with no search_path and the default ACL
     await client.query(
