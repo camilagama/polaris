@@ -12,7 +12,9 @@ import { unknownDaysFit, unknownDaysText } from "./home-kpis";
  * app no longer has.
  */
 const E2E_SOURCE = readFileSync(
-  fileURLToPath(new URL("../../e2e/dashboard/reflow-320.e2e.ts", import.meta.url)),
+  fileURLToPath(
+    new URL("../../e2e/dashboard/reflow-320.e2e.ts", import.meta.url)
+  ),
   "utf8"
 );
 
