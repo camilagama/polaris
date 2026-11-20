@@ -1,6 +1,6 @@
 name: CI
 
-run-name: ${{ github.event_name == 'workflow_dispatch' && format('{0} PR #{1} {2}', inputs.full && 'CI completo' || 'CI', inputs.pr || '?', github.sha) || github.event.pull_request.title || github.event.head_commit.message || 'CI' }}
+run-name: "${{ github.event_name == 'workflow_dispatch' && format('{0} PR #{1} {2}', inputs.full && 'CI completo' || 'CI', inputs.pr || '?', github.sha) || github.event.pull_request.title || github.event.head_commit.message || 'CI' }}"
 
 on:
   pull_request:
