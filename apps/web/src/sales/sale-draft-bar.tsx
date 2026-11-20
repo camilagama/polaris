@@ -29,8 +29,9 @@ interface SaleDraftBarProps {
 
 /**
  * "Venda em andamento" and "Limpar venda" under the title, and the notice of the cart that came back. The two live
- * regions are always in the tree (empty, out of the flow: no gap row) and their text is put in after the mount, so a
- * reader announces a cart that came back with the screen.
+ * regions are always in the tree (empty, out of the flow: no gap row). The new-day sentence and the "Venda em
+ * andamento" status are put in after the mount, so a reader announces them as a change; the notice is an alert and is
+ * announced on its own.
  */
 export function SaleDraftBar({
   canClear,
@@ -67,7 +68,7 @@ export function SaleDraftBar({
             </AlertDescription>
           </Alert>
         ) : null}
-        {newDayNotice ? (
+        {mounted && newDayNotice ? (
           <p className="m-0 text-muted-foreground text-support">
             {newDayNotice}
           </p>
