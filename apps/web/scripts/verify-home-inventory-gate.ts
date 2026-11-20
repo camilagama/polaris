@@ -39,8 +39,9 @@ import {
  *      (AC-3: otherwise the derivation would be a lie, and the cut goes back to its designer);
  *   2. the derived values equal the filtered reads in a full catalog, an empty one and one that has only variants
  *      with no stock beside an archived one with stock;
- *   3. mutants of the derivation (`>= 0`, archived ones counted, a cost of zero taken for no cost, the first active
- *      product in the place of the first) give another answer in these catalogs: the catalog tells them apart.
+ *   3. wrong derivations (`>= 0`, archived ones counted, a cost of zero taken for no cost, the first active product in
+ *      the place of the first) give another answer in these catalogs: the catalog tells them apart. What fails when
+ *      `home-inventory.ts` itself is wrong are the equalities of 2.
  */
 const expectedDatabase =
   process.env.POLARIS_GATE_DATABASE ??
@@ -357,7 +358,7 @@ async function run() {
 
       assert.equal(notes, 5, "every check of the gate ran");
       console.log(
-        `gate-note: ${notes} cases passed (the variant with no balance row reads quantity 0 and no cost; the derivation equals the four filtered reads in a full, an empty and a stockless catalog; ${mutants.length} mutants told apart)`
+        `gate-note: ${notes} cases passed (the variant with no balance row reads quantity 0 and no cost; the derivation equals the four filtered reads in a full, an empty and a stockless catalog; the seeded catalog tells ${mutants.length} wrong derivations apart)`
       );
       console.log(
         JSON.stringify(

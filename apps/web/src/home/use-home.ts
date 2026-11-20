@@ -59,7 +59,8 @@ import { todaysRhythmCopy, writeRhythmCopy } from "./rhythm-copy";
 /**
  * The reads of the Início: A and B (the figures), G (the goals) and the wide list of the stock (up to 100 variants,
  * which gives S, no stock, C, no cost, and the checklist's P and E when it is the whole catalog) in parallel; V (the
- * checklist's sale) and, past 100 variants, the filtered reads of S, C, P and E only when A asks for them. Each block has its own state, so
+ * checklist's sale) once A counted no sale and, past 100 variants, the filtered reads of P and E after it, and of S and
+ * C after the wide list (C only when A asks for it). Each block has its own state, so
  * one that fails never takes the others with it (§ 5.2), and "Nova venda" depends on none of them.
  *
  * They are read again when the tab comes back (at most once every 5 min), when the page comes back from the browser's
@@ -334,7 +335,7 @@ type WideCatalog = readonly WideEntry[] | null;
 /**
  * The one list that serves the checklist and the stock lines: every variant, up to 100 (§ 2.4). Null, with no read at
  * all, once this tab found the catalog past 100 variants; null too when this list has a next page, which the tab then
- * remembers (the guard of the copies: nothing while the session ends).
+ * remembers, unless the session is ending.
  */
 async function readWideCatalog(
   organizationId: string,
@@ -352,7 +353,8 @@ async function readWideCatalog(
     { isCurrent }
   );
   const whole = wholeCatalog(list);
-  if (whole === null && !(isSessionOver() || isSigningOut())) {
+  // a hint written after the session ended or the screen left would outlive what clears it
+  if (whole === null && isCurrent() && !(isSessionOver() || isSigningOut())) {
     rememberLargeCatalog(organizationId);
   }
   return whole;
