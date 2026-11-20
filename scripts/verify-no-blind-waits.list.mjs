@@ -12,6 +12,9 @@ const ONE_TURN_AFTER_THE_CLICK =
 const ABSENCE_IS_THE_TEST =
   "o tempo é o comportamento testado: a espera prova a ausência (nada se repete sozinho, nada muda antes do prazo); um sinal positivo não provaria isso";
 
+const SIMULATED_LATENCY =
+  "a espera é a latência de uma resposta simulada dentro de page.route: o tempo é o que o servidor falso leva para responder";
+
 export const BLIND_WAITS_LIST = {
   "apps/web/e2e-pwa/lazy-retry.e2e.ts": { count: 2, reason: BEFORE_THE_RULE },
   "apps/web/e2e-pwa/motion-level.e2e.ts": { count: 3, reason: BEFORE_THE_RULE },
@@ -84,6 +87,5 @@ export const BLIND_WAITS_LIST = {
     count: 2,
     reason: BEFORE_THE_RULE,
   },
-  "apps/web/e2e/password-screens.e2e.ts": { count: 1, reason: BEFORE_THE_RULE },
-  "apps/web/e2e/sign-in.e2e.ts": { count: 4, reason: BEFORE_THE_RULE },
+  "apps/web/e2e/sign-in.e2e.ts": { count: 1, reason: SIMULATED_LATENCY },
 };

@@ -2,6 +2,7 @@
 import { readFileSync } from "node:fs";
 import type { Page, Request, Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
+import { runClockFor } from "./run-clock-for";
 import { OFFLINE_POC_ORIGIN } from "./run-settings";
 import { onPhone } from "./settings-nav";
 import { WORKER_MARK } from "./worker-mark";
@@ -1265,6 +1266,7 @@ test.describe("trocar senha dentro do app (AC-57, V8)", () => {
   test("pausa por tentativas: diz o que fazer nesta tela, não na da entrada (P3)", async ({
     page,
   }) => {
+    await page.clock.install();
     const server = newServer({
       answers: {
         "/api/auth/change-password": {
@@ -1299,7 +1301,7 @@ test.describe("trocar senha dentro do app (AC-57, V8)", () => {
     const sent = callsTo(server, "/api/auth/change-password").length;
     await newPasswordField(page).press("Enter");
     // a request would leave a moment after the press: wait for it, so the proof does not pass by being early
-    await page.waitForTimeout(500);
+    await runClockFor(page, 500);
     await expect(change).toHaveText("Trocar senha");
     expect(callsTo(server, "/api/auth/change-password")).toHaveLength(sent);
     await expectNoTechnicalText(page);
