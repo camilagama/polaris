@@ -677,59 +677,98 @@ describe("SERIAL_GATES against the gates' code", () => {
   });
 });
 
-// `CREATE ROLE` and the name it creates: a bare or quoted identifier, or an interpolation whose first variable is the name
-const CREATE_ROLE =
-  /CREATE\s+ROLE\s+(?:IF\s+NOT\s+EXISTS\s+)?"?(?:\$\{\s*([A-Za-z_]\w*)[^}]*\}|([A-Za-z_]\w*))/gi;
-const GENERATED_NAME = /randomUUID|randomBytes/;
+// Any statement that creates a role, and the name right after it: a bare or quoted identifier, made of literal text and
+// `${…}` interpolations. A name that is not there (`%I`, a concatenation) cannot be read, and is reported as such.
+const ROLE_CREATION = /CREATE\s+(?:ROLE|USER|GROUP)\b/gi;
+const ROLE_NAME = /^\s+(?:IF\s+NOT\s+EXISTS\s+)?"?((?:\$\{[^}]*\}|[\w$])+)/i;
+const GENERATOR_CALL = /\b(?:randomUUID|randomBytes)\s*\(/;
+const INTERPOLATION = /\$\{([^}]*)\}/g;
+const IDENTIFIER = /[A-Za-z_]\w*/g;
 
-function assignmentsTo(variable: string, code: string): string[] {
+interface Assignment {
+  index: number;
+  value: string;
+}
+
+// The assignments to `variable` before `at` that are still in scope there: none of the text between them and `at` closes
+// the block they are in, so a same-named variable of another function is not read.
+function visibleAssignments(
+  variable: string,
+  code: string,
+  at: number
+): Assignment[] {
   const pattern = new RegExp(
     String.raw`(?:\b(?:const|let|var)\s+)?(?<![.\w])${variable}\b(?:\s*:[^=;]+)?\s*=(?![=>])\s*([^;]*);`,
     "g"
   );
-  return [...code.matchAll(pattern)].map(([, value]) => value as string);
+  return [...code.matchAll(pattern)]
+    .filter((match) => {
+      let depth = 0;
+      for (const char of code.slice(match.index + match[0].length, at)) {
+        if (char === "{") {
+          depth += 1;
+        } else if (char === "}") {
+          depth -= 1;
+        }
+        if (depth < 0) {
+          return false;
+        }
+      }
+      return match.index < at;
+    })
+    .map((match) => ({ index: match.index, value: match[1] as string }));
 }
 
-const INTERPOLATED = /\$\{\s*([A-Za-z_]\w*)/g;
-
-// a value is drawn when it calls a generator, or interpolates a variable of the same file that was drawn
-function isDrawn(value: string, code: string, seen: Set<string>): boolean {
-  if (GENERATED_NAME.test(value)) {
+// A value is drawn when it calls a generator, or interpolates a variable whose every visible assignment is drawn.
+function isDrawn(
+  value: string,
+  code: string,
+  at: number,
+  seen: ReadonlySet<string>
+): boolean {
+  if (GENERATOR_CALL.test(value)) {
     return true;
   }
-  return [...value.matchAll(INTERPOLATED)].some(([, variable]) => {
-    if (seen.has(variable as string)) {
+  const names = [...value.matchAll(INTERPOLATION)].flatMap(
+    ([, expression]) => (expression ?? "").match(IDENTIFIER) ?? []
+  );
+  return names.some((name) => {
+    const key = `${name}@${at}`;
+    if (seen.has(key)) {
       return false;
     }
-    seen.add(variable as string);
-    const values = assignmentsTo(variable as string, code);
+    const assignments = visibleAssignments(name, code, at);
     return (
-      values.length > 0 && values.every((each) => isDrawn(each, code, seen))
+      assignments.length > 0 &&
+      assignments.every((assignment) =>
+        isDrawn(
+          assignment.value,
+          code,
+          assignment.index,
+          new Set(seen).add(key)
+        )
+      )
     );
   });
 }
 
 /**
- * The roles a source creates under a name that two gates running at the same time would share: a literal name, or a
- * variable that is not assigned, directly or through variables of the same file, from `randomUUID` or `randomBytes` (a
- * parameter or an import is not followed, so it is reported too).
+ * The roles a source creates under a name that two gates running at the same time would share: a literal name, a name
+ * that cannot be read, or one that is not drawn, directly or through variables in scope in the same file, by `randomUUID`
+ * or `randomBytes` (a parameter or an import is not followed, so it is reported too).
  */
 function fixedRoleNames(source: string): string[] {
   const code = withoutComments(source);
   const fixed: string[] = [];
-  for (const [, variable, literal] of code.matchAll(CREATE_ROLE)) {
-    if (literal !== undefined) {
-      fixed.push(literal);
-      continue;
-    }
-    const values = assignmentsTo(variable as string, code);
-    if (
-      values.length === 0 ||
-      !values.every((value) =>
-        isDrawn(value, code, new Set([variable as string]))
-      )
-    ) {
-      fixed.push(`variable ${variable}`);
+  for (const creation of code.matchAll(ROLE_CREATION)) {
+    const end = creation.index + creation[0].length;
+    const name = ROLE_NAME.exec(code.slice(end))?.[1];
+    if (name === undefined) {
+      fixed.push("name not readable");
+    } else if (!name.includes("${")) {
+      fixed.push(name);
+    } else if (!isDrawn(name, code, end, new Set())) {
+      fixed.push(`name ${name}`);
     }
   }
   return fixed;
@@ -758,38 +797,87 @@ describe("CREATE ROLE with a fixed name outside SERIAL_GATES", () => {
     expect(
       fixedRoleNames('query(`create role IF NOT EXISTS "gate_y" NOLOGIN`)')
     ).toEqual(["gate_y"]);
+    expect(fixedRoleNames("CREATE\n  ROLE\n  gate_multiline")).toEqual([
+      "gate_multiline",
+    ]);
+    expect(fixedRoleNames("CREATE USER gate_user LOGIN")).toEqual([
+      "gate_user",
+    ]);
+    expect(fixedRoleNames("CREATE GROUP gate_group")).toEqual(["gate_group"]);
+  });
+
+  it("finds a name that is a variable not drawn, or not readable", () => {
+    const fixed = (...code: string[]) => fixedRoleNames(planted(...code));
+    expect(
+      fixed('const role = "gate_z";', 'await q(`CREATE ROLE "@{role}" LOGIN`);')
+    ).toEqual([planted("name @{role}")]);
+    expect(
+      fixed(
+        "let login: string | undefined;",
+        "login = `gate_@{randomUUID()}`;",
+        "login = `fixed`;",
+        "await q(`CREATE ROLE @{login}`);"
+      )
+    ).toEqual([planted("name @{login}")]);
+    expect(
+      fixed("async function f(name) { await q(`CREATE ROLE @{name}`); }")
+    ).toEqual([planted("name @{name}")]);
+    expect(
+      fixed(
+        'const suffix = "fixed";',
+        "const role = `gate_@{suffix}`;",
+        "await q(`CREATE ROLE @{role}`);"
+      )
+    ).toEqual([planted("name @{role}")]);
+    expect(
+      fixed(
+        "const quoted = (name: string) => name;",
+        'const prefix = "gate";',
+        "await q(`CREATE ROLE @{quoted(prefix)}`);"
+      )
+    ).toEqual([planted("name @{quoted(prefix)}")]);
+    expect(fixed("await q(`CREATE ROLE gate_@{prefix}`);")).toEqual([
+      planted("name gate_@{prefix}"),
+    ]);
+    expect(
+      fixed(
+        "DO $$ BEGIN EXECUTE format('CREATE ROLE %I', 'gate_fixed'); END $$"
+      )
+    ).toEqual(["name not readable"]);
+    expect(fixed("await q('CREATE ROLE ' + name);")).toEqual([
+      "name not readable",
+    ]);
+    expect(fixed('await q("CREATE ROLE " + name);')).toEqual([
+      "name not readable",
+    ]);
+  });
+
+  it("reads a variable only where it is in scope", () => {
     expect(
       fixedRoleNames(
         planted(
-          'const role = "gate_z";',
-          'await q(`CREATE ROLE "@{role}" LOGIN`);'
+          "async function drawn() {",
+          "  const role = `gate_@{randomUUID()}`;",
+          "  await q(`CREATE ROLE @{role}`);",
+          "}",
+          "async function given(role: string) {",
+          "  await q(`CREATE ROLE @{role}`);",
+          "}"
         )
       )
-    ).toEqual(["variable role"]);
+    ).toEqual([planted("name @{role}")]);
     expect(
       fixedRoleNames(
         planted(
-          "let login: string | undefined;",
-          "login = `gate_@{randomUUID()}`;",
-          "login = `fixed`;",
-          "await q(`CREATE ROLE @{login}`);"
+          "async function f() {",
+          "  const role = `gate_@{randomUUID()}`;",
+          "  if (ready) {",
+          "    await q(`CREATE ROLE @{role}`);",
+          "  }",
+          "}"
         )
       )
-    ).toEqual(["variable login"]);
-    expect(
-      fixedRoleNames(
-        planted("async function f(name) { await q(`CREATE ROLE @{name}`); }")
-      )
-    ).toEqual(["variable name"]);
-    expect(
-      fixedRoleNames(
-        planted(
-          'const suffix = "fixed";',
-          "const role = `gate_@{suffix}`;",
-          "await q(`CREATE ROLE @{role}`);"
-        )
-      )
-    ).toEqual(["variable role"]);
+    ).toEqual([]);
   });
 
   it("accepts a name drawn from randomUUID or randomBytes, directly or through a variable, and ignores comments", () => {
@@ -816,6 +904,24 @@ describe("CREATE ROLE with a fixed name outside SERIAL_GATES", () => {
         planted(
           "const login = `gate_@{randomBytes(6).toString()}`;",
           "await q(`CREATE ROLE @{login}`);"
+        )
+      )
+    ).toEqual([]);
+    expect(
+      fixedRoleNames(
+        planted(
+          'const suffix = randomUUID().replaceAll("-", "");',
+          "let login: string | undefined;",
+          "login = `a_@{suffix}`;",
+          "login = `b_@{suffix}`;",
+          "await q(`CREATE ROLE @{login}`);"
+        )
+      )
+    ).toEqual([]);
+    expect(
+      fixedRoleNames(
+        planted(
+          'await q(`CREATE ROLE "gate_@{randomUUID().replaceAll("-", "")}" LOGIN`);'
         )
       )
     ).toEqual([]);

@@ -938,7 +938,8 @@ const ROLE_CATALOGS_VACUUM = "VACUUM pg_authid, pg_auth_members";
 /**
  * The parallel phase creates and drops many temporary roles, and the dead rows it leaves in the catalogs of roles slow
  * down the gates that read them afterwards (`definer-hardening`). Vacuuming them needs more than the owner has, so it
- * goes through the superuser URL; without it the step is skipped with a warning and the gates run as before.
+ * goes through the superuser URL. It only speeds the gates up: without the URL, or if the VACUUM fails, a warning is
+ * printed and the gates run as before.
  */
 async function vacuumRoleCatalogs(input: {
   branch: string;
@@ -951,19 +952,25 @@ async function vacuumRoleCatalogs(input: {
     );
     return;
   }
-  const { admin } = await connectToGateTarget({
-    branch: input.branch,
-    database: input.database,
-    url: input.superuserUrl,
-  });
   try {
-    const started = Date.now();
-    await admin.query(ROLE_CATALOGS_VACUUM);
-    console.log(
-      `--- ${ROLE_CATALOGS_VACUUM} in ${((Date.now() - started) / 1000).toFixed(1)}s`
+    const { admin } = await connectToGateTarget({
+      branch: input.branch,
+      database: input.database,
+      url: input.superuserUrl,
+    });
+    try {
+      const started = Date.now();
+      await admin.query(ROLE_CATALOGS_VACUUM);
+      console.log(
+        `--- ${ROLE_CATALOGS_VACUUM} in ${((Date.now() - started) / 1000).toFixed(1)}s`
+      );
+    } finally {
+      await admin.end();
+    }
+  } catch (error) {
+    console.warn(
+      `--- ${ROLE_CATALOGS_VACUUM} failed, the gates go on: ${redact(String(error))}`
     );
-  } finally {
-    await admin.end();
   }
 }
 
