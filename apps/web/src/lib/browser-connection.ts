@@ -1,5 +1,6 @@
 import { useEffect, useRef, useSyncExternalStore } from "react";
 import { type Connection, createConnection, timerSchedule } from "./connection";
+import { createSessionLookup } from "./session-lookup";
 
 /**
  * The one connection state of this tab (emenda do ADR 0043): the RPC client classifies every response
@@ -59,6 +60,15 @@ function createBrowserConnection(): Connection {
 }
 
 export const browserConnection = createBrowserConnection();
+
+/**
+ * The one session lookup of this tab, over the classified `fetch` of the connection: the shell, the runtime and the
+ * Assinatura share its 10 s of memory instead of each asking the server.
+ */
+export const browserSessionLookup = createSessionLookup({
+  fetch: browserConnection.fetch,
+  now: () => Date.now(),
+});
 
 export { lockInBrowser, markInBrowser };
 

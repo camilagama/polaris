@@ -14,8 +14,9 @@ export interface ExpenseRulesState {
  * Every recurring rule of the organization, paused ones included. Reading the
  * rules makes the server generate the occurrences that fell due, so the
  * "next occurrence" of each rule is always current. `enabled` false reads
- * nothing (the state stays "loading"): the Recorrentes part asks for the rules
- * only once it has been in front.
+ * nothing (the state starts "loading"): the Recorrentes part asks for the rules
+ * only once it has been in front. Turning it off drops the read in flight, so
+ * its answer never arrives to end the loading: the cleanup ends it.
  */
 export function useExpenseRules(organizationId: string, enabled: boolean) {
   const [state, setState] = useState<ExpenseRulesState>({
@@ -59,6 +60,9 @@ export function useExpenseRules(organizationId: string, enabled: boolean) {
     reload();
     return () => {
       sequence.current += 1;
+      setState((current) =>
+        current.isLoading ? { ...current, isLoading: false } : current
+      );
     };
   }, [enabled, reload]);
 
