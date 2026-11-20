@@ -1,4 +1,4 @@
-import type { Page, Request, Response } from "@playwright/test";
+import type { Page, Request } from "@playwright/test";
 
 /**
  * Runs the page clock and then sends one call of its own: it reaches the route after any resend the run let go,
@@ -11,40 +11,31 @@ export async function runClockFor(
   milliseconds: number,
   sentinel = "/rpc/settle"
 ) {
-  const isSentinel = (request: Request) =>
-    new URL(request.url()).pathname === sentinel;
-  const responses: Response[] = [];
-  let failures = 0;
-  const onResponse = (response: Response) => {
-    if (isSentinel(response.request())) {
-      responses.push(response);
+  await page.clock.runFor(milliseconds);
+  const sent: Request[] = [];
+  const onRequest = (request: Request) => {
+    if (new URL(request.url()).pathname === sentinel) {
+      sent.push(request);
     }
   };
-  const onFailed = (request: Request) => {
-    if (isSentinel(request)) {
-      failures += 1;
-    }
-  };
-  page.on("response", onResponse);
-  page.on("requestfailed", onFailed);
+  page.on("request", onRequest);
   try {
-    await page.clock.runFor(milliseconds);
     await page.evaluate((path) => fetch(path).catch(() => undefined), sentinel);
   } finally {
-    page.off("response", onResponse);
-    page.off("requestfailed", onFailed);
+    page.off("request", onRequest);
   }
-  const addresses = await Promise.all(
-    responses.map((response) => response.serverAddr())
-  );
-  if (failures + responses.length === 0) {
+  if (sent.length === 0) {
     throw new Error(
       `runClockFor: the sentinel ${sentinel} never went out through the page, so nothing ordered the count after the run.`
     );
   }
-  if (addresses.some((address) => address !== null)) {
-    throw new Error(
-      `runClockFor: the sentinel ${sentinel} reached the server, not a route of the test. Serve it with page.route and answer it, or pass the path of a route the test already serves.`
-    );
+  for (const request of sent) {
+    // biome-ignore lint/performance/noAwaitInLoops: one request in practice, and each answer is read in turn
+    const response = await request.response();
+    if (response && (await response.serverAddr()) !== null) {
+      throw new Error(
+        `runClockFor: the sentinel ${sentinel} reached the server, not a route of the test. Serve it with page.route and answer it, or pass the path of a route the test already serves.`
+      );
+    }
   }
 }

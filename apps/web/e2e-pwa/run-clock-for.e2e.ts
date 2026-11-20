@@ -8,6 +8,8 @@ test.use({ serviceWorkers: "block" });
 const REACHED_THE_SERVER =
   /sentinel \/rpc\/settle reached the server, not a route of the test/;
 
+const NEVER_WENT_OUT = /never went out through the page/;
+
 test("runClockFor falha com mensagem clara quando a sentinela não passa por uma rota do teste", async ({
   page,
 }) => {
@@ -43,4 +45,11 @@ test("runClockFor falha quando a rota deixa a sentinela seguir para o servidor",
   await page.route("**/rpc/settle", (route) => route.continue());
   await page.goto("/");
   await expect(runClockFor(page, 100)).rejects.toThrow(REACHED_THE_SERVER);
+});
+
+test("runClockFor falha quando a sentinela nem chega a sair da página", async ({
+  page,
+}) => {
+  await page.clock.install();
+  await expect(runClockFor(page, 100)).rejects.toThrow(NEVER_WENT_OUT);
 });
