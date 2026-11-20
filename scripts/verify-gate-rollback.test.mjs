@@ -140,6 +140,47 @@ describe("what counts as a bare ROLLBACK", () => {
     ).toEqual([]);
   });
 
+  it("does not count a test or suite title that is only ROLLBACK, and keeps counting the statement next to it", () => {
+    expect(
+      bareRollbackLines(
+        [
+          'it("ROLLBACK", () => {});',
+          'describe("ROLLBACK", () => {});',
+          'test("ROLLBACK", () => {});',
+          'it.concurrent("ROLLBACK", () => {});',
+          'it.fails("ROLLBACK", () => {});',
+          'it.each(rows)("ROLLBACK", () => {});',
+          'it.skip("ROLLBACK", () => {});',
+          'it.only("ROLLBACK", () => {});',
+          'it.todo("ROLLBACK");',
+          'describe.skip("ROLLBACK", () => {});',
+          'describe.only("ROLLBACK", () => {});',
+          'test.skip("ROLLBACK", () => {});',
+          'test.only("ROLLBACK", () => {});',
+          'test.todo("ROLLBACK");',
+        ].join("\n")
+      )
+    ).toEqual([]);
+    expect(
+      bareRollbackLines(
+        [
+          'it("ROLLBACK", async () => { await runQuery("ROLLBACK"); });',
+          'describe("ROLLBACK", () => { query("ROLLBACK"); });',
+        ].join("\n")
+      )
+    ).toEqual([1, 2]);
+    expect(
+      bareRollbackLines(
+        [
+          'runTest("ROLLBACK");',
+          'skipAll("ROLLBACK");',
+          'itQuery("ROLLBACK");',
+          'await client.skipSql("ROLLBACK");',
+        ].join("\n")
+      )
+    ).toEqual([1, 2, 3, 4]);
+  });
+
   it("keeps counting a ROLLBACK next to a comparison or inside an exempt call, and a wrapper named like a matcher it is not", () => {
     expect(
       bareRollbackLines(
