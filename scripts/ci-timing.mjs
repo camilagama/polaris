@@ -27,6 +27,7 @@ const DEFAULT_REPO = "camilagama/polaris";
 const WORKFLOW = "ci.yml";
 export const EVENTS = ["pull_request", "workflow_dispatch"];
 const JOB_SETUP_STEP = /^(Set up job|Initialize containers)$/;
+const REQUEST_BATCH = 5;
 const BROWSER_GATE = "Offline browser gate";
 const SHARD_SUFFIX = /^(.*?)\s*\(shard (\d+\/\d+)\)\s*$/;
 const RUN_ID = /^\d+$/;
@@ -68,8 +69,11 @@ export function splitJob(job) {
     if (JOB_SETUP_STEP.test(step.name)) {
       continue;
     }
-    if (!(step.completed_at && INSTALL_STEP.test(step.name))) {
+    if (!INSTALL_STEP.test(step.name)) {
       break;
+    }
+    if (!step.completed_at) {
+      continue;
     }
     prepEnd = Math.min(seconds(step.completed_at), completed);
   }
@@ -304,6 +308,9 @@ export function unzip(buffer) {
     if (method !== 0 && method !== 8) {
       throw new Error(`zip entry ${name}: unsupported method ${method}`);
     }
+    if (name.startsWith("/") || name.split("/").includes("..")) {
+      throw new Error(`zip entry ${name}: path leaves the folder`);
+    }
     if (!name.endsWith("/")) {
       files.push({ data: method === 0 ? raw : inflateRawSync(raw), name });
     }
@@ -433,15 +440,23 @@ async function jobsOf(api, run) {
 
 async function measure(options) {
   const api = client(options.repo);
-  const measured = await Promise.all(
-    EVENTS.map(async (event) => {
-      const runs = await greenRuns(api, event, options.runs);
-      const entries = await Promise.all(
-        runs.map(async (run) => ({ jobs: await jobsOf(api, run), run }))
+  const measured = [];
+  for (const event of EVENTS) {
+    // biome-ignore lint/performance/noAwaitInLoops: the two events one after the other, to keep the requests in flight few
+    const runs = await greenRuns(api, event, options.runs);
+    const entries = [];
+    for (let at = 0; at < runs.length; at += REQUEST_BATCH) {
+      // biome-ignore lint/performance/noAwaitInLoops: batches of runs, one after the other
+      const batch = await Promise.all(
+        runs.slice(at, at + REQUEST_BATCH).map(async (run) => ({
+          jobs: await jobsOf(api, run),
+          run,
+        }))
       );
-      return [event, summarize(entries)];
-    })
-  );
+      entries.push(...batch);
+    }
+    measured.push([event, summarize(entries)]);
+  }
   const byEvent = Object.fromEntries(measured);
   process.stdout.write(renderMarkdown(byEvent));
   if (options.json) {

@@ -385,6 +385,13 @@ describe("unzip", () => {
     expect(files[1].data.toString()).toBe("comprimido ".repeat(40));
   });
 
+  it("refuses an entry that would leave the folder", () => {
+    for (const name of ["../x.json", "a/../../x.json", "/etc/x.json"]) {
+      const zip = zipOf([{ data: Buffer.from("{}"), name }]);
+      expect(() => unzip(zip)).toThrow("path leaves the folder");
+    }
+  });
+
   it("refuses what is not a zip", () => {
     expect(() => unzip(Buffer.from("nope"))).toThrow("not a zip");
   });
