@@ -279,6 +279,8 @@ describe("YAML comments", () => {
       "c: it's 24/10 for t1234",
       "d: [\"# t1234\", '# t1234']",
       "e: url#t1234",
+      "g: 'it''s # t1234'",
+      "h: {\"a\":'x # t1234'}",
       'f: "escaped \\" # t1234"',
     ].join("\n");
     expect(yamlKinds(source)).toEqual([]);
@@ -308,6 +310,17 @@ describe("YAML comments", () => {
       { line: 7, text: " t1234" },
       { line: 10, text: " PR 123" },
     ]);
+  });
+
+  it("does not read a block scalar whose header has no key", () => {
+    for (const source of [
+      "steps:\n  - |\n    echo # t1234",
+      "a:\n- |\n  echo # t1234",
+      "- - |\n    x # t1234",
+      "? |\n  x # t1234",
+    ]) {
+      expect(extractYamlComments(source)).toEqual([]);
+    }
   });
 
   it("lets ADR, AC, GHSA, links and quoted dates pass", () => {

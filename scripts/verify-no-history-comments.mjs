@@ -327,8 +327,10 @@ export function stripComments(source) {
   return code + source.slice(from);
 }
 
-const blockScalarHeader = /(?:^|[:-])\s+(?:[&!]\S+\s+)*[|>][+-]?\d?[+-]?\s*$/;
-const sequenceItemPrefix = /^(?:\s*-\s+)*\s*/;
+const blockScalarHeader = /(?:^|[:?-])\s+(?:[&!]\S+\s+)*[|>][+-]?\d?[+-]?\s*$/;
+const sequenceItemPrefix = /^\s*(?:[-?]\s+)*/;
+const keylessHeader = /^(?:[&!]\S+\s+)*[|>]/;
+const quoteChars = "\"'";
 const yamlValueOpeners = ":-,[{?";
 
 /**
@@ -363,9 +365,12 @@ function indentOf(line) {
   return line.length - line.trimStart().length;
 }
 
-// Column of the key on a line, past any `- ` of a sequence item: a block scalar's lines sit deeper than it.
+// A block scalar's lines sit deeper than its key, or than the last `-`/`?` indicator when the header has no key.
 function keyIndentOf(content) {
-  return sequenceItemPrefix.exec(content)?.[0].length ?? 0;
+  const prefix = sequenceItemPrefix.exec(content)?.[0] ?? "";
+  return keylessHeader.test(content.slice(prefix.length))
+    ? Math.max(prefix.trimEnd().length - 1, 0)
+    : prefix.length;
 }
 
 function scanYamlLine(line, quoteAtStart) {
@@ -373,7 +378,10 @@ function scanYamlLine(line, quoteAtStart) {
   for (let index = 0; index < line.length; index += 1) {
     const char = line[index];
     if (quote !== "") {
-      if (quote === '"' && char === "\\") {
+      if (
+        (quote === '"' && char === "\\") ||
+        (quote === "'" && char === "'" && line[index + 1] === "'")
+      ) {
         index += 1;
       } else if (char === quote) {
         quote = "";
@@ -404,7 +412,13 @@ function opensYamlValue(line, index) {
   if (!yamlValueOpeners.includes(last)) {
     return false;
   }
-  return last === "," || last === "[" || last === "{" || before.length < index;
+  return (
+    last === "," ||
+    last === "[" ||
+    last === "{" ||
+    before.length < index ||
+    (last === ":" && quoteChars.includes(before.at(-2) ?? ""))
+  );
 }
 
 /** Violations of one file as `{ line, kind, match }`; `.yml` and `.yaml` are read as YAML. */
