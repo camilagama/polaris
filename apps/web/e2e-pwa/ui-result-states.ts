@@ -9,7 +9,7 @@ import { serveLabWorker, WORKER_MARK } from "./worker-mark";
  * (`/offline-screens-lab?screen=dashboard`), with the summary of the month and the goals answered by the test
  * (`page.route`), synthetic data only. Few states: each one starts the runtime of the lab in every context of the
  * map, and the CI job has a limit of 30 minutes. The complete month, the loading, the saves and the cancellation
- * are proved in `e2e/dashboard.e2e.ts` and `e2e/goals.e2e.ts` and in the captures of the pull request. The lab's own
+ * are proved in the files of `e2e/dashboard/` and in `e2e/goals.e2e.ts` and in the captures of the pull request. The lab's own
  * controls are hidden at the end of each state, so what is measured is the screen alone.
  */
 const ORGANIZATION_ID = "0199c2d0-0000-7000-8000-00000000a001";

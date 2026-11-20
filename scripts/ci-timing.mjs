@@ -14,7 +14,8 @@ import { inflateRawSync } from "node:zlib";
 /**
  * Where the minutes of the CI go. Reads the green runs of `ci.yml` from the GitHub REST API and splits every job into
  * the wait for a runner (`created_at` to `started_at`), the preparation (start of the job to the end of the last
- * install step of the opening sequence: checkout, Node, Bun, cache, `bun install`, `playwright install`) and the execution (the rest). With
+ * step of the opening sequence: pulling the container image, checkout, Node, Bun, cache, `bun install`, `playwright install`,
+ * the read of the Playwright version and the check of it against the image tag) and the execution (the rest). With
  * `--durations`, sums the time per test file from the JSON reports the browser shards upload.
  *
  * Usage:
@@ -26,15 +27,22 @@ const DEFAULT_RUNS = 25;
 const DEFAULT_REPO = "camilagama/polaris";
 const WORKFLOW = "ci.yml";
 export const EVENTS = ["pull_request", "workflow_dispatch"];
-const JOB_SETUP_STEP = /^(Set up job|Initialize containers)$/;
+const JOB_SETUP_STEP = "Set up job";
+const IMAGE_PULL_STEP = "Initialize containers";
 const REQUEST_BATCH = 5;
 const BROWSER_GATE = "Offline browser gate";
 const SHARD_SUFFIX = /^(.*?)\s*\(shard (\d+\/\d+)\)\s*$/;
 const RUN_ID = /^\d+$/;
 const TIMINGS_ARTIFACT = /^playwright-timings-/;
 const TIMINGS_FILE = /^timings-(.+)\.json$/;
-const INSTALL_STEP =
-  /^(Run (actions\/(checkout|setup-node|cache)@|oven-sh\/setup-bun@|(bun|npm|pnpm) install|(bunx|npx) playwright install)|Install Chromium$)/;
+const INSTALL_STEP = new RegExp(
+  [
+    "^Run (actions/(checkout|setup-node|cache)@|oven-sh/setup-bun@|(bun|npm|pnpm) install|(bunx|npx) playwright install)",
+    "^Run version=.*@playwright/test",
+    String.raw`^Run test "\$\((bunx|npx) playwright --version\)"`,
+    "^Install Chromium$",
+  ].join("|")
+);
 
 const seconds = (iso) => Date.parse(iso) / 1000;
 
@@ -66,10 +74,10 @@ export function splitJob(job) {
   const completed = seconds(job.completed_at);
   let prepEnd = started;
   for (const step of job.steps ?? []) {
-    if (JOB_SETUP_STEP.test(step.name)) {
+    if (step.name === JOB_SETUP_STEP) {
       continue;
     }
-    if (!INSTALL_STEP.test(step.name)) {
+    if (step.name !== IMAGE_PULL_STEP && !INSTALL_STEP.test(step.name)) {
       break;
     }
     if (!step.completed_at) {
@@ -194,7 +202,7 @@ export function renderMarkdown(byEvent) {
     }
     const gated = data.wallWithBrowserGate;
     lines.push(
-      `Parede (criação → fim do último job): p50 **${minutesText(data.wall.p50)} min**, p95 ${minutesText(data.wall.p95)} min.`,
+      `Parede (início → fim do último job): p50 **${minutesText(data.wall.p50)} min**, p95 ${minutesText(data.wall.p95)} min.`,
       `Só as execuções em que o gate de navegador rodou (${gated.n} de ${data.runs}): p50 **${minutesText(gated.p50)} min**, p95 ${minutesText(gated.p95)} min.`,
       `Minutos faturados por execução: p50 ${minutesText(data.minutesPerRun.p50 * 60)}, p95 ${minutesText(data.minutesPerRun.p95 * 60)}.`,
       "",
@@ -236,8 +244,10 @@ function* specsOf(suite) {
 
 /**
  * The time per test file and project of Playwright JSON reports, `[{ name, report }]` (`name` is the `<name>` of
- * `timings-<name>.json`). Every attempt counts: a retry also took the shard's time. Sorted by suite, file and project,
- * with no clock in it, so the same reports always give the same file.
+ * `timings-<name>.json`). A test belongs to the file of its top suite, the one `--shard` hands out, and not to the
+ * `spec.file` where `test()` was called: a helper such as `reflow.ts` creates tests for many spec files. Every attempt
+ * counts: a retry also took the shard's time. Sorted by suite, file and project, with no clock in it, so the same
+ * reports always give the same file.
  */
 export function sumDurations(reports) {
   const totals = new Map();
@@ -245,7 +255,7 @@ export function sumDurations(reports) {
     for (const top of report.suites ?? []) {
       for (const spec of specsOf(top)) {
         for (const test of spec.tests ?? []) {
-          const file = spec.file ?? top.file;
+          const file = top.file ?? spec.file;
           const key = JSON.stringify([name, file, test.projectName ?? ""]);
           const entry = totals.get(key) ?? { ms: 0, tests: 0 };
           entry.ms += (test.results ?? []).reduce(
