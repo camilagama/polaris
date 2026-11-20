@@ -199,6 +199,24 @@ describe("the reflow specs run with a finger too", () => {
     expect(problems).toEqual([]);
   });
 
+  it("the other specs of a folder of e2e/ keep no plain test that reads like a reflow case", () => {
+    const named = new Set([...Object.keys(SPECS), ...Object.keys(OTHER)]);
+    const inFolders = readdirSync(E2E, { recursive: true, encoding: "utf8" })
+      .map((name) => name.split(sep).join("/"))
+      .filter((name) => name.includes("/") && name.endsWith(".e2e.ts"))
+      .filter((name) => !named.has(name));
+    expect(inFolders.length).toBeGreaterThan(0);
+    const found = inFolders.flatMap((name) =>
+      reflowLookingTitles(readFileSync(join(E2E, name), "utf8")).map(
+        (title) => `${name}: "${title}"`
+      )
+    );
+    expect(
+      found,
+      "a plain test that reads like a reflow case: declare it with reflowTest in a reflow spec"
+    ).toEqual([]);
+  });
+
   it("each exception in SPECS has its reason", () => {
     const missing = Object.entries(SPECS)
       .filter(
