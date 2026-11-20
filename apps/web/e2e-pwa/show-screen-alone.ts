@@ -1,15 +1,30 @@
 import type { Page } from "@playwright/test";
 
+const FINITE_ANIMATION_BUDGET_MS = 10_000;
+const STABLE_FRAMES = 3;
+const SCRIPT_DRIVEN_SELECTOR = '[data-slot="filter-pill"]';
+
 /**
  * Hides the lab's own controls and waits for the fonts, for the layout to settle after the scroll and the hiding
- * (two frames), for the finite animations of the clock to end and for every `[data-slot="filter-pill"]` to stop moving
- * (identity transform and the same box, pill and icon, in two consecutive frames): the pills move by script (layout
- * spring), which `getAnimations` does not list, and the tail of that spring scales the icon to 16.01 px. Not waited for:
- * an animation that repeats forever (the skeleton, the spinner) and one driven by the scroll (it ends only at the end of
- * the scroll), neither of which finishes by itself; nor script-driven movement of anything other than the filter pills,
- * nor image decoding.
+ * (two frames) and for the finite animations of the clock to end. Not waited for: an animation that repeats forever (the
+ * skeleton, the spinner) and one driven by the scroll (it ends only at the end of the scroll), neither of which finishes
+ * by itself; nor image decoding, which `getAnimations` does not list.
+ *
+ * The filter pills enter with a spring of `motion` that runs in script, so `getAnimations` does not list it and the
+ * pill, and the icon inside it, would be measured while still scaled: the boxes of the pill and of its icon must stay
+ * unchanged for `STABLE_FRAMES` frames in a row and the pill's transform must be the identity. The box alone is not
+ * enough: the tail of the spring changes a box by less than the two decimals compared while the icon is still scaled
+ * (16.01 px). A screen with no pill yet counts as still, so the caller waits for its pills to be
+ * drawn before calling. The selector is not wider because other script-driven movement (the loading
+ * shimmer of the charts) never stops.
+ *
+ * A finite animation still running, or a pill still moving, after `budgetMs` fails with its name and total duration:
+ * a very long one would otherwise only show as the 45 s test timeout, with no hint of what holds the screen.
  */
-export async function showScreenAlone(page: Page) {
+export async function showScreenAlone(
+  page: Page,
+  { budgetMs = FINITE_ANIMATION_BUDGET_MS }: { budgetMs?: number } = {}
+) {
   await page.evaluate(() => {
     for (const element of document.querySelectorAll("[data-lab-chrome]")) {
       (element as HTMLElement).hidden = true;
@@ -24,41 +39,77 @@ export async function showScreenAlone(page: Page) {
         requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
       )
   );
-  await page.waitForFunction(() =>
-    document
-      .getAnimations()
-      .every(
-        (animation) =>
-          !(animation.timeline instanceof DocumentTimeline) ||
-          animation.effect?.getComputedTiming().iterations ===
-            Number.POSITIVE_INFINITY ||
-          (animation.playState !== "running" && !animation.pending)
-      )
+  const stuck = await page.evaluate(
+    ({ budget, frames, selector }) =>
+      new Promise<string[]>((resolve) => {
+        const startedAt = performance.now();
+        let lastBoxes = "";
+        let stableFor = 0;
+        const boxes = () =>
+          [...document.querySelectorAll(selector)]
+            .flatMap((pill) => [pill, pill.querySelector("svg.lucide")])
+            .map((element) => {
+              const box = element?.getBoundingClientRect() ?? new DOMRect();
+              return [box.x, box.y, box.width, box.height]
+                .map((value) => value.toFixed(2))
+                .join(",");
+            })
+            .join(";");
+        const scaled = () =>
+          [...document.querySelectorAll(selector)].some((pill) => {
+            const { transform } = getComputedStyle(pill);
+            return transform !== "none" && !new DOMMatrix(transform).isIdentity;
+          });
+        const unfinished = () =>
+          document
+            .getAnimations()
+            .filter(
+              (animation) =>
+                animation.timeline instanceof DocumentTimeline &&
+                animation.effect?.getComputedTiming().iterations !==
+                  Number.POSITIVE_INFINITY &&
+                (animation.playState === "running" || animation.pending)
+            );
+        const check = () => {
+          const left = unfinished();
+          const current = boxes();
+          stableFor = current === lastBoxes && !scaled() ? stableFor + 1 : 0;
+          lastBoxes = current;
+          if (left.length === 0 && stableFor >= frames) {
+            resolve([]);
+            return;
+          }
+          if (performance.now() - startedAt > budget) {
+            const moving =
+              stableFor < frames ? [`${selector} (caixa ainda mudando)`] : [];
+            resolve([
+              ...moving,
+              ...left.map((animation) => {
+                let name = animation.id || "(sem nome)";
+                if (animation instanceof CSSAnimation) {
+                  name = animation.animationName;
+                } else if (animation instanceof CSSTransition) {
+                  name = animation.transitionProperty;
+                }
+                const total = animation.effect?.getComputedTiming().endTime;
+                return `"${name}" (${String(total)} ms no total)`;
+              }),
+            ]);
+            return;
+          }
+          requestAnimationFrame(check);
+        };
+        check();
+      }),
+    {
+      budget: budgetMs,
+      frames: STABLE_FRAMES,
+      selector: SCRIPT_DRIVEN_SELECTOR,
+    }
   );
-  await page.waitForFunction(
-    () => {
-      const holder = window as { pillBoxes?: string | undefined };
-      const boxes: string[] = [];
-      for (const pill of document.querySelectorAll(
-        '[data-slot="filter-pill"]'
-      )) {
-        const { transform } = getComputedStyle(pill);
-        if (transform !== "none" && !new DOMMatrix(transform).isIdentity) {
-          holder.pillBoxes = undefined;
-          return false;
-        }
-        for (const element of [pill, pill.querySelector("svg.lucide")]) {
-          const { height, left, top, width } =
-            element?.getBoundingClientRect() ?? new DOMRect();
-          boxes.push(`${left},${top},${width},${height}`);
-        }
-      }
-      const key = boxes.join("|");
-      const stable = holder.pillBoxes === key;
-      holder.pillBoxes = stable ? undefined : key;
-      return stable;
-    },
-    undefined,
-    { polling: "raf" }
-  );
+  if (stuck.length > 0) {
+    throw new Error(
+      `showScreenAlone: ainda se move depois de ${budgetMs} ms: ${stuck.join(", ")}. Encurte a animação ou tire-a da tela capturada.`
+    );
+  }
 }

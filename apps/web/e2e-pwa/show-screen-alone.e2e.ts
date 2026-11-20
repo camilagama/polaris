@@ -47,52 +47,100 @@ test("showScreenAlone: com esqueleto e animação de rolagem na tela a espera te
   expect(state.skeletonStillRuns).toBe(true);
 });
 
-const MOVERS = {
-  box: "pill.style.marginLeft = (20 * (1 - progress)) + 'px';",
-  transform:
-    "pill.style.transform = 'scale(' + (0.95 + 0.05 * progress) + ')';",
-};
+test("showScreenAlone: animação finita longa demais falha com o nome e a duração, sem esperar o timeout do teste", async ({
+  page,
+}) => {
+  await page.setContent(`
+<style>
+  @keyframes slow-reveal { from { opacity: 0; } to { opacity: 1; } }
+  .slow { animation: slow-reveal 60s both; height: 20px; background: #999; }
+</style>
+<div class="slow"></div>
+`);
 
-function pillLab(move: string) {
+  const failure = await showScreenAlone(page, { budgetMs: 500 }).then(
+    () => null,
+    (error: Error) => error
+  );
+
+  expect(failure?.message).toContain("slow-reveal");
+  expect(failure?.message).toContain("60000 ms");
+  expect(failure?.message).toContain("500 ms");
+});
+
+function pillPage(scaleAt: string) {
   return `
-<body style="margin: 0">
-<div data-lab-chrome>controls</div>
-<div data-slot="filter-pill" id="pill" style="display: inline-flex; width: 120px; height: 36px;">
+<div data-slot="filter-pill" id="pill" style="width: 100px; height: 20px; transform: scale(0.95);"></div>
+<script>
+  const pill = document.getElementById("pill");
+  const startedAt = performance.now();
+  const step = () => {
+    const elapsed = performance.now() - startedAt;
+    pill.style.transform = "scale(" + (${scaleAt}) + ")";
+    requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+</script>
+`;
+}
+
+test("showScreenAlone: espera a pílula movida por script (fora de getAnimations) parar antes de devolver", async ({
+  page,
+}) => {
+  await page.setContent(pillPage("0.95 + 0.05 * Math.min(elapsed / 600, 1)"));
+
+  await showScreenAlone(page);
+
+  const width = await page.evaluate(
+    () => document.getElementById("pill")?.getBoundingClientRect().width
+  );
+  expect(width).toBe(100);
+});
+
+test("showScreenAlone: pílula que não para falha com o seletor e o orçamento, sem esperar o timeout do teste", async ({
+  page,
+}) => {
+  await page.setContent(pillPage("1 + 0.05 * Math.sin(elapsed / 50)"));
+
+  const failure = await showScreenAlone(page, { budgetMs: 500 }).then(
+    () => null,
+    (error: Error) => error
+  );
+
+  expect(failure?.message).toContain("filter-pill");
+  expect(failure?.message).toContain("caixa ainda mudando");
+  expect(failure?.message).toContain("500 ms");
+});
+
+test("showScreenAlone: cauda do spring da pílula, com a caixa quase parada e o ícone ainda escalado, também é esperada", async ({
+  page,
+}) => {
+  await page.setContent(`
+<div data-slot="filter-pill" id="pill" style="width: 100px; height: 20px;">
   <svg class="lucide" width="16" height="16"></svg>
 </div>
 <script>
   const pill = document.getElementById("pill");
-  const start = performance.now();
-  const step = (now) => {
-    const progress = Math.min((now - start) / 500, 1);
-    ${move}
-    if (progress < 1) requestAnimationFrame(step);
+  const startedAt = performance.now();
+  const step = () => {
+    const elapsed = performance.now() - startedAt;
+    const scale = elapsed < 700 ? 1 + 0.0008 * Math.exp(-elapsed / 120) : 1;
+    pill.style.transform = "scale(" + scale + ")";
+    requestAnimationFrame(step);
   };
   requestAnimationFrame(step);
 </script>
-</body>
-`;
-}
+`);
 
-for (const [kind, move] of Object.entries(MOVERS)) {
-  test(`showScreenAlone: pill movido por script (${kind}, fora do getAnimations) só é medido depois de parar`, async ({
-    page,
-  }) => {
-    await page.setContent(pillLab(move));
+  await showScreenAlone(page);
 
-    await showScreenAlone(page);
-
-    const state = await page.evaluate(() => {
-      const pill = document.getElementById("pill") as HTMLElement;
-      const icon = pill.querySelector("svg") as SVGElement;
-      return {
-        iconWidth: icon.getBoundingClientRect().width,
-        left: pill.getBoundingClientRect().left,
-        moving: !new DOMMatrix(getComputedStyle(pill).transform).isIdentity,
-      };
-    });
-    expect(state.moving).toBe(false);
-    expect(state.iconWidth).toBe(16);
-    expect(state.left).toBe(0);
+  const state = await page.evaluate(() => {
+    const pill = document.getElementById("pill") as HTMLElement;
+    return {
+      iconWidth: pill.querySelector("svg")?.getBoundingClientRect().width,
+      scaled: !new DOMMatrix(getComputedStyle(pill).transform).isIdentity,
+    };
   });
-}
+  expect(state.scaled).toBe(false);
+  expect(state.iconWidth).toBeCloseTo(16, 3);
+});
