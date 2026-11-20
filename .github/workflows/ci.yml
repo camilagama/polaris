@@ -245,10 +245,14 @@ jobs:
   # browser projects). Splitting by browser project left 21 min on desktop and 6 on
   # mobile (run 40078910891), so shards it is. The catalog CSP test runs in its own job
   # (offline-catalog-csp-browser) so it no longer adds to the longest shard.
+  # 20/11/2026: five shards. The slowest shard took a median of 30.2 min; running the big files in
+  # parallel inside a shard did not help (PR 1209: the 4-core runner is already CPU-bound with the
+  # SQLite WASM), so the fix is more runners, not more workers. Workers, fullyParallel and the
+  # timeout stay as they are.
   # The job named "Offline persistence browser gate" stays as the single result that
   # branch rules, the automerge and the bots read.
   offline-poc-browser-part:
-    name: Offline browser gate (shard ${{ matrix.shard }}/4)
+    name: Offline browser gate (shard ${{ matrix.shard }}/5)
     needs: changes
     # a failed detection runs it anyway: never skipped by accident
     if: ${{ !cancelled() && github.event_name != 'push' && (needs.changes.result != 'success' || needs.changes.outputs.browser == 'true') }}
@@ -257,7 +261,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4]
+        shard: [1, 2, 3, 4, 5]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -276,9 +280,9 @@ jobs:
       - run: bun install --frozen-lockfile
       - run: bunx playwright install --with-deps chromium
         working-directory: apps/web
-      - run: bun run test:offline-poc --project=chromium-desktop --project=chromium-mobile-emulated --shard=${{ matrix.shard }}/4
+      - run: bun run test:offline-poc --project=chromium-desktop --project=chromium-mobile-emulated --shard=${{ matrix.shard }}/5
         working-directory: apps/web
-      - run: bun run test:pwa --shard=${{ matrix.shard }}/4
+      - run: bun run test:pwa --shard=${{ matrix.shard }}/5
         working-directory: apps/web
       # The whole trace of the tab (rastro-*.txt of e2e-pwa/network-trace.ts) and the Playwright traces of the
       # failed tests: without this the files go away with the runner. Skipped when the shard is green.
