@@ -117,7 +117,7 @@ const SOLD: Scenario = {
   everSold: true,
   goals: [],
   soldWithoutCost: 2,
-  stock: { all: 5, unknownCost: 1, withoutStock: 3, withStock: 4 },
+  stock: { all: 5, unknownCost: 1, withoutStock: 3, withStock: 2 },
 };
 
 function balance(index: number) {
@@ -375,8 +375,40 @@ class FakeServer {
     return { count, from, net };
   }
 
+  /**
+   * The opening's one list (every status, 100 variants): the catalog of the scenario, in which the first
+   * `withoutStock` variants have no stock, the first `unknownCost` have no cost, and the rest has both.
+   */
+  wideBalances(limit: number) {
+    const { stock } = this.scenario;
+    if (stock.withStock + stock.withoutStock !== stock.all) {
+      throw new Error(
+        "the scenario's stock counts do not add up to the catalog"
+      );
+    }
+    return {
+      entries: Array.from(
+        { length: Math.min(stock.all, limit) },
+        (_, index) => ({
+          ...balance(index),
+          movingAverageCost: index < stock.unknownCost ? null : "5.00",
+          quantity: index < stock.withoutStock ? 0 : 3,
+        })
+      ),
+      nextCursor: stock.all > limit ? "mais" : null,
+    };
+  }
+
   balances(input: Record<string, unknown>) {
     const { stock } = this.scenario;
+    if (
+      input.productStatus === "all" &&
+      input.stock === undefined &&
+      input.cost === undefined &&
+      input.limit === 100
+    ) {
+      return this.wideBalances(100);
+    }
     let count = stock.all;
     if (input.cost === "unknown") {
       count = stock.unknownCost;
@@ -3602,7 +3634,7 @@ test.describe("sem conexão (§ 7, AC-28 a AC-31)", () => {
     await page.clock.runFor(10_000);
     await expect.poll(() => periodCalls(server).length).toBeGreaterThan(asked);
     await expect.poll(balances).toBeGreaterThan(0);
-    // the stock is asked only after the figures answered; two frames later the page has rendered that answer
+    // the stock is asked beside the figures, and held; two frames after the figures' answer the page has rendered it
     await page.evaluate(
       () =>
         new Promise((resolve) =>
@@ -4250,6 +4282,89 @@ test.describe("Ritmo de vendas (revisão de UI v7, § 3 item 10)", () => {
     expect(rpc.total(), RPC_TABLE_HINT).toBe(OPENING_WITHOUT_SALES_TOTAL);
   });
 
+  test("catálogo com mais de 100 variantes: a 1ª abertura da aba lê a lista larga e as filtradas, a 2ª só as filtradas, e a tela é a mesma", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 800, width: 1280 });
+    const server = new FakeServer({
+      ...SOLD,
+      days: {},
+      everSold: false,
+      stock: { all: 101, unknownCost: 0, withoutStock: 101, withStock: 0 },
+    });
+    const wideReads = () =>
+      server.calls.filter(
+        (call) =>
+          call.procedure === "inventory/listBalances" &&
+          call.input.productStatus === "all" &&
+          call.input.limit === 100
+      ).length;
+    const stockReads = () =>
+      server.calls.filter(
+        (call) =>
+          call.procedure === "inventory/listBalances" &&
+          call.input.stock === "without_stock"
+      ).length;
+    await openHome(page, server);
+    const attention = region(page, "Precisa de ação");
+    await expect(attention).toContainText("100 ou mais variantes sem saldo");
+    await expect(region(page, "Primeiros passos")).toBeVisible();
+    await expect.poll(wideReads).toBe(1);
+    await expect.poll(stockReads).toBe(1);
+    // the tab goes to another screen (a full load of the page) and comes back: the Início opens again, in the same tab
+    await newSale(page).click();
+    await page.waitForURL(SALES_PATH);
+    await page.goBack();
+    await expect(attention).toContainText("100 ou mais variantes sem saldo");
+    await expect(region(page, "Primeiros passos")).toBeVisible();
+    await expect.poll(stockReads).toBe(2);
+    expect(wideReads()).toBe(1);
+    // the hint is the tab's (sessionStorage), never the device's (localStorage)
+    expect(
+      await page.evaluate(() => ({
+        local: Object.keys(localStorage).filter((key) =>
+          key.toLowerCase().includes("largecatalog")
+        ),
+        session: Object.keys(sessionStorage).filter((key) =>
+          key.toLowerCase().includes("largecatalog")
+        ),
+      }))
+    ).toEqual({ local: [], session: ["polaris.home.largeCatalog"] });
+  });
+
+  test("a leitura larga falha (500): estoque diz que está indisponível, o checklist não diz 'sem produto' nem desmarca passo, e os números ficam", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 800, width: 1280 });
+    const server = new FakeServer({
+      ...SOLD,
+      days: {},
+      everSold: false,
+      stock: { all: 1, unknownCost: 0, withoutStock: 0, withStock: 1 },
+    });
+    server.broken.set("inventory/listBalances", "500");
+    await openHome(page, server);
+    await expect(
+      page.getByText("Avisos do estoque indisponíveis agora.")
+    ).toBeVisible({ timeout: 20_000 });
+    await expect(region(page, "Vendas hoje")).toBeVisible();
+    await expect(region(page, "Meta")).toBeVisible();
+    // the same state the checklist had before: with no answer of the stock it is not drawn at all (never one step undone)
+    await expect(region(page, "Primeiros passos")).toHaveCount(0);
+    await expect(page.getByText("Cadastrar o 1º produto")).toHaveCount(0);
+    await expect(
+      page.getByText("Não foi possível carregar os números da loja.")
+    ).toHaveCount(0);
+    // only the wide list, tried again as any read is: no filtered read stands in for it
+    const reads = server.calls.filter(
+      (call) => call.procedure === "inventory/listBalances"
+    );
+    expect(reads.length).toBeGreaterThan(0);
+    expect(reads.every((call) => call.input.productStatus === "all")).toBe(
+      true
+    );
+  });
+
   test("cache diário: a loja recusa os números e a série do dia não é servida de novo sem o servidor", async ({
     page,
   }) => {
@@ -4412,24 +4527,24 @@ function countRpc(page: Page) {
 const OPENING_WITH_SALES: Record<string, number> = {
   "device/register": 1,
   "goal/list": 1,
-  "inventory/listBalances": 2,
+  "inventory/listBalances": 1,
   "offline/issueLease": 1,
   "organization/listMine": 1,
   "report/dailySales": 1,
   "report/periodSummary": 2,
 };
-const OPENING_WITH_SALES_TOTAL = 9;
+const OPENING_WITH_SALES_TOTAL = 8;
 const OPENING_WITHOUT_SALES: Record<string, number> = {
   "device/register": 1,
   "goal/list": 1,
-  "inventory/listBalances": 4,
+  "inventory/listBalances": 1,
   "offline/issueLease": 1,
   "organization/listMine": 1,
   "report/dailySales": 1,
   "report/periodSummary": 2,
   "sale/list": 1,
 };
-const OPENING_WITHOUT_SALES_TOTAL = 12;
+const OPENING_WITHOUT_SALES_TOTAL = 9;
 
 test.describe("paliativo dos 1102: leituras tentadas de novo, em fila e com freio", () => {
   test("(a) as duas primeiras respostas do periodSummary morrem por CPU: o Início abre sem 'Tentar novamente', em menos de 8 s, com o esqueleto no meio", async ({
