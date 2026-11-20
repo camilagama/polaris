@@ -154,6 +154,9 @@ const EXPECTED_OPERATIONS_FILES = [
   "scripts/gate5-real-devices.sh",
   "scripts/e2e-flaky-report.mjs",
   "scripts/e2e-flaky-report.test.mjs",
+  "scripts/check-protegidos.ts",
+  "scripts/check-protegidos.test.mjs",
+  "tests/protegidos.txt",
   ".github/workflows/deploy-staging.yml",
 ];
 

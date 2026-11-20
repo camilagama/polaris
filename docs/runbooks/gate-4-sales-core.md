@@ -39,11 +39,11 @@ O Gate 4 roda como os demais gates de banco: num PostgreSQL 18 que não é o Neo
        psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "CREATE ROLE polaris_pr11_runtime NOLOGIN NOSUPERUSER NOBYPASSRLS"
        bun run --filter @polaris/db db:migrate
 
-3. Rodar o executor, que roda **em sequência** no mesmo banco, cria o login temporário que alguns gates exigem e o remove ao final:
+3. Rodar o executor, que cria o login temporário que alguns gates exigem e o remove ao final. No PostgreSQL local, ele copia o banco migrado para 4 bancos (`polaris_gate_p1` a `_p4`, apagados no fim) e roda neles, em paralelo, os gates que só mexem no próprio banco; os de `SERIAL_GATES` (`gate-runs.ts`) e os de superusuário rodam depois, **em sequência**, no `polaris_gate` ([ADR 0025](../adr/0025-estrategia-de-testes-de-banco.md), emenda de 20/11/2026). `POLARIS_GATE_WORKERS=1` roda tudo em sequência num banco só, como antes. O dono precisa de `CREATEDB`:
 
        CI=true bun run --filter @polaris/db gates:ci   # o que o CI roda, incluindo os gates de venda e o gate4
 
-   `gates:gate3` e `gates:all` incluem o `gate2-runtime`, só de Neon, e falham num PostgreSQL local (`gates:gate4` roda local). Para um subconjunto, escolha gates pelo nome: `CI=true bun scripts/run-gates.ts sale-return gate4` (a partir de `packages/db`). Cada gate termina com `"status": "passed"`; o executor imprime só o resumo (e a cauda redigida de um gate que falhar), nunca a URL.
+   `gates:gate3` e `gates:all` incluem o `gate2-runtime`, só de Neon, e falham num PostgreSQL local (`gates:gate4` roda local). Para um subconjunto, escolha gates pelo nome: `CI=true bun scripts/run-gates.ts sale-return gate4` (a partir de `packages/db`). Cada gate termina com `"status": "passed"` e o banco em que rodou; o executor imprime o resumo (e a saída inteira, redigida, de um gate que falhar), nunca a URL.
 4. Para repetir do zero, derrube o container (`docker stop polaris-gate-pg`) e suba outro; as migrations são sempre reaplicadas desde a 0000. Remova as variáveis do processo ao final (`unset DATABASE_URL POLARIS_GATE_DATABASE_URL POLARIS_GATE_SUPERUSER_URL POLARIS_GATE_BRANCH POLARIS_GATE_DATABASE`).
 
 Gates avulsos continuam existindo (`poc:sales:verify`, `poc:sales:transaction:verify`, `poc:sales:customer-link:verify`, `poc:sales:cancellation:verify`, `poc:sales:return:verify`, `poc:sales:dates:verify`, `poc:gate4:verify`, `poc:review-hardening:verify`) e usam as variáveis `POLARIS_SALES_GATE_*`; o executor é o caminho recomendado.
