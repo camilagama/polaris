@@ -108,7 +108,7 @@ type RedoOutcome = "opened" | { lines?: RedoProblem["lines"]; message: string };
  * Fills the draft of Vender with a refused sale, once the server confirms that every line can be sold as it was.
  * Nothing is removed from the queue; "opened" says Vender may be shown.
  */
-async function redoSale(
+export async function redoSale(
   refusedCommandId: string,
   outbox: Outbox,
   organizationId: string,
