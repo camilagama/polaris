@@ -146,6 +146,12 @@ const listByStatus =
 const menuOf = (page: Page, name: string) =>
   page.getByRole("button", { name: `Mais ações para ${name}` });
 
+/** Runs the clock and then sends one call of its own: it reaches the route after any resend the run let go. */
+async function runClockFor(page: Page, milliseconds: number) {
+  await page.clock.runFor(milliseconds);
+  await page.evaluate(() => fetch("/rpc/settle").catch(() => undefined));
+}
+
 test("Categorias: a lista, o selo de estado com texto e a falta de código na tela", async ({
   page,
 }) => {
@@ -232,6 +238,7 @@ test("Categorias: criar deixa o cursor no campo, que se esvazia, e diz o resulta
 test("Categorias: criar com o 503 server_busy diz que pode ter sido salvo e não repete sozinho", async ({
   page,
 }) => {
+  await page.clock.install();
   let created = 0;
   await openScreen(page, "/categories", "Categorias", {
     "category/create": (route) => {
@@ -248,7 +255,7 @@ test("Categorias: criar com o 503 server_busy diz que pode ter sido salvo e não
   await expect(
     page.getByRole("button", { name: "Tentar novamente" })
   ).toHaveCount(0);
-  await page.waitForTimeout(6000);
+  await runClockFor(page, 6000);
   expect(created).toBe(1);
   await expect(page.getByLabel("Nova categoria")).toHaveValue("Acessórios");
 });
@@ -532,6 +539,7 @@ test("Clientes: cadastrar um cliente fecha o formulário, diz o resultado e o pr
 test("Clientes: cadastrar com o 503 server_busy diz que pode ter sido salvo, não repete sozinho e não oferece tentar de novo", async ({
   page,
 }) => {
+  await page.clock.install();
   let created = 0;
   await openScreen(page, "/customers", "Clientes", {
     "customer/create": (route) => {
@@ -554,7 +562,7 @@ test("Clientes: cadastrar com o 503 server_busy diz que pode ter sido salvo, nã
     page.getByRole("button", { name: "Tentar novamente" })
   ).toHaveCount(0);
   await expect(page.getByText("salvo neste aparelho")).toHaveCount(0);
-  await page.waitForTimeout(6000);
+  await runClockFor(page, 6000);
   expect(created).toBe(1);
   await expect(page.getByLabel("Nome", { exact: true })).toHaveValue(
     "Bia Souza"
