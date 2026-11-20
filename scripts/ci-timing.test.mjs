@@ -176,7 +176,7 @@ describe("splitJob", () => {
       completed_at: at(100),
       conclusion: "success",
       created_at: at(0),
-      name: "PostgreSQL 18 gates",
+      name: "Job with only a service container",
       started_at: at(2),
       steps: [
         step("Set up job", 2, 3),
@@ -402,6 +402,16 @@ describe("sumDurations", () => {
       ["y.e2e.ts", 30, 1],
     ]);
     expect(entries.every((e) => SPEC_FILE.test(e.file))).toBe(true);
+  });
+
+  it("falls back to the file of the spec when the top suite has none", () => {
+    const { entries } = sumDurations([
+      {
+        name: "pwa",
+        report: { suites: [{ specs: [spec("w.e2e.ts", testOf("p", 9))] }] },
+      },
+    ]);
+    expect(entries.map((e) => [e.file, e.ms])).toEqual([["w.e2e.ts", 9]]);
   });
 
   it("adds the shards of the same suite and keeps the suites apart", () => {

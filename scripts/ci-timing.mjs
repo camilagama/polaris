@@ -245,8 +245,9 @@ function* specsOf(suite) {
 /**
  * The time per test file and project of Playwright JSON reports, `[{ name, report }]` (`name` is the `<name>` of
  * `timings-<name>.json`). A test belongs to the file of its top suite, the one `--shard` hands out, and not to the
- * `spec.file` where `test()` was called: a helper such as `reflow.ts` creates tests for many spec files. Every attempt counts: a retry also took the shard's time. Sorted by suite, file and project,
- * with no clock in it, so the same reports always give the same file.
+ * `spec.file` where `test()` was called: a helper such as `reflow.ts` creates tests for many spec files. Every attempt
+ * counts: a retry also took the shard's time. Sorted by suite, file and project, with no clock in it, so the same
+ * reports always give the same file.
  */
 export function sumDurations(reports) {
   const totals = new Map();
