@@ -272,9 +272,6 @@ jobs:
     # a failed detection runs it anyway: never skipped by accident
     if: ${{ !cancelled() && github.event_name != 'push' && (needs.changes.result != 'success' || needs.changes.outputs.browser == 'true') }}
     runs-on: ubuntu-24.04
-    container:
-      image: mcr.microsoft.com/playwright:v1.63.0-noble
-      options: --init --ipc=host
     timeout-minutes: 45
     strategy:
       fail-fast: false
@@ -287,16 +284,16 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version-file: .node-version
-      - run: npm install --global "bun@$(cat .bun-version)"
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: .bun-version
       - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           path: ~/.bun/install/cache
           key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
           restore-keys: bun-${{ runner.os }}-
       - run: bun install --frozen-lockfile
-      # the browsers come baked in the image: its tag has to be the @playwright/test of bun.lock
-      - run: |
-          test "$(bunx playwright --version)" = "Version 1.63.0" || { echo "The image tag and @playwright/test in bun.lock differ."; exit 1; }
+      - run: bunx playwright install --with-deps chromium
         working-directory: apps/web
       - run: bun run test:offline-poc --project=chromium-desktop --project=chromium-mobile-emulated --shard=${{ matrix.shard }}/4
         working-directory: apps/web
