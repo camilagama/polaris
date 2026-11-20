@@ -73,16 +73,8 @@ export const TEST_CLOCK_LIST = {
     count: 1,
     reason: BEFORE_THE_RULE,
   },
-  "apps/web/src/server/authenticated-request-context.test.ts": {
-    count: 4,
-    reason: BEFORE_THE_RULE,
-  },
   "apps/web/src/server/billing/asaas-adapter.test.ts": {
     count: 2,
-    reason: BEFORE_THE_RULE,
-  },
-  "apps/web/src/server/rpc/account-router.test.ts": {
-    count: 3,
     reason: BEFORE_THE_RULE,
   },
   "apps/web/src/server/rpc/billing-router.test.ts": {
@@ -90,10 +82,6 @@ export const TEST_CLOCK_LIST = {
     reason: BEFORE_THE_RULE,
   },
   "apps/web/src/server/rpc/data-export-router.test.ts": {
-    count: 4,
-    reason: BEFORE_THE_RULE,
-  },
-  "apps/web/src/server/rpc/offline-router.test.ts": {
     count: 4,
     reason: BEFORE_THE_RULE,
   },
@@ -111,14 +99,6 @@ export const TEST_CLOCK_LIST = {
   },
   "apps/web/src/server/rpc/sale-router.test.ts": {
     count: 1,
-    reason: BEFORE_THE_RULE,
-  },
-  "apps/web/src/server/rpc/sync-push-router.test.ts": {
-    count: 2,
-    reason: BEFORE_THE_RULE,
-  },
-  "apps/web/src/server/tenant-request-context.test.ts": {
-    count: 9,
     reason: BEFORE_THE_RULE,
   },
   "apps/web/src/ui/date-values.test.ts": { count: 1, reason: BEFORE_THE_RULE },
