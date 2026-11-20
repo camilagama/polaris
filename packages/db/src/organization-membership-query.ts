@@ -20,7 +20,8 @@ export interface UserOrganization {
  * memberships and then each active organization under its own scope, with the
  * same policies the runtime reads them under, in one statement: the Hyperdrive
  * counts every statement against its daily quota. Its settings are local to
- * this transaction and empty again when it returns.
+ * this transaction and empty again when it returns, so it runs only in a
+ * transaction of its own, never inside a tenant transaction.
  */
 export async function listUserOrganizations(
   database: Database,
@@ -42,7 +43,7 @@ export async function listUserOrganizations(
           role: string;
           timezone: string;
         }>(
-          sql`SELECT id, name, role, timezone FROM public.list_user_organizations(${authenticatedUserId})`
+          sql`SELECT listed.id, listed.name, listed.role, listed.timezone FROM public.list_user_organizations(${authenticatedUserId}) WITH ORDINALITY AS listed ORDER BY listed.ordinality`
         )
       ).rows,
     { isolationLevel: "read committed" }

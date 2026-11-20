@@ -8,7 +8,8 @@
 --   because the policies read the settings on every row and the loop changes `app.organization_id`;
 -- * for each of them, `app.organization_id` is that organization and its row is read under
 --   `organizations_active_tenant_select`; only an active one is answered, with the role of the membership;
--- * at the end both settings are empty again, so a later statement of the same transaction inherits neither.
+-- * at the end both settings are empty again, so a later statement of the same transaction inherits neither; it
+--   runs only in a transaction of its own, never inside a tenant transaction, whose context it would clear.
 --
 -- SECURITY INVOKER: it reads only what the tenant runtime already reads, under the same policies, so it needs no owner,
 -- policy or privilege of its own; the answer depends on the policies alone, never on the argument as a proof. Every

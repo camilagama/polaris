@@ -11,8 +11,8 @@ import { runtimeRole, sqlState } from "./sales-gate-support";
 
 /**
  * The checks of `public.list_user_organizations`: its catalog entry, its refusals, the settings it leaves behind and
- * the equality of its answer with the list read as separate statements, the way `listUserOrganizations` read it
- * before the function (one `set_config` and one SELECT per organization, under the same policies).
+ * the equality of its answer with the reference reading in separate statements (one `set_config` and one SELECT per
+ * organization, under the same policies).
  */
 
 export interface ListedOrganization {
@@ -23,7 +23,7 @@ export interface ListedOrganization {
 }
 
 const FUNCTION_CALL =
-  "SELECT id, name, role, timezone FROM public.list_user_organizations($1)";
+  "SELECT listed.id, listed.name, listed.role, listed.timezone FROM public.list_user_organizations($1) WITH ORDINALITY AS listed ORDER BY listed.ordinality";
 
 async function underSavepoint<T>(
   client: GateQueryable,
@@ -37,7 +37,7 @@ async function underSavepoint<T>(
   }
 }
 
-/** The list read as separate statements, exactly as the query of the Worker read it before the function. */
+/** The reference reading: the memberships, then each organization under its own scope, one statement at a time. */
 export async function listedBySeparateStatements(
   client: GateQueryable,
   user: string
@@ -108,7 +108,7 @@ async function functionOutcome(
   }
 }
 
-/** One function, invoker, pinned search_path, the four fields of today; besides its owner, only the tenant runtime may run it. */
+/** One function, invoker, pinned search_path, the four fields of the contract; besides its owner, only the tenant runtime may run it. */
 export async function checkUserOrganizationsCatalog(
   adminPool: Pool
 ): Promise<void> {
@@ -199,12 +199,19 @@ export async function checkUserOrganizationsRefusals(
   });
 }
 
+const divisionByZero = /division by zero/;
 const SETTINGS =
   "SELECT current_setting('app.user_id', true) AS user_id, current_setting('app.organization_id', true) AS organization_id";
+const SESSION_SETTINGS = {
+  organization_id: "session-organization-sentinel",
+  user_id: "session-user-sentinel",
+};
 
 /**
- * Inside the transaction, a statement after the function finds both settings empty; and two calls in a row on the same
- * connection, each in its own transaction, answer the same and the second starts with no setting of the first.
+ * Every setting of the function is local: with session values set on the connection beforehand, a statement after the
+ * function in the same transaction finds both settings empty, and after the COMMIT (twice in a row, on the same
+ * connection) and after a ROLLBACK the session values are back. A `set_config(..., false)` anywhere in the function
+ * would leave its own value on the connection instead.
  */
 export async function checkUserOrganizationsLeaveNoSetting(
   runtimeClient: GateQueryable,
@@ -217,32 +224,55 @@ export async function checkUserOrganizationsLeaveNoSetting(
         rows: { organization_id: string | null; user_id: string | null }[];
       }
     ).rows[0];
-  const empty = (value: string | null | undefined) => (value ?? "") === "";
-
-  for (const call of ["first", "second"]) {
-    // biome-ignore lint/performance/noAwaitInLoops: the two calls run one after the other on the one connection
-    const before = await settingsOf();
-    assert.ok(
-      empty(before?.user_id) && empty(before?.organization_id),
-      `the ${call} call starts with no setting on the connection`
-    );
+  const inTransaction = async (call: string, end: "COMMIT" | "ROLLBACK") => {
     await runtimeClient.query("BEGIN");
     try {
       const listed = (await runtimeClient.query(FUNCTION_CALL, [user])) as {
         rows: ListedOrganization[];
       };
       assert.deepEqual(listed.rows, expected, `the ${call} call answers`);
-      const after = await settingsOf();
       assert.deepEqual(
-        after,
+        await settingsOf(),
         { organization_id: "", user_id: "" },
         `after the ${call} call, a statement of the same transaction finds both settings empty`
       );
+      if (end === "ROLLBACK") {
+        await assert.rejects(
+          runtimeClient.query("SELECT 1 / 0"),
+          divisionByZero
+        );
+        await rollbackQuietly(runtimeClient);
+        return;
+      }
       await runtimeClient.query("COMMIT");
     } catch (error) {
       await rollbackQuietly(runtimeClient);
       throw error;
     }
+  };
+
+  await runtimeClient.query(
+    "SELECT set_config('app.user_id', $1, false), set_config('app.organization_id', $2, false)",
+    [SESSION_SETTINGS.user_id, SESSION_SETTINGS.organization_id]
+  );
+  try {
+    for (const [call, end] of [
+      ["first", "COMMIT"],
+      ["second", "COMMIT"],
+      ["aborted", "ROLLBACK"],
+    ] as const) {
+      // biome-ignore lint/performance/noAwaitInLoops: the calls run one after the other on the one connection
+      await inTransaction(call, end);
+      assert.deepEqual(
+        await settingsOf(),
+        SESSION_SETTINGS,
+        `after the ${end} of the ${call} call, the connection has its own settings back`
+      );
+    }
+  } finally {
+    await runtimeClient.query(
+      "SELECT set_config('app.user_id', '', false), set_config('app.organization_id', '', false)"
+    );
   }
 }
 
@@ -256,7 +286,7 @@ interface EqualityCase {
  * The function and the separate statements answer exactly the same, rows and order, as the tenant runtime, on users
  * with 0, 1 and 3 organizations, a membership that is not active, organizations in every status that is not active,
  * a role other than owner, and two memberships created at the same instant (the tie goes to the organization id).
- * The CHECKs that today hold memberships to one role and one status are dropped inside the rolled-back transaction, so
+ * The CHECKs that hold memberships to one role and one status are dropped inside the rolled-back transaction, so
  * the filters of both readings are compared on rows a later status or role would write. Returns the cases it compared.
  */
 export async function checkUserOrganizationsEquality(
