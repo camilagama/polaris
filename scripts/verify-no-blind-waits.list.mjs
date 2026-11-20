@@ -65,12 +65,10 @@ export const BLIND_WAITS_LIST = {
     reason: BEFORE_THE_RULE,
   },
   "apps/web/e2e/app-shell.e2e.ts": { count: 1, reason: BEFORE_THE_RULE },
-  "apps/web/e2e/close-store.e2e.ts": { count: 1, reason: BEFORE_THE_RULE },
   "apps/web/e2e/closed-store-device.e2e.ts": {
     count: 1,
     reason: BEFORE_THE_RULE,
   },
-  "apps/web/e2e/closed-store.e2e.ts": { count: 1, reason: BEFORE_THE_RULE },
   "apps/web/e2e/dashboard.e2e.ts": { count: 2, reason: BEFORE_THE_RULE },
   "apps/web/e2e/home.e2e.ts": { count: 3, reason: BEFORE_THE_RULE },
   "apps/web/e2e/offline-devices.e2e.ts": {
