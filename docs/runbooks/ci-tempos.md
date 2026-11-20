@@ -32,7 +32,7 @@ A instalação do Chromium é cerca de dois terços da preparação. A meta de p
 
 ## Variante (ii): contêiner da Microsoft
 
-O que muda nos jobs `lighthouse`, `offline-poc-browser-part` e `offline-catalog-csp-browser`:
+A variante vale para 2 jobs: `lighthouse` e `offline-catalog-csp-browser`. O que muda neles:
 
 - `container: mcr.microsoft.com/playwright:v1.63.0-noble` com `options: --init --ipc=host` (as recomendações da imagem para o Chromium);
 - o Bun entra por `npm install --global "bun@$(cat .bun-version)"` no lugar de `oven-sh/setup-bun`: a imagem parte do `ubuntu:noble` sem `unzip`, e o `setup-bun` desempacota com ele;
@@ -41,10 +41,11 @@ O que muda nos jobs `lighthouse`, `offline-poc-browser-part` e `offline-catalog-
 
 O que fica de fora e por quê:
 
+- Os shards do gate offline (`offline-poc-browser-part`) continuam no runner, com `setup-bun` e `playwright install` de hoje. O `test:pwa` liga o projeto `chromium-visual` e chama o `docker` (`apps/web/scripts/pwa-browser-tests.ts`, linhas 41-43 e 187-192): a imagem do Playwright não traz o CLI do Docker nem o socket, e o `docker run --network host` não acharia o servidor estático do job. Mudar esse script pede revisão de código própria.
 - O job `e2e-real` continua no runner. Em job de contêiner o serviço do PostgreSQL deixa de ser `localhost` e passa a ser `postgres`, e `packages/db/scripts/gate-hosts.ts` e `apps/web/e2e-real/run-environment.ts` recusam esse host de propósito. Incluí-lo pede uma mudança de código revisada (a própria lista documenta isso), não só do workflow.
 
 Pontos a medir e a vigiar:
 
-- A preparação nos jobs de contêiner termina no `bun install` (o passo de conferência da versão não casa com `INSTALL_STEP`), e o puxar da imagem entra em "Initialize containers", que a ferramenta ignora ao contar a preparação: some-o à mão ao comparar. O tempo de puxar a imagem é a parte que só a execução mostra.
+- A preparação nos jobs de contêiner termina no `bun install` (o passo de conferência da versão não casa com `INSTALL_STEP`), e o puxar da imagem (passo "Initialize containers") já está na preparação, porque `scripts/ci-timing.mjs` conta a preparação desde o início do job: não some nada à mão. A rodada 2 lê esse tempo em separado, pelo tempo do passo "Initialize containers" nos passos do job. O tempo de puxar a imagem é a parte que só a execução mostra.
 - Chromium como root dentro do Docker, `HOME=/github/home`, o cache do Bun e o `actions/checkout` no contêiner não foram exercidos antes de rodar no CI; a primeira execução é a prova.
 
