@@ -11,7 +11,7 @@ import { GATE_ROLLBACK_LIST } from "./verify-gate-rollback.list.mjs";
  * `rollbackAndRelease` in `packages/db/scripts/gate-roles.ts` never throw and destroy such a connection; this check
  * keeps a new gate from going back to the bare call.
  *
- * Counted, in every `.ts` file under `packages/db/scripts/` (tests included) except `gate-roles.ts`, which is where
+ * Counted, in every `.ts` file under `packages/db/scripts/` and `apps/web/scripts/` (tests included) except `gate-roles.ts`, which is where
  * the helpers live: a string or template literal whose whole text is `ROLLBACK` (or its synonyms `ROLLBACK WORK`, `ROLLBACK TRANSACTION`, `ABORT`, with `AND [NO] CHAIN`; case and a trailing `;` aside) written
  * at the top level of the arguments of a `query(` call, so both `query("ROLLBACK")` and
  * `query(commit ? "COMMIT" : "ROLLBACK")` count, as does a call with type arguments (`query<Row>("ROLLBACK")`). `ROLLBACK TO SAVEPOINT` is another statement and does not. Comments
@@ -25,10 +25,11 @@ const root = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
 
 export const LIST_FILE = "scripts/verify-gate-rollback.list.mjs";
 export const HELPERS_FILE = "packages/db/scripts/gate-roles.ts";
+export const GATE_FOLDERS = ["packages/db/scripts/", "apps/web/scripts/"];
 
 export const ADVICE =
-  "Use rollbackAndRelease (conexão do pool) ou rollbackQuietly (conexão que o gate segue usando) de packages/db/scripts/gate-roles.ts: " +
-  "eles não lançam, e o erro que já vinha subindo não é trocado pelo de um ROLLBACK que falhou. " +
+  "Use rollbackAndRelease (conexão do pool) ou rollbackQuietly (conexão que o gate segue usando) de packages/db/scripts/gate-roles.ts " +
+  "(em apps/web/scripts, import relativo de `../../../packages/db/scripts/gate-roles`): eles não lançam, e o erro que já vinha subindo não é trocado pelo de um ROLLBACK que falhou. " +
   `Só se o ROLLBACK precisa mesmo falhar o gate, acrescente o arquivo (ou suba a entrada) em ${LIST_FILE} com o motivo.`;
 
 const ENDS_TRANSACTION = String.raw`(?:rollback(?:[ \t\r\n]+(?:work|transaction))?|abort(?:[ \t\r\n]+(?:work|transaction))?)(?:[ \t\r\n]+and[ \t\r\n]+(?:no[ \t\r\n]+)?chain)?`;
@@ -40,7 +41,7 @@ const QUERY_CALL = /\bquery(?:\s*<[^;()]*>)?\s*\(/g;
 
 export function isGateScript(relative) {
   return (
-    relative.startsWith("packages/db/scripts/") &&
+    GATE_FOLDERS.some((folder) => relative.startsWith(folder)) &&
     relative.endsWith(".ts") &&
     !relative.endsWith(".d.ts") &&
     relative !== HELPERS_FILE
