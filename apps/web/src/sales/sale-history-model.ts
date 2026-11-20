@@ -9,10 +9,6 @@ import {
   formatCalendarDate,
   formatInstant,
 } from "../lib/format";
-import {
-  LIST_REFRESH_FAILED_TEXT,
-  LIST_REFRESHING_TEXT,
-} from "../lib/list-refresh-text";
 import { rpcErrorReason } from "../lib/rpc-error";
 import { sumBrlAmounts } from "../lib/sum-brl";
 import { cancellationReasonLabel } from "./sale-cancellation-model";
@@ -520,9 +516,6 @@ export interface LoadMoreView {
   refreshFailed: boolean;
   visible: boolean;
 }
-
-export const REFRESHING_LIST_TEXT = LIST_REFRESHING_TEXT;
-export const REFRESH_FAILED_TEXT = LIST_REFRESH_FAILED_TEXT;
 
 /** The button is hidden, not disabled, until the list on screen was read for the filter in force. */
 export function loadMoreView(
