@@ -3,6 +3,7 @@ import { Pool } from "pg";
 import { guardPoolErrors } from "./pool-errors";
 
 export interface DatabaseOptions {
+  schema?: Record<string, unknown>;
   connectionTimeoutMillis?: number;
   idleTimeoutMillis?: number;
   maxConnections?: number;
@@ -22,7 +23,10 @@ export function createDatabase(
   );
 
   return {
-    db: drizzle({ client: pool }),
+    db: drizzle({
+      client: pool,
+      ...(options.schema ? { schema: options.schema } : {}),
+    }),
     pool,
   };
 }

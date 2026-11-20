@@ -3613,6 +3613,14 @@ Origem: achado B do Diego no Pixel 6 (28/10): a venda montada em Vender sumia ao
 | Catálogo grande | Em revisão | Com mais de 100 variantes ficam as leituras filtradas de antes, e a aba guarda a pista no `sessionStorage` (`polaris.home.largeCatalog`, a loja; nunca `localStorage`) para pular a leitura larga; apagada no Sair, na sessão encerrada (`leave-browser.ts`) e na troca de loja. |
 | Provas | Em revisão | `home-inventory.test.ts` e `use-home.test.tsx` (contagens, pista, falha da leitura larga, números sem esperar o estoque; mutações reprovadas), `home.e2e.ts` (tabelas, 101 variantes, 500 na leitura larga), gate `home-inventory` (PostgreSQL 18: a variante sem linha de saldo chega com quantidade 0 e custo nulo; a derivação é igual às quatro leituras filtradas; mutantes reprovam). |
 
+### Sessão e usuário num SELECT só (t1478; sem migration)
+
+| Item | Estado | Detalhe |
+| --- | --- | --- |
+| Servidor | Em revisão | `advanced.database.joins: true` no `createBetterAuth` (`server/auth.ts`); `schema/auth.ts` declara as relações de sessão, conta e usuário e exporta `authRelationalSchema`; o `createDatabase` aceita `schema` e só as conexões de autenticação de `auth/handler.ts` e `authenticated-request-context.ts` o passam (a de tenant não, salvo no desenvolvimento local, onde as duas strings são iguais). O `get-session` lê a sessão e o usuário num `LEFT JOIN LATERAL`: de 2 para 1 statement por chamada autenticada. `cookieCache`, `updateAge` e `freshAge` não mudam. Emenda de 20/11 do [ADR 0017](../docs/adr/0017-politica-de-sessao-e-conta.md). |
+| Medida | Em revisão | Gate `web-worker` (PostgreSQL 18 local): todas as 18 linhas de `STATEMENT_COUNTS` e de `FIRST_CALL_STATEMENT_COUNTS` baixam exatamente 1 sobre o que a `main` tinha (`auth get-session` 2 → 1, `sync/pull` 6 → 5, `billing/readPlan` 18 → 17, `goal/list` 8 → 7); com a função `list_user_organizations` da t1480 já na `main`, `organization/listMine` fica em 4 (5 → 4). |
+| Provas | Em revisão | `get-session-single-read.test.ts` (1 statement; 2 na composição anterior ao gancho), `authenticated-request-context.test.ts` (só a conexão de autenticação recebe o `schema`) e o caso "changes the password and ends every other session" do gate `web-worker` (revogação imediata). |
+
 ### As lojas do usuário num statement (t1480, C3; migration 0137, provisória)
 
 | Parte | Estado | O que há |

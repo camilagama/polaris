@@ -1,3 +1,4 @@
+import { authRelationalSchema } from "@polaris/db/auth-schema";
 import type {
   createDatabase as createHyperdriveDatabase,
   DatabaseOptions,
@@ -273,7 +274,11 @@ describe("authenticated request database connection", () => {
     expect(createDatabaseSpy).toHaveBeenNthCalledWith(
       1,
       baseBindings.AUTH_HYPERDRIVE.connectionString,
-      { connectionTimeoutMillis: 30_000, maxConnections: 1 }
+      {
+        connectionTimeoutMillis: 30_000,
+        maxConnections: 1,
+        schema: authRelationalSchema,
+      }
     );
     expect(endPool).toHaveBeenCalledTimes(2);
   });
