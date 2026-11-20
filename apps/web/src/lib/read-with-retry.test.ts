@@ -423,6 +423,7 @@ const CONTRACT_READS = readProceduresOfTheContract();
 /** The reads `readWithRetry` wraps today, as `router.procedure`: a new one is added here on purpose, and the contract has to call it a read. */
 const READ_PROCEDURES = [
   "category.list",
+  "customer.get",
   "customer.list",
   "expense.list",
   "expense.listCategories",

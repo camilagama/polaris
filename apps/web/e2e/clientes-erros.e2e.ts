@@ -1,5 +1,5 @@
 /// <reference lib="dom" />
-import type { Page, Route } from "@playwright/test";
+import type { Locator, Page, Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 import { serveHealth, WORKER_MARK } from "./worker-mark";
 
@@ -152,49 +152,96 @@ const FAILING_CHECKS = [
   },
 ];
 
+const SAVED = "Cliente “Bia Souza” cadastrado.";
+
+async function fillNewCustomer(page: Page) {
+  await page.getByRole("button", { name: "Novo cliente" }).click();
+  const name = page.getByLabel("Nome", { exact: true });
+  const phone = page.getByLabel("Telefone");
+  await name.fill("Bia Souza");
+  await phone.fill("11900000002");
+  await page.getByRole("button", { name: "Cadastrar cliente" }).click();
+  return { name, phone };
+}
+
+async function expectRefusedAndKept(
+  page: Page,
+  text: string,
+  kept: { name: Locator; phone: Locator }
+) {
+  await expect(page.getByRole("alert")).toContainText(text);
+  await expect(
+    page.getByRole("dialog", { name: "Novo cliente" })
+  ).toBeVisible();
+  await expect(kept.name).toHaveValue("Bia Souza");
+  await expect(kept.phone).toHaveValue("11900000002");
+}
+
+function saveAnswers(failure: ReturnType<typeof refusal>, failures: number) {
+  const calls = { checks: 0, creates: 0 };
+  const answers: Record<string, Handler> = {
+    "customer/create": (route) => {
+      calls.creates += 1;
+      return route.fulfill(rpc(customer(2, "Bia Souza")));
+    },
+    "customer/findPossibleDuplicates": (route) => {
+      calls.checks += 1;
+      return calls.checks <= failures
+        ? route.fulfill(failure)
+        : route.fulfill(rpc({ matches: [] }));
+    },
+    "customer/list": reply({ customers: [] }),
+  };
+  return { answers, calls };
+}
+
 for (const failing of FAILING_CHECKS) {
   test(`Clientes: a conferência de repetidos que falha com ${failing.label} diz que não conferiu, não salva e o que foi digitado fica`, async ({
     page,
   }) => {
-    let checks = 0;
-    let creates = 0;
-    await openCustomers(page, {
-      "customer/create": (route) => {
-        creates += 1;
-        return route.fulfill(rpc(customer(2, "Bia Souza")));
-      },
-      "customer/findPossibleDuplicates": (route) => {
-        checks += 1;
-        return checks === 1
-          ? route.fulfill(failing.answer)
-          : route.fulfill(rpc({ matches: [] }));
-      },
-      "customer/list": reply({ customers: [] }),
-    });
-    await page.getByRole("button", { name: "Novo cliente" }).click();
-    const name = page.getByLabel("Nome", { exact: true });
-    const phone = page.getByLabel("Telefone");
-    await name.fill("Bia Souza");
-    await phone.fill("11900000002");
-    await page.getByRole("button", { name: "Cadastrar cliente" }).click();
+    const { answers, calls } = saveAnswers(failing.answer, 1);
+    await openCustomers(page, answers);
+    const kept = await fillNewCustomer(page);
 
-    await expect(page.getByRole("alert")).toContainText(failing.text);
-    expect(checks).toBe(1);
-    expect(creates).toBe(0);
-    await expect(
-      page.getByRole("dialog", { name: "Novo cliente" })
-    ).toBeVisible();
-    await expect(name).toHaveValue("Bia Souza");
-    await expect(phone).toHaveValue("11900000002");
+    await expectRefusedAndKept(page, failing.text, kept);
+    expect(calls.checks).toBe(1);
+    expect(calls.creates).toBe(0);
 
     // the form is still open and the same button checks again; once the check answers, the customer is saved
     await page.getByRole("button", { name: "Cadastrar cliente" }).click();
     await expect(
-      page
-        .getByRole("status")
-        .filter({ hasText: "Cliente “Bia Souza” cadastrado." })
+      page.getByRole("status").filter({ hasText: SAVED })
     ).toBeVisible();
-    expect(checks).toBe(2);
-    expect(creates).toBe(1);
+    expect(calls.checks).toBe(2);
+    expect(calls.creates).toBe(1);
   });
 }
+
+test("Clientes: a conferência de repetidos que segue em 503 no segundo clique volta a dizer que não conferiu e só salva quando responde", async ({
+  page,
+}) => {
+  const { answers, calls } = saveAnswers(
+    refusal("SERVICE_UNAVAILABLE", 503),
+    2
+  );
+  await openCustomers(page, answers);
+  const kept = await fillNewCustomer(page);
+  const save = page.getByRole("button", { name: "Cadastrar cliente" });
+
+  await expectRefusedAndKept(page, CHECK_UNAVAILABLE, kept);
+  expect(calls.checks).toBe(1);
+  expect(calls.creates).toBe(0);
+
+  await save.click();
+  await expect.poll(() => calls.checks).toBe(2);
+  await expect(save).toBeEnabled();
+  await expectRefusedAndKept(page, CHECK_UNAVAILABLE, kept);
+  expect(calls.creates).toBe(0);
+
+  await save.click();
+  await expect(
+    page.getByRole("status").filter({ hasText: SAVED })
+  ).toBeVisible();
+  expect(calls.checks).toBe(3);
+  expect(calls.creates).toBe(1);
+});

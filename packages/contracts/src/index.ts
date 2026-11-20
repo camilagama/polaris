@@ -1873,6 +1873,15 @@ export const polarisContract = {
         })
       )
       .output(z.object({ matches: z.array(customerDuplicateMatch) })),
+    // One customer by ID, archived or anonymized included: the sale detail reads the current name of its customer without the whole list.
+    get: readProcedure
+      .input(
+        z.object({
+          id: z.string().uuid(),
+          organizationId: organizationIdInput,
+        })
+      )
+      .output(customer),
     list: readProcedure
       .input(
         z.object({
