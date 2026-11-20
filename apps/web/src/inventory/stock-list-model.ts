@@ -470,10 +470,6 @@ export interface StockMoreView {
   visible: boolean;
 }
 
-export const STOCK_REFRESHING_TEXT = "Atualizando a lista…";
-export const STOCK_REFRESH_FAILED_TEXT =
-  "Não foi possível atualizar a lista. O que está na tela pode estar desatualizado.";
-
 /** The button is hidden, not disabled, until the list on screen was read for the filter in force. */
 export function stockMoreView(
   state: StockListState,

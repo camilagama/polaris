@@ -1,13 +1,15 @@
 import type { PolarisRpcClient } from "@polaris/contracts";
+import {
+  createSessionLookup,
+  type SessionAnswer,
+  type SessionLookup,
+} from "../../lib/session-lookup";
 import type { BootstrapSource } from "../bootstrap";
 import {
   type RuntimeApi,
   type SignedInSession,
   SessionUnreachableError,
 } from "./offline-runtime";
-
-/** A lie-fi connection must not hold the start of the app: after this, the remembered user stands in. */
-const SESSION_LOOKUP_TIMEOUT_MS = 4000;
 
 /** 5xx and 429 say nothing about who is signed in: they are a server that could not answer, not a refusal. */
 function isNoAnswer(status: number): boolean {
@@ -30,39 +32,42 @@ function isDeviceRefusal(error: unknown): boolean {
  */
 export function createRpcRuntimeApi(
   client: PolarisRpcClient,
-  // the connection's fetch in the browser: a 401 or 403 that is not the Worker's is no answer, not "no session"
-  fetchSession: typeof fetch = (input, init) => fetch(input, init)
+  // in the browser, over the connection's fetch: a 401 or 403 that is not the Worker's is no answer, not "no session"
+  session: SessionLookup = createSessionLookup({
+    fetch: (input, init) => fetch(input, init),
+    now: () => Date.now(),
+  })
 ): RuntimeApi {
-  /** Always the server's answer of now: the start trusts a link of the device to this session id only on it. */
-  const readSession = async (): Promise<SignedInSession | null> => {
-    let response: Response;
+  const readSession = async (options?: {
+    fresh?: boolean;
+  }): Promise<SignedInSession | null> => {
+    let answer: SessionAnswer;
     try {
-      response = await fetchSession("/api/auth/get-session", {
-        cache: "no-store",
-        credentials: "same-origin",
-        signal: AbortSignal.timeout(SESSION_LOOKUP_TIMEOUT_MS),
-      });
+      answer = await session.read(options);
     } catch (cause) {
       throw new SessionUnreachableError("session_unreachable", { cause });
     }
-    if (response.status === 401 || response.status === 403) {
+    if (answer.status === 401 || answer.status === 403) {
       return null; // the server said, in so many words, that there is no session for this cookie
     }
-    if (isNoAnswer(response.status)) {
+    if (isNoAnswer(answer.status)) {
       // the server is down, overloaded or throttling: no answer, the same as having no connection
-      throw new SessionUnreachableError(`session_http_${response.status}`);
+      throw new SessionUnreachableError(`session_http_${answer.status}`);
     }
-    if (!response.ok) {
+    if (answer.status < 200 || answer.status >= 300) {
       throw new Error("session_unavailable");
     }
-    const body = (await response.json().catch((cause: unknown) => {
-      throw new Error("session_unavailable", { cause });
-    })) as { session?: { id?: unknown }; user?: { id?: unknown } } | null;
+    if (answer.body === undefined) {
+      throw new Error("session_unavailable");
+    }
+    const body = answer.body as {
+      session?: { id?: unknown };
+      user?: { id?: unknown };
+    } | null;
     const userId = body?.user?.id;
     if (!(typeof userId === "string" && userId !== "")) {
       return null;
     }
-    // only the id is kept: the token in the same answer never leaves this function
     const sessionId = body?.session?.id;
     return {
       sessionId:
@@ -99,9 +104,10 @@ export function createRpcRuntimeApi(
       const { device } = await client.device.register({ label });
       return device.id;
     },
-    sessionUserId: async () => (await readSession())?.userId ?? null,
-    signedInSession: readSession,
-    source: (organizationId, signal): BootstrapSource => {
+    sessionUserId: async (options) =>
+      (await readSession(options))?.userId ?? null,
+    signedInSession: () => readSession({ fresh: true }),
+    source: (organizationId, signal, expectedUserId): BootstrapSource => {
       const options = signal ? { signal } : undefined;
       return {
         getCursor: async () =>
@@ -120,7 +126,10 @@ export function createRpcRuntimeApi(
           return { nextAfterId: page.nextAfterId, rows: page.rows } as never;
         },
         pull: (cursor, limit) =>
-          client.sync.pull({ cursor, limit, organizationId }, options),
+          client.sync.pull(
+            { cursor, expectedUserId, limit, organizationId },
+            options
+          ),
         recentSales: async () =>
           (await client.sale.list({ limit: 100, organizationId }, options))
             .sales,

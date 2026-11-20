@@ -60,7 +60,9 @@ function world(options: { leaseHours?: number } = {}) {
     registerDevice: 0,
     sessionUser: 0,
   };
+  const sessionFresh: boolean[] = [];
   const labels: (string | null)[] = [];
+  const expectedUsers: (string | undefined)[] = [];
   const owners = new Map<string, string>();
   /** `id` is the session row the get-session names; null is an answer without one (the start never skips the check). */
   const session: { id: string | null; signedIn: boolean; user: string } = {
@@ -72,7 +74,7 @@ function world(options: { leaseHours?: number } = {}) {
     /** The server cannot say whose a device is (down, timed out). */
     deviceIsMine: boolean;
     /** What asking whose a device is throws, if anything (wins over `deviceIsMine`). */
-    deviceIsMineError?: Error;
+    deviceIsMineError?: Error | undefined;
     /** What asking who is signed in throws, if anything. */
     sessionUser?: Error;
     issueLease: Error[];
@@ -85,6 +87,10 @@ function world(options: { leaseHours?: number } = {}) {
     pushData?: Record<string, unknown> | undefined;
     /** The server answers every pushed command as rejected, with this code. */
     rejectCode?: string | undefined;
+    /** What every pull throws, after `beforePullError` ran, if anything. */
+    pullError?: unknown;
+    /** Runs inside the pull that is about to fail (the session or the queue changes while it is on its way). */
+    beforePullError?: (() => Promise<void> | void) | undefined;
   } = {
     deviceIsMine: false,
     issueLease: [],
@@ -167,6 +173,10 @@ function world(options: { leaseHours?: number } = {}) {
   countedSource.pull = async (cursor, limit) => {
     calls.pull += 1;
     await gates.pull;
+    if (failures.pullError !== undefined) {
+      await failures.beforePullError?.();
+      throw failures.pullError;
+    }
     const release = await gates.readGate?.acquire(pullSignal);
     try {
       return await server.pull(cursor, limit);
@@ -231,14 +241,16 @@ function world(options: { leaseHours?: number } = {}) {
       owners.set(id, session.user);
       return Promise.resolve(id);
     },
-    sessionUserId: () => {
+    sessionUserId: (lookup) => {
       calls.sessionUser += 1;
+      sessionFresh.push(lookup?.fresh === true);
       return failures.sessionUser
         ? Promise.reject(failures.sessionUser)
         : Promise.resolve(session.signedIn ? session.user : null);
     },
     signedInSession: () => {
       calls.sessionUser += 1;
+      sessionFresh.push(true);
       if (failures.sessionUser) {
         return Promise.reject(failures.sessionUser);
       }
@@ -248,7 +260,8 @@ function world(options: { leaseHours?: number } = {}) {
           : null
       );
     },
-    source: (_organizationId, signal) => {
+    source: (_organizationId, signal, expectedUserId) => {
+      expectedUsers.push(expectedUserId);
       pullSignal = signal;
       return countedSource;
     },
@@ -332,8 +345,10 @@ function world(options: { leaseHours?: number } = {}) {
     },
     api,
     calls,
+    sessionFresh,
     closed,
     disk,
+    expectedUsers,
     failures,
     /** Fires every live timer that is due by the clock, as the browser would. */
     fireDueTimers: () => {
@@ -563,22 +578,21 @@ describe("starting", () => {
     await queueProduct(first, "Do primeiro usuário", 1);
     await first.stop(); // the session ended without a logout: the lease and the data stay
 
+    const registered = w.calls.registerDevice;
     w.session.user = "user-2";
     w.failures.deviceIsMine = true;
     const second = w.make();
     await second.start(organizationId);
 
-    // the first user's device is not lent on the strength of a failed question
-    expect(second.getSnapshot().phase).toBe("ready");
-    expect(second.context()?.deviceId).not.toBe(uuid(701));
-    expect(second.getSnapshot().counts.pending).toBe(0);
+    // the first user's device is not lent on the strength of a failed question, and nothing is opened or registered
+    expect(second.getSnapshot()).toMatchObject({
+      phase: "unavailable",
+      reason: "device_check_unavailable",
+    });
+    expect(second.context()).toBeNull();
+    expect(w.calls.registerDevice).toBe(registered);
+    expect(w.keyValues.read("polaris.offline.device")).toBe(uuid(701));
     expect(w.stores.has(`user-1-${organizationId}`)).toBe(true);
-    expect(w.stores.get(`user-1-${organizationId}`)?.outbox).not.toBe(
-      second.context()?.outbox
-    );
-    expect(second.context()?.lease).not.toBe(
-      w.keyValues.read(`polaris.offline.lease.user-1.${organizationId}`)
-    );
     // the first user's lease is still theirs alone
     expect(
       JSON.parse(
@@ -663,6 +677,117 @@ describe("starting", () => {
     expect(w.wiped).toEqual([]);
   });
 
+  describe("device.check that the server could not answer, with no lease that proves the device", () => {
+    const leaseKeyName = `polaris.offline.lease.${userId}.${organizationId}`;
+
+    const unanswered: [string, () => Error][] = [
+      [
+        "a 503",
+        () =>
+          Object.assign(new Error("unavailable"), {
+            code: "SERVICE_UNAVAILABLE",
+            status: 503,
+          }),
+      ],
+      [
+        "a 500",
+        () =>
+          Object.assign(new Error("boom"), {
+            code: "INTERNAL_SERVER_ERROR",
+            status: 500,
+          }),
+      ],
+      ["a network failure", () => new TypeError("Failed to fetch")],
+      [
+        "a timeout",
+        () => new DOMException("The operation timed out", "TimeoutError"),
+      ],
+    ];
+
+    it.each(unanswered)(
+      "%s keeps the device and the lease, registers nothing and starts unavailable",
+      async (_name, failure) => {
+        const w = world();
+        await w.make().start(organizationId);
+        const device = w.keyValues.read("polaris.offline.device");
+        const registered = w.calls.registerDevice;
+        const issued = w.calls.issueLease;
+        w.keyValues.remove(leaseKeyName);
+
+        w.failures.deviceIsMineError = failure();
+        const runtime = w.make();
+        await runtime.start(organizationId);
+
+        expect(w.calls.registerDevice).toBe(registered);
+        expect(w.calls.issueLease).toBe(issued);
+        expect(w.keyValues.read("polaris.offline.device")).toBe(device);
+        expect(runtime.context()).toBeNull();
+        expect(runtime.getSnapshot()).toMatchObject({
+          legalAcceptanceRequired: false,
+          phase: "unavailable",
+          reason: "device_check_unavailable",
+          sessionRefused: false,
+        });
+        expect(w.wiped).toEqual([]);
+      }
+    );
+
+    it("the next opening, with the server back, reuses the same device", async () => {
+      const w = world();
+      await w.make().start(organizationId);
+      const device = w.keyValues.read("polaris.offline.device");
+      const registered = w.calls.registerDevice;
+      w.keyValues.remove(leaseKeyName);
+
+      w.failures.deviceIsMineError = Object.assign(new Error("unavailable"), {
+        code: "SERVICE_UNAVAILABLE",
+        status: 503,
+      });
+      await w.make().start(organizationId);
+      w.failures.deviceIsMineError = undefined;
+
+      const back = w.make();
+      await back.start(organizationId);
+      expect(back.getSnapshot().phase).toBe("ready");
+      expect(back.context()?.deviceId).toBe(device);
+      expect(w.calls.registerDevice).toBe(registered);
+    });
+
+    it.each(["FORBIDDEN", "UNAUTHORIZED"])(
+      "a definite %s answer with no lease keeps the earlier behaviour: forgets the device and registers again",
+      async (code) => {
+        const w = world();
+        await w.make().start(organizationId);
+        const registered = w.calls.registerDevice;
+        w.keyValues.remove(leaseKeyName);
+
+        w.failures.deviceIsMineError = Object.assign(new Error("refused"), {
+          code,
+          status: code === "FORBIDDEN" ? 403 : 401,
+        });
+        await w.make().start(organizationId);
+
+        expect(w.calls.registerDevice).toBe(registered + 1);
+        expect(w.keyValues.read("polaris.offline.device")).not.toBe(uuid(701));
+      }
+    );
+
+    it("a device that is not this user's (the server answered) is still forgotten and registered again", async () => {
+      const w = world();
+      await w.make().start(organizationId);
+      const registered = w.calls.registerDevice;
+      w.keyValues.remove(leaseKeyName);
+      w.session.user = "user-2";
+
+      const runtime = w.make();
+      await runtime.start(organizationId);
+
+      expect(w.calls.registerDevice).toBe(registered + 1);
+      expect(runtime.getSnapshot().phase).toBe("ready");
+      expect(w.keyValues.read("polaris.offline.device")).not.toBe(uuid(701));
+    });
+  });
+
   it("a session that changes hands while the app is open stops the first user's runtime without touching their data", async () => {
     const w = world();
     const runtime = w.make();
@@ -683,6 +808,77 @@ describe("starting", () => {
     expect(w.wiped).toEqual([]);
     const kept = w.stores.get(`${userId}-${organizationId}`);
     expect((await kept?.outbox.snapshot())?.commands).toHaveLength(1);
+  });
+
+  it("the pull names the user of the lease in use as the expected one", async () => {
+    const w = world();
+    const runtime = w.make();
+    await runtime.start(organizationId);
+    w.expectedUsers.length = 0;
+    await runtime.syncNow();
+    expect(w.expectedUsers).toEqual([userId]);
+  });
+
+  it.each([
+    ["with an empty queue, even inside the confirmation window", false],
+    ["with a command queued while the pull was on its way", true],
+  ])(
+    "a pull refused for another session takes the session changed path %s, keeping the queue",
+    async (_name, queued) => {
+      const w = world();
+      const runtime = w.make();
+      await runtime.start(organizationId);
+      const sessionReads = w.calls.sessionUser;
+      w.failures.pullError = Object.assign(new Error("forbidden"), {
+        code: "FORBIDDEN",
+        data: { reason: "session_changed" },
+      });
+      w.failures.beforePullError = async () => {
+        w.session.user = "user-2"; // signed in in another window after the confirmation
+        if (queued) {
+          await queueProduct(runtime, "Do primeiro usuário", 1);
+        }
+      };
+      await runtime.syncNow();
+
+      expect(w.calls.sessionUser).toBe(sessionReads + 1); // the window skipped the read before the pull; the refusal forced one
+      expect(runtime.getSnapshot()).toMatchObject({
+        phase: "unavailable",
+        reason: "session_changed",
+        sessionRefused: true,
+      });
+      expect(w.keyValues.read("polaris.offline.session-user")).toBe("user-2");
+      expect(w.purged).toEqual([]);
+      expect(w.wiped).toEqual([]);
+      const kept = w.stores.get(`${userId}-${organizationId}`);
+      expect((await kept?.outbox.snapshot())?.commands).toHaveLength(
+        queued ? 1 : 0
+      );
+    }
+  );
+
+  it("a pull refused for another session while the reading still names this user ends the sync quietly and the next one tries again", async () => {
+    const w = world();
+    const runtime = w.make();
+    await runtime.start(organizationId);
+    w.failures.pullError = Object.assign(new Error("forbidden"), {
+      code: "FORBIDDEN",
+      data: { reason: "session_changed" },
+    });
+    await runtime.syncNow();
+
+    expect(runtime.getSnapshot()).toMatchObject({
+      phase: "ready",
+      reason: null,
+      sessionRefused: false,
+      syncing: false,
+    });
+    expect(w.purged).toEqual([]);
+    w.failures.pullError = undefined;
+    const pulls = w.calls.pull;
+    await runtime.syncNow();
+    expect(w.calls.pull).toBe(pulls + 1);
+    expect(runtime.getSnapshot().lastSyncAt).not.toBeNull();
   });
 
   it("when the server answers about the session with something unusable, it never falls back to the remembered user; with no connection at all it does", async () => {
@@ -790,6 +986,32 @@ describe("starting", () => {
     w.network.online = true;
     await runtime.syncNow();
     expect(w.calls.sessionUser).toBe(3);
+  });
+
+  it("asks every confirmation of the server fresh: at the start, with a queue, within the window and past it", async () => {
+    const w = world();
+    const runtime = w.make();
+    await runtime.start(organizationId);
+    expect(w.sessionFresh).toEqual([true]);
+
+    w.network.online = false;
+    await queueProduct(runtime, "Camiseta", 1);
+    w.network.online = true;
+    await runtime.syncNow();
+    expect(w.calls.sessionUser).toBe(2);
+    expect(w.sessionFresh).toEqual([true, true]);
+
+    w.network.online = false;
+    await queueProduct(runtime, "Calça", 1);
+    w.network.online = true;
+    w.advance(0.02);
+    await runtime.syncNow();
+    expect(w.calls.sessionUser).toBe(3);
+
+    w.advance(0.09);
+    await runtime.syncNow();
+    expect(w.sessionFresh.every(Boolean)).toBe(true);
+    expect(w.sessionFresh.length).toBe(w.calls.sessionUser);
   });
 
   it("a sync with nothing queued reuses the session confirmation for 5 minutes and looks again at exactly 5", async () => {

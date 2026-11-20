@@ -5,6 +5,7 @@ import {
   isDefiniteRpcRejection,
   isLegalAcceptanceRefusal,
   isOrganizationClosedRefusal,
+  isSessionChangedRefusal,
   isPlatformCut,
   isTransientReadFailure,
   rpcErrorCode,
@@ -79,9 +80,10 @@ export interface RuntimeApi {
    * is none (the server said so, or refused with 401/403). Throws
    * SessionUnreachableError when the server gave no answer (no connection, timeout,
    * 5xx, 429: the remembered user stands in), and any other error when it answered
-   * with something unusable.
+   * with something unusable. By default an answer of the last 10 s of this tab may be reused; `fresh` always asks
+   * the server (a queue to send, who is leaving).
    */
-  sessionUserId: () => Promise<string | null>;
+  sessionUserId: (options?: { fresh?: boolean }) => Promise<string | null>;
   /**
    * The session as the server sees it in this very call (never a remembered answer): the user and the id of the
    * session row, never its token. The same answers and errors as `sessionUserId`. Without it, or without an id in the
@@ -90,9 +92,15 @@ export interface RuntimeApi {
   signedInSession?: () => Promise<SignedInSession | null>;
   /**
    * The reads of the sync (pull, bootstrap). `signal` ends the ones still going when someone is waiting for the
-   * queue to be sent: a read held by the tab's read gate (a 429 pause) must not hold "Sair".
+   * queue to be sent: a read held by the tab's read gate (a 429 pause) must not hold "Sair". `expectedUserId` is the
+   * user of the lease the tab reads under: the pull of a sync is refused (`session_changed`) when the session is
+   * another user's. The first load of a copy leaves it out: it has just read the session itself.
    */
-  source: (organizationId: string, signal?: AbortSignal) => BootstrapSource;
+  source: (
+    organizationId: string,
+    signal?: AbortSignal,
+    expectedUserId?: string
+  ) => BootstrapSource;
 }
 
 export interface SignedInSession {
@@ -114,6 +122,20 @@ export class SessionUnreachableError extends Error {
   constructor(message = "session_unreachable", options?: ErrorOptions) {
     super(message, options);
     this.name = "SessionUnreachableError";
+  }
+}
+
+/** Reason of the `unavailable` phase when the server did not say whose the remembered device is: the server's fault, not the browser's. */
+export const DEVICE_CHECK_UNAVAILABLE_REASON = "device_check_unavailable";
+
+/** The server did not answer whose the remembered device is, and no lease of this user proves it: nothing is forgotten or registered. */
+class DeviceCheckUnavailableError extends Error {
+  constructor(
+    message = DEVICE_CHECK_UNAVAILABLE_REASON,
+    options?: ErrorOptions
+  ) {
+    super(message, options);
+    this.name = "DeviceCheckUnavailableError";
   }
 }
 
@@ -424,11 +446,15 @@ export const ACCOUNT_UNAVAILABLE_REASONS: ReadonlySet<string> = new Set([
   "session_refused",
 ]);
 
-/** Whether an `unavailable` reason blames the browser: anything that is not the plan or the account/store. */
+/** Whether an `unavailable` reason blames the browser: anything that is not the plan, the account/store or a server that did not answer. */
 export function isBrowserFailure(reason: string | null): boolean {
   return (
     reason === null ||
-    !(reason === PLAN_REFUSED_REASON || ACCOUNT_UNAVAILABLE_REASONS.has(reason))
+    !(
+      reason === PLAN_REFUSED_REASON ||
+      reason === DEVICE_CHECK_UNAVAILABLE_REASON ||
+      ACCOUNT_UNAVAILABLE_REASONS.has(reason)
+    )
   );
 }
 
@@ -838,7 +864,7 @@ export class OfflineRuntime {
       return null;
     }
     try {
-      return await this.dependencies.api.sessionUserId();
+      return await this.dependencies.api.sessionUserId({ fresh: true });
     } catch {
       return null;
     }
@@ -1232,7 +1258,10 @@ export class OfflineRuntime {
    * Online, asks the server whether the remembered device is this user's; offline,
    * trusts it (the session user is the one the server last confirmed). When the
    * server cannot be asked, a hiccup does not discard the device of a user who
-   * already holds a lease for it, but it never lends it to a user who does not.
+   * already holds a lease for it, but it never lends it to a user who does not:
+   * without that proof the start stops with `device_check_unavailable`, leaving the
+   * device and the lease as they are and registering nothing (a down server would
+   * otherwise mint a device per opening). Only a definite answer ("not yours") forgets it.
    */
   private async stillMine(deviceId: string, userId: string): Promise<boolean> {
     if (!this.dependencies.isOnline()) {
@@ -1252,7 +1281,15 @@ export class OfflineRuntime {
       if (isLegalAcceptanceRefusal(error)) {
         throw error;
       }
-      return this.leaseProvesDevice(deviceId, userId);
+      if (this.leaseProvesDevice(deviceId, userId)) {
+        return true;
+      }
+      if (isDefiniteRpcRejection(error)) {
+        return false;
+      }
+      throw new DeviceCheckUnavailableError(DEVICE_CHECK_UNAVAILABLE_REASON, {
+        cause: error,
+      });
     }
   }
 
@@ -2102,7 +2139,7 @@ export class OfflineRuntime {
     }
     let current: string | null;
     try {
-      current = await this.dependencies.api.sessionUserId();
+      current = await this.dependencies.api.sessionUserId({ fresh: true });
     } catch {
       return false; // the server could not say: the push will be refused if it matters
     }
@@ -2203,7 +2240,8 @@ export class OfflineRuntime {
       }
       const source = this.dependencies.api.source(
         organizationId,
-        pullAbort.signal
+        pullAbort.signal,
+        userId
       );
       this.mark("sync:phase:push");
       // the catch-up comes below, once: the chip counts what is left as soon as the push answered
@@ -2421,6 +2459,31 @@ export class OfflineRuntime {
     );
   }
 
+  /**
+   * The pull was refused because the session is another user's than the lease in use: the confirmation is void and
+   * the session is read again, which closes the stores as `session_changed` when it really changed. The queue is not
+   * touched. When the reading still names this user (the other window went back, or the server could not say), the
+   * next sync tries again.
+   */
+  private async reReadSessionAfterRefusedPull(run: RunScope): Promise<void> {
+    if (run.generation !== this.generation) {
+      return;
+    }
+    this.lastOutcome = "answered";
+    this.sessionConfirmedAt = null;
+    if (await this.sessionChangedHands(run)) {
+      return;
+    }
+    this.set({
+      ...this.snapshot,
+      online: this.dependencies.isOnline(),
+      reason: null,
+      sessionRefused: false,
+      syncing: false,
+    });
+    await this.refreshCounts();
+  }
+
   /** What a sync that threw leaves: paused for the acceptance, a refused session, no answer, or a failure. */
   private async syncFailed(run: RunScope, error: unknown): Promise<void> {
     // before the session refusal (it is a FORBIDDEN too): only the sync pauses. The batch went back to
@@ -2446,6 +2509,10 @@ export class OfflineRuntime {
         forgetDevice: false,
         organizationClosed: true,
       });
+      return;
+    }
+    if (isSessionChangedRefusal(error)) {
+      await this.reReadSessionAfterRefusedPull(run);
       return;
     }
     if (isSessionRefusal(error)) {

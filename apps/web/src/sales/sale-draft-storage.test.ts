@@ -102,6 +102,87 @@ describe("the sale draft of the tab", () => {
     expect(readSaleDraft(storage, ORG, NEXT_DAY, "UTC").kind).toBe("restored");
   });
 
+  describe("past the turn of the day, up to six hours after the person's last change", () => {
+    // São Paulo is UTC−3: 23:50 there is 02:50Z of the next UTC day
+    const START_2300 = "2026-11-11T02:00:00.000Z";
+    const CHANGED_2350 = "2026-11-11T02:50:00.000Z";
+    const at = (iso: string) => new Date(iso);
+    const read = (candidate: SaleDraft, now: Date) => {
+      const storage = memoryStorage();
+      writeSaleDraft(storage, ORG, candidate);
+      return readSaleDraft(storage, ORG, now, SAO_PAULO).kind;
+    };
+    const draft = (updatedAt?: string, startedAt = START_2300): SaleDraft => ({
+      form: cart(),
+      startedAt,
+      ...(updatedAt === undefined ? {} : { updatedAt }),
+    });
+
+    it("(a) started and changed at 23:50, opened at 00:05: restored", () => {
+      expect(read(draft(CHANGED_2350), at("2026-11-11T03:05:00.000Z"))).toBe(
+        "restored"
+      );
+    });
+
+    it("(b) last change at 17:00, opened at 00:05: dropped as expired", () => {
+      expect(
+        read(
+          draft("2026-11-10T20:00:00.000Z", "2026-11-10T19:00:00.000Z"),
+          at("2026-11-11T03:05:00.000Z")
+        )
+      ).toBe("expired");
+    });
+
+    it("(c) exactly six hours after the last change: restored; one minute more: dropped", () => {
+      expect(read(draft(CHANGED_2350), at("2026-11-11T08:50:00.000Z"))).toBe(
+        "restored"
+      );
+      expect(read(draft(CHANGED_2350), at("2026-11-11T08:51:00.000Z"))).toBe(
+        "expired"
+      );
+    });
+
+    it("(d) a draft without updatedAt is never kept past the day", () => {
+      expect(read(draft(), at("2026-11-11T03:05:00.000Z"))).toBe("expired");
+    });
+
+    it("(e) the same store day is restored at any hour, with or without updatedAt", () => {
+      expect(read(draft(), at("2026-11-11T02:59:00.000Z"))).toBe("restored");
+      expect(
+        read(
+          draft("2026-11-10T13:00:00.000Z", "2026-11-10T13:00:00.000Z"),
+          at("2026-11-11T02:59:00.000Z")
+        )
+      ).toBe("restored");
+    });
+
+    it("(f) the same store day with a change one minute in the future: restored", () => {
+      expect(
+        read(
+          draft("2026-11-10T20:01:00.000Z", "2026-11-10T19:00:00.000Z"),
+          at("2026-11-10T20:00:00.000Z")
+        )
+      ).toBe("restored");
+    });
+
+    it("(g) another day with a change in the future: dropped", () => {
+      expect(
+        read(draft("2026-11-11T03:06:00.000Z"), at("2026-11-11T03:05:00.000Z"))
+      ).toBe("expired");
+    });
+
+    it("does not read an updatedAt that is not an instant", () => {
+      const storage = memoryStorage();
+      storage.setItem(
+        `${SALE_DRAFT_KEY_PREFIX}${ORG}`,
+        JSON.stringify({ form: cart(), startedAt: START_2300, updatedAt: "x" })
+      );
+      expect(
+        readSaleDraft(storage, ORG, at("2026-11-11T03:05:00.000Z"), SAO_PAULO)
+      ).toEqual({ kind: "unreadable" });
+    });
+  });
+
   it("is kept per store: another store never sees it", () => {
     const storage = memoryStorage();
     writeSaleDraft(storage, ORG, { form: cart(), startedAt: STARTED });

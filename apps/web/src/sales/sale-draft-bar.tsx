@@ -18,6 +18,8 @@ interface SaleDraftBarProps {
   canClear: boolean;
   /** Lines with a variant chosen and their units; with no line, "Limpar venda" clears at once. */
   count: SaleCount;
+  /** The cart began on another store day and its date is empty: it is dated at the confirmation. Plain text, derived. */
+  newDayNotice: string | null;
   /** What happened to the cart kept in the tab (dropped, lines taken out), announced. */
   notice: string | null;
   onClear: () => void;
@@ -33,6 +35,7 @@ interface SaleDraftBarProps {
 export function SaleDraftBar({
   canClear,
   count,
+  newDayNotice,
   notice,
   onClear,
   open,
@@ -63,6 +66,11 @@ export function SaleDraftBar({
               <MoneyText text={notice} />
             </AlertDescription>
           </Alert>
+        ) : null}
+        {newDayNotice ? (
+          <p className="m-0 text-muted-foreground text-support">
+            {newDayNotice}
+          </p>
         ) : null}
       </div>
       <div
