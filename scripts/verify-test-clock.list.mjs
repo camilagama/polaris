@@ -81,5 +81,4 @@ export const TEST_CLOCK_LIST = {
     reason: BEFORE_THE_RULE,
   },
   "scripts/test-clock/setup.test.mjs": { count: 10, reason: BEFORE_THE_RULE },
-  "scripts/verify-deployed-sha.test.mjs": { count: 2, reason: BEFORE_THE_RULE },
 };
