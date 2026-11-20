@@ -62,7 +62,7 @@ doc/doc-inicial.md é material de origem; doc/plano-inicial.md rege a sequência
 
 ### Ganchos locais (opcionais)
 
-O `hk.pkl` da raiz antecipa o que o CI já checa; o CI não muda e nenhum gancho é instalado sozinho (nada no `postinstall`). Instalação opcional: tenha o [hk](https://hk.jdx.dev) (`mise use hk`, `brew install hk` ou `cargo install hk --locked`) e rode `hk install` na raiz. Os ganchos ficam no `.git` comum, valendo para todos os worktrees do clone. `git commit --no-verify` e `git push --no-verify` pulam o gancho, e o CI continua sendo a barreira.
+O `hk.pkl` da raiz antecipa o que o CI já checa; o CI não muda e nenhum gancho é instalado sozinho (nada no `postinstall`). Instalação opcional: tenha o [hk](https://hk.jdx.dev) (`mise use hk`, `brew install hk` ou `cargo install hk --locked`; não precisa do CLI `pkl`, mas a primeira carga baixa o esquema do pacote no GitHub e pede rede) e rode `hk install` na raiz. Os ganchos ficam no `.git` comum, valendo para todos os worktrees do clone. `git commit --no-verify` e `git push --no-verify` pulam o gancho, e o CI continua sendo a barreira.
 
 | Gancho | O que roda |
 | --- | --- |
