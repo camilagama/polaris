@@ -266,10 +266,10 @@ describe("what a get-session costs the database", () => {
     }) => {
       shared.statements.push(config.text);
       if (config.text.includes("left join lateral")) {
+        const userDataAt = config.text.indexOf('"session_user"."data"');
+        expect(userDataAt).toBeGreaterThan(-1);
         const sessionColumns = [
-          ...config.text
-            .slice(0, config.text.indexOf('"session_user"."data"'))
-            .matchAll(SQL_SESSION_COLUMN),
+          ...config.text.slice(0, userDataAt).matchAll(SQL_SESSION_COLUMN),
         ].map((match) => match[1] as string);
         const userColumns = [
           ...(SQL_USER_ARRAY.exec(config.text)?.[1] ?? "").matchAll(
