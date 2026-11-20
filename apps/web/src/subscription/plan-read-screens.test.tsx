@@ -105,6 +105,43 @@ describe("a memória de 10 s do plano entre as telas", () => {
     expect(readPlan).toHaveBeenCalledTimes(2);
   });
 
+  it("gravação rastreada com o version subindo na página e no painel de Produtos faz 1 leitura", async () => {
+    const view = renderHook(
+      ({ version }) => ({
+        page: useNearLimitRead("variants", version),
+        panel: useNearLimitRead("variants", version),
+      }),
+      { initialProps: { version: 0 } }
+    );
+    await flush();
+    expect(readPlan).toHaveBeenCalledTimes(1);
+
+    readPlan.mockResolvedValue(planWith(48));
+    notifyPlanUsageChanged();
+    view.rerender({ version: 1 });
+    await flush();
+    expect(readPlan).toHaveBeenCalledTimes(2);
+    expect(view.result.current.page.view?.usage.used).toBe(48);
+    expect(view.result.current.panel.view?.usage.used).toBe(48);
+  });
+
+  it("o version subindo sem clear() faz 2 leituras", async () => {
+    const view = renderHook(
+      ({ version }) => ({
+        page: useNearLimitRead("variants", version),
+        panel: useNearLimitRead("variants", version),
+      }),
+      { initialProps: { version: 0 } }
+    );
+    await flush();
+    expect(readPlan).toHaveBeenCalledTimes(1);
+
+    readPlan.mockResolvedValue(planWith(48));
+    view.rerender({ version: 1 });
+    await flush();
+    expect(readPlan).toHaveBeenCalledTimes(3);
+  });
+
   it("a mesma tela remontada sem o version mudar não pede leitura fresca", async () => {
     const view = renderHook(
       ({ version }) => useNearLimitRead("variants", version),
