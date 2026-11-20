@@ -107,7 +107,7 @@ export function createRpcRuntimeApi(
     sessionUserId: async (options) =>
       (await readSession(options))?.userId ?? null,
     signedInSession: () => readSession({ fresh: true }),
-    source: (organizationId, signal): BootstrapSource => {
+    source: (organizationId, signal, expectedUserId): BootstrapSource => {
       const options = signal ? { signal } : undefined;
       return {
         getCursor: async () =>
@@ -126,7 +126,10 @@ export function createRpcRuntimeApi(
           return { nextAfterId: page.nextAfterId, rows: page.rows } as never;
         },
         pull: (cursor, limit) =>
-          client.sync.pull({ cursor, limit, organizationId }, options),
+          client.sync.pull(
+            { cursor, expectedUserId, limit, organizationId },
+            options
+          ),
         recentSales: async () =>
           (await client.sale.list({ limit: 100, organizationId }, options))
             .sales,

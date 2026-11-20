@@ -10,7 +10,11 @@ import {
   jittered,
   NoWorkerAnswerError,
 } from "./connection";
-import { isPlatformCut, rpcErrorReason } from "./rpc-error";
+import {
+  isPlatformCut,
+  isTransientReadFailure,
+  rpcErrorReason,
+} from "./rpc-error";
 
 const MARK = "0199c2d0-0000-7000-8000-000000000001";
 const START = 1_000_000;
@@ -898,5 +902,147 @@ describe("timeline marks", () => {
     const t = setup();
     await t.connection.probeNow();
     expect(t.marks).toEqual(["connection:probe:start", "connection:probe:ok"]);
+  });
+});
+
+describe("the breaker and the Worker's own transient 5xx", () => {
+  const rpcError = (status: number, code: string, reason?: string): Response =>
+    reply(
+      status,
+      { "content-type": "application/json", "x-request-id": MARK },
+      JSON.stringify({
+        json: {
+          code,
+          data: reason === undefined ? {} : { reason },
+          defined: false,
+          message: code,
+          status,
+        },
+      })
+    );
+
+  const failures: [string, () => Response][] = [
+    ["a 503 with no reason", () => rpcError(503, "SERVICE_UNAVAILABLE")],
+    [
+      "a 503 server_busy",
+      () => rpcError(503, "SERVICE_UNAVAILABLE", "server_busy"),
+    ],
+    ["a 500 with no reason", () => rpcError(500, "INTERNAL_SERVER_ERROR")],
+    ["a 5xx with a body that is no JSON", () => marked(502)],
+  ];
+  const answers: [string, () => Response][] = [
+    ["a 429", () => rpcError(429, "TOO_MANY_REQUESTS", "rate_limited")],
+    ["a 403", () => rpcError(403, "FORBIDDEN", "no_membership")],
+    ["a 400", () => rpcError(400, "BAD_REQUEST")],
+    [
+      "a 503 with another reason",
+      () => rpcError(503, "SERVICE_UNAVAILABLE", "billing_not_configured"),
+    ],
+    [
+      "a 500 with a reason of its own",
+      () => rpcError(500, "INTERNAL_SERVER_ERROR", "x"),
+    ],
+    ["a 200", () => marked()],
+  ];
+
+  async function callTimes(
+    t: ReturnType<typeof setup>,
+    make: () => Response,
+    died: number,
+    total = 20
+  ) {
+    for (let i = 0; i < total; i += 1) {
+      t.routes.rpc = i < died ? make : () => marked();
+      // biome-ignore lint/performance/noAwaitInLoops: the window of 20 counts the calls in order
+      await t.connection.fetch("/rpc/product/list");
+    }
+  }
+
+  it.each(failures)(
+    "%s counts: 11 of 20 open the breaker and the retries stop for 15 s",
+    async (_name, make) => {
+      const t = setup();
+
+      await callTimes(t, make, 10);
+      expect(t.connection.isServerFailing()).toBe(false);
+      expect(t.connection.mayRetryRead()).toBe(true);
+
+      const u = setup();
+      await callTimes(u, make, 11);
+      expect(u.connection.isServerFailing()).toBe(true);
+      expect(u.connection.mayRetryRead()).toBe(false);
+      await u.advance(14_999);
+      expect(u.connection.mayRetryRead()).toBe(false);
+      await u.advance(1);
+      expect(u.connection.isServerFailing()).toBe(false);
+      expect(u.connection.mayRetryRead()).toBe(true);
+    }
+  );
+
+  it.each(answers)(
+    "%s does not count: 20 of 20 leave the breaker closed",
+    async (_name, make) => {
+      const t = setup();
+
+      await callTimes(t, make, 20);
+
+      expect(t.connection.isServerFailing()).toBe(false);
+      expect(t.connection.mayRetryRead()).toBe(true);
+    }
+  );
+
+  it("counts the same calls as isTransientReadFailure, whatever the status and the reason", async () => {
+    const shapes: [number, string, string | undefined][] = [
+      [503, "SERVICE_UNAVAILABLE", undefined],
+      [503, "SERVICE_UNAVAILABLE", "server_busy"],
+      [503, "SERVICE_UNAVAILABLE", "billing_not_configured"],
+      [500, "INTERNAL_SERVER_ERROR", undefined],
+      [500, "INTERNAL_SERVER_ERROR", "server_busy"],
+      [502, "BAD_GATEWAY", undefined],
+      [429, "TOO_MANY_REQUESTS", undefined],
+      [403, "FORBIDDEN", undefined],
+      [400, "BAD_REQUEST", undefined],
+      [503, "INTERNAL_SERVER_ERROR", "server_busy"],
+      [500, "SERVICE_UNAVAILABLE", "server_busy"],
+    ];
+    for (const [status, code, reason] of shapes) {
+      const t = setup();
+      // biome-ignore lint/performance/noAwaitInLoops: one connection per shape
+      await callTimes(t, () => rpcError(status, code, reason), 11);
+      expect(
+        t.connection.isServerFailing(),
+        `${status} ${code} ${reason}`
+      ).toBe(
+        isTransientReadFailure({
+          code,
+          data: reason === undefined ? {} : { reason },
+          status,
+        })
+      );
+    }
+  });
+
+  it("hands the 5xx back with its body still readable after the breaker read it", async () => {
+    const t = setup();
+    t.routes.rpc = () => rpcError(503, "SERVICE_UNAVAILABLE", "server_busy");
+
+    const response = await t.connection.fetch("/rpc/product/list");
+
+    expect(response.status).toBe(503);
+    expect(await response.json()).toMatchObject({
+      json: { data: { reason: "server_busy" } },
+    });
+  });
+
+  it("a 5xx of the Worker that is not RPC does not count", async () => {
+    const t = setup();
+    t.routes.rpc = () => rpcError(503, "SERVICE_UNAVAILABLE");
+
+    for (let i = 0; i < 20; i += 1) {
+      // biome-ignore lint/performance/noAwaitInLoops: the window of 20 counts the calls in order
+      await t.connection.fetch("/api/auth/get-session");
+    }
+
+    expect(t.connection.isServerFailing()).toBe(false);
   });
 });

@@ -35,6 +35,7 @@ export interface OfflineSyncClient {
     }) => Promise<{ cursor: string }>;
     pull: (input: {
       cursor?: string | null;
+      expectedUserId?: string;
       limit?: number;
       organizationId: string;
     }) => Promise<{

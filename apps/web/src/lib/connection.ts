@@ -85,6 +85,35 @@ function platformCutResponse(response: Response): Response {
   );
 }
 
+/** The `data.reason` the Worker's own 503 carries for a fault nobody named: "try again" (`server_busy` in the router). */
+const WORKER_TRANSIENT_REASON = "server_busy";
+
+/**
+ * The Worker's own 5xx on an RPC call that another try may fix: the same criterion as `isTransientReadFailure`
+ * (`rpc-error.ts`, which cannot be imported here: it imports this module), read from the body the router sends. A 503
+ * with no reason or with `server_busy`, or a 5xx with no reason. A 503 with another reason (`billing_not_configured`)
+ * is an answer, and so is any 4xx or 429.
+ */
+async function isWorkerTransientFailure(response: Response): Promise<boolean> {
+  let code: unknown;
+  let reason: unknown;
+  try {
+    const body = (await response.clone().json()) as {
+      json?: { code?: unknown; data?: { reason?: unknown } | null } | null;
+    } | null;
+    code = body?.json?.code;
+    reason = body?.json?.data?.reason;
+  } catch {
+    code = undefined;
+    reason = undefined;
+  }
+  const named = typeof reason === "string" ? reason : undefined;
+  if (code === "SERVICE_UNAVAILABLE") {
+    return named === undefined || named === WORKER_TRANSIENT_REASON;
+  }
+  return named === undefined;
+}
+
 /** A response that did not come from the Worker: the same as no response at all. */
 export class NoWorkerAnswerError extends Error {
   constructor(verdict: ResponseVerdict) {
@@ -240,7 +269,7 @@ export interface Connection {
   fetch: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
   getSnapshot: () => ConnectionSnapshot;
   isOnline: () => boolean;
-  /** The breaker of the reads is open (`read-gate.ts`): the platform is killing the calls of this tab. */
+  /** The breaker of the reads is open (`read-gate.ts`): the platform is killing the calls of this tab, or the Worker answers 5xx to them. */
   isServerFailing: () => boolean;
   /**
    * Whether a read that failed in a transient way may be tried again now (the brakes of `read-gate.ts`): true spends
@@ -440,9 +469,19 @@ export function createConnection(
     }
   };
 
-  /** An answer to the RPC: the breaker counts the platform's deaths, and a 429 holds every read of the tab. */
-  const noteRpcAnswer = (response: Response, verdict: ResponseVerdict) => {
-    reads.record(verdict === "server_failed");
+  /**
+   * An answer to the RPC: the breaker counts the platform's deaths and the Worker's own transient 5xx, and a 429
+   * holds every read of the tab.
+   */
+  const noteRpcAnswer = async (
+    response: Response,
+    verdict: ResponseVerdict
+  ) => {
+    const workerFailed =
+      verdict === "worker" &&
+      response.status >= 500 &&
+      (await isWorkerTransientFailure(response));
+    reads.record(verdict === "server_failed" || workerFailed);
     const wait =
       verdict === "worker" && response.status === 429
         ? retryAfterOf(response)
@@ -474,15 +513,18 @@ export function createConnection(
     } finally {
       cancelSlow();
     }
-    return answerOf(input, response);
+    return await answerOf(input, response);
   };
 
   /** A response that came: the Worker's or the platform's goes back (online); any other is no answer. */
-  const answerOf = (input: RequestInfo | URL, response: Response): Response => {
+  const answerOf = async (
+    input: RequestInfo | URL,
+    response: Response
+  ): Promise<Response> => {
     const verdict = classifyResponse(response);
     const rpc = isRpcCall(input);
     if (rpc) {
-      noteRpcAnswer(response, verdict);
+      await noteRpcAnswer(response, verdict);
     }
     if (verdict === "worker" || verdict === "server_failed") {
       if (verdict === "worker" && response.status === 429) {
