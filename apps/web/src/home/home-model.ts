@@ -111,8 +111,8 @@ export function msUntilNextMidnight(
   return DAY - elapsed + 1000;
 }
 
-/** Re-reading when the tab comes back is limited to once every 30 s (§ 5.1). */
-const FOCUS_REFRESH_MS = 30_000;
+/** Re-reading when the tab comes back is limited to once every 5 min (§ 5.1): the hour of the read is in the title and "Atualizar" is on the screen. */
+export const FOCUS_REFRESH_MS = 5 * 60_000;
 
 export function shouldRefreshOnReturn(
   lastReadAt: number,
