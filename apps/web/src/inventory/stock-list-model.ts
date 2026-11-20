@@ -5,6 +5,10 @@ import type {
 } from "@polaris/contracts";
 import { productHref, STOCK_QUERY_MAX } from "../catalog/products-link-model";
 import { formatQuantity } from "../lib/format";
+import {
+  LIST_REFRESH_FAILED_TEXT,
+  LIST_REFRESHING_TEXT,
+} from "../lib/list-refresh-text";
 import { readErrorMessage } from "../lib/rpc-error";
 import { canInformCost, type StockAction } from "./stock-command-model";
 import {
@@ -470,9 +474,8 @@ export interface StockMoreView {
   visible: boolean;
 }
 
-export const STOCK_REFRESHING_TEXT = "Atualizando a lista…";
-export const STOCK_REFRESH_FAILED_TEXT =
-  "Não foi possível atualizar a lista. O que está na tela pode estar desatualizado.";
+export const STOCK_REFRESHING_TEXT = LIST_REFRESHING_TEXT;
+export const STOCK_REFRESH_FAILED_TEXT = LIST_REFRESH_FAILED_TEXT;
 
 /** The button is hidden, not disabled, until the list on screen was read for the filter in force. */
 export function stockMoreView(
