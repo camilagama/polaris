@@ -52,7 +52,7 @@ import { todaysRhythmCopy, writeRhythmCopy } from "./rhythm-copy";
  * parallel; C (no cost) and the checklist reads (V, P, E) only when A asks for them. Each block has its own state, so
  * one that fails never takes the others with it (§ 5.2), and "Nova venda" depends on none of them.
  *
- * They are read again when the tab comes back (at most once every 30 s), when the page comes back from the browser's
+ * They are read again when the tab comes back (at most once every 5 min), when the page comes back from the browser's
  * history (a sale confirmed on `/sales` is then in the figures) and at the next midnight of the store, taken from the
  * server's clock; when the month of the server is not the one asked for, the figures are read again for it (§ 5.1).
  * A 401 is the shell's to say ("Entrar de novo"): the blocks say nothing more, and the copies of the results go away.
