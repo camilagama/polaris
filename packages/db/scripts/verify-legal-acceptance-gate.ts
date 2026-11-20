@@ -3,7 +3,11 @@ import assert from "node:assert/strict";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { Client } from "pg";
 import { createDatabase } from "../src/client";
-import { replaceFunctionAsOwner, withGateRole } from "./gate-roles";
+import {
+  inRolledBackTransaction,
+  replaceFunctionAsOwner,
+  withGateRole,
+} from "./gate-roles";
 import {
   disposableHostPattern,
   expectSqlState,
@@ -991,8 +995,7 @@ async function run() {
         assert.notEqual(mutated, original);
         const probe = probes[index];
         assert.ok(probe);
-        await mutationClient.query("BEGIN");
-        try {
+        await inRolledBackTransaction(mutationClient, async () => {
           await replaceFunctionAsOwner(mutationClient, signature, mutated);
           // the mutant is called by the authentication runtime, as in production; the probe reads and writes the table
           // on the gate's own connection, which owns it and bypasses RLS, so the rows are visible
@@ -1011,9 +1014,7 @@ async function run() {
               sqlState(error) === "23514",
             `the probes catch the mutation: ${label}`
           );
-        } finally {
-          await mutationClient.query("ROLLBACK");
-        }
+        });
         assert.equal(
           await definitionOf(mutationClient, signature),
           original,

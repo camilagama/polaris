@@ -24,10 +24,6 @@ export const GATE_ROLLBACK_LIST = {
     count: 9,
     reason: BEFORE_THE_RULE,
   },
-  "apps/web/scripts/verify-password-hash-gate.ts": {
-    count: 1,
-    reason: BEFORE_THE_RULE,
-  },
   "packages/db/scripts/billing-current-charge-reconcile.ts": {
     count: 1,
     reason: BEFORE_THE_RULE,
@@ -110,14 +106,6 @@ export const GATE_ROLLBACK_LIST = {
   },
   "packages/db/scripts/verify-gate2-runtime.ts": {
     count: 16,
-    reason: BEFORE_THE_RULE,
-  },
-  "packages/db/scripts/verify-legal-acceptance-gate.ts": {
-    count: 1,
-    reason: BEFORE_THE_RULE,
-  },
-  "packages/db/scripts/verify-login-lock-gate.ts": {
-    count: 1,
     reason: BEFORE_THE_RULE,
   },
   "packages/db/scripts/verify-media-gate.ts": {
