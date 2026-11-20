@@ -84,8 +84,8 @@ export interface RuntimeApi {
    */
   sessionUserId: (options?: { fresh?: boolean }) => Promise<string | null>;
   /**
-   * The session as the server sees it in this very call (never a remembered answer): the user and the id of the
-   * session row, never its token. The same answers and errors as `sessionUserId`. Without it, or without an id in the
+   * The session as the server sees it in this very call (never a remembered answer; a lookup that began in this same
+   * opening may be joined): the user and the id of the session row, never its token. The same answers and errors as `sessionUserId`. Without it, or without an id in the
    * answer, every online start asks `deviceIsMine`.
    */
   signedInSession?: () => Promise<SignedInSession | null>;

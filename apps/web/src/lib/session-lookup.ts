@@ -15,15 +15,21 @@ export interface SessionAnswer {
   status: number;
 }
 
+export interface SessionReadOptions {
+  fresh?: boolean;
+  joinInFlight?: boolean;
+}
+
 export interface SessionLookup {
   /** Drops the remembered answer (the session ended or changed hands); a lookup in flight is not reused after it. */
   forget: () => void;
   /**
    * The session of this tab. By default the answer of the last 10 s is reused and calls in flight are joined, so
    * the shell, the runtime and the Assinatura do not each ask. `fresh` always goes to the server (a queue to send,
-   * who is leaving) and its answer becomes the one remembered.
+   * who is leaving) and its answer becomes the one remembered. `joinInFlight` joins a lookup that is still going
+   * (it began in this same moment) but never the remembered answer, and opens its own lookup when none is going.
    */
-  read: (options?: { fresh?: boolean }) => Promise<SessionAnswer>;
+  read: (options?: SessionReadOptions) => Promise<SessionAnswer>;
 }
 
 interface Dependencies {
@@ -131,6 +137,9 @@ export function createSessionLookup(dependencies: Dependencies): SessionLookup {
     read(options) {
       if (options?.fresh) {
         return start();
+      }
+      if (options?.joinInFlight) {
+        return flying ?? start();
       }
       if (remembered) {
         const age = now() - remembered.at;

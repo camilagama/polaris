@@ -3,6 +3,7 @@ import {
   createSessionLookup,
   type SessionAnswer,
   type SessionLookup,
+  type SessionReadOptions,
 } from "../../lib/session-lookup";
 import type { BootstrapSource } from "../bootstrap";
 import {
@@ -38,9 +39,9 @@ export function createRpcRuntimeApi(
     now: () => Date.now(),
   })
 ): RuntimeApi {
-  const readSession = async (options?: {
-    fresh?: boolean;
-  }): Promise<SignedInSession | null> => {
+  const readSession = async (
+    options?: SessionReadOptions
+  ): Promise<SignedInSession | null> => {
     let answer: SessionAnswer;
     try {
       answer = await session.read(options);
@@ -105,7 +106,7 @@ export function createRpcRuntimeApi(
       return device.id;
     },
     sessionUserId: async (options) => (await readSession(options))?.userId ?? null,
-    signedInSession: () => readSession({ fresh: true }),
+    signedInSession: () => readSession({ joinInFlight: true }),
     source: (organizationId, signal): BootstrapSource => {
       const options = signal ? { signal } : undefined;
       return {
