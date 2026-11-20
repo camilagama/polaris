@@ -138,26 +138,6 @@ export const TEST_CLOCK_LIST = {
     count: 2,
     reason: BEFORE_THE_RULE,
   },
-  "packages/domain/src/catalog/category.test.ts": {
-    count: 3,
-    reason: BEFORE_THE_RULE,
-  },
-  "packages/domain/src/catalog/product.test.ts": {
-    count: 3,
-    reason: BEFORE_THE_RULE,
-  },
-  "packages/domain/src/customers/customer.test.ts": {
-    count: 1,
-    reason: BEFORE_THE_RULE,
-  },
-  "packages/domain/src/privacy/retention.test.ts": {
-    count: 4,
-    reason: BEFORE_THE_RULE,
-  },
-  "packages/domain/src/scheduling/scheduled-jobs.test.ts": {
-    count: 2,
-    reason: BEFORE_THE_RULE,
-  },
   "scripts/test-clock/setup.test.mjs": { count: 10, reason: BEFORE_THE_RULE },
   "scripts/verify-deployed-sha.test.mjs": { count: 2, reason: BEFORE_THE_RULE },
 };
