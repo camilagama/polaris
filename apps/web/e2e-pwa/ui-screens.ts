@@ -148,6 +148,30 @@ async function escapeUntilGone(page: Page, surface: Locator) {
   await surface.first().waitFor({ state: "detached" });
 }
 
+/**
+ * The panels that open and close here move with CSS animations the page clock does not drive: wait two frames for the
+ * animation the click started to be running, then for the page to have no finite one running. The endless ones (the
+ * skeleton pulse) never stop and are not what the panel does, so they do not count.
+ */
+async function waitForAnimationsToEnd(page: Page) {
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) => {
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+      })
+  );
+  await page.waitForFunction(() =>
+    document
+      .getAnimations()
+      .every(
+        (animation) =>
+          animation.playState !== "running" ||
+          animation.effect?.getComputedTiming().iterations ===
+            Number.POSITIVE_INFINITY
+      )
+  );
+}
+
 async function exerciseGallery(page: Page) {
   await openAndClose(
     page,
@@ -188,14 +212,14 @@ async function exerciseGallery(page: Page) {
   const recurring = page.getByRole("button", { name: "Despesas recorrentes" });
   await recurring.click();
   await page.getByText("Aluguel e internet, todo dia 5.").waitFor();
-  await page.waitForTimeout(300);
+  await waitForAnimationsToEnd(page);
   await recurring.click();
   await page
     .getByText("Aluguel e internet, todo dia 5.")
     .waitFor({ state: "detached" });
   await page.getByRole("button", { name: "Mostrar aviso" }).click();
   await page.getByText("Venda registrada").waitFor();
-  await page.waitForTimeout(300);
+  await waitForAnimationsToEnd(page);
 }
 
 /** The files of the sale screen on the new interface: the other screens of `src/sales` are still the old CSS. */
@@ -461,7 +485,7 @@ async function exerciseHomePanels(page: Page) {
   const sheet = page.getByRole("dialog", { name: "Mais" });
   await more.click();
   await sheet.waitFor();
-  await page.waitForTimeout(300);
+  await waitForAnimationsToEnd(page);
   await page.keyboard.press("Escape");
   await sheet.waitFor({ state: "hidden" });
 }

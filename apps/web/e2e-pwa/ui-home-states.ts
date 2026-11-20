@@ -1,5 +1,5 @@
 /// <reference lib="dom" />
-// Only types from Playwright: the e2e-pwa helpers are read under Vitest by the source rules.
+// Only types from Playwright at the top: the e2e-pwa helpers are read under Vitest by the source rules, so `expect` is loaded inside the function that polls.
 import type { Page, Route } from "@playwright/test";
 import { serveHealth, serveLabWorker, WORKER_MARK } from "./worker-mark";
 
@@ -436,13 +436,13 @@ export async function readHomeInLab(page: Page): Promise<string> {
     .getByRole("region", { name: "Vendas por dia" })
     .getByRole("img")
     .waitFor();
-  // biome-ignore lint/performance/noAwaitInLoops: waits for the copy the read keeps
-  for (let tries = 0; (await homeCopyKeys(page)).length < 3; tries += 1) {
-    if (tries > 50) {
-      throw new Error("o Início não guardou a cópia");
-    }
-    await page.waitForTimeout(100);
-  }
+  const { expect } = await import("@playwright/test");
+  await expect
+    .poll(async () => (await homeCopyKeys(page)).length, {
+      message: "o Início não guardou a cópia",
+      timeout: 10_000,
+    })
+    .toBeGreaterThanOrEqual(3);
   return user;
 }
 
