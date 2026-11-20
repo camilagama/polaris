@@ -1,7 +1,7 @@
 /// <reference lib="dom" />
 import type { Locator, Page, Route, TestInfo } from "@playwright/test";
 import { expect, test } from "@playwright/test";
-import { ORGANIZATION, serveHome } from "./ui-home-states";
+import { NOW, ORGANIZATION, serveHome } from "./ui-home-states";
 import { CONFIRMED_SALE } from "./ui-sale-states";
 import { WORKER_MARK } from "./worker-mark";
 
@@ -575,3 +575,141 @@ test("AC-3 e AC-6: trocar de loja e voltar com a resposta perdida: o mesmo carri
   await expect.poll(() => sent.length).toBe(2);
   expect(sent[1]).toEqual(sent[0]);
 });
+
+const REMOVE_NAME = /^Remover/;
+const HOUR = 60 * 60 * 1000;
+const CLOCK_NOW = new Date(NOW);
+const SEEDED_STARTED_AT = new Date(
+  CLOCK_NOW.getTime() - 3 * HOUR
+).toISOString();
+const SEEDED_UPDATED_AT = new Date(CLOCK_NOW.getTime() - HOUR).toISOString();
+const EDITED_AT = new Date(CLOCK_NOW.getTime() + 30 * 60 * 1000);
+
+/** One shirt at the old list price on the first line and a blank second line, with the stamps the test knows. */
+const SEEDED_DRAFT = {
+  form: {
+    adjustments: [],
+    items: [
+      {
+        chargedUnitPrice: "50,00",
+        draftId: "draft-seed-1",
+        label: "Camiseta do teste · Azul",
+        listedUnitPrice: "50,00",
+        productId: SHIRT.productId,
+        quantity: "2",
+        variantId: SHIRT.variantId,
+      },
+      {
+        chargedUnitPrice: "",
+        draftId: "draft-seed-2",
+        label: "",
+        listedUnitPrice: "",
+        productId: "",
+        quantity: "1",
+        variantId: "",
+      },
+    ],
+    occurredAtLocal: "",
+    payment: {
+      anticipationRequested: false,
+      installmentPlan: "",
+      installments: "",
+      method: "",
+    },
+    profile: { choice: "", reviewNotice: null, seenVersion: null },
+  },
+  startedAt: SEEDED_STARTED_AT,
+  updatedAt: SEEDED_UPDATED_AT,
+};
+
+async function storedStamps(page: Page) {
+  const raw = await page.evaluate(
+    (key) => window.sessionStorage.getItem(key),
+    DRAFT_KEY
+  );
+  expect(raw).not.toBeNull();
+  const draft = JSON.parse(raw ?? "{}") as {
+    startedAt: string;
+    updatedAt?: string;
+  };
+  return { startedAt: draft.startedAt, updatedAt: draft.updatedAt };
+}
+
+const SEEDED_EDITS: {
+  act: (page: Page) => Promise<void>;
+  name: string;
+}[] = [
+  {
+    act: (page) =>
+      itemOne(page).getByRole("button", { name: "Mais uma unidade" }).click(),
+    name: "mudar a quantidade",
+  },
+  {
+    act: (page) => itemOne(page).getByLabel("Preço cobrado").fill("45,00"),
+    name: "mudar o preço cobrado",
+  },
+  {
+    act: (page) =>
+      page
+        .getByRole("radiogroup", { name: "Método de pagamento" })
+        .getByRole("radio", { name: "Pix" })
+        .check(),
+    name: "trocar o método de pagamento",
+  },
+  {
+    act: (page) =>
+      page
+        .getByRole("group", { exact: true, name: "Item 2" })
+        .getByRole("button", { name: REMOVE_NAME })
+        .click(),
+    name: "tirar a linha",
+  },
+];
+
+for (const edit of SEEDED_EDITS) {
+  test(`AC-2: o updatedAt do rascunho só anda quando a pessoa muda a venda (${edit.name})`, async ({
+    page,
+  }) => {
+    const catalog = await serveSale(page);
+    await page.clock.setFixedTime(CLOCK_NOW);
+    await page.goto("/");
+    await page.evaluate(
+      ([key, draft]) => window.sessionStorage.setItem(key, draft),
+      [DRAFT_KEY, JSON.stringify(SEEDED_DRAFT)] as const
+    );
+
+    // the list price of the shirt changed: the reread of the variants writes the draft again with the new price
+    catalog.entries = [{ ...SHIRT, listPrice: "38.00", version: 2 }];
+    const reread = page.waitForResponse("**/rpc/inventory/listBalances");
+    await openSale(page);
+    await reread;
+    await expect(
+      page.locator("[aria-live]").filter({ hasText: "preço de tabela" })
+    ).toBeVisible();
+    await expect(itemOne(page).getByLabel("Preço cobrado")).toHaveValue(
+      "38,00"
+    );
+    await expect
+      .poll(async () => {
+        const stored = JSON.parse(
+          (await page.evaluate(
+            (key) => window.sessionStorage.getItem(key),
+            DRAFT_KEY
+          )) ?? "{}"
+        ) as { form?: { items?: { chargedUnitPrice: string }[] } };
+        return stored.form?.items?.[0]?.chargedUnitPrice;
+      })
+      .toBe("38,00");
+    expect(await storedStamps(page)).toEqual({
+      startedAt: SEEDED_STARTED_AT,
+      updatedAt: SEEDED_UPDATED_AT,
+    });
+
+    await page.clock.setFixedTime(EDITED_AT);
+    await edit.act(page);
+    await expect
+      .poll(async () => (await storedStamps(page)).updatedAt)
+      .toBe(EDITED_AT.toISOString());
+    expect((await storedStamps(page)).startedAt).toBe(SEEDED_STARTED_AT);
+  });
+}
