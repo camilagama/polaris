@@ -9,7 +9,7 @@ import { TenantAuthorizationError } from "@polaris/db/tenant-transaction";
 import { EntitlementLimitReachedError } from "@polaris/domain/billing/entitlements";
 import { ProductIdConflictError } from "@polaris/domain/catalog/product";
 import { InventoryCostLimitError } from "@polaris/domain/inventory/inventory-cost";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createServerApp } from "../app";
 import type { WorkerBindings } from "../environment";
 import {
@@ -17,6 +17,16 @@ import {
   createProductWithOpeningStock,
 } from "../use-cases/create-product-with-opening-stock";
 import { createRpcRouter } from "./router";
+
+const NOW = new Date("2026-11-19T02:50:00.000Z");
+
+beforeEach(() => {
+  vi.useFakeTimers({ now: NOW, toFake: ["Date"] });
+});
+
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 const testBindings = {
   BETTER_AUTH_BASE_URL: "https://polaris.example.invalid",
@@ -128,13 +138,13 @@ function repositoriesOver(
       return Promise.resolve({
         archivedAt: null,
         categoryId: input.categoryId ?? null,
-        createdAt: new Date(),
+        createdAt: new Date(NOW),
         deletedAt: null,
         description: input.description ?? null,
         id,
         name: input.name,
         organizationId,
-        updatedAt: new Date(),
+        updatedAt: new Date(NOW),
         version: 1,
       });
     }) as never,
