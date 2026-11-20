@@ -153,6 +153,7 @@ async function redoSale(
   writeSaleDraft(sessionStorageOrNull(), organizationId, {
     form: built.form,
     startedAt,
+    updatedAt: startedAt,
   });
   const written = readSaleDraft(
     sessionStorageOrNull(),

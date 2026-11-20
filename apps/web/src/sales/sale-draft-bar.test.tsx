@@ -15,11 +15,15 @@ const NOTICE =
 
 const clear = () => undefined;
 
-const render = () =>
+const NEW_DAY =
+  "Esta venda começou ontem. Ela será registrada com a data de hoje.";
+
+const render = (newDayNotice: string | null = null) =>
   renderToStaticMarkup(
     <SaleDraftBar
       canClear
       count={{ lines: 1, units: 1 }}
+      newDayNotice={newDayNotice}
       notice={NOTICE}
       onClear={clear}
       open={false}
@@ -39,6 +43,18 @@ describe("the notice of the cart that came back, with Esconder valores", () => {
 
   it("writes the notice as it is while the values show", () => {
     expect(textOf(render())).toBe(NOTICE);
+  });
+
+  it("puts the new-day sentence in the live region as plain text, without the warning alert", () => {
+    const html = render(NEW_DAY);
+    expect(html).toContain(NEW_DAY);
+    expect(html).toContain(`text-support">${NEW_DAY}</p>`);
+    expect(html.indexOf('aria-live="polite"')).toBeLessThan(
+      html.indexOf(NEW_DAY)
+    );
+    expect(html.match(/role="alert"/g)?.length ?? 0).toBe(
+      render().match(/role="alert"/g)?.length ?? 0
+    );
   });
 
   it("masks each amount of the notice and keeps the words", () => {
