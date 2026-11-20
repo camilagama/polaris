@@ -12,6 +12,7 @@ import {
   checkSource,
   collectFiles,
   extractComments,
+  extractYamlComments,
   stripComments,
   findViolations,
 } from "./verify-no-history-comments.mjs";
@@ -21,7 +22,8 @@ const OPEN = "${";
 
 const root = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
 
-const sourceFile = /\.(?:ts|tsx|mjs|js)$/;
+const yamlFile = /\.ya?ml$/;
+const sourceFile = /\.(?:ts|tsx|mjs|js|ya?ml)$/;
 
 const kinds = (source) =>
   checkSource(source).map((violation) => violation.kind);
@@ -242,6 +244,91 @@ describe("what counts as a comment", () => {
   });
 });
 
+describe("YAML comments", () => {
+  const yamlKinds = (source) =>
+    checkSource(source, "workflow.yml").map((violation) => violation.kind);
+
+  it.each([
+    ["# decisão de 24/10", "data"],
+    ["# Approved on 2026-10-28", "data"],
+    ["# menor do PR 123", "número de PR"],
+    ["# feito na t1234", "id de tarefa"],
+    ["steps:\n  - run: echo ok # t1234", "id de tarefa"],
+    ["key: 'a' # 24/10", "data"],
+  ])("flags %j", (source, kind) => {
+    expect(yamlKinds(source)).toContain(kind);
+  });
+
+  it("reports the line of the comment", () => {
+    expect(
+      checkSource("name: x\njobs:\n  # t1234\n  a: 1\n", "ci.yaml")
+    ).toEqual([{ kind: "id de tarefa", line: 3, match: "t1234" }]);
+  });
+
+  it("reads .yaml and .yml as YAML and anything else as source", () => {
+    expect(checkSource("# t1234", "a.yaml")).toHaveLength(1);
+    expect(checkSource("# t1234", "a.yml")).toHaveLength(1);
+    expect(checkSource("# t1234", "a.ts")).toHaveLength(0);
+    expect(checkSource("// t1234", "a.yml")).toHaveLength(0);
+  });
+
+  it("does not flag the same text inside a YAML string", () => {
+    const source = [
+      'a: "24/10 PR 123 t1234 # t1234"',
+      "b: 'em 2026-10-28, PR 123 # t1234'",
+      "c: it's 24/10 for t1234",
+      "d: [\"# t1234\", '# t1234']",
+      "e: url#t1234",
+      'f: "escaped \\" # t1234"',
+    ].join("\n");
+    expect(yamlKinds(source)).toEqual([]);
+    expect(extractYamlComments(source)).toEqual([]);
+  });
+
+  it("does not read a quoted scalar that spans lines", () => {
+    const source = 'a: "first\n  # t1234 24/10\n  end"\nb: 1 # t1234\n';
+    expect(extractYamlComments(source)).toEqual([{ line: 4, text: " t1234" }]);
+  });
+
+  it("does not read the lines of a block scalar, and reads the comment after it", () => {
+    const source = [
+      "steps:",
+      "  - run: |",
+      "      echo # t1234",
+      "      # PR 123 24/10",
+      "",
+      "      echo ok",
+      "  - name: next # t1234",
+      "    run: >-",
+      "      # 2026-10-28",
+      "  # PR 123",
+      "    with: 1",
+    ].join("\n");
+    expect(extractYamlComments(source)).toEqual([
+      { line: 7, text: " t1234" },
+      { line: 10, text: " PR 123" },
+    ]);
+  });
+
+  it("lets ADR, AC, GHSA, links and quoted dates pass", () => {
+    const source = [
+      "# ver ADR 0103 e AC-4",
+      "# advisory GHSA-abcd-efgh-ijkl",
+      "# https://example.com/pull/1234 e https://x.dev/2026-10-28/a",
+      '# o rótulo "24/10/2026" e `2026-10-28`',
+      "# 24/7 e 04:30 em Brasília",
+      "key: 1 # PRnnn do plano",
+    ].join("\n");
+    expect(yamlKinds(source)).toEqual([]);
+  });
+
+  it("reads comments indented under a list and after a document marker", () => {
+    expect(yamlKinds("---\nlist:\n  - a\n    # t1234\n  - b\n")).toEqual([
+      "id de tarefa",
+    ]);
+  });
+});
+
 describe("stripComments", () => {
   it("keeps the code and drops line, block and JSDoc comments but not strings", () => {
     const source =
@@ -286,11 +373,16 @@ describe("scanned files", () => {
         "scripts/r.mjs",
         "scripts/r.test.mjs",
         "vitest.config.ts",
+        ".github/workflows/s.yml",
+        "scripts/t.workflow.yaml",
       ];
       const ignored = [
         "apps/web/src/s.css",
         "apps/web/src/t.d.ts",
         "apps/web/src/u.md",
+        "apps/web/src/u.json",
+        "apps/web/src/node_modules/u.yml",
+        "apps/web/dist/u.yaml",
         "apps/web/src/node_modules/v.ts",
         "apps/web/node_modules/w.ts",
         "apps/web/dist/x.js",
@@ -309,7 +401,7 @@ describe("scanned files", () => {
         ".git/ll.js",
       ];
       for (const relative of [...scanned, ...ignored]) {
-        write(base, relative, bad);
+        write(base, relative, yamlFile.test(relative) ? "# t268\n" : bad);
       }
       expect(
         collectFiles(base).map((file) => path.relative(base, file))
@@ -376,6 +468,7 @@ describe("the repository", () => {
       "apps/web/playwright.pwa.config.ts",
       "scripts/verify-no-history-comments.mjs",
       "vitest.config.ts",
+      ".github/workflows/ci.yml",
     ]) {
       expect(files).toContain(known);
     }

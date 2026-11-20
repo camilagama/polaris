@@ -240,7 +240,7 @@ jobs:
   # The most expensive gate (about 25 minutes when it ran as one job). It runs on pull
   # requests that change something it exercises (not on prose or database-only changes)
   # and on demand; it does not repeat on main what the pull request already proved.
-  # 24/10: the same suites and projects as before, split into four Playwright shards that
+  # The same suites and projects as one job would run, split into four Playwright shards that
   # run in parallel (each shard runs its share of test:offline-poc and test:pwa, both
   # browser projects). Splitting by browser project left 21 min on desktop and 6 on
   # mobile (run 40078910891), so shards it is. The catalog CSP test runs in its own job

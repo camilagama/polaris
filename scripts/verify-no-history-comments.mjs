@@ -5,14 +5,15 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 /**
  * Comments say why the code is the way it is. Who asked, which task, which review round or which
  * day belong to git, the pull request and the ADR: left in a comment they age, and the next reader
- * takes a one-off fix for a general rule. This check reads only comments (`//`, block and JSDoc),
- * never string contents, and fails on task ids, team names, review vocabulary, pull request numbers
+ * takes a one-off fix for a general rule. This check reads only comments (`//`, block and JSDoc in
+ * source files, `#` in YAML), never string contents, and fails on task ids, team names, review vocabulary, pull request numbers
  * and dates (dd/mm and yyyy-mm-dd). `ADR 0NNN`, `PRnnn` of the plan, `AC-n`, `GHSA-…`, links and a
  * date between quotes or backticks stay allowed. It walks every source file of the repository except
  * dependencies, build output and generated files, so a new folder is covered without a list to update.
  */
 const root = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
 const sourceSuffix = /\.(?:ts|tsx|mjs|js)$/;
+const yamlSuffix = /\.ya?ml$/;
 // Dependencies, build output, generated files and local state: nobody writes a comment there.
 export const IGNORED_FOLDERS = new Set([
   ".codex-worktrees",
@@ -326,10 +327,93 @@ export function stripComments(source) {
   return code + source.slice(from);
 }
 
-/** Violations of one file as `{ line, kind, match }`. */
-export function checkSource(source) {
+const blockScalarHeader = /(?:^|[:-])\s+(?:[&!]\S+\s+)*[|>][+-]?\d?[+-]?\s*$/;
+const sequenceItemPrefix = /^(?:\s*-\s+)*\s*/;
+const yamlValueOpeners = ":-,[{?";
+
+/**
+ * Comments of a YAML file as `{ line, text }`. A `#` starts a comment only at the start of a line or after
+ * whitespace and outside quotes; the lines of a block scalar (`|`, `>`) and the text of a quoted scalar,
+ * even one that spans lines, are string contents and never read.
+ */
+export function extractYamlComments(source) {
+  const comments = [];
+  let blockIndent = -1;
+  let openQuote = "";
+  for (const [offset, line] of source.split("\n").entries()) {
+    if (blockIndent >= 0) {
+      if (line.trim() === "" || indentOf(line) > blockIndent) {
+        continue;
+      }
+      blockIndent = -1;
+    }
+    const scan = scanYamlLine(line, openQuote);
+    ({ openQuote } = scan);
+    if (scan.comment !== null) {
+      comments.push({ line: offset + 1, text: scan.comment });
+    }
+    if (openQuote === "" && blockScalarHeader.test(scan.content)) {
+      blockIndent = keyIndentOf(scan.content);
+    }
+  }
+  return comments;
+}
+
+function indentOf(line) {
+  return line.length - line.trimStart().length;
+}
+
+// Column of the key on a line, past any `- ` of a sequence item: a block scalar's lines sit deeper than it.
+function keyIndentOf(content) {
+  return sequenceItemPrefix.exec(content)?.[0].length ?? 0;
+}
+
+function scanYamlLine(line, quoteAtStart) {
+  let quote = quoteAtStart;
+  for (let index = 0; index < line.length; index += 1) {
+    const char = line[index];
+    if (quote !== "") {
+      if (quote === '"' && char === "\\") {
+        index += 1;
+      } else if (char === quote) {
+        quote = "";
+      }
+    } else if (
+      char === "#" &&
+      (index === 0 || whitespace.test(line[index - 1]))
+    ) {
+      return {
+        comment: line.slice(index + 1),
+        content: line.slice(0, index),
+        openQuote: "",
+      };
+    } else if ((char === '"' || char === "'") && opensYamlValue(line, index)) {
+      quote = char;
+    }
+  }
+  return { comment: null, content: line, openQuote: quote };
+}
+
+// A quote starts a scalar only where a value can start; the apostrophe of a plain "don't" does not.
+function opensYamlValue(line, index) {
+  const before = line.slice(0, index).trimEnd();
+  if (before === "") {
+    return true;
+  }
+  const last = before.at(-1);
+  if (!yamlValueOpeners.includes(last)) {
+    return false;
+  }
+  return last === "," || last === "[" || last === "{" || before.length < index;
+}
+
+/** Violations of one file as `{ line, kind, match }`; `.yml` and `.yaml` are read as YAML. */
+export function checkSource(source, file = "") {
   const violations = [];
-  for (const { line, text } of extractComments(source)) {
+  const comments = yamlSuffix.test(file)
+    ? extractYamlComments(source)
+    : extractComments(source);
+  for (const { line, text } of comments) {
     for (const { kind, match } of findViolations(text)) {
       violations.push({ kind, line, match });
     }
@@ -346,7 +430,7 @@ function walk(directory, found) {
       }
     } else if (
       entry.isFile() &&
-      sourceSuffix.test(entry.name) &&
+      (sourceSuffix.test(entry.name) || yamlSuffix.test(entry.name)) &&
       !entry.name.endsWith(".d.ts")
     ) {
       found.push(full);
@@ -354,7 +438,7 @@ function walk(directory, found) {
   }
 }
 
-/** Every source file under `base` (the repository root), tests, e2e, scripts and configs included. */
+/** Every source and YAML file under `base` (the repository root), tests, e2e, scripts and configs included. */
 export function collectFiles(base = root) {
   const found = [];
   walk(base, found);
@@ -364,7 +448,7 @@ export function collectFiles(base = root) {
 export function checkRepository(base = root) {
   const failures = [];
   for (const file of collectFiles(base)) {
-    for (const violation of checkSource(readFileSync(file, "utf8"))) {
+    for (const violation of checkSource(readFileSync(file, "utf8"), file)) {
       failures.push({ file: path.relative(base, file), ...violation });
     }
   }

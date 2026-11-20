@@ -3,7 +3,6 @@ name: Concurrency nightly
 # The CI runs each race once (gates:ci). An intermittent race is what one round
 # misses, so the concurrency suite runs every night on main with 3 rounds
 # (gates:concurrency), outside the pull request: it does not slow any PR.
-# Approved by the user on 2026-10-28 (menor do PR 191).
 on:
   schedule:
     - cron: "30 7 * * *" # 04:30 in Brasília
