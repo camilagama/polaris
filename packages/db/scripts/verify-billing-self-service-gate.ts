@@ -15,7 +15,7 @@ import {
 } from "../src/billing-store";
 import { createDatabase } from "../src/client";
 import { CURRENT_CHARGE_RECONCILE_SQL } from "./current-charge-reconcile-sql";
-import { withGateRole } from "./gate-roles";
+import { inRolledBackTransaction, withGateRole } from "./gate-roles";
 import {
   createTenantFixture,
   disposableHostPattern,
@@ -202,14 +202,11 @@ async function run() {
       role: string,
       operation: (client: Client) => Promise<T>
     ): Promise<T> =>
-      as(adminUrl, async (client) => {
-        await client.query("BEGIN");
-        try {
-          return await withGateRole(client, role, () => operation(client));
-        } finally {
-          await client.query("ROLLBACK");
-        }
-      });
+      as(adminUrl, (client) =>
+        inRolledBackTransaction(client, () =>
+          withGateRole(client, role, () => operation(client))
+        )
+      );
 
     store = createBillingStore(billingUrl);
     const billing = store;

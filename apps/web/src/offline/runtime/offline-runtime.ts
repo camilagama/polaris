@@ -308,15 +308,19 @@ function isSessionRefusal(error: unknown): boolean {
 }
 
 /**
- * The server could not answer the call, so nothing follows from it about the device: no answer at all, a 5xx the
- * retry of the reads already counts as transient, or an oRPC code that is no definite 4xx (a 500 with a reason of its
- * own, a 429). Only a definite answer ("this device is not yours") may send the start to forget the device.
+ * The only failures of the start that say the remembered device is not this person's: the server's definite
+ * refusal, or a lease that names somebody else. Whatever else went wrong (browser storage, an unreadable lease, no
+ * answer, an unknown error) is no news about the device, and registering another one would not fix it.
  */
-function isServerUnanswered(error: unknown): boolean {
+function isDeviceForgettingFailure(error: unknown): boolean {
+  if (error instanceof Error && error.message === "lease_wrong_user") {
+    return true;
+  }
   return (
-    isConnectionFailure(error) ||
-    isTransientReadFailure(error) ||
-    (rpcErrorCode(error) !== undefined && !isDefiniteRpcRejection(error))
+    isDefiniteRpcRejection(error) &&
+    !isPlanRefusal(error) &&
+    !isLegalAcceptanceRefusal(error) &&
+    !isClosedRefusal(error)
   );
 }
 
@@ -1739,16 +1743,9 @@ export class OfflineRuntime {
         await this.openExpired(userId, organizationId, deviceId, generation);
         return;
       }
-      if (
-        !this.dependencies.isOnline() ||
-        // no answer (network or a 5xx, with or without an oRPC code) is not a refusal: the device is not somebody else's
-        isServerUnanswered(error) ||
-        (error instanceof Error && error.message === "no_lease_offline") ||
-        isPlanRefusal(error) ||
-        // the device is not somebody else's: the server only waits for the acceptance, or the store was closed
-        isLegalAcceptanceRefusal(error) ||
-        isClosedRefusal(error)
-      ) {
+      const forgetsDevice =
+        this.dependencies.isOnline() && isDeviceForgettingFailure(error);
+      if (!forgetsDevice) {
         throw error;
       }
       // The remembered device may belong to another user of this browser:

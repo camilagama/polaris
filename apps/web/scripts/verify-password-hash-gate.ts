@@ -2,6 +2,7 @@
 import assert from "node:assert/strict";
 import { randomBytes, randomUUID } from "node:crypto";
 import { createDatabase } from "@polaris/db/client";
+import { inRolledBackTransaction } from "../../../packages/db/scripts/gate-roles";
 import {
   disposableHostPattern,
   expectSqlState,
@@ -363,8 +364,7 @@ async function run() {
     const mutationClient = await owner.pool.connect();
     try {
       const original = await definitionOf(authClient, FUNCTIONS.hash);
-      await mutationClient.query("BEGIN");
-      try {
+      await inRolledBackTransaction(mutationClient, async () => {
         await mutationClient.query(
           original.replace("gen_salt('bf', 11)", "gen_salt('bf', 4)")
         );
@@ -378,9 +378,7 @@ async function run() {
           () => probeHashAndCheck(mutantHasher),
           "the probe of the cost catches a hash of cost 4"
         );
-      } finally {
-        await mutationClient.query("ROLLBACK");
-      }
+      });
       assert.equal(
         await definitionOf(authClient, FUNCTIONS.hash),
         original,

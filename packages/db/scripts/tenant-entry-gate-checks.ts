@@ -5,7 +5,11 @@ import {
   TENANT_LOCK_TIMEOUT_MS,
   TENANT_STATEMENT_TIMEOUT_MS,
 } from "../src/tenant-transaction";
-import { type GateQueryable, withGateRole } from "./gate-roles";
+import {
+  type GateQueryable,
+  inRolledBackTransaction,
+  withGateRole,
+} from "./gate-roles";
 import { sqlState } from "./sales-gate-support";
 
 /**
@@ -52,19 +56,6 @@ export async function entryOutcome(
     return `${state}:${error instanceof Error ? error.message : String(error)}`;
   } finally {
     await client.query("ROLLBACK TO SAVEPOINT tenant_entry_probe");
-  }
-}
-
-/** Runs `work` in a transaction that is always rolled back. */
-export async function inRolledBackTransaction<T>(
-  client: GateQueryable,
-  work: () => Promise<T>
-): Promise<T> {
-  await client.query("BEGIN");
-  try {
-    return await work();
-  } finally {
-    await client.query("ROLLBACK");
   }
 }
 

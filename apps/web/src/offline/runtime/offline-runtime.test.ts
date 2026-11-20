@@ -669,6 +669,111 @@ describe("starting", () => {
         expect(runtime.getSnapshot().phase).toBe("ready");
       }
     );
+
+    it("a FORBIDDEN registers exactly one other device, never more", async () => {
+      const { w } = await deviceWithoutLease();
+      const registered = w.calls.registerDevice;
+      w.failures.issueLease.push(
+        Object.assign(new Error("refused"), { code: "FORBIDDEN", status: 403 }),
+        Object.assign(new Error("refused"), { code: "FORBIDDEN", status: 403 })
+      );
+
+      const runtime = w.make();
+      await runtime.start(organizationId);
+
+      expect(w.calls.registerDevice).toBe(registered + 1);
+      expect(runtime.getSnapshot().phase).toBe("unavailable");
+    });
+
+    it("a lease for somebody else forgets the device and registers exactly one other", async () => {
+      const { device, w } = await deviceWithoutLease();
+      const registered = w.calls.registerDevice;
+      const remove = vi.spyOn(w.keyValues, "remove");
+      let asked = 0;
+      const runtime = w.make(null, {
+        api: {
+          ...w.api,
+          issueLease: async (deviceId, org) => {
+            asked += 1;
+            if (asked > 1) {
+              return w.api.issueLease(deviceId, org);
+            }
+            w.session.user = "somebody-else";
+            try {
+              return await w.api.issueLease(deviceId, org);
+            } finally {
+              w.session.user = userId;
+            }
+          },
+        },
+      });
+      await runtime.start(organizationId);
+
+      expect(remove).toHaveBeenCalledWith("polaris.offline.device");
+      expect(w.calls.registerDevice).toBe(registered + 1);
+      expect(w.keyValues.read("polaris.offline.device")).not.toBe(device);
+      expect(runtime.getSnapshot().phase).toBe("ready");
+    });
+
+    const localFailures: [string, Partial<RuntimeDependencies>][] = [
+      [
+        "a DOMException from opening the stores",
+        {
+          openStores: () =>
+            Promise.reject(new DOMException("quota", "QuotaExceededError")),
+        },
+      ],
+      [
+        "a DOMException from the namespace",
+        {
+          namespaceFor: () =>
+            Promise.reject(new DOMException("blocked", "InvalidStateError")),
+        },
+      ],
+      [
+        "an Error with no oRPC code from opening the stores",
+        { openStores: () => Promise.reject(new Error("opfs_failed")) },
+      ],
+    ];
+
+    it.each(localFailures)(
+      "%s keeps the device and the key: nothing is removed, nothing is registered, the start ends unavailable",
+      async (_name, broken) => {
+        const { device, w } = await deviceWithoutLease();
+        const registered = w.calls.registerDevice;
+        const remove = vi.spyOn(w.keyValues, "remove");
+
+        const runtime = w.make(null, broken);
+        await runtime.start(organizationId);
+
+        expect(remove).not.toHaveBeenCalledWith("polaris.offline.device");
+        expect(w.calls.registerDevice).toBe(registered);
+        expect(w.keyValues.read("polaris.offline.device")).toBe(device);
+        expect(runtime.getSnapshot().phase).toBe("unavailable");
+        expect(runtime.context()).toBeNull();
+      }
+    );
+
+    it("an unreadable lease keeps the device and the key: nothing is registered, the start ends unavailable", async () => {
+      const { device, w } = await deviceWithoutLease();
+      const registered = w.calls.registerDevice;
+      const remove = vi.spyOn(w.keyValues, "remove");
+      const runtime = w.make();
+      vi.spyOn(
+        runtime as unknown as { ensureLease: () => Promise<string> },
+        "ensureLease"
+      ).mockResolvedValue("not-a-lease");
+      await runtime.start(organizationId);
+
+      expect(remove).not.toHaveBeenCalledWith("polaris.offline.device");
+      expect(w.calls.registerDevice).toBe(registered);
+      expect(w.keyValues.read("polaris.offline.device")).toBe(device);
+      expect(runtime.getSnapshot()).toMatchObject({
+        phase: "unavailable",
+        reason: "lease_unreadable",
+      });
+      expect(runtime.context()).toBeNull();
+    });
   });
 
   it("a plan refusal is the reason of the unavailable phase, and any other failure is not", async () => {
@@ -784,7 +889,7 @@ describe("starting", () => {
     w.keyValues.write("polaris.offline.session-user", "user-2");
     const intruder = w.make();
     await intruder.start(organizationId);
-    expect(intruder.getSnapshot().phase).not.toBe("ready");
+    expect(intruder.getSnapshot().phase).toBe("unavailable");
     expect(intruder.context()).toBeNull();
     expect(w.stores.has("user-2-org-1")).toBe(false);
   });

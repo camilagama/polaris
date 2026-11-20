@@ -6,6 +6,7 @@ import {
 } from "@polaris/domain/catalog/product";
 import type { PoolClient } from "pg";
 import { createDatabase } from "../src/client";
+import { rollbackAndRelease } from "./gate-roles";
 import {
   createTenantFixture,
   disposableHostPattern,
@@ -82,8 +83,7 @@ async function inRolledBackTransaction(
     await client.query("BEGIN");
     await body(client);
   } finally {
-    await client.query("ROLLBACK");
-    client.release();
+    await rollbackAndRelease(client);
   }
 }
 
