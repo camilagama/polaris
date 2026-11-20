@@ -693,8 +693,9 @@ async function main() {
       "SELECT policyname AS name, cmd AS command, roles, " +
         'qual AS "usingExpression", with_check AS "withCheck" ' +
         "FROM pg_policies WHERE schemaname = 'public' AND tablename = 'products' " +
-        // the tenant policies; the billing owner's read policy is checked on its own below
-        "AND roles NOT IN ('{polaris_billing_owner}', '{polaris_catalog_owner}', '{polaris_admin_owner}', '{polaris_purge_owner}', '{polaris_closed_export_reader}') " +
+        // the tenant policies; the billing owner's read policy is checked on its own below, and the activation-notice
+        // owner's read policy (migration 0124) with its column grants by `activation-candidates`
+        "AND roles NOT IN ('{polaris_billing_owner}', '{polaris_catalog_owner}', '{polaris_admin_owner}', '{polaris_purge_owner}', '{polaris_closed_export_reader}', '{polaris_activation_notice_owner}') " +
         "ORDER BY policyname"
     );
     assert.deepEqual(
