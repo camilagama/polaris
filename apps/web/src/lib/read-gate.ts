@@ -39,6 +39,7 @@ const READ_PROCEDURES: ReadonlySet<string> = new Set([
   "billing/readPlan",
   "category/list",
   "customer/findPossibleDuplicates",
+  "customer/get",
   "customer/list",
   "dataExport/list",
   "dataExport/listClosed",

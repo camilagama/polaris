@@ -277,8 +277,8 @@ export interface Connection {
    */
   mayRetryRead: () => boolean;
   /**
-   * Runs a session lookup that does not go through `fetch` here (the e-mail at the foot of the shell): the first one
-   * of the tab still holds the reads until it ends (`read-gate.ts`), and its answer is not classified.
+   * Runs a session lookup that does not go through `fetch` here: the first one of the tab still holds the reads until
+   * it ends (`read-gate.ts`), and its answer is not classified. The tab's own lookups go through `fetch`.
    */
   sessionFirst: <T>(task: () => Promise<T>) => Promise<T>;
   /** "Tentar agora": one probe right now, whatever the interval; the state it ends in. */

@@ -63,11 +63,13 @@ function entry(
   };
 }
 
+const KEY = "filtro-a";
+
 function loaded(
   sales: SaleListEntryReadModel[],
   hasMore = false
 ): HistoryState {
-  return historyLoaded(initialHistoryState(), { hasMore, sales });
+  return historyLoaded(initialHistoryState(), { hasMore, sales }, KEY);
 }
 
 describe("list load states", () => {
@@ -85,20 +87,26 @@ describe("list load states", () => {
   });
 
   it("reports an error, with the generic forbidden message", () => {
-    const state = historyLoadFailed(initialHistoryState(), {
-      code: "FORBIDDEN",
-    });
+    const state = historyLoadFailed(
+      initialHistoryState(),
+      { code: "FORBIDDEN" },
+      KEY
+    );
     expect(historyView(state)).toEqual({
       kind: "error",
       message: "Sua conta não tem acesso a esta loja ou a esta ação.",
     });
   });
 
-  it("keeps a showing list when a refresh fails", () => {
-    const state = historyLoadFailed(loaded([entry(1)]), new TypeError("x"));
-    expect(historyView(state).kind).toBe("ready");
-    expect(state.moreError).toContain("Não foi possível carregar");
-    expect(historyLoading(state).moreError).toBeNull();
+  it("re-reading the first page drops a load-more in flight and keeps the list", () => {
+    const busy = loadMoreStarted(loaded([entry(2), entry(1)], true), KEY);
+    expect(busy.loadingMore).toBe(true);
+    const state = historyLoading(busy);
+    expect(state.loadingMore).toBe(false);
+    expect(state.list).toBe("ready");
+    expect(state.hasMore).toBe(true);
+    expect(state.sales.map((sale) => sale.id)).toEqual([id(2), id(1)]);
+    expect(canLoadMore(state, KEY)).toBe(false);
   });
 
   it("keeps the list in the server order, newest first", () => {
@@ -107,34 +115,96 @@ describe("list load states", () => {
   });
 });
 
+describe("the list is read for one filter", () => {
+  const OTHER = "filtro-b";
+
+  it("hides the button, not disables it, once the filter in force is another one", () => {
+    const state = loaded([entry(1)], true);
+    expect(canLoadMore(state, OTHER)).toBe(false);
+    expect(loadMoreView(state, OTHER).visible).toBe(false);
+    expect(loadMoreStarted(state, OTHER)).toBe(state);
+  });
+
+  it("hides the button while the first page is read again, and says so", () => {
+    const state = historyLoading(loaded([entry(1)], true));
+    expect(state.sales).toHaveLength(1);
+    expect(canLoadMore(state, KEY)).toBe(false);
+    expect(loadMoreView(state, KEY)).toMatchObject({
+      refreshFailed: false,
+      refreshing: true,
+      visible: false,
+    });
+  });
+
+  it("a first page for another filter replaces rows, key and offset together", () => {
+    const state = historyLoaded(
+      historyLoading(loaded([entry(1), entry(2)], true)),
+      { hasMore: true, sales: [entry(9)] },
+      OTHER
+    );
+    expect(state.sales.map((sale) => sale.id)).toEqual([id(9)]);
+    expect(nextOffset(state)).toBe(1);
+    expect(canLoadMore(state, KEY)).toBe(false);
+    expect(canLoadMore(state, OTHER)).toBe(true);
+  });
+
+  it("a failed read for another filter drops the old rows and shows the list error", () => {
+    const state = historyLoadFailed(
+      historyLoading(loaded([entry(1)], true)),
+      new TypeError("x"),
+      OTHER
+    );
+    expect(state.sales).toEqual([]);
+    expect(historyView(state).kind).toBe("error");
+    expect(loadMoreView(state, OTHER).visible).toBe(false);
+  });
+
+  it("a failed read for the same filter keeps the rows, hides the button and flags them as possibly old", () => {
+    const state = historyLoadFailed(
+      historyLoading(loaded([entry(1)], true)),
+      new TypeError("x"),
+      KEY
+    );
+    expect(historyView(state).kind).toBe("ready");
+    expect(loadMoreView(state, KEY)).toMatchObject({
+      error: null,
+      refreshFailed: true,
+      refreshing: false,
+      visible: false,
+    });
+    expect(canLoadMore(state, KEY)).toBe(false);
+    expect(historyLoading(state).refresh).toBe("loading");
+  });
+});
+
 describe("pagination", () => {
   it("offers more only when the server says so and nothing is loading", () => {
     const state = loaded([entry(1), entry(2)], true);
-    expect(canLoadMore(state)).toBe(true);
+    expect(canLoadMore(state, KEY)).toBe(true);
     expect(nextOffset(state)).toBe(2);
-    expect(loadMoreView(state)).toMatchObject({
+    expect(loadMoreView(state, KEY)).toMatchObject({
       busy: false,
       label: "Carregar mais",
       visible: true,
     });
-    expect(canLoadMore(loaded([entry(1)], false))).toBe(false);
-    expect(loadMoreView(loaded([entry(1)], false)).visible).toBe(false);
-    expect(canLoadMore(initialHistoryState())).toBe(false);
+    expect(canLoadMore(loaded([entry(1)], false), KEY)).toBe(false);
+    expect(loadMoreView(loaded([entry(1)], false), KEY).visible).toBe(false);
+    expect(canLoadMore(initialHistoryState(), KEY)).toBe(false);
   });
 
   it("guards against a second load while one is running", () => {
-    const first = loadMoreStarted(loaded([entry(1)], true));
+    const first = loadMoreStarted(loaded([entry(1)], true), KEY);
     expect(first.loadingMore).toBe(true);
-    expect(canLoadMore(first)).toBe(false);
-    expect(loadMoreStarted(first)).toBe(first);
-    expect(loadMoreView(first)).toMatchObject({
+    expect(canLoadMore(first, KEY)).toBe(false);
+    expect(loadMoreStarted(first, KEY)).toBe(first);
+    expect(loadMoreView(first, KEY)).toMatchObject({
       busy: true,
       label: "Carregando…",
     });
   });
 
   it("appends the next page, skipping sales already shown", () => {
-    const first = loadMoreStarted(loaded([entry(3), entry(2)], true));
+    const first = loadMoreStarted(loaded([entry(3), entry(2)], true), KEY);
     const next = moreLoaded(first, {
       hasMore: false,
       sales: [entry(2), entry(1)],
@@ -145,20 +215,24 @@ describe("pagination", () => {
   });
 
   it("keeps the list and shows an error when loading more fails", () => {
-    const state = moreLoadFailed(loadMoreStarted(loaded([entry(1)], true)), {
-      code: "SERVICE_UNAVAILABLE",
-    });
+    const state = moreLoadFailed(
+      loadMoreStarted(loaded([entry(1)], true), KEY),
+      {
+        code: "SERVICE_UNAVAILABLE",
+      }
+    );
     expect(state.sales).toHaveLength(1);
     expect(state.loadingMore).toBe(false);
-    expect(loadMoreView(state).error).toContain("mais vendas");
-    expect(canLoadMore(state)).toBe(true);
+    expect(loadMoreView(state, KEY).error).toContain("mais vendas");
+    expect(canLoadMore(state, KEY)).toBe(true);
   });
 
   it("replaces the list when the first page is reloaded", () => {
-    const state = historyLoaded(loaded([entry(1), entry(2)], true), {
-      hasMore: false,
-      sales: [entry(9)],
-    });
+    const state = historyLoaded(
+      loaded([entry(1), entry(2)], true),
+      { hasMore: false, sales: [entry(9)] },
+      KEY
+    );
     expect(state.sales.map((sale) => sale.id)).toEqual([id(9)]);
   });
 });

@@ -1,6 +1,7 @@
 /// <reference lib="dom" />
 // Only types from Playwright: `ui-screens.ts` is read under Vitest by the source rules.
 import type { Page, Route } from "@playwright/test";
+import { showScreenAlone } from "./show-screen-alone";
 import { serveLabWorker, WORKER_MARK } from "./worker-mark";
 
 /**
@@ -185,19 +186,6 @@ async function openExpensesLab(page: Page) {
     .getByRole("heading", { exact: true, level: 1, name: "Despesas" })
     .waitFor();
   await page.getByText("DAS do Simples").waitFor();
-}
-
-/** Hides the lab's own controls and waits for the fonts: what stays is the screen. */
-async function showScreenAlone(page: Page) {
-  await page.evaluate(() => {
-    for (const element of document.querySelectorAll("[data-lab-chrome]")) {
-      (element as HTMLElement).hidden = true;
-    }
-    (document.activeElement as HTMLElement | null)?.blur();
-    window.scrollTo(0, 0);
-  });
-  await page.evaluate(() => document.fonts.ready);
-  await page.waitForTimeout(300);
 }
 
 export const expenseStates = {

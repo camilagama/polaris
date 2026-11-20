@@ -590,6 +590,50 @@ test.describe("o número acompanha o que a pessoa grava", () => {
     expect(await stillTheSamePage(page)).toBe(true);
   });
 
+  test("abrir Produtos e depois as abas Variantes e Imagens do diálogo soma 1 leitura do plano, e salvar variantes soma mais 1", async ({
+    page,
+  }) => {
+    const reads = { plan: 0 };
+    const store: Store = {
+      answers: {
+        ...productAnswers(),
+        "product/configureVariants": (route) => {
+          store.use = { images: 47, variants: 48 };
+          return route.fulfill(rpc(savedConfiguration));
+        },
+      },
+      reads,
+      use: { images: 47, variants: 47 },
+    };
+    await page.route("**/api/products/*/media**", (route) =>
+      route.fulfill({
+        body: mediaListBody(0),
+        contentType: "application/json",
+        headers: { ...WORKER_MARK },
+      })
+    );
+    await openApp(page, "/products", store);
+    await expect(line(page)).toContainText("Você usa 47 de 50 variantes");
+    // the shell's notice of the grace and Produtos share the memory of the plan: one read for both
+    await expect.poll(() => reads.plan).toBe(1);
+
+    await openVariants(page);
+    await expect(dialogLine(page)).toContainText("Você usa 47 de 50 variantes");
+    await page.getByRole("tab", { name: "Imagens" }).click();
+    await expect(page.getByText("Você usa 47 de 50 imagens")).toBeVisible();
+    await page.getByRole("tab", { name: "Variantes" }).click();
+    expect(reads.plan).toBe(1);
+
+    await page.getByRole("button", { name: "Adicionar combinação" }).click();
+    await page.getByRole("combobox", { exact: true, name: "Cor" }).click();
+    await page.getByRole("option", { exact: true, name: "Azul" }).click();
+    await page.getByRole("button", { name: "Salvar variantes" }).click();
+    await expect(behindTheDialog(page)).toContainText(
+      "Você usa 48 de 50 variantes"
+    );
+    expect(reads.plan).toBe(2);
+  });
+
   test("cadastrar um produto lê o uso de novo na linha de Produtos", async ({
     page,
   }) => {

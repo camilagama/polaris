@@ -31,6 +31,7 @@ import {
   archiveCustomer,
   createCustomer,
   findPossibleCustomerDuplicates,
+  getCustomer,
   listCustomers,
   restoreCustomer,
   updateCustomer,
@@ -409,6 +410,7 @@ interface RpcRouterDependencies {
   deleteCategory: typeof deleteCategory;
   deleteProduct: typeof deleteProduct;
   findPossibleCustomerDuplicates: typeof findPossibleCustomerDuplicates;
+  getCustomer: typeof getCustomer;
   getInventoryBalance: typeof getInventoryBalance;
   getProductVariants: typeof getProductVariants;
   getSale: typeof getSale;
@@ -1063,6 +1065,7 @@ function createCustomerRpcHandlers(
       | "archiveCustomer"
       | "createCustomer"
       | "findPossibleCustomerDuplicates"
+      | "getCustomer"
       | "listCustomers"
       | "restoreCustomer"
       | "updateCustomer"
@@ -1077,12 +1080,31 @@ function createCustomerRpcHandlers(
   const findTenantCustomerDuplicates =
     dependencies.findPossibleCustomerDuplicates ??
     findPossibleCustomerDuplicates;
+  const getTenantCustomer = dependencies.getCustomer ?? getCustomer;
   const listTenantCustomers = dependencies.listCustomers ?? listCustomers;
   const restoreTenantCustomer = dependencies.restoreCustomer ?? restoreCustomer;
   const updateTenantCustomer = dependencies.updateCustomer ?? updateCustomer;
   const tenantRequest = dependencies.withTenantRequestContext;
   const implementContract =
     implement(polarisContract).$context<PolarisRpcContext>();
+
+  const get = implementContract.customer.get.handler(
+    async ({ context, input }) => {
+      try {
+        const customer = await tenantRequest({
+          bindings: context.bindings,
+          capability: "customer:update",
+          operation: (transaction, identity) =>
+            getTenantCustomer(transaction, identity, input.id),
+          request: context.request,
+          requestedOrganizationId: input.organizationId,
+        });
+        return customerReadModel(customer);
+      } catch (error) {
+        return toRpcError(error);
+      }
+    }
+  );
 
   const list = implementContract.customer.list.handler(
     async ({ context, input }) => {
@@ -1241,6 +1263,7 @@ function createCustomerRpcHandlers(
     archive,
     create,
     findPossibleDuplicates,
+    get,
     list,
     restore,
     update,

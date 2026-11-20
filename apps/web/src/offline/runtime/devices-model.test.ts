@@ -223,6 +223,7 @@ describe("what the screen says while it does not know this device", () => {
     "purge_failed",
     "session_changed",
     "session_refused",
+    "device_check_unavailable",
     PLAN_REFUSED_REASON,
   ])(
     "does not blame the browser when the reason is about the account or the plan (%s)",

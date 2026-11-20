@@ -18,6 +18,7 @@ import {
   validateMediaImageSource,
 } from "@polaris/domain/catalog/media";
 import { browserConnection } from "./browser-connection";
+import { trackPlanUsageWrite } from "./plan-usage-changes";
 import { trackWrite } from "./writes-in-flight";
 
 /** The Worker's calls go through the connection: an answer without the Worker's mark is no answer (emenda do ADR 0043). */
@@ -102,13 +103,15 @@ export async function uploadProductMedia(
     input.origin || globalThis.location?.origin || "http://localhost"
   );
   // the media goes outside the oRPC link: it counts as a write on its way by itself (it holds the swap of the build)
-  const response = await trackWrite(["media", "upload"], () =>
-    fetcher(url, {
-      body: file,
-      credentials: "same-origin",
-      headers,
-      method: "POST",
-    })
+  const response = await trackPlanUsageWrite(() =>
+    trackWrite(["media", "upload"], () =>
+      fetcher(url, {
+        body: file,
+        credentials: "same-origin",
+        headers,
+        method: "POST",
+      })
+    )
   );
 
   let payload: unknown;
@@ -212,14 +215,18 @@ async function sendMediaCommand<T>(
   if (init.body !== undefined) {
     headers.set("Content-Type", "application/json");
   }
-  const response = await trackWrite(["media", init.method], () =>
-    fetcher(url, {
-      ...(init.body === undefined ? {} : { body: init.body }),
-      credentials: "same-origin",
-      headers,
-      method: init.method,
-    })
-  );
+  const send = () =>
+    trackWrite(["media", init.method], () =>
+      fetcher(url, {
+        ...(init.body === undefined ? {} : { body: init.body }),
+        credentials: "same-origin",
+        headers,
+        method: init.method,
+      })
+    );
+  const response = await (init.method === "DELETE"
+    ? trackPlanUsageWrite(send)
+    : send());
   let payload: unknown;
   try {
     payload = await response.json();
