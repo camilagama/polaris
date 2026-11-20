@@ -530,6 +530,112 @@ describe("starting", () => {
     expect(w.keyValues.read("polaris.offline.device")).not.toBeNull();
   });
 
+  describe("issueLease at start that the server could not answer, with no usable lease", () => {
+    const leaseKeyName = `polaris.offline.lease.${userId}.${organizationId}`;
+
+    async function deviceWithoutLease() {
+      const w = world();
+      await w.make().start(organizationId);
+      const device = w.keyValues.read("polaris.offline.device");
+      w.keyValues.remove(leaseKeyName);
+      return { device, w };
+    }
+
+    const unanswered: [string, () => Error][] = [
+      [
+        "a 503 with an oRPC code",
+        () =>
+          Object.assign(new Error("unavailable"), {
+            code: "SERVICE_UNAVAILABLE",
+            status: 503,
+          }),
+      ],
+      [
+        "a 500 with an oRPC code",
+        () =>
+          Object.assign(new Error("boom"), {
+            code: "INTERNAL_SERVER_ERROR",
+            status: 500,
+          }),
+      ],
+      [
+        "a 500 with an oRPC code and a reason of its own",
+        () =>
+          Object.assign(new Error("boom"), {
+            code: "INTERNAL_SERVER_ERROR",
+            data: { reason: "lease_signing_failed" },
+            status: 500,
+          }),
+      ],
+      [
+        "a 5xx with no oRPC code",
+        () => Object.assign(new Error("bad gateway"), { status: 502 }),
+      ],
+      ["a network failure", () => new TypeError("Failed to fetch")],
+    ];
+
+    it.each(unanswered)(
+      "%s keeps the device: nothing is removed and nothing is registered again",
+      async (_name, failure) => {
+        const { device, w } = await deviceWithoutLease();
+        const registered = w.calls.registerDevice;
+        const remove = vi.spyOn(w.keyValues, "remove");
+        w.failures.issueLease.push(failure());
+
+        const runtime = w.make();
+        await runtime.start(organizationId);
+
+        expect(remove).not.toHaveBeenCalledWith("polaris.offline.device");
+        expect(w.calls.registerDevice).toBe(registered);
+        expect(w.keyValues.read("polaris.offline.device")).toBe(device);
+        expect(runtime.getSnapshot().phase).not.toBe("ready");
+      }
+    );
+
+    it("a server that keeps failing never mints a device per opening", async () => {
+      const { device, w } = await deviceWithoutLease();
+      const registered = w.calls.registerDevice;
+      const down = () =>
+        Object.assign(new Error("unavailable"), {
+          code: "SERVICE_UNAVAILABLE",
+          status: 503,
+        });
+      w.failures.issueLease.push(down());
+      await w.make().start(organizationId);
+      w.failures.issueLease.push(down());
+      await w.make().start(organizationId);
+      w.failures.issueLease.push(down());
+      await w.make().start(organizationId);
+      expect(w.calls.registerDevice).toBe(registered);
+      expect(w.keyValues.read("polaris.offline.device")).toBe(device);
+
+      const back = w.make();
+      await back.start(organizationId);
+      expect(back.getSnapshot().phase).toBe("ready");
+      expect(back.context()?.deviceId).toBe(device);
+    });
+
+    it("an explicit refusal of the device still forgets it and registers another", async () => {
+      const { device, w } = await deviceWithoutLease();
+      const registered = w.calls.registerDevice;
+      const remove = vi.spyOn(w.keyValues, "remove");
+      w.failures.issueLease.push(
+        Object.assign(new Error("forbidden"), {
+          code: "FORBIDDEN",
+          status: 403,
+        })
+      );
+
+      const runtime = w.make();
+      await runtime.start(organizationId);
+
+      expect(remove).toHaveBeenCalledWith("polaris.offline.device");
+      expect(w.calls.registerDevice).toBe(registered + 1);
+      expect(w.keyValues.read("polaris.offline.device")).not.toBe(device);
+      expect(runtime.getSnapshot().phase).toBe("ready");
+    });
+  });
+
   it("a plan refusal is the reason of the unavailable phase, and any other failure is not", async () => {
     const refused = world();
     refused.failures.issueLease.push(
