@@ -2,6 +2,7 @@ import { defineConfig, devices } from "@playwright/test";
 import {
   OFFLINE_POC_ORIGIN,
   OFFLINE_POC_PORT,
+  reportersFor,
   reuseExistingServer,
   workersFrom,
 } from "./e2e/run-settings";
@@ -36,7 +37,7 @@ export default defineConfig({
         ]
       : []),
   ],
-  reporter: inCI ? [["list"], ["github"]] : "list",
+  reporter: reportersFor("offline-poc"),
   retries: inCI ? 1 : 0,
   testDir: "./e2e",
   testMatch: "**/*.e2e.ts",
