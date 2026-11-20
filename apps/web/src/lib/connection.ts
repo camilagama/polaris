@@ -18,6 +18,7 @@
 
 import { COMMON_ORPC_ERROR_DEFS } from "@orpc/client";
 import { callKind, createReadGate, isRpcCall } from "./read-gate";
+import { isTransientServerFault } from "./transient-server-fault";
 
 type ConnectionState = "offline" | "online";
 
@@ -85,14 +86,9 @@ function platformCutResponse(response: Response): Response {
   );
 }
 
-/** The `data.reason` the Worker's own 503 carries for a fault nobody named: "try again" (`server_busy` in the router). */
-const WORKER_TRANSIENT_REASON = "server_busy";
-
 /**
- * The Worker's own 5xx on an RPC call that another try may fix: the same criterion as `isTransientReadFailure`
- * (`rpc-error.ts`, which cannot be imported here: it imports this module), read from the body the router sends. A 503
- * with no reason or with `server_busy`, or a 5xx with no reason. A 503 with another reason (`billing_not_configured`)
- * is an answer, and so is any 4xx or 429.
+ * The Worker's own 5xx on an RPC call that another try may fix (`isTransientServerFault`, the criterion
+ * `isTransientReadFailure` shares), read from the body the router sends.
  */
 async function isWorkerTransientFailure(response: Response): Promise<boolean> {
   let code: unknown;
@@ -107,11 +103,11 @@ async function isWorkerTransientFailure(response: Response): Promise<boolean> {
     code = undefined;
     reason = undefined;
   }
-  const named = typeof reason === "string" ? reason : undefined;
-  if (code === "SERVICE_UNAVAILABLE") {
-    return named === undefined || named === WORKER_TRANSIENT_REASON;
-  }
-  return named === undefined;
+  return isTransientServerFault({
+    code,
+    reason: typeof reason === "string" ? reason : undefined,
+    status: response.status,
+  });
 }
 
 /** A response that did not come from the Worker: the same as no response at all. */
