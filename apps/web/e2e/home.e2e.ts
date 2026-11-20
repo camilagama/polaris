@@ -801,6 +801,18 @@ const newSale = (page: Page) =>
 const periodCalls = (server: FakeServer) =>
   server.calls.filter((call) => call.procedure === "report/periodSummary");
 
+/**
+ * No read left on its way: two frames so the event has left the page, a second of the page's clock so a timer that
+ * would start a read fires, then the network idle of Playwright (signals, not a wait). A count taken before this
+ * passes while an answer is still flying. The second stays under the 5 min that the tests count.
+ */
+async function readsEnded(page: Page) {
+  await settled(page);
+  await page.clock.runFor(1000);
+  await page.waitForLoadState("networkidle");
+  await settled(page);
+}
+
 function goal(overrides: Record<string, unknown>) {
   return {
     achievedValue: null,
@@ -2625,11 +2637,14 @@ test.describe("atualização (§ 5.1, relógio controlado)", () => {
     const server = new FakeServer(SOLD);
     await openHome(page, server);
     await expect(region(page, "Vendas hoje")).toContainText("R$ 320,10");
+    await readsEnded(page);
     const before = periodCalls(server).length;
     await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+    await readsEnded(page);
     expect(periodCalls(server).length).toBe(before);
     await page.clock.runFor(4 * 60_000);
     await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+    await readsEnded(page);
     expect(periodCalls(server).length).toBe(before);
     await page.clock.runFor(RETURN_REFRESH_MS - 4 * 60_000);
     server.scenario = {
