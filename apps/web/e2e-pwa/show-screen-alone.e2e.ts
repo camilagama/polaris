@@ -46,3 +46,53 @@ test("showScreenAlone: com esqueleto e animação de rolagem na tela a espera te
   expect(state.cardStates).toEqual(["finished"]);
   expect(state.skeletonStillRuns).toBe(true);
 });
+
+const MOVERS = {
+  box: "pill.style.marginLeft = (20 * (1 - progress)) + 'px';",
+  transform:
+    "pill.style.transform = 'scale(' + (0.95 + 0.05 * progress) + ')';",
+};
+
+function pillLab(move: string) {
+  return `
+<body style="margin: 0">
+<div data-lab-chrome>controls</div>
+<div data-slot="filter-pill" id="pill" style="display: inline-flex; width: 120px; height: 36px;">
+  <svg class="lucide" width="16" height="16"></svg>
+</div>
+<script>
+  const pill = document.getElementById("pill");
+  const start = performance.now();
+  const step = (now) => {
+    const progress = Math.min((now - start) / 500, 1);
+    ${move}
+    if (progress < 1) requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+</script>
+</body>
+`;
+}
+
+for (const [kind, move] of Object.entries(MOVERS)) {
+  test(`showScreenAlone: pill movido por script (${kind}, fora do getAnimations) só é medido depois de parar`, async ({
+    page,
+  }) => {
+    await page.setContent(pillLab(move));
+
+    await showScreenAlone(page);
+
+    const state = await page.evaluate(() => {
+      const pill = document.getElementById("pill") as HTMLElement;
+      const icon = pill.querySelector("svg") as SVGElement;
+      return {
+        iconWidth: icon.getBoundingClientRect().width,
+        left: pill.getBoundingClientRect().left,
+        moving: !new DOMMatrix(getComputedStyle(pill).transform).isIdentity,
+      };
+    });
+    expect(state.moving).toBe(false);
+    expect(state.iconWidth).toBe(16);
+    expect(state.left).toBe(0);
+  });
+}
