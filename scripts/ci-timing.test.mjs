@@ -19,6 +19,8 @@ import {
 const at = (offsetSeconds) =>
   new Date(Date.UTC(2026, 0, 1, 12, 0, 0) + offsetSeconds * 1000).toISOString();
 
+const SPEC_FILE = /\.(e2e|spec)\.ts$/;
+
 const step = (name, from, to) => ({
   completed_at: at(to),
   name,
@@ -105,6 +107,88 @@ describe("splitJob", () => {
       ],
     };
     expect(splitJob(none)).toEqual({ execution: 37, preparation: 0, wait: 3 });
+  });
+
+  it("counts the image pull, the Playwright version steps and the Chromium cache of each browser variant", () => {
+    const cache = {
+      completed_at: at(900),
+      conclusion: "success",
+      created_at: at(0),
+      name: "Catalog CSP browser test",
+      started_at: at(6),
+      steps: [
+        step("Set up job", 6, 8),
+        step("Run actions/checkout@abc", 8, 16),
+        step("Run actions/setup-node@abc", 16, 26),
+        step("Run oven-sh/setup-bun@abc", 26, 31),
+        step("Run actions/cache@abc", 31, 46),
+        step("Run bun install --frozen-lockfile", 46, 60),
+        step(
+          'Run version=$(grep -oP \'"@playwright/test": \\["@playwright/test@\\K[0-9][0-9.]*\' bun.lock | head -n 1)',
+          60,
+          62
+        ),
+        step("Run actions/cache@abc", 62, 75),
+        step("Run bunx playwright install-deps chromium", 75, 85),
+        step("Run bunx playwright install --with-deps chromium", 85, 85),
+        step("Run bun run test", 85, 895),
+        step("Post Run actions/cache@abc", 895, 899),
+      ],
+    };
+    expect(splitJob(cache)).toEqual({
+      execution: 815,
+      preparation: 79,
+      wait: 6,
+    });
+
+    const image = {
+      completed_at: at(400),
+      conclusion: "success",
+      created_at: at(0),
+      name: "Lighthouse (mobile, simulated)",
+      started_at: at(4),
+      steps: [
+        step("Set up job", 4, 6),
+        step("Initialize containers", 6, 46),
+        step("Run actions/checkout@abc", 46, 50),
+        step("Run actions/setup-node@abc", 50, 58),
+        step('Run npm install --global "bun@$(cat .bun-version)"', 58, 62),
+        step("Run actions/cache@abc", 62, 70),
+        step("Run bun install --frozen-lockfile", 70, 74),
+        step(
+          'Run test "$(bunx playwright --version)" = "Version 1.63.0" || { echo "The image tag and @playwright/test in bun.lock differ."; exit 1; }',
+          74,
+          76
+        ),
+        step("Run bun run --filter @polaris/web test:lighthouse", 76, 395),
+        step("Post Run actions/cache@abc", 395, 400),
+      ],
+    };
+    expect(splitJob(image)).toEqual({
+      execution: 324,
+      preparation: 72,
+      wait: 4,
+    });
+  });
+
+  it("counts the image pull of a container job that installs nothing", () => {
+    const pullOnly = {
+      completed_at: at(100),
+      conclusion: "success",
+      created_at: at(0),
+      name: "Job with only a service container",
+      started_at: at(2),
+      steps: [
+        step("Set up job", 2, 3),
+        step("Initialize containers", 3, 25),
+        step("Run bun run gates", 25, 99),
+      ],
+    };
+    expect(splitJob(pullOnly)).toEqual({
+      execution: 75,
+      preparation: 23,
+      wait: 2,
+    });
   });
 
   it("gives no split to a skipped job", () => {
@@ -289,6 +373,45 @@ describe("sumDurations", () => {
       unit: "ms",
       version: 1,
     });
+  });
+
+  it("gives a test made by a helper to the spec file of its top suite", () => {
+    const helperReport = {
+      suites: [
+        {
+          file: "x.e2e.ts",
+          specs: [spec("reflow.ts", testOf("chromium-desktop", 400))],
+          suites: [
+            {
+              file: "x.e2e.ts",
+              specs: [spec("reflow.ts", testOf("chromium-desktop", 100))],
+            },
+          ],
+        },
+        {
+          file: "y.e2e.ts",
+          specs: [spec("reflow.ts", testOf("chromium-desktop", 30))],
+        },
+      ],
+    };
+    const { entries } = sumDurations([
+      { name: "offline-poc", report: helperReport },
+    ]);
+    expect(entries.map((e) => [e.file, e.ms, e.tests])).toEqual([
+      ["x.e2e.ts", 500, 2],
+      ["y.e2e.ts", 30, 1],
+    ]);
+    expect(entries.every((e) => SPEC_FILE.test(e.file))).toBe(true);
+  });
+
+  it("falls back to the file of the spec when the top suite has none", () => {
+    const { entries } = sumDurations([
+      {
+        name: "pwa",
+        report: { suites: [{ specs: [spec("w.e2e.ts", testOf("p", 9))] }] },
+      },
+    ]);
+    expect(entries.map((e) => [e.file, e.ms])).toEqual([["w.e2e.ts", 9]]);
   });
 
   it("adds the shards of the same suite and keeps the suites apart", () => {
