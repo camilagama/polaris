@@ -99,6 +99,7 @@ function withSession<T>(
       authenticatedUserId: fixture.userId,
       capability,
       requestedOrganizationId: fixture.organizationId,
+      requireLegalAcceptance: false,
       sessionId,
     },
     operation

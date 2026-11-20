@@ -184,6 +184,7 @@ async function run() {
             authenticatedUserId: tenant.userId,
             capability,
             requestedOrganizationId: tenant.organizationId,
+            requireLegalAcceptance: false,
           },
           operation
         );

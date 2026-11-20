@@ -13,6 +13,7 @@ import { memberships, organizations } from "../src/schema/organization";
 import { tenantAuditEvents } from "../src/schema/tenant-audit";
 import { recordTenantAuditEvent } from "../src/tenant-audit";
 import {
+  LegalAcceptancePendingError,
   TENANT_IDLE_IN_TRANSACTION_TIMEOUT_MS,
   TENANT_LOCK_TIMEOUT_MS,
   TENANT_STATEMENT_TIMEOUT_MS,
@@ -30,6 +31,8 @@ import {
   type EntryCall,
   entryOutcome,
   outcomeUnderMutant,
+  outcomeWithoutPendingHelper,
+  recordAcceptance,
 } from "./tenant-entry-gate-checks";
 
 const gateDatabase =
@@ -639,6 +642,7 @@ async function main() {
         authenticatedUserId: userA,
         capability: "organization:manage",
         requestedOrganizationId: initialA.organization.id,
+        requireLegalAcceptance: false,
       },
       async (transaction) => {
         await transaction.insert(rlsPocOperations).values({
@@ -654,6 +658,7 @@ async function main() {
         authenticatedUserId: userB,
         capability: "organization:manage",
         requestedOrganizationId: initialB.organization.id,
+        requireLegalAcceptance: false,
       },
       async (transaction) => {
         await transaction.insert(rlsPocOperations).values({
@@ -673,6 +678,7 @@ async function main() {
         authenticatedUserId: userA,
         capability: "organization:manage",
         requestedOrganizationId: initialA.organization.id,
+        requireLegalAcceptance: false,
       },
       async (transaction, identity) => {
         await transaction.insert(rlsPocOperations).values({
@@ -715,6 +721,7 @@ async function main() {
         authenticatedUserId: userA,
         capability: "catalog:read",
         requestedOrganizationId: initialA.organization.id,
+        requireLegalAcceptance: false,
       },
       async (transaction) => ({
         memberships: await transaction
@@ -762,6 +769,7 @@ async function main() {
           authenticatedUserId: userA,
           capability: "catalog:read",
           requestedOrganizationId: initialB.organization.id,
+          requireLegalAcceptance: false,
         },
         async () => "must not execute"
       ),
@@ -774,6 +782,7 @@ async function main() {
           authenticatedUserId: userA,
           capability: "__proto__",
           requestedOrganizationId: initialA.organization.id,
+          requireLegalAcceptance: false,
         },
         async () => "must not execute"
       ),
@@ -852,12 +861,139 @@ async function main() {
       ),
     });
 
+    // the legal acceptance at the entry: no default (a null flag or minimum, or one out of 1-1000, raises whether or
+    // not the check is asked for), checked first (a pending document comes before the membership and the capability),
+    // with the pending documents in the DETAIL, and the helper without EXECUTE fails closed
+    const userLegal = await createUser("PR22 tenant context legal");
+    const initialLegal = await createInitialOrganization(
+      userLegal,
+      "PR22 tenant context legal"
+    );
+    const legalCall: EntryCall = {
+      organization: initialLegal.organization.id,
+      requireLegal: true,
+      roles: ["owner"],
+      user: userLegal,
+    };
+    const legalOutcomes = async () =>
+      await inRolledBackTransaction(runtimeClient, async () => {
+        const outcomes: Record<string, string> = {};
+        const cases: [string, EntryCall][] = [
+          ["required", legalCall],
+          ["not required", { ...legalCall, requireLegal: false }],
+          [
+            "required, not a member",
+            { ...legalCall, organization: initialA.organization.id },
+          ],
+          [
+            "required, without the capability",
+            { ...legalCall, roles: ["manager"] },
+          ],
+          ["required, terms raised to 2", { ...legalCall, minimums: [2, 1] }],
+          ["null flag", { ...legalCall, requireLegal: null }],
+          [
+            "not required, null minimum",
+            { ...legalCall, minimums: [null, 1], requireLegal: false },
+          ],
+          ["null terms minimum", { ...legalCall, minimums: [null, 1] }],
+          ["null privacy minimum", { ...legalCall, minimums: [1, null] }],
+          ["zero minimum", { ...legalCall, minimums: [0, 1] }],
+          ["minimum 1001", { ...legalCall, minimums: [1, 1001] }],
+        ];
+        for (const [name, call] of cases) {
+          // biome-ignore lint/performance/noAwaitInLoops: one savepoint at a time on the one connection
+          outcomes[name] = await entryOutcome(runtimeClient, call);
+        }
+        return outcomes;
+      });
+    const invalidLegal = "22023:invalid_legal_acceptance_check";
+    const invalidLegalCases = {
+      "minimum 1001": invalidLegal,
+      "not required, null minimum": invalidLegal,
+      "null flag": invalidLegal,
+      "null privacy minimum": invalidLegal,
+      "null terms minimum": invalidLegal,
+      "zero minimum": invalidLegal,
+    };
+    const pendingBoth = "42501:legal_acceptance_required:terms,privacy";
+    assert.deepEqual(await legalOutcomes(), {
+      ...invalidLegalCases,
+      "not required": "ok:owner",
+      required: pendingBoth,
+      "required, not a member": pendingBoth,
+      "required, terms raised to 2": pendingBoth,
+      "required, without the capability": pendingBoth,
+    });
+    await recordAcceptance(adminPool, userLegal, "terms", 1);
+    const pendingPrivacy = "42501:legal_acceptance_required:privacy";
+    assert.deepEqual(await legalOutcomes(), {
+      ...invalidLegalCases,
+      "not required": "ok:owner",
+      required: pendingPrivacy,
+      "required, not a member": pendingPrivacy,
+      "required, terms raised to 2": pendingBoth,
+      "required, without the capability": pendingPrivacy,
+    });
+    await recordAcceptance(adminPool, userLegal, "privacy", 1);
+    assert.deepEqual(await legalOutcomes(), {
+      ...invalidLegalCases,
+      "not required": "ok:owner",
+      required: "ok:owner",
+      "required, not a member": "42501:tenant_access_denied",
+      "required, terms raised to 2": "42501:legal_acceptance_required:terms",
+      "required, without the capability": "42501:capability_denied",
+    });
+    const pendingThroughTheEntry = await withAuthorizedTenantTransaction(
+      runtimeDb,
+      {
+        authenticatedUserId: userA,
+        capability: "catalog:read",
+        requestedOrganizationId: initialA.organization.id,
+        requireLegalAcceptance: true,
+      },
+      async () => "must not execute"
+    ).then(
+      () => undefined,
+      (error: unknown) => error
+    );
+    assert.ok(
+      pendingThroughTheEntry instanceof LegalAcceptancePendingError,
+      "a pending acceptance reaches the Worker as LegalAcceptancePendingError, not as a refusal of the authorization"
+    );
+    assert.deepEqual(pendingThroughTheEntry.documents, ["terms", "privacy"]);
+    assert.equal(
+      await withAuthorizedTenantTransaction(
+        runtimeDb,
+        {
+          authenticatedUserId: userLegal,
+          capability: "catalog:read",
+          requestedOrganizationId: initialLegal.organization.id,
+          requireLegalAcceptance: true,
+        },
+        async () => "entered"
+      ),
+      "entered"
+    );
+    assert.equal(
+      await outcomeWithoutPendingHelper(adminPool, legalCall),
+      "42501:permission denied for function legal_acceptance_pending",
+      "without EXECUTE on the helper the entry fails closed, with the privilege error"
+    );
+    assert.equal(
+      await outcomeWithoutPendingHelper(adminPool, {
+        ...legalCall,
+        requireLegal: false,
+      }),
+      "ok:owner",
+      "with the check off the entry reads nothing of the acceptance"
+    );
+
     // a refusal aborts the transaction: nothing runs after it, and the organization context never stays
     await runtimeClient.query("BEGIN");
     try {
       await expectSqlState(
         runtimeClient.query(
-          "SELECT member_role FROM public.begin_tenant_request($1, $2, '{}'::text[], 30000, 20000, 60000)",
+          "SELECT member_role FROM public.begin_tenant_request($1, $2, '{}'::text[], false, 1, 1, 30000, 20000, 60000)",
           [userA, initialA.organization.id]
         ),
         "42501",
@@ -892,6 +1028,7 @@ async function main() {
         authenticatedUserId: userA,
         capability: "catalog:read",
         requestedOrganizationId: initialA.organization.id,
+        requireLegalAcceptance: false,
       },
       () => sessionSettings()
     );
@@ -913,6 +1050,7 @@ async function main() {
           authenticatedUserId: userA,
           capability: "__proto__",
           requestedOrganizationId: initialB.organization.id,
+          requireLegalAcceptance: false,
         },
         async () => "must not execute"
       ),
@@ -925,6 +1063,7 @@ async function main() {
           authenticatedUserId: userA,
           capability: "catalog:read",
           requestedOrganizationId: randomUUID(),
+          requireLegalAcceptance: false,
         },
         async () => "must not execute"
       ),
@@ -941,6 +1080,7 @@ async function main() {
       authenticatedUserId: userRemoved,
       capability: "catalog:read",
       requestedOrganizationId: initialRemoved.organization.id,
+      requireLegalAcceptance: false,
     };
     assert.equal(
       await withAuthorizedTenantTransaction(runtimeDb, removedCall, () =>
@@ -983,6 +1123,7 @@ async function main() {
             authenticatedUserId: userSuspended,
             capability,
             requestedOrganizationId: initialSuspended.organization.id,
+            requireLegalAcceptance: false,
           },
           async () => "must not execute"
         ),
@@ -992,6 +1133,20 @@ async function main() {
 
     // each probe tells the real body from one without its check (the definition replaced and rolled back)
     const mutants: [string, string, EntryCall, string, string][] = [
+      [
+        "IF p_require_legal THEN",
+        "IF FALSE THEN",
+        { ...ownCall, requireLegal: true },
+        "42501:legal_acceptance_required:terms,privacy",
+        "ok:owner",
+      ],
+      [
+        "IF v_pending IS NOT NULL THEN",
+        "IF FALSE THEN",
+        { ...ownCall, requireLegal: true },
+        "42501:legal_acceptance_required:terms,privacy",
+        "ok:owner",
+      ],
       [
         "IF v_status IS DISTINCT FROM 'active' THEN",
         "IF FALSE THEN",
@@ -1041,6 +1196,7 @@ async function main() {
           authenticatedUserId: userA,
           capability: "organization:manage",
           requestedOrganizationId: initialA.organization.id,
+          requireLegalAcceptance: false,
         },
         async (transaction) => {
           await transaction.insert(rlsPocOperations).values({
@@ -1063,6 +1219,7 @@ async function main() {
           authenticatedUserId: userA,
           capability: "organization:manage",
           requestedOrganizationId: initialA.organization.id,
+          requireLegalAcceptance: false,
         },
         async (transaction) => {
           await transaction.insert(tenantAuditEvents).values({
@@ -1084,6 +1241,7 @@ async function main() {
           authenticatedUserId: userA,
           capability: "organization:manage",
           requestedOrganizationId: initialA.organization.id,
+          requireLegalAcceptance: false,
         },
         async (transaction) => {
           await transaction.insert(tenantAuditEvents).values({
@@ -1105,6 +1263,7 @@ async function main() {
           authenticatedUserId: userA,
           capability: "organization:manage",
           requestedOrganizationId: initialA.organization.id,
+          requireLegalAcceptance: false,
         },
         async (transaction) => {
           await transaction.insert(organizations).values({
@@ -1125,6 +1284,7 @@ async function main() {
           authenticatedUserId: userA,
           capability: "organization:manage",
           requestedOrganizationId: initialA.organization.id,
+          requireLegalAcceptance: false,
         },
         async (transaction) => {
           await transaction.insert(memberships).values({
@@ -1145,6 +1305,7 @@ async function main() {
           authenticatedUserId: userA,
           capability: "organization:manage",
           requestedOrganizationId: initialA.organization.id,
+          requireLegalAcceptance: false,
         },
         async (transaction) => {
           await transaction.insert(rlsPocOperations).values({
@@ -1192,6 +1353,7 @@ async function main() {
         authenticatedUserId: userB,
         capability: "catalog:read",
         requestedOrganizationId: initialB.organization.id,
+        requireLegalAcceptance: false,
       },
       async (transaction) => ({
         memberships: await transaction
@@ -1253,6 +1415,7 @@ async function main() {
           authenticatedUserId: userA,
           capability: "organization:manage",
           requestedOrganizationId: initialA.organization.id,
+          requireLegalAcceptance: false,
         },
         async (transaction) => {
           const effectiveRole = await transaction.execute(

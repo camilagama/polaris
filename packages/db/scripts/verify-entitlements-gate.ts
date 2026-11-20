@@ -551,6 +551,7 @@ async function run() {
         capability: "goal:manage",
         isolationLevel: "repeatable read",
         requestedOrganizationId: goalsDown.organizationId,
+        requireLegalAcceptance: false,
       },
       async (tx, identity) => ({
         ...(await evaluateActiveGoals(tx, identity)),
@@ -638,6 +639,7 @@ async function run() {
         capability: "goal:manage",
         isolationLevel: "repeatable read",
         requestedOrganizationId: goalsEnded.organizationId,
+        requireLegalAcceptance: false,
       },
       async (tx, identity) => (await evaluateActiveGoals(tx, identity)).progress
     );

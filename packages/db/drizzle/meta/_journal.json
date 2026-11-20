@@ -946,6 +946,13 @@
       "when": 1795197881466,
       "tag": "0137_lojas_do_usuario_num_statement",
       "breakpoints": true
+    },
+    {
+      "idx": 136,
+      "version": "7",
+      "when": 1795200596670,
+      "tag": "0138_aceite_na_entrada_do_tenant",
+      "breakpoints": true
     }
   ]
 }

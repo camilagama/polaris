@@ -137,8 +137,29 @@ const FIRST_CALL_STATEMENT_COUNTS: Record<string, number> = {
   "sync/pull": 5,
 };
 
+/**
+ * The routes that keep the check of the legal acceptance at the gate of the request (a read on the authentication
+ * connection) when LEGAL_ACCEPTANCE_ENFORCED is on: those that do not enter a single tenant transaction. Every other
+ * route checks it inside the entry of its transaction (`begin_tenant_request`), so with the control on it sends exactly
+ * what it sends with the control off; `auth get-session` does not pass through the request context at all.
+ */
+const ROUTES_CHECKED_AT_THE_GATE = new Set([
+  "device/check",
+  "organization/listMine",
+]);
+
+/** The numbers of `STATEMENT_COUNTS` with LEGAL_ACCEPTANCE_ENFORCED on: one more only where the gate reads it. */
+const ENFORCED_STATEMENT_COUNTS: Record<string, number> = Object.fromEntries(
+  Object.entries(STATEMENT_COUNTS).map(([name, count]) => [
+    name,
+    ROUTES_CHECKED_AT_THE_GATE.has(name) ? count + 1 : count,
+  ])
+);
+
 /** The secret that signs the lease of `offline/issueLease`: a made-up value, long enough for the signer. */
 const LEASE_SECRET = "harness-offline-lease-secret-of-32-bytes-or-more";
+/** The secret of the content hash of `sync/push`: a made-up value, long enough for the hash. */
+const PAYLOAD_HASH_SECRET = "harness-sync-payload-hash-secret-of-32-bytes";
 
 /** Makes the store Pro the way a paid charge does, through the insert the billing login has on that record. */
 async function upgradeToPro(connectionString: string, organizationId: string) {
@@ -1125,6 +1146,7 @@ describe("the e-mail and password flows of the web worker", () => {
     const first: Record<string, number> = {};
     const firstStatements: Record<string, RecordedStatement[]> = {};
     const second: Record<string, number> = {};
+    const enforced: Record<string, number> = {};
     const detail: string[] = [];
     const listStatements = (statements: RecordedStatement[]) =>
       statements.map(
@@ -1156,6 +1178,18 @@ describe("the e-mail and password flows of the web worker", () => {
           detail.push(
             `${route.name}: first call, ${firstCall.length} statements`,
             ...listStatements(firstCall)
+          );
+        }
+        // the same call with the control of the legal acceptance on (the user accepted both documents at the sign-up)
+        const withControl = await measure({
+          ...route,
+          bindings: { ...route.bindings, LEGAL_ACCEPTANCE_ENFORCED: "true" },
+        });
+        enforced[route.name] = withControl.length;
+        if (withControl.length !== ENFORCED_STATEMENT_COUNTS[route.name]) {
+          detail.push(
+            `${route.name}: with LEGAL_ACCEPTANCE_ENFORCED, ${withControl.length} statements`,
+            ...listStatements(withControl)
           );
         }
       }
@@ -1240,6 +1274,7 @@ describe("the e-mail and password flows of the web worker", () => {
     );
     expect(second, advice).toEqual(STATEMENT_COUNTS);
     expect(first, advice).toEqual(FIRST_CALL_STATEMENT_COUNTS);
+    expect(enforced, advice).toEqual(ENFORCED_STATEMENT_COUNTS);
     expect(network.strangers).toEqual([]);
   });
 
@@ -1487,6 +1522,122 @@ describe("the e-mail and password flows of the web worker", () => {
     expect(location.searchParams.has("error")).toBe(false);
     const session = await sessionOf(cookiesOf(callback), "198.51.100.15");
     expect(session?.user.id).toBe(userId);
+    expect(network.strangers).toEqual([]);
+  });
+
+  it("refuses a person with the legal acceptance pending with the same body whether the entry of the tenant or the gate checks it, and lets the exempt routes through", async () => {
+    // a person who came in with Google accepted nothing at the sign-up: both documents are pending
+    const address = email("legal-pending");
+    const ip = "198.51.100.22";
+    const network = fakeNetwork(
+      claimsOf(`${fixture.auth.tag}-legal-pending`, address)
+    );
+    const callback = await googleSignIn(ip, "harness-code-legal-pending");
+    expect(callback.status).toBe(302);
+    const cookie = cookiesOf(callback);
+    expect(cookie).toContain("session_token=");
+    const post = async (
+      path: string,
+      json: unknown,
+      bindings: Bindings = {}
+    ) => {
+      const response = await call(path, {
+        bindings: {
+          OFFLINE_LEASE_SECRET: LEASE_SECRET,
+          SYNC_PAYLOAD_HASH_SECRET: PAYLOAD_HASH_SECRET,
+          ...bindings,
+        },
+        body: { json },
+        cookie,
+        ip,
+      });
+      return {
+        body: (await response.json()) as unknown,
+        status: response.status,
+      };
+    };
+    // the store, the device and a lease, made with the control off
+    const created = await post("/rpc/organization/createInitial", {
+      name: "Loja do aceite pendente",
+      timezone: "America/Sao_Paulo",
+    });
+    expect(created.status).toBe(200);
+    const organizationId = (
+      created.body as { json: { organization: { id: string } } }
+    ).json.organization.id;
+    await upgradeToPro(env.BILLING_HYPERDRIVE.connectionString, organizationId);
+    const registered = await post("/rpc/device/register", {
+      label: "Aparelho do aceite pendente",
+    });
+    expect(registered.status).toBe(200);
+    const deviceId = (registered.body as { json: { device: { id: string } } })
+      .json.device.id;
+    const issued = await post("/rpc/offline/issueLease", {
+      deviceId,
+      organizationId,
+    });
+    expect(issued.status).toBe(200);
+    const { lease } = (issued.body as { json: { lease: string } }).json;
+    const { rows } = await databaseClock(env.HYPERDRIVE.connectionString);
+    const push = {
+      commands: [
+        {
+          baseVersion: null,
+          commandId: crypto.randomUUID(),
+          createdAt: rows[0]?.now as string,
+          deviceId,
+          lease,
+          payload: { name: "Cliente do aceite pendente" },
+          type: "customer.create",
+        },
+      ],
+      organizationId,
+    };
+    const on = { LEGAL_ACCEPTANCE_ENFORCED: "true" };
+    const refusals = {
+      "device/check (gate)": await post("/rpc/device/check", { deviceId }, on),
+      "offline/issueLease (entry)": await post(
+        "/rpc/offline/issueLease",
+        { deviceId, organizationId },
+        on
+      ),
+      "sync/pull (entry)": await post(
+        "/rpc/sync/pull",
+        { limit: 10, organizationId },
+        on
+      ),
+      "sync/push (entry)": await post("/rpc/sync/push", push, on),
+    };
+    const expected = {
+      body: refusals["device/check (gate)"].body,
+      status: 403,
+    };
+    expect(expected.body).toMatchObject({
+      json: {
+        code: "FORBIDDEN",
+        data: {
+          pending: [
+            { document: "terms", version: LEGAL_DOCUMENTS.terms.version },
+            { document: "privacy", version: LEGAL_DOCUMENTS.privacy.version },
+          ],
+          reason: "legal_acceptance_required",
+        },
+      },
+    });
+    expect(refusals).toEqual(
+      Object.fromEntries(Object.keys(refusals).map((name) => [name, expected]))
+    );
+    // nothing of the push ran: the customer is not in the store
+    const pulled = await post("/rpc/sync/pull", { limit: 200, organizationId });
+    expect(pulled.status).toBe(200);
+    expect(JSON.stringify(pulled.body)).not.toContain(
+      "Cliente do aceite pendente"
+    );
+    // the exempt routes still answer with the acceptance pending
+    expect((await post("/rpc/device/list", {}, on)).status).toBe(200);
+    expect(
+      (await post("/rpc/dataExport/list", { organizationId }, on)).status
+    ).toBe(200);
     expect(network.strangers).toEqual([]);
   });
 });

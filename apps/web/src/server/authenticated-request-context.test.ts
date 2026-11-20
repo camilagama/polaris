@@ -315,3 +315,55 @@ describe("authenticated request database connection", () => {
     expect(operation).not.toHaveBeenCalled();
   });
 });
+
+describe("the check of the legal acceptance at the gate", () => {
+  function contextWithAcceptance() {
+    const readAccepted = vi.fn(async () => ({}));
+    const createDatabase = vi.fn(() => ({
+      db: {},
+      pool: { end: vi.fn(async () => undefined) },
+    }));
+    const run = createAuthenticatedRequestContext({
+      createAuth: (() => ({
+        api: {
+          getSession: vi.fn(async () => ({
+            session: { createdAt: new Date(NOW), id: "session-1" },
+            user: { id: "test-user" },
+          })),
+        },
+      })) as unknown as AuthenticatedRequestContextDependencies["createAuth"],
+      createDatabase:
+        createDatabase as unknown as AuthenticatedRequestContextDependencies["createDatabase"],
+      readAcceptedLegalVersions: readAccepted,
+    });
+    return { readAccepted, run };
+  }
+  const enforced = { ...baseBindings, LEGAL_ACCEPTANCE_ENFORCED: "true" };
+
+  it("runs for every caller that does not opt out of it, and refuses before the operation", async () => {
+    const { readAccepted, run } = contextWithAcceptance();
+    const operation = vi.fn(async () => "ran");
+    await expect(
+      run({
+        bindings: enforced,
+        operation,
+        request: new Request("https://polaris.example.invalid/rpc"),
+      })
+    ).rejects.toMatchObject({ code: "legal_acceptance_required" });
+    expect(readAccepted).toHaveBeenCalledOnce();
+    expect(operation).not.toHaveBeenCalled();
+  });
+
+  it("is skipped only when the caller says the entry of its tenant transaction checks it", async () => {
+    const { readAccepted, run } = contextWithAcceptance();
+    await expect(
+      run({
+        bindings: enforced,
+        legalAcceptanceCheckedAtTenantEntry: true,
+        operation: async () => "ran",
+        request: new Request("https://polaris.example.invalid/rpc"),
+      })
+    ).resolves.toBe("ran");
+    expect(readAccepted).not.toHaveBeenCalled();
+  });
+});
