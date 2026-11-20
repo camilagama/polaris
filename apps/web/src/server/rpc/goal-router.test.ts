@@ -2,6 +2,10 @@ import { createORPCClient } from "@orpc/client";
 import { RPCLink } from "@orpc/client/fetch";
 import type { GoalReadModel } from "@polaris/contracts";
 import type { PeriodReadCounts } from "@polaris/db/economics-repository";
+import type {
+  ActiveGoalsEvaluation,
+  GoalProgress,
+} from "@polaris/db/goal-repository";
 import {
   TenantAuthorizationError,
   type TenantRequestIdentity,
@@ -118,6 +122,14 @@ function numberedTenantStub(
   };
 }
 
+function evaluated(
+  progress: GoalProgress[] = [],
+  goals: ActiveGoalsEvaluation["goals"] = [],
+  paused: string[] = []
+) {
+  return Promise.resolve({ goals, paused, progress });
+}
+
 afterEach(() => {
   vi.restoreAllMocks();
 });
@@ -141,10 +153,8 @@ describe("goal RPCs", () => {
           evaluateActiveGoals: (_transaction, _identity, onRead) => {
             onRead?.(reads(30));
             onRead?.(reads(366));
-            return Promise.resolve([]);
+            return evaluated([], [{ ...row, name: "Meta secreta" }]);
           },
-          listGoals: () => Promise.resolve([{ ...row, name: "Meta secreta" }]),
-          listPausedGoalIds: () => Promise.resolve([]),
           settleGoals: () => Promise.resolve([]),
         },
         withTenantRequestContext: tenantStub(),
@@ -173,7 +183,7 @@ describe("goal RPCs", () => {
     expect(text).not.toContain(row.target);
   });
 
-  it("listing without a settlement opens one repeatable-read transaction that evaluates and reads, and never writes", async () => {
+  it("listing without a settlement opens one repeatable-read transaction that evaluates and answers from what it returned, and never writes", async () => {
     const calls: { capability: string; isolationLevel?: string }[] = [];
     const used = vi.fn<(step: string, transaction: unknown) => void>();
     const secondGoal = "0199c2d0-0000-7000-8000-0000000000a2";
@@ -182,27 +192,31 @@ describe("goal RPCs", () => {
         goalRepository: {
           evaluateActiveGoals: (transaction) => {
             used("evaluate", transaction);
-            return Promise.resolve([
-              {
-                evaluation: {
-                  percent: "10.0",
-                  periodEnded: false,
-                  progress: "100.00",
-                  reached: false,
+            return evaluated(
+              [
+                {
+                  evaluation: {
+                    percent: "10.0",
+                    periodEnded: false,
+                    progress: "100.00",
+                    reached: false,
+                  },
+                  goalId: secondGoal,
+                  settlement: null,
+                  version: 3,
                 },
-                goalId: secondGoal,
-                settlement: null,
-                version: 3,
-              },
-            ]);
+              ],
+              [{ ...row, id: secondGoal, version: 3 }],
+              [secondGoal]
+            );
           },
-          listGoals: (transaction, _identity, options) => {
-            used(`list ${options?.status}`, transaction);
-            return Promise.resolve([{ ...row, id: secondGoal, version: 3 }]);
+          listGoals: (transaction) => {
+            used("list", transaction);
+            return Promise.resolve([]);
           },
           listPausedGoalIds: (transaction) => {
             used("paused", transaction);
-            return Promise.resolve([secondGoal]);
+            return Promise.resolve([]);
           },
           settleGoals: (transaction) => {
             used("settle", transaction);
@@ -218,11 +232,7 @@ describe("goal RPCs", () => {
     expect(calls).toEqual([
       { capability: "goal:manage", isolationLevel: "repeatable read" },
     ]);
-    expect(used.mock.calls).toEqual([
-      ["evaluate", { number: 1 }],
-      ["list all", { number: 1 }],
-      ["paused", { number: 1 }],
-    ]);
+    expect(used.mock.calls).toEqual([["evaluate", { number: 1 }]]);
     expect(result.goals).toHaveLength(1);
     expect(result.goals[0]).toMatchObject({
       paused: true,
@@ -253,30 +263,34 @@ describe("goal RPCs", () => {
         goalRepository: {
           evaluateActiveGoals: (transaction) => {
             used("evaluate", transaction);
-            return Promise.resolve([
-              {
-                evaluation: {
-                  percent: "112.5",
-                  periodEnded: false,
-                  progress: "1125.00",
-                  reached: true,
+            return evaluated(
+              [
+                {
+                  evaluation: {
+                    percent: "112.5",
+                    periodEnded: false,
+                    progress: "1125.00",
+                    reached: true,
+                  },
+                  goalId,
+                  settlement: "completed" as const,
+                  version: 1,
                 },
-                goalId,
-                settlement: "completed" as const,
-                version: 1,
-              },
-              {
-                evaluation: {
-                  percent: "10.0",
-                  periodEnded: false,
-                  progress: "100.00",
-                  reached: false,
+                {
+                  evaluation: {
+                    percent: "10.0",
+                    periodEnded: false,
+                    progress: "100.00",
+                    reached: false,
+                  },
+                  goalId: secondGoal,
+                  settlement: null,
+                  version: 3,
                 },
-                goalId: secondGoal,
-                settlement: null,
-                version: 3,
-              },
-            ]);
+              ],
+              [row, { ...row, id: secondGoal, version: 3 }],
+              [secondGoal]
+            );
           },
           listGoals: (transaction, _identity, options) => {
             used(`list ${options?.status}`, transaction);
@@ -311,8 +325,6 @@ describe("goal RPCs", () => {
     ]);
     expect(used.mock.calls).toEqual([
       ["evaluate", { number: 1 }],
-      ["list active", { number: 1 }],
-      ["paused", { number: 1 }],
       ["settle", { number: 2 }],
       ["list active", { number: 2 }],
       ["paused", { number: 2 }],
@@ -344,26 +356,149 @@ describe("goal RPCs", () => {
     });
   });
 
+  it("listing answers the same payload per status filter from the goals and paused ids the evaluation returned", async () => {
+    const pausedId = "0199c2d0-0000-7000-8000-0000000000a2";
+    const doneId = "0199c2d0-0000-7000-8000-0000000000a3";
+    const missedId = "0199c2d0-0000-7000-8000-0000000000a4";
+    const cancelledId = "0199c2d0-0000-7000-8000-0000000000a5";
+    const goals = [
+      row,
+      { ...row, id: pausedId, startsOn: "2026-09-01" },
+      {
+        ...row,
+        achievedValue: "1200.00",
+        id: doneId,
+        settledAt: at,
+        startsOn: "2026-08-01",
+        status: "completed",
+        version: 2,
+      },
+      {
+        ...row,
+        achievedValue: "300.00",
+        id: missedId,
+        settledAt: at,
+        startsOn: "2026-07-01",
+        status: "missed",
+        version: 2,
+      },
+      {
+        ...row,
+        id: cancelledId,
+        startsOn: "2026-06-01",
+        status: "cancelled",
+        version: 2,
+      },
+    ];
+    const progress: GoalProgress[] = [
+      {
+        evaluation: {
+          percent: "10.0",
+          periodEnded: false,
+          progress: "100.00",
+          reached: false,
+        },
+        goalId,
+        settlement: null,
+        version: 1,
+      },
+    ];
+    const listGoals = vi.fn(() => Promise.resolve([]));
+    const listPausedGoalIds = vi.fn(() => Promise.resolve([]));
+    const api = client(
+      createRpcRouter({
+        goalRepository: {
+          evaluateActiveGoals: () => evaluated(progress, goals, [pausedId]),
+          listGoals,
+          listPausedGoalIds,
+        },
+        withTenantRequestContext: tenantStub(),
+      })
+    );
+    const readModel = (
+      source: ActiveGoalsEvaluation["goals"][number],
+      fields: Record<string, unknown>
+    ) => ({
+      achievedValue: source.achievedValue,
+      createdAt: at.toISOString(),
+      endsOn: "2026-10-31",
+      id: source.id,
+      kind: "net_sales",
+      name: "Outubro",
+      organizationId,
+      paused: false,
+      progress: null,
+      settledAt: source.settledAt ? at.toISOString() : null,
+      startsOn: source.startsOn,
+      status: source.status,
+      target: "1000.00",
+      updatedAt: at.toISOString(),
+      version: source.version,
+      ...fields,
+    });
+    const [first, second, third, fourth, fifth] = goals as [
+      ActiveGoalsEvaluation["goals"][number],
+      ActiveGoalsEvaluation["goals"][number],
+      ActiveGoalsEvaluation["goals"][number],
+      ActiveGoalsEvaluation["goals"][number],
+      ActiveGoalsEvaluation["goals"][number],
+    ];
+    const running = readModel(first, {
+      progress: {
+        periodEnded: false,
+        percent: "10.0",
+        reached: false,
+        value: "100.00",
+      },
+    });
+    const paused = readModel(second, { paused: true });
+    const done = readModel(third, {});
+    const missed = readModel(fourth, {});
+    const cancelled = readModel(fifth, {});
+
+    expect(await api.goal.list({ organizationId })).toEqual({
+      goals: [running, paused, done, missed, cancelled],
+    });
+    expect(await api.goal.list({ organizationId, status: "all" })).toEqual({
+      goals: [running, paused, done, missed, cancelled],
+    });
+    expect(await api.goal.list({ organizationId, status: "active" })).toEqual({
+      goals: [running, paused],
+    });
+    expect(
+      await api.goal.list({ organizationId, status: "completed" })
+    ).toEqual({ goals: [done] });
+    expect(await api.goal.list({ organizationId, status: "missed" })).toEqual({
+      goals: [missed],
+    });
+    expect(
+      await api.goal.list({ organizationId, status: "cancelled" })
+    ).toEqual({ goals: [cancelled] });
+    expect(listGoals).not.toHaveBeenCalled();
+    expect(listPausedGoalIds).not.toHaveBeenCalled();
+  });
+
   it("listing keeps no progress for a goal whose version moved after it was measured", async () => {
     const result = await client(
       createRpcRouter({
         goalRepository: {
           evaluateActiveGoals: () =>
-            Promise.resolve([
-              {
-                evaluation: {
-                  percent: "10.0",
-                  periodEnded: false,
-                  progress: "100.00",
-                  reached: false,
+            evaluated(
+              [
+                {
+                  evaluation: {
+                    percent: "10.0",
+                    periodEnded: false,
+                    progress: "100.00",
+                    reached: false,
+                  },
+                  goalId,
+                  settlement: null,
+                  version: 1,
                 },
-                goalId,
-                settlement: null,
-                version: 1,
-              },
-            ]),
-          listGoals: () => Promise.resolve([{ ...row, version: 2 }]),
-          listPausedGoalIds: () => Promise.resolve([]),
+              ],
+              [{ ...row, version: 2 }]
+            ),
         },
         withTenantRequestContext: tenantStub(),
       })
@@ -388,10 +523,8 @@ describe("goal RPCs", () => {
         goalRepository: {
           evaluateActiveGoals: (_transaction, _identity, onRead) => {
             onRead?.(reads);
-            return Promise.resolve([]);
+            return evaluated();
           },
-          listGoals: () => Promise.resolve([]),
-          listPausedGoalIds: () => Promise.resolve([]),
         },
         withTenantRequestContext: async (input) => {
           await input.operation({} as TenantRequestTransaction, identity);
@@ -411,7 +544,7 @@ describe("goal RPCs", () => {
 
   it("a refused session runs no repository work and opens no second transaction", async () => {
     const repository = {
-      evaluateActiveGoals: vi.fn(() => Promise.resolve([])),
+      evaluateActiveGoals: vi.fn(() => evaluated()),
       listGoals: vi.fn(() => Promise.resolve([])),
       listPausedGoalIds: vi.fn(() => Promise.resolve([])),
       settleGoals: vi.fn(() => Promise.resolve([])),
@@ -449,7 +582,7 @@ describe("goal RPCs", () => {
     "a %s refusal of the transaction answers the RPC error and runs no repository work",
     async (_label, error) => {
       const repository = {
-        evaluateActiveGoals: vi.fn(() => Promise.resolve([])),
+        evaluateActiveGoals: vi.fn(() => evaluated()),
         listGoals: vi.fn(() => Promise.resolve([])),
         listPausedGoalIds: vi.fn(() => Promise.resolve([])),
         settleGoals: vi.fn(() => Promise.resolve([])),
@@ -488,7 +621,7 @@ describe("goal RPCs", () => {
         createRpcRouter({
           goalRepository: {
             createGoal,
-            evaluateActiveGoals: () => Promise.resolve([]),
+            evaluateActiveGoals: () => evaluated(),
             settleGoals,
           },
           withTenantRequestContext: tenantStub(),
@@ -561,7 +694,7 @@ describe("goal RPCs", () => {
       client(
         createRpcRouter({
           goalRepository: {
-            evaluateActiveGoals: () => Promise.resolve([]),
+            evaluateActiveGoals: () => evaluated(),
             settleGoals: () => Promise.resolve([]),
             updateGoal: () => Promise.reject(error),
           },
@@ -647,7 +780,7 @@ describe("goal RPCs: edits settle first", () => {
             },
             evaluateActiveGoals: () => {
               steps.push("evaluate");
-              return Promise.resolve(progress);
+              return evaluated(progress);
             },
             settleGoals: () => {
               steps.push("settle");
