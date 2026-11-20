@@ -173,13 +173,24 @@ const GOAL = {
   version: 1,
 };
 
+/** The opening's one list (every status, 100 variants): three with no stock and a known cost, so only S shows. */
+function isWideRead(input: Record<string, unknown>) {
+  return (
+    input.productStatus === "all" &&
+    input.limit === 100 &&
+    input.stock === undefined &&
+    input.cost === undefined
+  );
+}
+
 function balances(input: Record<string, unknown>) {
-  const count = input.stock === "without_stock" ? 3 : 0;
+  const wide = isWideRead(input);
+  const count = input.stock === "without_stock" || wide ? 3 : 0;
   return {
     entries: Array.from({ length: count }, (_, index) => ({
       isDefaultVariant: true,
       listPrice: "10.00",
-      movingAverageCost: null,
+      movingAverageCost: wide ? "5.00" : null,
       productId: `0199c2d0-0000-7000-8000-0000000001${index}0`,
       productName: `Produto ${index + 1}`,
       productStatus: "active",

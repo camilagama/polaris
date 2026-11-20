@@ -526,7 +526,10 @@ describe("starting", () => {
     );
     const runtime = w.make();
     await runtime.start(organizationId);
-    expect(runtime.getSnapshot().phase).not.toBe("ready");
+    expect(runtime.getSnapshot()).toMatchObject({
+      phase: "unavailable",
+      reason: PLAN_REFUSED_REASON,
+    });
     expect(w.calls.issueLease).toBe(1);
     expect(w.calls.registerDevice).toBe(1);
     expect(w.keyValues.read("polaris.offline.device")).not.toBeNull();
@@ -598,7 +601,8 @@ describe("starting", () => {
         const { device, w } = await deviceWithoutLease();
         const registered = w.calls.registerDevice;
         const remove = vi.spyOn(w.keyValues, "remove");
-        w.failures.issueLease.push(failure());
+        const error = failure();
+        w.failures.issueLease.push(error);
 
         const runtime = w.make();
         await runtime.start(organizationId);
@@ -606,7 +610,12 @@ describe("starting", () => {
         expect(remove).not.toHaveBeenCalledWith("polaris.offline.device");
         expect(w.calls.registerDevice).toBe(registered);
         expect(w.keyValues.read("polaris.offline.device")).toBe(device);
-        expect(runtime.getSnapshot().phase).not.toBe("ready");
+        expect(runtime.getSnapshot()).toMatchObject({
+          bootstrapped: false,
+          phase: "unavailable",
+          reason: error.message,
+        });
+        expect(runtime.context()).toBeNull();
       }
     );
 

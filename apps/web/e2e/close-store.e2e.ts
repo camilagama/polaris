@@ -3,6 +3,7 @@ import type { Page, Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 import { buildOfflineLeaseClaims } from "@polaris/domain/offline/offline-lease";
 import { signOfflineLease } from "../src/lib/offline-lease-token";
+import { runClockFor } from "./run-clock-for";
 import { serveHealth, WORKER_MARK } from "./worker-mark";
 
 const ORGANIZATION = {
@@ -363,6 +364,7 @@ test("Voltar fecha sem pedir nada, e a recusa do servidor tem texto próprio sem
 test("entrada de mais de 15 minutos: o texto próprio, sem dizer que só o dono encerra, e nenhuma segunda chamada", async ({
   page,
 }) => {
+  await page.clock.install({ time: NOW });
   const calls = await openScreen(page, {
     closure: (route) =>
       route.fulfill(
@@ -386,7 +388,7 @@ test("entrada de mais de 15 minutos: o texto próprio, sem dizer que só o dono 
   );
   await expect(dialog(page)).not.toContainText("dono");
   await expect(dialog(page)).not.toContainText("fresh_session_required");
-  await page.waitForTimeout(1500);
+  await runClockFor(page, 1500);
   expect(calls.closures).toHaveLength(1);
 });
 
