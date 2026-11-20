@@ -90,39 +90,6 @@ describe("the session lookup of a tab", () => {
     expect(t.load).toHaveBeenCalledTimes(2);
   });
 
-  it("joinInFlight without a lookup going opens a new one", async () => {
-    const t = setup();
-    await t.lookup.read({ joinInFlight: true });
-    expect(t.load).toHaveBeenCalledTimes(1);
-  });
-
-  it("joinInFlight does not use a valid memory when no lookup is going", async () => {
-    const t = setup();
-    await t.lookup.read();
-    t.advance(1000);
-    await t.lookup.read({ joinInFlight: true });
-    expect(t.load).toHaveBeenCalledTimes(2);
-  });
-
-  it("joinInFlight joins a lookup that is still going", async () => {
-    const gate = withGate();
-    const first = gate.t.lookup.read();
-    const joined = gate.t.lookup.read({ joinInFlight: true });
-    expect(gate.t.load).toHaveBeenCalledTimes(1);
-    gate.answers[0]?.(Response.json({ user: { id: "user-1" } }));
-    expect(await joined).toBe(await first);
-  });
-
-  it("a fresh read opens its own lookup even with one going", async () => {
-    const gate = withGate();
-    const going = gate.t.lookup.read();
-    const own = gate.t.lookup.read({ fresh: true });
-    expect(gate.t.load).toHaveBeenCalledTimes(2);
-    gate.answers[0]?.(Response.json({ user: { id: "old" } }));
-    gate.answers[1]?.(Response.json({ user: { id: "new" } }));
-    expect(await going).not.toBe(await own);
-  });
-
   it("does not remember a failure, a refusal, the 'no session' answer or a body it cannot read", async () => {
     const answers: (() => Response | Promise<Response>)[] = [
       () => Promise.reject(new TypeError("Failed to fetch")),

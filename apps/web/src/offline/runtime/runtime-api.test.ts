@@ -122,25 +122,6 @@ describe("the session of a start, as the server answers it now", () => {
     expect(fetchSpy).toHaveBeenCalledTimes(2);
   });
 
-  it("joins the lookup the shell has going at the opening, and not the memory of a finished one", async () => {
-    let release: (response: Response) => void = () => undefined;
-    const fetchSpy = vi.fn(
-      () =>
-        new Promise<Response>((resolve) => {
-          release = resolve;
-        })
-    );
-    vi.stubGlobal("fetch", fetchSpy);
-    const shell = api.sessionUserId();
-    const runtime = api.signedInSession?.();
-    expect(fetchSpy).toHaveBeenCalledTimes(1);
-    release(Response.json({ session: { id: "s" }, user: { id: "u" } }));
-    expect(await shell).toBe("u");
-    expect(await runtime).toEqual({ sessionId: "s", userId: "u" });
-    api.signedInSession?.().catch(() => undefined);
-    expect(fetchSpy).toHaveBeenCalledTimes(2);
-  });
-
   it("goes to the server even right after the tab's memory answered a start", async () => {
     const fetchSpy = vi.fn(() =>
       Promise.resolve(

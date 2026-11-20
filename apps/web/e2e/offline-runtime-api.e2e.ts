@@ -58,6 +58,31 @@ const KILLED_FOR_CPU = {
   status: 503,
 };
 
+const FREE_PLAN = {
+  accessEndsAt: null,
+  cycleMonths: null,
+  kept: { historyMonths: 3, products: 18, sales: 47 },
+  limits: { goals: 1, images: 50, variants: 50 },
+  method: null,
+  nextCharge: null,
+  offer: {
+    methods: ["card", "pix_automatic"],
+    prices: [
+      { amount: "249.00", cycleMonths: 12 },
+      { amount: "24.90", cycleMonths: 1 },
+    ],
+  },
+  recovery: null,
+  refund: null,
+  refundPending: false,
+  refundWindowEndedOn: null,
+  renewalCancelled: false,
+  resubscribeFrom: null,
+  state: "free",
+  trialAvailable: true,
+  usage: { goals: 1, images: 12, variants: 38 },
+};
+
 interface PushedCommand {
   commandId: string;
 }
@@ -79,6 +104,8 @@ class RpcServer {
   registered = 0;
   checked = 0;
   sessionLookups = 0;
+  /** The store has the Assinatura on: the owner sees its tab and `billing.readPlan` answers a Free plan. */
+  billingSelfService = false;
   readonly pushed: PushedCommand[][] = [];
   /** Every call is dropped as if the connection were gone (the browser still says it is online). */
   connection: "down" | "up" = "up";
@@ -181,7 +208,13 @@ class RpcServer {
     }
     switch (procedure) {
       case "organization/listMine":
-        await RpcServer.ok(route, { organizations: [ORGANIZATION] });
+        await RpcServer.ok(route, {
+          billingSelfService: this.billingSelfService,
+          organizations: [ORGANIZATION],
+        });
+        return;
+      case "billing/readPlan":
+        await RpcServer.ok(route, FREE_PLAN);
         return;
       case "device/register": {
         this.registered += 1;
@@ -531,13 +564,27 @@ test.describe("createRpcRuntimeApi no app real, com o servidor interceptado", ()
       .toBeNull();
   });
 
-  test("a abertura com o runtime ligado (shell e runtime) lê o get-session uma vez (AC-2.1)", async ({
+  test("2 na abertura: rodapé pela memória, runtime fresco; a Assinatura logo depois não lê de novo (AC-2.1)", async ({
     page,
   }) => {
     const user = `user-${crypto.randomUUID()}`;
     const server = new RpcServer(user);
-    await openSales(page, server);
-    expect(server.sessionLookups).toBe(1);
+    server.billingSelfService = true;
+    await server.install(page);
+    await page.goto("/sales");
+    // the second read is the runtime's, fresh: its answer is the memory the Assinatura finds, so go there at once
+    await expect.poll(() => server.sessionLookups).toBe(2);
+    await page.evaluate(() => {
+      window.history.pushState(null, "", "/configuracoes?aba=assinatura");
+      window.dispatchEvent(new Event("polaris:address"));
+    });
+    await expect(
+      page.getByRole("heading", { exact: true, level: 2, name: "Assinatura" })
+    ).toBeVisible();
+    await expect(chip(page)).toContainText("Tudo sincronizado", {
+      timeout: 20_000,
+    });
+    expect(server.sessionLookups).toBe(2);
   });
 
   test("get-session 429: o app segue com o usuário lembrado e o lease próprio, sem registrar outro aparelho", async ({
