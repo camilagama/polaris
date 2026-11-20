@@ -67,7 +67,7 @@ export const API_CALLS_PER_TRY = 2;
 
 /**
  * Longest the whole check can take. The last try of a Worker starts inside RETRY_WINDOW_MS and may hit
- * API_TIMEOUT_MS on the API read and WRANGLER_TIMEOUT_MS on both wrangler calls, so one Worker takes at most
+ * API_TIMEOUT_MS on each of the two API reads and WRANGLER_TIMEOUT_MS on both wrangler calls, so one Worker takes at most
  * the window plus that try. `workers` is the list checked (or how many).
  */
 export function worstCaseMs(workers = STAGING_WORKERS) {
