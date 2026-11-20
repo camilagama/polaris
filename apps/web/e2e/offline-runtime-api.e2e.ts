@@ -581,6 +581,9 @@ test.describe("createRpcRuntimeApi no app real, com o servidor interceptado", ()
     await expect(
       page.getByRole("heading", { exact: true, level: 2, name: "Assinatura" })
     ).toBeVisible();
+    await expect(page.locator("#subscription-plan-title")).toHaveText(
+      "Plano Free"
+    );
     await expect(chip(page)).toContainText("Tudo sincronizado", {
       timeout: 20_000,
     });
