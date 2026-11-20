@@ -136,3 +136,47 @@ describe("o foco do aviso de falha na releitura do Estoque", () => {
     expect(document.activeElement).toBe(screen.getByRole("heading", TITLE));
   });
 });
+
+describe("o foco do erro de tela cheia do Estoque", () => {
+  const fullError = () =>
+    stockLoadFailed(initialStockListState(), new Error("x"), "k");
+
+  it("vai ao título quando o erro some com o foco em Tentar novamente", () => {
+    stock.state = fullError();
+    const { rerender } = render(page());
+    const retry = screen.getByRole("button", RETRY);
+    retry.focus();
+    fireEvent.focus(retry);
+    stock.state = stockLoading(fullError());
+    rerender(page());
+    expect(screen.queryByRole("button", RETRY)).toBeNull();
+    expect(document.activeElement).toBe(screen.getByRole("heading", TITLE));
+  });
+
+  it("não mexe no foco de quem já foi a outro campo", () => {
+    stock.state = fullError();
+    const { rerender } = render(page());
+    const retry = screen.getByRole("button", RETRY);
+    retry.focus();
+    fireEvent.focus(retry);
+    const other = screen
+      .getAllByRole("button")
+      .find((button) => button !== retry) as HTMLElement;
+    other.focus();
+    stock.state = stockLoading(fullError());
+    rerender(page());
+    expect(document.activeElement).toBe(other);
+  });
+
+  it("não puxa o foco ao título quando quem o largou não foi a outro campo", () => {
+    stock.state = fullError();
+    const { rerender } = render(page());
+    const retry = screen.getByRole("button", RETRY);
+    retry.focus();
+    fireEvent.focus(retry);
+    retry.blur();
+    stock.state = stockLoading(fullError());
+    rerender(page());
+    expect(document.activeElement).toBe(document.body);
+  });
+});

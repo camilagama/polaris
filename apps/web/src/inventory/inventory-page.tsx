@@ -260,9 +260,12 @@ function LoadingCard({ message }: { message: string }) {
   );
 }
 
-/** "Carregar mais" and the retry of the refresh warning never show together, and a re-read always passes through `refresh: "loading"` between them, so the hook sees one render with neither. */
-function hasFocusableControl(more: StockMoreView): boolean {
-  return more.visible || more.refreshFailed;
+/** "Carregar mais", the retry of the refresh warning and the retry of the full-screen error never show together, and a re-read always passes through a loading render between them, so the hook sees one render with none. */
+function hasFocusableControl(
+  more: StockMoreView,
+  fullScreenError: boolean
+): boolean {
+  return more.visible || more.refreshFailed || fullScreenError;
 }
 
 /**
@@ -330,7 +333,7 @@ export function InventoryPage() {
   const view = stockListView(state, filters, offline);
   const more = stockMoreView(state, listKey);
   const focus = useFocusTitleWhenGone<HTMLHeadingElement>(
-    hasFocusableControl(more)
+    hasFocusableControl(more, view.kind === "error")
   );
   const coverIds = useMemo(() => stockCoverIds(state.entries), [state.entries]);
   useThumbnailSequence(coverIds);
@@ -511,7 +514,9 @@ export function InventoryPage() {
           <AlertDescription className="flex flex-wrap items-center gap-x-3 gap-y-1">
             {view.message}
             <Button
+              onBlur={focus.onBlur}
               onClick={handleReload}
+              onFocus={focus.onFocus}
               size="sm"
               type="button"
               variant="link"
