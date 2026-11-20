@@ -887,6 +887,11 @@ export async function reopenWithoutNetwork(
   ).toBeVisible({ timeout: 20_000 });
 }
 
+export const UPDATED_AT = /atualizado às \d{2}:\d{2}/;
+
+export const refreshButton = (page: Page) =>
+  page.getByRole("button", { exact: true, name: "Atualizar" });
+
 export const CONFIRMED = "Confirmado em 23/10 12:00";
 
 export const RPC_PATH = /\/rpc\/(.+)$/;
