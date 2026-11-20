@@ -18,6 +18,7 @@ import {
   updateProduct,
 } from "../src/product-repository";
 import { pullSyncChanges } from "../src/sync-repository";
+import { rollbackAndRelease } from "./gate-roles";
 import {
   createTenantFixture,
   disposableHostPattern,
@@ -675,11 +676,8 @@ async function run() {
         [tenantC.organizationId]
       );
       await seeder.query("COMMIT");
-    } catch (error) {
-      await seeder.query("ROLLBACK");
-      throw error;
     } finally {
-      seeder.release();
+      await rollbackAndRelease(seeder);
     }
     await admin.pool.query("ANALYZE public.products");
     await admin.pool.query("ANALYZE public.product_media");

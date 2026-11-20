@@ -87,6 +87,7 @@ test("se o peda√ßo continua faltando, um clique logo depois do recarregamento n√
     )
   ).toBe(true);
   expect(asked).toBe(2);
+  await page.clock.fastForward(1);
   await page.clock.resume();
   await page.getByRole("button", { name: "Tentar novamente" }).click();
   await expect(page.getByRole("region", { name: "Hoje" })).toContainText("R$", {

@@ -198,10 +198,11 @@ test("o ponteiro abre o tooltip no primeiro, no do meio e no último ponto, com 
     isMobile,
     "a mouse moves over the drawing; with touch it is a hold"
   );
+  await page.clock.install();
   const areas = await openGalleryWithCharts(page);
   const week = areas.getByRole("img", { name: WEEK_LABEL });
   await week.scrollIntoViewIfNeeded();
-  await page.waitForTimeout(1500);
+  await page.clock.runFor(1500);
   const box = await week.boundingBox();
   expect(box).not.toBeNull();
   if (!box) {
@@ -222,7 +223,7 @@ test("o ponteiro abre o tooltip no primeiro, no do meio e no último ponto, com 
     await expect(rows).toHaveCount(1);
     await expect(pill).toBeVisible();
     // the pill rolls to its date and the panel follows the pointer: let both arrive
-    await page.waitForTimeout(900);
+    await page.clock.runFor(900);
     const date = await week.evaluate(visiblePillDate);
     if (stop.date) {
       expect(date).toBe(stop.date);
@@ -240,10 +241,11 @@ test("no toque, o tooltip aparece enquanto o dedo está no gráfico e some ao so
   page,
 }) => {
   test.skip(!isMobile, "a hold of the finger is a touch device's gesture");
+  await page.clock.install();
   const areas = await openGalleryWithCharts(page);
   const week = areas.getByRole("img", { name: WEEK_LABEL });
   await week.scrollIntoViewIfNeeded();
-  await page.waitForTimeout(1500);
+  await page.clock.runFor(1500);
   const box = await week.boundingBox();
   expect(box).not.toBeNull();
   if (!box) {
@@ -270,10 +272,11 @@ test("o painel do tooltip fica na margem de cima e não cobre o eixo das datas, 
   isMobile,
   page,
 }) => {
+  await page.clock.install();
   const areas = await openGalleryWithCharts(page);
   const week = areas.getByRole("img", { name: WEEK_LABEL });
   await week.scrollIntoViewIfNeeded();
-  await page.waitForTimeout(1500);
+  await page.clock.runFor(1500);
   const box = await week.boundingBox();
   expect(box).not.toBeNull();
   if (!box) {
@@ -293,7 +296,7 @@ test("o painel do tooltip fica na margem de cima e não cobre o eixo das datas, 
       : page.mouse.move(x, y));
     await expect(row).toBeVisible();
     // the spring of the panel needs its time before it is where it stays
-    await page.waitForTimeout(1200);
+    await page.clock.runFor(1200);
     const panel = await row.evaluate((element) => {
       const rect = (
         element.closest(".rounded-xl") as Element

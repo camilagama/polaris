@@ -188,6 +188,7 @@ test("a) no celular a barra não pede o motion (a camada animada, o único camin
 test("b) no celular o gráfico aparece pronto: sem o clip da revelação, e o caminho e o eixo Y já na escala final um quadro depois da troca de mês", async ({
   page,
 }) => {
+  await page.clock.install();
   // the gallery: the area chart has no clip group (it exists only while the reveal runs)
   await page.goto("/ui-galeria");
   await expectPhone(page);
@@ -197,7 +198,7 @@ test("b) no celular o gráfico aparece pronto: sem o clip da revelação, e o ca
   await expect(week.locator("svg path[stroke]").first()).toBeVisible();
   await expect(week.locator("svg g[clip-path]")).toHaveCount(0);
   const first = await drawing(week);
-  await page.waitForTimeout(1300);
+  await page.clock.runFor(1300);
   expect(await drawing(week)).toEqual(first);
 
   // the Início: another month draws another chart; the first frame it is there is already the final one
@@ -223,7 +224,7 @@ test("b) no celular o gráfico aparece pronto: sem o clip da revelação, e o ca
   const next = await drawing(chart);
   expect(next.path).not.toBe(october.path);
   expect(next.ticks).not.toEqual(october.ticks);
-  await page.waitForTimeout(1300);
+  await page.clock.runFor(1300);
   expect(await drawing(chart)).toEqual(next);
 
   // the map: no entrance of 1 600 ms and no wave of the cells; every cell is drawn finished a frame after it

@@ -10,6 +10,7 @@ import {
 } from "../src/billing-store";
 import { createDatabase } from "../src/client";
 import { eachRound, lockRow, raceBehindLock } from "./concurrency-support";
+import { rollbackQuietly } from "./gate-roles";
 import {
   createTenantFixture,
   disposableHostPattern,
@@ -689,7 +690,7 @@ async function main() {
       );
       assert.equal(Number(ownerlessClaims.rows[0]?.count), 0);
     } finally {
-      await fill.query("ROLLBACK").catch(() => undefined);
+      await rollbackQuietly(fill);
       await fill.end();
     }
     tests.push(

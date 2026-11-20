@@ -308,15 +308,19 @@ function isSessionRefusal(error: unknown): boolean {
 }
 
 /**
- * The server could not answer the call, so nothing follows from it about the device: no answer at all, a 5xx the
- * retry of the reads already counts as transient, or an oRPC code that is no definite 4xx (a 500 with a reason of its
- * own, a 429). Only a definite answer ("this device is not yours") may send the start to forget the device.
+ * The only failures of the start that say the remembered device is not this person's: the server's definite
+ * refusal, or a lease that names somebody else. Whatever else went wrong (browser storage, an unreadable lease, no
+ * answer, an unknown error) is no news about the device, and registering another one would not fix it.
  */
-function isServerUnanswered(error: unknown): boolean {
+function isDeviceForgettingFailure(error: unknown): boolean {
+  if (error instanceof Error && error.message === "lease_wrong_user") {
+    return true;
+  }
   return (
-    isConnectionFailure(error) ||
-    isTransientReadFailure(error) ||
-    (rpcErrorCode(error) !== undefined && !isDefiniteRpcRejection(error))
+    isDefiniteRpcRejection(error) &&
+    !isPlanRefusal(error) &&
+    !isLegalAcceptanceRefusal(error) &&
+    !isClosedRefusal(error)
   );
 }
 
@@ -413,15 +417,19 @@ const DEVICE_CHECK_KEY = "polaris.offline.device-checked";
 const DEVICE_CHECK_REUSE_MS = RENEW_BEFORE_MS;
 /**
  * A confirmation of who is signed in is reused by the syncs that follow it, so
- * the ticks of an idle tab cost one get-session per window, not one each. Never
- * reused when something is queued: the push must not leave under somebody
- * else's session (the server would refuse and record that for good). It only
- * bounds how long a first user's runtime may keep reading and queueing after
- * somebody else signed in. The server reads the session on every request, so the
- * window only governs a pull with nothing queued; the opening is what opens it,
- * and a change of the connection or the return to the page forgets it.
+ * an idle tab costs one get-session per two ticks, not one per tick. The window
+ * is a fixed 6 minutes, deliberately above the idle tick ceiling (5 minutes):
+ * at or under it every tick would find the window already closed and spare
+ * nothing. It is a literal, not derived from the tick, so raising the tick
+ * never raises the window without a review. Never reused when something is
+ * queued: the push must not leave under somebody else's session (the server
+ * would refuse and record that for good). It only bounds how long a first
+ * user's runtime may keep reading and queueing after somebody else signed in.
+ * The server reads the session on every request, so the window only governs a
+ * pull with nothing queued; the opening is what opens it, and a change of the
+ * connection or the return to the page forgets it.
  */
-const SESSION_RECHECK_MS = 300_000;
+export const SESSION_RECHECK_MS = 360_000;
 const EMPTY_COUNTS: PendingWork = { pending: 0, rejected: 0, sending: 0 };
 
 /** What one sync run was started for, so a late answer never acts on whoever opened after it. */
@@ -1735,16 +1743,9 @@ export class OfflineRuntime {
         await this.openExpired(userId, organizationId, deviceId, generation);
         return;
       }
-      if (
-        !this.dependencies.isOnline() ||
-        // no answer (network or a 5xx, with or without an oRPC code) is not a refusal: the device is not somebody else's
-        isServerUnanswered(error) ||
-        (error instanceof Error && error.message === "no_lease_offline") ||
-        isPlanRefusal(error) ||
-        // the device is not somebody else's: the server only waits for the acceptance, or the store was closed
-        isLegalAcceptanceRefusal(error) ||
-        isClosedRefusal(error)
-      ) {
+      const forgetsDevice =
+        this.dependencies.isOnline() && isDeviceForgettingFailure(error);
+      if (!forgetsDevice) {
         throw error;
       }
       // The remembered device may belong to another user of this browser:
