@@ -60,6 +60,7 @@ function world(options: { leaseHours?: number } = {}) {
     registerDevice: 0,
     sessionUser: 0,
   };
+  const sessionFresh: boolean[] = [];
   const labels: (string | null)[] = [];
   const owners = new Map<string, string>();
   /** `id` is the session row the get-session names; null is an answer without one (the start never skips the check). */
@@ -231,14 +232,16 @@ function world(options: { leaseHours?: number } = {}) {
       owners.set(id, session.user);
       return Promise.resolve(id);
     },
-    sessionUserId: () => {
+    sessionUserId: (lookup) => {
       calls.sessionUser += 1;
+      sessionFresh.push(lookup?.fresh === true);
       return failures.sessionUser
         ? Promise.reject(failures.sessionUser)
         : Promise.resolve(session.signedIn ? session.user : null);
     },
     signedInSession: () => {
       calls.sessionUser += 1;
+      sessionFresh.push(true);
       if (failures.sessionUser) {
         return Promise.reject(failures.sessionUser);
       }
@@ -332,6 +335,7 @@ function world(options: { leaseHours?: number } = {}) {
     },
     api,
     calls,
+    sessionFresh,
     closed,
     disk,
     failures,
@@ -790,6 +794,32 @@ describe("starting", () => {
     w.network.online = true;
     await runtime.syncNow();
     expect(w.calls.sessionUser).toBe(3);
+  });
+
+  it("asks every confirmation of the server fresh: at the start, with a queue, within the window and past it", async () => {
+    const w = world();
+    const runtime = w.make();
+    await runtime.start(organizationId);
+    expect(w.sessionFresh).toEqual([true]);
+
+    w.network.online = false;
+    await queueProduct(runtime, "Camiseta", 1);
+    w.network.online = true;
+    await runtime.syncNow();
+    expect(w.calls.sessionUser).toBe(2);
+    expect(w.sessionFresh).toEqual([true, true]);
+
+    w.network.online = false;
+    await queueProduct(runtime, "Calça", 1);
+    w.network.online = true;
+    w.advance(0.02);
+    await runtime.syncNow();
+    expect(w.calls.sessionUser).toBe(3);
+
+    w.advance(0.09);
+    await runtime.syncNow();
+    expect(w.sessionFresh.every(Boolean)).toBe(true);
+    expect(w.sessionFresh.length).toBe(w.calls.sessionUser);
   });
 
   it("a sync with nothing queued reuses the session confirmation for 5 minutes and looks again at exactly 5", async () => {

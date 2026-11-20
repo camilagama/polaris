@@ -2,6 +2,7 @@
 import type { ExpenseRuleReadModel } from "@polaris/contracts";
 import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { expenseErrorMessage } from "./expense-errors";
 import { useExpenseRules } from "./use-expense-rules";
 
 const listRules = vi.fn();
@@ -24,10 +25,12 @@ const idsOf = (rules: readonly ExpenseRuleReadModel[]) =>
 
 function deferred<T>() {
   let resolve: (value: T) => void = () => undefined;
-  const promise = new Promise<T>((done) => {
+  let reject: (reason: unknown) => void = () => undefined;
+  const promise = new Promise<T>((done, fail) => {
     resolve = done;
+    reject = fail;
   });
-  return { promise, resolve };
+  return { promise, reject, resolve };
 }
 
 afterEach(cleanup);
@@ -112,6 +115,93 @@ describe("useExpenseRules", () => {
       organizationId: "org-b",
       status: "all",
     });
+  });
+
+  it("turning disabled with a read in flight stops loading and drops the late answer", async () => {
+    const inFlight = deferred<{ rules: ExpenseRuleReadModel[] }>();
+    listRules.mockReturnValueOnce(inFlight.promise);
+    const { result, rerender } = renderHook(
+      ({ enabled }) => useExpenseRules("org-a", enabled),
+      { initialProps: { enabled: true } }
+    );
+    await waitFor(() => expect(listRules).toHaveBeenCalledTimes(1));
+    expect(result.current.state.isLoading).toBe(true);
+
+    rerender({ enabled: false });
+    await waitFor(() => expect(result.current.state.isLoading).toBe(false));
+
+    await act(async () => {
+      inFlight.resolve(answer("late-rule"));
+      await inFlight.promise;
+      await new Promise((done) => {
+        setTimeout(done, 0);
+      });
+    });
+    expect(result.current.state).toEqual({
+      error: null,
+      isLoading: false,
+      rules: [],
+    });
+  });
+
+  it("turning disabled with a read that fails later does not write the error", async () => {
+    const inFlight = deferred<{ rules: ExpenseRuleReadModel[] }>();
+    listRules.mockReturnValueOnce(inFlight.promise);
+    const { result, rerender } = renderHook(
+      ({ enabled }) => useExpenseRules("org-a", enabled),
+      { initialProps: { enabled: true } }
+    );
+    await waitFor(() => expect(listRules).toHaveBeenCalledTimes(1));
+    rerender({ enabled: false });
+    await waitFor(() => expect(result.current.state.isLoading).toBe(false));
+
+    await act(async () => {
+      queueMicrotask(() => inFlight.reject(new Error("late failure")));
+      await new Promise((done) => {
+        setTimeout(done, 0);
+      });
+    });
+    expect(result.current.state.error).toBeNull();
+    expect(result.current.state.isLoading).toBe(false);
+  });
+
+  it("a failed read shows the rule-load message, stops loading and keeps the rules", async () => {
+    const failure = new Error("boom");
+    const { result } = renderHook(() => useExpenseRules("org-a", true));
+    await waitFor(() => expect(result.current.state.isLoading).toBe(false));
+    expect(idsOf(result.current.state.rules)).toEqual(["rule-1"]);
+
+    listRules.mockRejectedValueOnce(failure);
+    await act(async () => {
+      await result.current.reload();
+    });
+    expect(result.current.state.error).toBe(
+      expenseErrorMessage(failure, "rule-load")
+    );
+    expect(result.current.state.isLoading).toBe(false);
+    expect(idsOf(result.current.state.rules)).toEqual(["rule-1"]);
+  });
+
+  it("changing the store while a read is in flight never shows loading as false", async () => {
+    const inFlight = deferred<{ rules: ExpenseRuleReadModel[] }>();
+    listRules.mockReturnValueOnce(inFlight.promise);
+    const seen: boolean[] = [];
+    const { result, rerender } = renderHook(
+      ({ organizationId }) => {
+        const hook = useExpenseRules(organizationId, true);
+        seen.push(hook.state.isLoading);
+        return hook;
+      },
+      { initialProps: { organizationId: "org-a" } }
+    );
+    await waitFor(() => expect(listRules).toHaveBeenCalledTimes(1));
+    seen.length = 0;
+
+    listRules.mockReturnValueOnce(new Promise(() => undefined));
+    rerender({ organizationId: "org-b" });
+    await waitFor(() => expect(listRules).toHaveBeenCalledTimes(2));
+    expect(seen).not.toContain(false);
+    expect(result.current.state.isLoading).toBe(true);
   });
 
   it("an old answer still in flight does not overwrite the newer one", async () => {
