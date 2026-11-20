@@ -17,6 +17,7 @@ import {
   requiredEnvironment,
   type TenantFixture,
 } from "./sales-gate-support";
+import { rollbackAndRelease } from "./gate-roles";
 
 /**
  * Size ceilings of the catalog in the database (0107): an option value of at most 80 and a SKU of at most 64 code
@@ -82,8 +83,7 @@ async function inRolledBackTransaction(
     await client.query("BEGIN");
     await body(client);
   } finally {
-    await client.query("ROLLBACK");
-    client.release();
+    await rollbackAndRelease(client);
   }
 }
 

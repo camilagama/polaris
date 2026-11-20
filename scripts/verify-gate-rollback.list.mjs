@@ -60,10 +60,6 @@ export const GATE_ROLLBACK_LIST = {
     count: 1,
     reason: BEFORE_THE_RULE,
   },
-  "packages/db/scripts/tenant-entry-gate-checks.ts": {
-    count: 1,
-    reason: BEFORE_THE_RULE,
-  },
   "packages/db/scripts/verify-access-log-gate.ts": {
     count: 2,
     reason: BEFORE_THE_RULE,
@@ -96,14 +92,6 @@ export const GATE_ROLLBACK_LIST = {
     count: 3,
     reason: BEFORE_THE_RULE,
   },
-  "packages/db/scripts/verify-billing-self-service-gate.ts": {
-    count: 1,
-    reason: BEFORE_THE_RULE,
-  },
-  "packages/db/scripts/verify-catalog-size-ceilings-gate.ts": {
-    count: 1,
-    reason: BEFORE_THE_RULE,
-  },
   "packages/db/scripts/verify-closed-organization-readonly-gate.ts": {
     count: 3,
     reason: BEFORE_THE_RULE,
@@ -124,19 +112,11 @@ export const GATE_ROLLBACK_LIST = {
     count: 16,
     reason: BEFORE_THE_RULE,
   },
-  "packages/db/scripts/verify-inventory-gate.ts": {
-    count: 1,
-    reason: BEFORE_THE_RULE,
-  },
   "packages/db/scripts/verify-legal-acceptance-gate.ts": {
     count: 1,
     reason: BEFORE_THE_RULE,
   },
   "packages/db/scripts/verify-login-lock-gate.ts": {
-    count: 1,
-    reason: BEFORE_THE_RULE,
-  },
-  "packages/db/scripts/verify-media-derivatives-gate.ts": {
     count: 1,
     reason: BEFORE_THE_RULE,
   },
@@ -158,10 +138,6 @@ export const GATE_ROLLBACK_LIST = {
   },
   "packages/db/scripts/verify-review-hardening-gate.ts": {
     count: 2,
-    reason: BEFORE_THE_RULE,
-  },
-  "packages/db/scripts/verify-rls-forced-catalog-gate.ts": {
-    count: 1,
     reason: BEFORE_THE_RULE,
   },
   "packages/db/scripts/verify-tenant-context-gate.ts": {
