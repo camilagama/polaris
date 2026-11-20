@@ -12,10 +12,6 @@ export const GATE_ROLLBACK_LIST = {
     count: 2,
     reason: BEFORE_THE_RULE,
   },
-  "apps/web/scripts/verify-access-log-login-gate.ts": {
-    count: 2,
-    reason: BEFORE_THE_RULE,
-  },
   "apps/web/scripts/verify-activation-sweep-gate.ts": {
     count: 3,
     reason: BEFORE_THE_RULE,
@@ -54,10 +50,6 @@ export const GATE_ROLLBACK_LIST = {
   },
   "packages/db/scripts/sales-gate-support.ts": {
     count: 1,
-    reason: BEFORE_THE_RULE,
-  },
-  "packages/db/scripts/verify-access-log-gate.ts": {
-    count: 2,
     reason: BEFORE_THE_RULE,
   },
   "packages/db/scripts/verify-account-key-gate.ts": {
