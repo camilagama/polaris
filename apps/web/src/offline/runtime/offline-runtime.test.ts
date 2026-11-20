@@ -754,25 +754,55 @@ describe("starting", () => {
       }
     );
 
-    it("an unreadable lease keeps the device and the key: nothing is registered, the start ends unavailable", async () => {
-      const { device, w } = await deviceWithoutLease();
+    it("a lease the server issued that cannot be read is no lease of this person: one other device at most, the start ends unavailable", async () => {
+      const { w } = await deviceWithoutLease();
       const registered = w.calls.registerDevice;
-      const remove = vi.spyOn(w.keyValues, "remove");
-      const runtime = w.make();
-      vi.spyOn(
-        runtime as unknown as { ensureLease: () => Promise<string> },
-        "ensureLease"
-      ).mockResolvedValue("not-a-lease");
+      const runtime = w.make(null, {
+        api: {
+          ...w.api,
+          issueLease: async (deviceId, org) => ({
+            ...(await w.api.issueLease(deviceId, org)),
+            lease: "not-a-lease",
+          }),
+        },
+      });
       await runtime.start(organizationId);
+
+      expect(w.calls.registerDevice).toBe(registered + 1);
+      expect(runtime.getSnapshot()).toMatchObject({
+        phase: "unavailable",
+        reason: "lease_wrong_user",
+      });
+      expect(runtime.context()).toBeNull();
+    });
+
+    it("a persistent 403 of the first read keeps the device: no opening registers another", async () => {
+      const w = world();
+      w.failures.pullError = Object.assign(new Error("forbidden"), {
+        code: "FORBIDDEN",
+        status: 403,
+      });
+      const remove = vi.spyOn(w.keyValues, "remove");
+      const first = w.make();
+      await first.start(organizationId);
+      const device = w.keyValues.read("polaris.offline.device");
+      const registered = w.calls.registerDevice;
+      expect(registered).toBe(1);
+      expect(first.getSnapshot().phase).toBe("unavailable");
+
+      const reopen = async () => {
+        const runtime = w.make();
+        await runtime.start(organizationId);
+        expect(runtime.getSnapshot().phase).toBe("unavailable");
+        expect(runtime.context()).toBeNull();
+      };
+      await reopen();
+      await reopen();
+      await reopen();
 
       expect(remove).not.toHaveBeenCalledWith("polaris.offline.device");
       expect(w.calls.registerDevice).toBe(registered);
       expect(w.keyValues.read("polaris.offline.device")).toBe(device);
-      expect(runtime.getSnapshot()).toMatchObject({
-        phase: "unavailable",
-        reason: "lease_unreadable",
-      });
-      expect(runtime.context()).toBeNull();
     });
   });
 
