@@ -36,7 +36,7 @@ export default defineConfig({
         ]
       : []),
   ],
-  reporter: "list",
+  reporter: inCI ? [["list"], ["github"]] : "list",
   retries: inCI ? 1 : 0,
   testDir: "./e2e",
   testMatch: "**/*.e2e.ts",
