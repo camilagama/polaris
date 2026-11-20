@@ -383,11 +383,11 @@ const COVERED: Readonly<Record<string, readonly Case[]>> = {
 const ALREADY_AT_24: Readonly<Record<string, { file: string; test: string }>> =
   {
     "resultado gráfico de vendas e custos e a tabela": {
-      file: "dashboard.e2e.ts",
+      file: "dashboard/reflow-320.e2e.ts",
       test: "com a letra em 24 px, o gráfico lê inteiro, com a tabela dos dias invisível, sem rolagem lateral",
     },
     "resultado mês incompleto e gráfico de vendas": {
-      file: "dashboard.e2e.ts",
+      file: "dashboard/reflow-320.e2e.ts",
       test: "com a letra em 24 px, o R$ e o número de cada valor ficam na mesma linha",
     },
   };

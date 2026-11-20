@@ -35,7 +35,7 @@ const SPECS: Readonly<Record<string, SpecRule>> = {
     coarse: 1,
     why: "the window of 1280 px is not a phone",
   },
-  "dashboard.e2e.ts": {
+  "dashboard/reflow-320.e2e.ts": {
     bare: 0,
     coarse: 0,
     from: 'test.describe("o passo a passo do Resultado a 320 px com a letra do navegador em 24, 20 e 16 px"',

@@ -51,8 +51,12 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          # The commit under test and its first parent (the base of a pull request merge).
+          # The commit under test and its first parent (the base of a pull request merge): `git diff --name-only`
+          # reads trees, not file contents, and the job only runs scripts/ci-changed.mjs, so no blob outside
+          # scripts/ is downloaded.
           fetch-depth: 2
+          filter: blob:none
+          sparse-checkout: scripts
           persist-credentials: false
       - id: changed
         run: node scripts/ci-changed.mjs
@@ -71,13 +75,35 @@ jobs:
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version-file: .bun-version
-      - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+      - id: node-modules
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: |
+            node_modules
+            apps/*/node_modules
+            packages/*/node_modules
+          key: node-modules-${{ runner.os }}-${{ runner.arch }}-bun${{ hashFiles('.bun-version') }}-${{ hashFiles('bun.lock', 'bunfig.toml', 'package.json', 'apps/*/package.json', 'packages/*/package.json') }}
+      - if: ${{ steps.node-modules.outputs.cache-hit != 'true' }}
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           path: ~/.bun/install/cache
           key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
           restore-keys: bun-${{ runner.os }}-
       - id: install
-        run: bun install --frozen-lockfile
+        env:
+          NODE_MODULES_HIT: ${{ steps.node-modules.outputs.cache-hit }}
+        run: |
+          if [ "$NODE_MODULES_HIT" != "true" ]; then
+            bun install --frozen-lockfile
+          fi
+      - if: ${{ steps.node-modules.outputs.cache-hit != 'true' && github.event_name == 'push' }}
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: |
+            node_modules
+            apps/*/node_modules
+            packages/*/node_modules
+          key: ${{ steps.node-modules.outputs.cache-primary-key }}
       # Every check runs even when an earlier one failed, so one run shows all
       # the problems; the job still fails if any of them failed.
       - name: Lint
@@ -158,12 +184,34 @@ jobs:
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version-file: .bun-version
-      - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+      - id: node-modules
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: |
+            node_modules
+            apps/*/node_modules
+            packages/*/node_modules
+          key: node-modules-${{ runner.os }}-${{ runner.arch }}-bun${{ hashFiles('.bun-version') }}-${{ hashFiles('bun.lock', 'bunfig.toml', 'package.json', 'apps/*/package.json', 'packages/*/package.json') }}
+      - if: ${{ steps.node-modules.outputs.cache-hit != 'true' }}
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           path: ~/.bun/install/cache
           key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
           restore-keys: bun-${{ runner.os }}-
-      - run: bun install --frozen-lockfile
+      - env:
+          NODE_MODULES_HIT: ${{ steps.node-modules.outputs.cache-hit }}
+        run: |
+          if [ "$NODE_MODULES_HIT" != "true" ]; then
+            bun install --frozen-lockfile
+          fi
+      - if: ${{ steps.node-modules.outputs.cache-hit != 'true' && github.event_name == 'push' }}
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: |
+            node_modules
+            apps/*/node_modules
+            packages/*/node_modules
+          key: ${{ steps.node-modules.outputs.cache-primary-key }}
       - name: Create the gate owner and its database, as on Neon (not a superuser)
         run: |
           psql "postgresql://postgres:polaris-ci@localhost:5432/postgres" -v ON_ERROR_STOP=1 \
@@ -203,12 +251,34 @@ jobs:
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version-file: .bun-version
-      - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+      - id: node-modules
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: |
+            node_modules
+            apps/*/node_modules
+            packages/*/node_modules
+          key: node-modules-${{ runner.os }}-${{ runner.arch }}-bun${{ hashFiles('.bun-version') }}-${{ hashFiles('bun.lock', 'bunfig.toml', 'package.json', 'apps/*/package.json', 'packages/*/package.json') }}
+      - if: ${{ steps.node-modules.outputs.cache-hit != 'true' }}
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           path: ~/.bun/install/cache
           key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
           restore-keys: bun-${{ runner.os }}-
-      - run: bun install --frozen-lockfile
+      - env:
+          NODE_MODULES_HIT: ${{ steps.node-modules.outputs.cache-hit }}
+        run: |
+          if [ "$NODE_MODULES_HIT" != "true" ]; then
+            bun install --frozen-lockfile
+          fi
+      - if: ${{ steps.node-modules.outputs.cache-hit != 'true' && github.event_name == 'push' }}
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: |
+            node_modules
+            apps/*/node_modules
+            packages/*/node_modules
+          key: ${{ steps.node-modules.outputs.cache-primary-key }}
       - run: bun audit --audit-level=high
 
   # Page speed on a simulated phone (Lighthouse CI, apps/web/lighthouserc.json): LCP, TBT, CLS and the JS bytes of the
@@ -234,12 +304,34 @@ jobs:
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version-file: .bun-version
-      - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+      - id: node-modules
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: |
+            node_modules
+            apps/*/node_modules
+            packages/*/node_modules
+          key: node-modules-${{ runner.os }}-${{ runner.arch }}-bun${{ hashFiles('.bun-version') }}-${{ hashFiles('bun.lock', 'bunfig.toml', 'package.json', 'apps/*/package.json', 'packages/*/package.json') }}
+      - if: ${{ steps.node-modules.outputs.cache-hit != 'true' }}
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           path: ~/.bun/install/cache
           key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
           restore-keys: bun-${{ runner.os }}-
-      - run: bun install --frozen-lockfile
+      - env:
+          NODE_MODULES_HIT: ${{ steps.node-modules.outputs.cache-hit }}
+        run: |
+          if [ "$NODE_MODULES_HIT" != "true" ]; then
+            bun install --frozen-lockfile
+          fi
+      - if: ${{ steps.node-modules.outputs.cache-hit != 'true' && github.event_name == 'push' }}
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: |
+            node_modules
+            apps/*/node_modules
+            packages/*/node_modules
+          key: ${{ steps.node-modules.outputs.cache-primary-key }}
       # the Chromium of the Playwright in bun.lock, the same build as the one in the image of the visual checks
       - run: bunx playwright install --with-deps chromium
         working-directory: apps/web
@@ -285,12 +377,34 @@ jobs:
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version-file: .bun-version
-      - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+      - id: node-modules
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: |
+            node_modules
+            apps/*/node_modules
+            packages/*/node_modules
+          key: node-modules-${{ runner.os }}-${{ runner.arch }}-bun${{ hashFiles('.bun-version') }}-${{ hashFiles('bun.lock', 'bunfig.toml', 'package.json', 'apps/*/package.json', 'packages/*/package.json') }}
+      - if: ${{ steps.node-modules.outputs.cache-hit != 'true' }}
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           path: ~/.bun/install/cache
           key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
           restore-keys: bun-${{ runner.os }}-
-      - run: bun install --frozen-lockfile
+      - env:
+          NODE_MODULES_HIT: ${{ steps.node-modules.outputs.cache-hit }}
+        run: |
+          if [ "$NODE_MODULES_HIT" != "true" ]; then
+            bun install --frozen-lockfile
+          fi
+      - if: ${{ steps.node-modules.outputs.cache-hit != 'true' && github.event_name == 'push' }}
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: |
+            node_modules
+            apps/*/node_modules
+            packages/*/node_modules
+          key: ${{ steps.node-modules.outputs.cache-primary-key }}
       - run: bunx playwright install --with-deps chromium
         working-directory: apps/web
       - run: bun run test:offline-poc --project=chromium-desktop --project=chromium-mobile-emulated --shard=${{ matrix.shard }}/4
@@ -335,12 +449,34 @@ jobs:
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version-file: .bun-version
-      - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+      - id: node-modules
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: |
+            node_modules
+            apps/*/node_modules
+            packages/*/node_modules
+          key: node-modules-${{ runner.os }}-${{ runner.arch }}-bun${{ hashFiles('.bun-version') }}-${{ hashFiles('bun.lock', 'bunfig.toml', 'package.json', 'apps/*/package.json', 'packages/*/package.json') }}
+      - if: ${{ steps.node-modules.outputs.cache-hit != 'true' }}
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           path: ~/.bun/install/cache
           key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
           restore-keys: bun-${{ runner.os }}-
-      - run: bun install --frozen-lockfile
+      - env:
+          NODE_MODULES_HIT: ${{ steps.node-modules.outputs.cache-hit }}
+        run: |
+          if [ "$NODE_MODULES_HIT" != "true" ]; then
+            bun install --frozen-lockfile
+          fi
+      - if: ${{ steps.node-modules.outputs.cache-hit != 'true' && github.event_name == 'push' }}
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: |
+            node_modules
+            apps/*/node_modules
+            packages/*/node_modules
+          key: ${{ steps.node-modules.outputs.cache-primary-key }}
       - run: bunx playwright install --with-deps chromium
         working-directory: apps/catalog
       - run: bun run --filter @polaris/catalog test:e2e
@@ -410,12 +546,34 @@ jobs:
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version-file: .bun-version
-      - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+      - id: node-modules
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: |
+            node_modules
+            apps/*/node_modules
+            packages/*/node_modules
+          key: node-modules-${{ runner.os }}-${{ runner.arch }}-bun${{ hashFiles('.bun-version') }}-${{ hashFiles('bun.lock', 'bunfig.toml', 'package.json', 'apps/*/package.json', 'packages/*/package.json') }}
+      - if: ${{ steps.node-modules.outputs.cache-hit != 'true' }}
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           path: ~/.bun/install/cache
           key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
           restore-keys: bun-${{ runner.os }}-
-      - run: bun install --frozen-lockfile
+      - env:
+          NODE_MODULES_HIT: ${{ steps.node-modules.outputs.cache-hit }}
+        run: |
+          if [ "$NODE_MODULES_HIT" != "true" ]; then
+            bun install --frozen-lockfile
+          fi
+      - if: ${{ steps.node-modules.outputs.cache-hit != 'true' && github.event_name == 'push' }}
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: |
+            node_modules
+            apps/*/node_modules
+            packages/*/node_modules
+          key: ${{ steps.node-modules.outputs.cache-primary-key }}
       - name: Install Chromium
         working-directory: apps/web
         run: npx playwright install --with-deps chromium

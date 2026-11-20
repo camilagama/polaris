@@ -10,6 +10,9 @@ const BEFORE_THE_RULE =
 const CLOCK_FIXED_BY_THE_HELPER =
   "o teste abre a tela por openHome ou openWithCopy, de home/shared.ts, que instala o relógio do navegador no instante da fixture (page.clock.install({ time })); a checagem julga cada arquivo sozinho e não vê o helper";
 
+const THE_SHARED_SIGN_IN_FIXES_THE_CLOCK =
+  "a data é da fixture do Resultado e o relógio é fixado por `signIn`, em `dashboard/shared.ts`, que a checagem não segue; o arquivo já tinha essas datas junto da fixação quando era um só";
+
 export const E2E_FIXED_DATES_LIST = {
   "apps/web/e2e-pwa/sale-detail-fixture.ts": {
     count: 7,
@@ -56,6 +59,26 @@ export const E2E_FIXED_DATES_LIST = {
   "apps/web/e2e/home/valores-e-ranking.e2e.ts": {
     count: 9,
     reason: CLOCK_FIXED_BY_THE_HELPER,
+  },
+  "apps/web/e2e/dashboard/caixa-do-grafico.e2e.ts": {
+    count: 2,
+    reason: THE_SHARED_SIGN_IN_FIXES_THE_CLOCK,
+  },
+  "apps/web/e2e/dashboard/faixa-de-kpis.e2e.ts": {
+    count: 4,
+    reason: THE_SHARED_SIGN_IN_FIXES_THE_CLOCK,
+  },
+  "apps/web/e2e/dashboard/grafico-e-periodos.e2e.ts": {
+    count: 41,
+    reason: THE_SHARED_SIGN_IN_FIXES_THE_CLOCK,
+  },
+  "apps/web/e2e/dashboard/mes-e-copia.e2e.ts": {
+    count: 19,
+    reason: THE_SHARED_SIGN_IN_FIXES_THE_CLOCK,
+  },
+  "apps/web/e2e/dashboard/periodo-e-controle.e2e.ts": {
+    count: 27,
+    reason: THE_SHARED_SIGN_IN_FIXES_THE_CLOCK,
   },
   "apps/web/e2e/legal-acceptance.e2e.ts": { count: 1, reason: BEFORE_THE_RULE },
   "apps/web/e2e/media-fixtures.ts": { count: 1, reason: BEFORE_THE_RULE },
