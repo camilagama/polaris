@@ -68,8 +68,58 @@ describe("what counts as a bare ROLLBACK", () => {
           "await rollbackAndRelease(a);",
           'expect(statements).toEqual(["ROLLBACK"]);',
           'if (text === "ROLLBACK") { fail(); }',
-          'await a.query(wrap("ROLLBACK"));',
           'await a.query(["ROLLBACK"]);',
+        ].join("\n")
+      )
+    ).toEqual([]);
+  });
+
+  it("counts a ROLLBACK sent through a wrapper with another name, with or without a receiver", () => {
+    expect(
+      bareRollbackLines(
+        [
+          'await runQuery("ROLLBACK");',
+          'await client.sql("ROLLBACK");',
+          'await a.query(wrap("ROLLBACK"));',
+          'await exec<Row>("ROLLBACK WORK;");',
+          'await send(commit ? "COMMIT" : "ROLLBACK");',
+          "await run(",
+          '  "ABORT"',
+          ");",
+        ].join("\n")
+      )
+    ).toEqual([1, 2, 3, 4, 5, 7]);
+  });
+
+  it("counts a wrapper's ROLLBACK only in capitals, but a query's in any case", () => {
+    expect(
+      bareRollbackLines(
+        [
+          'await callWorker("rollback", "org_a");',
+          'const server = fakeServer("pg_catalog", "rollback");',
+          'await runQuery("rollback");',
+          'await a.query("rollback");',
+        ].join("\n")
+      )
+    ).toEqual([4]);
+  });
+
+  it("does not count a ROLLBACK that is compared, asserted, logged or tested by a keyword", () => {
+    expect(
+      bareRollbackLines(
+        [
+          'if (text === "ROLLBACK") { fail(); }',
+          'while (text !== "ROLLBACK") { next(); }',
+          'const same = check(text == "ROLLBACK");',
+          'const other = check("ROLLBACK" != text);',
+          'expect(server.statements.at(-1)).toBe("ROLLBACK");',
+          'expect(statements).toContain("ROLLBACK");',
+          'expect("ROLLBACK").toBeDefined();',
+          'assert.equal(last, "ROLLBACK");',
+          'console.log("ROLLBACK");',
+          'logger.warn("ROLLBACK");',
+          'throw new Error("ROLLBACK");',
+          'const seen = statements.includes("ROLLBACK");',
         ].join("\n")
       )
     ).toEqual([]);
@@ -83,6 +133,9 @@ describe("what counts as a bare ROLLBACK", () => {
           '/* a.query("ROLLBACK") */',
           "const doc = 'a.query(\"ROLLBACK\")';",
           "await a.query(\"SELECT 'ROLLBACK'\");",
+          '// await runQuery("ROLLBACK");',
+          "const hint = 'runQuery(\"ROLLBACK\")';",
+          'await runQuery("SELECT 1 -- ROLLBACK");',
         ].join("\n")
       )
     ).toEqual([]);
@@ -135,6 +188,21 @@ describe("the rule", () => {
     expect(ADVICE).toContain("rollbackAndRelease");
     expect(ADVICE).toContain("rollbackQuietly");
     expect(ADVICE).toContain("gate-roles.ts");
+  });
+
+  it("refuses a new file whose ROLLBACK goes through a wrapper, naming the line", () => {
+    const wrapper = BARE.replace(
+      'client.query("ROLLBACK")',
+      'runQuery("ROLLBACK")'
+    );
+    expect(
+      gateRollbackProblems(
+        { "packages/db/scripts/verify-new-gate.ts": wrapper },
+        {}
+      )
+    ).toEqual([
+      `packages/db/scripts/verify-new-gate.ts (linha 6): 1 ROLLBACK solto em query(. ${ADVICE}`,
+    ]);
   });
 
   it("accepts the file that goes through the helper", () => {

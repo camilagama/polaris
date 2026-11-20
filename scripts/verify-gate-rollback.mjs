@@ -12,10 +12,17 @@ import { GATE_ROLLBACK_LIST } from "./verify-gate-rollback.list.mjs";
  * keeps a new gate from going back to the bare call.
  *
  * Counted, in every `.ts` file under `packages/db/scripts/` and `apps/web/scripts/` (tests included) except `gate-roles.ts`, which is where
- * the helpers live: a string or template literal whose whole text is `ROLLBACK` (or its synonyms `ROLLBACK WORK`, `ROLLBACK TRANSACTION`, `ABORT`, with `AND [NO] CHAIN`; case and a trailing `;` aside) written
+ * the helpers live: a string or template literal whose whole text is `ROLLBACK` (or its synonyms `ROLLBACK WORK`, `ROLLBACK TRANSACTION`, `ABORT`, with `AND [NO] CHAIN`; a trailing `;` aside) written
  * at the top level of the arguments of a `query(` call, so both `query("ROLLBACK")` and
  * `query(commit ? "COMMIT" : "ROLLBACK")` count, as does a call with type arguments (`query<Row>("ROLLBACK")`). `ROLLBACK TO SAVEPOINT` is another statement and does not. Comments
  * and the text inside other strings are not counted (the scanner is the one of `gate-clock-scan.ts`).
+ *
+ * The same literal passed to a call with any other name counts too, because a wrapper (`runQuery("ROLLBACK")`,
+ * `client.sql("ROLLBACK")`) sends it just the same. There the literal has to be written in capitals, since a
+ * lowercase `"rollback"` is as likely a command name or a mode of a test helper as a statement; for `query(` the case is free.
+ * Not counted, because they do not send the text: the keywords that take a condition (`if (`, `while (`...), the assertion and comparison
+ * calls (`toBe(`, `toEqual(`, `expect(`, `includes(`...), the log and error calls (`log(`, `error(`, `new Error(`...), and a literal
+ * that is one side of `===`, `!==`, `==` or `!=`.
  *
  * Not caught: a statement held in a variable first (`const sql = "ROLLBACK"; query(sql)`), one passed as
  * `query({ text: "ROLLBACK" })`, one built from parts or from a template with `${}`, and one wrapped in extra parentheses. Uses that exist before the rule stay in
@@ -37,7 +44,38 @@ const ROLLBACK_LITERAL = new RegExp(
   String.raw`(["'\`])[ \t\r\n]*${ENDS_TRANSACTION}[ \t\r\n]*;?[ \t\r\n]*\1`,
   "gi"
 );
-const QUERY_CALL = /\bquery(?:\s*<[^;()]*>)?\s*\(/g;
+const ANY_CALL = /\b([A-Za-z_$][\w$]*)(?:\s*<[^;()]*>)?\s*\(/g;
+const NOT_SENDING_CALLS = new Set([
+  "assert",
+  "catch",
+  "debug",
+  "deepEqual",
+  "endsWith",
+  "equal",
+  "equals",
+  "error",
+  "Error",
+  "expect",
+  "for",
+  "if",
+  "includes",
+  "indexOf",
+  "info",
+  "log",
+  "ok",
+  "return",
+  "startsWith",
+  "strictEqual",
+  "switch",
+  "trace",
+  "typeof",
+  "warn",
+  "while",
+]);
+const LOWERCASE_LETTER = /[a-z]/;
+const ASSERTION_MATCHER = /^to[A-Z]/;
+const COMPARED_BEFORE = /[=!]==?\s*$/;
+const COMPARED_AFTER = /^\s*[=!]==?/;
 
 export function isGateScript(relative) {
   return (
@@ -77,11 +115,29 @@ function atTopLevel(code, from, at) {
   return depth === 0;
 }
 
-/** The 1-based lines with a bare ROLLBACK sent to `query(`. */
+function isSendingCall(callee) {
+  return !(NOT_SENDING_CALLS.has(callee) || ASSERTION_MATCHER.test(callee));
+}
+
+/** Whether the literal found at `at` (its text is `text`) is what the call at `callee` sends as a statement. */
+function sendsRollback(code, at, text, callee) {
+  if (
+    callee !== "query" &&
+    (LOWERCASE_LETTER.test(text) || !isSendingCall(callee))
+  ) {
+    return false;
+  }
+  return !(
+    COMPARED_BEFORE.test(code.slice(0, at)) ||
+    COMPARED_AFTER.test(code.slice(at + text.length))
+  );
+}
+
+/** The 1-based lines with a bare ROLLBACK sent to `query(` or to a call that wraps it. */
 export function bareRollbackLines(source) {
   const code = codeOnly(source);
   const lines = new Set();
-  for (const call of code.matchAll(QUERY_CALL)) {
+  for (const call of code.matchAll(ANY_CALL)) {
     const open = call.index + call[0].length - 1;
     const close = closingParen(code, open);
     if (close === -1) {
@@ -91,7 +147,11 @@ export function bareRollbackLines(source) {
       .slice(open + 1, close)
       .matchAll(ROLLBACK_LITERAL)) {
       const at = open + 1 + literal.index;
-      if (code[at] === literal[1] && atTopLevel(code, open + 1, at)) {
+      if (
+        code[at] === literal[1] &&
+        atTopLevel(code, open + 1, at) &&
+        sendsRollback(code, at, literal[0], call[1])
+      ) {
         lines.add(source.slice(0, at).split("\n").length);
       }
     }
