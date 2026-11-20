@@ -26,6 +26,9 @@ const STORE_MENU_NAME = /^Loja, conta e ajuda: /;
  * on PostgreSQL (the `economics` and `home-writes` gates); here, what the screen does with it.
  */
 
+// independent tests, each with its own browser context and FakeServer: the shard splits the file by test
+test.describe.configure({ mode: "parallel" });
+
 const ORGANIZATION_ID = "0199c2d0-0000-7000-8000-00000000a001";
 const USER_ID = "user-do-inicio";
 const LEASE_KEY = {
