@@ -4,6 +4,10 @@ import {
   markOrganizationClosed,
   organizationsClosedHere,
 } from "../../lib/organization-closed";
+import {
+  knowsLargeCatalog,
+  rememberLargeCatalog,
+} from "../../home/home-inventory";
 import { SESSION_MARKER_KEY } from "../../lib/session-marker";
 import { CLOSED_STORES_KEY } from "../../organization/closed-stores-memory";
 import {
@@ -66,5 +70,16 @@ describe("leaving the page", () => {
     markOrganizationClosed("c");
     clearSessionCaches();
     expect(organizationsClosedHere()).toEqual([]);
+  });
+
+  it("forgets that the catalog of the store is past 100 variants when the person leaves and when the session is refused", () => {
+    fakeWindow();
+    rememberLargeCatalog("a");
+    leaveAfterSignOut("/");
+    expect(knowsLargeCatalog("a")).toBe(false);
+
+    rememberLargeCatalog("a");
+    clearSessionCaches();
+    expect(knowsLargeCatalog("a")).toBe(false);
   });
 });

@@ -1,4 +1,8 @@
 import { isNoAnswer, PLATFORM_CUT_REASON } from "./connection";
+import {
+  isTransientServerFault,
+  TRANSIENT_REASON,
+} from "./transient-server-fault";
 
 /** The oRPC error code (BAD_REQUEST, CONFLICT, ...), when the error has one. */
 export function rpcErrorCode(error: unknown): string | undefined {
@@ -44,6 +48,18 @@ export function isOrganizationClosedRefusal(error: unknown): boolean {
   return (
     rpcErrorCode(error) === "FORBIDDEN" &&
     rpcErrorReason(error) === "organization_closed"
+  );
+}
+
+/**
+ * The server refused the pull because the session is another user's than the one the tab expected (the lease in use).
+ * It is a FORBIDDEN with its own reason, and it is NOT a refused session: nothing local is dropped, the tab looks at
+ * the session again and the queue stays.
+ */
+export function isSessionChangedRefusal(error: unknown): boolean {
+  return (
+    rpcErrorCode(error) === "FORBIDDEN" &&
+    rpcErrorReason(error) === "session_changed"
   );
 }
 
@@ -135,9 +151,6 @@ export function readErrorMessage(error: unknown, subject: string): string {
   return `Não foi possível carregar ${subject}. Tente novamente.`;
 }
 
-/** The `data.reason` of the 503 the router gives an unexpected fault: "try again" (`unexpectedRpcError`). */
-const TRANSIENT_REASON = "server_busy";
-
 /**
  * A READ that failed in a way another try may fix: no answer (`isNoAnswer`, which includes a response without the
  * Worker's mark), the cut of the platform (`isPlatformCut`), `SERVICE_UNAVAILABLE` with no reason or with the
@@ -150,12 +163,12 @@ export function isTransientReadFailure(error: unknown): boolean {
   if (isNoAnswer(error) || isPlatformCut(error)) {
     return true;
   }
-  const reason = rpcErrorReason(error);
-  if (rpcErrorCode(error) === "SERVICE_UNAVAILABLE") {
-    return reason === undefined || reason === TRANSIENT_REASON;
-  }
   const { status } = (error ?? {}) as { status?: unknown };
-  return typeof status === "number" && status >= 500 && reason === undefined;
+  return isTransientServerFault({
+    code: rpcErrorCode(error),
+    reason: rpcErrorReason(error),
+    status,
+  });
 }
 
 /**

@@ -953,6 +953,19 @@ const FUTURE_REASON = "Só depois de hoje";
 const footerReason = (popup: Locator) =>
   popup.locator("[data-date-footer]").getByText(FUTURE_REASON, { exact: true });
 
+async function expectAnimationsDone(popup: Locator) {
+  await expect
+    .poll(() =>
+      popup.evaluate(
+        (element) => element.getAnimations({ subtree: true }).length
+      )
+    )
+    .toBe(0);
+}
+
+const settledHeight = async (popup: Locator) =>
+  Math.round((await popup.boundingBox())?.height ?? Number.NaN);
+
 async function openFuturePicker(page: Page) {
   await openGallery(page);
   return openPicker(page, "Data de entrega,", "Data de entrega");
@@ -1010,7 +1023,9 @@ test.describe("Hoje desligado, com o motivo à vista", () => {
   }) => {
     const popup = await openFuturePicker(page);
     const off = day(popup, "2026-10-24");
-    const before = (await popup.boundingBox())?.height;
+    await expectAnimationsDone(popup);
+    const before = await settledHeight(popup);
+    expect(before).toBeGreaterThan(0);
     await off.focus();
     await expect(off).toBeFocused();
     await expect(popup.getByText(FUTURE_REASON, { exact: true })).toHaveCount(
@@ -1021,7 +1036,8 @@ test.describe("Hoje desligado, com o motivo à vista", () => {
     ).toHaveCount(1);
     await expect(footerReason(popup)).toBeVisible();
     await expect(off).toHaveAccessibleDescription(FUTURE_REASON);
-    expect((await popup.boundingBox())?.height).toBe(before);
+    await expectAnimationsDone(popup);
+    expect(await settledHeight(popup)).toBe(before);
   });
 
   test("com Hoje permitido o rodapé não escreve motivo nenhum", async ({

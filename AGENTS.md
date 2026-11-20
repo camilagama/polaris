@@ -73,7 +73,7 @@ Erros que voltaram de revisão em mais de um PR e que agora reprovam no `bun run
 | Arquivo renomeado ou apagado não deixa caminho velho nos documentos | `scripts/verify-doc-paths.mjs` (lista em `verify-doc-paths.list.mjs`) |
 | `when` do journal da migration crescente e não futuro | `scripts/verify-migration-compat.mjs` |
 | Gate sem relógio solto | `packages/db/scripts/gate-loose-clock.test.ts` |
-| Gate de banco não manda `ROLLBACK` solto a `query(`: use `rollbackAndRelease`/`rollbackQuietly` de `packages/db/scripts/gate-roles.ts` | `scripts/verify-gate-rollback.mjs` (lista em `verify-gate-rollback.list.mjs`) |
+| Gate de banco (em `packages/db/scripts` e `apps/web/scripts`) não manda `ROLLBACK` solto a `query(` nem a um invólucro dele (`runQuery("ROLLBACK")`): use `rollbackAndRelease`/`rollbackQuietly` de `packages/db/scripts/gate-roles.ts` | `scripts/verify-gate-rollback.mjs` (lista em `verify-gate-rollback.list.mjs`) |
 | Comentário sem histórico | `scripts/verify-no-history-comments.mjs` |
 
 ## Fluxo de trabalho

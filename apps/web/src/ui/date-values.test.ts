@@ -1,4 +1,13 @@
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 import {
   clampDay,
   cutRange,
@@ -259,7 +268,37 @@ describe("valores que a tela passa", () => {
     expect(validDay("2026-13-45")).toBeUndefined();
     expect(validDay("2026-10-24")).toBe("2026-10-24");
     expect(todayOr("2026-10-24")).toBe("2026-10-24");
-    expect(todayOr("ontem")).toBe(toIsoDate(new Date()));
+  });
+
+  describe("o hoje do aparelho em São Paulo", () => {
+    const originalZone = process.env.TZ;
+
+    beforeEach(() => {
+      process.env.TZ = "America/Sao_Paulo";
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+      if (originalZone === undefined) {
+        Reflect.deleteProperty(process.env, "TZ");
+      } else {
+        process.env.TZ = originalZone;
+      }
+    });
+
+    it("hoje inválido vira o dia do aparelho, que muda na meia-noite de São Paulo", () => {
+      vi.useFakeTimers({
+        now: new Date("2026-11-19T02:50:00.000Z"),
+        toFake: ["Date"],
+      });
+      expect(todayOr("ontem")).toBe("2026-11-18");
+      expect(todayOr(null)).toBe("2026-11-18");
+      expect(todayOr(undefined)).toBe("2026-11-18");
+
+      vi.setSystemTime(new Date("2026-11-19T03:10:00.000Z"));
+      expect(todayOr("ontem")).toBe("2026-11-19");
+      expect(todayOr("2026-10-24")).toBe("2026-10-24");
+    });
   });
 
   it("intervalo com ponta inválida ou invertido vira nenhum", () => {

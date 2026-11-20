@@ -1,12 +1,22 @@
 import { createORPCClient } from "@orpc/client";
 import { RPCLink } from "@orpc/client/fetch";
 import { buildOfflineLeaseClaims } from "@polaris/domain/offline/offline-lease";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { signOfflineLease } from "../../lib/offline-lease-token";
 import { createServerApp } from "../app";
 import type { WorkerBindings } from "../environment";
 import { InvalidSyncPayloadError, type SyncCommandHandler } from "../sync/push";
 import { createRpcRouter } from "./router";
+
+const NOW = new Date("2026-11-19T02:50:00.000Z");
+
+beforeEach(() => {
+  vi.useFakeTimers({ now: NOW, toFake: ["Date"] });
+});
+
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 const organizationId = "7b9c212a-f90b-4e05-9e9a-0c0eb1c9c9b0";
 const deviceId = "0199c2d0-0000-7000-8000-0000000000d1";
@@ -74,7 +84,7 @@ function tenantContext() {
 }
 
 async function lease() {
-  const issuedAt = new Date(Date.now() - 3_600_000);
+  const issuedAt = new Date(NOW.getTime() - 3_600_000);
   return await signOfflineLease(
     buildOfflineLeaseClaims({
       capabilities: ["customer:update"],
@@ -94,7 +104,7 @@ async function pushCommand(n: number, overrides: Record<string, unknown> = {}) {
   return {
     baseVersion: null,
     commandId: uuid(n),
-    createdAt: new Date().toISOString(),
+    createdAt: NOW.toISOString(),
     deviceId,
     lease: await lease(),
     payload: { name: `Cliente ${n}` },

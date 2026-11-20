@@ -1,4 +1,5 @@
 import { clearFirstSteps } from "../../app-shell/first-steps";
+import { forgetLargeCatalog } from "../../home/home-inventory";
 import {
   browserStorage,
   clearOrganizationsCache,
@@ -45,6 +46,7 @@ export function clearSessionCaches(): void {
   // the plan's reading of the session that ended (`planRead` listens; the module is not imported here: it needs the client)
   notifyPlanUsageChanged();
   clearFirstSteps();
+  forgetLargeCatalog();
   clearSaleDrafts(sessionStorageOrNull());
   clearSaleAttempts(sessionStorageOrNull());
 }

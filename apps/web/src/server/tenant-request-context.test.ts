@@ -21,6 +21,16 @@ import {
 
 type Database = ReturnType<typeof createDatabase>["db"];
 
+const NOW = new Date("2026-11-19T02:50:00.000Z");
+
+beforeEach(() => {
+  vi.useFakeTimers({ now: NOW, toFake: ["Date"] });
+});
+
+afterEach(() => {
+  vi.useRealTimers();
+});
+
 function createBindings(
   overrides: Partial<WorkerBindings> = {}
 ): WorkerBindings {
@@ -107,7 +117,7 @@ describe("tenant request context", () => {
 
   it("rejects a session without an id before any tenant authorization", async () => {
     const fixture = createFixture({
-      session: { createdAt: new Date() },
+      session: { createdAt: new Date(NOW) },
       user: { id: "session-user-42" },
     } as unknown as TenantRequestSession);
 
@@ -120,7 +130,7 @@ describe("tenant request context", () => {
 
   it("passes only the Better Auth session user and requested organization to the transaction", async () => {
     const fixture = createFixture({
-      session: { createdAt: new Date(), id: "session-1" },
+      session: { createdAt: new Date(NOW), id: "session-1" },
       user: { id: "session-user-42" },
     });
 
@@ -159,7 +169,7 @@ describe("tenant request context", () => {
   });
   it("fails when Better Auth configuration is unavailable without opening a database pool", async () => {
     const fixture = createFixture({
-      session: { createdAt: new Date(), id: "session-1" },
+      session: { createdAt: new Date(NOW), id: "session-1" },
       user: { id: "session-user-42" },
     });
 
@@ -176,7 +186,7 @@ describe("tenant request context", () => {
 
   it("closes the database pool when the requested organization is invalid", async () => {
     const fixture = createFixture({
-      session: { createdAt: new Date(), id: "session-1" },
+      session: { createdAt: new Date(NOW), id: "session-1" },
       user: { id: "session-user-42" },
     });
 
@@ -189,7 +199,7 @@ describe("tenant request context", () => {
   });
 
   it("rejects a session older than the 30-day absolute lifetime without touching tenant data", async () => {
-    const thirtyOneDaysAgo = new Date(Date.now() - 31 * 24 * 60 * 60 * 1000);
+    const thirtyOneDaysAgo = new Date("2026-10-19T02:50:00.000Z");
     const fixture = createFixture({
       session: { createdAt: thirtyOneDaysAgo, id: "session-1" },
       user: { id: "session-user-42" },
@@ -216,8 +226,35 @@ describe("tenant request context", () => {
     expect(fixture.runTransaction).not.toHaveBeenCalled();
   });
 
+  it.each([
+    ["exactly 30 days old", "2026-10-20T02:50:00.000Z"],
+    ["30 days and 1 ms old", "2026-10-20T02:49:59.999Z"],
+  ])("refuses a session %s", async (_label, createdAt) => {
+    const fixture = createFixture({
+      session: { createdAt: new Date(createdAt), id: "session-1" },
+      user: { id: "session-user-42" },
+    });
+
+    await expect(fixture.context(baseInput)).rejects.toMatchObject({
+      code: "session_required",
+    });
+    expect(fixture.runTransaction).not.toHaveBeenCalled();
+  });
+
+  it("accepts a session 1 ms short of 30 days", async () => {
+    const fixture = createFixture({
+      session: {
+        createdAt: new Date("2026-10-20T02:50:00.001Z"),
+        id: "session-1",
+      },
+      user: { id: "session-user-42" },
+    });
+
+    await expect(fixture.context(baseInput)).resolves.toBe("tenant result");
+  });
+
   it("accepts a session just inside the absolute lifetime", async () => {
-    const twentyNineDaysAgo = new Date(Date.now() - 29 * 24 * 60 * 60 * 1000);
+    const twentyNineDaysAgo = new Date("2026-10-21T02:50:00.000Z");
     const fixture = createFixture({
       session: { createdAt: twentyNineDaysAgo, id: "session-1" },
       user: { id: "session-user-42" },
@@ -228,7 +265,7 @@ describe("tenant request context", () => {
 
   it("fails closed when a deployed Worker has no dedicated auth Hyperdrive", async () => {
     const fixture = createFixture({
-      session: { createdAt: new Date(), id: "session-1" },
+      session: { createdAt: new Date(NOW), id: "session-1" },
       user: { id: "session-user-42" },
     });
     const { AUTH_HYPERDRIVE: _removed, ...withoutAuthDatabase } =
@@ -244,7 +281,7 @@ describe("tenant request context", () => {
 
   it("uses one shared pool in local development when both roles share a connection", async () => {
     const fixture = createFixture({
-      session: { createdAt: new Date(), id: "session-1" },
+      session: { createdAt: new Date(NOW), id: "session-1" },
       user: { id: "session-user-42" },
     });
     const { AUTH_HYPERDRIVE: _removed, ...withoutAuthDatabase } =
@@ -266,7 +303,6 @@ describe("tenant request context", () => {
 });
 
 describe("tenant request context with requireFreshSession", () => {
-  const NOW = new Date("2026-10-30T15:00:00.000Z");
   const FIFTEEN_MINUTES = 15 * 60 * 1000;
 
   function runWith(
@@ -285,15 +321,6 @@ describe("tenant request context with requireFreshSession", () => {
     });
     return { fixture, operation, result };
   }
-
-  beforeEach(() => {
-    vi.useFakeTimers({ toFake: ["Date"] });
-    vi.setSystemTime(NOW);
-  });
-
-  afterEach(() => {
-    vi.useRealTimers();
-  });
 
   it("refuses a 16-minute session before the operation, with the reason the router maps", async () => {
     const { operation, result, fixture } = runWith(
@@ -363,7 +390,7 @@ describe("tenant request context with requireFreshSession", () => {
 
 describe("tenant request sequence", () => {
   const session = {
-    session: { createdAt: new Date(), id: "session-1" },
+    session: { createdAt: new Date(NOW), id: "session-1" },
     user: { id: "session-user-42" },
   };
 

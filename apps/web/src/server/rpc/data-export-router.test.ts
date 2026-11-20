@@ -2,12 +2,22 @@ import { createORPCClient } from "@orpc/client";
 import { RPCLink } from "@orpc/client/fetch";
 import { FreshSessionRequiredError } from "@polaris/db/device-repository";
 import { InvalidExportRequestError } from "@polaris/domain/privacy/data-export";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createServerApp } from "../app";
 import type { WorkerBindings } from "../environment";
 import { TenantRequestContextError } from "../request-context-error";
 import type { TenantRequestContextInput } from "../tenant-request-context";
 import { createRpcRouter } from "./router";
+
+const NOW = new Date("2026-11-19T02:50:00.000Z");
+
+beforeEach(() => {
+  vi.useFakeTimers({ now: NOW, toFake: ["Date"] });
+});
+
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 const organizationId = "org_7b9c212a";
 const session = { user: { emailVerified: true, id: "session-user-17" } };
@@ -230,7 +240,7 @@ describe("dataExport.requestClosed", () => {
     );
     const client = createClient({
       dataExportRepository: { requestClosedDataExport },
-      withAuthenticatedRequestContext: authenticated(new Date()),
+      withAuthenticatedRequestContext: authenticated(new Date(NOW)),
     });
     await expect(
       client.dataExport.requestClosed({
@@ -250,7 +260,7 @@ describe("dataExport.requestClosed", () => {
     const client = createClient({
       dataExportRepository: { requestClosedDataExport },
       withAuthenticatedRequestContext: authenticated(
-        new Date(Date.now() - 16 * 60 * 1000)
+        new Date(NOW.getTime() - 16 * 60 * 1000)
       ),
     });
     await expect(
@@ -270,7 +280,7 @@ describe("dataExport.requestClosed", () => {
             new InvalidExportRequestError("closed_export_unavailable")
           ),
       },
-      withAuthenticatedRequestContext: authenticated(new Date()),
+      withAuthenticatedRequestContext: authenticated(new Date(NOW)),
     });
     await expect(
       client.dataExport.requestClosed({ formats: ["json"], organizationId })
@@ -316,7 +326,7 @@ describe("dataExport.listClosed", () => {
     );
     const client = createClient({
       dataExportRepository: { listClosedDataExports },
-      withAuthenticatedRequestContext: authenticated(new Date()),
+      withAuthenticatedRequestContext: authenticated(new Date(NOW)),
     });
     const result = await client.dataExport.listClosed({ organizationId });
     expect(listClosedDataExports).toHaveBeenCalledWith(
