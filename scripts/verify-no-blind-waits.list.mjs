@@ -67,7 +67,14 @@ export const BLIND_WAITS_LIST = {
     count: 1,
     reason: BEFORE_THE_RULE,
   },
-  "apps/web/e2e/dashboard.e2e.ts": { count: 2, reason: BEFORE_THE_RULE },
+  "apps/web/e2e/dashboard/mes-e-copia.e2e.ts": {
+    count: 1,
+    reason: BEFORE_THE_RULE,
+  },
+  "apps/web/e2e/dashboard/reflow-320.e2e.ts": {
+    count: 1,
+    reason: BEFORE_THE_RULE,
+  },
   "apps/web/e2e/home.e2e.ts": { count: 3, reason: BEFORE_THE_RULE },
   "apps/web/e2e/offline-devices.e2e.ts": {
     count: 3,
