@@ -21,6 +21,7 @@ import {
   withAuthorizedTenantTransaction,
 } from "../src/tenant-transaction";
 import { runClock, storeDay } from "./gate-clock";
+import { rollbackAndRelease, rollbackQuietly } from "./gate-roles";
 import { archiveThenDeleteProduct } from "./product-lifecycle-support";
 import {
   confirmPlainSale,
@@ -242,7 +243,7 @@ async function run() {
         `waited ${waited}ms`
       );
     } finally {
-      await holder.query("ROLLBACK");
+      await rollbackQuietly(holder);
       await holder.end();
     }
     tests.push(
@@ -710,8 +711,7 @@ async function run() {
         ]
       );
     } finally {
-      await probe.query("ROLLBACK");
-      probe.release();
+      await rollbackAndRelease(probe);
     }
     for (const [label, key, owner] of [
       [

@@ -116,18 +116,6 @@ export const GATE_ROLLBACK_LIST = {
     count: 6,
     reason: BEFORE_THE_RULE,
   },
-  "packages/db/scripts/verify-period-summary-sql-gate.ts": {
-    count: 2,
-    reason: BEFORE_THE_RULE,
-  },
-  "packages/db/scripts/verify-renewal-cancellation-gate.ts": {
-    count: 2,
-    reason: BEFORE_THE_RULE,
-  },
-  "packages/db/scripts/verify-review-hardening-gate.ts": {
-    count: 2,
-    reason: BEFORE_THE_RULE,
-  },
   "packages/db/scripts/verify-tenant-context-gate.ts": {
     count: 3,
     reason: BEFORE_THE_RULE,
