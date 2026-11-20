@@ -27,6 +27,10 @@ import {
 import { stockProductLinks } from "../catalog/products-link-model";
 import { useCurrentOrganization } from "../lib/current-organization";
 import { focusLater } from "../lib/focus";
+import {
+  LIST_REFRESH_FAILED_TEXT,
+  LIST_REFRESHING_TEXT,
+} from "../lib/list-refresh-text";
 import { useMediaThumbsEnabled } from "../lib/media-thumbs-flag";
 import { useFocusTitleWhenGone } from "../lib/use-focus-title-when-gone";
 import { useStoreToday } from "../lib/use-store-today";
@@ -43,8 +47,6 @@ import {
   stockCountText,
   stockCoverIds,
   stockListView,
-  STOCK_REFRESH_FAILED_TEXT,
-  STOCK_REFRESHING_TEXT,
   stockMoreView,
 } from "./stock-list-model";
 import { RowActions, triggerId } from "./stock-row-actions";
@@ -329,7 +331,7 @@ export function InventoryPage() {
       return null;
     }
     return more.refreshing && !offline
-      ? STOCK_REFRESHING_TEXT
+      ? LIST_REFRESHING_TEXT
       : stockCountText(state, filters, offline);
   })();
 
@@ -480,7 +482,7 @@ export function InventoryPage() {
       {more.refreshFailed ? (
         <Alert variant="warning">
           <AlertDescription className="flex flex-wrap items-center gap-x-3 gap-y-1">
-            {STOCK_REFRESH_FAILED_TEXT}
+            {LIST_REFRESH_FAILED_TEXT}
             <Button
               onClick={handleReload}
               size="sm"
