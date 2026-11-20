@@ -1,5 +1,13 @@
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { basename, dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
@@ -351,10 +359,10 @@ describe("drainQueue", () => {
       running.add(worker);
       peak = Math.max(peak, running.size);
       seen.push([item, worker]);
-      return new Promise<string>((resolve) => {
+      return new Promise<string>((settle) => {
         gates.push(() => {
           running.delete(worker);
-          resolve(`${item}@${worker}`);
+          settle(`${item}@${worker}`);
         });
       });
     });
@@ -440,8 +448,8 @@ describe("databaseAclStatements", () => {
   });
 });
 
-// What a gate does, in its own script, that reaches past its database: a role granted to the session user, or a read
-// of the roles, memberships, locks or backends of the whole cluster.
+// What a gate does, in its script or in a gate helper it imports, that reaches past its database: a role granted to
+// the session user, or a read of the roles, memberships, locks or backends of the whole cluster.
 const CLUSTER_TOUCHES: readonly [string, RegExp][] = [
   [
     "grants a role to the session user",
@@ -455,50 +463,127 @@ const CLUSTER_TOUCHES: readonly [string, RegExp][] = [
     "reads or ends backends",
     /pg_stat_activity|pg_terminate_backend|pg_cancel_backend/,
   ],
-  ["creates or drops a database", /(CREATE|DROP) DATABASE|ALTER SYSTEM/],
+  [
+    "creates, alters or drops a database",
+    /(CREATE|ALTER|DROP) DATABASE|ALTER SYSTEM/,
+  ],
 ];
 
+const BLOCK_COMMENT = /\/\*[\s\S]*?\*\//g;
+const LINE_COMMENT = /^\s*\/\/.*$/gm;
+
+// the code without its block and whole-line comments, which name statements the code never runs
 function clusterTouches(source: string): string[] {
-  return CLUSTER_TOUCHES.filter(([, pattern]) => pattern.test(source)).map(
+  const code = source.replace(BLOCK_COMMENT, "").replace(LINE_COMMENT, "");
+  return CLUSTER_TOUCHES.filter(([, pattern]) => pattern.test(code)).map(
     ([touch]) => touch
+  );
+}
+
+const RELATIVE_IMPORT = /from "(\.{1,2}\/[^"]+)"/g;
+
+/**
+ * The gate's script and every gate helper it reaches through relative imports, transitively: the files under a
+ * `scripts` folder (the product code under `src` is what the gates test, not how they reach the cluster).
+ */
+function gateSources(entry: string): Map<string, string> {
+  const found = new Map<string, string>();
+  const pending = [entry];
+  while (pending.length > 0) {
+    const file = pending.pop() as string;
+    if (found.has(file) || !existsSync(file)) {
+      continue;
+    }
+    const text = readFileSync(file, "utf8");
+    found.set(file, text);
+    for (const [, specifier] of text.matchAll(RELATIVE_IMPORT)) {
+      const target = resolve(dirname(file), specifier as string);
+      const withExtension = target.endsWith(".ts") ? target : `${target}.ts`;
+      if (withExtension.includes(`${sep}scripts${sep}`)) {
+        pending.push(withExtension);
+      }
+    }
+  }
+  return found;
+}
+
+// Gate helpers read by hand, with the touches they have: what they reach stays inside the gate's database (or, for
+// gate-roles.ts, the definitions, whose callers are scanned where they call them). Exact, so a change to one fails here.
+const HELPERS_READ: Readonly<Record<string, string[]>> = {
+  // the observer of a race reads pg_stat_activity only `WHERE datname = current_database()`, and pg_roles and
+  // pg_has_role of its own user for pg_read_all_stats
+  "concurrency-support.ts": [
+    "reads memberships",
+    "reads roles",
+    "reads or ends backends",
+  ],
+  "gate-roles.ts": ["grants a role to the session user", "reads memberships"],
+};
+
+function touchesOf(entry: string): string[] {
+  const touches = new Set<string>();
+  for (const [file, text] of gateSources(entry)) {
+    if (
+      !(
+        dirname(file) === SCRIPTS_DIR &&
+        Object.hasOwn(HELPERS_READ, basename(file))
+      )
+    ) {
+      for (const touch of clusterTouches(text)) {
+        touches.add(touch);
+      }
+    }
+  }
+  return CLUSTER_TOUCHES.map(([touch]) => touch).filter((touch) =>
+    touches.has(touch)
   );
 }
 
 // The parallel gates whose touches stay inside their own database, each read against the code: exact, so a gate that
 // stops touching leaves the list and one that touches more fails.
 const PARALLEL_DESPITE: Readonly<Record<string, string[]>> = {
+  // event-outbox-policies.ts names the roles of the outbox's policies through pg_roles; it lists no other role
+  "event-outbox": ["reads roles"],
+  // pg_stat_activity of its own temporary login
   "home-writes": ["reads or ends backends"],
+  // pg_roles of the two outbox roles by name; pg_stat_activity of its own temporary login
   "outbox-dispatcher": ["reads roles", "reads or ends backends"],
+  // pg_roles of named roles; ALTER ROLE of its own temporary login (its time zone)
   "review-hardening": ["reads roles", "alters a role"],
 };
 
 const GATE_TUPLE = /\[\s*"([a-z0-9-]+)",\s*"([^"]+\.ts)",?\s*\]/g;
 const GATE_OBJECT = /name: "([a-z0-9-]+)",\s*script: "([^"]+\.ts)"/g;
+const SUITE_CI = /\bci: \[([^\]]*)\]/;
+const QUOTED_NAME = /"([a-z0-9-]+)"/g;
+const SCRIPTS_DIR = dirname(fileURLToPath(import.meta.url));
+const RUNNER = readFileSync(join(SCRIPTS_DIR, "run-gates.ts"), "utf8");
 
 function gateScripts(): Map<string, string> {
-  const source = readFileSync(join(SCRIPTS, "run-gates.ts"), "utf8");
   const found = new Map<string, string>();
   for (const pattern of [GATE_TUPLE, GATE_OBJECT]) {
-    for (const [, name, script] of source.matchAll(pattern)) {
-      found.set(name as string, script as string);
+    for (const [, name, script] of RUNNER.matchAll(pattern)) {
+      found.set(name as string, join(SCRIPTS_DIR, script as string));
     }
   }
   return found;
 }
 
-const SCRIPTS = fileURLToPath(new URL(".", import.meta.url));
-
 describe("SERIAL_GATES against the gates' code", () => {
   const scripts = gateScripts();
 
-  it("reads every gate of the runner", () => {
-    expect(scripts.size).toBeGreaterThan(80);
-    expect(scripts.get("rls-forced-catalog")).toBe(
-      "verify-rls-forced-catalog-gate.ts"
-    );
-    expect(scripts.get("product-import")).toBe(
-      "../../../apps/web/scripts/verify-product-import-gate.ts"
-    );
+  it("reads every gate of the runner: each name the runner declares, and every gate of the ci suite", () => {
+    const declared = [...RUNNER.matchAll(/name: "([a-z0-9-]+)"/g)].length;
+    const tuples = [...RUNNER.matchAll(GATE_TUPLE)].length;
+    expect(scripts.size).toBe(declared + tuples);
+    const ci = [
+      ...(SUITE_CI.exec(RUNNER)?.[1] ?? "").matchAll(QUOTED_NAME),
+    ].map(([, name]) => name as string);
+    expect(ci.length).toBeGreaterThan(80);
+    expect(ci.filter((name) => !scripts.has(name))).toEqual([]);
+    for (const script of scripts.values()) {
+      expect(existsSync(script), script).toBe(true);
+    }
   });
 
   it("names only gates of the runner", () => {
@@ -519,9 +604,58 @@ describe("SERIAL_GATES against the gates' code", () => {
     ).toEqual(["reads memberships"]);
     expect(clusterTouches("SELECT * FROM pg_locks")).toEqual(["reads locks"]);
     expect(clusterTouches("CREATE DATABASE x")).toEqual([
-      "creates or drops a database",
+      "creates, alters or drops a database",
     ]);
     expect(clusterTouches("SELECT 1 FROM public.sales")).toEqual([]);
+    expect(
+      clusterTouches(
+        "/** the marker `ALTER DATABASE … SET` stores */\n  // pg_locks is not read here\nconst x = 1;"
+      )
+    ).toEqual([]);
+    expect(
+      clusterTouches('const sql = "SELECT 1"; // then FROM pg_locks')
+    ).toEqual(["reads locks"]);
+  });
+
+  it("finds a touch in a helper the gate imports, and skips the product code", () => {
+    const root = mkdtempSync(join(tmpdir(), "gate-runs-"));
+    try {
+      mkdirSync(join(root, "scripts"));
+      mkdirSync(join(root, "src"));
+      writeFileSync(
+        join(root, "scripts", "verify-x-gate.ts"),
+        'import { check } from "./x-checks";\nimport { repo } from "../src/repo";\n'
+      );
+      writeFileSync(
+        join(root, "scripts", "x-checks.ts"),
+        'import { more } from "./x-more";\nexport const check = 1;\n'
+      );
+      writeFileSync(
+        join(root, "scripts", "x-more.ts"),
+        "await withGateRole(client, ROLE, work);\n"
+      );
+      writeFileSync(join(root, "src", "repo.ts"), "SELECT 1 FROM pg_locks\n");
+      expect(touchesOf(join(root, "scripts", "verify-x-gate.ts"))).toEqual([
+        "grants a role to the session user",
+      ]);
+    } finally {
+      rmSync(root, { force: true, recursive: true });
+    }
+    expect(
+      [...gateSources(scripts.get("read-models") as string).keys()].map(
+        (file) => basename(file)
+      )
+    ).toContain("user-organizations-gate-checks.ts");
+  });
+
+  it("has the touches of the helpers read by hand exactly as listed", () => {
+    const read: Record<string, string[]> = {};
+    for (const helper of Object.keys(HELPERS_READ)) {
+      read[helper] = clusterTouches(
+        readFileSync(join(SCRIPTS_DIR, helper), "utf8")
+      );
+    }
+    expect(read).toEqual(HELPERS_READ);
   });
 
   it("leaves in the parallel queue only gates whose touches were read and listed", () => {
@@ -530,9 +664,7 @@ describe("SERIAL_GATES against the gates' code", () => {
       if (Object.hasOwn(SERIAL_GATES, name)) {
         continue;
       }
-      const touches = clusterTouches(
-        readFileSync(join(SCRIPTS, script), "utf8")
-      );
+      const touches = touchesOf(script);
       if (touches.length > 0) {
         touching[name] = touches;
       }

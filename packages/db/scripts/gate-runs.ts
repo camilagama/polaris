@@ -159,13 +159,14 @@ export async function runThenCleanUp<T>(
 
 /**
  * Gates that never share the cluster with another gate: they run after the parallel ones, one at a time, in the
- * database the job migrated, in the order of the runner's list (as every gate ran before the parallel runner).
+ * database the job migrated, in the order of the runner's list.
  *
  * Roles are objects of the cluster, not of a database, so a copy of the database isolates the tables but not the roles.
  * A gate is here, with the reason, when it does one of these (a gate with a `superuser` need is serial too, see
  * `runsSerially`):
  * - `grant`: grants a role to the session user (`withGateRole`, `becomeGateRole`, `queryAsFunctionOwner`,
- *   `replaceFunctionAsOwner`): two gates with the same role would revoke it under each other;
+ *   `replaceFunctionAsOwner`), in its script or in a gate helper it imports: two gates with the same role would revoke
+ *   it under each other;
  * - `cluster`: reads the roles or memberships of the cluster as a whole (`pg_roles`, `pg_auth_members`, `pg_has_role`
  *   over a list, `pg_locks` without the database), where the temporary logins of a gate in another database would show
  *   up, or acts on the cluster itself (a database of its own, the backends of the server, a local server: `rls`);
@@ -205,6 +206,7 @@ export const SERIAL_GATES: Readonly<Record<string, SerialReason>> = {
   "media-derivatives": "cluster",
   "migrations-without-superuser": "cluster",
   "organization-purge": "grant",
+  "read-models": "grant",
   "renewal-cancellation": "grant",
   rls: "cluster",
   "rls-forced-catalog": "order",
@@ -229,7 +231,7 @@ export interface PlannedRun<G> {
 /**
  * Splits the runs of the selected gates, in their order, into the ones that share a queue across the copies of the
  * database and the ones that run afterwards, one at a time, in the migrated database. With one worker every run is
- * serial, which is the runner as it was.
+ * serial, in one database and in order.
  */
 export function planGateRuns<
   G extends { name: string; superuser?: SuperuserNeed },

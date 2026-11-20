@@ -29,8 +29,9 @@ import { connectToGateTarget, validateGateTarget } from "./gate-target";
  * Against the local Postgres of the job, it copies the migrated database (`CREATE DATABASE … TEMPLATE`) once per worker
  * (4, or POLARIS_GATE_WORKERS) and the workers take the gates that touch only their own database from one queue; then
  * the gates of SERIAL_GATES (gate-runs.ts), which touch the roles of the cluster or depend on the gates before them, run
- * one at a time in the migrated database itself, in the order of the list below. Against Neon every gate runs in the
- * one database, in order.
+ * one at a time in the migrated database itself, in the order of the list below. There, "the gates before" a serial
+ * gate are the serial gates before it: the parallel ones write in the copies. Against Neon every gate runs in the one
+ * database, in order.
  *
  * Environment (read here, never printed):
  *   POLARIS_GATE_DATABASE_URL  direct (non-pooled) owner URL of the disposable database
@@ -675,6 +676,10 @@ function runGate(
     };
     child.stdout.on("data", collect);
     child.stderr.on("data", collect);
+    // a gate that cannot start is a failed gate, with the reason in its output
+    child.on("error", (error) => {
+      lines.push(redact(`the gate did not start: ${String(error)}`));
+    });
     const timer = setTimeout(() => child.kill(), 30 * 60_000);
     child.on("close", (code) => {
       clearTimeout(timer);
@@ -749,6 +754,7 @@ async function runAndReport(
   context: Context,
   run: GateRun
 ): Promise<GateResult> {
+  console.log(`>>> ${run.label} [${context.database}]`);
   const result = await runGate(gate, context, run);
   const status = result.code === 0 ? "passed" : "failed";
   const block = [
@@ -878,9 +884,10 @@ async function runParallel(
   return await runThenCleanUp(
     async () => {
       for (const copy of copies) {
+        // listed before the CREATE, so a copy whose ACL or comment fails afterwards is dropped too
+        created.push(copy);
         // biome-ignore lint/performance/noAwaitInLoops: a template is copied only while nothing else is connected to it
         await createCopy(admin, context.database, copy);
-        created.push(copy);
       }
       console.log(
         `--- ${runs.length} runs in parallel, in ${copies.length} copies of ${context.database}: ${copies.join(", ")}`
@@ -902,10 +909,19 @@ async function runParallel(
       });
     },
     async () => {
+      const failures: unknown[] = [];
       for (const copy of created) {
         // biome-ignore lint/performance/noAwaitInLoops: one session, one statement after another
-        await admin.query(
-          `DROP DATABASE IF EXISTS ${quotedIdentifier(copy)} WITH (FORCE)`
+        await admin
+          .query(
+            `DROP DATABASE IF EXISTS ${quotedIdentifier(copy)} WITH (FORCE)`
+          )
+          .catch((error: unknown) => failures.push(error));
+      }
+      if (failures.length > 0) {
+        throw new AggregateError(
+          failures,
+          `${failures.length} copies of the database were not dropped: ${failures.map(String).join("; ")}`
         );
       }
     },
