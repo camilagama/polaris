@@ -147,27 +147,37 @@ export async function getEffectiveEntitlements(
   );
 }
 
-/** `getEffectiveEntitlements` over a catalog the caller already read in the same transaction. */
-export async function resolveEffectiveEntitlements(
-  transaction: TenantRequestTransaction,
-  scope: OrganizationScope,
-  catalog: PlanCatalog
-): Promise<EffectiveEntitlements> {
-  const facts = await readBillingFacts(transaction, scope);
-  const grants = await readGrants(transaction, scope);
+/** The database clock: what the plan in force is judged at, never the application server's. */
+export async function readDatabaseNow(
+  transaction: TenantRequestTransaction
+): Promise<Date> {
   const clock = await transaction.execute<{ now: Date }>(
     sql`SELECT now() AS now`
   );
-  // the database clock decides, never the application server's
-  const databaseNow = clock.rows[0]?.now;
-  if (!databaseNow) {
+  const value = clock.rows[0]?.now;
+  if (!value) {
     throw new Error("database_clock_unavailable");
   }
-  const now = new Date(databaseNow);
+  return new Date(value);
+}
+
+/**
+ * `getEffectiveEntitlements` over a catalog the caller already read in the same transaction. `now` is a reading of
+ * the database clock the caller already made in that transaction (`now()` is the same value all through it); without
+ * it the clock is read here.
+ */
+export async function resolveEffectiveEntitlements(
+  transaction: TenantRequestTransaction,
+  scope: OrganizationScope,
+  catalog: PlanCatalog,
+  databaseNow?: Date
+): Promise<EffectiveEntitlements> {
+  const facts = await readBillingFacts(transaction, scope);
+  const grants = await readGrants(transaction, scope);
   return resolveEntitlements({
     catalog,
     facts: { accessEndsAt: facts.accessEndsAt, state: facts.state },
     grants,
-    now,
+    now: databaseNow ?? (await readDatabaseNow(transaction)),
   });
 }

@@ -3,7 +3,7 @@ import { useEffect, useRef, useSyncExternalStore } from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
 import { buttonVariants } from "@/ui/button";
 import { useConnectionOnline } from "../lib/browser-connection";
-import { orpcClient } from "../lib/orpc";
+import { planRead } from "../lib/plan-read";
 import { isSigningOut } from "../lib/sign-out";
 import { useNow } from "../lib/use-now";
 import { isSessionOver } from "../offline/runtime/session-ended";
@@ -32,7 +32,8 @@ const SUBSCRIPTION_HREF = tabHref("settings", "assinatura");
 
 /**
  * The plan's state for the shell (the notice of grace and the trial at the foot of the menu), read once for both: what this tab read (shown at once, also while it is read again), and a read of the
- * plan when there is none or it is a few minutes old and the tab is online. A failed read shows nothing new and is
+ * plan (through the memory of 10 s the screens share, `planRead`) when there is none or it is a few minutes old and the
+ * tab is online. A failed read shows nothing new and is
  * tried again later, the wait doubling from 1 to 10 min; the notice never guesses.
  */
 export function usePlanNoticeFacts(
@@ -64,8 +65,8 @@ export function usePlanNoticeFacts(
       return;
     }
     reading.current = planReadStarted(reading.current, organizationId);
-    orpcClient.billing
-      .readPlan({ organizationId })
+    planRead
+      .get(organizationId)
       .then((plan) => {
         failed.current = planReadSucceeded(failed.current, organizationId);
         // an answer after the sign-out would write back what the sign-out dropped

@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
+import { parseWranglerConfig, varsOf } from "../wrangler-config.testing";
 import {
   CANCELLATION_FEEDBACK_EXPIRY_BATCH,
   CLOSURE_AUTO_PURGE_ALERT_PER_DAY,
@@ -308,23 +309,14 @@ describe("the automatic schedule of the purge (ADR 0102, AC-62)", () => {
   });
 
   it("is on only in staging: the local top level and production stay off", () => {
-    const config = readFileSync(
-      new URL("../../../wrangler.jsonc", import.meta.url),
-      "utf8"
+    const config = parseWranglerConfig(
+      readFileSync(new URL("../../../wrangler.jsonc", import.meta.url), "utf8")
     );
-    const stagingAt = config.indexOf('"staging": {');
-    const productionAt = config.indexOf('"production": {');
-    expect(stagingAt).toBeGreaterThan(-1);
-    expect(productionAt).toBeGreaterThan(stagingAt);
-    const valuesOf = (block: string) =>
-      [...block.matchAll(/"CLOSURE_AUTO_PURGE_ENABLED":\s*"([^"]*)"/g)].map(
-        (match) => match[1]
-      );
     expect({
-      production: valuesOf(config.slice(productionAt)),
-      staging: valuesOf(config.slice(stagingAt, productionAt)),
-      top: valuesOf(config.slice(0, stagingAt)),
-    }).toEqual({ production: ["false"], staging: ["true"], top: ["false"] });
+      production: varsOf(config, "production").CLOSURE_AUTO_PURGE_ENABLED,
+      staging: varsOf(config, "staging").CLOSURE_AUTO_PURGE_ENABLED,
+      top: varsOf(config).CLOSURE_AUTO_PURGE_ENABLED,
+    }).toEqual({ production: "false", staging: "true", top: "false" });
   });
 });
 

@@ -8,6 +8,7 @@ import { and, eq, isNull, sql } from "drizzle-orm";
 import {
   listBillingPrices,
   type OrganizationScope,
+  readDatabaseNow,
   readPlanCatalog,
   resolveEffectiveEntitlements,
 } from "./billing-repository";
@@ -21,20 +22,6 @@ import { organizations } from "./schema/organization";
 import { products } from "./schema/product";
 import { sales } from "./schema/sale";
 import type { TenantRequestTransaction } from "./tenant-transaction";
-
-/** The database clock decides, never the application server's (as `getEffectiveEntitlements`). */
-async function databaseNow(
-  transaction: TenantRequestTransaction
-): Promise<Date> {
-  const clock = await transaction.execute<{ now: Date }>(
-    sql`SELECT now() AS now`
-  );
-  const value = clock.rows[0]?.now;
-  if (!value) {
-    throw new Error("database_clock_unavailable");
-  }
-  return new Date(value);
-}
 
 /** What the organization holds against the limits of its plan, counted as the writes count it. */
 export interface PlanUsage {
@@ -79,10 +66,12 @@ export async function readOwnerPlanTenantFacts(
   const { organizationId } = scope;
   const prices = await listBillingPrices(transaction);
   const catalog = await readPlanCatalog(transaction);
+  const databaseNow = await readDatabaseNow(transaction);
   const entitlements = await resolveEffectiveEntitlements(
     transaction,
     scope,
-    catalog
+    catalog,
+    databaseNow
   );
   const usage: PlanUsage = {
     freeable: await countFreeableArchivedProducts(transaction, organizationId),
@@ -97,7 +86,7 @@ export async function readOwnerPlanTenantFacts(
     })
     .from(sales)
     .where(eq(sales.organizationId, organizationId));
-  const clock = now ?? (await databaseNow(transaction));
+  const clock = now ?? databaseNow;
   const [organization] = await transaction
     .select({ timezone: organizations.timezone })
     .from(organizations)

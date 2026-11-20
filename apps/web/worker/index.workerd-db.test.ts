@@ -7,7 +7,10 @@ import {
 } from "cloudflare:test";
 import { env, exports } from "cloudflare:workers";
 import { createDatabase } from "@polaris/db/client";
-import { recordStatements } from "@polaris/db/statement-counter-testing";
+import {
+  type RecordedStatement,
+  recordStatements,
+} from "@polaris/db/statement-counter-testing";
 import { LEGAL_DOCUMENTS } from "@polaris/domain/legal/legal-documents";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { WorkerBindings } from "../src/server/environment";
@@ -79,23 +82,94 @@ interface Fixture {
 const UUID = /^[0-9a-f-]{36}$/;
 
 /**
- * Statements one call of each of the most frequent routes sends to the database, with BEGIN, COMMIT and the
- * settings of the transaction (the platform counts every one against the daily quota of the Hyperdrive). They are the
- * numbers the routes send today, not a goal: a route that sends one more fails here, and the one that sends fewer
- * lowers its number in the same change. They are the fixed cost of a call on a store with no goals, products or sales:
- * what a row adds is not counted. `billing/readPlan` is measured with BILLING_SELF_SERVICE_ENABLED on (off, it answers
- * 404 before any statement); the other routes run with the bindings as the wrangler file has them.
+ * Statements one call of each of the routes the screens open, with BEGIN, COMMIT and the settings of the
+ * transaction (the platform counts every one against the daily quota of the Hyperdrive). They are the numbers the
+ * routes send today, not a goal: a route that sends one more fails here, and the one that sends fewer lowers its number
+ * in the same change. The rows with a plain name are the fixed cost of a call on a store with no products, sales or
+ * goals (what a row adds is not counted); the two that say so are the same route with a sale and with an active goal.
+ * `billing/readPlan` is measured with BILLING_SELF_SERVICE_ENABLED on (off, it answers 404 before any statement);
+ * `offline/issueLease` with a lease secret; the other routes run with the bindings as the wrangler file has them.
  */
 const STATEMENT_COUNTS: Record<string, number> = {
   "auth get-session": 2,
-  "billing/readPlan": 24,
-  "goal/list": 41,
-  "inventory/listBalances": 10,
+  "billing/readPlan": 18,
+  "category/list": 6,
+  "device/check": 9,
+  "expense/list": 8,
+  "expense/listCategories": 7,
+  "expense/listRules": 7,
+  "goal/list": 10,
+  "goal/list with an active goal": 29,
+  "inventory/listBalances": 6,
+  "offline/issueLease": 14,
   "organization/listMine": 8,
-  "report/dailySales": 10,
-  "report/periodSummary": 10,
-  "sync/pull": 10,
+  "product/list": 6,
+  "report/dailySales": 6,
+  "report/periodSummary": 6,
+  "sale/list": 6,
+  "sale/list with one sale": 12,
+  "sync/pull": 6,
 };
+
+/**
+ * The same routes counted on their first call in this store (after the sign-in and the creation of the store, on an
+ * isolate the earlier tests already warmed, so it is not a cold start). They differ from the numbers above only where
+ * the first call writes something the next one finds: the default expense categories. The test holds them exactly as well.
+ */
+const FIRST_CALL_STATEMENT_COUNTS: Record<string, number> = {
+  "auth get-session": 2,
+  "billing/readPlan": 18,
+  "category/list": 6,
+  "device/check": 9,
+  "expense/list": 8,
+  "expense/listCategories": 8,
+  "expense/listRules": 7,
+  "goal/list": 10,
+  "goal/list with an active goal": 29,
+  "inventory/listBalances": 6,
+  "offline/issueLease": 14,
+  "organization/listMine": 8,
+  "product/list": 6,
+  "report/dailySales": 6,
+  "report/periodSummary": 6,
+  "sale/list": 6,
+  "sale/list with one sale": 12,
+  "sync/pull": 6,
+};
+
+/** The secret that signs the lease of `offline/issueLease`: a made-up value, long enough for the signer. */
+const LEASE_SECRET = "harness-offline-lease-secret-of-32-bytes-or-more";
+
+/** Makes the store Pro the way a paid charge does, through the insert the billing login has on that record. */
+async function upgradeToPro(connectionString: string, organizationId: string) {
+  const { pool } = createDatabase(connectionString, { maxConnections: 1 });
+  try {
+    await pool.query(
+      "INSERT INTO public.organization_billing (organization_id, state, access_ends_at) VALUES ($1, 'active', now() + interval '365 days')",
+      [organizationId]
+    );
+  } finally {
+    await pool.end();
+  }
+}
+
+/** The day and the instant the database reads, in the store's time zone: the clock a goal is active by. */
+async function databaseClock(connectionString: string) {
+  const { pool } = createDatabase(connectionString, { maxConnections: 1 });
+  try {
+    return await pool.query<{
+      ends_on: string;
+      now: string;
+      today: string;
+    }>(
+      `SELECT to_char(timezone('America/Sao_Paulo', now()), 'YYYY-MM-DD') AS today,
+              to_char(timezone('America/Sao_Paulo', now()) + interval '29 days', 'YYYY-MM-DD') AS ends_on,
+              to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS now`
+    );
+  } finally {
+    await pool.end();
+  }
+}
 
 const fixture = JSON.parse(env.TEST_WEB_FIXTURE ?? "{}") as Fixture;
 const HYPERDRIVES: Binding[] = [
@@ -922,35 +996,34 @@ describe("the e-mail and password flows of the web worker", () => {
     const ip = "198.51.100.21";
     await verifiedUser(network, address, ip);
     const cookie = await signedInCookie(address, PASSWORD, ip);
-    const created = await call("/rpc/organization/createInitial", {
-      body: {
-        json: { name: "Loja dos statements", timezone: "America/Sao_Paulo" },
-      },
-      cookie,
-      ip,
-    });
-    expect(created.status).toBe(200);
-    const organizationId = (
-      (await created.json()) as { json: { organization: { id: string } } }
-    ).json.organization.id;
-    const firstPull = await call("/rpc/sync/pull", {
-      body: { json: { limit: 200, organizationId } },
-      cookie,
-      ip,
-    });
-    expect(firstPull.status).toBe(200);
-    const { nextCursor } = (
-      (await firstPull.json()) as { json: { nextCursor: string } }
-    ).json;
+    const post = async <Answer>(path: string, json: unknown) => {
+      const response = await call(path, { body: { json }, cookie, ip });
+      expect(response.status, path).toBe(200);
+      return ((await response.json()) as { json: Answer }).json;
+    };
+    const created = await post<{ organization: { id: string } }>(
+      "/rpc/organization/createInitial",
+      { name: "Loja dos statements", timezone: "America/Sao_Paulo" }
+    );
+    const organizationId = created.organization.id;
+    const { nextCursor } = await post<{ nextCursor: string }>(
+      "/rpc/sync/pull",
+      { limit: 200, organizationId }
+    );
+    const { device } = await post<{ device: { id: string } }>(
+      "/rpc/device/register",
+      { label: "Aparelho dos statements" }
+    );
     // the dates do not change the count: the store has no sale, and the 31 days stay under the ceiling of the period
     const period = { from: "2026-10-01", organizationId, to: "2026-10-31" };
-    const routes: {
+    interface Route {
       bindings?: Bindings;
       body?: unknown;
       method?: string;
       name: string;
       path: string;
-    }[] = [
+    }
+    const emptyStoreRoutes: Route[] = [
       {
         method: "GET",
         name: "auth get-session",
@@ -992,8 +1065,43 @@ describe("the e-mail and password flows of the web worker", () => {
         name: "organization/listMine",
         path: "/rpc/organization/listMine",
       },
+      {
+        body: { json: { deviceId: device.id } },
+        name: "device/check",
+        path: "/rpc/device/check",
+      },
+      {
+        body: { json: { organizationId } },
+        name: "product/list",
+        path: "/rpc/product/list",
+      },
+      {
+        body: { json: { organizationId } },
+        name: "category/list",
+        path: "/rpc/category/list",
+      },
+      {
+        body: { json: { organizationId } },
+        name: "sale/list",
+        path: "/rpc/sale/list",
+      },
+      {
+        body: { json: { organizationId } },
+        name: "expense/list",
+        path: "/rpc/expense/list",
+      },
+      {
+        body: { json: { organizationId } },
+        name: "expense/listCategories",
+        path: "/rpc/expense/listCategories",
+      },
+      {
+        body: { json: { organizationId } },
+        name: "expense/listRules",
+        path: "/rpc/expense/listRules",
+      },
     ];
-    const measure = async (route: (typeof routes)[number]) => {
+    const measure = async (route: Route) => {
       const recorder = recordStatements();
       try {
         const response = await call(route.path, {
@@ -1008,32 +1116,130 @@ describe("the e-mail and password flows of the web worker", () => {
       } finally {
         recorder.stop();
       }
+      expect(
+        recorder.statements.length,
+        `${route.name} sent no statement: the call did not reach the database`
+      ).toBeGreaterThan(0);
       return recorder.statements;
     };
-
-    // the first call of each route warms what a later call of the isolate finds ready; only the second one is counted
-    for (const route of routes) {
-      // biome-ignore lint/performance/noAwaitInLoops: one route at a time, so the statements of two calls never mix
-      await measure(route);
-    }
-    const counted: Record<string, number> = {};
+    const first: Record<string, number> = {};
+    const firstStatements: Record<string, RecordedStatement[]> = {};
+    const second: Record<string, number> = {};
     const detail: string[] = [];
-    for (const route of routes) {
-      // biome-ignore lint/performance/noAwaitInLoops: one route at a time, so the statements of two calls never mix
-      const statements = await measure(route);
-      counted[route.name] = statements.length;
-      detail.push(
-        `${route.name}: ${statements.length}`,
-        ...statements.map(
-          (statement, index) =>
-            `  ${index + 1}. [${statement.kind}] ${statement.text.replaceAll(/\s+/g, " ").slice(0, 120)}`
-        )
+    const listStatements = (statements: RecordedStatement[]) =>
+      statements.map(
+        (statement, index) =>
+          `  ${index + 1}. [${statement.kind}] ${statement.text.replaceAll(/\s+/g, " ").slice(0, 120)}`
       );
-    }
-    expect(
-      counted,
-      `statements per call, in order:\n${detail.join("\n")}\nRaise a number only for a route that must send more; lower it when the route sends fewer.`
-    ).toEqual(STATEMENT_COUNTS);
+    // each route is called twice, one at a time so the statements of two calls never mix: the first call is counted
+    // as it comes, and the second, after what the first warmed in the isolate, is the number a later call sends
+    const measureAll = async (routes: Route[]) => {
+      for (const route of routes) {
+        // biome-ignore lint/performance/noAwaitInLoops: one route at a time, so the statements of two calls never mix
+        const statements = await measure(route);
+        firstStatements[route.name] = statements;
+        first[route.name] = statements.length;
+      }
+      for (const route of routes) {
+        // biome-ignore lint/performance/noAwaitInLoops: one route at a time, so the statements of two calls never mix
+        const statements = await measure(route);
+        second[route.name] = statements.length;
+        const firstCall = firstStatements[route.name] ?? [];
+        detail.push(
+          `${route.name}: ${statements.length} (first call ${firstCall.length})`,
+          ...listStatements(statements)
+        );
+        if (
+          firstCall.length !== statements.length ||
+          firstCall.length !== FIRST_CALL_STATEMENT_COUNTS[route.name]
+        ) {
+          detail.push(
+            `${route.name}: first call, ${firstCall.length} statements`,
+            ...listStatements(firstCall)
+          );
+        }
+      }
+    };
+    await measureAll(emptyStoreRoutes);
+
+    // the same routes where a row changes what they read: a sale and an active goal (the clock is the database's)
+    const { rows } = await databaseClock(env.HYPERDRIVE.connectionString);
+    const today = rows[0]?.today as string;
+    const endsOn = rows[0]?.ends_on as string;
+    const productId = crypto.randomUUID();
+    const variantId = crypto.randomUUID();
+    await post("/rpc/product/create", {
+      initialStock: {
+        commandId: crypto.randomUUID(),
+        quantity: 5,
+        unitCost: "4.00",
+      },
+      listPrice: "10.00",
+      name: "Camiseta dos statements",
+      organizationId,
+      productId,
+      variantId,
+    });
+    await post("/rpc/sale/confirm", {
+      adjustments: [],
+      commandId: crypto.randomUUID(),
+      commandVersion: 1,
+      items: [
+        {
+          chargedUnitPrice: "10.00",
+          listedUnitPrice: "10.00",
+          quantity: 1,
+          variantId,
+        },
+      ],
+      occurredAt: rows[0]?.now as string,
+      organizationId,
+      payment: {
+        anticipationRequested: false,
+        installmentPlan: null,
+        installments: null,
+        method: "cash",
+      },
+      paymentProfile: null,
+    });
+    await post("/rpc/goal/create", {
+      endsOn,
+      kind: "net_sales",
+      organizationId,
+      startsOn: today,
+      target: "1000.00",
+    });
+    await measureAll([
+      {
+        body: { json: { organizationId } },
+        name: "goal/list with an active goal",
+        path: "/rpc/goal/list",
+      },
+      {
+        body: { json: { organizationId } },
+        name: "sale/list with one sale",
+        path: "/rpc/sale/list",
+      },
+    ]);
+
+    // a lease is for Pro only (Free answers 409): the billing role writes the record a paid charge would write
+    await upgradeToPro(env.BILLING_HYPERDRIVE.connectionString, organizationId);
+    await measureAll([
+      {
+        bindings: { OFFLINE_LEASE_SECRET: LEASE_SECRET },
+        body: { json: { deviceId: device.id, organizationId } },
+        name: "offline/issueLease",
+        path: "/rpc/offline/issueLease",
+      },
+    ]);
+
+    const advice = `statements per call, in order:\n${detail.join("\n")}\nRaise a number only for a route that must send more; lower it when the route sends fewer.`;
+    // a route that did not run (a skipped case) is a missing key, not a zero: both maps must hold exactly the rows
+    expect(Object.keys(second).sort(), advice).toEqual(
+      Object.keys(STATEMENT_COUNTS).sort()
+    );
+    expect(second, advice).toEqual(STATEMENT_COUNTS);
+    expect(first, advice).toEqual(FIRST_CALL_STATEMENT_COUNTS);
     expect(network.strangers).toEqual([]);
   });
 

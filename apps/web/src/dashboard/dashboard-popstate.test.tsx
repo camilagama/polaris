@@ -32,8 +32,7 @@ vi.mock("./use-goals", () => ({
   }),
 }));
 vi.mock("./use-period-summary", () => ({
-  useComparisonDays: () => null,
-  useComparisonSales: () => null,
+  useComparisonReads: () => ({ comparison: null, salesComparison: null }),
   usePeriodSummary: (_organization: string, period: Period) => {
     requested.push(period);
     return {

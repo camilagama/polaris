@@ -67,12 +67,14 @@ import {
   writeSaleAttempt,
 } from "./sale-attempt-storage";
 import { ConfirmedSalePanel } from "./sale-confirmed-panel";
+import { useSaleDraftStamps } from "./use-sale-draft-stamps";
 import { SaleDraftBar } from "./sale-draft-bar";
 import {
   chosenSaleCount,
   DRAFT_EXPIRED_MESSAGE,
   DRAFT_RECORDED_MESSAGE,
   DRAFT_UNREADABLE_MESSAGE,
+  draftNewDayNotice,
   draftVariantIds,
   refreshedDraftMessage,
   refreshRestoredItems,
@@ -257,9 +259,8 @@ export function SalePage() {
     )
   );
   const restoredDraft = draftRead.kind === "restored" ? draftRead.draft : null;
-  const draftStartedAt = useRef<string | null>(
-    restoredDraft?.startedAt ?? null
-  );
+  const draftStamps = useSaleDraftStamps(restoredDraft);
+  const draftStartedAt = draftStamps.startedAt;
   const [draftNotice, setDraftNotice] = useState<string | null>(null);
   const [firstSaleId, setFirstSaleId] = useState<string | null>(null);
   const [form, setForm] = useState<SaleFormState>(
@@ -373,9 +374,9 @@ export function SalePage() {
   const confirmedRef = useRef<HTMLElement | null>(null);
 
   const forgetDraft = useCallback(() => {
-    draftStartedAt.current = null;
+    draftStamps.reset();
     writeSaleDraft(sessionStorageOrNull(), organizationId, null);
-  }, [organizationId]);
+  }, [draftStamps, organizationId]);
   useEffect(() => {
     // after "Sair" or a session refused, the copies were dropped and must not be written again
     if (isSigningOut() || isSessionOver()) {
@@ -385,12 +386,11 @@ export function SalePage() {
       forgetDraft();
       return;
     }
-    draftStartedAt.current ??= new Date().toISOString();
     writeSaleDraft(sessionStorageOrNull(), organizationId, {
       form,
-      startedAt: draftStartedAt.current,
+      ...draftStamps.stamp(),
     });
-  }, [forgetDraft, form, organizationId]);
+  }, [draftStamps, forgetDraft, form, organizationId]);
 
   const handleProfilesLoaded = useCallback(
     (profiles: PaymentProfileReadModel[]) => {
@@ -576,6 +576,15 @@ export function SalePage() {
       setForm((current) => editSaleForm(submission, current, edit)),
     [submission]
   );
+  const editByPerson = useCallback(
+    (edit: (current: SaleFormState) => SaleFormState) => {
+      if (!isFormLocked(submission)) {
+        draftStamps.markEdited();
+      }
+      editForm(edit);
+    },
+    [draftStamps, editForm, submission]
+  );
   const appliedPresetRef = useRef<SalePreset | null>(null);
   useEffect(() => {
     // the profiles were read: a store without an active one starts on "Sem perfil"; only empty choices are filled,
@@ -608,9 +617,9 @@ export function SalePage() {
       if ("chargedUnitPrice" in changes || "listedUnitPrice" in changes) {
         setKeptNotice(draftId, false);
       }
-      editForm((current) => updateItem(current, draftId, changes));
+      editByPerson((current) => updateItem(current, draftId, changes));
     },
-    [editForm, setKeptNotice]
+    [editByPerson, setKeptNotice]
   );
   const handlePickVariant = useCallback(
     (draftId: string, entry: InventoryBalanceEntryReadModel) => {
@@ -646,7 +655,7 @@ export function SalePage() {
       } else if (item) {
         prices = withSuggestedPrices(item, suggestion);
       }
-      editForm((current) =>
+      editByPerson((current) =>
         updateItem(current, draftId, {
           ...itemChangesForEntry(entry),
           ...(prices
@@ -661,73 +670,78 @@ export function SalePage() {
         document.getElementById(`sale-item-${draftId}-quantity`)?.focus()
       );
     },
-    [editForm, form.items, lastPrices, listPrices, seedStock, setKeptNotice]
+    [editByPerson, form.items, lastPrices, listPrices, seedStock, setKeptNotice]
   );
   const handleAddItem = useCallback(
-    () => editForm((current) => addItem(current, newId())),
-    [editForm]
+    () => editByPerson((current) => addItem(current, newId())),
+    [editByPerson]
   );
   const handleRemoveItem = useCallback(
-    (draftId: string) => editForm((current) => removeItem(current, draftId)),
-    [editForm]
+    (draftId: string) =>
+      editByPerson((current) => removeItem(current, draftId)),
+    [editByPerson]
   );
   const handleAddAdjustment = useCallback(
-    () => editForm((current) => addAdjustment(current, newId())),
-    [editForm]
+    () => editByPerson((current) => addAdjustment(current, newId())),
+    [editByPerson]
   );
   const handleAdjustmentChange = useCallback(
     (draftId: string, changes: Partial<Omit<AdjustmentDraft, "draftId">>) =>
-      editForm((current) => updateAdjustment(current, draftId, changes)),
-    [editForm]
+      editByPerson((current) => updateAdjustment(current, draftId, changes)),
+    [editByPerson]
   );
   const handleRemoveAdjustment = useCallback(
     (draftId: string) =>
-      editForm((current) => removeAdjustment(current, draftId)),
-    [editForm]
+      editByPerson((current) => removeAdjustment(current, draftId)),
+    [editByPerson]
   );
   const handleDateChange = useCallback(
-    (value: string) => editForm((current) => editSaleDate(current, value)),
-    [editForm]
+    (value: string) => editByPerson((current) => editSaleDate(current, value)),
+    [editByPerson]
   );
   const handleMethodChange = useCallback(
     (value: string) =>
-      editForm((current) =>
+      editByPerson((current) =>
         selectPaymentMethod(current, value as SaleMethod | "")
       ),
-    [editForm]
+    [editByPerson]
   );
   const handleInstallmentsChange = useCallback(
     (value: string) =>
-      editForm((current) => updatePayment(current, { installments: value })),
-    [editForm]
+      editByPerson((current) =>
+        updatePayment(current, { installments: value })
+      ),
+    [editByPerson]
   );
   const handlePlanChange = useCallback(
     (value: string) =>
-      editForm((current) =>
+      editByPerson((current) =>
         updatePayment(current, {
           installmentPlan: value as "" | "issuer" | "merchant",
         })
       ),
-    [editForm]
+    [editByPerson]
   );
   const handleAnticipationChange = useCallback(
     (checked: boolean) =>
-      editForm((current) =>
+      editByPerson((current) =>
         updatePayment(current, { anticipationRequested: checked })
       ),
-    [editForm]
+    [editByPerson]
   );
   const handleProfileChange = useCallback(
     (value: string) =>
-      editForm((current) =>
+      editByPerson((current) =>
         selectProfileChoice(current, value, activeProfiles)
       ),
-    [activeProfiles, editForm]
+    [activeProfiles, editByPerson]
   );
   const handleAcknowledgeReview = useCallback(
     () =>
-      editForm((current) => acknowledgeProfileReview(current, activeProfiles)),
-    [activeProfiles, editForm]
+      editByPerson((current) =>
+        acknowledgeProfileReview(current, activeProfiles)
+      ),
+    [activeProfiles, editByPerson]
   );
 
   /** What the page does once a confirmation settled, on the server or on the device. */
@@ -1016,12 +1030,23 @@ export function SalePage() {
   );
   const itemCount = form.items.length;
   const chosen = chosenSaleCount(form);
+  const newDayNotice =
+    isSaleFormDirty(form, preset) && !locked
+      ? draftNewDayNotice({
+          dateEmpty: form.occurredAtLocal === "",
+          now,
+          offline,
+          startedAt: draftStartedAt.current,
+          timezone: organization.timezone,
+        })
+      : null;
   return (
     <div className="@container/sale grid gap-4 font-sans text-foreground text-sm antialiased">
       <h1 className="text-title">Nova venda</h1>
       <SaleDraftBar
         canClear={!locked}
         count={chosen}
+        newDayNotice={newDayNotice}
         notice={draftNotice}
         onClear={handleClearSale}
         open={isSaleFormDirty(form, preset)}
