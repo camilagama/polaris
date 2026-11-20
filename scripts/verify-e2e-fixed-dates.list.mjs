@@ -12,7 +12,6 @@ export const E2E_FIXED_DATES_LIST = {
     count: 7,
     reason: BEFORE_THE_RULE,
   },
-  "apps/web/e2e-pwa/sale-draft.e2e.ts": { count: 3, reason: BEFORE_THE_RULE },
   "apps/web/e2e-pwa/ui-account-states.ts": {
     count: 1,
     reason: BEFORE_THE_RULE,
