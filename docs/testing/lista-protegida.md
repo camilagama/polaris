@@ -11,7 +11,7 @@ Alguns testes são a prova de que um risco não voltou: autorização, privacida
 `bun run protegidos:check` (`scripts/check-protegidos.ts`) compara a base do PR (merge-base com `origin/main`) com o head, lendo as árvores dos commits, e reprova quando:
 
 - um arquivo protegido é apagado, ou renomeado para um caminho que a lista não cobre (renomear para lugar coberto passa, e o conteúdo é comparado com o do nome antigo; trocar o tipo, como `x.test.ts` para `x.ts` ou `gate.ts` para `gate.ts.off`, reprova, porque o runner deixa de achar o arquivo);
-- um arquivo protegido ganha `.skip`, `.only`, `.todo`, `.fixme` ou `.fail` (também `xit`, `xdescribe`, `testInfo.skip`), ganha `retry`/`retries` acima de zero, ganha marca de quarentena, perde chamadas `expect`/`assert*` ou perde casos `it`/`test`; a contagem é feita no código sem comentários nem strings;
+- um arquivo protegido ganha `.skip`, `.only`, `.todo`, `.fixme` ou `.fail` (também `xit`, `xdescribe`, `testInfo.skip()`, `ctx.skip()` ou `skip()` no corpo do teste e `{ skip: true }`, `{ todo: true }` ou `{ fails: true }` em qualquer objeto literal, por não saber de quem é o objeto: um campo `skip`, `todo` ou `fails` de dado novo num arquivo protegido também pede o aceite), ganha `retry`/`retries` acima de zero, ganha marca de quarentena, perde chamadas `expect`/`assert*` ou perde casos `it`/`test`; a contagem é feita no código sem comentários nem strings;
 - a lista perde uma linha ou um glob deixa de casar com arquivo;
 - uma config de Vitest ou Playwright (`vitest*config*`, `playwright*config*`) deixa de incluir um arquivo protegido (`include`, `testMatch`, lidos contra o `testDir` quando há), ganha um filtro (`exclude`, `testIgnore`, qualquer glob de teste novo) que o alcança, sobe o `retries` ou ganha `grepInvert` num config que roda arquivo protegido.
 
@@ -23,7 +23,7 @@ O commit no PR com o trailer `Protegido-Aceito-Por: Rodrigo` (última linha da m
 
 ## O que a checagem não prova
 
-Está em `NOT_CHECKED` no script e no corpo do PR que o criou: matriz de shards e `--shard`, `--project` e `paths:` dos workflows, os filtros de job do `scripts/ci-changed.mjs`, lista de arquivos montada fora de literal, mover teste protegido para o workflow noturno, gate de banco tirado do `run-gates.ts` sem apagar o arquivo e troca de uma asserção ou de um caso por outro mais fraco. Quando um PR muda `.github/workflows/`, `scripts/ci-changed.mjs`, o script ou a lista, a saída traz um aviso para o Rodrigo ler.
+Está em `NOT_CHECKED` no script e no corpo do PR que o criou: matriz de shards e `--shard`, `--project` e `paths:` dos workflows, os filtros de job do `scripts/ci-changed.mjs`, lista de arquivos montada fora de literal, mover teste protegido para o workflow noturno, gate de banco tirado do `run-gates.ts` sem apagar o arquivo e troca de uma asserção, de um caso ou de um `.skip` por outro mais fraco ou de lugar, e pulo que o texto não mostra (`if (cond) return`). Quando um PR muda `.github/workflows/`, `scripts/ci-changed.mjs`, o script ou a lista, a saída traz um aviso para o Rodrigo ler.
 
 ## No CI
 

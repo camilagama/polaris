@@ -25,7 +25,8 @@ export const NOT_CHECKED = [
   "filtros de caminho do `scripts/ci-changed.mjs` (quais jobs rodam para qual caminho)",
   "lista de arquivos montada fora de literal (`testMatch: NOME_DA_CONSTANTE` sem a constante no mesmo arquivo, glob montado por código)",
   "mover um teste protegido para outro workflow (noturno) sem mexer na config",
-  "asserção ou caso trocado por outro mais fraco, sem mudar a contagem",
+  "asserção, caso ou `.skip` trocado por outro mais fraco ou de lugar, sem mudar a contagem",
+  "pulo que o texto não mostra (`if (cond) return` no corpo do teste, nome do pulo guardado em variável)",
   "gate de banco tirado da lista do `run-gates.ts` ou de uma suíte sem apagar o arquivo",
 ];
 
@@ -37,7 +38,10 @@ const WATCHED_FOR_WARNING =
 const SKIP_MEMBER =
   /(?<![.\w$])(?:it|test|describe|suite|bench)(?:\.\w+)*\.(?:skip|only|todo|fixme|fail|fails|skipIf|runIf)\b/g;
 const SKIP_PREFIXED = /(?<![.\w$])(?:xit|xtest|xdescribe)\s*\(/g;
-const SKIP_TEST_INFO = /(?<![\w$])testInfo\.(?:skip|fixme)\b/g;
+const SKIP_CONTEXT_CALL = /\.(?:skip|fixme)(?=\s*\()/g;
+const SKIP_DESTRUCTURED_CALL = /(?<![.\w$])(?:skip|fixme)(?=\s*\()/g;
+const SKIP_OPTION =
+  /(?<![.\w$])(?:skip|todo|fails)\s*:\s*(?!(?:false|null|undefined|0)(?![\w$]))[^\s,})]/g;
 const RETRY = /(?<![\w$])retr(?:y|ies)\s*:\s*([^,}\n]+)/g;
 const QUARANTINE = /quarantine|quarentena/gi;
 const ASSERTION = /(?<![.\w$])(?:expect|assert)\w*\s*[(<.]/g;
@@ -57,6 +61,24 @@ export interface FileMetrics {
 
 const count = (code: string, pattern: RegExp): number =>
   [...code.matchAll(pattern)].length;
+
+/** Every form that turns a case off, counted once by where its keyword ends: `it.skip`, `ctx.skip()`, a destructured `skip()`, `testInfo.fixme()` and `{ skip: true }` in the options of a case. */
+function skipsIn(code: string): number {
+  const ends = new Set<number>();
+  for (const pattern of [
+    SKIP_MEMBER,
+    SKIP_CONTEXT_CALL,
+    SKIP_DESTRUCTURED_CALL,
+  ]) {
+    for (const match of code.matchAll(pattern)) {
+      ends.add(match.index + match[0].length);
+    }
+  }
+  for (const match of code.matchAll(SKIP_OPTION)) {
+    ends.add(match.index + match[0].length);
+  }
+  return ends.size;
+}
 
 export function retryFacts(code: string): { count: number; sum: number } {
   let retryCount = 0;
@@ -83,10 +105,7 @@ export function metricsOf(source: string): FileMetrics {
     quarantine: count(source, QUARANTINE),
     retryCount: retries.count,
     retrySum: retries.sum,
-    skips:
-      count(code, SKIP_MEMBER) +
-      count(code, SKIP_PREFIXED) +
-      count(code, SKIP_TEST_INFO),
+    skips: skipsIn(code) + count(code, SKIP_PREFIXED),
   };
 }
 

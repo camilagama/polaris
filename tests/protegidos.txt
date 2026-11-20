@@ -25,6 +25,7 @@ apps/web/e2e/closed-store*.e2e.ts
 packages/db/src/**/*.test.ts
 packages/domain/src/admin/*.test.ts
 packages/domain/src/organization/*.test.ts
+packages/domain/src/authorization/*.test.ts
 packages/domain/src/billing/grants.test.ts
 packages/domain/src/billing/entitlements*.test.ts
 apps/admin/src/**/*.test.ts
@@ -62,6 +63,7 @@ apps/web/src/server/auth.test.ts
 apps/web/src/server/client-ip.test.ts
 apps/web/src/server/routes/auth-methods.test.ts
 apps/web/src/sign-in/*.test.{ts,tsx}
+packages/domain/src/auth/*.test.ts
 apps/web/src/offline/runtime/session-over.test.ts
 apps/web/src/offline/runtime/session-copies.test.ts
 apps/web/src/offline/runtime/logout-*.test.ts
@@ -118,6 +120,7 @@ apps/web/src/observability/*.test.ts
 # --- Grupo 7: sync offline e catálogo público (lease, grants, authorization_revoked, namespace, public_catalog_*) ---
 packages/domain/src/offline/*.test.ts
 apps/web/src/offline/runtime/lease-standing.test.ts
+apps/web/src/lib/offline-lease-token.test.ts
 apps/web/src/offline/namespace.test.ts
 apps/web/src/offline/runtime/offline-access-expired.test.tsx
 apps/web/src/offline/runtime/offline-runtime.test.ts

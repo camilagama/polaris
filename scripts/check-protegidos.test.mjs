@@ -142,6 +142,32 @@ describe("a change that weakens a protected test", () => {
     expect(text).toContain("ganhou 1 .skip");
   });
 
+  it("fails on a case skipped through the context of the test", () => {
+    const { code, text } = outcomeOf((cwd) =>
+      write(cwd, {
+        "apps/web/src/server/auth/sessions.test.ts": SESSION_TEST.replace(
+          'it("aceita a sessão viva", () => {',
+          'it("aceita a sessão viva", (ctx) => { ctx.skip();'
+        ),
+      })
+    );
+    expect(code).toBe(1);
+    expect(text).toContain("ganhou 1 .skip");
+  });
+
+  it("fails on a case skipped through the options of the test", () => {
+    const { code, text } = outcomeOf((cwd) =>
+      write(cwd, {
+        "apps/web/src/server/auth/sessions.test.ts": SESSION_TEST.replace(
+          'it("aceita a sessão viva", ',
+          'it("aceita a sessão viva", { skip: true }, '
+        ),
+      })
+    );
+    expect(code).toBe(1);
+    expect(text).toContain("ganhou 1 .skip");
+  });
+
   it("fails on a protected file that is deleted", () => {
     const { code, text } = outcomeOf((cwd) =>
       write(cwd, { "apps/web/src/server/auth/sessions.test.ts": null })
@@ -532,6 +558,36 @@ describe("helpers", () => {
     expect(metrics.skips).toBe(0);
     expect(metrics.cases).toBe(1);
     expect(metrics.assertions).toBe(1);
+  });
+
+  it("counts a skip made through the context, a destructured skip and the skip option", () => {
+    const forms = [
+      'it("a", (ctx) => { ctx.skip(); });',
+      'it("a", (context) => { context.skip(); });',
+      'it("a", ({ skip }) => { skip(); });',
+      'it("a", { skip: true }, () => {});',
+      'it("a", { skip: process.env.CI }, () => {});',
+      'it("a", { todo: true }, () => {});',
+      'it("a", { fails: true }, () => {});',
+      'test("a", async ({ page }, testInfo) => { testInfo.fixme(); });',
+    ];
+    for (const form of forms) {
+      expect(metricsOf(form).skips, form).toBe(1);
+    }
+    expect(metricsOf('it.skip("a", { skip: true }, () => {});').skips).toBe(2);
+    expect(metricsOf('it.skip("a", () => {});').skips).toBe(1);
+  });
+
+  it("does not count a skip that is off, in a string or in a comment", () => {
+    for (const quiet of [
+      'it("a", { skip: false }, () => {});',
+      'it("a", { skip: 0 }, () => {});',
+      'it("a", () => { const page = { skip: undefined }; });',
+      'it("a", () => { // ctx.skip()\n });',
+      'it("a", () => { const text = "ctx.skip()"; });',
+    ]) {
+      expect(metricsOf(quiet).skips, quiet).toBe(0);
+    }
   });
 
   it("counts the forms of skip and of retry", () => {
