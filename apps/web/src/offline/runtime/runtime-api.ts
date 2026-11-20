@@ -104,7 +104,8 @@ export function createRpcRuntimeApi(
       const { device } = await client.device.register({ label });
       return device.id;
     },
-    sessionUserId: async (options) => (await readSession(options))?.userId ?? null,
+    sessionUserId: async (options) =>
+      (await readSession(options))?.userId ?? null,
     signedInSession: () => readSession({ fresh: true }),
     source: (organizationId, signal): BootstrapSource => {
       const options = signal ? { signal } : undefined;
