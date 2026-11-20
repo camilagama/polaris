@@ -7,7 +7,10 @@ import {
 } from "cloudflare:test";
 import { env, exports } from "cloudflare:workers";
 import { createDatabase } from "@polaris/db/client";
-import { recordStatements } from "@polaris/db/statement-counter-testing";
+import {
+  type RecordedStatement,
+  recordStatements,
+} from "@polaris/db/statement-counter-testing";
 import { LEGAL_DOCUMENTS } from "@polaris/domain/legal/legal-documents";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { WorkerBindings } from "../src/server/environment";
@@ -1120,26 +1123,41 @@ describe("the e-mail and password flows of the web worker", () => {
       return recorder.statements;
     };
     const first: Record<string, number> = {};
+    const firstStatements: Record<string, RecordedStatement[]> = {};
     const second: Record<string, number> = {};
     const detail: string[] = [];
+    const listStatements = (statements: RecordedStatement[]) =>
+      statements.map(
+        (statement, index) =>
+          `  ${index + 1}. [${statement.kind}] ${statement.text.replaceAll(/\s+/g, " ").slice(0, 120)}`
+      );
     // each route is called twice, one at a time so the statements of two calls never mix: the first call is counted
     // as it comes, and the second, after what the first warmed in the isolate, is the number a later call sends
     const measureAll = async (routes: Route[]) => {
       for (const route of routes) {
         // biome-ignore lint/performance/noAwaitInLoops: one route at a time, so the statements of two calls never mix
-        first[route.name] = (await measure(route)).length;
+        const statements = await measure(route);
+        firstStatements[route.name] = statements;
+        first[route.name] = statements.length;
       }
       for (const route of routes) {
         // biome-ignore lint/performance/noAwaitInLoops: one route at a time, so the statements of two calls never mix
         const statements = await measure(route);
         second[route.name] = statements.length;
+        const firstCall = firstStatements[route.name] ?? [];
         detail.push(
-          `${route.name}: ${statements.length} (first call ${first[route.name]})`,
-          ...statements.map(
-            (statement, index) =>
-              `  ${index + 1}. [${statement.kind}] ${statement.text.replaceAll(/\s+/g, " ").slice(0, 120)}`
-          )
+          `${route.name}: ${statements.length} (first call ${firstCall.length})`,
+          ...listStatements(statements)
         );
+        if (
+          firstCall.length !== statements.length ||
+          firstCall.length !== FIRST_CALL_STATEMENT_COUNTS[route.name]
+        ) {
+          detail.push(
+            `${route.name}: first call, ${firstCall.length} statements`,
+            ...listStatements(firstCall)
+          );
+        }
       }
     };
     await measureAll(emptyStoreRoutes);
