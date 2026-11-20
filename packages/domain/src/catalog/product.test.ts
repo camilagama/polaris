@@ -14,6 +14,8 @@ import {
   transitionProductLifecycle,
 } from "./product";
 
+const AT = new Date("2026-11-19T15:00:00.000Z");
+
 describe("product rules", () => {
   it("trims a product name and rejects blank input", () => {
     expect(normalizeProductName("  Bolsa  ")).toBe("Bolsa");
@@ -30,8 +32,8 @@ describe("product rules", () => {
 
   it("derives active, archived, and terminal deleted lifecycle states", () => {
     expect(deriveProductLifecycle(null, null)).toBe("active");
-    expect(deriveProductLifecycle(new Date(), null)).toBe("archived");
-    expect(deriveProductLifecycle(new Date(), new Date())).toBe("deleted");
+    expect(deriveProductLifecycle(AT, null)).toBe("archived");
+    expect(deriveProductLifecycle(AT, AT)).toBe("deleted");
   });
 
   it("supports reversible archive and restore before terminal deletion", () => {

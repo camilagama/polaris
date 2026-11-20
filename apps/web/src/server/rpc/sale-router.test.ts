@@ -29,7 +29,7 @@ import { SaleDiscountExceedsSubtotalError } from "@polaris/domain/sales/sale-adj
 import { SaleOccurredTooOldError } from "@polaris/domain/sales/sale-dates";
 import { InvalidSalePaymentError } from "@polaris/domain/sales/sale-payment";
 import { logger } from "@polaris/observability/logger";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createServerApp } from "../app";
 import type { WorkerBindings } from "../environment";
 import { TenantRequestContextError } from "../request-context-error";
@@ -38,6 +38,16 @@ import {
   type TenantRequestContextInput,
 } from "../tenant-request-context";
 import { createRpcRouter } from "./router";
+
+const NOW = new Date("2026-11-19T02:50:00.000Z");
+
+beforeEach(() => {
+  vi.useFakeTimers({ now: NOW, toFake: ["Date"] });
+});
+
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 const organizationId = "7b9c212a-f90b-4e05-9e9a-0c0eb1c9c9b0";
 const otherOrganizationId = "11111111-f90b-4e05-9e9a-0c0eb1c9c9b0";
@@ -422,7 +432,7 @@ describe("sale.confirm RPC", () => {
       "a session past its 30-day lifetime",
       {
         session: {
-          createdAt: new Date(Date.now() - 40 * 24 * 60 * 60 * 1000),
+          createdAt: new Date(NOW.getTime() - 40 * 24 * 60 * 60 * 1000),
           id: "s",
         },
         user: { id: "u" },

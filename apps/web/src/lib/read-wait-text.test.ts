@@ -29,6 +29,8 @@ describe("copyShownText", () => {
   });
 
   it("nothing for a date it cannot read", () => {
-    expect(copyShownText("x", ZONE, new Date())).toBe("");
+    expect(copyShownText("x", ZONE, new Date("2026-10-23T20:00:00.000Z"))).toBe(
+      ""
+    );
   });
 });
