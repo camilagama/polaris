@@ -1226,6 +1226,7 @@ async function main() {
         authenticatedUserId: userA,
         capability: "category:create",
         requestedOrganizationId: organizationA.organization.id,
+        requireLegalAcceptance: false,
       },
       (transaction, identity) =>
         createCategory(transaction, identity, {
@@ -1239,6 +1240,7 @@ async function main() {
         authenticatedUserId: userB,
         capability: "category:create",
         requestedOrganizationId: organizationB.organization.id,
+        requireLegalAcceptance: false,
       },
       (transaction, identity) =>
         createCategory(transaction, identity, {
@@ -1255,6 +1257,7 @@ async function main() {
         authenticatedUserId: userA,
         capability: "category:create",
         requestedOrganizationId: organizationA.organization.id,
+        requireLegalAcceptance: false,
       },
       (transaction, identity) =>
         createCategory(transaction, identity, {
@@ -1270,6 +1273,7 @@ async function main() {
           authenticatedUserId: userA,
           capability: "category:create",
           requestedOrganizationId: organizationA.organization.id,
+          requireLegalAcceptance: false,
         },
         (transaction, identity) =>
           createCategory(transaction, identity, {
@@ -1287,6 +1291,7 @@ async function main() {
           authenticatedUserId: userA,
           capability: "category:manage",
           requestedOrganizationId: organizationA.organization.id,
+          requireLegalAcceptance: false,
         },
         (transaction, identity) =>
           renameCategory(transaction, identity, {
@@ -1308,6 +1313,7 @@ async function main() {
         authenticatedUserId: userA,
         capability: "category:manage",
         requestedOrganizationId: organizationA.organization.id,
+        requireLegalAcceptance: false,
       },
       (transaction, identity) =>
         renameCategory(transaction, identity, {
@@ -1324,6 +1330,7 @@ async function main() {
         authenticatedUserId: userA,
         capability: "category:manage",
         requestedOrganizationId: organizationA.organization.id,
+        requireLegalAcceptance: false,
       },
       (transaction, identity) =>
         renameCategory(transaction, identity, {
@@ -1339,6 +1346,7 @@ async function main() {
         authenticatedUserId: userA,
         capability: "product:create",
         requestedOrganizationId: organizationA.organization.id,
+        requireLegalAcceptance: false,
       },
       (transaction, identity) =>
         createProduct(transaction, identity, {
@@ -1358,6 +1366,7 @@ async function main() {
         authenticatedUserId: userA,
         capability: "product:create",
         requestedOrganizationId: organizationA.organization.id,
+        requireLegalAcceptance: false,
       },
       (transaction, identity) =>
         createProduct(transaction, identity, {
@@ -1371,6 +1380,7 @@ async function main() {
         authenticatedUserId: userB,
         capability: "product:create",
         requestedOrganizationId: organizationB.organization.id,
+        requireLegalAcceptance: false,
       },
       (transaction, identity) =>
         createProduct(transaction, identity, {
@@ -1389,6 +1399,7 @@ async function main() {
           authenticatedUserId: userA,
           capability: "product:update",
           requestedOrganizationId: organizationA.organization.id,
+          requireLegalAcceptance: false,
         },
         (transaction, identity) =>
           configureProductVariants(transaction, identity, {
@@ -1411,6 +1422,7 @@ async function main() {
         authenticatedUserId: userB,
         capability: "category:manage",
         requestedOrganizationId: organizationB.organization.id,
+        requireLegalAcceptance: false,
       },
       (transaction, identity) =>
         archiveCategory(transaction, identity, { id: categoryB.id })
@@ -1424,6 +1436,7 @@ async function main() {
           authenticatedUserId: userB,
           capability: "product:create",
           requestedOrganizationId: organizationB.organization.id,
+          requireLegalAcceptance: false,
         },
         (transaction, identity) =>
           createProduct(transaction, identity, {
@@ -1445,6 +1458,7 @@ async function main() {
         authenticatedUserId: userB,
         capability: "category:manage",
         requestedOrganizationId: organizationB.organization.id,
+        requireLegalAcceptance: false,
       },
       (transaction, identity) =>
         restoreCategory(transaction, identity, { id: categoryB.id })
@@ -1483,6 +1497,7 @@ async function main() {
         authenticatedUserId: userA,
         capability: "product:create",
         requestedOrganizationId: organizationA.organization.id,
+        requireLegalAcceptance: false,
       },
       (transaction, identity) =>
         createProduct(transaction, identity, {
@@ -1501,6 +1516,7 @@ async function main() {
         authenticatedUserId: userA,
         capability: "product:update",
         requestedOrganizationId: organizationA.organization.id,
+        requireLegalAcceptance: false,
       },
       (transaction, identity) =>
         configureProductVariants(transaction, identity, {
@@ -1547,6 +1563,7 @@ async function main() {
         authenticatedUserId: userA,
         capability: "catalog:read",
         requestedOrganizationId: organizationA.organization.id,
+        requireLegalAcceptance: false,
       },
       (transaction, identity) =>
         getProductVariants(transaction, identity, configurableProduct.id)
@@ -1610,6 +1627,7 @@ async function main() {
         authenticatedUserId: userA,
         capability: "product:create",
         requestedOrganizationId: organizationA.organization.id,
+        requireLegalAcceptance: false,
       },
       (transaction, identity) =>
         createProduct(transaction, identity, {
@@ -1640,6 +1658,7 @@ async function main() {
           authenticatedUserId: userA,
           capability: "product:update",
           requestedOrganizationId: organizationA.organization.id,
+          requireLegalAcceptance: false,
         },
         (transaction, identity) =>
           configureProductVariants(transaction, identity, {
@@ -1680,6 +1699,7 @@ async function main() {
         authenticatedUserId: userA,
         capability: "product:update",
         requestedOrganizationId: organizationA.organization.id,
+        requireLegalAcceptance: false,
       },
       (transaction, identity) =>
         archiveProduct(transaction, identity, {
@@ -1695,6 +1715,7 @@ async function main() {
         authenticatedUserId: userA,
         capability: "product:update",
         requestedOrganizationId: organizationA.organization.id,
+        requireLegalAcceptance: false,
       },
       (transaction, identity) =>
         restoreProduct(transaction, identity, {
@@ -1710,6 +1731,7 @@ async function main() {
         authenticatedUserId: userA,
         capability: "catalog:read",
         requestedOrganizationId: organizationA.organization.id,
+        requireLegalAcceptance: false,
       },
       (transaction, identity) =>
         getProductVariants(transaction, identity, configurableProduct.id)
@@ -1725,6 +1747,7 @@ async function main() {
         authenticatedUserId: userA,
         capability: "product:create",
         requestedOrganizationId: organizationA.organization.id,
+        requireLegalAcceptance: false,
       },
       (transaction, identity) =>
         createProduct(transaction, identity, {
@@ -1739,6 +1762,7 @@ async function main() {
           authenticatedUserId: userA,
           capability: "product:update",
           requestedOrganizationId: organizationA.organization.id,
+          requireLegalAcceptance: false,
         },
         (transaction, identity) =>
           configureProductVariants(transaction, identity, {
@@ -1772,6 +1796,7 @@ async function main() {
           authenticatedUserId: userA,
           capability: "catalog:read",
           requestedOrganizationId: organizationA.organization.id,
+          requireLegalAcceptance: false,
         },
         (transaction, identity) =>
           getProductVariants(transaction, identity, concurrentVariantProduct.id)
@@ -1786,6 +1811,7 @@ async function main() {
         authenticatedUserId: userA,
         capability: "product:update",
         requestedOrganizationId: organizationA.organization.id,
+        requireLegalAcceptance: false,
       },
       (transaction, identity) =>
         setProductVariantSku(transaction, identity, {
@@ -1807,6 +1833,7 @@ async function main() {
           authenticatedUserId: userA,
           capability: "product:update",
           requestedOrganizationId: organizationA.organization.id,
+          requireLegalAcceptance: false,
         },
         (transaction, identity) =>
           setProductVariantSku(transaction, identity, {
@@ -1826,6 +1853,7 @@ async function main() {
         authenticatedUserId: userB,
         capability: "catalog:read",
         requestedOrganizationId: organizationB.organization.id,
+        requireLegalAcceptance: false,
       },
       (transaction, identity) =>
         getProductVariants(transaction, identity, productB.id)
@@ -1838,6 +1866,7 @@ async function main() {
         authenticatedUserId: userB,
         capability: "product:update",
         requestedOrganizationId: organizationB.organization.id,
+        requireLegalAcceptance: false,
       },
       (transaction, identity) =>
         setProductVariantSku(transaction, identity, {
@@ -1873,6 +1902,7 @@ async function main() {
           authenticatedUserId: userB,
           capability: "product:update",
           requestedOrganizationId: organizationB.organization.id,
+          requireLegalAcceptance: false,
         },
         (transaction, identity) =>
           configureProductVariants(transaction, identity, {
@@ -1892,6 +1922,7 @@ async function main() {
         authenticatedUserId: userB,
         capability: "product:update",
         requestedOrganizationId: organizationB.organization.id,
+        requireLegalAcceptance: false,
       },
       (transaction, identity) =>
         setProductVariantSku(transaction, identity, {
@@ -1910,6 +1941,7 @@ async function main() {
           authenticatedUserId: userB,
           capability: "product:update",
           requestedOrganizationId: organizationB.organization.id,
+          requireLegalAcceptance: false,
         },
         (transaction, identity) =>
           configureProductVariants(transaction, identity, {
@@ -1932,6 +1964,7 @@ async function main() {
         authenticatedUserId: userA,
         capability: "product:update",
         requestedOrganizationId: organizationA.organization.id,
+        requireLegalAcceptance: false,
       },
       (transaction, identity) =>
         setProductVariantSku(transaction, identity, {
@@ -1952,6 +1985,7 @@ async function main() {
         authenticatedUserId: userA,
         capability: "product:update",
         requestedOrganizationId: organizationA.organization.id,
+        requireLegalAcceptance: false,
       },
       (transaction, identity) =>
         setProductVariantSku(transaction, identity, {
@@ -1972,6 +2006,7 @@ async function main() {
         authenticatedUserId: userA,
         capability: "product:update",
         requestedOrganizationId: organizationA.organization.id,
+        requireLegalAcceptance: false,
       },
       (transaction, identity) =>
         setProductVariantSku(transaction, identity, {
@@ -1990,6 +2025,7 @@ async function main() {
         authenticatedUserId: userA,
         capability: "product:update",
         requestedOrganizationId: organizationA.organization.id,
+        requireLegalAcceptance: false,
       },
       (transaction, identity) =>
         setProductVariantSku(transaction, identity, {
@@ -2010,6 +2046,7 @@ async function main() {
           authenticatedUserId: userA,
           capability: "product:update",
           requestedOrganizationId: organizationA.organization.id,
+          requireLegalAcceptance: false,
         },
         (transaction, identity) =>
           setProductVariantSku(transaction, identity, {
@@ -2035,6 +2072,7 @@ async function main() {
           authenticatedUserId: userA,
           capability: "product:update",
           requestedOrganizationId: organizationA.organization.id,
+          requireLegalAcceptance: false,
         },
         (transaction, identity) =>
           setProductVariantListPrice(transaction, identity, {
@@ -2204,6 +2242,7 @@ async function main() {
         authenticatedUserId: userA,
         capability: "product:create",
         requestedOrganizationId: organizationA.organization.id,
+        requireLegalAcceptance: false,
       },
       (transaction, identity) =>
         createProduct(transaction, identity, {
@@ -2223,6 +2262,7 @@ async function main() {
         authenticatedUserId: userA,
         capability: "product:create",
         requestedOrganizationId: organizationA.organization.id,
+        requireLegalAcceptance: false,
       },
       (transaction, identity) =>
         createProduct(transaction, identity, {
@@ -2240,6 +2280,7 @@ async function main() {
         authenticatedUserId: userA,
         capability: "product:update",
         requestedOrganizationId: organizationA.organization.id,
+        requireLegalAcceptance: false,
       },
       (transaction, identity) =>
         configureProductVariants(transaction, identity, {
@@ -2277,6 +2318,7 @@ async function main() {
           authenticatedUserId: userA,
           capability: "product:create",
           requestedOrganizationId: organizationA.organization.id,
+          requireLegalAcceptance: false,
         },
         (transaction, identity) =>
           createProduct(transaction, identity, {
@@ -2294,6 +2336,7 @@ async function main() {
         authenticatedUserId: userA,
         capability: "catalog:read",
         requestedOrganizationId: organizationA.organization.id,
+        requireLegalAcceptance: false,
       },
       async (transaction, identity) => ({
         otherTenantRows: await transaction
@@ -2323,6 +2366,7 @@ async function main() {
         authenticatedUserId: userA,
         capability: "catalog:read",
         requestedOrganizationId: organizationA.organization.id,
+        requireLegalAcceptance: false,
       },
       async (transaction, identity) => ({
         categories: await listCategories(transaction, identity),
@@ -2359,6 +2403,7 @@ async function main() {
         authenticatedUserId: userA,
         capability: "product:update",
         requestedOrganizationId: organizationA.organization.id,
+        requireLegalAcceptance: false,
       },
       (transaction, identity) =>
         updateProduct(transaction, identity, {
@@ -2379,6 +2424,7 @@ async function main() {
           authenticatedUserId: userA,
           capability: "product:update",
           requestedOrganizationId: organizationA.organization.id,
+          requireLegalAcceptance: false,
         },
         (transaction, identity) =>
           updateProduct(transaction, identity, {
@@ -2398,6 +2444,7 @@ async function main() {
         authenticatedUserId: userA,
         capability: "product:update",
         requestedOrganizationId: organizationA.organization.id,
+        requireLegalAcceptance: false,
       },
       (transaction, identity) =>
         archiveProduct(transaction, identity, {
@@ -2414,6 +2461,7 @@ async function main() {
         authenticatedUserId: userA,
         capability: "product:update",
         requestedOrganizationId: organizationA.organization.id,
+        requireLegalAcceptance: false,
       },
       (transaction, identity) =>
         archiveProduct(transaction, identity, {
@@ -2428,6 +2476,7 @@ async function main() {
         authenticatedUserId: userA,
         capability: "catalog:read",
         requestedOrganizationId: organizationA.organization.id,
+        requireLegalAcceptance: false,
       },
       (transaction, identity) => listProducts(transaction, identity)
     );
@@ -2448,6 +2497,7 @@ async function main() {
         authenticatedUserId: userA,
         capability: "catalog:read",
         requestedOrganizationId: organizationA.organization.id,
+        requireLegalAcceptance: false,
       },
       (transaction, identity) =>
         listProducts(transaction, identity, { status: "archived" })
@@ -2462,6 +2512,7 @@ async function main() {
         authenticatedUserId: userA,
         capability: "product:update",
         requestedOrganizationId: organizationA.organization.id,
+        requireLegalAcceptance: false,
       },
       (transaction, identity) =>
         restoreProduct(transaction, identity, {
@@ -2480,6 +2531,7 @@ async function main() {
           authenticatedUserId: userA,
           capability: "category:manage",
           requestedOrganizationId: organizationA.organization.id,
+          requireLegalAcceptance: false,
         },
         (transaction, identity) =>
           deleteCategory(transaction, identity, {
@@ -2502,6 +2554,7 @@ async function main() {
         authenticatedUserId: userA,
         capability: "product:update",
         requestedOrganizationId: organizationA.organization.id,
+        requireLegalAcceptance: false,
       },
       (transaction, identity) =>
         updateProduct(transaction, identity, {
@@ -2522,6 +2575,7 @@ async function main() {
         authenticatedUserId: userA,
         capability: "category:manage",
         requestedOrganizationId: organizationA.organization.id,
+        requireLegalAcceptance: false,
       },
       (transaction, identity) =>
         archiveCategory(transaction, identity, {
@@ -2538,6 +2592,7 @@ async function main() {
           authenticatedUserId: userA,
           capability: "catalog:read",
           requestedOrganizationId: organizationA.organization.id,
+          requireLegalAcceptance: false,
         },
         (transaction, identity) => listCategories(transaction, identity)
       ),
@@ -2550,6 +2605,7 @@ async function main() {
           authenticatedUserId: userA,
           capability: "catalog:read",
           requestedOrganizationId: organizationA.organization.id,
+          requireLegalAcceptance: false,
         },
         (transaction, identity) =>
           listCategories(transaction, identity, { status: "archived" })
@@ -2563,6 +2619,7 @@ async function main() {
         authenticatedUserId: userA,
         capability: "category:manage",
         requestedOrganizationId: organizationA.organization.id,
+        requireLegalAcceptance: false,
       },
       (transaction, identity) =>
         archiveCategory(transaction, identity, { id: categoryA.id })
@@ -2575,6 +2632,7 @@ async function main() {
         authenticatedUserId: userA,
         capability: "category:manage",
         requestedOrganizationId: organizationA.organization.id,
+        requireLegalAcceptance: false,
       },
       (transaction, identity) =>
         restoreCategory(transaction, identity, {
@@ -2591,6 +2649,7 @@ async function main() {
         authenticatedUserId: userA,
         capability: "category:manage",
         requestedOrganizationId: organizationA.organization.id,
+        requireLegalAcceptance: false,
       },
       (transaction, identity) =>
         deleteCategory(transaction, identity, {
@@ -2607,6 +2666,7 @@ async function main() {
           authenticatedUserId: userA,
           capability: "category:manage",
           requestedOrganizationId: organizationA.organization.id,
+          requireLegalAcceptance: false,
         },
         (transaction, identity) =>
           restoreCategory(transaction, identity, { id: categoryA.id })
@@ -2619,6 +2679,7 @@ async function main() {
         authenticatedUserId: userA,
         capability: "category:manage",
         requestedOrganizationId: organizationA.organization.id,
+        requireLegalAcceptance: false,
       },
       (transaction, identity) =>
         deleteCategory(transaction, identity, { id: categoryA.id })
@@ -2631,6 +2692,7 @@ async function main() {
           authenticatedUserId: userA,
           capability: "category:manage",
           requestedOrganizationId: organizationA.organization.id,
+          requireLegalAcceptance: false,
         },
         (transaction, identity) =>
           renameCategory(transaction, identity, {
@@ -2647,6 +2709,7 @@ async function main() {
           authenticatedUserId: userA,
           capability: "category:create",
           requestedOrganizationId: organizationA.organization.id,
+          requireLegalAcceptance: false,
         },
         (transaction, identity) =>
           createCategory(transaction, identity, {
@@ -2662,6 +2725,7 @@ async function main() {
           authenticatedUserId: userA,
           capability: "catalog:read",
           requestedOrganizationId: organizationA.organization.id,
+          requireLegalAcceptance: false,
         },
         (transaction, identity) =>
           listCategories(transaction, identity, { status: "deleted" })
@@ -2677,6 +2741,7 @@ async function main() {
           authenticatedUserId: userA,
           capability: "category:create",
           requestedOrganizationId: organizationA.organization.id,
+          requireLegalAcceptance: false,
         },
         async (transaction, identity) => {
           const category = await createCategory(transaction, identity, {

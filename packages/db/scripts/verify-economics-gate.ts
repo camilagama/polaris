@@ -347,6 +347,7 @@ async function run() {
           capability: "report:read",
           isolationLevel: "repeatable read",
           requestedOrganizationId: tenant.organizationId,
+          requireLegalAcceptance: false,
         },
         operation
       );

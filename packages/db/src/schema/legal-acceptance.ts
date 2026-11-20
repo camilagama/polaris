@@ -22,9 +22,11 @@ const legalAcceptanceOwnerRole = "polaris_legal_acceptance_owner";
  * row outlives the deletion of the user (kept 5 years after the account is deleted, retention class
  * `legal_acceptance`; 6 months and 30 days for a user who never verified the e-mail, class
  * `legal_acceptance_unverified_user`). Append-only: triggers refuse UPDATE, DELETE and TRUNCATE for every role. No runtime
- * role reads or writes the table: only `polaris_legal_acceptance_owner` has privileges on it, and its two
- * functions, executed by the authentication runtime, are the whole interface (`record_legal_acceptance`
- * appends, `legal_acceptance_versions` reads the highest version of each document a user accepted).
+ * role reads or writes the table: only `polaris_legal_acceptance_owner` has privileges on it, and its three
+ * functions are the whole interface: `record_legal_acceptance` appends and `legal_acceptance_versions` reads the
+ * highest version of each document a user accepted, both executed by the authentication runtime, and
+ * `legal_acceptance_pending`, executed by the tenant runtime from the entry of its transaction, answers only the
+ * names of the documents still below their minimum.
  */
 export const legalAcceptance = pgTable(
   "legal_acceptance",

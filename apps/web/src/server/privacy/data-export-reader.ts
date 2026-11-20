@@ -31,6 +31,8 @@ export function createRequesterReader(
           capability: "organization:export",
           isolationLevel: "repeatable read",
           requestedOrganizationId: claimed.organizationId,
+          // a copy of the data is a request of the data subject, exempt from the acceptance, and the job has no request
+          requireLegalAcceptance: false,
         },
         (transaction) => operation(transaction)
       );

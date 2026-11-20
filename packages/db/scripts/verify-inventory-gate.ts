@@ -198,6 +198,7 @@ async function createTestProduct(
       authenticatedUserId: fixture.userId,
       capability: "product:create",
       requestedOrganizationId: fixture.organizationId,
+      requireLegalAcceptance: false,
     },
     (transaction, identity) =>
       createProduct(transaction, identity, {
@@ -219,6 +220,7 @@ async function getDefaultVariantId(
       authenticatedUserId: fixture.userId,
       capability: "catalog:read",
       requestedOrganizationId: fixture.organizationId,
+      requireLegalAcceptance: false,
     },
     (transaction) =>
       transaction
@@ -253,6 +255,7 @@ async function withTenant<T>(
       authenticatedUserId: fixture.userId,
       capability,
       requestedOrganizationId: fixture.organizationId,
+      requireLegalAcceptance: false,
     },
     operation
   );
@@ -1318,6 +1321,7 @@ async function main(): Promise<void> {
                 authenticatedUserId: fixtureA.userId,
                 capability: "inventory:adjust",
                 requestedOrganizationId: fixtureA.organizationId,
+                requireLegalAcceptance: false,
               },
               (transaction, identity) =>
                 inventoryCount(transaction, identity, {
@@ -1427,6 +1431,7 @@ async function main(): Promise<void> {
                 authenticatedUserId: fixtureA.userId,
                 capability: "inventory:adjust",
                 requestedOrganizationId: fixtureA.organizationId,
+                requireLegalAcceptance: false,
               },
               (transaction, identity) =>
                 receiveStock(transaction, identity, {
@@ -1460,6 +1465,7 @@ async function main(): Promise<void> {
                 authenticatedUserId: fixtureA.userId,
                 capability: "inventory:adjust",
                 requestedOrganizationId: fixtureA.organizationId,
+                requireLegalAcceptance: false,
               },
               (transaction, identity) =>
                 writeOffStock(transaction, identity, {
@@ -1957,6 +1963,7 @@ async function main(): Promise<void> {
                 authenticatedUserId: fixtureA.userId,
                 capability: "product:update",
                 requestedOrganizationId: fixtureA.organizationId,
+                requireLegalAcceptance: false,
               },
               (transaction, identity) =>
                 deleteProduct(transaction, identity, {
@@ -1972,6 +1979,7 @@ async function main(): Promise<void> {
                 authenticatedUserId: fixtureA.userId,
                 capability: "inventory:adjust",
                 requestedOrganizationId: fixtureA.organizationId,
+                requireLegalAcceptance: false,
               },
               (transaction, identity) =>
                 receiveStock(transaction, identity, {

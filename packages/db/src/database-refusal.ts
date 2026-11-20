@@ -69,3 +69,27 @@ export function sqlStateOf(error: unknown): string | undefined {
   }
   return undefined;
 }
+
+/** The DETAIL of the first error along the causes that has a SQLSTATE: what a function wrote next to its refusal. */
+export function detailOf(error: unknown): string | undefined {
+  const visited = new Set<object>();
+  let current: unknown = error;
+  while (typeof current === "object" && current !== null) {
+    if (visited.has(current)) {
+      return undefined;
+    }
+    visited.add(current);
+    const candidate = current as {
+      cause?: unknown;
+      code?: unknown;
+      detail?: unknown;
+    };
+    if (typeof candidate.code === "string" && candidate.code.length === 5) {
+      return typeof candidate.detail === "string"
+        ? candidate.detail
+        : undefined;
+    }
+    current = candidate.cause;
+  }
+  return undefined;
+}

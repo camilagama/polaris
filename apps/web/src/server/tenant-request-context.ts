@@ -1,6 +1,7 @@
 import type { createDatabase } from "@polaris/db/client";
 import { FreshSessionRequiredError } from "@polaris/db/device-repository";
 import {
+  LegalAcceptancePendingError,
   type TenantRequestIdentity,
   type TenantRequestTransaction,
   withAuthorizedTenantTransaction,
@@ -11,6 +12,10 @@ import {
   createAuthenticatedRequestContext,
 } from "./authenticated-request-context";
 import type { WorkerBindings } from "./environment";
+import {
+  isLegalAcceptanceRequired,
+  pendingLegalAcceptanceOf,
+} from "./legal-acceptance";
 import { TenantRequestContextError } from "./request-context-error";
 
 type Database = ReturnType<typeof createDatabase>["db"];
@@ -54,36 +59,57 @@ export function createTenantRequestContext(
   return function runTenantRequestContext<T>(
     input: TenantRequestContextInput<T>
   ): Promise<T> {
+    const organizationIdIsValid =
+      input.requestedOrganizationId.trim() !== "" &&
+      input.requestedOrganizationId === input.requestedOrganizationId.trim();
     return authenticatedRequest({
       bindings: input.bindings,
-      operation: (database, session) => {
-        if (
-          !input.requestedOrganizationId.trim() ||
-          input.requestedOrganizationId !== input.requestedOrganizationId.trim()
-        ) {
+      // the entry checks the acceptance only when the transaction runs: a request refused before it (no organization)
+      // keeps the check at the gate, so a pending acceptance still comes first
+      ...(organizationIdIsValid
+        ? { legalAcceptanceCheckedAtTenantEntry: true as const }
+        : {}),
+      operation: async (database, session) => {
+        if (!organizationIdIsValid) {
           throw new TenantRequestContextError("organization_id_required");
         }
 
-        return tenantTransaction(
-          database as Database,
-          {
-            authenticatedUserId: session.user.id,
-            capability: input.capability,
-            ...(input.isolationLevel
-              ? { isolationLevel: input.isolationLevel }
-              : {}),
-            requestedOrganizationId: input.requestedOrganizationId,
-            sessionId: session.session.id,
-          },
-          input.requireFreshSession
-            ? (transaction, identity) => {
-                if (!isSessionFresh(session.session.createdAt)) {
-                  throw new FreshSessionRequiredError();
+        try {
+          return await tenantTransaction(
+            database as Database,
+            {
+              authenticatedUserId: session.user.id,
+              capability: input.capability,
+              ...(input.isolationLevel
+                ? { isolationLevel: input.isolationLevel }
+                : {}),
+              requestedOrganizationId: input.requestedOrganizationId,
+              requireLegalAcceptance: isLegalAcceptanceRequired(
+                input.bindings,
+                input.request
+              ),
+              sessionId: session.session.id,
+            },
+            input.requireFreshSession
+              ? (transaction, identity) => {
+                  if (!isSessionFresh(session.session.createdAt)) {
+                    throw new FreshSessionRequiredError();
+                  }
+                  return input.operation(transaction, identity);
                 }
-                return input.operation(transaction, identity);
-              }
-            : input.operation
-        );
+              : input.operation
+          );
+        } catch (error) {
+          // the same refusal the gate gives, with what is pending: a client must never take it for a refused session
+          if (error instanceof LegalAcceptancePendingError) {
+            // biome-ignore lint/style/useErrorCause: The refusal is the request context's own; the documents are all it carries.
+            throw new TenantRequestContextError(
+              "legal_acceptance_required",
+              pendingLegalAcceptanceOf(error.documents)
+            );
+          }
+          throw error;
+        }
       },
       request: input.request,
     });
@@ -139,6 +165,8 @@ export function createTenantRequestSequence(
               authenticatedUserId: session.user.id,
               capability: input.capability,
               requestedOrganizationId: input.requestedOrganizationId,
+              // the gate of this request already checked it, before the first transaction
+              requireLegalAcceptance: false,
               sessionId: session.session.id,
             },
             operation
