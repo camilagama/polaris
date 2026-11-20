@@ -49,6 +49,7 @@ function testUser(): Parameters<
 
 describe("Resend authentication email delivery", () => {
   afterEach(() => {
+    vi.useRealTimers();
     vi.unstubAllGlobals();
   });
 
@@ -268,6 +269,10 @@ describe("Resend authentication email delivery", () => {
   });
 
   it("tells an address that already has an account, at most once a day per user", async () => {
+    vi.useFakeTimers({
+      now: new Date("2026-11-19T02:50:00.000Z"),
+      toFake: ["Date"],
+    });
     const fetcher = vi.fn<typeof fetch>();
     fetcher.mockResolvedValue(Response.json({ id: "resend-email-id" }));
     vi.stubGlobal("fetch", fetcher);
@@ -283,7 +288,7 @@ describe("Resend authentication email delivery", () => {
 
     const [, init] = fetcher.mock.calls[0] ?? [];
     const key = new Headers(init?.headers).get("idempotency-key") ?? "";
-    const day = new Date().toISOString().slice(0, 10);
+    const day = "2026-11-19";
     expect(key).toBe(
       `polaris-exists-${await sha256Hex("user-test-id")}-${day}`
     );

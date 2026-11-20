@@ -11,7 +11,6 @@ export const TEST_CLOCK_LIST = {
     count: 1,
     reason: BEFORE_THE_RULE,
   },
-  "apps/web/e2e-pwa/sale-draft.e2e.ts": { count: 2, reason: BEFORE_THE_RULE },
   "apps/web/e2e-pwa/support.ts": { count: 1, reason: BEFORE_THE_RULE },
   "apps/web/e2e-pwa/update-moments.e2e.ts": {
     count: 1,
@@ -65,10 +64,6 @@ export const TEST_CLOCK_LIST = {
     count: 1,
     reason: BEFORE_THE_RULE,
   },
-  "apps/web/src/server/auth/email.test.tsx": {
-    count: 1,
-    reason: BEFORE_THE_RULE,
-  },
   "apps/web/src/server/auth/get-session-single-read.test.ts": {
     count: 1,
     reason: BEFORE_THE_RULE,
@@ -81,7 +76,6 @@ export const TEST_CLOCK_LIST = {
     count: 1,
     reason: BEFORE_THE_RULE,
   },
-  "apps/web/src/ui/date-values.test.ts": { count: 1, reason: BEFORE_THE_RULE },
   "apps/web/worker/index.workerd-db.test.ts": {
     count: 2,
     reason: BEFORE_THE_RULE,
@@ -92,10 +86,6 @@ export const TEST_CLOCK_LIST = {
   },
   "packages/billing/src/woovi/sandbox.integration.test.ts": {
     count: 3,
-    reason: BEFORE_THE_RULE,
-  },
-  "packages/db/src/billing-store-command-lock.test.ts": {
-    count: 2,
     reason: BEFORE_THE_RULE,
   },
   "scripts/test-clock/setup.test.mjs": { count: 10, reason: BEFORE_THE_RULE },
