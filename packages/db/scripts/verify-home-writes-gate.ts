@@ -218,16 +218,11 @@ async function run() {
           (tx, identity) => readPeriodSummary(tx, identity, before),
           "repeatable read"
         );
-        // `goal.list` as `goal-handlers.ts` runs it: one snapshot with evaluate, every
+        // `goal.list` as `goal-handlers.ts` runs it: one snapshot, the evaluation hands back every
         // status and the paused ids; a second transaction only when a period ended, settling and listing again
         const snapshot = await as(
           "goal:manage",
-          async (tx, identity) => {
-            const progress = await evaluateActiveGoals(tx, identity);
-            const goals = await listGoals(tx, identity, { status: "all" });
-            const paused = await listPausedGoalIds(tx, identity);
-            return { goals, paused, progress };
-          },
+          (tx, identity) => evaluateActiveGoals(tx, identity),
           "repeatable read"
         );
         const settlements = snapshot.progress.flatMap((entry) =>
