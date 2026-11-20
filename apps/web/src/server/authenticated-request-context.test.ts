@@ -3,13 +3,23 @@ import type {
   DatabaseOptions,
 } from "@polaris/db/client";
 import { Hono } from "hono";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   type AuthenticatedRequestContextDependencies,
   createAuthenticatedRequestContext,
 } from "./authenticated-request-context";
 import type { ServerEnv, WorkerBindings } from "./environment";
 import { requestIdMiddleware } from "./middleware/request-id";
+
+const NOW = new Date("2026-11-19T02:50:00.000Z");
+
+beforeEach(() => {
+  vi.useFakeTimers({ now: NOW, toFake: ["Date"] });
+});
+
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 const baseBindings = {
   AUTH_HYPERDRIVE: { connectionString: "postgresql://auth.invalid/neondb" },
@@ -20,7 +30,7 @@ const baseBindings = {
 
 function contextWithDatabaseSpy(
   session: unknown = {
-    session: { createdAt: new Date(), id: "session-1" },
+    session: { createdAt: new Date(NOW), id: "session-1" },
     user: { id: "test-user" },
   }
 ) {
@@ -75,7 +85,7 @@ describe("Better Auth once per isolate", () => {
               requestId: options.requestId(),
             });
             return Promise.resolve({
-              session: { createdAt: new Date(), id: "session-1" },
+              session: { createdAt: new Date(NOW), id: "session-1" },
               user: { id: "test-user" },
             });
           }),
@@ -167,7 +177,7 @@ describe("Better Auth once per isolate", () => {
 
 describe("when the isolate drops the Better Auth instance", () => {
   const session = {
-    session: { createdAt: new Date(), id: "session-1" },
+    session: { createdAt: new Date(NOW), id: "session-1" },
     user: { id: "test-user" },
   };
 
@@ -285,7 +295,7 @@ describe("authenticated request database connection", () => {
 
   it("rejects a session without an id, running no operation", async () => {
     const { run } = contextWithDatabaseSpy({
-      session: { createdAt: new Date() },
+      session: { createdAt: new Date(NOW) },
       user: { id: "test-user" },
     });
     const operation = vi.fn(async () => "ok");

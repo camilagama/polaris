@@ -43,6 +43,7 @@ import {
   readStockLinkFilters,
   readStockLinkSearch,
   type StockAttentionLink,
+  type StockMoreView,
   type StockRow,
   stockCountText,
   stockCoverIds,
@@ -259,6 +260,11 @@ function LoadingCard({ message }: { message: string }) {
   );
 }
 
+/** "Carregar mais" and the retry of the refresh warning never show together, and a re-read always passes through `refresh: "loading"` between them, so the hook sees one render with neither. */
+function hasFocusableControl(more: StockMoreView): boolean {
+  return more.visible || more.refreshFailed;
+}
+
 /**
  * Current balance of every variant, with the three stock commands: receive,
  * count and write off. Balances change only through those commands.
@@ -323,7 +329,9 @@ export function InventoryPage() {
   const today = useStoreToday(organization.timezone);
   const view = stockListView(state, filters, offline);
   const more = stockMoreView(state, listKey);
-  const focus = useFocusTitleWhenGone<HTMLHeadingElement>(more.visible);
+  const focus = useFocusTitleWhenGone<HTMLHeadingElement>(
+    hasFocusableControl(more)
+  );
   const coverIds = useMemo(() => stockCoverIds(state.entries), [state.entries]);
   useThumbnailSequence(coverIds);
   const countText = (() => {
@@ -484,7 +492,9 @@ export function InventoryPage() {
           <AlertDescription className="flex flex-wrap items-center gap-x-3 gap-y-1">
             {LIST_REFRESH_FAILED_TEXT}
             <Button
+              onBlur={focus.onBlur}
               onClick={handleReload}
+              onFocus={focus.onFocus}
               size="sm"
               type="button"
               variant="link"

@@ -1,0 +1,239 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { codeOnly } from "../packages/db/scripts/gate-clock-scan.ts";
+import { exactCountProblems, walkFiles } from "./exact-count-list.mjs";
+import { GATE_ROLLBACK_LIST } from "./verify-gate-rollback.list.mjs";
+
+/**
+ * A gate that sends a bare `ROLLBACK` to `query(` lets a failed ROLLBACK replace the error already on its way up,
+ * and hands a connection that may still hold the open transaction back to the pool. `rollbackQuietly` and
+ * `rollbackAndRelease` in `packages/db/scripts/gate-roles.ts` never throw and destroy such a connection; this check
+ * keeps a new gate from going back to the bare call.
+ *
+ * Counted, in every `.ts` file under `packages/db/scripts/` and `apps/web/scripts/` (tests included) except `gate-roles.ts`, which is where
+ * the helpers live: a string or template literal whose whole text is `ROLLBACK` (or its synonyms `ROLLBACK WORK`, `ROLLBACK TRANSACTION`, `ABORT`, with `AND [NO] CHAIN`; a trailing `;` aside) written
+ * at the top level of the arguments of a `query(` call, so both `query("ROLLBACK")` and
+ * `query(commit ? "COMMIT" : "ROLLBACK")` count, as does a call with type arguments (`query<Row>("ROLLBACK")`). `ROLLBACK TO SAVEPOINT` is another statement and does not. Comments
+ * and the text inside other strings are not counted (the scanner is the one of `gate-clock-scan.ts`).
+ *
+ * The same literal passed to a call with any other name counts too, because a wrapper (`runQuery("ROLLBACK")`,
+ * `client.sql("ROLLBACK")`) sends it just the same. The case is free for `query(` and for a callee whose name says it
+ * runs SQL (`query`, `sql`, `exec`, `run`, `send` or `statement` in it); for any other name the literal has to be in capitals, since
+ * a lowercase `"rollback"` is as likely a command name or a mode of a test helper (`callWorker("rollback")`) as a statement.
+ * Not counted, because they do not send the text: the keywords that take a condition (`if (`, `while (`...), the assertion and comparison
+ * calls (`toBe(`, `toEqual(`, `expect*(`, `assert*(`, `includes(`, `has(`...), the test and suite declarations (`it(`, `test(`, `describe(` and their member forms `.skip(`, `.only(`, `.todo(`, `.concurrent(` and `.fails(`, whose title can be the word `ROLLBACK`; the member name is exempt whatever its receiver, and `it.each(rows)("ROLLBACK")` is never read as a call with that literal), the collection calls that record a statement (`push(`, `add(`, `set(`), the log and error calls (`log(`, `error(`, `new Error(`...), and a literal
+ * that is one side of `===`, `!==`, `==` or `!=`. These are lists of names, so a new non-sending call that trips the rule is added to `NOT_SENDING_CALLS`, with a test.
+ *
+ * Not caught: a statement held in a variable first (`const sql = "ROLLBACK"; query(sql)`), one passed as
+ * `query({ text: "ROLLBACK" })` or inside an array (`runAll(client, ["BEGIN", "ROLLBACK"])`), one built from parts or from a template with `${}`, and one wrapped in extra parentheses. Uses that exist before the rule stay in
+ * `verify-gate-rollback.list.mjs` with their exact count per file, so only a change that adds one fails.
+ */
+const root = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
+
+export const LIST_FILE = "scripts/verify-gate-rollback.list.mjs";
+export const HELPERS_FILE = "packages/db/scripts/gate-roles.ts";
+export const GATE_FOLDERS = ["packages/db/scripts/", "apps/web/scripts/"];
+
+export const ADVICE =
+  "Use rollbackAndRelease (conexão do pool) ou rollbackQuietly (conexão que o gate segue usando) de packages/db/scripts/gate-roles.ts " +
+  "(em apps/web/scripts, import relativo de `../../../packages/db/scripts/gate-roles`): eles não lançam, e o erro que já vinha subindo não é trocado pelo de um ROLLBACK que falhou. " +
+  `Só se o ROLLBACK precisa mesmo falhar o gate, acrescente o arquivo (ou suba a entrada) em ${LIST_FILE} com o motivo.`;
+
+const ENDS_TRANSACTION = String.raw`(?:rollback(?:[ \t\r\n]+(?:work|transaction))?|abort(?:[ \t\r\n]+(?:work|transaction))?)(?:[ \t\r\n]+and[ \t\r\n]+(?:no[ \t\r\n]+)?chain)?`;
+const ROLLBACK_LITERAL = new RegExp(
+  String.raw`(["'\`])[ \t\r\n]*${ENDS_TRANSACTION}[ \t\r\n]*;?[ \t\r\n]*\1`,
+  "gi"
+);
+const ANY_CALL = /\b([A-Za-z_$][\w$]*)(?:\s*<[^;()]*>)?\s*\(/g;
+const NOT_SENDING_CALLS = new Set([
+  "add",
+  "calledWith",
+  "catch",
+  "concurrent",
+  "debug",
+  "describe",
+  "endsWith",
+  "equal",
+  "equals",
+  "error",
+  "Error",
+  "fails",
+  "for",
+  "get",
+  "has",
+  "if",
+  "includes",
+  "indexOf",
+  "info",
+  "it",
+  "lastIndexOf",
+  "log",
+  "ok",
+  "only",
+  "push",
+  "replace",
+  "return",
+  "set",
+  "skip",
+  "split",
+  "startsWith",
+  "stringContaining",
+  "switch",
+  "test",
+  "todo",
+  "trace",
+  "typeof",
+  "warn",
+  "while",
+]);
+const NOT_SENDING_PREFIX = /^(?:expect|assert|deepEqual|strictEqual)/;
+const ASSERTION_MATCHER =
+  /^to(?:Be|Equal|StrictEqual|Contain|Match|Have|Throw|Reject|Resolve)/;
+const EXECUTOR_NAME = /query|sql|exec|run|send|statement/i;
+const LOWERCASE_LETTER = /[a-z]/;
+const COMPARED_BEFORE = /[=!]==?\s*$/;
+const COMPARED_AFTER = /^\s*[=!]==?/;
+
+export function isGateScript(relative) {
+  return (
+    GATE_FOLDERS.some((folder) => relative.startsWith(folder)) &&
+    relative.endsWith(".ts") &&
+    !relative.endsWith(".d.ts") &&
+    relative !== HELPERS_FILE
+  );
+}
+
+/** The index of the `)` that closes the call whose `(` is at `open`, read on blanked code; -1 when it never closes. */
+function closingParen(code, open) {
+  let depth = 0;
+  for (let index = open; index < code.length; index += 1) {
+    if (code[index] === "(") {
+      depth += 1;
+    } else if (code[index] === ")") {
+      depth -= 1;
+      if (depth === 0) {
+        return index;
+      }
+    }
+  }
+  return -1;
+}
+
+/** Whether the code between `from` and `to` is at the top level of the arguments at `at`: no inner call, array or object around it. */
+function atTopLevel(code, from, at) {
+  let depth = 0;
+  for (let index = from; index < at; index += 1) {
+    if ("([{".includes(code[index])) {
+      depth += 1;
+    } else if (")]}".includes(code[index])) {
+      depth -= 1;
+    }
+  }
+  return depth === 0;
+}
+
+function isSendingCall(callee) {
+  return !(
+    NOT_SENDING_CALLS.has(callee) ||
+    NOT_SENDING_PREFIX.test(callee) ||
+    ASSERTION_MATCHER.test(callee)
+  );
+}
+
+function isLowercaseAllowed(callee) {
+  return callee === "query" || EXECUTOR_NAME.test(callee);
+}
+
+/** Whether the literal at `at` (its text is `text`), an argument of the call named `callee`, is sent as a statement. */
+function sendsRollback(code, at, text, callee) {
+  if (!isSendingCall(callee)) {
+    return false;
+  }
+  if (LOWERCASE_LETTER.test(text) && !isLowercaseAllowed(callee)) {
+    return false;
+  }
+  return !(
+    COMPARED_BEFORE.test(code.slice(0, at)) ||
+    COMPARED_AFTER.test(code.slice(at + text.length))
+  );
+}
+
+/** The 1-based lines with a bare ROLLBACK sent to `query(` or to a call that wraps it. */
+export function bareRollbackLines(source) {
+  const code = codeOnly(source);
+  const lines = new Set();
+  for (const call of code.matchAll(ANY_CALL)) {
+    const open = call.index + call[0].length - 1;
+    const close = closingParen(code, open);
+    if (close === -1) {
+      continue;
+    }
+    for (const literal of source
+      .slice(open + 1, close)
+      .matchAll(ROLLBACK_LITERAL)) {
+      const at = open + 1 + literal.index;
+      if (
+        code[at] === literal[1] &&
+        atTopLevel(code, open + 1, at) &&
+        sendsRollback(code, at, literal[0], call[1])
+      ) {
+        lines.add(source.slice(0, at).split("\n").length);
+      }
+    }
+  }
+  return [...lines].sort((a, b) => a - b);
+}
+
+export function gateRollbackProblems(sources, allowed = GATE_ROLLBACK_LIST) {
+  const lines = Object.fromEntries(
+    Object.entries(sources).map(([file, source]) => [
+      file,
+      bareRollbackLines(source),
+    ])
+  );
+  const found = Object.fromEntries(
+    Object.entries(lines).map(([file, where]) => [file, where.length])
+  );
+  return exactCountProblems({
+    advice: ADVICE,
+    allowed,
+    found,
+    listFile: LIST_FILE,
+    what: "ROLLBACK solto em query( ou em invólucro dele",
+  }).map((problem) => {
+    const file = problem.split(": ")[0] ?? "";
+    const where = lines[file] ?? [];
+    if (where.length === 0 || problem.includes("Baixe a entrada")) {
+      return problem;
+    }
+    return problem.replace(
+      `${file}: `,
+      `${file} (linha${where.length > 1 ? "s" : ""} ${where.join(", ")}): `
+    );
+  });
+}
+
+export function checkRepository(base = root, allowed = GATE_ROLLBACK_LIST) {
+  const sources = Object.fromEntries(
+    walkFiles(base, isGateScript).map((file) => [
+      file,
+      readFileSync(path.join(base, file), "utf8"),
+    ])
+  );
+  return gateRollbackProblems(sources, allowed);
+}
+
+if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
+  const problems = checkRepository(process.argv[2] ?? root);
+  for (const problem of problems) {
+    console.error(problem);
+  }
+  if (problems.length > 0) {
+    console.error(
+      `\n${problems.length} problema(s) de ROLLBACK solto em gate de banco.`
+    );
+    process.exit(1);
+  }
+  console.log("Nenhum ROLLBACK solto novo em gate de banco.");
+}

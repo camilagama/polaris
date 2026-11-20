@@ -1,5 +1,7 @@
+// @vitest-environment happy-dom
+import { cleanup, render as renderInDom } from "@testing-library/react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const state = vi.hoisted(() => ({ hidden: false }));
 
@@ -15,12 +17,34 @@ const NOTICE =
 
 const clear = () => undefined;
 
-const render = () =>
+const NEW_DAY =
+  "Esta venda começou ontem. Ela será registrada com a data de hoje.";
+
+const render = (
+  newDayNotice: string | null = null,
+  notice: string | null = NOTICE
+) =>
   renderToStaticMarkup(
     <SaleDraftBar
       canClear
       count={{ lines: 1, units: 1 }}
-      notice={NOTICE}
+      newDayNotice={newDayNotice}
+      notice={notice}
+      onClear={clear}
+      open={false}
+    />
+  );
+
+const renderClient = (
+  newDayNotice: string | null = null,
+  notice: string | null = NOTICE
+) =>
+  renderInDom(
+    <SaleDraftBar
+      canClear
+      count={{ lines: 1, units: 1 }}
+      newDayNotice={newDayNotice}
+      notice={notice}
       onClear={clear}
       open={false}
     />
@@ -37,8 +61,31 @@ describe("the notice of the cart that came back, with Esconder valores", () => {
     state.hidden = false;
   });
 
+  afterEach(cleanup);
+
   it("writes the notice as it is while the values show", () => {
     expect(textOf(render())).toBe(NOTICE);
+  });
+
+  it("leaves the live region empty on the first render, so the new-day sentence arrives as a change", () => {
+    const html = render(NEW_DAY, null);
+    expect(html).not.toContain(NEW_DAY);
+    expect(html).toContain(
+      '<div aria-live="polite" class="empty:absolute"></div>'
+    );
+  });
+
+  it("puts the new-day sentence in the live region as plain text after the mount, without the warning alert", () => {
+    const { container } = renderClient(NEW_DAY, null);
+    const region = container.querySelector('[aria-live="polite"]');
+    const sentence = region?.querySelector("p");
+    expect(sentence?.textContent).toBe(NEW_DAY);
+    expect(sentence?.className).toContain("text-support");
+    expect(region?.querySelectorAll('[role="alert"]').length).toBe(0);
+  });
+
+  it("keeps the recovered-cart notice in the first render", () => {
+    expect(render(NEW_DAY)).toContain("Camiseta do teste");
   });
 
   it("masks each amount of the notice and keeps the words", () => {

@@ -232,7 +232,7 @@ export function PaymentProfilesPage() {
   const [maybeSaved, setMaybeSaved] = useState(false);
   const [duplicateAsk, setDuplicateAsk] = useState(false);
   // the draft kept when the form was closed by Esc or "Fechar": "new", or the id of the profile being edited
-  const keptRef = useRef<string | null>(null);
+  const [kept, setKept] = useState<string | null>(null);
   // the form is a dialog: it opens for a new profile or for an edit, and the draft is only cleared once it has closed
   const [formOpen, setFormOpen] = useState(false);
   const feedbackRef = useRef<HTMLDivElement>(null);
@@ -244,13 +244,13 @@ export function PaymentProfilesPage() {
   const readOnce = useRef<boolean>(false);
   const [listRead, setListRead] = useState(false);
   const profilesRequest = useRef(0);
-  // offline the notice says the typed text stays only when there is a form (it shows once the list was read)
-  useConnectionNoticeForm(listRead);
-  useHoldSwap(
-    !pending &&
-      profileDraftKey(draft) !==
-        profileDraftKey(editing ? profileDraft(editing) : blankDraft())
-  );
+  const draftTyped =
+    profileDraftKey(draft) !==
+    profileDraftKey(editing ? profileDraft(editing) : blankDraft());
+  // offline the notice says the typed text stays only when there is a form: the list was read, or a closed form
+  // kept a draft with something typed (state, not a ref: the strip is drawn again when the draft is kept or let go)
+  useConnectionNoticeForm(listRead || (kept !== null && draftTyped));
+  useHoldSwap(!pending && draftTyped);
 
   /** The focus moves in an effect, after the render that draws the message: a timer could run before it. */
   const [feedbackFocus, setFeedbackFocus] = useState(0);
@@ -369,21 +369,21 @@ export function PaymentProfilesPage() {
 
   const handleNew = useCallback(() => {
     originRef.current = () => newButtonRef.current;
-    if (keptRef.current !== "new") {
+    if (kept !== "new") {
       setEditing(null);
       setDraft(blankDraft());
       setMaybeSaved(false);
     }
-    keptRef.current = null;
+    setKept(null);
     setDuplicateAsk(false);
     setFieldErrors({});
     setError(null);
     setNotice(null);
     setFormOpen(true);
-  }, []);
+  }, [kept]);
   /** "Cancelar": the form closes and what was typed is thrown away, and with it the doubt about a save. */
   const handleCancelEdit = useCallback(() => {
-    keptRef.current = null;
+    setKept(null);
     if (maybeSaved) {
       setMaybeSaved(false);
       setUncertain(null);
@@ -395,7 +395,7 @@ export function PaymentProfilesPage() {
   }, [maybeSaved]);
   /** Esc, "Fechar" and "Fechar e conferir": the form closes and the draft stays, in memory, with the doubt. */
   const handleDismiss = useCallback(() => {
-    keptRef.current = editing?.id ?? "new";
+    setKept(editing?.id ?? "new");
     if (maybeSaved) {
       setUncertain(MAYBE_SAVED_TEXT);
     }
@@ -406,12 +406,12 @@ export function PaymentProfilesPage() {
   }, [editing, maybeSaved]);
   /** The form is empty again only once it has finished closing (and only when nothing was kept). */
   const handleFormClosed = useCallback(() => {
-    if (keptRef.current === null) {
+    if (kept === null) {
       setEditing(null);
       setDraft(blankDraft());
       setFieldErrors({});
     }
-  }, []);
+  }, [kept]);
   /**
    * What the save said takes the focus when the form closes; a cancel (the notice was cleared when it opened) goes
    * back to what opened the form, even with the warning of a cut connection still on screen.
@@ -483,7 +483,7 @@ export function PaymentProfilesPage() {
           });
           setNotice(`Perfil “${name}” criado.`);
         }
-        keptRef.current = null;
+        setKept(null);
         setMaybeSaved(false);
         setDuplicateAsk(false);
         setFormOpen(false);
@@ -520,24 +520,27 @@ export function PaymentProfilesPage() {
       readAgainIfAnswers,
     ]
   );
-  const editProfile = useCallback((profile: PaymentProfileReadModel) => {
-    // the "Editar" of the profile that opened the form
-    originRef.current = () =>
-      rootRef.current?.querySelector<HTMLElement>(
-        `[data-profile-id="${profile.id}"] [data-profile-edit]`
-      ) ?? null;
-    if (keptRef.current !== profile.id) {
-      setEditing(profile);
-      setDraft(profileDraft(profile));
-      setMaybeSaved(false);
-    }
-    keptRef.current = null;
-    setDuplicateAsk(false);
-    setFieldErrors({});
-    setError(null);
-    setNotice(null);
-    setFormOpen(true);
-  }, []);
+  const editProfile = useCallback(
+    (profile: PaymentProfileReadModel) => {
+      // the "Editar" of the profile that opened the form
+      originRef.current = () =>
+        rootRef.current?.querySelector<HTMLElement>(
+          `[data-profile-id="${profile.id}"] [data-profile-edit]`
+        ) ?? null;
+      if (kept !== profile.id) {
+        setEditing(profile);
+        setDraft(profileDraft(profile));
+        setMaybeSaved(false);
+      }
+      setKept(null);
+      setDuplicateAsk(false);
+      setFieldErrors({});
+      setError(null);
+      setNotice(null);
+      setFormOpen(true);
+    },
+    [kept]
+  );
   const changeLifecycle = useCallback(
     async (profile: PaymentProfileReadModel) => {
       setPending(true);

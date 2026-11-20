@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   BillingCommandInProgressError,
   type CommandLockCounter,
@@ -17,12 +17,22 @@ function storeWith(commandLocks: CommandLockCounter) {
   return createBillingStore(unreachable, { commandLocks });
 }
 
+const NOW = new Date("2026-11-19T02:50:00.000Z");
+
 describe("withOrganizationLock: one command lock per isolate", () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ now: NOW, toFake: ["Date"] });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it("refuses at once while this isolate holds one, for any organization, and never connects", async () => {
     const locks: CommandLockCounter = {
       held: 1,
       holder: {},
-      since: Date.now(),
+      since: NOW.getTime(),
     };
     const store = storeWith(locks);
     const operation = vi.fn(() => Promise.resolve("ran"));
@@ -41,7 +51,7 @@ describe("withOrganizationLock: one command lock per isolate", () => {
     const locks: CommandLockCounter = {
       held: 1,
       holder: stale,
-      since: Date.now() - 80_000,
+      since: NOW.getTime() - 80_000,
     };
     const store = storeWith(locks);
     const operation = vi.fn(() => Promise.resolve("ran"));

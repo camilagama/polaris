@@ -39,7 +39,6 @@ export const BLIND_WAITS_LIST = {
   },
   "apps/web/e2e-pwa/ui-help-tip.e2e.ts": { count: 1, reason: BEFORE_THE_RULE },
   "apps/web/e2e-pwa/ui-home-states.ts": { count: 1, reason: BEFORE_THE_RULE },
-  "apps/web/e2e-pwa/ui-sale-states.ts": { count: 1, reason: BEFORE_THE_RULE },
   "apps/web/e2e-pwa/ui-screens.ts": { count: 3, reason: BEFORE_THE_RULE },
   "apps/web/e2e-pwa/update-moments.e2e.ts": {
     count: 7,
@@ -70,9 +69,7 @@ export const BLIND_WAITS_LIST = {
   },
   "apps/web/e2e/closed-store.e2e.ts": { count: 1, reason: BEFORE_THE_RULE },
   "apps/web/e2e/dashboard.e2e.ts": { count: 2, reason: BEFORE_THE_RULE },
-  "apps/web/e2e/expenses.e2e.ts": { count: 1, reason: BEFORE_THE_RULE },
   "apps/web/e2e/home.e2e.ts": { count: 3, reason: BEFORE_THE_RULE },
-  "apps/web/e2e/lote-2-telas.e2e.ts": { count: 2, reason: BEFORE_THE_RULE },
   "apps/web/e2e/offline-devices.e2e.ts": {
     count: 3,
     reason: ABSENCE_IS_THE_TEST,
@@ -88,10 +85,5 @@ export const BLIND_WAITS_LIST = {
     reason: BEFORE_THE_RULE,
   },
   "apps/web/e2e/password-screens.e2e.ts": { count: 1, reason: BEFORE_THE_RULE },
-  "apps/web/e2e/payment-profiles-screen.e2e.ts": {
-    count: 3,
-    reason: BEFORE_THE_RULE,
-  },
-  "apps/web/e2e/products-screen.e2e.ts": { count: 1, reason: BEFORE_THE_RULE },
   "apps/web/e2e/sign-in.e2e.ts": { count: 4, reason: BEFORE_THE_RULE },
 };
