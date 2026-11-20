@@ -421,12 +421,13 @@ const DEVICE_CHECK_KEY = "polaris.offline.device-checked";
  */
 const DEVICE_CHECK_REUSE_MS = RENEW_BEFORE_MS;
 /**
- * A confirmation of who is signed in is reused by the syncs that follow it, so
- * an idle tab costs one get-session per two ticks, not one per tick. The window
- * is a fixed 6 minutes, deliberately above the idle tick ceiling (5 minutes):
- * at or under it every tick would find the window already closed and spare
- * nothing. It is a literal, not derived from the tick, so raising the tick
- * never raises the window without a review. Never reused when something is
+ * A confirmation of who is signed in is reused by the syncs that follow it
+ * within a fixed 6 minutes. The idle tick ceiling (10 minutes) is above that
+ * window, so an idle tab at the ceiling finds the window already closed at
+ * every tick and reads the get-session once per tick; the reuse only spares
+ * the syncs that come sooner (the opening's own, a nudge, a faster tick). It is
+ * a literal, not derived from the tick, so changing the tick never moves the
+ * window without a review. Never reused when something is
  * queued: the push must not leave under somebody else's session (the server
  * would refuse and record that for good). It only bounds how long a first
  * user's runtime may keep reading and queueing after somebody else signed in.
