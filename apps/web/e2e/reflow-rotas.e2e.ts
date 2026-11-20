@@ -403,7 +403,7 @@ const UNREACHABLE_AT_24: Readonly<Record<string, string>> = {};
 const EXCLUDED: Readonly<Record<string, string>> = {
   attention: "pendencias-reflow.e2e.ts",
   customers: "clientes-reflow.e2e.ts",
-  home: "home.e2e.ts",
+  home: "home/valores-e-ranking.e2e.ts",
   inventory: "estoque-reflow.e2e.ts",
   sale: "sale-item-reflow.e2e.ts",
   "sale-history": "historico-reflow.e2e.ts",

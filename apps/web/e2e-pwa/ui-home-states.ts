@@ -7,7 +7,7 @@ import { serveHealth, serveLabWorker, WORKER_MARK } from "./worker-mark";
  * The reads of the Início (`/`) answered by the test, synthetic data only: the month and the days before it with the
  * daily series and the ranking, an active goal, three variants with no stock and a store that already sold. The
  * shell check (`ui-shell-isolation.e2e.ts`) and the CSP check (`ui-csp.e2e.ts`) open the real page with them, so the
- * chart and its chunk are drawn under the real rules. The states and the errors are proved in `e2e/home.e2e.ts`.
+ * chart and its chunk are drawn under the real rules. The states and the errors are proved in `e2e/home/`.
  */
 export const ORGANIZATION = {
   id: "0199c2d0-0000-7000-8000-00000000a001",

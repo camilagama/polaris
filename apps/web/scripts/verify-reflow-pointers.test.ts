@@ -60,7 +60,7 @@ const SPECS: Readonly<Record<string, SpecRule>> = {
     coarse: 1,
     why: "the window of 1280 px is not a phone",
   },
-  "home.e2e.ts": {
+  "home/valores-e-ranking.e2e.ts": {
     bare: 1,
     coarse: 4,
     from: 'test.describe("Mais vendidos do mês a 320 px com a letra do navegador em 20 px"',
@@ -197,6 +197,24 @@ describe("the reflow specs run with a finger too", () => {
       problemsOf(name, readFileSync(join(E2E, name), "utf8"), rule)
     );
     expect(problems).toEqual([]);
+  });
+
+  it("the other specs of a folder of e2e/ keep no plain test that reads like a reflow case", () => {
+    const named = new Set([...Object.keys(SPECS), ...Object.keys(OTHER)]);
+    const inFolders = readdirSync(E2E, { recursive: true, encoding: "utf8" })
+      .map((name) => name.split(sep).join("/"))
+      .filter((name) => name.includes("/") && name.endsWith(".e2e.ts"))
+      .filter((name) => !named.has(name));
+    expect(inFolders.length).toBeGreaterThan(0);
+    const found = inFolders.flatMap((name) =>
+      reflowLookingTitles(readFileSync(join(E2E, name), "utf8")).map(
+        (title) => `${name}: "${title}"`
+      )
+    );
+    expect(
+      found,
+      "a plain test that reads like a reflow case: declare it with reflowTest in a reflow spec"
+    ).toEqual([]);
   });
 
   it("each exception in SPECS has its reason", () => {

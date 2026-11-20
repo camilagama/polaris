@@ -191,7 +191,7 @@ test("sem a leitura do período anterior pelo periodSummary, o chip de Vendas ai
 
 /**
  * The lab of the screens has no header, so no eye: the choice reaches the page as it does from another tab of the device
- * (the key of the Início and of the shell, and the `storage` event). The button is proved in the shell, in `home.e2e.ts`
+ * (the key of the Início and of the shell, and the `storage` event). The button is proved in the shell, in `home/cartoes-e-grafico.e2e.ts`
  * and `shell-header.e2e.ts`.
  */
 const chooseHiddenValues = (page: Page, hidden: boolean) =>
