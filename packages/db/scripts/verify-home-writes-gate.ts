@@ -218,36 +218,41 @@ async function run() {
           (tx, identity) => readPeriodSummary(tx, identity, before),
           "repeatable read"
         );
-        // goal.list as its handler runs it: evaluate in a snapshot, settle, list every status, the paused ones
-        const progress = await as(
+        // `goal.list` as `goal-handlers.ts` runs it: one snapshot with evaluate, every
+        // status and the paused ids; a second transaction only when a period ended, settling and listing again
+        const snapshot = await as(
           "goal:manage",
-          (tx, identity) => evaluateActiveGoals(tx, identity),
+          async (tx, identity) => {
+            const progress = await evaluateActiveGoals(tx, identity);
+            const goals = await listGoals(tx, identity, { status: "all" });
+            const paused = await listPausedGoalIds(tx, identity);
+            return { goals, paused, progress };
+          },
           "repeatable read"
         );
-        await as("goal:manage", (tx, identity) =>
-          settleGoals(
-            tx,
-            identity,
-            progress.flatMap((entry) =>
-              entry.settlement
-                ? [
-                    {
-                      achievedValue: entry.evaluation.progress,
-                      expectedVersion: entry.version,
-                      goalId: entry.goalId,
-                      settlement: entry.settlement,
-                    },
-                  ]
-                : []
-            )
-          )
+        const settlements = snapshot.progress.flatMap((entry) =>
+          entry.settlement
+            ? [
+                {
+                  achievedValue: entry.evaluation.progress,
+                  expectedVersion: entry.version,
+                  goalId: entry.goalId,
+                  settlement: entry.settlement,
+                },
+              ]
+            : []
         );
-        const goals = await as("goal:manage", (tx, identity) =>
-          listGoals(tx, identity, { status: "all" })
-        );
-        await as("goal:manage", (tx, identity) =>
-          listPausedGoalIds(tx, identity)
-        );
+        const settled = settlements.length > 0;
+        const current = settled
+          ? await as("goal:manage", async (tx, identity) => {
+              await settleGoals(tx, identity, settlements);
+              return {
+                goals: await listGoals(tx, identity, { status: "all" }),
+                paused: await listPausedGoalIds(tx, identity),
+              };
+            })
+          : snapshot;
+        const { goals } = current;
         const withoutStock = await as("inventory:read", (tx, identity) =>
           listInventoryBalances(tx, identity, {
             limit: 100,
@@ -272,7 +277,7 @@ async function run() {
         await as("inventory:read", (tx, identity) =>
           listInventoryBalances(tx, identity, { limit: 1, stock: "with_stock" })
         );
-        return { a, goals, sold, unknownCost, withoutStock };
+        return { a, goals, settled, sold, unknownCost, withoutStock };
       } finally {
         await database.pool.end();
       }
@@ -375,8 +380,18 @@ async function run() {
     const beforeSettle = await statsWhen(
       (now) => writesOf(now, "goals") > writesOf(beforeInsert, "goals")
     );
-    await openHome();
+    const settlingOpening = await openHome();
     const afterSettle = await statsAfterOpening(beforeSettle);
+    assert.equal(
+      settlingOpening.settled,
+      true,
+      "a goal whose period ended opens the second transaction of goal.list"
+    );
+    assert.equal(
+      settlingOpening.goals.find((goal) => goal.id === endedGoalId)?.status,
+      "missed",
+      "the list of the second transaction shows the ended goal as settled, not active"
+    );
     const settling = changed(beforeSettle, afterSettle);
     assert.ok(
       settling.some(([table]) => table === "goals"),
@@ -394,8 +409,17 @@ async function run() {
     assert.equal(status.rows[0]?.status, "missed");
 
     const beforeAgain = await stats();
-    await openHome();
+    const againOpening = await openHome();
     const afterAgain = await statsAfterOpening(beforeAgain);
+    assert.equal(
+      againOpening.settled,
+      false,
+      "the second opening does not open the second transaction"
+    );
+    assert.equal(
+      againOpening.goals.find((goal) => goal.id === endedGoalId)?.status,
+      "missed"
+    );
     assert.deepEqual(
       changed(beforeAgain, afterAgain),
       [],
