@@ -91,17 +91,19 @@ describe("what counts as a bare ROLLBACK", () => {
     ).toEqual([1, 2, 3, 4, 5, 7]);
   });
 
-  it("counts a wrapper's ROLLBACK only in capitals, but a query's in any case", () => {
+  it("counts a wrapper's lowercase ROLLBACK when its name says it runs SQL, and any case for query", () => {
     expect(
       bareRollbackLines(
         [
           'await callWorker("rollback", "org_a");',
           'const server = fakeServer("pg_catalog", "rollback");',
           'await runQuery("rollback");',
-          'await a.query("rollback");',
+          'await a.query("Rollback");',
+          'await client.execSql("abort");',
+          'await sender.send("Rollback");',
         ].join("\n")
       )
-    ).toEqual([4]);
+    ).toEqual([3, 4, 5, 6]);
   });
 
   it("does not count a ROLLBACK that is compared, asserted, logged or tested by a keyword", () => {
@@ -120,9 +122,35 @@ describe("what counts as a bare ROLLBACK", () => {
           'logger.warn("ROLLBACK");',
           'throw new Error("ROLLBACK");',
           'const seen = statements.includes("ROLLBACK");',
+          'statements.push("ROLLBACK");',
+          'const known = new Set(); known.add("ROLLBACK");',
+          'if (name.startsWith("ROLLBACK")) { skip(); }',
+          'const at = text.indexOf("ROLLBACK");',
+          'expectLast(statements, "ROLLBACK");',
+          'assertLast(statements, "ROLLBACK");',
+          'strictEqual(last, "ROLLBACK");',
+          'logger.info("ROLLBACK"); logger.debug("ROLLBACK"); logger.trace("ROLLBACK");',
+          'switch ("ROLLBACK") { default: break; }',
+          'for (let sql = "ROLLBACK"; ; ) { stop(); }',
+          'try { go(); } catch ("ROLLBACK") { stop(); }',
+          'const kind = typeof ("ROLLBACK");',
+          'const last = text.endsWith("ROLLBACK") && ok("ROLLBACK");',
         ].join("\n")
       )
     ).toEqual([]);
+  });
+
+  it("keeps counting a ROLLBACK next to a comparison or inside an exempt call, and a wrapper named like a matcher it is not", () => {
+    expect(
+      bareRollbackLines(
+        [
+          'await runQuery(text === "ROLLBACK" ? "ROLLBACK" : "COMMIT");',
+          'expect(await runQuery("ROLLBACK")).toBe(true);',
+          'await send(log("x"), "ROLLBACK");',
+          'await toSql("ROLLBACK");',
+        ].join("\n")
+      )
+    ).toEqual([1, 2, 3, 4]);
   });
 
   it("does not count a comment or text inside another string", () => {
@@ -183,7 +211,7 @@ describe("the rule", () => {
       {}
     );
     expect(problems).toEqual([
-      `packages/db/scripts/verify-new-gate.ts (linha 6): 1 ROLLBACK solto em query(. ${ADVICE}`,
+      `packages/db/scripts/verify-new-gate.ts (linha 6): 1 ROLLBACK solto em query( ou em invólucro dele. ${ADVICE}`,
     ]);
     expect(ADVICE).toContain("rollbackAndRelease");
     expect(ADVICE).toContain("rollbackQuietly");
@@ -201,7 +229,7 @@ describe("the rule", () => {
         {}
       )
     ).toEqual([
-      `packages/db/scripts/verify-new-gate.ts (linha 6): 1 ROLLBACK solto em query(. ${ADVICE}`,
+      `packages/db/scripts/verify-new-gate.ts (linha 6): 1 ROLLBACK solto em query( ou em invólucro dele. ${ADVICE}`,
     ]);
   });
 
@@ -255,7 +283,7 @@ describe("the rule", () => {
         {}
       )
     ).toEqual([
-      `apps/web/scripts/verify-new-web-gate.ts (linha 6): 1 ROLLBACK solto em query(. ${ADVICE}`,
+      `apps/web/scripts/verify-new-web-gate.ts (linha 6): 1 ROLLBACK solto em query( ou em invólucro dele. ${ADVICE}`,
     ]);
   });
 
