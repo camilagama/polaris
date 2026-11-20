@@ -24,6 +24,10 @@ import {
   rangeProblem,
 } from "../dashboard/result-period";
 import { useCurrentOrganization } from "../lib/current-organization";
+import {
+  LIST_REFRESH_FAILED_TEXT,
+  LIST_REFRESHING_TEXT,
+} from "../lib/list-refresh-text";
 import { useFocusTitleWhenGone } from "../lib/use-focus-title-when-gone";
 import { useLocalWorkspace } from "../offline/runtime/use-local-workspace";
 import { todayOr } from "../ui/date-values";
@@ -39,8 +43,6 @@ import {
   loadMoreView,
   PERIOD_TOTAL_HELP,
   PERIOD_TOTAL_LABEL,
-  REFRESH_FAILED_TEXT,
-  REFRESHING_LIST_TEXT,
   type PeriodTotalRead,
   periodTotalPeriod,
   statusFromState,
@@ -213,7 +215,7 @@ export function SaleHistoryPage() {
       {more.refreshFailed ? (
         <Alert variant="warning">
           <AlertDescription className="flex flex-wrap items-center gap-x-3 gap-y-1">
-            {REFRESH_FAILED_TEXT}
+            {LIST_REFRESH_FAILED_TEXT}
             <Button onClick={reload} size="sm" type="button" variant="link">
               <RefreshCwIcon aria-hidden="true" data-icon="inline-start" />
               Tentar novamente
@@ -278,7 +280,7 @@ export function SaleHistoryPage() {
           <p className="text-muted-foreground">Carregando mais vendas…</p>
         ) : null}
         {more.refreshing && !offline ? (
-          <p className="text-muted-foreground">{REFRESHING_LIST_TEXT}</p>
+          <p className="text-muted-foreground">{LIST_REFRESHING_TEXT}</p>
         ) : null}
       </div>
       {more.error ? (
