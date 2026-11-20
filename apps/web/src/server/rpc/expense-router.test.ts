@@ -450,8 +450,15 @@ describe("expense RPCs", () => {
   });
 });
 
+type RouterOptions = NonNullable<Parameters<typeof createRpcRouter>[0]>;
+type ReadCase = [
+  procedure: string,
+  overrides: Partial<RouterOptions>,
+  call: (client: ExpenseClient) => Promise<unknown>,
+];
+
 describe("expense read RPCs open one tenant context", () => {
-  it.each([
+  it.each<ReadCase>([
     [
       "expense.list",
       {
@@ -491,7 +498,7 @@ describe("expense read RPCs open one tenant context", () => {
           withTenantRequestContext: tenantStub((capability) =>
             capabilities.push(capability)
           ),
-        } as unknown as NonNullable<Parameters<typeof createRpcRouter>[0]>)
+        })
       );
 
       await call(client);
