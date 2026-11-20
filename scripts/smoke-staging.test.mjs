@@ -2021,7 +2021,7 @@ describe("the worst cases of the smoke and of verify-deployed-sha against the ti
       smokeSeconds() +
         verifyWorstCaseSeconds(STAGING_WORKERS.length) +
         REST_OF_THE_JOB_SECONDS
-    ).toBe(1380);
+    ).toBe(1410);
   });
 
   it("control: a step Smoke three minutes longer overflows the job", () => {
