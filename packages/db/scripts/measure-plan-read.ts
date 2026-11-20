@@ -364,6 +364,7 @@ async function timedRead(context: MeasureContext, fixture: TenantFixture) {
       authenticatedUserId: fixture.userId,
       capability: "billing:manage",
       requestedOrganizationId: fixture.organizationId,
+      requireLegalAcceptance: false,
     },
     async (transaction, identity) => {
       const readStarted = performance.now();

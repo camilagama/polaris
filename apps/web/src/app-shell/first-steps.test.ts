@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import {
   clearFirstSteps,
   deviceSaleKept,
@@ -12,6 +12,10 @@ import {
   rememberFirstSteps,
   subscribeFirstSteps,
 } from "./first-steps";
+
+beforeEach(() => {
+  clearFirstSteps(null);
+});
 
 const fakeStore = () => {
   const values = new Map<string, string>();

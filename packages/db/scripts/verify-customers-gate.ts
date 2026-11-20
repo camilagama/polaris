@@ -115,6 +115,7 @@ async function withTenant<T>(
       authenticatedUserId: fixture.userId,
       capability: "customer:update",
       requestedOrganizationId: fixture.organizationId,
+      requireLegalAcceptance: false,
     },
     operation
   );

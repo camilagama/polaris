@@ -420,6 +420,7 @@ async function assertSame(
       capability: "report:read",
       isolationLevel: "repeatable read",
       requestedOrganizationId: tenant.organizationId,
+      requireLegalAcceptance: false,
     },
     async (tx, identity) => [
       await readPeriodSummary(tx, identity, period, {
