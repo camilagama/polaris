@@ -933,6 +933,40 @@ async function runParallel(
   );
 }
 
+const ROLE_CATALOGS_VACUUM = "VACUUM pg_authid, pg_auth_members";
+
+/**
+ * The parallel phase creates and drops many temporary roles, and the dead rows it leaves in the catalogs of roles slow
+ * down the gates that read them afterwards (`definer-hardening`). Vacuuming them needs more than the owner has, so it
+ * goes through the superuser URL; without it the step is skipped with a warning and the gates run as before.
+ */
+async function vacuumRoleCatalogs(input: {
+  branch: string;
+  database: string;
+  superuserUrl: string | undefined;
+}): Promise<void> {
+  if (!input.superuserUrl) {
+    console.warn(
+      "--- no POLARIS_GATE_SUPERUSER_URL: the catalogs of roles are not vacuumed between the phases"
+    );
+    return;
+  }
+  const { admin } = await connectToGateTarget({
+    branch: input.branch,
+    database: input.database,
+    url: input.superuserUrl,
+  });
+  try {
+    const started = Date.now();
+    await admin.query(ROLE_CATALOGS_VACUUM);
+    console.log(
+      `--- ${ROLE_CATALOGS_VACUUM} in ${((Date.now() - started) / 1000).toFixed(1)}s`
+    );
+  } finally {
+    await admin.end();
+  }
+}
+
 async function main() {
   const url = process.env.POLARIS_GATE_DATABASE_URL;
   const branch = process.env.POLARIS_GATE_BRANCH ?? "";
@@ -1016,6 +1050,9 @@ async function main() {
         );
       }
       if (plan.serial.length > 0) {
+        if (plan.parallel.length > 0) {
+          await vacuumRoleCatalogs({ branch, database, superuserUrl });
+        }
         console.log(
           `--- ${plan.serial.length} runs one at a time, in ${database}`
         );
