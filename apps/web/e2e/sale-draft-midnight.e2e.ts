@@ -83,10 +83,29 @@ function savedDraft(updatedAt: string, startedAt = STARTED_AT) {
   };
 }
 
+/** The mount writes the cart back; waiting for that write is what makes "the stamp did not move" a claim about it. */
+const draftWritten = (page: Page) =>
+  expect
+    .poll(() =>
+      page.evaluate(
+        () => (window as unknown as { draftWrites: number }).draftWrites
+      )
+    )
+    .toBeGreaterThan(0);
+
 /** The draft goes into the tab once, before the app runs: a reload then finds what the app itself wrote. */
 async function seedDraft(page: Page, draft: unknown) {
   await page.addInitScript(
     ({ draftKey, seededKey, value }) => {
+      const counter = window as unknown as { draftWrites: number };
+      counter.draftWrites = 0;
+      const { setItem } = Storage.prototype;
+      Storage.prototype.setItem = function (key: string, text: string) {
+        if (key === draftKey) {
+          counter.draftWrites += 1;
+        }
+        setItem.call(this, key, text);
+      };
       if (window.sessionStorage.getItem(seededKey) === null) {
         window.sessionStorage.setItem(seededKey, "1");
         window.sessionStorage.setItem(draftKey, JSON.stringify(value));
@@ -154,7 +173,7 @@ const heading = (page: Page) =>
 test.describe("rascunho de venda que atravessa a meia-noite", () => {
   test.setTimeout(60_000);
 
-  test("abrir, reler as variantes e recarregar não renovam o updatedAt", async ({
+  test("abrir, o carrinho que volta igual e recarregar não renovam o updatedAt", async ({
     page,
   }) => {
     const server = await install(page, "40.00");
@@ -166,7 +185,7 @@ test.describe("rascunho de venda que atravessa a meia-noite", () => {
     await expect(page.getByText(LABEL, { exact: true })).toBeVisible();
     await expect(page.getByText(NEW_DAY_NOTICE)).toBeVisible();
     await expect.poll(() => server.reads).toBeGreaterThan(0);
-    await page.waitForLoadState("networkidle");
+    await draftWritten(page);
     await expect
       .poll(() => stored(page))
       .toMatchObject({
@@ -179,7 +198,7 @@ test.describe("rascunho de venda que atravessa a meia-noite", () => {
     await expect(heading(page)).toBeVisible();
     await expect(page.getByLabel("Quantidade")).toHaveValue("2");
     await expect.poll(() => server.reads).toBeGreaterThan(readsBeforeReload);
-    await page.waitForLoadState("networkidle");
+    await draftWritten(page);
     expect(await stored(page)).toMatchObject({
       form: { items: [{ quantity: "2", variantId: VARIANT_ID }] },
       startedAt: STARTED_AT,
@@ -212,7 +231,7 @@ test.describe("rascunho de venda que atravessa a meia-noite", () => {
 
     await page.reload();
     await expect(heading(page)).toBeVisible();
-    await page.waitForLoadState("networkidle");
+    await draftWritten(page);
     expect(await stored(page)).toMatchObject({
       startedAt: STARTED_AT,
       updatedAt: FIVE_HOURS_AGO,
@@ -246,9 +265,9 @@ test.describe("rascunho de venda que atravessa a meia-noite", () => {
     await expect
       .poll(() => stored(page))
       .toMatchObject({
+        form: { items: [{ quantity: "3" }] },
         startedAt: STARTED_AT,
         updatedAt: NOW.toISOString(),
       });
-    expect(NOW.toISOString()).not.toBe(FIVE_HOURS_AGO);
   });
 });
