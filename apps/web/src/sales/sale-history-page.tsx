@@ -148,9 +148,12 @@ function HistoryTotalFooter({
   );
 }
 
-/** "Carregar mais" and the retry of the refresh warning never show together, and a re-read always passes through `refresh: "loading"` between them, so the hook sees one render with neither. */
-function hasFocusableControl(more: LoadMoreView): boolean {
-  return more.visible || more.refreshFailed;
+/** "Carregar mais", the retry of the refresh warning and the retry of the full-screen error never show together, and a re-read always passes through a loading render between them, so the hook sees one render with none. */
+function hasFocusableControl(
+  more: LoadMoreView,
+  fullScreenError: boolean
+): boolean {
+  return more.visible || more.refreshFailed || fullScreenError;
 }
 
 /** Newest-first list of confirmed and cancelled sales, filterable on the server. */
@@ -204,7 +207,7 @@ export function SaleHistoryPage() {
   );
   const more = loadMoreView(state, listKey);
   const focus = useFocusTitleWhenGone<HTMLHeadingElement>(
-    hasFocusableControl(more)
+    hasFocusableControl(more, view.kind === "error")
   );
 
   return (
@@ -255,7 +258,14 @@ export function SaleHistoryPage() {
         <Alert variant="destructive">
           <AlertDescription className="flex flex-wrap items-center gap-x-3 gap-y-1">
             {view.message}
-            <Button onClick={reload} size="sm" type="button" variant="link">
+            <Button
+              onBlur={focus.onBlur}
+              onClick={reload}
+              onFocus={focus.onFocus}
+              size="sm"
+              type="button"
+              variant="link"
+            >
               <RefreshCwIcon aria-hidden="true" data-icon="inline-start" />
               Tentar novamente
             </Button>
