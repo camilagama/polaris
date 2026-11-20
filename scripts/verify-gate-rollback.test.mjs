@@ -180,6 +180,36 @@ describe("the rule", () => {
     ).toContain("sem nenhum uso");
   });
 
+  it("refuses a new bare ROLLBACK in apps/web/scripts, naming the file and the line", () => {
+    expect(
+      gateRollbackProblems(
+        { "apps/web/scripts/verify-new-web-gate.ts": BARE },
+        {}
+      )
+    ).toEqual([
+      `apps/web/scripts/verify-new-web-gate.ts (linha 6): 1 ROLLBACK solto em query(. ${ADVICE}`,
+    ]);
+  });
+
+  it("accepts a listed apps/web/scripts file with exactly its count and refuses one with more", () => {
+    const allowed = {
+      "apps/web/scripts/old-web-gate.ts": { count: 1, reason: "r" },
+    };
+    expect(
+      gateRollbackProblems(
+        { "apps/web/scripts/old-web-gate.ts": BARE },
+        allowed
+      )
+    ).toEqual([]);
+    const problems = gateRollbackProblems(
+      { "apps/web/scripts/old-web-gate.ts": `${BARE}${BARE}` },
+      allowed
+    );
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain("old-web-gate.ts (linhas 6, 15)");
+    expect(problems[0]).toContain("aceita 1");
+  });
+
   it("asks for a reason on a listed entry", () => {
     expect(
       gateRollbackProblems(
@@ -199,14 +229,20 @@ describe("which files are gate scripts", () => {
     ["packages/db/scripts/types.d.ts", false],
     ["packages/db/scripts/run.mjs", false],
     ["packages/db/src/billing-store.ts", false],
-    ["apps/web/scripts/x.ts", false],
+    ["apps/web/scripts/verify-y-gate.ts", true],
+    ["apps/web/scripts/sub/support.ts", true],
+    ["apps/web/scripts/verify-y-gate.test.ts", true],
+    ["apps/web/scripts/types.d.ts", false],
+    ["apps/web/scripts/run.mjs", false],
+    ["apps/web/src/server/x.ts", false],
+    ["packages/domain/scripts/x.ts", false],
   ])("%s", (file, expected) => {
     expect(isGateScript(file)).toBe(expected);
   });
 });
 
 describe("the tree", () => {
-  it("walks a planted tree: gate scripts count, the helper file, other folders and build output do not", () => {
+  it("walks a planted tree: gate scripts of both folders count, the helper file, declaration files, other folders and build output do not", () => {
     const base = mkdtempSync(path.join(tmpdir(), "gate-rollback-"));
     try {
       for (const file of [
@@ -216,6 +252,10 @@ describe("the tree", () => {
         HELPERS_FILE,
         "packages/db/src/store.ts",
         "packages/db/scripts/node_modules/d.ts",
+        "apps/web/scripts/e-gate.ts",
+        "apps/web/scripts/sub/f-gate.test.ts",
+        "apps/web/scripts/types.d.ts",
+        "apps/web/src/server/g.ts",
       ]) {
         mkdirSync(path.dirname(path.join(base, file)), { recursive: true });
         writeFileSync(path.join(base, file), BARE);
@@ -228,6 +268,8 @@ describe("the tree", () => {
       expect(
         checkRepository(base, {}).map((problem) => problem.split(" ")[0])
       ).toEqual([
+        "apps/web/scripts/e-gate.ts",
+        "apps/web/scripts/sub/f-gate.test.ts",
         "packages/db/scripts/a-gate.ts",
         "packages/db/scripts/c-gate.test.ts",
         "packages/db/scripts/sub/b-gate.ts",
