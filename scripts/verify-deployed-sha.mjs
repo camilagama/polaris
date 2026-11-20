@@ -164,7 +164,7 @@ export async function verifyDeployedSha(
         reason = `could not read the deployment (${reasonOf(error)})`;
       }
       console.log(
-        `try ${tries}/${ATTEMPTS} ${target.worker}: ${reason === "" ? `active version is ${expectedSha.slice(0, 12)}` : reason} (${seconds()} s since start)`
+        `try ${tries}/${ATTEMPTS} ${target.worker}: ${reason === "" ? `active version is ${expectedSha.slice(0, 12)}` : reason} (${seconds()} s since the check started)`
       );
       const remaining = workerStart + RETRY_WINDOW_MS - now();
       if (reason === "" || tries === ATTEMPTS || remaining <= 0) {

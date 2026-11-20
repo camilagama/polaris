@@ -434,9 +434,7 @@ describe("the deployed version check", () => {
     );
     expect(failures).toHaveLength(1);
     expect(clock.pauses).toEqual([5000, 10_000, 9000]);
-    expect(clock.now()).toBeLessThanOrEqual(
-      RETRY_WINDOW_MS + 12_000 * WRANGLER_CALLS_PER_TRY
-    );
+    expect(clock.now()).toBe(72_000);
   });
 
   it("logs each attempt with the Worker, what it read and the seconds since the start", async () => {
@@ -451,18 +449,17 @@ describe("the deployed version check", () => {
     );
     const lines = console.log.mock.calls.map(([line]) => line);
     expect(lines).toEqual([
-      `try 1/${ATTEMPTS} polaris-web-staging: the active version carries the commit fedcba987654, expected the commit 0123456789ab (0 s since start)`,
-      `try 2/${ATTEMPTS} polaris-web-staging: the active version carries the commit fedcba987654, expected the commit 0123456789ab (5 s since start)`,
-      `try 3/${ATTEMPTS} polaris-web-staging: active version is 0123456789ab (15 s since start)`,
+      `try 1/${ATTEMPTS} polaris-web-staging: the active version carries the commit fedcba987654, expected the commit 0123456789ab (0 s since the check started)`,
+      `try 2/${ATTEMPTS} polaris-web-staging: the active version carries the commit fedcba987654, expected the commit 0123456789ab (5 s since the check started)`,
+      `try 3/${ATTEMPTS} polaris-web-staging: active version is 0123456789ab (15 s since the check started)`,
       "ok polaris-web-staging: active version is 0123456789ab",
     ]);
   });
 
-  it("keeps the window and the pauses inside what the job allows", () => {
+  it("pins the schedule of the pauses and of the window", () => {
     expect(PAUSES_MS).toEqual([5000, 10_000, 15_000, 30_000]);
     expect(ATTEMPTS).toBe(5);
     expect(RETRY_WINDOW_MS).toBe(60_000);
-    expect(RETRY_WINDOW_MS).toBeLessThanOrEqual(75_000);
   });
 
   it("refuses an expected commit that is not a full lowercase SHA, before any read", async () => {
@@ -521,7 +518,8 @@ esac
     rmSync(bin, { force: true, recursive: true });
   });
 
-  const withoutTimes = (text) => text.replace(/ \(\d+ s since start\)/g, "");
+  const withoutTimes = (text) =>
+    text.replace(/ \(\d+ s since the check started\)/g, "");
 
   const run = (headSha, args = []) =>
     spawnSync(process.execPath, ["scripts/verify-deployed-sha.mjs", ...args], {
