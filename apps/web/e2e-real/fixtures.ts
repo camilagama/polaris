@@ -8,6 +8,7 @@ import {
   type TestInfo,
 } from "@playwright/test";
 import type { PolarisRpcClient } from "@polaris/contracts";
+import { authRelationalSchema } from "@polaris/db/auth-schema";
 import { createDatabase } from "@polaris/db/client";
 import type { BetterAuthPlugin } from "better-auth";
 import { testUtils } from "better-auth/plugins";
@@ -129,7 +130,7 @@ function authHelpers() {
     const run = ensureRunEnvironment();
     const { db, pool } = createDatabase(
       databaseUrl(ownerDatabaseUrl(), runDatabaseName(run.runId)),
-      { maxConnections: 2 }
+      { maxConnections: 2, schema: authRelationalSchema }
     );
     const auth = createBetterAuth({
       baseURL: "http://127.0.0.1",

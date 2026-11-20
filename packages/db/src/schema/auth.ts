@@ -1,4 +1,4 @@
-import { sql } from "drizzle-orm";
+import { relations, sql } from "drizzle-orm";
 import {
   boolean,
   index,
@@ -259,4 +259,24 @@ export const verification = pgTable(
   ]
 ).enableRLS();
 
+const sessionRelations = relations(session, ({ one }) => ({
+  user: one(user, { fields: [session.userId], references: [user.id] }),
+}));
+
+const accountRelations = relations(account, ({ one }) => ({
+  user: one(user, { fields: [account.userId], references: [user.id] }),
+}));
+
+const userRelations = relations(user, ({ many }) => ({
+  accounts: many(account),
+}));
+
 export const authSchema = { account, session, user, verification };
+
+/** The tables with the relations Better Auth's `advanced.database.joins` reads through: a session or an account with its user, a user with its accounts. */
+export const authRelationalSchema = {
+  ...authSchema,
+  accountRelations,
+  sessionRelations,
+  userRelations,
+};

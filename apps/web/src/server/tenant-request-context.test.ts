@@ -1,3 +1,4 @@
+import { authRelationalSchema } from "@polaris/db/auth-schema";
 import type { createDatabase } from "@polaris/db/client";
 import { FreshSessionRequiredError } from "@polaris/db/device-repository";
 import {
@@ -149,7 +150,7 @@ describe("tenant request context", () => {
     expect(fixture.createDatabase).toHaveBeenNthCalledWith(
       1,
       baseInput.bindings.AUTH_HYPERDRIVE?.connectionString,
-      { maxConnections: 1 }
+      { maxConnections: 1, schema: authRelationalSchema }
     );
     expect(fixture.createDatabase).toHaveBeenNthCalledWith(
       2,

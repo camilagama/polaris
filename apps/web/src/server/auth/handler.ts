@@ -1,3 +1,4 @@
+import { authRelationalSchema } from "@polaris/db/auth-schema";
 import { bumpUserAuthorizationEpoch } from "@polaris/db/authorization-epoch";
 import { createDatabase } from "@polaris/db/client";
 import { logger } from "@polaris/observability/logger";
@@ -775,6 +776,7 @@ async function withAuthRuntime(
   const safeRequestId = safeRequestIdOf(requestId);
   const { db, pool } = createDatabase(authConnectionString, {
     maxConnections: 1,
+    schema: authRelationalSchema,
   });
   const pending: Promise<unknown>[] = [];
   const background = (task: Promise<unknown>) => {
