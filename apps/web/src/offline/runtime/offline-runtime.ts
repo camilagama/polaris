@@ -125,6 +125,20 @@ export class SessionUnreachableError extends Error {
   }
 }
 
+/** Reason of the `unavailable` phase when the server did not say whose the remembered device is: the server's fault, not the browser's. */
+export const DEVICE_CHECK_UNAVAILABLE_REASON = "device_check_unavailable";
+
+/** The server did not answer whose the remembered device is, and no lease of this user proves it: nothing is forgotten or registered. */
+class DeviceCheckUnavailableError extends Error {
+  constructor(
+    message = DEVICE_CHECK_UNAVAILABLE_REASON,
+    options?: ErrorOptions
+  ) {
+    super(message, options);
+    this.name = "DeviceCheckUnavailableError";
+  }
+}
+
 /** Nobody could be named as signed in, so nothing of the closed store's queue was touched. */
 export class NoSessionForDiscardError extends Error {
   constructor() {
@@ -432,11 +446,15 @@ export const ACCOUNT_UNAVAILABLE_REASONS: ReadonlySet<string> = new Set([
   "session_refused",
 ]);
 
-/** Whether an `unavailable` reason blames the browser: anything that is not the plan or the account/store. */
+/** Whether an `unavailable` reason blames the browser: anything that is not the plan, the account/store or a server that did not answer. */
 export function isBrowserFailure(reason: string | null): boolean {
   return (
     reason === null ||
-    !(reason === PLAN_REFUSED_REASON || ACCOUNT_UNAVAILABLE_REASONS.has(reason))
+    !(
+      reason === PLAN_REFUSED_REASON ||
+      reason === DEVICE_CHECK_UNAVAILABLE_REASON ||
+      ACCOUNT_UNAVAILABLE_REASONS.has(reason)
+    )
   );
 }
 
@@ -1240,7 +1258,10 @@ export class OfflineRuntime {
    * Online, asks the server whether the remembered device is this user's; offline,
    * trusts it (the session user is the one the server last confirmed). When the
    * server cannot be asked, a hiccup does not discard the device of a user who
-   * already holds a lease for it, but it never lends it to a user who does not.
+   * already holds a lease for it, but it never lends it to a user who does not:
+   * without that proof the start stops with `device_check_unavailable`, leaving the
+   * device and the lease as they are and registering nothing (a down server would
+   * otherwise mint a device per opening). Only a definite answer ("not yours") forgets it.
    */
   private async stillMine(deviceId: string, userId: string): Promise<boolean> {
     if (!this.dependencies.isOnline()) {
@@ -1260,7 +1281,15 @@ export class OfflineRuntime {
       if (isLegalAcceptanceRefusal(error)) {
         throw error;
       }
-      return this.leaseProvesDevice(deviceId, userId);
+      if (this.leaseProvesDevice(deviceId, userId)) {
+        return true;
+      }
+      if (isDefiniteRpcRejection(error)) {
+        return false;
+      }
+      throw new DeviceCheckUnavailableError(DEVICE_CHECK_UNAVAILABLE_REASON, {
+        cause: error,
+      });
     }
   }
 

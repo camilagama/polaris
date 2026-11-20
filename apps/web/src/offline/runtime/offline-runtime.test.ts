@@ -74,7 +74,7 @@ function world(options: { leaseHours?: number } = {}) {
     /** The server cannot say whose a device is (down, timed out). */
     deviceIsMine: boolean;
     /** What asking whose a device is throws, if anything (wins over `deviceIsMine`). */
-    deviceIsMineError?: Error;
+    deviceIsMineError?: Error | undefined;
     /** What asking who is signed in throws, if anything. */
     sessionUser?: Error;
     issueLease: Error[];
@@ -578,22 +578,21 @@ describe("starting", () => {
     await queueProduct(first, "Do primeiro usuário", 1);
     await first.stop(); // the session ended without a logout: the lease and the data stay
 
+    const registered = w.calls.registerDevice;
     w.session.user = "user-2";
     w.failures.deviceIsMine = true;
     const second = w.make();
     await second.start(organizationId);
 
-    // the first user's device is not lent on the strength of a failed question
-    expect(second.getSnapshot().phase).toBe("ready");
-    expect(second.context()?.deviceId).not.toBe(uuid(701));
-    expect(second.getSnapshot().counts.pending).toBe(0);
+    // the first user's device is not lent on the strength of a failed question, and nothing is opened or registered
+    expect(second.getSnapshot()).toMatchObject({
+      phase: "unavailable",
+      reason: "device_check_unavailable",
+    });
+    expect(second.context()).toBeNull();
+    expect(w.calls.registerDevice).toBe(registered);
+    expect(w.keyValues.read("polaris.offline.device")).toBe(uuid(701));
     expect(w.stores.has(`user-1-${organizationId}`)).toBe(true);
-    expect(w.stores.get(`user-1-${organizationId}`)?.outbox).not.toBe(
-      second.context()?.outbox
-    );
-    expect(second.context()?.lease).not.toBe(
-      w.keyValues.read(`polaris.offline.lease.user-1.${organizationId}`)
-    );
     // the first user's lease is still theirs alone
     expect(
       JSON.parse(
@@ -676,6 +675,117 @@ describe("starting", () => {
     expect(w.keyValues.read("polaris.offline.device")).toBe(device);
     expect(w.keyValues.read(leaseKeyName)).toBe(lease);
     expect(w.wiped).toEqual([]);
+  });
+
+  describe("device.check that the server could not answer, with no lease that proves the device", () => {
+    const leaseKeyName = `polaris.offline.lease.${userId}.${organizationId}`;
+
+    const unanswered: [string, () => Error][] = [
+      [
+        "a 503",
+        () =>
+          Object.assign(new Error("unavailable"), {
+            code: "SERVICE_UNAVAILABLE",
+            status: 503,
+          }),
+      ],
+      [
+        "a 500",
+        () =>
+          Object.assign(new Error("boom"), {
+            code: "INTERNAL_SERVER_ERROR",
+            status: 500,
+          }),
+      ],
+      ["a network failure", () => new TypeError("Failed to fetch")],
+      [
+        "a timeout",
+        () => new DOMException("The operation timed out", "TimeoutError"),
+      ],
+    ];
+
+    it.each(unanswered)(
+      "%s keeps the device and the lease, registers nothing and starts unavailable",
+      async (_name, failure) => {
+        const w = world();
+        await w.make().start(organizationId);
+        const device = w.keyValues.read("polaris.offline.device");
+        const registered = w.calls.registerDevice;
+        const issued = w.calls.issueLease;
+        w.keyValues.remove(leaseKeyName);
+
+        w.failures.deviceIsMineError = failure();
+        const runtime = w.make();
+        await runtime.start(organizationId);
+
+        expect(w.calls.registerDevice).toBe(registered);
+        expect(w.calls.issueLease).toBe(issued);
+        expect(w.keyValues.read("polaris.offline.device")).toBe(device);
+        expect(runtime.context()).toBeNull();
+        expect(runtime.getSnapshot()).toMatchObject({
+          legalAcceptanceRequired: false,
+          phase: "unavailable",
+          reason: "device_check_unavailable",
+          sessionRefused: false,
+        });
+        expect(w.wiped).toEqual([]);
+      }
+    );
+
+    it("the next opening, with the server back, reuses the same device", async () => {
+      const w = world();
+      await w.make().start(organizationId);
+      const device = w.keyValues.read("polaris.offline.device");
+      const registered = w.calls.registerDevice;
+      w.keyValues.remove(leaseKeyName);
+
+      w.failures.deviceIsMineError = Object.assign(new Error("unavailable"), {
+        code: "SERVICE_UNAVAILABLE",
+        status: 503,
+      });
+      await w.make().start(organizationId);
+      w.failures.deviceIsMineError = undefined;
+
+      const back = w.make();
+      await back.start(organizationId);
+      expect(back.getSnapshot().phase).toBe("ready");
+      expect(back.context()?.deviceId).toBe(device);
+      expect(w.calls.registerDevice).toBe(registered);
+    });
+
+    it.each(["FORBIDDEN", "UNAUTHORIZED"])(
+      "a definite %s answer with no lease keeps the earlier behaviour: forgets the device and registers again",
+      async (code) => {
+        const w = world();
+        await w.make().start(organizationId);
+        const registered = w.calls.registerDevice;
+        w.keyValues.remove(leaseKeyName);
+
+        w.failures.deviceIsMineError = Object.assign(new Error("refused"), {
+          code,
+          status: code === "FORBIDDEN" ? 403 : 401,
+        });
+        await w.make().start(organizationId);
+
+        expect(w.calls.registerDevice).toBe(registered + 1);
+        expect(w.keyValues.read("polaris.offline.device")).not.toBe(uuid(701));
+      }
+    );
+
+    it("a device that is not this user's (the server answered) is still forgotten and registered again", async () => {
+      const w = world();
+      await w.make().start(organizationId);
+      const registered = w.calls.registerDevice;
+      w.keyValues.remove(leaseKeyName);
+      w.session.user = "user-2";
+
+      const runtime = w.make();
+      await runtime.start(organizationId);
+
+      expect(w.calls.registerDevice).toBe(registered + 1);
+      expect(runtime.getSnapshot().phase).toBe("ready");
+      expect(w.keyValues.read("polaris.offline.device")).not.toBe(uuid(701));
+    });
   });
 
   it("a session that changes hands while the app is open stops the first user's runtime without touching their data", async () => {

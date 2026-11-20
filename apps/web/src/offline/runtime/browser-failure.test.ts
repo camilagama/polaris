@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   ACCOUNT_UNAVAILABLE_REASONS,
+  DEVICE_CHECK_UNAVAILABLE_REASON,
   isBrowserFailure,
   PLAN_REFUSED_REASON,
 } from "./offline-runtime";
@@ -25,5 +26,9 @@ describe("isBrowserFailure", () => {
 
   it("does not blame the browser when the plan refused", () => {
     expect(isBrowserFailure(PLAN_REFUSED_REASON)).toBe(false);
+  });
+
+  it("does not blame the browser when the server did not answer whose the device is", () => {
+    expect(isBrowserFailure(DEVICE_CHECK_UNAVAILABLE_REASON)).toBe(false);
   });
 });
