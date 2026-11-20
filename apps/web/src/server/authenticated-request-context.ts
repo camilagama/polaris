@@ -1,3 +1,4 @@
+import { authRelationalSchema } from "@polaris/db/auth-schema";
 import { createDatabase as createHyperdriveDatabase } from "@polaris/db/client";
 import { logger } from "@polaris/observability/logger";
 import { createBetterAuth } from "./auth";
@@ -218,7 +219,10 @@ export function createAuthenticatedRequestContext(
       throw error;
     }
     const databaseOptions = { maxConnections: 1, ...connectionOptions };
-    const authDatabase = databaseFactory(authConnectionString, databaseOptions);
+    const authDatabase = databaseFactory(authConnectionString, {
+      ...databaseOptions,
+      schema: authRelationalSchema,
+    });
     // Authentication and tenant data use different database roles. Only when
     // both resolve to the same connection (local development) is one pool shared.
     let tenantDatabase: typeof authDatabase | undefined;

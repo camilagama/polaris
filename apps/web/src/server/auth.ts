@@ -1185,6 +1185,8 @@ export function createBetterAuth({
     }
   }
 
+  const securityOptions = betterAuthSecurityOptions(baseURL, runInBackground);
+
   return betterAuth({
     account: {
       accountLinking: {
@@ -1197,7 +1199,11 @@ export function createBetterAuth({
       },
       encryptOAuthTokens: true,
     },
-    ...betterAuthSecurityOptions(baseURL, runInBackground),
+    ...securityOptions,
+    advanced: {
+      ...securityOptions.advanced,
+      database: { joins: true },
+    },
     appName: "Polaris",
     baseURL,
     database: resolvedDatabase,
