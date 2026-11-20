@@ -6,6 +6,7 @@ import {
 } from "@polaris/domain/catalog/product";
 import type { PoolClient } from "pg";
 import { createDatabase } from "../src/client";
+import { rollbackAndRelease } from "./gate-roles";
 import {
   createTenantFixture,
   disposableHostPattern,
@@ -17,7 +18,6 @@ import {
   requiredEnvironment,
   type TenantFixture,
 } from "./sales-gate-support";
-import { rollbackAndRelease } from "./gate-roles";
 
 /**
  * Size ceilings of the catalog in the database (0107): an option value of at most 80 and a SKU of at most 64 code
