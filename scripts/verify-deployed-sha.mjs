@@ -45,22 +45,24 @@ export function workersFromArgs(args) {
 
 const SHA = /^[0-9a-f]{40}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
-export const ATTEMPTS = 3;
 export const WRANGLER_TIMEOUT_MS = 20_000;
-export const PAUSE_MS = 5000;
+// pauses before the 2nd, 3rd... try of one Worker: the control plane showed the new version 24 to 47 s late
+export const PAUSES_MS = [5000, 10_000, 15_000, 30_000];
+export const ATTEMPTS = PAUSES_MS.length + 1;
+// no new try starts after this long since the first of the Worker, so the pauses never add up to more
+export const RETRY_WINDOW_MS = PAUSES_MS.reduce((sum, ms) => sum + ms, 0);
 // `deployments status` and `versions view`: the two reads of checkWorker
 export const WRANGLER_CALLS_PER_TRY = 2;
 
 /**
- * Longest the whole check can take: every call of every try hits WRANGLER_TIMEOUT_MS and the pauses run in full.
+ * Longest the whole check can take. The last try of a Worker starts inside RETRY_WINDOW_MS and may hit
+ * WRANGLER_TIMEOUT_MS on both of its calls, so one Worker takes at most the window plus that try.
  * `workers` is the list checked (or how many).
  */
 export function worstCaseMs(workers = STAGING_WORKERS) {
   const count = Array.isArray(workers) ? workers.length : workers;
   return (
-    count *
-    (ATTEMPTS * WRANGLER_CALLS_PER_TRY * WRANGLER_TIMEOUT_MS +
-      (ATTEMPTS - 1) * PAUSE_MS)
+    count * (RETRY_WINDOW_MS + WRANGLER_CALLS_PER_TRY * WRANGLER_TIMEOUT_MS)
   );
 }
 
@@ -132,32 +134,43 @@ function reasonOf(error) {
 }
 
 /**
- * Checks every Worker of `workers` (none stops the others) and returns the failures, one line each. Each check is
- * tried up to ATTEMPTS times: the deployment is read through the API that just accepted it and may not show it yet.
+ * Checks every Worker of `workers` (none stops the others) and returns the failures, one line each. The deployment
+ * is read through the API that just accepted it and may not show it yet, so a check that does not pass is tried
+ * again after PAUSES_MS (growing) while the Worker is inside RETRY_WINDOW_MS; a Worker that still carries another
+ * commit after the window fails with the reason of its last try. `pause(ms)` sleeps and `now()` reads a clock in
+ * ms, both injected so a test never waits.
  */
 export async function verifyDeployedSha(
   expectedSha,
   wranglerJson,
   pause,
-  workers = STAGING_WORKERS
+  workers = STAGING_WORKERS,
+  now = Date.now
 ) {
   if (typeof expectedSha !== "string" || !SHA.test(expectedSha)) {
     return ["HEAD_SHA is not a full commit SHA (40 lowercase hex characters)"];
   }
+  const checkStart = now();
+  const seconds = () => Math.floor((now() - checkStart) / 1000);
   const failures = [];
   for (const target of workers) {
+    const workerStart = now();
     let reason = "";
-    for (let tries = 1; tries <= ATTEMPTS; tries += 1) {
+    for (let tries = 1; ; tries += 1) {
       try {
         // biome-ignore lint/performance/noAwaitInLoops: the attempts are sequential by design
         reason = (await checkWorker(target, expectedSha, wranglerJson)) ?? "";
       } catch (error) {
         reason = `could not read the deployment (${reasonOf(error)})`;
       }
-      if (reason === "" || tries === ATTEMPTS) {
+      console.log(
+        `try ${tries}/${ATTEMPTS} ${target.worker}: ${reason === "" ? `active version is ${expectedSha.slice(0, 12)}` : reason} (${seconds()} s since start)`
+      );
+      const remaining = workerStart + RETRY_WINDOW_MS - now();
+      if (reason === "" || tries === ATTEMPTS || remaining <= 0) {
         break;
       }
-      await pause();
+      await pause(Math.min(PAUSES_MS[tries - 1], remaining));
     }
     if (reason === "") {
       console.log(
@@ -224,7 +237,7 @@ export function runWrangler(
   });
 }
 
-const wait = () => new Promise((resolve) => setTimeout(resolve, PAUSE_MS));
+const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function main() {
   const workers = workersFromArgs(process.argv.slice(2));
