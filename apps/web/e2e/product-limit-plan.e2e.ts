@@ -19,6 +19,9 @@ const LIMIT_TEXT =
   "Seu plano chegou ao limite de variantes. Nada foi cadastrado.";
 const ASK_OWNER = "Fale com o dono da loja para mudar o plano.";
 
+const NOW = new Date("2026-10-14T12:00:00-03:00");
+const TRIAL_DAYS = 30;
+
 const rpc = (json: unknown, status = 200) => ({
   body: JSON.stringify({ json, meta: [] }),
   contentType: "application/json",
@@ -27,7 +30,10 @@ const rpc = (json: unknown, status = 200) => ({
 });
 
 const planOf = (state: string) => ({
-  accessEndsAt: state === "free" ? null : "2026-11-24T03:00:00.000Z",
+  accessEndsAt:
+    state === "free"
+      ? null
+      : new Date(NOW.getTime() + TRIAL_DAYS * 86_400_000).toISOString(),
   cycleMonths: state === "free" ? null : 1,
   kept: { historyMonths: 3, products: 50, sales: 47 },
   limits: { goals: 1, images: 50, variants: 50 },
@@ -102,6 +108,7 @@ async function openAtLimit(
         return route.abort("internetdisconnected");
     }
   });
+  await page.clock.setFixedTime(NOW);
   await page.goto("/products");
   await page.getByRole("button", { name: "Novo produto" }).first().click();
   await page.getByLabel("Nome do produto").fill("Camiseta");

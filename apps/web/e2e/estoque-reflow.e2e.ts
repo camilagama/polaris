@@ -19,6 +19,7 @@ import { serveLabWorker, WORKER_MARK } from "./worker-mark";
  */
 skipOutsideChromium();
 
+const NOW = new Date("2026-10-14T12:00:00-03:00");
 const TOUCH = 44;
 const ACTIONS = '[data-slot="button-group"] [data-stock-action]';
 
@@ -29,7 +30,7 @@ const BASE = {
   productStatus: "active",
   quantity: 3,
   sku: null,
-  updatedAt: "2026-10-14T12:00:00.000Z",
+  updatedAt: NOW.toISOString(),
   values: [{ optionName: "tamanho", optionValueName: "42" }],
   version: 1,
 };
@@ -89,6 +90,7 @@ async function openStock(page: Page, width: number, fontPixels: number) {
     route.fulfill(rpc({ entries: ENTRIES, nextCursor: null }))
   );
   await serveLabWorker(page);
+  await page.clock.setFixedTime(NOW);
   await page.goto("/offline-screens-lab?screen=stock");
   await page.getByLabel("Usuário").fill(`user-${crypto.randomUUID()}`);
   await page.getByRole("button", { exact: true, name: "Iniciar" }).click();
