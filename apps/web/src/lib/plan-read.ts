@@ -57,7 +57,7 @@ interface Flying {
 }
 
 /**
- * One memory of `billing/readPlan` for the screens that warn near the limit, per store: it answers within the TTL,
+ * One memory of `billing/readPlan` for the screens that warn near the limit and the notice of the shell, per store: it answers within the TTL,
  * joins the read already on its way, and nothing is written in the browser. Every read gets a generation when it
  * starts; an answer is kept only if no newer reading is kept and nothing was cleared since it started, so a slow old
  * answer never replaces a newer one nor outlives a write. The key is the store: the session that ends clears all of it,
