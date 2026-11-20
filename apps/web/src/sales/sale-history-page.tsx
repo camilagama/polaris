@@ -40,6 +40,7 @@ import {
   type HistoryFilters,
   historyFooterView,
   historyView,
+  type LoadMoreView,
   loadMoreView,
   PERIOD_TOTAL_HELP,
   PERIOD_TOTAL_LABEL,
@@ -147,6 +148,11 @@ function HistoryTotalFooter({
   );
 }
 
+/** "Carregar mais" and the retry of the refresh warning never show together, and a re-read always passes through `refresh: "loading"` between them, so the hook sees one render with neither. */
+function hasFocusableControl(more: LoadMoreView): boolean {
+  return more.visible || more.refreshFailed;
+}
+
 /** Newest-first list of confirmed and cancelled sales, filterable on the server. */
 export function SaleHistoryPage() {
   const { organization, organizationId } = useCurrentOrganization();
@@ -197,7 +203,9 @@ export function SaleHistoryPage() {
     [setFilters]
   );
   const more = loadMoreView(state, listKey);
-  const focus = useFocusTitleWhenGone<HTMLHeadingElement>(more.visible);
+  const focus = useFocusTitleWhenGone<HTMLHeadingElement>(
+    hasFocusableControl(more)
+  );
 
   return (
     <div className="grid gap-4 font-sans text-foreground text-sm antialiased">
@@ -216,7 +224,14 @@ export function SaleHistoryPage() {
         <Alert variant="warning">
           <AlertDescription className="flex flex-wrap items-center gap-x-3 gap-y-1">
             {LIST_REFRESH_FAILED_TEXT}
-            <Button onClick={reload} size="sm" type="button" variant="link">
+            <Button
+              onBlur={focus.onBlur}
+              onClick={reload}
+              onFocus={focus.onFocus}
+              size="sm"
+              type="button"
+              variant="link"
+            >
               <RefreshCwIcon aria-hidden="true" data-icon="inline-start" />
               Tentar novamente
             </Button>
