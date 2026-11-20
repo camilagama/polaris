@@ -17,6 +17,15 @@ import { changeSaleCustomerLink } from "../src/sale-customer-link-repository";
 import { listSales } from "../src/sale-query-repository";
 import { createSaleReturn } from "../src/sale-return-repository";
 import { runClock, storeDay, storeNoon } from "./gate-clock";
+import { inRolledBackTransaction } from "./gate-roles";
+import {
+  checkOtherRuntimeCannotList,
+  checkUserOrganizationsCatalog,
+  checkUserOrganizationsEquality,
+  checkUserOrganizationsLeaveNoSetting,
+  checkUserOrganizationsRefusals,
+  listedBySeparateStatements,
+} from "./user-organizations-gate-checks";
 import { archiveThenDeleteProduct } from "./product-lifecycle-support";
 import {
   confirmPlainSale,
@@ -139,6 +148,45 @@ async function run() {
     );
     tests.push(
       "organization.listMine reads only the session user's active memberships of active organizations, with name, time zone and role; a stranger has none and a padded id is refused"
+    );
+
+    await checkUserOrganizationsCatalog(admin.pool);
+    await checkOtherRuntimeCannotList(admin.pool, tenantA.userId);
+    const runtimeClient = await runtimeDatabase.pool.connect();
+    try {
+      await checkUserOrganizationsRefusals(runtimeClient, tenantB.userId);
+      await checkUserOrganizationsLeaveNoSetting(
+        runtimeClient,
+        tenantA.userId,
+        mine
+      );
+      assert.deepEqual(
+        mine,
+        await inRolledBackTransaction(runtimeClient, () =>
+          listedBySeparateStatements(runtimeClient, tenantA.userId)
+        ),
+        "listUserOrganizations answers what the separate statements of before answered"
+      );
+    } finally {
+      runtimeClient.release();
+    }
+    assert.deepEqual(
+      await listUserOrganizations(runtimeDatabase.db, tenantA.userId),
+      mine,
+      "a second listUserOrganizations on the same connection answers the same"
+    );
+    const leftOver = await runtimeDatabase.pool.query<{
+      organization_id: string | null;
+      user_id: string | null;
+    }>(
+      "SELECT current_setting('app.user_id', true) AS user_id, current_setting('app.organization_id', true) AS organization_id"
+    );
+    assert.equal(leftOver.rows[0]?.user_id ?? "", "");
+    assert.equal(leftOver.rows[0]?.organization_id ?? "", "");
+    const compared = await checkUserOrganizationsEquality(admin.pool);
+    assert.equal(compared.length, 6);
+    tests.push(
+      `list_user_organizations is SECURITY INVOKER with a pinned search_path and EXECUTE only for the tenant runtime, returns the four fields, refuses a null, empty or padded user with 42501, leaves both settings empty within and across transactions on one connection, and answers exactly what the separate statements answer (${compared.join("; ")})`
     );
 
     // ------------------------------------------- 2. the stock balance list
