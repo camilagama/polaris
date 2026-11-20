@@ -11,7 +11,11 @@ import {
 import { ACTIVATION_EMAIL_EVENT_STATEMENT } from "../src/activation-email-events";
 import { ACTIVATION_ADDRESS_SUPPRESSED_STATEMENT } from "../src/activation-notice-store";
 import { createDatabase } from "../src/client";
-import { setLoginRole, withGateRole } from "./gate-roles";
+import {
+  inRolledBackTransaction,
+  setLoginRole,
+  withGateRole,
+} from "./gate-roles";
 import {
   disposableHostPattern,
   expectSqlState,
@@ -445,8 +449,7 @@ async function run() {
         "22023",
         "a null clock is refused"
       );
-      await client.query("BEGIN");
-      try {
+      await inRolledBackTransaction(client, async () => {
         await client.query(
           "INSERT INTO public.activation_series_state (enabled_since) VALUES (now()) ON CONFLICT (id) DO UPDATE SET enabled_since = EXCLUDED.enabled_since, updated_at = now()"
         );
@@ -465,9 +468,7 @@ async function run() {
           "42501",
           "the billing role writes only the instant"
         );
-      } finally {
-        await client.query("ROLLBACK");
-      }
+      });
     });
     tests.push(
       'activation_notice_candidates is SECURITY DEFINER of polaris_activation_notice_owner, volatile, with search_path pg_catalog, public, pg_temp and no dynamic SQL; of PUBLIC and every polaris_* group only the billing role executes it (and its owner), a tenant login is refused (42501), a limit of 0, 51 or null and a null clock are refused (22023); the state of the series is reached only by the billing role (which writes only the instant) and the owner of the series; that owner reads neither "user".email nor session and writes nothing'
@@ -477,8 +478,7 @@ async function run() {
       work: (client: Client) => Promise<T>
     ): Promise<T> =>
       as(adminUrl, async (client) => {
-        await client.query("BEGIN");
-        try {
+        return await inRolledBackTransaction(client, async () => {
           // the function must not lean on the session's zone: a database in São Paulo would hide a day of UTC
           await client.query("SET LOCAL TimeZone = 'UTC'");
           // the stores and notices other gates left are out of this transaction's answers
@@ -491,9 +491,7 @@ async function run() {
             [at(ten, -30 * DAY)]
           );
           return await work(client);
-        } finally {
-          await client.query("ROLLBACK");
-        }
+        });
       });
     const newPerson = async (client: Client, verified = true) => {
       const userId = randomUUID();
