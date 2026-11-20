@@ -2,6 +2,7 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { clearFirstSteps } from "../app-shell/first-steps";
+import { clearPeriodSummaryCaches } from "../lib/period-summary-cache";
 import { forgetLargeCatalog, LARGE_CATALOG_KEY } from "./home-inventory";
 import { homePeriods } from "./home-model";
 import { useHome } from "./use-home";
@@ -216,6 +217,7 @@ beforeEach(() => {
   }
   forgetLargeCatalog();
   window.sessionStorage.clear();
+  clearPeriodSummaryCaches(window.localStorage);
   clearFirstSteps();
 });
 

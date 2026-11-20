@@ -112,7 +112,10 @@ export async function mount(
     if (answer instanceof Error) {
       return Promise.reject(answer);
     }
-    return typeof answer === "function" ? answer() : Promise.resolve(answer);
+    // a Response body is read once: a shared answer is handed out as a copy, so test order cannot spend it
+    return typeof answer === "function"
+      ? answer()
+      : Promise.resolve(answer instanceof Response ? answer.clone() : answer);
   };
   const navigations: string[] = [];
   await mountAdmin(
