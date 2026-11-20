@@ -23,6 +23,7 @@ import {
   withAuthorizedTenantTransaction,
 } from "../src/tenant-transaction";
 import { assertAllowedGateUrl, disposableHostPattern } from "./gate-hosts";
+import { rollbackQuietly } from "./gate-roles";
 import { redactedFailure } from "./sales-gate-support";
 
 const gateDatabase =
@@ -139,7 +140,7 @@ async function withRuntimeSqlContext<T>(
     await client.query("COMMIT");
     return result;
   } catch (error) {
-    await client.query("ROLLBACK");
+    await rollbackQuietly(client);
     throw error;
   } finally {
     await client.end();

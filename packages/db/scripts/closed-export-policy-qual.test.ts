@@ -85,7 +85,7 @@ const QUALIFIED_ORGANIZATION_SCOPE = REAL.replace(
 
 function fakeServer(sessionSearchPath: string, failOn?: "select" | "rollback") {
   const statements: string[] = [];
-  const released: (Error | undefined)[] = [];
+  const released: (boolean | undefined)[] = [];
   let searchPath = sessionSearchPath;
   const pool: PolicyReadPool = {
     connect: () =>
@@ -111,8 +111,8 @@ function fakeServer(sessionSearchPath: string, failOn?: "select" | "rollback") {
           }
           return Promise.resolve({ rows: [] as T[] });
         },
-        release: (error?: Error) => {
-          released.push(error);
+        release: (destroy?: boolean) => {
+          released.push(destroy);
         },
       }),
   };
@@ -147,7 +147,7 @@ describe("readClosedExportPolicies", () => {
       CLOSED_EXPORT_POLICIES_SQL,
       "ROLLBACK",
     ]);
-    expect(server.released).toEqual([undefined]);
+    expect(server.released).toEqual([false]);
   });
 
   it("rolls back and releases when the select fails", async () => {
@@ -156,13 +156,12 @@ describe("readClosedExportPolicies", () => {
       readClosedExportPolicies(server.pool, "reader")
     ).rejects.toThrow("select failed");
     expect(server.statements.at(-1)).toBe("ROLLBACK");
-    expect(server.released).toEqual([undefined]);
+    expect(server.released).toEqual([false]);
   });
 
   it("gives the connection back as broken when the rollback fails", async () => {
     const server = fakeServer("pg_catalog", "rollback");
     await readClosedExportPolicies(server.pool, "reader");
-    expect(server.released).toHaveLength(1);
-    expect(server.released[0]?.message).toBe("connection lost");
+    expect(server.released).toEqual([true]);
   });
 });
