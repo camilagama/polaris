@@ -2,10 +2,11 @@ import { spawn } from "node:child_process";
 import { pathToFileURL } from "node:url";
 
 /**
- * The deploy passes `--message "$HEAD_SHA"`, and that message is what this reads back from the active deployment.
- * It runs in the job that holds the deploy token, so it only reads: the deployments list of the Cloudflare API
- * first (one GET, the Worker name written here and never taken from input) and, when that read fails or has
- * no message, two fixed wrangler subcommands. It never prints the body the API answers. The stderr of a failed
+ * The deploy passes `--message "$HEAD_SHA"`, and that message is stored on the version (not on the deployment),
+ * so this reads it back from the active version. It runs in the job that holds the deploy token, so it only reads:
+ * the deployments list of the Cloudflare API (which version is active) and that version, two GETs with the Worker
+ * name written here and never taken from input, and, when either read fails or the version has no message, two
+ * fixed wrangler subcommands. It never prints the body the API answers. The stderr of a failed
  * wrangler, which may carry the error text of the API, is printed only after `cleanStderr`: the token is redacted
  * and every line gets a fixed prefix, as the log is public and the runner acts on workflow commands that start a
  * line (it trims leading spaces, so the prefix is what protects, not the indentation).
@@ -61,7 +62,8 @@ export const ATTEMPTS = PAUSES_MS.length + 1;
 export const RETRY_WINDOW_MS = PAUSES_MS.reduce((sum, ms) => sum + ms, 0);
 // `deployments status` and `versions view`: the two wrangler reads of checkWorker when the API read fails
 export const WRANGLER_CALLS_PER_TRY = 2;
-export const API_CALLS_PER_TRY = 1;
+// the deployments list and the active version
+export const API_CALLS_PER_TRY = 2;
 
 /**
  * Longest the whole check can take. The last try of a Worker starts inside RETRY_WINDOW_MS and may hit
@@ -154,41 +156,26 @@ export function cleanStderr(text, env = process.env) {
     .join("\n");
 }
 
-/** What the active deployment of the API list says: a decision (`null` or the reason), or `undefined` for no message. */
-function checkApiDeployment(deployments, expectedSha) {
-  const { failure } = activeVersionId(deployments[0]);
-  if (failure) {
-    return failure;
-  }
-  const message = deployments[0].annotations?.["workers/message"];
-  if (typeof message !== "string" || message === "") {
-    return;
-  }
-  return compareMessage(message, expectedSha);
-}
-
 /**
- * `null` when the active version carries `expectedSha`, otherwise the reason. `apiDeployments(worker)` returns the
- * deployments list of the Cloudflare API (newest first) and is asked first; when it throws or the newest deployment
- * has no message, `wranglerJson(app, worker, args)` (the parsed JSON of a wrangler subcommand) reads it instead.
+ * `null` when the active version carries `expectedSha`, otherwise the reason. `api.deployments(worker)` returns the
+ * deployments list of the Cloudflare API (newest first) and `api.version(worker, id)` the version with that id; they
+ * are asked first, and when one throws or the version has no message, `wranglerJson(app, worker, args)` (the parsed
+ * JSON of a wrangler subcommand) reads it instead.
  */
 export async function checkWorker(
   { app, worker },
   expectedSha,
   wranglerJson,
-  apiDeployments = null
+  api = null
 ) {
-  if (apiDeployments) {
+  if (api) {
     try {
-      const decision = checkApiDeployment(
-        await apiDeployments(worker),
-        expectedSha
-      );
+      const decision = await checkApiVersion(worker, expectedSha, api);
       if (decision !== undefined) {
         return decision;
       }
       console.log(
-        `${worker}: the API deployment has no message, reading it with wrangler`
+        `${worker}: the API version has no message, reading it with wrangler`
       );
     } catch (error) {
       console.log(
@@ -211,6 +198,28 @@ export async function checkWorker(
     id,
     "--json",
   ]);
+  return compareVersion(version, id, expectedSha);
+}
+
+/** A decision (`null` or the reason), or `undefined` when the version has no message to compare. */
+async function checkApiVersion(worker, expectedSha, api) {
+  const deployments = await api.deployments(worker);
+  const { failure, id } = activeVersionId(deployments[0]);
+  if (failure) {
+    return failure;
+  }
+  const version = await api.version(worker, id);
+  if (version?.id !== id) {
+    return "the version read back is not the active one";
+  }
+  const message = version.annotations?.["workers/message"];
+  if (typeof message !== "string" || message === "") {
+    return;
+  }
+  return compareMessage(message, expectedSha);
+}
+
+function compareVersion(version, id, expectedSha) {
   if (version?.id !== id) {
     return "the version read back is not the active one";
   }
@@ -225,16 +234,8 @@ function reasonOf(error) {
   return error instanceof Error ? error.name : "error";
 }
 
-/**
- * The active deployment list of the Cloudflare API, newest first. Errors carry the HTTP status only, never the
- * body. `fetchImpl` and `env` are injected for the test.
- */
-export async function readApiDeployments(
-  worker,
-  env = process.env,
-  fetchImpl = fetch,
-  timeoutMs = API_TIMEOUT_MS
-) {
+/** The `result` of one GET to the Cloudflare API. Errors carry the HTTP status only, never the body. */
+async function apiGet(path, env, fetchImpl, timeoutMs) {
   const accountId = env.CLOUDFLARE_ACCOUNT_ID;
   const token = env.CLOUDFLARE_API_TOKEN;
   if (!(token && ACCOUNT_ID.test(accountId ?? ""))) {
@@ -242,13 +243,10 @@ export async function readApiDeployments(
   }
   let response;
   try {
-    response = await fetchImpl(
-      `${API_BASE}/accounts/${accountId}/workers/scripts/${encodeURIComponent(worker)}/deployments`,
-      {
-        headers: { authorization: `Bearer ${token}` },
-        signal: AbortSignal.timeout(timeoutMs),
-      }
-    );
+    response = await fetchImpl(`${API_BASE}/accounts/${accountId}${path}`, {
+      headers: { authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(timeoutMs),
+    });
   } catch (error) {
     throw new ApiError("no answer from the API", { cause: error });
   }
@@ -261,8 +259,27 @@ export async function readApiDeployments(
   } catch (error) {
     throw new ApiError("the API did not answer JSON", { cause: error });
   }
-  const deployments = body?.result?.deployments;
-  if (body?.success !== true || !Array.isArray(deployments)) {
+  if (body?.success !== true) {
+    throw new ApiError("the API answer is not a success");
+  }
+  return body.result;
+}
+
+/** The deployments list of the Cloudflare API, newest first. `fetchImpl` and `env` are injected for the test. */
+export async function readApiDeployments(
+  worker,
+  env = process.env,
+  fetchImpl = fetch,
+  timeoutMs = API_TIMEOUT_MS
+) {
+  const result = await apiGet(
+    `/workers/scripts/${encodeURIComponent(worker)}/deployments`,
+    env,
+    fetchImpl,
+    timeoutMs
+  );
+  const deployments = result?.deployments;
+  if (!Array.isArray(deployments)) {
     throw new ApiError("the API answer has no deployments list");
   }
   if (deployments.length === 0) {
@@ -271,15 +288,39 @@ export async function readApiDeployments(
   return deployments;
 }
 
+/** One version of a Worker, whose `annotations` carry the deploy message. The id is a UUID before it reaches the path. */
+export async function readApiVersion(
+  worker,
+  versionId,
+  env = process.env,
+  fetchImpl = fetch,
+  timeoutMs = API_TIMEOUT_MS
+) {
+  if (typeof versionId !== "string" || !UUID.test(versionId)) {
+    throw new ApiError("the version id is not a UUID");
+  }
+  const result = await apiGet(
+    `/workers/scripts/${encodeURIComponent(worker)}/versions/${versionId}`,
+    env,
+    fetchImpl,
+    timeoutMs
+  );
+  if (result === null || typeof result !== "object") {
+    throw new ApiError("the API answer has no version");
+  }
+  return result;
+}
+
+/** The API readers of checkWorker. */
+export const apiReaders = {
+  deployments: (worker) => readApiDeployments(worker),
+  version: (worker, id) => readApiVersion(worker, id),
+};
+
 /** One read of a Worker: its failure reason (`""` when it carries the commit) and the cleaned stderr of a failed wrangler. */
-async function attempt(target, expectedSha, wranglerJson, apiDeployments) {
+async function attempt(target, expectedSha, wranglerJson, api) {
   try {
-    const reason = await checkWorker(
-      target,
-      expectedSha,
-      wranglerJson,
-      apiDeployments
-    );
+    const reason = await checkWorker(target, expectedSha, wranglerJson, api);
     return { reason: reason ?? "", stderr: "" };
   } catch (error) {
     return {
@@ -294,7 +335,7 @@ async function attempt(target, expectedSha, wranglerJson, apiDeployments) {
  * is read through the API that just accepted it and may not show it yet, so a check that does not pass is tried
  * again after PAUSES_MS (growing) while the Worker is inside RETRY_WINDOW_MS; a Worker that still carries another
  * commit after the window fails with the reason of its last try. `pause(ms)` sleeps and `now()` reads a clock in
- * ms, both injected so a test never waits. `apiDeployments` is the API reader of checkWorker (none: wrangler only).
+ * ms, both injected so a test never waits. `api` is the API readers of checkWorker (none: wrangler only).
  */
 export async function verifyDeployedSha(
   expectedSha,
@@ -302,7 +343,7 @@ export async function verifyDeployedSha(
   pause,
   workers = STAGING_WORKERS,
   now = Date.now,
-  apiDeployments = null
+  api = null
 ) {
   if (typeof expectedSha !== "string" || !SHA.test(expectedSha)) {
     return ["HEAD_SHA is not a full commit SHA (40 lowercase hex characters)"];
@@ -315,12 +356,7 @@ export async function verifyDeployedSha(
     let reason = "";
     for (let tries = 1; ; tries += 1) {
       // biome-ignore lint/performance/noAwaitInLoops: the attempts are sequential by design
-      const outcome = await attempt(
-        target,
-        expectedSha,
-        wranglerJson,
-        apiDeployments
-      );
+      const outcome = await attempt(target, expectedSha, wranglerJson, api);
       ({ reason } = outcome);
       console.log(
         `try ${tries}/${ATTEMPTS} ${target.worker}: ${reason === "" ? `active version is ${expectedSha.slice(0, 12)}` : reason} (${seconds()} s since the check started)`
@@ -425,7 +461,7 @@ async function main() {
     wait,
     workers,
     Date.now,
-    readApiDeployments
+    apiReaders
   );
   if (failures.length > 0) {
     console.error(`Deployed version check failed (${failures.length}).`);

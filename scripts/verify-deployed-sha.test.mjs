@@ -21,6 +21,7 @@ import {
   PRODUCTION_WORKERS,
   RETRY_WINDOW_MS,
   readApiDeployments,
+  readApiVersion,
   runWrangler,
   STAGING_WORKERS,
   verifyDeployedSha,
@@ -612,11 +613,11 @@ wait
     });
   });
 
-  it("keeps the worst case of the whole check at 330 s, as the runbook says", () => {
+  it("keeps the worst case of the whole check at 360 s, as the runbook says", () => {
     expect(WRANGLER_TIMEOUT_MS).toBe(20_000);
     expect(API_TIMEOUT_MS).toBe(10_000);
-    expect(worstCaseMs(STAGING_WORKERS)).toBe(330_000);
-    expect(worstCaseMs(STAGING_WORKERS.length)).toBe(330_000);
+    expect(worstCaseMs(STAGING_WORKERS)).toBe(360_000);
+    expect(worstCaseMs(STAGING_WORKERS.length)).toBe(360_000);
   });
 
   it("makes as many wrangler calls per try as the worst case counts", async () => {
@@ -634,7 +635,7 @@ wait
       RETRY_WINDOW_MS +
       API_CALLS_PER_TRY * API_TIMEOUT_MS +
       WRANGLER_CALLS_PER_TRY * WRANGLER_TIMEOUT_MS;
-    expect(perWorker).toBe(110_000);
+    expect(perWorker).toBe(120_000);
     expect(worstCaseMs(5)).toBe(5 * perWorker);
     expect(worstCaseMs(0)).toBe(0);
   });
@@ -657,13 +658,12 @@ const LINE_STARTING_WITH_COMMAND = /^::/m;
 const TOKEN = "cfut_SECRETSECRETSECRETSECRET1234";
 const ACCOUNT = "0123456789abcdef0123456789abcdef";
 
-/** The deployments list of the API: newest first, one deployment at 100% carrying `message`. */
-const apiList = (id, message) => [
-  {
-    annotations: message === undefined ? {} : { "workers/message": message },
-    id: "d",
-    versions: [{ percentage: 100, version_id: id }],
-  },
+/**
+ * The deployments list of the API: newest first, one deployment at 100% of `id`. The deployment carries no message
+ * (as in the real API, where `--message` is stored on the version).
+ */
+const apiList = (id) => [
+  { id: "d", versions: [{ percentage: 100, version_id: id }] },
 ];
 
 const IDS = {
@@ -671,6 +671,23 @@ const IDS = {
   "polaris-catalog-staging": CATALOG_VERSION,
   "polaris-web-staging": WEB_VERSION,
 };
+
+/** The API readers of a host that serves `message` on the version of every Worker (`override` replaces the version). */
+function fakeApi(message = SHA, override = {}) {
+  const calls = [];
+  const api = {
+    calls,
+    deployments: vi.fn((worker) => {
+      calls.push(["deployments", worker]);
+      return Promise.resolve(override.list ?? apiList(IDS[worker]));
+    }),
+    version: vi.fn((worker, id) => {
+      calls.push(["version", worker, id]);
+      return Promise.resolve(override.version ?? version(id, message));
+    }),
+  };
+  return api;
+}
 
 describe("the read through the Cloudflare API", () => {
   beforeEach(() => {
@@ -680,9 +697,9 @@ describe("the read through the Cloudflare API", () => {
     vi.restoreAllMocks();
   });
 
-  it("passes on the first API read without calling wrangler", async () => {
+  it("passes on the first API read, taking the message from the version and not calling wrangler", async () => {
     const wrangler = fakeWrangler();
-    const api = vi.fn((worker) => Promise.resolve(apiList(IDS[worker], SHA)));
+    const api = fakeApi(SHA);
     expect(
       await verifyDeployedSha(
         SHA,
@@ -693,15 +710,40 @@ describe("the read through the Cloudflare API", () => {
         api
       )
     ).toEqual([]);
-    expect(api.mock.calls.map(([worker]) => worker)).toEqual(
-      STAGING_WORKERS.map(({ worker }) => worker)
+    expect(api.calls).toEqual(
+      STAGING_WORKERS.flatMap(({ worker }) => [
+        ["deployments", worker],
+        ["version", worker, IDS[worker]],
+      ])
     );
     expect(wrangler.calls).toEqual([]);
   });
 
-  it("falls back to wrangler when the API read fails, and says so without the API's words", async () => {
+  it("ignores a message on the deployment: only the one on the version decides", async () => {
     const wrangler = fakeWrangler();
-    const api = vi.fn(() => Promise.reject(new Error("token abc123 leaked")));
+    const api = fakeApi(SHA, {
+      list: [
+        {
+          annotations: { "workers/message": OTHER },
+          id: "d",
+          versions: [{ percentage: 100, version_id: WEB_VERSION }],
+        },
+      ],
+    });
+    expect(
+      await checkWorker(STAGING_WORKERS[0], SHA, wrangler, api)
+    ).toBeNull();
+    expect(wrangler.calls).toEqual([]);
+  });
+
+  it("falls back to wrangler when the deployments read fails, and says so without the API's words", async () => {
+    const wrangler = fakeWrangler();
+    const api = {
+      deployments: vi.fn(() =>
+        Promise.reject(new Error("token abc123 leaked"))
+      ),
+      version: vi.fn(),
+    };
     expect(
       await verifyDeployedSha(
         SHA,
@@ -712,27 +754,46 @@ describe("the read through the Cloudflare API", () => {
         api
       )
     ).toEqual([]);
+    expect(api.version).not.toHaveBeenCalled();
     expect(wrangler.calls).toHaveLength(WRANGLER_CALLS_PER_TRY);
     const lines = console.log.mock.calls.map(([line]) => line).join("\n");
     expect(lines).toContain("the API read failed (Error)");
     expect(lines).not.toContain("abc123");
   });
 
-  it("falls back to wrangler when the API deployment carries no message", async () => {
+  it("falls back to wrangler when the version read fails", async () => {
     const wrangler = fakeWrangler();
-    const api = vi.fn((worker) =>
-      Promise.resolve(apiList(IDS[worker], undefined))
-    );
+    const api = {
+      ...fakeApi(SHA),
+      version: vi.fn(() => Promise.reject(new Error("down"))),
+    };
     expect(
       await checkWorker(STAGING_WORKERS[0], SHA, wrangler, api)
     ).toBeNull();
     expect(wrangler.calls).toHaveLength(WRANGLER_CALLS_PER_TRY);
   });
 
+  it("falls back to wrangler when the API version carries no message", async () => {
+    const wrangler = fakeWrangler();
+    expect(
+      await checkWorker(STAGING_WORKERS[0], SHA, wrangler, fakeApi(""))
+    ).toBeNull();
+    expect(wrangler.calls).toHaveLength(WRANGLER_CALLS_PER_TRY);
+  });
+
+  it("fails when the version the API returns is not the active one", async () => {
+    const wrangler = fakeWrangler();
+    const api = fakeApi(SHA, { version: version(CATALOG_VERSION, SHA) });
+    expect(await checkWorker(STAGING_WORKERS[0], SHA, wrangler, api)).toBe(
+      "the version read back is not the active one"
+    );
+    expect(wrangler.calls).toEqual([]);
+  });
+
   it("fails with the usual message when every API read carries another commit, never asking wrangler", async () => {
     const clock = fakeClock();
     const wrangler = fakeWrangler();
-    const api = vi.fn((worker) => Promise.resolve(apiList(IDS[worker], OTHER)));
+    const api = fakeApi(OTHER);
     const failures = await verifyDeployedSha(
       SHA,
       wrangler,
@@ -744,7 +805,7 @@ describe("the read through the Cloudflare API", () => {
     expect(failures).toEqual([
       "polaris-web-staging: the active version carries the commit fedcba987654, expected the commit 0123456789ab",
     ]);
-    expect(api).toHaveBeenCalledTimes(ATTEMPTS);
+    expect(api.version).toHaveBeenCalledTimes(ATTEMPTS);
     expect(clock.pauses).toEqual(PAUSES_MS);
     expect(wrangler.calls).toEqual([]);
   });
@@ -752,9 +813,12 @@ describe("the read through the Cloudflare API", () => {
   it("retries the API read and passes when the commit shows up late", async () => {
     const clock = fakeClock();
     let reads = 0;
-    const api = (worker) => {
-      reads += 1;
-      return Promise.resolve(apiList(IDS[worker], reads < 3 ? OTHER : SHA));
+    const api = {
+      deployments: (worker) => Promise.resolve(apiList(IDS[worker])),
+      version: (_worker, id) => {
+        reads += 1;
+        return Promise.resolve(version(id, reads < 3 ? OTHER : SHA));
+      },
     };
     expect(
       await verifyDeployedSha(
@@ -769,12 +833,11 @@ describe("the read through the Cloudflare API", () => {
     expect(clock.pauses).toEqual([5000, 10_000]);
   });
 
-  it("fails on a split, a partial share or an id that is not a UUID in the API list", async () => {
+  it("fails on a split, a partial share or an id that is not a UUID in the API list, before reading a version", async () => {
     const cases = [
       [
         [
           {
-            annotations: { "workers/message": SHA },
             versions: [
               { percentage: 50, version_id: WEB_VERSION },
               { percentage: 50, version_id: CATALOG_VERSION },
@@ -784,32 +847,24 @@ describe("the read through the Cloudflare API", () => {
         "the active deployment is not a single version (2 versions listed)",
       ],
       [
-        [
-          {
-            annotations: { "workers/message": SHA },
-            versions: [{ percentage: 90, version_id: WEB_VERSION }],
-          },
-        ],
+        [{ versions: [{ percentage: 90, version_id: WEB_VERSION }] }],
         "the active version does not take 100% of the traffic",
       ],
       [
-        [
-          {
-            annotations: { "workers/message": SHA },
-            versions: [{ percentage: 100, version_id: "--name=other" }],
-          },
-        ],
+        [{ versions: [{ percentage: 100, version_id: "--name=other" }] }],
         "the active version has no valid id",
       ],
     ];
+    const apis = cases.map(([list]) => fakeApi(SHA, { list }));
     const reasons = await Promise.all(
-      cases.map(([list]) =>
-        checkWorker(STAGING_WORKERS[0], SHA, fakeWrangler(), () =>
-          Promise.resolve(list)
-        )
+      cases.map((_case, index) =>
+        checkWorker(STAGING_WORKERS[0], SHA, fakeWrangler(), apis[index])
       )
     );
     expect(reasons).toEqual(cases.map(([, reason]) => reason));
+    for (const api of apis) {
+      expect(api.version).not.toHaveBeenCalled();
+    }
   });
 
   it("does not echo a message that is not a commit SHA", async () => {
@@ -817,7 +872,7 @@ describe("the read through the Cloudflare API", () => {
       STAGING_WORKERS[0],
       SHA,
       fakeWrangler(),
-      () => Promise.resolve(apiList(WEB_VERSION, "::error::forged"))
+      fakeApi("::error::forged")
     );
     expect(reason).toBe(
       "the active version carries a message that is not a commit SHA, expected the commit 0123456789ab"
@@ -836,7 +891,7 @@ describe("readApiDeployments", () => {
     readApiDeployments(worker, env, fetchImpl);
 
   it("asks GET /accounts/{account}/workers/scripts/{name}/deployments with the bearer token and returns the list", async () => {
-    const list = apiList(WEB_VERSION, SHA);
+    const list = apiList(WEB_VERSION);
     const fetchImpl = vi.fn(() =>
       Promise.resolve(answer({ result: { deployments: list }, success: true }))
     );
@@ -888,6 +943,10 @@ describe("readApiDeployments", () => {
       ],
       [
         () => Promise.resolve(answer({ success: false })),
+        "the API answer is not a success",
+      ],
+      [
+        () => Promise.resolve(answer({ result: {}, success: true })),
         "the API answer has no deployments list",
       ],
       [
@@ -902,6 +961,53 @@ describe("readApiDeployments", () => {
       // biome-ignore lint/performance/noAwaitInLoops: each case on its own, for a clear failure
       await expect(read(fetchImpl)).rejects.toThrow(message);
     }
+  });
+});
+
+describe("readApiVersion", () => {
+  const env = { CLOUDFLARE_ACCOUNT_ID: ACCOUNT, CLOUDFLARE_API_TOKEN: TOKEN };
+  const answer = (body, status = 200) => ({
+    json: () => Promise.resolve(body),
+    ok: status >= 200 && status < 300,
+    status,
+  });
+  const read = (fetchImpl, id = WEB_VERSION) =>
+    readApiVersion("polaris-web-staging", id, env, fetchImpl);
+
+  it("asks GET /accounts/{account}/workers/scripts/{name}/versions/{id} with the bearer token and returns the version", async () => {
+    const found = version(WEB_VERSION, SHA);
+    const fetchImpl = vi.fn(() =>
+      Promise.resolve(answer({ result: found, success: true }))
+    );
+    expect(await read(fetchImpl)).toEqual(found);
+    const [url, init] = fetchImpl.mock.calls[0];
+    expect(url).toBe(
+      `https://api.cloudflare.com/client/v4/accounts/${ACCOUNT}/workers/scripts/polaris-web-staging/versions/${WEB_VERSION}`
+    );
+    expect(init.headers.authorization).toBe(`Bearer ${TOKEN}`);
+    expect(init.method).toBeUndefined();
+    expect(init.signal).toBeInstanceOf(AbortSignal);
+  });
+
+  it("refuses an id that is not a UUID before any request", async () => {
+    const fetchImpl = vi.fn();
+    for (const bad of ["../x", "--name=other", "", null]) {
+      // biome-ignore lint/performance/noAwaitInLoops: each case on its own, for a clear failure
+      await expect(read(fetchImpl, bad)).rejects.toThrow(
+        "the version id is not a UUID"
+      );
+    }
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("reports the HTTP status only and refuses an answer without a version", async () => {
+    const forbidden = await read(() =>
+      Promise.resolve(answer({ errors: [{ message: TOKEN }] }, 404))
+    ).catch((caught) => caught);
+    expect(forbidden.message).toBe("the API answered HTTP 404");
+    await expect(
+      read(() => Promise.resolve(answer({ result: null, success: true })))
+    ).rejects.toThrow("the API answer has no version");
   });
 });
 
@@ -969,7 +1075,10 @@ exit 1
   const worker = decodeURIComponent(String(url).split("/scripts/")[1].split("/")[0]);
   const ids = ${JSON.stringify(IDS)};
   console.log("GET " + String(url).replace(/^https:\\/\\/api\\.cloudflare\\.com\\/client\\/v4\\/accounts\\/[0-9a-f]+/, "") + " " + (init.headers.authorization === "Bearer ${TOKEN}"));
-  return { ok: true, status: 200, json: async () => ({ success: true, result: { deployments: [{ annotations: { "workers/message": "${SHA}" }, versions: [{ percentage: 100, version_id: ids[worker] }] }] } }) };
+  const result = String(url).endsWith("/deployments")
+    ? { deployments: [{ versions: [{ percentage: 100, version_id: ids[worker] }] }] }
+    : { id: ids[worker], annotations: { "workers/message": "${SHA}" } };
+  return { ok: true, status: 200, json: async () => ({ success: true, result }) };
 };
 `
     );
@@ -999,6 +1108,9 @@ exit 1
     );
     expect(result.stdout).toContain(
       "GET /workers/scripts/polaris-admin-staging/deployments true"
+    );
+    expect(result.stdout).toContain(
+      `GET /workers/scripts/polaris-admin-staging/versions/${ADMIN_VERSION} true`
     );
     expect(result.stdout).not.toContain("the API read failed");
     expect(result.stdout).not.toContain(TOKEN);
@@ -1032,7 +1144,7 @@ exit 1
       `import { verifyDeployedSha, runWrangler, STAGING_WORKERS } from ${JSON.stringify(
         new URL("./verify-deployed-sha.mjs", import.meta.url).href
       )};
-const failures = await verifyDeployedSha(process.env.HEAD_SHA, runWrangler, async () => {}, [STAGING_WORKERS[0]], () => 0, async () => { throw new Error("down"); });
+const failures = await verifyDeployedSha(process.env.HEAD_SHA, runWrangler, async () => {}, [STAGING_WORKERS[0]], () => 0, { deployments: async () => { throw new Error("down"); } });
 console.log(JSON.stringify(failures));
 `
     );
