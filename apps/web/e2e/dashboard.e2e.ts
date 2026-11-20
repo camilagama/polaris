@@ -22,6 +22,10 @@ import { serveLabWorker, WORKER_MARK } from "./worker-mark";
  * real server computes is proved on PostgreSQL by the `economics` gate.
  */
 const NOW = "2026-10-14T12:00:00.000Z";
+
+// Independent tests, each with its own browser context: the shard splits the file by test.
+test.describe.configure({ mode: "parallel" });
+
 /** The server read the figures at NOW: 09:00 in the lab organization (America/Sao_Paulo). */
 const UPDATED_AT = "Atualizado às 09:00";
 const UPDATED_NAME = "Atualizar, atualizado às 09:00";
