@@ -349,7 +349,6 @@ function world(options: { leaseHours?: number } = {}) {
     },
     api,
     calls,
-    sessionFresh,
     closed,
     disk,
     expectedUsers,
@@ -380,6 +379,7 @@ function world(options: { leaseHours?: number } = {}) {
     },
     server,
     session,
+    sessionFresh,
     stores,
     wiped,
   };
@@ -754,9 +754,10 @@ describe("starting", () => {
       }
     );
 
-    it("a lease the server issued that cannot be read is no lease of this person: one other device at most, the start ends unavailable", async () => {
-      const { w } = await deviceWithoutLease();
+    it("a lease the server issued that cannot be read keeps the device and the key: nothing is registered, the start ends unavailable", async () => {
+      const { device, w } = await deviceWithoutLease();
       const registered = w.calls.registerDevice;
+      const remove = vi.spyOn(w.keyValues, "remove");
       const runtime = w.make(null, {
         api: {
           ...w.api,
@@ -768,10 +769,12 @@ describe("starting", () => {
       });
       await runtime.start(organizationId);
 
-      expect(w.calls.registerDevice).toBe(registered + 1);
+      expect(remove).not.toHaveBeenCalledWith("polaris.offline.device");
+      expect(w.calls.registerDevice).toBe(registered);
+      expect(w.keyValues.read("polaris.offline.device")).toBe(device);
       expect(runtime.getSnapshot()).toMatchObject({
         phase: "unavailable",
-        reason: "lease_wrong_user",
+        reason: "lease_unreadable",
       });
       expect(runtime.context()).toBeNull();
     });

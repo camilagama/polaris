@@ -313,7 +313,8 @@ function isWrongUserLease(error: unknown): boolean {
 
 /**
  * The only failures of asking for the lease that say the remembered device is not this person's: the server's
- * definite refusal, or a lease that is not this person's (one that names somebody else or cannot be read). Whatever
+ * definite refusal, or a readable lease that is not this user's, organization's and device's (an unreadable one says
+ * nothing about whose the device is). Whatever
  * else went wrong (no answer, an unknown error) is no news about the device, and registering another one would not fix it.
  */
 function isDeviceForgettingFailure(error: unknown): boolean {
@@ -1716,6 +1717,10 @@ export class OfflineRuntime {
     if (!this.leaseIsUsable(issued.lease, userId, organizationId, deviceId)) {
       if (usable) {
         return usable.lease;
+      }
+      // an unreadable lease says nothing about whose the device is: it keeps the device
+      if (readUnverifiedOfflineLease(issued.lease) === null) {
+        throw new Error("lease_unreadable");
       }
       throw new Error("lease_wrong_user");
     }
