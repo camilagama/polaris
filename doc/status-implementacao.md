@@ -3601,8 +3601,8 @@ Origem: achado B do Diego no Pixel 6 (28/10): a venda montada em Vender sumia ao
 
 | Item | Estado | Detalhe |
 | --- | --- | --- |
-| Handler | Em revisão | `server/rpc/goal-handlers.ts`: `goal.list` lê, numa transação repeatable read que nunca escreve, `evaluateActiveGoals`, `listGoals` e `listPausedGoalIds`. Só quando alguma meta pede liquidação abre uma segunda (read committed) com `settleGoals` e as duas leituras de novo, e a resposta sai delas; `create`, `update` e `cancel` também só abrem a transação de liquidação quando há o que liquidar. `goal.list` segue `read`. |
-| Medida | Em revisão | `STATEMENT_COUNTS["goal/list"]` 25 → 10 e, com uma meta ativa, 44 → 29 (gate `web-worker`, PostgreSQL 18 local). |
+| Handler | Em revisão | `server/rpc/goal-handlers.ts`: `goal.list` lê, numa transação repeatable read que nunca escreve, só `evaluateActiveGoals`, que devolve também as metas (todos os status) e os ids pausados que já leu; o handler filtra pelo `status` pedido e não lê `listGoals` nem `listPausedGoalIds` de novo. Só quando alguma meta pede liquidação abre uma segunda (read committed) com `settleGoals` e as duas leituras de novo, e a resposta sai delas; `create`, `update` e `cancel` também só abrem a transação de liquidação quando há o que liquidar. `goal.list` segue `read`. |
+| Medida | Em revisão | `STATEMENT_COUNTS["goal/list"]` 25 → 10 e, com uma meta ativa, 44 → 29 (gate `web-worker`, PostgreSQL 18 local). Sem a leitura repetida de `listGoals` e `listPausedGoalIds` no handler: 10 → 8 e, com uma meta ativa, 29 → 22. |
 | Provas | Em revisão | `goal-router.test.ts` (1 transação sem liquidação, 2 com, a resposta da 2ª, recusa de sessão e cada código de `TenantAuthorizationError` sem trabalho, tally zerado no retry, mutante "liquida sempre" reprova), gates `goals` e `home-writes` verdes (o `goals` chama o repositório na ordem antiga, em transações separadas; o `home-writes` reproduz as duas transações do handler, com a lista da transação 2 lida depois do `settleGoals`; a garantia de que a transação 1 não escreve é do teste do handler). |
 
 ### Início: o estoque é lido numa lista só (t1431; sem migration)

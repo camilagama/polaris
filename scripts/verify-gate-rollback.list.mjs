@@ -53,7 +53,7 @@ export const GATE_ROLLBACK_LIST = {
     reason: BEFORE_THE_RULE,
   },
   "packages/db/scripts/verify-account-key-gate.ts": {
-    count: 2,
+    count: 1,
     reason: BEFORE_THE_RULE,
   },
   "packages/db/scripts/verify-activation-funnel-gate.ts": {
@@ -81,7 +81,7 @@ export const GATE_ROLLBACK_LIST = {
     reason: BEFORE_THE_RULE,
   },
   "packages/db/scripts/verify-definer-hardening-gate.ts": {
-    count: 2,
+    count: 1,
     reason: BEFORE_THE_RULE,
   },
   "packages/db/scripts/verify-definer-owners-gate.ts": {

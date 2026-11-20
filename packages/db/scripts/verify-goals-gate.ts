@@ -149,7 +149,8 @@ async function run() {
           isolationLevel: "repeatable read",
           requestedOrganizationId: tenant.organizationId,
         },
-        (tx, identity) => evaluateActiveGoals(tx, identity)
+        async (tx, identity) =>
+          (await evaluateActiveGoals(tx, identity)).progress
       );
     /** What the handler does: evaluate in a snapshot, then settle in a short transaction. */
     const refresh = async (tenant: TenantFixture) => {
