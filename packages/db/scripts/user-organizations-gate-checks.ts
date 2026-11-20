@@ -224,7 +224,7 @@ export async function checkUserOrganizationsLeaveNoSetting(
         rows: { organization_id: string | null; user_id: string | null }[];
       }
     ).rows[0];
-  const inTransaction = async (call: string, end: "COMMIT" | "ROLLBACK") => {
+  const inTransaction = async (call: string, end: "commit" | "abort") => {
     await runtimeClient.query("BEGIN");
     try {
       const listed = (await runtimeClient.query(FUNCTION_CALL, [user])) as {
@@ -236,7 +236,7 @@ export async function checkUserOrganizationsLeaveNoSetting(
         { organization_id: "", user_id: "" },
         `after the ${call} call, a statement of the same transaction finds both settings empty`
       );
-      if (end === "ROLLBACK") {
+      if (end === "abort") {
         await assert.rejects(
           runtimeClient.query("SELECT 1 / 0"),
           divisionByZero
@@ -257,16 +257,16 @@ export async function checkUserOrganizationsLeaveNoSetting(
   );
   try {
     for (const [call, end] of [
-      ["first", "COMMIT"],
-      ["second", "COMMIT"],
-      ["aborted", "ROLLBACK"],
+      ["first", "commit"],
+      ["second", "commit"],
+      ["aborted", "abort"],
     ] as const) {
       // biome-ignore lint/performance/noAwaitInLoops: the calls run one after the other on the one connection
       await inTransaction(call, end);
       assert.deepEqual(
         await settingsOf(),
         SESSION_SETTINGS,
-        `after the ${end} of the ${call} call, the connection has its own settings back`
+        `after the ${end === "commit" ? "COMMIT" : "rollback"} of the ${call} call, the connection has its own settings back`
       );
     }
   } finally {
