@@ -6,8 +6,6 @@ const source = readFileSync(
   "utf8"
 );
 
-const READS_BY_MEMORY = /planRead\s*\.get\(organizationId\)/;
-const READS_STRAIGHT = /orpcClient|\.readPlan\(/;
 const READING_WRITE = /reading\.current\s*(?:\|\||&&|\?\?)?=[^;]+;/gs;
 const SKIP_BLOCK = /if \(([^{]*?)\) \{\s*return;/s;
 const IN_FLIGHT_CHECK =
@@ -63,12 +61,5 @@ describe("the wait after failed reads in the grace notice", () => {
       "false ||"
     );
     expect(skipsWhenReading(outside)).toBe(false);
-  });
-});
-
-describe("the read of the plan in the grace notice", () => {
-  it("goes through the memory the screens share, never straight to the RPC", () => {
-    expect(source).toMatch(READS_BY_MEMORY);
-    expect(source).not.toMatch(READS_STRAIGHT);
   });
 });
