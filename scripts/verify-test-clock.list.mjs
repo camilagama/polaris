@@ -33,16 +33,7 @@ export const TEST_CLOCK_LIST = {
       "o servidor simulado das specs da casca assina o lease com a hora real (ou a do relógio fixado por serveFoot) e grava o comando recusado na hora do navegador, que roda no relógio real nas specs que não o fixam; são as leituras que saíram de app-shell.e2e.ts, sem leitura nova",
   },
   "apps/web/e2e/close-store.e2e.ts": { count: 2, reason: BEFORE_THE_RULE },
-  "apps/web/e2e/closed-store-device.e2e.ts": {
-    count: 1,
-    reason: BEFORE_THE_RULE,
-  },
-  "apps/web/e2e/closed-store-sale.e2e.ts": {
-    count: 1,
-    reason: BEFORE_THE_RULE,
-  },
   "apps/web/e2e/home.e2e.ts": { count: 4, reason: BEFORE_THE_RULE },
-  "apps/web/e2e/offline-devices.e2e.ts": { count: 1, reason: BEFORE_THE_RULE },
   "apps/web/e2e/offline-runtime-api.e2e.ts": {
     count: 1,
     reason: BEFORE_THE_RULE,

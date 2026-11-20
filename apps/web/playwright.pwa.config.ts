@@ -64,7 +64,7 @@ export default defineConfig({
       use: { browserName: "chromium", connectOptions: visualConnectOptions() },
     },
   ],
-  reporter: "list",
+  reporter: inCI ? [["list"], ["github"]] : "list",
   retries: inCI ? 1 : 0,
   testDir: "./e2e-pwa",
   testMatch: "**/*.e2e.ts",

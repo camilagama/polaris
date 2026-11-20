@@ -1,6 +1,6 @@
 # RLS and Hyperdrive gate (PR11)
 
-This is an isolated architecture proof. It uses only the synthetic organizations `org_a` and `org_b` and the table `rls_poc_operations`; it does not create Polaris business entities. The route is absent from the default Worker entrypoint and is included only by `worker/pr11.ts`. The separate Wrangler configuration is for remote development; do not deploy `wrangler.pr11.jsonc`.
+This is an isolated architecture proof. It uses only the synthetic organizations `org_a` and `org_b` and the table `rls_poc_operations`; it does not create Polaris business entities. The route is absent from the default Worker entrypoint and is included only by `apps/web/poc/pr11.ts`. The separate Wrangler configuration is for remote development; do not deploy `apps/web/poc/wrangler.pr11.jsonc`.
 
 ## Prerequisites
 

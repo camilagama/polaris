@@ -28,7 +28,8 @@ const ORGANIZATION = {
   timezone: "America/Sao_Paulo",
 };
 const id = (n: number) => `0199c2d0-0000-7000-8000-0000000000${n}`;
-const DAY = "2026-10-14T12:00:00.000Z";
+const NOW = new Date("2026-10-14T12:00:00-03:00");
+const DAY = NOW.toISOString();
 
 const rpc = (json: unknown, status = 200) => ({
   body: JSON.stringify({ json, meta: [] }),
@@ -96,6 +97,7 @@ async function openScreen(
     const handler = answers[procedure];
     return handler ? handler(route) : route.abort("internetdisconnected");
   });
+  await page.clock.setFixedTime(NOW);
   await page.goto(path);
   // Categorias and Catálogo público are tabs now (of Produtos and of Configurações): their title is an h2 there
   const level = TAB_PATHS.includes(path) ? 2 : 1;

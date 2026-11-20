@@ -35,6 +35,7 @@ const LEASE_KEY = {
 /** Any amount in reais, as the page or a slider would say it. */
 const AN_AMOUNT = /R\$ -?\d/;
 const HOUR = 3_600_000;
+const RETURN_REFRESH_MS = 5 * 60_000 + 1000;
 const DAY = 24 * HOUR;
 const DEVICE = {
   createdAt: "2026-10-01T12:00:00.000Z",
@@ -799,6 +800,18 @@ const newSale = (page: Page) =>
   page.getByRole("link", { exact: true, name: "Nova venda" });
 const periodCalls = (server: FakeServer) =>
   server.calls.filter((call) => call.procedure === "report/periodSummary");
+
+/**
+ * No read left on its way: two frames so the event has left the page, a second of the page's clock so a timer that
+ * would start a read fires, then the network idle of Playwright (signals, not a wait). A count taken before this
+ * passes while an answer is still flying. The second stays under the 5 min that the tests count.
+ */
+async function readsEnded(page: Page) {
+  await settled(page);
+  await page.clock.runFor(1000);
+  await page.waitForLoadState("networkidle");
+  await settled(page);
+}
 
 function goal(overrides: Record<string, unknown>) {
   return {
@@ -2618,21 +2631,46 @@ test.describe("atualização (§ 5.1, relógio controlado)", () => {
     expect(periodCalls(server).at(-2)?.input.from).toBe("2026-10-01");
   });
 
-  test("ao voltar à aba relê, no máximo uma vez a cada 30 s", async ({
+  test("ao voltar à aba relê, no máximo uma vez a cada 5 min", async ({
     page,
   }) => {
     const server = new FakeServer(SOLD);
     await openHome(page, server);
     await expect(region(page, "Vendas hoje")).toContainText("R$ 320,10");
+    await readsEnded(page);
     const before = periodCalls(server).length;
     await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+    await readsEnded(page);
     expect(periodCalls(server).length).toBe(before);
-    await page.clock.runFor(31_000);
+    await page.clock.runFor(4 * 60_000);
+    await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+    await readsEnded(page);
+    expect(periodCalls(server).length).toBe(before);
+    await page.clock.runFor(RETURN_REFRESH_MS - 4 * 60_000);
     server.scenario = {
       ...SOLD,
       days: { ...SOLD.days, "2026-10-23": [42_010, 3] },
     };
     await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+    await expect(region(page, "Vendas hoje")).toContainText("R$ 420,10");
+  });
+
+  test("a página volta do histórico (pageshow persistido): relê mesmo antes dos 5 min", async ({
+    page,
+  }) => {
+    const server = new FakeServer(SOLD);
+    await openHome(page, server);
+    await expect(region(page, "Vendas hoje")).toContainText("R$ 320,10");
+    await page.clock.runFor(60_000);
+    server.scenario = {
+      ...SOLD,
+      days: { ...SOLD.days, "2026-10-23": [42_010, 3] },
+    };
+    await page.evaluate(() =>
+      window.dispatchEvent(
+        new PageTransitionEvent("pageshow", { persisted: true })
+      )
+    );
     await expect(region(page, "Vendas hoje")).toContainText("R$ 420,10");
   });
 
@@ -2644,7 +2682,7 @@ test.describe("atualização (§ 5.1, relógio controlado)", () => {
     await expect(region(page, "Vendas hoje")).toContainText("R$ 320,10");
     const before = periodCalls(server).length;
     server.broken.set("report/periodSummary", "500");
-    await page.clock.runFor(31_000);
+    await page.clock.runFor(RETURN_REFRESH_MS);
     const failedRead = page.waitForResponse(
       (response) =>
         response.url().includes("/rpc/report/periodSummary") &&
@@ -2736,7 +2774,7 @@ test.describe("janela anterior do Início: uma leitura por dia da loja (relógio
     const server = new FakeServer(SOLD);
     await openHome(page, server);
     await expect(region(page, "Vendas hoje")).toContainText("R$ 320,10");
-    await page.clock.runFor(31_000);
+    await page.clock.runFor(RETURN_REFRESH_MS);
     await page.evaluate(() => window.dispatchEvent(new Event("focus")));
     await expect.poll(() => monthReads(server)).toBe(2);
     expect(beforeReads(server)).toBe(1);
@@ -2856,12 +2894,12 @@ test.describe("janela anterior do Início: uma leitura por dia da loja (relógio
     const server = new FakeServer(SOLD);
     await openWithCopy(page, server);
     server.broken.set("report/periodSummary", "403");
-    await page.clock.runFor(31_000);
+    await page.clock.runFor(RETURN_REFRESH_MS);
     await page.evaluate(() => window.dispatchEvent(new Event("focus")));
     await expect.poll(() => copyKeys(page)).toEqual([]);
 
     server.broken.delete("report/periodSummary");
-    await page.clock.runFor(31_000);
+    await page.clock.runFor(RETURN_REFRESH_MS);
     await page.evaluate(() => window.dispatchEvent(new Event("focus")));
     await expect(region(page, "Vendas hoje")).toContainText("R$ 320,10");
     expect(beforeReads(server)).toBe(2);
@@ -3072,7 +3110,7 @@ test.describe("sem conexão (§ 7, AC-28 a AC-31)", () => {
       page.getByText("Esta tela precisa de conexão.", { exact: false })
     ).toHaveCount(0);
     // no read while offline, not even when the tab comes back
-    await page.clock.runFor(31_000);
+    await page.clock.runFor(RETURN_REFRESH_MS);
     await page.evaluate(() => window.dispatchEvent(new Event("focus")));
     expect(server.calls.length).toBe(reads);
   });
@@ -3638,7 +3676,7 @@ test.describe("sem conexão (§ 7, AC-28 a AC-31)", () => {
     const server = new FakeServer(SOLD);
     await openWithCopy(page, server);
     server.broken.set("report/periodSummary", "403");
-    await page.clock.runFor(31_000);
+    await page.clock.runFor(RETURN_REFRESH_MS);
     await page.evaluate(() => window.dispatchEvent(new Event("focus")));
     await expect.poll(() => copyKeys(page)).toEqual([]);
     await page.context().setOffline(true);
@@ -4176,6 +4214,42 @@ test.describe("Ritmo de vendas (revisão de UI v7, § 3 item 10)", () => {
     ]);
   });
 
+  test("chamadas /rpc da abertura (loja com vendas): lista exata de procedimentos e o total", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 800, width: 1280 });
+    const rpc = countRpc(page);
+    await openHome(page, new FakeServer(SOLD));
+    await expect(atRest(page)).toHaveText(AT_REST);
+    await expect(region(page, "Meta")).toBeVisible();
+    await expect(region(page, "Precisa de ação")).toBeVisible();
+    await expect
+      .poll(rpc.byProcedure, { message: RPC_TABLE_HINT, timeout: 20_000 })
+      .toEqual(OPENING_WITH_SALES);
+    await expect.poll(rpc.inFlight).toBe(0);
+    expect(rpc.byProcedure(), RPC_TABLE_HINT).toEqual(OPENING_WITH_SALES);
+    expect(rpc.total(), RPC_TABLE_HINT).toBe(OPENING_WITH_SALES_TOTAL);
+  });
+
+  test("chamadas /rpc da abertura (loja sem vendas, lê o checklist): lista exata de procedimentos e o total", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 800, width: 1280 });
+    const rpc = countRpc(page);
+    await openHome(
+      page,
+      new FakeServer({ ...SOLD, days: {}, everSold: false })
+    );
+    await expect(region(page, "Primeiros passos")).toBeVisible();
+    await expect(region(page, "Meta")).toBeVisible();
+    await expect
+      .poll(rpc.byProcedure, { message: RPC_TABLE_HINT, timeout: 20_000 })
+      .toEqual(OPENING_WITHOUT_SALES);
+    await expect.poll(rpc.inFlight).toBe(0);
+    expect(rpc.byProcedure(), RPC_TABLE_HINT).toEqual(OPENING_WITHOUT_SALES);
+    expect(rpc.total(), RPC_TABLE_HINT).toBe(OPENING_WITHOUT_SALES_TOTAL);
+  });
+
   test("cache diário: a loja recusa os números e a série do dia não é servida de novo sem o servidor", async ({
     page,
   }) => {
@@ -4189,13 +4263,13 @@ test.describe("Ritmo de vendas (revisão de UI v7, § 3 item 10)", () => {
     expect(dailyCalls()).toBe(1);
 
     server.broken.set("report/periodSummary", "403");
-    await page.clock.runFor(31_000);
+    await page.clock.runFor(RETURN_REFRESH_MS);
     await page.evaluate(() => window.dispatchEvent(new Event("focus")));
     await expect.poll(() => copyKeys(page)).toEqual([]);
 
     // the access is back: the series of the day is asked of the server, not taken from the page or the device
     server.broken.delete("report/periodSummary");
-    await page.clock.runFor(31_000);
+    await page.clock.runFor(RETURN_REFRESH_MS);
     await page.evaluate(() => window.dispatchEvent(new Event("focus")));
     await expect.poll(dailyCalls).toBe(2);
     await expect(atRest(page)).toHaveText(AT_REST);
@@ -4305,6 +4379,57 @@ async function watchFiguresError(page: Page) {
 const SLOW_READ = "Demorando mais que o normal…";
 const STALE_COPY = "Não foi possível atualizar agora";
 const RPC_PATH = /\/rpc\/(.+)$/;
+
+const RPC_TABLE_HINT =
+  "chamadas /rpc por procedimento na abertura do Início: cada leitura a mais ou a menos gasta consultas do banco por aba; quem muda use-home.ts ou o shell (as leituras que ele faz na abertura) atualiza esta tabela";
+
+/** Every /rpc request of the page, by procedure, whoever answers it (the simulated server or the stubs of the shell). */
+function countRpc(page: Page) {
+  const counts = new Map<string, number>();
+  let flying = 0;
+  const isRpc = (url: string) => RPC_PATH.test(new URL(url).pathname);
+  const done = (request: { url: () => string }) => {
+    if (isRpc(request.url())) {
+      flying -= 1;
+    }
+  };
+  page.on("request", (request) => {
+    const match = RPC_PATH.exec(new URL(request.url()).pathname);
+    if (match?.[1] !== undefined) {
+      flying += 1;
+      counts.set(match[1], (counts.get(match[1]) ?? 0) + 1);
+    }
+  });
+  page.on("requestfinished", done);
+  page.on("requestfailed", done);
+  return {
+    byProcedure: () => Object.fromEntries([...counts].sort()),
+    inFlight: () => flying,
+    total: () => [...counts.values()].reduce((sum, n) => sum + n, 0),
+  };
+}
+
+const OPENING_WITH_SALES: Record<string, number> = {
+  "device/register": 1,
+  "goal/list": 1,
+  "inventory/listBalances": 2,
+  "offline/issueLease": 1,
+  "organization/listMine": 1,
+  "report/dailySales": 1,
+  "report/periodSummary": 2,
+};
+const OPENING_WITH_SALES_TOTAL = 9;
+const OPENING_WITHOUT_SALES: Record<string, number> = {
+  "device/register": 1,
+  "goal/list": 1,
+  "inventory/listBalances": 4,
+  "offline/issueLease": 1,
+  "organization/listMine": 1,
+  "report/dailySales": 1,
+  "report/periodSummary": 2,
+  "sale/list": 1,
+};
+const OPENING_WITHOUT_SALES_TOTAL = 12;
 
 test.describe("paliativo dos 1102: leituras tentadas de novo, em fila e com freio", () => {
   test("(a) as duas primeiras respostas do periodSummary morrem por CPU: o Início abre sem 'Tentar novamente', em menos de 8 s, com o esqueleto no meio", async ({
@@ -5684,13 +5809,15 @@ test.describe("a linha do plano no fim do Início (item 2 do aviso de limite)", 
     await expect(page.locator(PLAN_LINE)).toHaveText(
       "Você usa 46 de 50 imagens no plano Free. Conhecer o Pro"
     );
+    await readsEnded(page);
     expect(plan.reads).toBe(1);
     await page.evaluate(() => window.dispatchEvent(new Event("focus")));
     await page.evaluate(() =>
       document.dispatchEvent(new Event("visibilitychange"))
     );
+    await readsEnded(page);
     await page.clock.runFor(4 * 60_000);
-    await settled(page);
+    await readsEnded(page);
     expect(plan.reads).toBe(1);
     await page.reload();
     await expect(page.locator(PLAN_LINE)).toBeVisible();
@@ -5706,7 +5833,7 @@ test.describe("a linha do plano no fim do Início (item 2 do aviso de limite)", 
     await page.context().setOffline(true);
     await expect(page.locator(PLAN_LINE)).toHaveCount(0);
     await page.context().setOffline(false);
-    await settled(page);
+    await readsEnded(page);
     await expect(page.locator(PLAN_LINE)).toHaveCount(0);
     expect(plan.reads).toBe(1);
   });
@@ -5720,7 +5847,7 @@ test.describe("a linha do plano no fim do Início (item 2 do aviso de limite)", 
       waitForBlocks: false,
     });
     expect(await page.evaluate(() => navigator.onLine)).toBe(false);
-    await settled(page);
+    await readsEnded(page);
     await expect(page.locator(PLAN_LINE)).toHaveCount(0);
     expect(plan.reads).toBe(0);
     await page.evaluate(() => {

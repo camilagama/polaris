@@ -50,11 +50,15 @@ export interface SalePage {
 
 export interface HistoryState {
   hasMore: boolean;
+  /** The filter the rows on screen were read for; `null` while no first page has arrived. */
+  listKey: string | null;
   list: "error" | "loading" | "ready";
   listError: string | null;
   loadingMore: boolean;
-  /** A failed refresh or "load more" while a list is already showing. */
+  /** A failed "load more" while a list is already showing. */
   moreError: string | null;
+  /** The first page being read again under a list that is already showing, or that read having failed for the same filter. */
+  refresh: "failed" | "idle" | "loading";
   sales: SaleListEntryReadModel[];
 }
 
@@ -63,55 +67,92 @@ export function initialHistoryState(): HistoryState {
     hasMore: false,
     list: "loading",
     listError: null,
+    listKey: null,
     loadingMore: false,
     moreError: null,
+    refresh: "idle",
     sales: [],
   };
 }
 
-/** Starts a (re)load of the first page; a showing list stays visible. */
+/** Starts a (re)load of the first page; a showing list stays visible until it answers. */
 export function historyLoading(state: HistoryState): HistoryState {
+  // Re-reading the first page makes an in-flight page 2 stale: its answer is ignored.
   return state.list === "ready"
-    ? { ...state, moreError: null }
-    : { ...state, list: "loading", listError: null };
+    ? { ...state, loadingMore: false, moreError: null, refresh: "loading" }
+    : { ...state, list: "loading", listError: null, refresh: "idle" };
 }
 
-/** The first page replaces the list. */
+/** The first page replaces the rows, the filter they belong to and the offset together. */
 export function historyLoaded(
   state: HistoryState,
-  page: SalePage
+  page: SalePage,
+  listKey: string
 ): HistoryState {
   return {
     ...state,
     hasMore: page.hasMore,
     list: "ready",
     listError: null,
+    listKey,
     loadingMore: false,
     moreError: null,
+    refresh: "idle",
     sales: [...page.sales],
   };
 }
 
+/**
+ * A first page that failed. For the same filter the rows stay (they are its
+ * own) and say they may be out of date; for another filter they leave, since
+ * the filters would show one period and the rows another.
+ */
 export function historyLoadFailed(
   state: HistoryState,
-  error: unknown
+  error: unknown,
+  listKey: string
 ): HistoryState {
-  const message = loadErrorMessage(error, "as vendas");
-  return state.list === "ready"
-    ? { ...state, moreError: message }
-    : { ...state, list: "error", listError: message };
+  if (state.list === "ready" && state.listKey === listKey) {
+    return {
+      ...state,
+      loadingMore: false,
+      moreError: null,
+      refresh: "failed",
+    };
+  }
+  return {
+    ...state,
+    hasMore: false,
+    list: "error",
+    listError: loadErrorMessage(error, "as vendas"),
+    listKey: null,
+    loadingMore: false,
+    moreError: null,
+    refresh: "idle",
+    sales: [],
+  };
 }
 
 export function nextOffset(state: HistoryState): number {
   return state.sales.length;
 }
 
-export function canLoadMore(state: HistoryState): boolean {
-  return state.list === "ready" && state.hasMore && !state.loadingMore;
+/** Only the next page of the list on screen, and only when that list was read for the filter in force. */
+export function canLoadMore(state: HistoryState, listKey: string): boolean {
+  return (
+    state.list === "ready" &&
+    state.listKey === listKey &&
+    state.refresh === "idle" &&
+    state.hasMore &&
+    !state.loadingMore
+  );
 }
 
-export function loadMoreStarted(state: HistoryState): HistoryState {
-  return canLoadMore(state)
+export function loadMoreStarted(
+  state: HistoryState,
+  listKey: string
+): HistoryState {
+  return canLoadMore(state, listKey)
     ? { ...state, loadingMore: true, moreError: null }
     : state;
 }
@@ -469,15 +510,29 @@ export interface LoadMoreView {
   busy: boolean;
   error: string | null;
   label: string;
+  /** The first page is being read again under the list that is showing. */
+  refreshing: boolean;
+  /** The list on screen could not be read again for the same filter: it may be out of date. */
+  refreshFailed: boolean;
   visible: boolean;
 }
 
-export function loadMoreView(state: HistoryState): LoadMoreView {
+/** The button is hidden, not disabled, until the list on screen was read for the filter in force. */
+export function loadMoreView(
+  state: HistoryState,
+  listKey: string
+): LoadMoreView {
   return {
     busy: state.loadingMore,
     error: state.moreError,
     label: state.loadingMore ? "Carregando…" : "Carregar mais",
-    visible: state.list === "ready" && state.hasMore,
+    refreshFailed: state.list === "ready" && state.refresh === "failed",
+    refreshing: state.list === "ready" && state.refresh === "loading",
+    visible:
+      state.list === "ready" &&
+      state.hasMore &&
+      state.listKey === listKey &&
+      state.refresh === "idle",
   };
 }
 
@@ -531,7 +586,8 @@ function cancellationView(
   }
   rows.push({
     label: "Estoque",
-    value: "Devolvido item a item, pelo custo registrado em cada item.",
+    value:
+      "Voltou item a item, pelo custo registrado em cada item, exceto item de produto removido.",
   });
   return { rows };
 }

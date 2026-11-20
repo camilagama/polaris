@@ -1,4 +1,5 @@
 import type { InventoryBalanceEntryReadModel } from "@polaris/contracts";
+import { calendarDayInTimezone } from "../lib/dates";
 import { formatBrlAmount } from "../lib/format";
 import { priceFieldText } from "./last-prices-model";
 import { clearSaleConsequenceText, type SaleCount } from "./sale-count-text";
@@ -122,7 +123,7 @@ export function refreshRestoredItems(
 }
 
 export const DRAFT_EXPIRED_MESSAGE =
-  "A venda em andamento era de outro dia e foi descartada.";
+  "A venda em andamento ficou parada por muito tempo e foi descartada.";
 export const DRAFT_RECORDED_MESSAGE =
   "A venda em andamento já foi confirmada ou guardada neste aparelho.";
 export const DRAFT_UNREADABLE_MESSAGE =
@@ -177,4 +178,44 @@ export function chosenSaleCount(form: SaleFormState): SaleCount {
 /** The consequence said before "Limpar venda" takes the lines out. */
 export function clearSaleConsequence(count: SaleCount): string {
   return clearSaleConsequenceText(count);
+}
+
+const dayBefore = (day: string): string =>
+  new Date(Date.parse(`${day}T00:00:00.000Z`) - 86_400_000)
+    .toISOString()
+    .slice(0, 10);
+
+/**
+ * Said while a cart that began on another store day is still on the screen with the date empty: the sale is dated at
+ * the moment of confirmation, not at the day it began. Derived from the clock and the form, never stored. Offline
+ * there is no date field, so the sentence ends at "de hoje".
+ */
+export function draftNewDayNotice({
+  dateEmpty,
+  now,
+  offline,
+  startedAt,
+  timezone,
+}: {
+  dateEmpty: boolean;
+  now: Date;
+  offline: boolean;
+  startedAt: string | null;
+  timezone: string | null;
+}): string | null {
+  if (startedAt === null || !dateEmpty) {
+    return null;
+  }
+  const startedDay = calendarDayInTimezone(new Date(startedAt), timezone);
+  const today = calendarDayInTimezone(now, timezone);
+  if (startedDay === today) {
+    return null;
+  }
+  const began =
+    startedDay === dayBefore(today)
+      ? "Esta venda começou ontem."
+      : "Esta venda começou em outro dia.";
+  return offline
+    ? `${began} Ela será registrada com a data de hoje.`
+    : `${began} Ela será registrada com a data de hoje, a não ser que você preencha “Data e hora da venda”.`;
 }

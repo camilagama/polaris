@@ -69,7 +69,7 @@ export function reusablePreviousWindow(
 }
 
 /**
- * A return, a cancellation or an adjustment of a sale, or an expense, was made on this device on `day` (the store's
+ * A return or a cancellation of a sale, or an expense, was made on this device on `day` (the store's
  * date of the sale, or the competence of the expense; null when it is not known): when that day is before the open
  * month, B no longer says what the server does, so the copy is taken back, in memory and on the device (it still shows
  * without a connection, but is not reused). A day of the open month is in A, which is always read.

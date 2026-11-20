@@ -2021,14 +2021,14 @@ describe("the worst cases of the smoke and of verify-deployed-sha against the ti
       smokeSeconds() +
         verifyWorstCaseSeconds(STAGING_WORKERS.length) +
         REST_OF_THE_JOB_SECONDS
-    ).toBe(1470);
+    ).toBe(1380);
   });
 
-  it("control: a step Smoke one minute longer overflows the job", () => {
+  it("control: a step Smoke three minutes longer overflows the job", () => {
     const verdict = budget({
-      smokeMinutes: smokeStepMinutes(DEPLOY_WORKFLOW) + 1,
+      smokeMinutes: smokeStepMinutes(DEPLOY_WORKFLOW) + 3,
     });
-    expect(verdict).toContain("900 s of smoke (timeout-minutes: 15");
+    expect(verdict).toContain("1020 s of smoke (timeout-minutes: 17");
   });
 
   it("control: a job of 18 minutes overflows", () => {

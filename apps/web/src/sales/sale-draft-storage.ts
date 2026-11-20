@@ -12,7 +12,7 @@ import {
  * The sale being built and not confirmed yet, kept in this tab (`sessionStorage`) so that leaving Vender, a reload
  * and the swap of the build (ADR 0041) give it back. Never `localStorage`: a shared counter device must not hand one
  * person's cart to the next, and a cart of another day has old prices and balances, so it ends at the turn of the
- * store's day. It holds identifiers, quantities and values only: the form has no customer, and nothing about a
+ * store's day unless the person changed it in the last six hours (a counter that sells past midnight). It holds identifiers, quantities and values only: the form has no customer, and nothing about a
  * person may be added to it.
  *
  * A change to the shape of `SaleFormState` changes the version in the key (`v1`) in the same change: the test of
@@ -20,16 +20,27 @@ import {
  */
 export const SALE_DRAFT_KEY_PREFIX = "polaris.sale.draft.v1:";
 
+/** How long after the person's last change a cart of another store day is still given back. */
+const DRAFT_GRACE_MS = 6 * 60 * 60 * 1000;
+
 export interface SaleDraft {
   form: SaleFormState;
-  /** When the cart got its first change: the store day it belongs to. */
+  /**
+   * When the cart got its first change: the store day it belongs to, and the key the send attempt and the redo of a
+   * refused sale match it by. It never changes once written.
+   */
   startedAt: string;
+  /**
+   * When the person last changed the cart. Reading it back again, or the refresh of its prices, does not move it.
+   * A draft written before this field existed has none, and only the store day keeps it.
+   */
+  updatedAt?: string;
 }
 
 export type SaleDraftRead =
   | { kind: "none" }
   | { draft: SaleDraft; kind: "restored" }
-  /** It was from another day of the store, and was dropped. */
+  /** It was from another day of the store and the person's last change was too long ago, and was dropped. */
   | { kind: "expired" }
   /** It did not have the shape this build writes, and was dropped. */
   | { kind: "unreadable" };
@@ -161,13 +172,26 @@ export function isSaleFormState(value: unknown): value is SaleFormState {
   );
 }
 
+const isInstant = (value: unknown): value is string =>
+  isText(value) && Number.isFinite(new Date(value).getTime());
+
 function isDraft(value: unknown): value is SaleDraft {
+  const withUpdatedAt = hasExactKeys(value, ["form", "startedAt", "updatedAt"]);
   return (
-    hasExactKeys(value, ["form", "startedAt"]) &&
-    isText(value.startedAt) &&
-    Number.isFinite(new Date(value.startedAt).getTime()) &&
+    (withUpdatedAt || hasExactKeys(value, ["form", "startedAt"])) &&
+    isInstant(value.startedAt) &&
+    (!withUpdatedAt || isInstant(value.updatedAt)) &&
     isSaleFormState(value.form)
   );
+}
+
+/** Within six hours of the last change; a change in the future of this clock (the clock went back) is not. */
+function changedRecently(draft: SaleDraft, now: Date): boolean {
+  if (draft.updatedAt === undefined) {
+    return false;
+  }
+  const age = now.getTime() - new Date(draft.updatedAt).getTime();
+  return age >= 0 && age <= DRAFT_GRACE_MS;
 }
 
 function forget(storage: DraftStorage | null, organizationId: string): void {
@@ -178,7 +202,10 @@ function forget(storage: DraftStorage | null, organizationId: string): void {
   }
 }
 
-/** The draft of this store, if it is of the store's current day and has the shape this build writes. */
+/**
+ * The draft of this store, if it has the shape this build writes and it is of the store's current day or the person
+ * changed it in the last six hours.
+ */
 export function readSaleDraft(
   storage: DraftStorage | null,
   organizationId: string,
@@ -208,7 +235,10 @@ export function readSaleDraft(
     new Date(parsed.startedAt),
     timezone
   );
-  if (startedDay !== calendarDayInTimezone(now, timezone)) {
+  if (
+    startedDay !== calendarDayInTimezone(now, timezone) &&
+    !changedRecently(parsed, now)
+  ) {
     forget(storage, organizationId);
     return { kind: "expired" };
   }

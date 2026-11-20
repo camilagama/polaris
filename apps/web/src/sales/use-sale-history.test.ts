@@ -1,6 +1,12 @@
 import type { SaleListEntryReadModel } from "@polaris/contracts";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { SALES_PAGE_SIZE, type SalePage } from "./sale-history-model";
+import {
+  canLoadMore,
+  historyView,
+  loadMoreView,
+  SALES_PAGE_SIZE,
+  type SalePage,
+} from "./sale-history-model";
 import { useSaleHistory } from "./use-sale-history";
 
 interface Runtime {
@@ -29,6 +35,7 @@ vi.mock("react", () => {
   return {
     createContext: () => ({ Provider: undefined }),
     useCallback: <T>(fn: T) => fn,
+    useMemo: <T>(make: () => T) => make(),
     useEffect: (effect: () => (() => void) | undefined) => {
       runtime.effect = effect;
     },
@@ -200,5 +207,114 @@ describe("useSaleHistory: Carregar mais", () => {
     expect(idsOf(render)).toEqual(["x"]);
     expect(render().state.moreError).toBeNull();
     expect(render().state.list).toBe("ready");
+  });
+
+  it("trocar o filtro com a 1ª página nova em voo esconde o Carregar mais e não pede a 2ª página com o deslocamento da lista antiga", async () => {
+    const newFirst = deferred<SalePage>();
+    saleList
+      .mockResolvedValueOnce(page(true, "a", "b"))
+      .mockReturnValueOnce(newFirst.promise);
+    const { render, runEffect } = mount();
+
+    runEffect();
+    await vi.waitFor(() => expect(idsOf(render)).toEqual(["a", "b"]));
+    expect(canLoadMore(render().state, render().listKey)).toBe(true);
+    render().setFilters({ status: "cancelled" });
+    render();
+    expect(loadMoreView(render().state, render().listKey).visible).toBe(false);
+    runEffect();
+    expect(saleList).toHaveBeenCalledTimes(2);
+
+    const { listKey, loadMore, state } = render();
+    expect(idsOf(render)).toEqual(["a", "b"]);
+    expect(loadMoreView(state, listKey)).toMatchObject({
+      refreshing: true,
+      visible: false,
+    });
+    expect(canLoadMore(state, listKey)).toBe(false);
+    loadMore();
+    expect(saleList).toHaveBeenCalledTimes(2);
+
+    newFirst.resolve(page(true, "x"));
+    await newFirst.promise;
+    const loaded = render();
+    expect(idsOf(render)).toEqual(["x"]);
+    expect(loadMoreView(loaded.state, loaded.listKey).visible).toBe(true);
+    saleList.mockResolvedValueOnce(page(false, "y"));
+    loaded.loadMore();
+    expect(saleList).toHaveBeenLastCalledWith(
+      expect.objectContaining({ offset: 1, status: "cancelled" })
+    );
+  });
+
+  it("a 1ª página do filtro novo falhar tira a lista antiga e mostra o erro da lista, sem Carregar mais", async () => {
+    const oldSecond = deferred<SalePage>();
+    const newFirst = deferred<SalePage>();
+    saleList
+      .mockResolvedValueOnce(page(true, "a", "b"))
+      .mockReturnValueOnce(oldSecond.promise)
+      .mockReturnValueOnce(newFirst.promise);
+    const { render, runEffect } = mount();
+
+    runEffect();
+    await vi.waitFor(() => expect(idsOf(render)).toEqual(["a", "b"]));
+    render().loadMore();
+    render().setFilters({ status: "cancelled" });
+    render();
+    runEffect();
+    expect(saleList).toHaveBeenCalledTimes(3);
+
+    newFirst.reject(new Error("sem rede"));
+    await vi.waitFor(() => expect(render().state.list).toBe("error"));
+    const { listKey, loadMore, state } = render();
+    expect(state.sales).toEqual([]);
+    expect(state.loadingMore).toBe(false);
+    expect(historyView(state).kind).toBe("error");
+    expect(loadMoreView(state, listKey).visible).toBe(false);
+    expect(canLoadMore(state, listKey)).toBe(false);
+    loadMore();
+    expect(saleList).toHaveBeenCalledTimes(3);
+  });
+
+  it("a releitura com o mesmo filtro falhar mantém a lista com o aviso, sem Carregar mais, até uma 1ª página dar certo", async () => {
+    const again = deferred<SalePage>();
+    saleList
+      .mockResolvedValueOnce(page(true, "a", "b"))
+      .mockReturnValueOnce(again.promise)
+      .mockResolvedValueOnce(page(true, "c"));
+    const { render, runEffect } = mount();
+
+    runEffect();
+    await vi.waitFor(() => expect(idsOf(render)).toEqual(["a", "b"]));
+    render().reload();
+    render();
+    runEffect();
+    expect(loadMoreView(render().state, render().listKey)).toMatchObject({
+      refreshing: true,
+      visible: false,
+    });
+
+    again.reject(new Error("sem rede"));
+    await vi.waitFor(() => expect(render().state.refresh).toBe("failed"));
+    const failed = render();
+    expect(idsOf(render)).toEqual(["a", "b"]);
+    expect(failed.state.list).toBe("ready");
+    expect(loadMoreView(failed.state, failed.listKey)).toMatchObject({
+      refreshFailed: true,
+      visible: false,
+    });
+    expect(canLoadMore(failed.state, failed.listKey)).toBe(false);
+    failed.loadMore();
+    expect(saleList).toHaveBeenCalledTimes(2);
+
+    failed.reload();
+    render();
+    runEffect();
+    await vi.waitFor(() => expect(idsOf(render)).toEqual(["c"]));
+    const healed = render();
+    expect(loadMoreView(healed.state, healed.listKey)).toMatchObject({
+      refreshFailed: false,
+      visible: true,
+    });
   });
 });

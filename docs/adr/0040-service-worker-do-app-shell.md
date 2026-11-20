@@ -33,7 +33,7 @@ O PR60 do plano pede o app shell, a navegação offline e o versionamento de ass
 
 ## Emenda (24/10/2026): origem dos ícones do manifesto
 
-O PR 280 trocou os ícones do app pela variante tinta (o "i" da marca sobre `#171614`), e o PR 287 apagou `apps/web/scripts/generate-pwa-icons.mjs`, o gerador da estrela de quatro pontas sobre o verde da marca. A linha "Instalável" da Decisão foi reescrita no PR 287 sem nota datada; esta emenda a registra. A origem dos ícones passou a ser `design/icone-app/` (SVG "any", maskable e `apple-touch-icon`). Os PNG de `apps/web/public/icons/` não têm script nem receita de geração no repositório (a ferramenta usada não foi registrada). O desenho do service worker, o precache e as provas deste ADR não mudam.
+O PR 280 trocou os ícones do app pela variante tinta (o "i" da marca sobre `#171614`), e o PR 287 apagou apps/web/scripts/generate-pwa-icons.mjs, o gerador da estrela de quatro pontas sobre o verde da marca. A linha "Instalável" da Decisão foi reescrita no PR 287 sem nota datada; esta emenda a registra. A origem dos ícones passou a ser `design/icone-app/` (SVG "any", maskable e `apple-touch-icon`). Os PNG de `apps/web/public/icons/` não têm script nem receita de geração no repositório (a ferramenta usada não foi registrada). O desenho do service worker, o precache e as provas deste ADR não mudam.
 
 ## Emenda (25/10/2026): identidade só pelo conteúdo, arquivo conferido e chunk ausente
 

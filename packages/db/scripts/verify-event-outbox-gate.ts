@@ -11,6 +11,7 @@ import {
   type OutboxPolicyRow,
   sortedOutboxPolicies,
 } from "./event-outbox-policies";
+import { rollbackAndRelease } from "./gate-roles";
 import {
   createTenantFixture,
   disposableHostPattern,
@@ -580,14 +581,7 @@ async function run() {
         "a policy TO PUBLIC fails the comparison with the expected list"
       );
     } finally {
-      // A failed ROLLBACK can leave the transaction open with the planted policy: destroy the connection instead of pooling it.
-      let rolledBack = false;
-      try {
-        await toPublic.query("ROLLBACK");
-        rolledBack = true;
-      } finally {
-        toPublic.release(!rolledBack);
-      }
+      await rollbackAndRelease(toPublic);
     }
     const afterRollback =
       await owner.pool.query<OutboxPolicyRow>(OUTBOX_POLICIES_SQL);

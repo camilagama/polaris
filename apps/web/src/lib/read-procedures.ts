@@ -9,6 +9,7 @@ export const READ_PROCEDURES: readonly string[] = [
   "billing/readPlan",
   "category/list",
   "customer/findPossibleDuplicates",
+  "customer/get",
   "customer/list",
   "dataExport/list",
   "dataExport/listClosed",

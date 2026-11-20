@@ -1,10 +1,14 @@
 import { ORPCError } from "@orpc/client";
 import type { PolarisRpcClient } from "@polaris/contracts";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SessionUnreachableError } from "./offline-runtime";
 import { createRpcRuntimeApi } from "./runtime-api";
 
-const api = createRpcRuntimeApi({} as PolarisRpcClient);
+let api = createRpcRuntimeApi({} as PolarisRpcClient);
+
+beforeEach(() => {
+  api = createRpcRuntimeApi({} as PolarisRpcClient);
+});
 
 function answerWith(response: Response | Error) {
   vi.stubGlobal(
@@ -66,6 +70,94 @@ describe("who is signed in, as the server answers", () => {
     await expect(api.sessionUserId()).rejects.toThrow("session_unavailable");
     answerWith(new Response("nope", { status: 404 }));
     await expect(api.sessionUserId()).rejects.toThrow("session_unavailable");
+  });
+
+  it("reads the server again when the caller asks for a fresh answer", async () => {
+    const fetchMock = vi.fn(() =>
+      Promise.resolve(Response.json({ user: { id: "user-1" } }))
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    await api.sessionUserId();
+    await api.sessionUserId();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    await api.sessionUserId({ fresh: true });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("the session of a start, as the server answers it now", () => {
+  it("names the user and the id of the session row, never its token", async () => {
+    const fetchSpy = vi.fn(() =>
+      Promise.resolve(
+        Response.json({
+          session: {
+            expiresAt: "2026-11-20T00:00:00.000Z",
+            id: "session-1",
+            token: "secret-session-token",
+            userId: "user-1",
+          },
+          user: { email: "a@example.com", id: "user-1" },
+        })
+      )
+    );
+    vi.stubGlobal("fetch", fetchSpy);
+    const session = await api.signedInSession?.();
+    expect(session).toEqual({ sessionId: "session-1", userId: "user-1" });
+    expect(JSON.stringify(session)).not.toContain("secret-session-token");
+    expect(fetchSpy).toHaveBeenCalledWith(
+      "/api/auth/get-session",
+      expect.objectContaining({ cache: "no-store" })
+    );
+  });
+
+  it("asks the server at every call, never reusing an answer", async () => {
+    const fetchSpy = vi.fn(() =>
+      Promise.resolve(
+        Response.json({ session: { id: "s" }, user: { id: "u" } })
+      )
+    );
+    vi.stubGlobal("fetch", fetchSpy);
+    await api.signedInSession?.();
+    await api.signedInSession?.();
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it("goes to the server even right after the tab's memory answered a start", async () => {
+    const fetchSpy = vi.fn(() =>
+      Promise.resolve(
+        Response.json({ session: { id: "s" }, user: { id: "u" } })
+      )
+    );
+    vi.stubGlobal("fetch", fetchSpy);
+    await api.sessionUserId();
+    await api.sessionUserId();
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(await api.signedInSession?.()).toEqual({
+      sessionId: "s",
+      userId: "u",
+    });
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it("has no session id when the answer carries none, so the start asks whose the device is", async () => {
+    answerWith(Response.json({ user: { id: "user-1" } }));
+    expect(await api.signedInSession?.()).toEqual({
+      sessionId: null,
+      userId: "user-1",
+    });
+    answerWith(Response.json({ session: { id: "" }, user: { id: "user-1" } }));
+    expect((await api.signedInSession?.())?.sessionId).toBeNull();
+  });
+
+  it("has no one when the server says there is no session, and no answer is still no answer", async () => {
+    answerWith(Response.json(null));
+    expect(await api.signedInSession?.()).toBeNull();
+    answerWith(new Response("{}", { status: 401 }));
+    expect(await api.signedInSession?.()).toBeNull();
+    answerWith(new Response("busy", { status: 503 }));
+    await expect(api.signedInSession?.()).rejects.toBeInstanceOf(
+      SessionUnreachableError
+    );
   });
 });
 

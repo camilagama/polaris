@@ -32,6 +32,7 @@ const CONTROLLED = [
   "customer.archive",
   "customer.create",
   "customer.findPossibleDuplicates",
+  "customer.get",
   "customer.list",
   "customer.restore",
   "customer.update",
