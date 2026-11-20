@@ -12,13 +12,13 @@ import { GATE_ROLLBACK_LIST } from "./verify-gate-rollback.list.mjs";
  * keeps a new gate from going back to the bare call.
  *
  * Counted, in every `.ts` file under `packages/db/scripts/` (tests included) except `gate-roles.ts`, which is where
- * the helpers live: a string or template literal whose whole text is `ROLLBACK` (case and a trailing `;` aside) written
+ * the helpers live: a string or template literal whose whole text is `ROLLBACK` (or its synonyms `ROLLBACK WORK`, `ROLLBACK TRANSACTION`, `ABORT`, with `AND [NO] CHAIN`; case and a trailing `;` aside) written
  * at the top level of the arguments of a `query(` call, so both `query("ROLLBACK")` and
- * `query(commit ? "COMMIT" : "ROLLBACK")` count. `ROLLBACK TO SAVEPOINT` is another statement and does not. Comments
+ * `query(commit ? "COMMIT" : "ROLLBACK")` count, as does a call with type arguments (`query<Row>("ROLLBACK")`). `ROLLBACK TO SAVEPOINT` is another statement and does not. Comments
  * and the text inside other strings are not counted (the scanner is the one of `gate-clock-scan.ts`).
  *
  * Not caught: a statement held in a variable first (`const sql = "ROLLBACK"; query(sql)`), one passed as
- * `query({ text: "ROLLBACK" })`, and one built from parts. Uses that exist before the rule stay in
+ * `query({ text: "ROLLBACK" })`, one built from parts or from a template with `${}`, and one wrapped in extra parentheses. Uses that exist before the rule stay in
  * `verify-gate-rollback.list.mjs` with their exact count per file, so only a change that adds one fails.
  */
 const root = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
@@ -31,8 +31,12 @@ export const ADVICE =
   "eles não lançam, e o erro que já vinha subindo não é trocado pelo de um ROLLBACK que falhou. " +
   `Só se o ROLLBACK precisa mesmo falhar o gate, acrescente o arquivo (ou suba a entrada) em ${LIST_FILE} com o motivo.`;
 
-const ROLLBACK_LITERAL = /(["'`])[ \t\r\n]*ROLLBACK[ \t\r\n]*;?[ \t\r\n]*\1/gi;
-const QUERY_CALL = /\bquery\s*\(/g;
+const ENDS_TRANSACTION = String.raw`(?:rollback(?:[ \t\r\n]+(?:work|transaction))?|abort(?:[ \t\r\n]+(?:work|transaction))?)(?:[ \t\r\n]+and[ \t\r\n]+(?:no[ \t\r\n]+)?chain)?`;
+const ROLLBACK_LITERAL = new RegExp(
+  String.raw`(["'\`])[ \t\r\n]*${ENDS_TRANSACTION}[ \t\r\n]*;?[ \t\r\n]*\1`,
+  "gi"
+);
+const QUERY_CALL = /\bquery(?:\s*<[^;()]*>)?\s*\(/g;
 
 export function isGateScript(relative) {
   return (

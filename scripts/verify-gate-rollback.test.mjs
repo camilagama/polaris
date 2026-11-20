@@ -88,6 +88,34 @@ describe("what counts as a bare ROLLBACK", () => {
     ).toEqual([]);
   });
 
+  it("counts a call with type arguments and the synonyms that end the transaction the same way", () => {
+    expect(
+      bareRollbackLines(
+        [
+          'await a.query<Row>("ROLLBACK");',
+          'await a.query<{ run: string }>("ROLLBACK");',
+          'await a.query("ROLLBACK WORK");',
+          'await a.query("rollback transaction and no chain;");',
+          'await a.query("ABORT");',
+        ].join("\n")
+      )
+    ).toEqual([1, 2, 3, 4, 5]);
+  });
+
+  it("leaves out, on purpose, the forms the header lists as not caught", () => {
+    expect(
+      bareRollbackLines(
+        [
+          'const sql = "ROLLBACK"; await a.query(sql);',
+          'await a.query({ text: "ROLLBACK" });',
+          'await a.query("ROLL" + "BACK");',
+          ["await a.query(`ROLLBACK$", "{suffix}`);"].join(""),
+          'await a.query(("ROLLBACK"));',
+        ].join("\n")
+      )
+    ).toEqual([]);
+  });
+
   it("is not fooled by parentheses inside strings that come before it", () => {
     expect(
       bareRollbackLines('await a.query("SELECT (1", "ROLLBACK");\n')
