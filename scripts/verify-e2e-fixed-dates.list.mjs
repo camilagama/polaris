@@ -7,6 +7,9 @@
 const BEFORE_THE_RULE =
   "anterior à checagem; ao mexer neste arquivo, fixe o relógio e derive as datas dele";
 
+const CLOCK_FIXED_BY_THE_HELPER =
+  "o teste abre a tela por openHome ou openWithCopy, de home/shared.ts, que instala o relógio do navegador no instante da fixture (page.clock.install({ time })); a checagem julga cada arquivo sozinho e não vê o helper";
+
 export const E2E_FIXED_DATES_LIST = {
   "apps/web/e2e-pwa/sale-detail-fixture.ts": {
     count: 7,
@@ -46,6 +49,14 @@ export const E2E_FIXED_DATES_LIST = {
   "apps/web/e2e-pwa/ui-stock-states.ts": { count: 3, reason: BEFORE_THE_RULE },
   "apps/web/e2e-pwa/update.e2e.ts": { count: 1, reason: BEFORE_THE_RULE },
   "apps/web/e2e-real/calendar.test.ts": { count: 7, reason: BEFORE_THE_RULE },
+  "apps/web/e2e/home/cartoes-e-grafico.e2e.ts": {
+    count: 33,
+    reason: CLOCK_FIXED_BY_THE_HELPER,
+  },
+  "apps/web/e2e/home/valores-e-ranking.e2e.ts": {
+    count: 9,
+    reason: CLOCK_FIXED_BY_THE_HELPER,
+  },
   "apps/web/e2e/legal-acceptance.e2e.ts": { count: 1, reason: BEFORE_THE_RULE },
   "apps/web/e2e/media-fixtures.ts": { count: 1, reason: BEFORE_THE_RULE },
   "apps/web/e2e/offline-screens.e2e.ts": { count: 12, reason: BEFORE_THE_RULE },

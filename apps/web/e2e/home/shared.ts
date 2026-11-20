@@ -15,9 +15,9 @@ import { serveHealth, WORKER_MARK } from "../worker-mark";
 
 export const ORGANIZATION_ID = "0199c2d0-0000-7000-8000-00000000a001";
 
-export const USER_ID = "user-do-inicio";
+const USER_ID = "user-do-inicio";
 
-export const LEASE_KEY = {
+const LEASE_KEY = {
   id: "teste",
   secret: "teste-secret-teste-secret-teste-secret-0123456789",
 };
@@ -64,7 +64,7 @@ export const failure = (code: string, status: number) => ({
   status,
 });
 
-export const inputOf = (route: Route) =>
+const inputOf = (route: Route) =>
   (route.request().postDataJSON() as { json: Record<string, unknown> }).json;
 
 export function addDays(day: string, days: number): string {
@@ -73,7 +73,7 @@ export function addDays(day: string, days: number): string {
     .slice(0, 10);
 }
 
-export function money(cents: number): string {
+function money(cents: number): string {
   const whole = Math.abs(cents);
   return `${cents < 0 ? "-" : ""}${Math.floor(whole / 100)}.${String(whole % 100).padStart(2, "0")}`;
 }
@@ -115,7 +115,7 @@ export const SOLD: Scenario = {
   stock: { all: 5, unknownCost: 1, withoutStock: 3, withStock: 2 },
 };
 
-export function balance(index: number) {
+function balance(index: number) {
   return {
     isDefaultVariant: true,
     listPrice: "10.00",
@@ -136,10 +136,7 @@ export function balance(index: number) {
 }
 
 /** A day of the series as the server sends it: with its costs and result only when the scenario has results. */
-export function dayEntry(
-  scenario: Scenario,
-  day: string
-): Record<string, unknown> {
+function dayEntry(scenario: Scenario, day: string): Record<string, unknown> {
   const [cents, count] = scenario.days[day] ?? [0, 0];
   const entry = { date: day, netSales: money(cents), salesCount: count };
   if (!scenario.results) {
@@ -157,10 +154,10 @@ export function dayEntry(
 }
 
 /** Above this many days the server sends the months, not the days. */
-export const LONGEST_BY_DAY = 62;
+const LONGEST_BY_DAY = 62;
 
 /** The days of the series added up by calendar month, as the server sends a long period. */
-export function byMonth(
+function byMonth(
   daily: readonly Record<string, unknown>[]
 ): Record<string, unknown>[] {
   const months = new Map<string, Record<string, unknown>[]>();
@@ -531,7 +528,7 @@ export class FakeServer {
  * What the platform answers for a Worker it killed for CPU (1102): an HTML 503 with `cf-ray` and without the
  * Worker's mark (`server_failed`), never a JSON of the RPC.
  */
-export const KILLED_FOR_CPU = {
+const KILLED_FOR_CPU = {
   body: "<!DOCTYPE html><title>Worker exceeded resource limits</title><h1>Error 1102</h1>",
   contentType: "text/html",
   headers: { "cf-ray": "8d2f0c1e9a7b-GRU" },
@@ -539,9 +536,9 @@ export const KILLED_FOR_CPU = {
 };
 
 /** What the Worker answers: the RPC and the auth endpoints. */
-export const WORKER_PATHS = /\/(rpc|api)\//;
+const WORKER_PATHS = /\/(rpc|api)\//;
 
-export const HOME_PROCEDURES = new Set([
+const HOME_PROCEDURES = new Set([
   "expense/create",
   "expense/list",
   "expense/listCategories",
@@ -557,13 +554,13 @@ export const HOME_PROCEDURES = new Set([
   "sale/list",
 ]);
 
-export const EXPENSE_CATEGORY_FIELDS = {
+const EXPENSE_CATEGORY_FIELDS = {
   categoryGroup: "operational",
   categoryId: "0199c2d0-0000-7000-8000-0000000000e2",
   categoryName: "Aluguel",
 };
 
-export const EXPENSE_CATEGORY = {
+const EXPENSE_CATEGORY = {
   archivedAt: null,
   createdAt: "2026-10-01T12:00:00.000Z",
   groupKey: "operational",
@@ -578,9 +575,9 @@ export const EXPENSE_CATEGORY = {
 
 export const SALE_ID = "0199c2d0-0000-7000-8000-0000000000c1";
 
-export const VARIANT = "0199c2d0-0000-7000-8000-0000000000c2";
+const VARIANT = "0199c2d0-0000-7000-8000-0000000000c2";
 
-export const NO_FEE = {
+const NO_FEE = {
   amount: null,
   fixedAmount: null,
   mode: "not_applicable",
@@ -588,7 +585,7 @@ export const NO_FEE = {
 };
 
 /** A confirmed sale of `occurredOn`, as `sale.get` returns it: one shirt, paid in cash, never returned. */
-export function saleDetail(occurredOn: string) {
+function saleDetail(occurredOn: string) {
   const at = `${occurredOn}T15:00:00.000Z`;
   return {
     cancellation: null,
@@ -790,7 +787,7 @@ export async function openHome(page: Page, server: FakeServer, at = NOON) {
 export const region = (page: Page, name: string) =>
   page.getByRole("region", { exact: true, name });
 
-export const PERIOD_BUTTON = /^Período: /;
+const PERIOD_BUTTON = /^Período: /;
 
 export const TYPE_DATES = /Digitar as datas/;
 
