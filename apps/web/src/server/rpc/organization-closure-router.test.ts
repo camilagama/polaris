@@ -7,12 +7,22 @@ import {
   ClosureNotRecoverableError,
   OrganizationNotActiveError,
 } from "@polaris/domain/organization/closure";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createServerApp } from "../app";
 import type { WorkerBindings } from "../environment";
 import { TenantRequestContextError } from "../request-context-error";
 import type { TenantRequestContextInput } from "../tenant-request-context";
 import { createRpcRouter } from "./router";
+
+const NOW = new Date("2026-11-19T02:50:00.000Z");
+
+beforeEach(() => {
+  vi.useFakeTimers({ now: NOW, toFake: ["Date"] });
+});
+
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 const organizationId = "7b9c212a-f90b-4e05-9e9a-0c0eb1c9c9b0";
 const recoverUntil = new Date("2026-11-16T12:00:00.000Z");
@@ -58,7 +68,7 @@ function createClient(overrides: Record<string, unknown>) {
   };
 }
 
-function authenticated(createdAt = new Date()) {
+function authenticated(createdAt = new Date(NOW)) {
   return async (input: {
     operation: (
       database: unknown,
@@ -278,7 +288,7 @@ describe("organization.recoverClosure", () => {
     const client = createClient({
       closureRepository: { recoverOrganizationClosure },
       withAuthenticatedRequestContext: authenticated(
-        new Date(Date.now() - 15 * 60 * 1000)
+        new Date(NOW.getTime() - 15 * 60 * 1000)
       ),
     });
 
@@ -289,6 +299,21 @@ describe("organization.recoverClosure", () => {
       data: { reason: "fresh_session_required" },
     });
     expect(recoverOrganizationClosure).not.toHaveBeenCalled();
+  });
+
+  it("accepts a session signed in 1 ms short of 15 minutes", async () => {
+    const recoverOrganizationClosure = vi.fn(async () => undefined);
+    const client = createClient({
+      closureRepository: { recoverOrganizationClosure },
+      withAuthenticatedRequestContext: authenticated(
+        new Date(NOW.getTime() - 15 * 60 * 1000 + 1)
+      ),
+    });
+
+    await expect(
+      client.organization.recoverClosure({ organizationId })
+    ).resolves.toEqual({ recovered: true });
+    expect(recoverOrganizationClosure).toHaveBeenCalledOnce();
   });
 
   it("answers a conflict when the window is over or it is not the owner's to undo", async () => {

@@ -77,27 +77,7 @@ export const TEST_CLOCK_LIST = {
     count: 2,
     reason: BEFORE_THE_RULE,
   },
-  "apps/web/src/server/rpc/billing-router.test.ts": {
-    count: 1,
-    reason: BEFORE_THE_RULE,
-  },
-  "apps/web/src/server/rpc/data-export-router.test.ts": {
-    count: 4,
-    reason: BEFORE_THE_RULE,
-  },
-  "apps/web/src/server/rpc/organization-closure-router.test.ts": {
-    count: 2,
-    reason: BEFORE_THE_RULE,
-  },
-  "apps/web/src/server/rpc/product-import-router.test.ts": {
-    count: 2,
-    reason: BEFORE_THE_RULE,
-  },
   "apps/web/src/server/rpc/report-router.test.ts": {
-    count: 1,
-    reason: BEFORE_THE_RULE,
-  },
-  "apps/web/src/server/rpc/sale-router.test.ts": {
     count: 1,
     reason: BEFORE_THE_RULE,
   },
