@@ -1,5 +1,7 @@
 /// <reference lib="dom" />
 import { expect } from "@playwright/test";
+import { runClockFor } from "../e2e/run-clock-for";
+import { RELOAD_WINDOW_MS } from "../src/app-shell/chunk-load-error";
 import { test } from "./support";
 import { serveHome } from "./ui-home-states";
 
@@ -11,8 +13,7 @@ test.use({ serviceWorkers: "block" });
 
 const HOME_CHUNK = "**/assets/home-page-*.js";
 const FAILED_TITLE = "Algo deu errado nesta tela";
-/** A little over `RELOAD_WINDOW_MS` of `app-shell/chunk-load-error.ts`. */
-const AFTER_RELOAD_WINDOW_MS = 10_500;
+const RELOAD_MARK = "polaris:chunk-reload-at";
 
 test("um pedaço da tela que não baixou: a tela de erro aparece e Tentar novamente recupera, sem recarregar à mão", async ({
   buildVersion,
@@ -43,6 +44,7 @@ test("se o pedaço continua faltando, um clique logo depois do recarregamento n�
   page,
 }) => {
   buildVersion("1");
+  await page.clock.install();
   await serveHome(page, { signedIn: true });
   let asked = 0;
   await page.route(HOME_CHUNK, (route) => {
@@ -62,7 +64,7 @@ test("se o pedaço continua faltando, um clique logo depois do recarregamento n�
 
   // 2nd click, right after: no second reload (the page is the same), the panel stays
   await page.getByRole("button", { name: "Tentar novamente" }).click();
-  await page.waitForTimeout(500);
+  await runClockFor(page, 500);
   await expect(page.getByText(FAILED_TITLE)).toBeVisible();
   expect(
     await page.evaluate(
@@ -70,8 +72,22 @@ test("se o pedaço continua faltando, um clique logo depois do recarregamento n�
     )
   ).toBe(true);
 
-  // a while later the click reloads again, and now the chunk is there
-  await page.waitForTimeout(AFTER_RELOAD_WINDOW_MS);
+  // one millisecond short of the window the click still does not reload; past it (the exact boundary is the unit test of chunk-load-error) it does and recovers
+  const markedAt = Number(
+    await page.evaluate((key) => sessionStorage.getItem(key), RELOAD_MARK)
+  );
+  expect(markedAt).toBeGreaterThan(0);
+  await page.clock.pauseAt(markedAt + RELOAD_WINDOW_MS - 1);
+  await page.getByRole("button", { name: "Tentar novamente" }).click();
+  await runClockFor(page, 500);
+  await expect(page.getByText(FAILED_TITLE)).toBeVisible();
+  expect(
+    await page.evaluate(
+      () => (window as unknown as { stillHere?: boolean }).stillHere
+    )
+  ).toBe(true);
+  expect(asked).toBe(2);
+  await page.clock.resume();
   await page.getByRole("button", { name: "Tentar novamente" }).click();
   await expect(page.getByRole("region", { name: "Hoje" })).toContainText("R$", {
     timeout: 20_000,

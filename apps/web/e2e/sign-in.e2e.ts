@@ -1,6 +1,7 @@
 /// <reference lib="dom" />
 import type { Locator, Page, Request } from "@playwright/test";
 import { expect, test } from "@playwright/test";
+import { runClockFor } from "./run-clock-for";
 import { SUPPORT_ADDRESS } from "./support-address";
 import { serveHealth, WORKER_MARK } from "./worker-mark";
 
@@ -298,12 +299,13 @@ test.describe("a tela de entrada, com o servidor interceptado", () => {
   test("com motivo=sessao e uma sessão que o servidor ainda aceita no lookup, a tela fica e oferece o botão: nunca um laço entre o app e /entrar", async ({
     page,
   }) => {
+    await page.clock.install();
     const server = newServer({ session: true });
     await serve(page, server);
     await page.goto("/entrar?motivo=sessao&voltar=%2Fsales");
     await expect(googleButton(page)).toBeEnabled();
     expect(new URL(page.url()).pathname).toBe("/entrar");
-    await page.waitForTimeout(800);
+    await runClockFor(page, 800);
     expect(new URL(page.url()).pathname).toBe("/entrar");
   });
 
@@ -419,6 +421,7 @@ test.describe("a tela de entrada, com o servidor interceptado", () => {
   test("429 no início: texto de espera, botão ativo, nada tenta de novo (AC-12)", async ({
     page,
   }) => {
+    await page.clock.install();
     const server = newServer({ start: "limit" });
     await serve(page, server);
     await page.goto("/entrar");
@@ -428,7 +431,7 @@ test.describe("a tela de entrada, com o servidor interceptado", () => {
     );
     await expect(alertBox(page)).toBeFocused();
     await expect(googleButton(page)).toBeEnabled();
-    await page.waitForTimeout(1500);
+    await runClockFor(page, 1500);
     expect(server.startBodies).toHaveLength(1);
     await expect(page.locator("body")).not.toContainText(TECHNICAL);
   });
@@ -437,6 +440,7 @@ test.describe("a tela de entrada, com o servidor interceptado", () => {
     test(`início com ${start}: texto de tentar em instantes, sem código nem corpo (AC-12)`, async ({
       page,
     }) => {
+      await page.clock.install();
       const server = newServer({ start });
       await serve(page, server);
       await page.goto("/entrar");
@@ -445,7 +449,7 @@ test.describe("a tela de entrada, com o servidor interceptado", () => {
         "Não conseguimos entrar agora. Tente de novo em instantes."
       );
       await expect(googleButton(page)).toBeEnabled();
-      await page.waitForTimeout(1000);
+      await runClockFor(page, 1000);
       expect(server.startBodies).toHaveLength(1);
       await expect(page.locator("body")).not.toContainText(TECHNICAL);
       await expect(page.locator("body")).not.toContainText("<html>");
