@@ -592,11 +592,11 @@ wait
     const path = process.env.PATH;
     process.env.PATH = `${bin}:${path}`;
     try {
-      const started = Date.now();
+      const started = performance.now();
       await expect(
         runWrangler("web", "polaris-web-staging", ["x"], 300)
       ).rejects.toThrow("wrangler was stopped (SIGKILL)");
-      expect(Date.now() - started).toBeLessThan(5000);
+      expect(performance.now() - started).toBeLessThan(5000);
     } finally {
       process.env.PATH = path;
     }

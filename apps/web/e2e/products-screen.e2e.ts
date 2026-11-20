@@ -162,6 +162,12 @@ const menuOf = (page: Page, name: string) =>
 const rowOf = (page: Page, name: string) =>
   page.getByRole("button", { exact: true, name: `Editar ${name}` });
 
+/** Runs the clock and then sends one call of its own: it reaches the route after any resend the run let go. */
+async function runClockFor(page: Page, milliseconds: number) {
+  await page.clock.runFor(milliseconds);
+  await page.evaluate(() => fetch("/rpc/settle").catch(() => undefined));
+}
+
 test("as abas Ativos e Arquivados: setas trocam de aba, Tab sai do grupo e o leitor de tela lê aba selecionada", async ({
   page,
 }, testInfo) => {
@@ -993,6 +999,7 @@ test("o cadastro que o servidor recusa deixa o pé do menu em 1 de 3", async ({
 test("cadastrar com o 503 server_busy: diz que pode ter sido salvo, não repete sozinho e não oferece tentar de novo", async ({
   page,
 }) => {
+  await page.clock.install();
   let created = 0;
   await openServerScreen(page, {
     lists: [answer([])],
@@ -1012,7 +1019,7 @@ test("cadastrar com o 503 server_busy: diz que pode ter sido salvo, não repete 
     page.getByRole("button", { name: "Tentar novamente" })
   ).toHaveCount(0);
   // a write is never sent again by itself (the reads try twice more at ~1.5 s and ~4 s)
-  await page.waitForTimeout(6000);
+  await runClockFor(page, 6000);
   expect(created).toBe(1);
 });
 

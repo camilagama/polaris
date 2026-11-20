@@ -308,6 +308,19 @@ function isSessionRefusal(error: unknown): boolean {
 }
 
 /**
+ * The server could not answer the call, so nothing follows from it about the device: no answer at all, a 5xx the
+ * retry of the reads already counts as transient, or an oRPC code that is no definite 4xx (a 500 with a reason of its
+ * own, a 429). Only a definite answer ("this device is not yours") may send the start to forget the device.
+ */
+function isServerUnanswered(error: unknown): boolean {
+  return (
+    isConnectionFailure(error) ||
+    isTransientReadFailure(error) ||
+    (rpcErrorCode(error) !== undefined && !isDefiniteRpcRejection(error))
+  );
+}
+
+/**
  * The runtime already knows the store was closed (a call of this page was refused for it): no lease is asked for it
  * again, and whatever was on its way ends as the server's own refusal would.
  */
@@ -1194,6 +1207,7 @@ export class OfflineRuntime {
     const ran = await exclusive(name, () => this.runSync(pull));
     if (!ran) {
       this.lastOutcome = "not_run";
+      this.pullIdle = false; // nothing was pulled: the idle verdict of the earlier pull must not stretch the next interval
     }
   }
 
@@ -1723,8 +1737,8 @@ export class OfflineRuntime {
       }
       if (
         !this.dependencies.isOnline() ||
-        // no answer is not a refusal: the remembered device is not somebody else's for that
-        isConnectionFailure(error) ||
+        // no answer (network or a 5xx, with or without an oRPC code) is not a refusal: the device is not somebody else's
+        isServerUnanswered(error) ||
         (error instanceof Error && error.message === "no_lease_offline") ||
         isPlanRefusal(error) ||
         // the device is not somebody else's: the server only waits for the acceptance, or the store was closed
@@ -2543,7 +2557,7 @@ export class OfflineRuntime {
 
   /**
    * Whether the last full sync (send and pull) was answered, sent nothing and pulled nothing new. A run that
-   * failed, got no answer, was cut at its pull or only pushed is not idle: the scheduler lets its interval grow
+   * failed, got no answer, did not get the lock (another tab was syncing), was cut at its pull or only pushed is not idle: the scheduler lets its interval grow
    * only after an idle one.
    */
   lastPullWasIdle(): boolean {

@@ -22,7 +22,11 @@ skipOutsideChromium();
 const SALE_ID = "0199c2d0-0000-7000-8000-0000000000c1";
 const PRODUCT = "0199c2d0-0000-7000-8000-0000000000b1";
 const VARIANT = "0199c2d0-0000-7000-8000-0000000000c2";
-const AT = "2026-10-14T15:00:00.000Z";
+const NOW = new Date("2026-10-14T12:00:00-03:00");
+const AT = NOW.toISOString();
+const STORE_DAY = new Intl.DateTimeFormat("en-CA", {
+  timeZone: "America/Sao_Paulo",
+}).format(NOW);
 const NO_FEE = {
   amount: null,
   basisPoints: null,
@@ -86,7 +90,7 @@ const detail = {
       currency: "BRL",
       id: SALE_ID,
       occurredAt: AT,
-      occurredOn: "2026-10-14",
+      occurredOn: STORE_DAY,
       recordedAt: null,
     },
     totals: {
@@ -134,6 +138,7 @@ async function openDetail(page: Page, fontPixels: number) {
     await route.abort("internetdisconnected");
   });
   await serveLabWorker(page);
+  await page.clock.setFixedTime(NOW);
   await page.goto(`/offline-screens-lab?screen=sale-detail&saleId=${SALE_ID}`);
   await page.getByLabel("Usuário").fill(`user-${crypto.randomUUID()}`);
   await page.getByRole("button", { exact: true, name: "Iniciar" }).click();

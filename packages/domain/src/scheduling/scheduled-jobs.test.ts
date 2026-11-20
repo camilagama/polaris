@@ -14,6 +14,8 @@ const HOUR = 3600;
 const JOB_ID = /^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)*$/;
 const HOURLY_CRON = /^\d{1,2} \* \* \* \*$/;
 
+const AT = new Date("2026-11-19T15:00:00.000Z");
+
 describe("scheduler windows", () => {
   it("puts an instant in the window of its cadence, counted from the epoch in UTC", () => {
     expect(windowIndex(new Date("1970-01-01T00:00:00Z"), HOUR)).toBe(0);
@@ -34,8 +36,8 @@ describe("scheduler windows", () => {
   });
 
   it("refuses a cadence that is not a whole number of seconds", () => {
-    expect(() => windowIndex(new Date(), 0)).toThrow("invalid_cadence");
-    expect(() => windowIndex(new Date(), 1.5)).toThrow("invalid_cadence");
+    expect(() => windowIndex(AT, 0)).toThrow("invalid_cadence");
+    expect(() => windowIndex(AT, 1.5)).toThrow("invalid_cadence");
   });
 
   it("counts the windows that passed without a run, none for the first run", () => {
