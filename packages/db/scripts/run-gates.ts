@@ -97,6 +97,8 @@ const gates: Gate[] = [
   ["goals", "verify-goals-gate.ts"],
   // opening the Início writes nothing but the settling of an ended goal (AC-23), measured by pg_stat_user_tables
   ["home-writes", "verify-home-writes-gate.ts"],
+  // lives in apps/web: the Início's derivation from one wide stock list equals its four filtered reads (home-inventory.ts)
+  ["home-inventory", "../../../apps/web/scripts/verify-home-inventory-gate.ts"],
   ["billing-catalog", "verify-billing-catalog-gate.ts"],
   ["entitlements", "verify-entitlements-gate.ts"],
   ["billing-lifecycle", "verify-billing-lifecycle-gate.ts"],
@@ -417,6 +419,7 @@ const suites: Record<string, string[]> = {
     "period-summary-sql",
     "goals",
     "home-writes",
+    "home-inventory",
     "billing-catalog",
     "entitlements",
     "billing-lifecycle",

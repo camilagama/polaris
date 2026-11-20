@@ -27,6 +27,15 @@ import {
 } from "../app-shell/first-steps";
 import { type HomeCopy, writeHomeCopy } from "./home-copy";
 import {
+  checklistOf,
+  knowsLargeCatalog,
+  rememberLargeCatalog,
+  stockOf,
+  WIDE_LIMIT,
+  type WideEntry,
+  wholeCatalog,
+} from "./home-inventory";
+import {
   type BalancesPage,
   homePeriods,
   homeReads,
@@ -48,8 +57,9 @@ import {
 import { todaysRhythmCopy, writeRhythmCopy } from "./rhythm-copy";
 
 /**
- * The reads of the Início: A and B (the figures), G (the goals) and S (no stock) in
- * parallel; C (no cost) and the checklist reads (V, P, E) only when A asks for them. Each block has its own state, so
+ * The reads of the Início: A and B (the figures), G (the goals) and the wide list of the stock (up to 100 variants,
+ * which gives S, no stock, C, no cost, and the checklist's P and E when it is the whole catalog) in parallel; V (the
+ * checklist's sale) and, past 100 variants, the filtered reads of S, C, P and E only when A asks for them. Each block has its own state, so
  * one that fails never takes the others with it (§ 5.2), and "Nova venda" depends on none of them.
  *
  * They are read again when the tab comes back (at most once every 5 min), when the page comes back from the browser's
@@ -318,14 +328,45 @@ function tellFirstSteps(
   }
 }
 
+/** The wide list of the opening, when it is the whole catalog; null when it is not (the filtered reads stand in). */
+type WideCatalog = readonly WideEntry[] | null;
+
+/**
+ * The one list that serves the checklist and the stock lines: every variant, up to 100 (§ 2.4). Null, with no read at
+ * all, once this tab found the catalog past 100 variants; null too when this list has a next page, which the tab then
+ * remembers (the guard of the copies: nothing while the session ends).
+ */
+async function readWideCatalog(
+  organizationId: string,
+  isCurrent: IsCurrent
+): Promise<WideCatalog> {
+  if (knowsLargeCatalog(organizationId)) {
+    return null;
+  }
+  const list = await readWithRetry(
+    (signal) =>
+      orpcClient.inventory.listBalances(
+        { limit: WIDE_LIMIT, organizationId, productStatus: "all" },
+        { signal }
+      ),
+    { isCurrent }
+  );
+  const whole = wholeCatalog(list);
+  if (whole === null && !(isSessionOver() || isSigningOut())) {
+    rememberLargeCatalog(organizationId);
+  }
+  return whole;
+}
+
 /**
  * Whether the store ever sold (V, cancelled sales included) and, when it did not, what it has: a product (P, archived
- * ones included) and a variant with stock (E). Null when the store sold: then there is no checklist (AC-23).
+ * ones included) and a variant with stock (E), taken from the wide list when it is the whole catalog. Null when the
+ * store sold: then there is no checklist (AC-23), and the wide list is not waited for.
  */
 async function readChecklist(
   organizationId: string,
   isCurrent: IsCurrent,
-  readsStock: boolean
+  catalog: Promise<WideCatalog> | null
 ): Promise<HomeChecklist | "sold" | null> {
   const sold = await readWithRetry(
     (signal) => orpcClient.sale.list({ limit: 1, organizationId }, { signal }),
@@ -334,8 +375,12 @@ async function readChecklist(
   if (sold.sales.length > 0) {
     return "sold";
   }
-  if (!readsStock) {
+  if (catalog === null) {
     return null;
+  }
+  const wide = await catalog;
+  if (wide !== null) {
+    return checklistOf(wide);
   }
   const [product] = (
     await readWithRetry(
@@ -364,12 +409,20 @@ async function readChecklist(
   };
 }
 
-/** S, and C only when the month sold an item without a known cost (§ 2.4). */
+/**
+ * S, and C only when the month sold an item without a known cost (§ 2.4): derived from the wide list when it is the
+ * whole catalog, read filtered (as before) when it is not.
+ */
 async function readStock(
   organizationId: string,
   isCurrent: IsCurrent,
+  catalog: Promise<WideCatalog>,
   withUnknownCost: Promise<boolean>
 ): Promise<{ unknownCost: BalancesPage | null; withoutStock: BalancesPage }> {
+  const wide = await catalog;
+  if (wide !== null) {
+    return stockOf(wide, await withUnknownCost);
+  }
   const page = (list: { entries: unknown[]; nextCursor: string | null }) => ({
     count: list.entries.length,
     more: list.nextCursor !== null,
@@ -550,7 +603,11 @@ export function useHome(
   );
 
   const loadChecklist = useCallback(
-    async (ticket: number, figures: HomeFigures | null) => {
+    async (
+      ticket: number,
+      figures: HomeFigures | null,
+      catalog: Promise<WideCatalog> | null
+    ) => {
       const current = () => ticket === sequence.current.numbers;
       const unasked = figures === null || !reads.sales;
       if (unasked || !noSaleCounted(figures.month, figures.before)) {
@@ -560,11 +617,7 @@ export function useHome(
         return;
       }
       try {
-        const read = await readChecklist(
-          organizationId,
-          current,
-          reads.inventory
-        );
+        const read = await readChecklist(organizationId, current, catalog);
         const data = read === "sold" ? null : read;
         tellFirstSteps(organizationId, data, current());
         settle(ticket, "checklist", { block: { data, status: "ready" } });
@@ -579,7 +632,7 @@ export function useHome(
         );
       }
     },
-    [organizationId, reads.inventory, reads.sales, settle]
+    [organizationId, reads.sales, settle]
   );
 
   const loadGoals = useCallback(
@@ -625,9 +678,10 @@ export function useHome(
     async (
       ticket: number,
       figures: Promise<HomeFigures | null>,
+      catalog: Promise<WideCatalog> | null,
       keep: boolean
     ) => {
-      if (!reads.inventory) {
+      if (catalog === null) {
         settle(ticket, "stock", { block: { status: "hidden" } });
         return;
       }
@@ -635,6 +689,7 @@ export function useHome(
         const data = await readStock(
           organizationId,
           () => ticket === sequence.current.numbers,
+          catalog,
           figures.then(
             (read) =>
               reads.unknownCost &&
@@ -651,7 +706,7 @@ export function useHome(
         }
       }
     },
-    [organizationId, reads.inventory, reads.unknownCost, settle]
+    [organizationId, reads.unknownCost, settle]
   );
 
   // the figures of the last read: "Tentar novamente" of the map reads the series of their today again
@@ -715,9 +770,16 @@ export function useHome(
 
   /** The figures, then the checklist and the map that depend on them; the stock waits for them only to decide on C. */
   const loadNumbers = useCallback(
-    (ticket: number, keep: boolean, force: boolean) => {
+    (
+      ticket: number,
+      keep: boolean,
+      force: boolean,
+      catalog: Promise<WideCatalog> | null
+    ) => {
       const figures = loadFigures(ticket, keep, force);
-      const checklist = figures.then((read) => loadChecklist(ticket, read));
+      const checklist = figures.then((read) =>
+        loadChecklist(ticket, read, catalog)
+      );
       const rhythm = figures.then((read) => loadRhythm(ticket, read, keep));
       return { checklist, figures, rhythm };
     },
@@ -729,13 +791,26 @@ export function useHome(
     (keep: boolean, force: boolean) => {
       sequence.current.numbers += 1;
       const ticket = sequence.current.numbers;
-      const { checklist, figures, rhythm } = loadNumbers(ticket, keep, force);
+      // one list for the checklist and the stock lines, read beside the figures and never in their way
+      const catalog = reads.inventory
+        ? readWideCatalog(
+            organizationId,
+            () => ticket === sequence.current.numbers
+          )
+        : null;
+      catalog?.catch(() => undefined);
+      const { checklist, figures, rhythm } = loadNumbers(
+        ticket,
+        keep,
+        force,
+        catalog
+      );
       checklist.catch(() => undefined);
       rhythm.catch(() => undefined);
-      loadStock(ticket, figures, keep).catch(() => undefined);
+      loadStock(ticket, figures, catalog, keep).catch(() => undefined);
       return figures;
     },
-    [loadNumbers, loadStock]
+    [loadNumbers, loadStock, organizationId, reads.inventory]
   );
   const loadGoalsAgain = useCallback(
     (keep: boolean) => {
