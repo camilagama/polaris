@@ -128,6 +128,17 @@ export class SessionUnreachableError extends Error {
 /** Reason of the `unavailable` phase when the server did not say whose the remembered device is: the server's fault, not the browser's. */
 export const DEVICE_CHECK_UNAVAILABLE_REASON = "device_check_unavailable";
 
+/**
+ * Waits before asking the server again whose the remembered device is, after it did not answer: growing, with a
+ * ceiling, so a server that stays down is asked a handful of times an hour and never in a tight loop.
+ */
+export const DEVICE_CHECK_RETRY_STEPS_MS = [
+  5000, 15_000, 30_000, 60_000, 120_000, 300_000,
+] as const;
+
+/** After the browser says the network is back: long enough for the connection to settle, short enough to feel automatic. */
+export const DEVICE_CHECK_BACK_ONLINE_MS = 1000;
+
 /** The server did not answer whose the remembered device is, and no lease of this user proves it: nothing is forgotten or registered. */
 class DeviceCheckUnavailableError extends Error {
   constructor(
@@ -525,6 +536,12 @@ export class OfflineRuntime {
   private generation = 0;
   /** Cancels the timer at the lease's `exp`, while one is set. */
   private cancelExpiryTimer: (() => void) | null = null;
+  /** Cancels the timer that asks the device check again while the start waits on `device_check_unavailable`. */
+  private cancelDeviceCheckRetry: (() => void) | null = null;
+  /** How many timed retries of the device check were set since the start last stopped on it. */
+  private deviceCheckRetryStep = 0;
+  /** A reopening of the start is asking the server: no other one is begun meanwhile. */
+  private reopening = false;
 
   constructor(dependencies: RuntimeDependencies) {
     this.dependencies = dependencies;
@@ -644,6 +661,10 @@ export class OfflineRuntime {
     const online = this.dependencies.isOnline();
     if (online !== this.snapshot.online) {
       this.set({ ...this.snapshot, online });
+    }
+    if (online && this.awaitingDeviceCheck() && !this.reopening) {
+      this.deviceCheckRetryStep = 0;
+      this.armDeviceCheckRetry(DEVICE_CHECK_BACK_ONLINE_MS);
     }
   }
 
@@ -929,7 +950,14 @@ export class OfflineRuntime {
 
   // ------------------------------------------------------------ lifecycle
   async start(organizationId: string): Promise<void> {
-    const run = this.startNow(organizationId);
+    await this.runStart(organizationId, false);
+  }
+
+  private async runStart(
+    organizationId: string,
+    reopen: boolean
+  ): Promise<void> {
+    const run = this.startNow(organizationId, reopen);
     this.startRun = run;
     try {
       await run;
@@ -940,7 +968,10 @@ export class OfflineRuntime {
     }
   }
 
-  private async startNow(organizationId: string): Promise<void> {
+  private async startNow(
+    organizationId: string,
+    reopen: boolean
+  ): Promise<void> {
     if (
       this.organizationId === organizationId &&
       (this.snapshot.phase === "starting" ||
@@ -949,10 +980,17 @@ export class OfflineRuntime {
     ) {
       return;
     }
-    await this.stop();
+    if (reopen) {
+      // the screens keep the notice while the server is asked again: nothing is reset, only the run is renewed
+      this.generation += 1;
+    } else {
+      await this.stop();
+    }
     const { generation } = this;
     this.organizationId = organizationId;
-    this.set({ ...this.snapshot, phase: "starting", reason: null });
+    if (!reopen) {
+      this.set({ ...this.snapshot, phase: "starting", reason: null });
+    }
     if (this.closedOrganizations.has(organizationId)) {
       await this.dropClosedBeforeBoot(organizationId, generation);
       return;
@@ -970,18 +1008,81 @@ export class OfflineRuntime {
         // without the legal acceptance nothing is forgotten: the device, the lease and the namespace stay
         const legal = isLegalAcceptanceRefusal(error);
         const failure = error instanceof Error ? error.message : "start_failed";
+        const reason = startFailureReason(error, legal, failure);
         this.set({
           ...this.snapshot,
           legalAcceptanceRequired: legal,
           phase: "unavailable",
-          reason: startFailureReason(error, legal, failure),
+          reason,
         });
+        if (reason === DEVICE_CHECK_UNAVAILABLE_REASON) {
+          this.armNextDeviceCheckRetry();
+        }
+      }
+    }
+  }
+
+  /** The start stopped because the server did not say whose the device is: the only `unavailable` that waits for the network. */
+  private awaitingDeviceCheck(): boolean {
+    return (
+      this.organizationId !== null &&
+      this.snapshot.phase === "unavailable" &&
+      this.snapshot.reason === DEVICE_CHECK_UNAVAILABLE_REASON
+    );
+  }
+
+  private clearDeviceCheckRetry() {
+    this.cancelDeviceCheckRetry?.();
+    this.cancelDeviceCheckRetry = null;
+  }
+
+  private armNextDeviceCheckRetry() {
+    const steps = DEVICE_CHECK_RETRY_STEPS_MS;
+    const step = steps[Math.min(this.deviceCheckRetryStep, steps.length - 1)];
+    this.deviceCheckRetryStep += 1;
+    this.armDeviceCheckRetry(step ?? DEVICE_CHECK_BACK_ONLINE_MS);
+  }
+
+  /**
+   * One timer at a time asks the device check again, through the same start (never `registerDevice` by itself: only
+   * a definite "not yours" answer registers, as in any start). Offline, nothing is asked and the next step is set.
+   */
+  private armDeviceCheckRetry(delayMs: number) {
+    const { generation, organizationId } = this;
+    if (!organizationId) {
+      return;
+    }
+    this.clearDeviceCheckRetry();
+    const schedule = this.dependencies.schedule ?? timerSchedule;
+    this.cancelDeviceCheckRetry = schedule(() => {
+      this.cancelDeviceCheckRetry = null;
+      if (generation !== this.generation || !this.awaitingDeviceCheck()) {
+        return;
+      }
+      if (!this.dependencies.isOnline()) {
+        this.armNextDeviceCheckRetry();
+        return;
+      }
+      this.reopenAfterDeviceCheck(organizationId).catch(() => undefined);
+    }, delayMs);
+  }
+
+  private async reopenAfterDeviceCheck(organizationId: string) {
+    this.reopening = true;
+    try {
+      await this.runStart(organizationId, true);
+    } finally {
+      this.reopening = false;
+      if (!this.awaitingDeviceCheck()) {
+        this.deviceCheckRetryStep = 0;
       }
     }
   }
 
   async stop(): Promise<void> {
     this.generation += 1;
+    this.clearDeviceCheckRetry();
+    this.deviceCheckRetryStep = 0;
     const { generation } = this;
     await this.closeStores();
     if (generation !== this.generation) {
@@ -1093,6 +1194,7 @@ export class OfflineRuntime {
     const ran = await exclusive(name, () => this.runSync(pull));
     if (!ran) {
       this.lastOutcome = "not_run";
+      this.pullIdle = false; // nothing was pulled: the idle verdict of the earlier pull must not stretch the next interval
     }
   }
 
@@ -2442,7 +2544,7 @@ export class OfflineRuntime {
 
   /**
    * Whether the last full sync (send and pull) was answered, sent nothing and pulled nothing new. A run that
-   * failed, got no answer, was cut at its pull or only pushed is not idle: the scheduler lets its interval grow
+   * failed, got no answer, did not get the lock (another tab was syncing), was cut at its pull or only pushed is not idle: the scheduler lets its interval grow
    * only after an idle one.
    */
   lastPullWasIdle(): boolean {

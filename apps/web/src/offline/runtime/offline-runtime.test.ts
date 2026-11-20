@@ -12,6 +12,8 @@ import { FakeCatalogServer, FakeWriter } from "../test-support";
 import { logoutDependencies } from "./logout-dependencies";
 import {
   type DataChannel,
+  DEVICE_CHECK_BACK_ONLINE_MS,
+  DEVICE_CHECK_RETRY_STEPS_MS,
   type KeyValueStore,
   NoSessionForDiscardError,
   OfflineRuntime,
@@ -379,6 +381,31 @@ function world(options: { leaseHours?: number } = {}) {
     stores,
     wiped,
   };
+}
+
+/** One lock per name across runtimes, `ifAvailable` like navigator.locks. */
+function sharedLock() {
+  const held = new Set<string>();
+  return async (name: string, task: () => Promise<void>) => {
+    if (held.has(name)) {
+      return false;
+    }
+    held.add(name);
+    try {
+      await task();
+      return true;
+    } finally {
+      held.delete(name);
+    }
+  };
+}
+
+function deferred() {
+  let release: () => void = () => undefined;
+  const promise = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  return { promise, release };
 }
 
 async function queueProduct(runtime: OfflineRuntime, name: string, n: number) {
@@ -751,6 +778,229 @@ describe("starting", () => {
       expect(back.getSnapshot().phase).toBe("ready");
       expect(back.context()?.deviceId).toBe(device);
       expect(w.calls.registerDevice).toBe(registered);
+    });
+
+    describe("coming back by itself once the server or the network answers again", () => {
+      const down = () =>
+        Object.assign(new Error("unavailable"), {
+          code: "SERVICE_UNAVAILABLE",
+          status: 503,
+        });
+
+      async function stuckOnDeviceCheck() {
+        const w = world();
+        const first = w.make();
+        await first.start(organizationId);
+        await first.stop();
+        w.keyValues.remove(leaseKeyName);
+        w.failures.deviceIsMineError = down();
+        const runtime = w.make();
+        await runtime.start(organizationId);
+        expect(runtime.getSnapshot()).toMatchObject({
+          phase: "unavailable",
+          reason: "device_check_unavailable",
+        });
+        return { runtime, w };
+      }
+
+      async function tick(
+        w: ReturnType<typeof world>,
+        ms: number,
+        checks: number
+      ) {
+        w.advanceMs(ms);
+        w.fireDueTimers();
+        await vi.waitFor(() => expect(w.calls.deviceIsMine).toBe(checks));
+        await vi.waitFor(() => expect(w.liveTimers().length).toBe(1));
+      }
+
+      it("the online event asks the device check again and, answered, the runtime is ready", async () => {
+        const { runtime, w } = await stuckOnDeviceCheck();
+        const registered = w.calls.registerDevice;
+        const checks = w.calls.deviceIsMine;
+        w.failures.deviceIsMineError = undefined;
+
+        w.network.online = false;
+        runtime.connectionChanged();
+        w.network.online = true;
+        runtime.connectionChanged();
+        expect(w.calls.deviceIsMine).toBe(checks);
+
+        w.advanceMs(DEVICE_CHECK_BACK_ONLINE_MS);
+        w.fireDueTimers();
+        await vi.waitFor(() =>
+          expect(runtime.getSnapshot().phase).toBe("ready")
+        );
+        expect(w.calls.deviceIsMine).toBe(checks + 1);
+        expect(w.calls.registerDevice).toBe(registered);
+        expect(runtime.context()?.deviceId).toBe(uuid(701));
+        expect(runtime.getSnapshot().reason).toBeNull();
+        w.advanceMs(1_000_000);
+        w.fireDueTimers();
+        expect(w.calls.deviceIsMine).toBe(checks + 1);
+      });
+
+      it("the timed retry grows step by step up to a ceiling and never asks sooner", async () => {
+        const { w } = await stuckOnDeviceCheck();
+        const steps = [
+          ...DEVICE_CHECK_RETRY_STEPS_MS,
+          DEVICE_CHECK_RETRY_STEPS_MS.at(-1),
+          DEVICE_CHECK_RETRY_STEPS_MS.at(-1),
+        ] as number[];
+        let checks = w.calls.deviceIsMine;
+
+        for (const step of steps) {
+          w.advanceMs(step - 1);
+          w.fireDueTimers();
+          expect(w.calls.deviceIsMine).toBe(checks);
+          checks += 1;
+          // biome-ignore lint/performance/noAwaitInLoops: each try follows the one before
+          await tick(w, 1, checks);
+        }
+        expect(steps.slice(-3)).toEqual([300_000, 300_000, 300_000]);
+      });
+
+      it("the retry never registers a device, whatever the number of tries", async () => {
+        const { runtime, w } = await stuckOnDeviceCheck();
+        const registered = w.calls.registerDevice;
+        const issued = w.calls.issueLease;
+        let checks = w.calls.deviceIsMine;
+
+        for (const step of DEVICE_CHECK_RETRY_STEPS_MS) {
+          checks += 1;
+          // biome-ignore lint/performance/noAwaitInLoops: each try follows the one before
+          await tick(w, step, checks);
+        }
+        expect(w.calls.registerDevice).toBe(registered);
+        expect(w.calls.issueLease).toBe(issued);
+        expect(w.keyValues.read("polaris.offline.device")).toBe(uuid(701));
+        expect(runtime.getSnapshot().reason).toBe("device_check_unavailable");
+
+        w.failures.deviceIsMineError = new TypeError("Failed to fetch");
+        await tick(w, 300_000, checks + 1);
+        expect(w.calls.registerDevice).toBe(registered);
+      });
+
+      it("the screens keep the notice while the server is asked again: the phase goes from unavailable straight to ready", async () => {
+        const { runtime, w } = await stuckOnDeviceCheck();
+        const phases: string[] = [];
+        runtime.subscribe(() => phases.push(runtime.getSnapshot().phase));
+        w.failures.deviceIsMineError = undefined;
+
+        w.advanceMs(DEVICE_CHECK_RETRY_STEPS_MS[0]);
+        w.fireDueTimers();
+        await vi.waitFor(() =>
+          expect(runtime.getSnapshot().phase).toBe("ready")
+        );
+        expect(phases).not.toContain("starting");
+        expect(phases).not.toContain("off");
+      });
+
+      it("a stop while the retry is asking leaves the runtime stopped, not opened behind it", async () => {
+        const { runtime, w } = await stuckOnDeviceCheck();
+        w.failures.deviceIsMineError = undefined;
+        let release: () => void = () => undefined;
+        w.gates.issueLease = new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        const issued = w.calls.issueLease;
+
+        w.advanceMs(DEVICE_CHECK_RETRY_STEPS_MS[0]);
+        w.fireDueTimers();
+        await vi.waitFor(() => expect(w.calls.issueLease).toBe(issued + 1));
+        await runtime.stop();
+        release();
+        await vi.waitFor(() => expect(w.liveTimers()).toHaveLength(0));
+
+        expect(runtime.getSnapshot().phase).toBe("off");
+        expect(runtime.context()).toBeNull();
+      });
+
+      it("offline, the timer asks nothing and sets the next step", async () => {
+        const { runtime, w } = await stuckOnDeviceCheck();
+        const checks = w.calls.deviceIsMine;
+        w.network.online = false;
+
+        w.advanceMs(DEVICE_CHECK_RETRY_STEPS_MS[0]);
+        w.fireDueTimers();
+        expect(w.calls.deviceIsMine).toBe(checks);
+        expect(w.liveTimers()).toHaveLength(1);
+        expect(runtime.getSnapshot().phase).toBe("unavailable");
+      });
+
+      it("stopping ends the retries", async () => {
+        const { runtime, w } = await stuckOnDeviceCheck();
+        const checks = w.calls.deviceIsMine;
+
+        await runtime.stop();
+        expect(w.liveTimers()).toHaveLength(0);
+        w.advanceMs(1_000_000);
+        w.fireDueTimers();
+        runtime.connectionChanged();
+        expect(w.calls.deviceIsMine).toBe(checks);
+        expect(runtime.getSnapshot().phase).toBe("off");
+      });
+
+      it.each([
+        [
+          "the plan refused",
+          () =>
+            Object.assign(new Error("conflict"), {
+              data: { reason: "entitlement_denied" },
+            }),
+        ],
+        ["the stores that do not open", () => undefined],
+      ])("%s does not reopen on its own", async (_name, failure) => {
+        const w = world();
+        const refusal = failure();
+        if (refusal) {
+          w.failures.issueLease.push(refusal);
+        } else {
+          w.gates.openStoresFailures = 2;
+        }
+        const runtime = w.make();
+        await runtime.start(organizationId);
+        const { reason } = runtime.getSnapshot();
+        expect(runtime.getSnapshot().phase).toBe("unavailable");
+        expect(reason).not.toBe("device_check_unavailable");
+        const checks = w.calls.deviceIsMine;
+        const issued = w.calls.issueLease;
+
+        runtime.connectionChanged();
+        w.network.online = false;
+        runtime.connectionChanged();
+        w.network.online = true;
+        runtime.connectionChanged();
+        w.advanceMs(1_000_000);
+        w.fireDueTimers();
+
+        expect(w.liveTimers()).toHaveLength(0);
+        expect(w.calls.deviceIsMine).toBe(checks);
+        expect(w.calls.issueLease).toBe(issued);
+        expect(runtime.getSnapshot()).toMatchObject({
+          phase: "unavailable",
+          reason,
+        });
+      });
+
+      it("a retry that finds another refusal stops there", async () => {
+        const { runtime, w } = await stuckOnDeviceCheck();
+        w.failures.deviceIsMineError = undefined;
+        w.failures.issueLease.push(
+          Object.assign(new Error("conflict"), {
+            data: { reason: "entitlement_denied" },
+          })
+        );
+
+        w.advanceMs(DEVICE_CHECK_RETRY_STEPS_MS[0]);
+        w.fireDueTimers();
+        await vi.waitFor(() =>
+          expect(runtime.getSnapshot().reason).not.toBe(
+            "device_check_unavailable"
+          )
+        );
+        expect(w.liveTimers()).toHaveLength(0);
+      });
     });
 
     it.each(["FORBIDDEN", "UNAUTHORIZED"])(
@@ -1591,6 +1841,58 @@ describe("whether the last pull was idle (the scheduler stretches its interval o
     expect(runtime.lastPullWasIdle()).toBe(true);
 
     await runtime.syncNow({ pull: false });
+    expect(runtime.lastPullWasIdle()).toBe(true);
+  });
+
+  it("is not idle after the sync that bootstraps a store opened offline, even with nothing to send", async () => {
+    const w = world();
+    const first = w.make();
+    await first.start(organizationId);
+    await first.stop();
+    const writer = w.stores.get(`${userId}-${organizationId}`)?.writer;
+    if (!writer) {
+      throw new Error("no stores");
+    }
+    writer.meta = null;
+    const flags = { proven: false };
+    const runtime = w.make(null, { isOnline: () => flags.proven });
+    await runtime.start(organizationId);
+    expect(runtime.getSnapshot()).toMatchObject({
+      bootstrapped: false,
+      phase: "ready",
+    });
+
+    flags.proven = true;
+    await runtime.syncNow();
+    expect(runtime.getSnapshot().bootstrapped).toBe(true);
+    expect(runtime.lastPullWasIdle()).toBe(false);
+
+    await runtime.syncNow();
+    expect(runtime.lastPullWasIdle()).toBe(true);
+  });
+
+  it("is not idle when the lock was held by another tab, whatever the pull before said", async () => {
+    const w = world();
+    const exclusive = sharedLock();
+    const runtime = w.make(null, { exclusive });
+    await runtime.start(organizationId);
+    await runtime.syncNow();
+    expect(runtime.lastPullWasIdle()).toBe(true);
+
+    const other = w.make(null, { exclusive });
+    await other.start(organizationId);
+    const gate = deferred();
+    w.gates.push = gate.promise;
+    await queueProduct(other, "Camiseta", 1);
+    const running = other.syncNow();
+    await vi.waitFor(() => expect(w.calls.push).toBe(1));
+
+    await runtime.syncNow();
+    expect(runtime.lastPullWasIdle()).toBe(false);
+
+    gate.release();
+    await running;
+    await runtime.syncNow();
     expect(runtime.lastPullWasIdle()).toBe(true);
   });
 });
@@ -3298,31 +3600,6 @@ describe("conexão com prova (F7)", () => {
     await runtime.start(organizationId);
     await queueProduct(runtime, "Camiseta", 1);
     return runtime;
-  }
-
-  /** One lock per name across runtimes, `ifAvailable` like navigator.locks. */
-  function sharedLock() {
-    const held = new Set<string>();
-    return async (name: string, task: () => Promise<void>) => {
-      if (held.has(name)) {
-        return false;
-      }
-      held.add(name);
-      try {
-        await task();
-        return true;
-      } finally {
-        held.delete(name);
-      }
-    };
-  }
-
-  function deferred() {
-    let release: () => void = () => undefined;
-    const promise = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    return { promise, release };
   }
 
   describe("an answer that did not come from the Worker is no refusal", () => {
