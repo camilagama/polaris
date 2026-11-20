@@ -113,12 +113,7 @@ describe("the draft that redoing a refused sale leaves in Vender", () => {
     expect(await redo()).toBe("opened");
 
     vi.setSystemTime(AT_0005);
-    const draft = readSaleDraft(
-      window.sessionStorage,
-      ORG,
-      new Date(),
-      SAO_PAULO
-    );
+    const draft = readSaleDraft(window.sessionStorage, ORG, AT_0005, SAO_PAULO);
     expect(draft.kind).toBe("restored");
     if (draft.kind !== "restored") {
       return;
@@ -134,7 +129,7 @@ describe("the draft that redoing a refused sale leaves in Vender", () => {
 
     vi.setSystemTime(AT_0611);
     expect(
-      readSaleDraft(window.sessionStorage, ORG, new Date(), SAO_PAULO).kind
+      readSaleDraft(window.sessionStorage, ORG, AT_0611, SAO_PAULO).kind
     ).toBe("expired");
   });
 });
