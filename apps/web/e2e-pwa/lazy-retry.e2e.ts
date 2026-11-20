@@ -1,6 +1,7 @@
 /// <reference lib="dom" />
 import { expect } from "@playwright/test";
 import { runClockFor } from "../e2e/run-clock-for";
+import { RELOAD_WINDOW_MS } from "../src/app-shell/chunk-load-error";
 import { test } from "./support";
 import { serveHome } from "./ui-home-states";
 
@@ -12,8 +13,6 @@ test.use({ serviceWorkers: "block" });
 
 const HOME_CHUNK = "**/assets/home-page-*.js";
 const FAILED_TITLE = "Algo deu errado nesta tela";
-/** `RELOAD_WINDOW_MS` of `app-shell/chunk-load-error.ts`. */
-const RELOAD_WINDOW_MS = 10_000;
 const RELOAD_MARK = "polaris:chunk-reload-at";
 
 test("um pedaço da tela que não baixou: a tela de erro aparece e Tentar novamente recupera, sem recarregar à mão", async ({
@@ -73,7 +72,7 @@ test("se o pedaço continua faltando, um clique logo depois do recarregamento n�
     )
   ).toBe(true);
 
-  // one millisecond short of the window the click still does not reload; at the window it does and recovers
+  // one millisecond short of the window the click still does not reload; past it (the exact boundary is the unit test of chunk-load-error) it does and recovers
   const markedAt = Number(
     await page.evaluate((key) => sessionStorage.getItem(key), RELOAD_MARK)
   );
