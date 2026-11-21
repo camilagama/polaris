@@ -410,6 +410,7 @@ export function ExpensesPage() {
           </Dialog>
           <ExpenseByCategory
             categories={categories.state.categories}
+            categoriesLoading={categories.state.isLoading}
             filters={filters}
             onPick={handlePickCategory}
             state={state}

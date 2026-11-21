@@ -52,11 +52,13 @@ const state = (overrides: Partial<ExpenseListState>): ExpenseListState => ({
 function render(
   overrides: Partial<ExpenseListState> = {},
   chosen: ExpenseFilters = filters,
-  list: ExpenseCategoryReadModel[] = categories
+  list: ExpenseCategoryReadModel[] = categories,
+  categoriesLoading = false
 ) {
   return renderToStaticMarkup(
     <ExpenseByCategory
       categories={list}
+      categoriesLoading={categoriesLoading}
       filters={chosen}
       onPick={noop}
       state={state(overrides)}
@@ -114,6 +116,18 @@ describe("ExpenseByCategory", () => {
     const html = render({ isLoading: true, totalsByCategory: undefined });
     expect(html).toContain("data-share-skeleton");
     expect(html).not.toContain("<button");
+  });
+
+  it("keeps the skeleton while the categories are still read, so the block does not pop in", () => {
+    const html = render({}, filters, [], true);
+    expect(html).toContain("data-share-skeleton");
+  });
+
+  it("writes an archived category as the filter pill does", () => {
+    const archived = categories.map((item) =>
+      item.id === ids.frete ? { ...item, status: "archived" as const } : item
+    );
+    expect(render({}, filters, archived)).toContain("Frete (arquivada)");
   });
 
   it.each([

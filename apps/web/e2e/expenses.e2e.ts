@@ -143,6 +143,7 @@ class FakeExpenseServer {
   /** Answers the split of the total per category, as the current server does; off, as an old server that has no such field. */
   splitByCategory = false as boolean;
   listGate: Promise<void> | null = null;
+  categoriesGate: Promise<void> | null = null;
   private next = 100;
 
   /** Like the real server: reading generates the occurrences that fell due, each an ordinary expense. */
@@ -439,6 +440,9 @@ async function installServer(page: Page, server: FakeExpenseServer) {
     } | null;
     if (procedure === "expense/list") {
       await server.listGate;
+    }
+    if (procedure === "expense/listCategories") {
+      await server.categoriesGate;
     }
     const answer = server.handle(procedure, body?.json ?? {});
     await route.fulfill({
@@ -2443,6 +2447,30 @@ test("por categoria: enquanto a leitura está aberta o bloco guarda o lugar em e
       () => (window as unknown as { __shift: number }).__shift
     )
   ).toBeLessThanOrEqual(0.01);
+});
+
+test("por categoria: se a lista chega antes das categorias o esqueleto fica e a lista não anda quando as linhas entram", async ({
+  page,
+}) => {
+  await page.clock.setFixedTime(new Date(NOW));
+  const server = new FakeExpenseServer();
+  seedSplit(server);
+  let release: () => void = () => undefined;
+  server.categoriesGate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await openExpenses(page, server);
+  await expect(page.locator("[data-expense-id]")).toHaveCount(5);
+  await expect(byCategory(page).locator("[data-share-skeleton]")).toBeVisible();
+  const card = page.getByRole("region", { name: "Despesas do período" });
+  const reserved = await placesOf({ list: card });
+  release();
+  await expect(byCategory(page).locator("[data-share-line]")).toHaveCount(3);
+  expectSamePlaces(
+    "com as categorias lidas depois da lista",
+    reserved,
+    await placesOf({ list: card })
+  );
 });
 
 test.describe("a 320 px com letra de 20 px", () => {

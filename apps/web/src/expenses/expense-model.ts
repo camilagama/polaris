@@ -478,7 +478,12 @@ function groupKnownCategories(
   totals: readonly ExpenseCategoryTotalReadModel[],
   categories: readonly ExpenseCategoryReadModel[]
 ): CategoryCents[] | null {
-  const names = new Map(categories.map((item) => [item.id, item.name]));
+  const names = new Map(
+    categories.map((item) => [
+      item.id,
+      item.status === "archived" ? `${item.name} (arquivada)` : item.name,
+    ])
+  );
   const grouped: CategoryCents[] = [];
   let unknown = 0n;
   for (const entry of totals) {

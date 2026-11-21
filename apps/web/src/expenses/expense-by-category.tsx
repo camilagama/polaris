@@ -135,6 +135,8 @@ function ShareSkeleton({ lines }: { lines: number }) {
 
 interface ExpenseByCategoryProps {
   categories: readonly ExpenseCategoryReadModel[];
+  /** The names come from the categories read: until it ends the lines could not be written, so the skeleton stays. */
+  categoriesLoading: boolean;
   filters: ExpenseFilters;
   /** Applies the category to the filter bar of the list: the same filter the bar's own menu sets. */
   onPick: (categoryId: string) => void;
@@ -149,6 +151,7 @@ interface ExpenseByCategoryProps {
  */
 export function ExpenseByCategory({
   categories,
+  categoriesLoading,
   filters,
   onPick,
   state,
@@ -166,7 +169,7 @@ export function ExpenseByCategory({
   if (!showsCategoryBlock(filters) || state.error !== null) {
     return null;
   }
-  const reading = state.isLoading && rows === null;
+  const reading = (state.isLoading || categoriesLoading) && rows === null;
   if (!(reading || rows)) {
     return null;
   }
