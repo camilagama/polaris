@@ -525,10 +525,12 @@ function customerReadModel(customer: {
   createdAt: Date;
   email: string | null;
   id: string;
+  lastPurchaseOn?: string | null;
   name: string;
   notes: string | null;
   organizationId: string;
   phone: string | null;
+  summary?: NonNullable<CustomerReadModel["summary"]>;
   updatedAt: Date;
   version: number;
 }): CustomerReadModel {
@@ -545,6 +547,10 @@ function customerReadModel(customer: {
     status: customer.archivedAt === null ? "active" : "archived",
     updatedAt: customer.updatedAt.toISOString(),
     version: customer.version,
+    ...(customer.lastPurchaseOn === undefined
+      ? {}
+      : { lastPurchaseOn: customer.lastPurchaseOn }),
+    ...(customer.summary === undefined ? {} : { summary: customer.summary }),
   };
 }
 

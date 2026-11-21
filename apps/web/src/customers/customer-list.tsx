@@ -29,6 +29,7 @@ import {
   lockedReasonFor,
   syncStateLabel,
 } from "./customers-model";
+import { lastPurchaseRowText } from "./last-purchase";
 
 interface RowActions {
   onAnonymize: (customer: CustomerReadModel) => void;
@@ -226,6 +227,8 @@ interface CustomerMainProps {
   lockedReasonId: string | undefined;
   onEdit: (customer: CustomerReadModel) => void;
   pendingLabelId: string | undefined;
+  /** The store's today: what "Última compra" counts from. */
+  today: string;
 }
 
 /**
@@ -239,11 +242,14 @@ function CustomerMain({
   lockedReasonId,
   onEdit,
   pendingLabelId,
+  today,
 }: CustomerMainProps) {
   const handleOpen = useCallback(() => onEdit(customer), [customer, onEdit]);
   const isAnonymized = customer.anonymizedAt !== null;
   const supportId = `customer-support-${customer.id}`;
   const stateId = `customer-state-${customer.id}`;
+  const purchaseId = `customer-purchase-${customer.id}`;
+  const purchaseText = lastPurchaseRowText(customer.lastPurchaseOn, today);
   // the active tab already says "Ativo": the badge is for the other states
   const hasStateBadge = customer.status !== "active" || isAnonymized;
   const hasContacts = Boolean(contacts.phone || contacts.email);
@@ -255,32 +261,44 @@ function CustomerMain({
       >
         {productInitials(customer.name)}
       </span>
-      <span className="grid min-w-0 flex-1 gap-0.5">
-        <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
-          <span className="font-medium [overflow-wrap:anywhere]">
-            {isAnonymized ? null : <span className="sr-only">Editar </span>}
-            {customer.name}
+      <span className="grid min-w-0 flex-1 gap-x-3 gap-y-0.5 sm:grid-cols-[minmax(0,1fr)_auto]">
+        <span className="grid min-w-0 gap-0.5">
+          <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <span className="font-medium [overflow-wrap:anywhere]">
+              {isAnonymized ? null : <span className="sr-only">Editar </span>}
+              {customer.name}
+            </span>
+            {hasStateBadge ? (
+              <Badge
+                aria-hidden={isAnonymized ? undefined : true}
+                id={stateId}
+                variant={
+                  customer.status === "archived" && !isAnonymized
+                    ? "warning"
+                    : "outline"
+                }
+              >
+                {customerStatusLabel(customer)}
+              </Badge>
+            ) : null}
           </span>
-          {hasStateBadge ? (
-            <Badge
-              aria-hidden={isAnonymized ? undefined : true}
-              id={stateId}
-              variant={
-                customer.status === "archived" && !isAnonymized
-                  ? "warning"
-                  : "outline"
-              }
-            >
-              {customerStatusLabel(customer)}
-            </Badge>
+          {hasContacts ? (
+            <ContactsLine
+              contacts={contacts}
+              hidden={!isAnonymized}
+              id={supportId}
+            />
           ) : null}
         </span>
-        {hasContacts ? (
-          <ContactsLine
-            contacts={contacts}
-            hidden={!isAnonymized}
-            id={supportId}
-          />
+        {purchaseText ? (
+          <span
+            aria-hidden={isAnonymized ? undefined : true}
+            className="text-muted-foreground text-support sm:text-right"
+            data-last-purchase=""
+            id={purchaseId}
+          >
+            {purchaseText}
+          </span>
         ) : null}
       </span>
     </>
@@ -298,6 +316,7 @@ function CustomerMain({
         [
           hasStateBadge ? stateId : undefined,
           hasContacts ? supportId : undefined,
+          purchaseText ? purchaseId : undefined,
           lockedReasonId,
           pendingLabelId,
         ]
@@ -392,6 +411,8 @@ interface CustomerRowProps extends RowActions {
   pendingAction: string | null;
   /** The customer was created on this device and the server has not confirmed it yet. */
   syncState: PendingCustomer | undefined;
+  /** The store's today, in its own time zone. */
+  today: string;
   /** An edit made on this device that the server has not confirmed yet. */
   updateState: PendingCustomerUpdate | undefined;
 }
@@ -406,6 +427,7 @@ function CustomerRow({
   onRestore,
   pendingAction,
   syncState,
+  today,
   updateState,
 }: CustomerRowProps) {
   const [confirming, setConfirming] = useState(false);
@@ -440,6 +462,7 @@ function CustomerRow({
           lockedReasonId={lockedReason ? reasonId : undefined}
           onEdit={onEdit}
           pendingLabelId={pendingLabel ? pendingLabelId : undefined}
+          today={today}
         />
         {isAnonymized ? null : (
           <CustomerMenu
@@ -485,6 +508,8 @@ interface CustomerListProps extends RowActions {
   status: CustomerListStatus;
   /** Customers created on this device that the server has not confirmed yet. */
   syncStates: ReadonlyMap<string, PendingCustomer>;
+  /** The store's today, in its own time zone. */
+  today: string;
   /** How many customers the status has, before the search. */
   total: number;
   /** Edits made on this device that the server has not confirmed yet. */
@@ -499,6 +524,7 @@ export function CustomerList({
   query,
   status,
   syncStates,
+  today,
   total,
   updateStates,
   ...actions
@@ -547,6 +573,7 @@ export function CustomerList({
             key={customer.id}
             pendingAction={pendingAction}
             syncState={syncStates.get(customer.id)}
+            today={today}
             updateState={updateStates.get(customer.id)}
           />
         ))}

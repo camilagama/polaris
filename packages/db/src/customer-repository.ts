@@ -14,6 +14,9 @@ import {
 import { and, asc, eq, isNotNull, isNull, or, sql } from "drizzle-orm";
 import { recordDeletionLedgerEntry } from "./deletion-ledger";
 import { customers } from "./schema/customer";
+import { saleAdjustments, saleItems, sales } from "./schema/sale";
+import { saleCancellations } from "./schema/sale-cancellation";
+import { saleCustomerLinks } from "./schema/sale-customer-link";
 import { recordTenantAuditEvent } from "./tenant-audit";
 import {
   TenantAuthorizationError,
@@ -93,6 +96,72 @@ const customerColumns = {
   version: customers.version,
 };
 
+/**
+ * What a customer bought, in the same statement that reads the customer. A purchase is a confirmed sale that was not
+ * cancelled and whose current attribution (the highest version of its links) is the customer; the total is what the
+ * sale history shows for each one (items, plus surcharge, freight and payment surcharge, minus discount), with no
+ * return taken out. The date is the commercial day of the sale in the store.
+ */
+function purchaseStats(
+  transaction: TenantRequestTransaction,
+  organizationId: string,
+  customerId?: string
+) {
+  const itemsTotal = sql`(
+    SELECT coalesce(sum(item.charged_unit_price * item.quantity), 0)
+    FROM ${saleItems} AS item
+    WHERE item.organization_id = ${sales.organizationId}
+      AND item.sale_id = ${sales.id}
+  )`;
+  const adjustmentsTotal = sql`(
+    SELECT coalesce(sum(CASE adjustment.kind WHEN 'discount' THEN -adjustment.amount ELSE adjustment.amount END), 0)
+    FROM ${saleAdjustments} AS adjustment
+    WHERE adjustment.organization_id = ${sales.organizationId}
+      AND adjustment.sale_id = ${sales.id}
+      AND adjustment.kind IN ('discount', 'freight', 'payment_surcharge', 'surcharge')
+  )`;
+  return transaction
+    .select({
+      customerId: saleCustomerLinks.customerId,
+      lastPurchaseOn: sql<string | null>`max(${sales.occurredOn})::text`.as(
+        "last_purchase_on"
+      ),
+      purchaseCount: sql<number>`count(*)::int`.as("purchase_count"),
+      totalSpent:
+        sql<string>`sum(${itemsTotal} + ${adjustmentsTotal})::text`.as(
+          "total_spent"
+        ),
+    })
+    .from(saleCustomerLinks)
+    .innerJoin(
+      sales,
+      and(
+        eq(sales.organizationId, saleCustomerLinks.organizationId),
+        eq(sales.id, saleCustomerLinks.saleId)
+      )
+    )
+    .where(
+      and(
+        eq(saleCustomerLinks.organizationId, organizationId),
+        customerId === undefined
+          ? isNotNull(saleCustomerLinks.customerId)
+          : eq(saleCustomerLinks.customerId, customerId),
+        sql`${saleCustomerLinks.version} = (
+          SELECT max(latest.version) FROM ${saleCustomerLinks} AS latest
+          WHERE latest.organization_id = ${saleCustomerLinks.organizationId}
+            AND latest.sale_id = ${saleCustomerLinks.saleId}
+        )`,
+        sql`NOT EXISTS (
+          SELECT 1 FROM ${saleCancellations}
+          WHERE ${saleCancellations.organizationId} = ${sales.organizationId}
+            AND ${saleCancellations.saleId} = ${sales.id}
+        )`
+      )
+    )
+    .groupBy(saleCustomerLinks.customerId)
+    .as("purchase_stats");
+}
+
 export async function listCustomers(
   transaction: TenantRequestTransaction,
   identity: TenantRequestIdentity,
@@ -112,11 +181,17 @@ export async function listCustomers(
       break;
   }
 
-  return await transaction
-    .select(customerColumns)
+  const stats = purchaseStats(transaction, identity.organizationId);
+  const rows = await transaction
+    .select({ ...customerColumns, lastPurchaseOn: stats.lastPurchaseOn })
     .from(customers)
+    .leftJoin(stats, eq(stats.customerId, customers.id))
     .where(and(...conditions))
     .orderBy(asc(customers.name), asc(customers.id));
+  return rows.map((row) => ({
+    ...row,
+    lastPurchaseOn: row.lastPurchaseOn ?? null,
+  }));
 }
 
 export async function getCustomer(
@@ -124,9 +199,16 @@ export async function getCustomer(
   identity: TenantRequestIdentity,
   customerId: string
 ) {
-  const [customer] = await transaction
-    .select(customerColumns)
+  const stats = purchaseStats(transaction, identity.organizationId, customerId);
+  const [row] = await transaction
+    .select({
+      ...customerColumns,
+      lastPurchaseOn: stats.lastPurchaseOn,
+      purchaseCount: stats.purchaseCount,
+      totalSpent: stats.totalSpent,
+    })
     .from(customers)
+    .leftJoin(stats, eq(stats.customerId, customers.id))
     .where(
       and(
         eq(customers.organizationId, identity.organizationId),
@@ -134,10 +216,18 @@ export async function getCustomer(
       )
     )
     .limit(1);
-  if (!customer) {
+  if (!row) {
     throw new CustomerNotFoundError();
   }
-  return customer;
+  const { lastPurchaseOn, purchaseCount, totalSpent, ...customer } = row;
+  return {
+    ...customer,
+    summary: {
+      lastPurchaseOn: lastPurchaseOn ?? null,
+      purchaseCount: purchaseCount ?? 0,
+      totalSpent: totalSpent ?? "0",
+    },
+  };
 }
 
 export async function findPossibleCustomerDuplicates(
