@@ -24,6 +24,7 @@ import {
 import {
   globToRegExp,
   listSpecFiles,
+  selectionForRun,
   selectSpecs,
 } from "./ci-select-specs.mjs";
 import { gitEnvironment } from "./exact-count-list.mjs";
@@ -648,5 +649,122 @@ describe("guarda do mapa de cobertura", () => {
     expect(ALL_SCREEN_SPECS).toContain(
       "apps/web/e2e-pwa/ui-guardrails/telas-01.e2e.ts"
     );
+  });
+});
+
+describe("selectionForRun (o job do PR)", () => {
+  const diff = (files) => () => files;
+  const run = (overrides = {}) =>
+    selectionForRun({
+      base: "HEAD^1",
+      changed: diff(["apps/web/src/sales/x.ts"]),
+      env: {},
+      head: "HEAD",
+      select: (files) => ({ full: false, motivo: "m", specs: files }),
+      ...overrides,
+    });
+
+  it("seleciona pelo diff num PR comum", () => {
+    expect(run()).toEqual({
+      full: false,
+      motivo: "m",
+      specs: ["apps/web/src/sales/x.ts"],
+    });
+  });
+
+  it("roda tudo com CI_FULL, em dispatch e em push, sem ler o diff", () => {
+    const never = () => {
+      throw new Error("não devia ler o diff");
+    };
+    for (const env of [
+      { CI_FULL: "true" },
+      { GITHUB_EVENT_NAME: "workflow_dispatch" },
+      { GITHUB_EVENT_NAME: "push" },
+    ]) {
+      const result = run({ changed: never, env });
+      expect(result.full).toBe(true);
+      expect(result.specs).toEqual([]);
+    }
+  });
+
+  it("CI_FULL=false não pede a suíte toda", () => {
+    expect(run({ env: { CI_FULL: "false" } }).full).toBe(false);
+  });
+
+  it("roda tudo quando o git falha", () => {
+    const result = run({
+      changed: () => {
+        throw new Error("git diff HEAD^1 HEAD saiu com 128");
+      },
+    });
+    expect(result.full).toBe(true);
+    expect(result.motivo).toContain("falha ao selecionar");
+    expect(result.motivo).toContain("128");
+  });
+
+  it("roda tudo quando o seletor falha", () => {
+    const result = run({
+      select: () => {
+        throw new Error("mapa quebrado");
+      },
+    });
+    expect(result).toMatchObject({ full: true, specs: [] });
+    expect(result.motivo).toContain("mapa quebrado");
+  });
+
+  it("usa o seletor de verdade: arquivo fora do mapa roda tudo, tela mapeada roda os specs dela", () => {
+    expect(
+      selectionForRun({
+        base: "a",
+        changed: diff(["apps/web/src/zzz-fora-do-mapa/x.ts"]),
+        env: {},
+        head: "b",
+      }).full
+    ).toBe(true);
+    expect(
+      selectionForRun({
+        base: "a",
+        changed: diff(["docs/runbooks/medir-o-ci.md"]),
+        env: {},
+        head: "b",
+      })
+    ).toMatchObject({ full: false, specs: [] });
+  });
+});
+
+describe("--diff na linha de comando", () => {
+  const cli = (args, env = {}) =>
+    spawnSync(process.execPath, [SCRIPT, ...args], {
+      cwd: root,
+      encoding: "utf8",
+      env: { ...gitEnvironment(), ...env },
+    });
+
+  it("sai com 0 e a suíte toda quando o git não acha as revisões", () => {
+    const result = cli(["--diff", "nao-existe-1", "nao-existe-2"]);
+    expect(result.status).toBe(0);
+    expect(JSON.parse(result.stdout)).toMatchObject({ full: true, specs: [] });
+  });
+
+  it("sai com 0 e a suíte toda sem os argumentos", () => {
+    const result = cli(["--diff"]);
+    expect(result.status).toBe(0);
+    expect(JSON.parse(result.stdout).full).toBe(true);
+  });
+
+  it("grava a seleção em --out", () => {
+    const dir = mkdtempSync(path.join(tmpdir(), "t1517-out-"));
+    try {
+      const out = path.join(dir, "selection.json");
+      const result = cli(["--diff", "x", "y", "--out", out], {
+        CI_FULL: "true",
+      });
+      expect(result.status).toBe(0);
+      expect(JSON.parse(readFileSync(out, "utf8"))).toEqual(
+        JSON.parse(result.stdout)
+      );
+    } finally {
+      rmSync(dir, { force: true, recursive: true });
+    }
   });
 });
