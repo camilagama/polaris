@@ -112,12 +112,29 @@ const DEPENDENCY_FILES = [
 ];
 
 /**
+ * Paths that cannot change what the PostgreSQL gates (`packages/db`, `gates:ci`) prove: prose, and the web app's
+ * client code that nothing the job runs reaches. The gate scripts, the Worker and the server import some client
+ * modules (`home/home-inventory.ts`, `offline/`, `lib/` helpers, the catalog thumbnail modules and
+ * `pwa/update-model.ts`), so those stay out of the list; ci-changed.test.mjs reads the import graph from all of
+ * them and fails if one reaches a file listed here.
+ * Everything else (the database package, the domain, any `apps/*` server, `apps/web/worker`, the manifests and
+ * lockfile, `.github/**` including its prose, `scripts/`) is not listed on purpose: a path that is not here runs
+ * the gates.
+ */
+export const DATABASE_IRRELEVANT = [
+  /^docs\//,
+  /^doc\//,
+  /^(?!\.github\/).*\.md$/,
+  /^apps\/web\/src\/(?!(?:server|offline|lib)\/|home\/home-inventory\.ts$|catalog\/thumbnail-|pwa\/update-model\.ts$)/,
+];
+
+/**
  * `files` is the list of changed paths, or null when it could not be
  * determined (then everything runs).
  */
 export function classifyChanges(files) {
   if (files === null) {
-    return { browser: true, dependencies: true, e2e: true };
+    return { browser: true, dependencies: true, e2e: true, database: true };
   }
   const changed = files.filter(Boolean);
   return {
@@ -135,6 +152,9 @@ export function classifyChanges(files) {
       (file) =>
         !MARKDOWN_FILE.test(file) &&
         E2E_RELEVANT.some((pattern) => pattern.test(file))
+    ),
+    database: changed.some(
+      (file) => !DATABASE_IRRELEVANT.some((pattern) => pattern.test(file))
     ),
   };
 }

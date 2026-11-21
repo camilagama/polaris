@@ -267,11 +267,14 @@ export async function serveFoot(
   {
     billingSelfService = true,
     name = "Loja do teste",
+    plan = TRIAL_PLAN,
     role = "owner",
     steps = 2,
   }: {
     billingSelfService?: boolean;
     name?: string;
+    /** What `billing/readPlan` answers: the trial by default. */
+    plan?: unknown;
     role?: string;
     steps?: number | null;
   }
@@ -293,7 +296,7 @@ export async function serveFoot(
   const reads = { plan: 0 };
   await page.route("**/rpc/billing/readPlan", (route) => {
     reads.plan += 1;
-    return route.fulfill(json(TRIAL_PLAN));
+    return route.fulfill(json(plan));
   });
   if (steps !== null) {
     await page.addInitScript(

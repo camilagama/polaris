@@ -1,7 +1,6 @@
 // @vitest-environment happy-dom
 import { act, cleanup, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { useHomePlanLimit } from "../home/use-home-plan-limit";
 import { planRead } from "../lib/plan-read";
 import { notifyPlanUsageChanged } from "../lib/plan-usage-changes";
 import { clearSessionCaches } from "../offline/runtime/leave-browser";
@@ -42,7 +41,6 @@ const flush = () =>
 
 function Both({ version = 0 }: { version?: number }) {
   return {
-    home: useHomePlanLimit(),
     images: useNearLimitRead("images", version),
     variants: useNearLimitRead("variants", version),
   };
@@ -58,13 +56,12 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("a memória de 10 s do plano entre as telas", () => {
-  it("dois avisos e o Início montados juntos fazem 1 leitura", async () => {
+  it("dois avisos montados juntos fazem 1 leitura", async () => {
     const view = renderHook(() => Both({}));
     await flush();
     expect(readPlan).toHaveBeenCalledTimes(1);
     expect(view.result.current.variants.view?.usage.used).toBe(47);
     expect(view.result.current.images.settled).toBe(true);
-    expect(view.result.current.home?.usage.used).toBe(47);
   });
 
   it("uma tela aberta logo depois lê da memória, sem nova leitura", async () => {
@@ -151,28 +148,6 @@ describe("a memória de 10 s do plano entre as telas", () => {
     );
     await flush();
     view.rerender({ version: 3 });
-    await flush();
-    expect(readPlan).toHaveBeenCalledTimes(1);
-  });
-
-  it("uma gravação que muda o uso apaga a memória para o Início, que não tem version", async () => {
-    const first = renderHook(() => useHomePlanLimit());
-    await flush();
-    expect(first.result.current?.usage.used).toBe(47);
-    first.unmount();
-
-    readPlan.mockResolvedValue(planWith(48));
-    notifyPlanUsageChanged();
-    const back = renderHook(() => useHomePlanLimit());
-    await flush();
-    expect(back.result.current?.usage.used).toBe(48);
-    expect(readPlan).toHaveBeenCalledTimes(2);
-  });
-
-  it("sem gravação, voltar ao Início dentro de 10 s não lê de novo", async () => {
-    renderHook(() => useHomePlanLimit()).unmount();
-    await flush();
-    renderHook(() => useHomePlanLimit());
     await flush();
     expect(readPlan).toHaveBeenCalledTimes(1);
   });

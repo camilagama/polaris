@@ -405,26 +405,47 @@ test.describe("Produtos", () => {
     await expect(page.getByRole("alert")).toHaveCount(0);
   });
 
-  test("'Conhecer o Pro' leva à Assinatura sem recarregar e o rascunho do produto está lá na volta", async ({
-    page,
-  }) => {
-    await openApp(page, "/products", {
-      answers: productAnswers(),
-      use: { images: 0, variants: 47 },
+  for (const way of [
+    {
+      link: (page: Page) =>
+        line(page).getByRole("link", { name: "Conhecer o Pro" }),
+      name: "da linha de aviso",
+    },
+    {
+      link: (page: Page) =>
+        page
+          .locator("[data-plan-card]")
+          .getByRole("link", { name: "Conhecer o Pro" }),
+      name: "do cartão do plano",
+      open: async (page: Page) => {
+        if ((page.viewportSize()?.width ?? 1280) < 760) {
+          await page.getByRole("button", { exact: true, name: "Mais" }).click();
+        }
+      },
+    },
+  ]) {
+    test(`'Conhecer o Pro' ${way.name} leva à Assinatura sem recarregar e o rascunho do produto está lá na volta`, async ({
+      page,
+    }) => {
+      await openApp(page, "/products", {
+        answers: productAnswers(),
+        use: { images: 0, variants: 47 },
+      });
+      await page.getByRole("button", { name: "Novo produto" }).first().click();
+      await page.getByLabel("Nome do produto").fill("Bolsa de couro");
+      await page.keyboard.press("Escape");
+      await way.open?.(page);
+      await way.link(page).click();
+      await expect(page).toHaveURL(SUBSCRIPTION_ADDRESS);
+      expect(await stillTheSamePage(page)).toBe(true);
+      await page.goBack();
+      await expect(page).toHaveURL(PRODUCTS_ADDRESS);
+      await page.getByRole("button", { name: "Novo produto" }).first().click();
+      await expect(page.getByLabel("Nome do produto")).toHaveValue(
+        "Bolsa de couro"
+      );
     });
-    await page.getByRole("button", { name: "Novo produto" }).first().click();
-    await page.getByLabel("Nome do produto").fill("Bolsa de couro");
-    await page.keyboard.press("Escape");
-    await page.getByRole("link", { name: "Conhecer o Pro" }).click();
-    await expect(page).toHaveURL(SUBSCRIPTION_ADDRESS);
-    expect(await stillTheSamePage(page)).toBe(true);
-    await page.goBack();
-    await expect(page).toHaveURL(PRODUCTS_ADDRESS);
-    await page.getByRole("button", { name: "Novo produto" }).first().click();
-    await expect(page.getByLabel("Nome do produto")).toHaveValue(
-      "Bolsa de couro"
-    );
-  });
+  }
 });
 
 test.describe("formulário de variantes", () => {

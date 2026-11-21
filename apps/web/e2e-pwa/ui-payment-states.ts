@@ -12,6 +12,8 @@ import { serveLabWorker, WORKER_MARK } from "./worker-mark";
  * are proved in `e2e/usabilidade-formularios.e2e.ts` and in the captures of the pull request. The lab's own controls
  * are hidden at the end of each state, so what is measured is the screen alone.
  */
+const NOW = new Date("2026-10-15T12:00:00.000Z");
+const DAY = 86_400_000;
 const ORGANIZATION_ID = "0199c2d0-0000-7000-8000-00000000a001";
 
 const rpc = (body: unknown) => ({
@@ -36,8 +38,11 @@ const profile = (
   status: "active" | "archived",
   rules: unknown[]
 ) => ({
-  archivedAt: status === "archived" ? "2026-10-02T12:00:00.000Z" : null,
-  createdAt: "2026-10-01T12:00:00.000Z",
+  archivedAt:
+    status === "archived"
+      ? new Date(NOW.getTime() - 13 * DAY).toISOString()
+      : null,
+  createdAt: new Date(NOW.getTime() - 14 * DAY).toISOString(),
   id: `0199c2d0-0000-7000-8000-0000000000c${n}`,
   name,
   organizationId: ORGANIZATION_ID,
@@ -46,7 +51,7 @@ const profile = (
     ...(rule as object),
   })),
   status,
-  updatedAt: "2026-10-01T12:00:00.000Z",
+  updatedAt: new Date(NOW.getTime() - 14 * DAY).toISOString(),
   version: 1,
 });
 
@@ -90,6 +95,7 @@ const PROFILES = [
 
 /** Starts the lab's runtime and waits for the screen with the list read. */
 async function openProfilesLab(page: Page) {
+  await page.clock.setFixedTime(NOW);
   await page.route("**/rpc/paymentProfile/list", (route: Route) =>
     route.fulfill(rpc({ profiles: PROFILES }))
   );

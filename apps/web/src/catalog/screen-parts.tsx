@@ -206,6 +206,33 @@ export function RowOpenButton({
   );
 }
 
+/**
+ * The 36 px square of a configuration row (Aparelhos, Formas de receber): the 16 px icon of what the row is, only
+ * decoration, since the name already says it. A person is a circle of initials instead (Clientes).
+ */
+export function RowTile({ children }: { children: ReactNode }) {
+  return (
+    <span
+      aria-hidden="true"
+      className="grid size-9 shrink-0 place-items-center self-start rounded-md bg-muted text-muted-foreground [&>svg]:size-4"
+      data-row-tile=""
+    >
+      {children}
+    </span>
+  );
+}
+
+/**
+ * Name, support line and state of a configuration row. The state badge is the last child: from 40rem it sits at the
+ * right end of the row; below that (a phone, or a large letter, since the breakpoint is in rem) it drops under the
+ * text, at the left of the text column. The breakpoint, not the wrapping of the line, decides: a short badge such as
+ * "Ativo" would still fit beside the text on a phone and the rows would not agree.
+ */
+export const ROW_BODY_CLASS =
+  "flex min-w-0 flex-1 flex-col items-start gap-1 min-[40rem]:flex-row min-[40rem]:gap-3";
+export const ROW_TEXT_CLASS =
+  "grid min-w-0 gap-0.5 self-stretch min-[40rem]:flex-1";
+
 /** A row that opens by a `RowOpenButton`: the hover of the whole row while the button under the pointer opens. */
 export const OPENABLE_ROW_CLASS =
   "has-[[data-row-open]:not([aria-disabled]):hover]:bg-muted/50";
