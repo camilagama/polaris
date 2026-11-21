@@ -87,13 +87,5 @@ export const E2E_FIXED_DATES_LIST = {
     count: 2,
     reason: BEFORE_THE_RULE,
   },
-  "apps/web/e2e/payment-profiles-screen.e2e.ts": {
-    count: 3,
-    reason: BEFORE_THE_RULE,
-  },
   "apps/web/e2e/product-import.e2e.ts": { count: 1, reason: BEFORE_THE_RULE },
-  "apps/web/e2e/session-ended-screens.e2e.ts": {
-    count: 5,
-    reason: BEFORE_THE_RULE,
-  },
 };
