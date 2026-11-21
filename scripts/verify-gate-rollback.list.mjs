@@ -40,8 +40,4 @@ export const GATE_ROLLBACK_LIST = {
     count: 16,
     reason: BEFORE_THE_RULE,
   },
-  "packages/db/scripts/verify-migrations-without-superuser-gate.ts": {
-    count: 6,
-    reason: BEFORE_THE_RULE,
-  },
 };
