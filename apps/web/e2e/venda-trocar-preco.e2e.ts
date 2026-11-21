@@ -14,6 +14,10 @@ const VERDE = /Camiseta do laboratório · Verde/;
 const SALE_LAB = "/offline-screens-lab?screen=sale";
 const UNPRICED_LAB = "/offline-screens-lab?screen=sale&variants=unpriced";
 const ORGANIZATION = "0199c2d0-0000-7000-8000-00000000a001";
+const NOW = new Date("2026-10-01T12:00:00-03:00");
+const NOW_DAY = NOW.toLocaleDateString("sv-SE", {
+  timeZone: "America/Sao_Paulo",
+});
 const AZUL_ID = "0199c2d0-0000-7000-8000-0000000000b1";
 const KEPT_NOTICE = "Preço cobrado mantido da variante anterior.";
 const KEPT_NOTICE_PATTERN = /Preço cobrado mantido da variante anterior\./;
@@ -39,21 +43,22 @@ async function startLab(page: Page, lab: string) {
 }
 
 async function openSale(page: Page, fontPixels = 16, lab = SALE_LAB) {
+  await page.clock.setFixedTime(NOW);
   await setBrowserFont(page, fontPixels);
   await page.addInitScript(
-    ([key, variant]) => {
+    ([key, variant, nowDay]) => {
       window.localStorage.setItem(
         key as string,
         JSON.stringify({
           [variant as string]: {
             charged: "49.90",
             listed: "49.90",
-            on: "2026-10-01",
+            on: nowDay,
           },
         })
       );
     },
-    [`polaris.sale.lastPrices.v1:${ORGANIZATION}`, AZUL_ID]
+    [`polaris.sale.lastPrices.v1:${ORGANIZATION}`, AZUL_ID, NOW_DAY]
   );
   await page.route("**/rpc/paymentProfile/list", (route) =>
     route.fulfill(rpc({ profiles: [] }))

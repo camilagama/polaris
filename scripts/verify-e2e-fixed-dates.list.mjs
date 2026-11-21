@@ -92,18 +92,8 @@ export const E2E_FIXED_DATES_LIST = {
     reason: BEFORE_THE_RULE,
   },
   "apps/web/e2e/product-import.e2e.ts": { count: 1, reason: BEFORE_THE_RULE },
-  "apps/web/e2e/sale-columns.e2e.ts": { count: 2, reason: BEFORE_THE_RULE },
-  "apps/web/e2e/sale-screen.e2e.ts": { count: 2, reason: BEFORE_THE_RULE },
   "apps/web/e2e/session-ended-screens.e2e.ts": {
     count: 5,
-    reason: BEFORE_THE_RULE,
-  },
-  "apps/web/e2e/usabilidade-formularios.e2e.ts": {
-    count: 2,
-    reason: BEFORE_THE_RULE,
-  },
-  "apps/web/e2e/venda-trocar-preco.e2e.ts": {
-    count: 1,
     reason: BEFORE_THE_RULE,
   },
 };

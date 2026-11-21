@@ -14,6 +14,8 @@ const ORGANIZATION = {
   role: "owner",
   timezone: "America/Sao_Paulo",
 };
+const NOW = new Date("2026-10-01T12:00:00-03:00");
+const STAMP = NOW.toISOString();
 const rpc = (json: unknown, status = 200) => ({
   body: JSON.stringify({ json, meta: [] }),
   headers: { ...WORKER_MARK },
@@ -28,7 +30,7 @@ const fee = (mode: string, percentage: string | null) => ({
 });
 const PROFILE = {
   archivedAt: null,
-  createdAt: "2026-10-01T12:00:00.000Z",
+  createdAt: STAMP,
   id: "0199c2d0-0000-7000-8000-0000000000c1",
   name: "Maquininha da loja",
   organizationId: ORGANIZATION.id,
@@ -51,7 +53,7 @@ const PROFILE = {
     },
   ],
   status: "active",
-  updatedAt: "2026-10-01T12:00:00.000Z",
+  updatedAt: STAMP,
   version: 1,
 };
 
@@ -61,6 +63,7 @@ async function openProfiles(
   options: { createRefused?: boolean; listFails?: boolean } = {}
 ) {
   const calls = { creates: 0 };
+  await page.clock.setFixedTime(NOW);
   await page.route("**/api/auth/get-session", (route) =>
     route.fulfill({
       body: JSON.stringify({ session: { id: "s" }, user: { id: "u" } }),
