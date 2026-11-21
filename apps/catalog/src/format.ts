@@ -17,12 +17,23 @@ export function formatPrice(price: string): string {
   return `R$ ${whole.replace(THOUSANDS, ".")},${cents}`;
 }
 
-/** The pieces of a list price ("R$" and "1.234,50"), for a page that sets the symbol apart; null when it is not a price. */
+/**
+ * The pieces of a list price for a page that sets the symbol and the cents apart: "R$", "1.234" and ",50".
+ * Glued back in that order, with a space after the symbol, they are the text of `formatPrice`; null when it is not a price.
+ */
 export function priceParts(
   price: string
-): { amount: string; symbol: string } | null {
+): { cents: string; symbol: string; whole: string } | null {
   const text = formatPrice(price);
-  return text === price ? null : { amount: text.slice(3), symbol: "R$" };
+  if (text === price) {
+    return null;
+  }
+  const comma = text.lastIndexOf(",");
+  return {
+    cents: text.slice(comma),
+    symbol: "R$",
+    whole: text.slice(3, comma),
+  };
 }
 
 const QUESTION_NAME_LIMIT = 120;
