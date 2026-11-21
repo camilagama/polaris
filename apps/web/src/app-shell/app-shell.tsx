@@ -70,10 +70,14 @@ import { SyncStatusMenuLine } from "../offline/runtime/sync-status";
 import { ClosedStoreNotice, useClosedStoreHere } from "./closed-store-notice";
 import { ConnectionRequiredSlot } from "./connection-required-notice";
 import { FirstAccess } from "./first-access";
-import { trialChargeDay } from "../subscription/plan-notice";
+import {
+  type PlanCardView,
+  planCardFor,
+  trialChargeDay,
+} from "../subscription/plan-notice";
 import { GraceNoticeSlot, usePlanNoticeFacts } from "./grace-notice";
 import { LegalAcceptanceNotice } from "./legal-acceptance-notice";
-import { MenuProgress, useFirstSteps } from "./menu-progress";
+import { MenuProgress, PlanCard, useFirstSteps } from "./menu-progress";
 import {
   BOTTOM_BAR_IDS,
   bottomBarMark,
@@ -211,6 +215,8 @@ interface AppSidebarProps {
   chargeDay: string | null;
   /** The first steps done, for the foot of the menu; null once the store sold or while not known. */
   firstSteps: number | null;
+  /** The card of the Free plan, for the foot of the menu; null where it is not shown. */
+  planCard: PlanCardView | null;
   navId: NavId | null;
   /** The screen works only with a connection: the state says so while offline (U-54). */
   onlineOnly: boolean;
@@ -229,6 +235,7 @@ function AppSidebar({
   firstSteps,
   navId,
   onlineOnly,
+  planCard,
 }: AppSidebarProps) {
   const { isMobile } = useSidebar();
   const rejected = useRuntimeSnapshot()?.counts.rejected ?? 0;
@@ -278,6 +285,7 @@ function AppSidebar({
         {/* 12 px around and between, as in the design: the footer itself has 8 */}
         <div className="grid gap-3 p-1 group-data-[collapsible=icon]:p-0">
           <MenuProgress chargeDay={chargeDay} firstSteps={firstSteps} />
+          {planCard === null ? null : <PlanCard view={planCard} />}
           {isMobile ? <SheetLegalLinks /> : null}
         </div>
       </SidebarFooter>
@@ -532,9 +540,13 @@ function ShellNotices({
   );
 }
 
+/** Where the card of the plan is not drawn: the sale, which never meets the plan, the Assinatura itself and the 404 (no route). */
+const NO_PLAN_CARD: readonly RouteId[] = ["sale", "subscription"];
+
 /**
- * What the shell shows of the plan and of the first steps. The plan is read once for the notice of grace and the trial
- * at the foot of the menu, only for whom manages the billing; nothing of either once the session is over.
+ * What the shell shows of the plan and of the first steps. The plan is read once for the notice of grace, the trial and
+ * the card of the Free plan at the foot of the menu, only for whom manages the billing; nothing of either once the
+ * session is over.
  */
 function useShellProgress(
   current: CurrentOrganization | null,
@@ -560,6 +572,10 @@ function useShellProgress(
         ? null
         : trialChargeDay(planFacts, saoPauloDateOf(now)),
     firstSteps: useFirstSteps(organization?.organizationId ?? null),
+    planCard:
+      routeId === undefined || NO_PLAN_CARD.includes(routeId)
+        ? null
+        : planCardFor(planFacts),
     planFacts,
   };
 }
@@ -670,7 +686,7 @@ export function AppShell({
           select,
         }
       : null;
-  const { chargeDay, firstSteps, planFacts } = useShellProgress(
+  const { chargeDay, firstSteps, planCard, planFacts } = useShellProgress(
     organization,
     sessionOver,
     routeId
@@ -719,6 +735,7 @@ export function AppShell({
           firstSteps={firstSteps}
           navId={navId}
           onlineOnly={onlineOnly}
+          planCard={planCard}
         />
         <SidebarInset className="pb-(--app-bottom-bar) md:pb-0">
           {/* the panel of the content, in the frame of the sidebar and the header: from 760 px its top left corner is

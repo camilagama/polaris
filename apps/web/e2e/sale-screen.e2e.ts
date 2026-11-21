@@ -17,6 +17,7 @@ import { serveLabWorker, WORKER_MARK } from "./worker-mark";
  */
 const DARK = /\bdark\b/;
 const NOT_DARK = /^(?!.*\bdark\b).*$/;
+const HAS_TWO = /2/;
 const SHIRT_OPTION = /Camiseta do laboratório · Azul/;
 const LAB_PROFILE = /Maquininha do laboratório/;
 const ANY_ID = /.+/;
@@ -518,4 +519,152 @@ test('um "Sem perfil" lembrado numa loja com perfil ativo: a venda seguinte vem 
       .getByRole("status")
       .filter({ hasText: "Venda guardada neste aparelho" })
   ).toBeVisible();
+});
+
+const DESKTOP_ONLY = "o número e a tecla só existem com ponteiro fino";
+
+function methodGroup(page: Page): Locator {
+  return page.getByRole("radiogroup", { name: "Método de pagamento" });
+}
+
+test("Pagamento: com o foco no grupo a tecla do número escolhe a forma; fora do grupo e em campo de texto, não", async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name.includes("mobile"), DESKTOP_ONLY);
+  await openSaleLab(page, "claro");
+  const methods = methodGroup(page);
+  const chosen = methods.locator('[role="radio"][aria-checked="true"]');
+  const search = page.getByLabel("Produto ou variante");
+  await search.focus();
+  await page.keyboard.press("2");
+  await expect(search).toHaveValue(HAS_TWO);
+  await expect(chosen).toHaveCount(0);
+  await search.fill("");
+  await page.keyboard.press("Escape");
+  const item = await pickShirt(page);
+  const pix = methods.getByRole("radio", { name: "Pix" });
+  const cash = methods.getByRole("radio", { name: "Dinheiro" });
+  const debit = methods.getByRole("radio", { name: "Débito" });
+
+  await pix.focus();
+  await page.keyboard.press("2");
+  await expect(cash).toBeChecked();
+  await expect(cash).toBeFocused();
+  await page.keyboard.press("4");
+  await expect(debit).toBeChecked();
+  await expect(debit).toBeFocused();
+
+  const price = item.getByLabel("Preço cobrado");
+  await price.fill("");
+  await price.focus();
+  await page.keyboard.press("2");
+  await expect(price).toHaveValue("2");
+  await expect(debit).toBeChecked();
+
+  await page.getByRole("heading", { exact: true, name: "Nova venda" }).click();
+  await page.evaluate(() => (document.activeElement as HTMLElement).blur());
+  await page.keyboard.press("2");
+  await expect(debit).toBeChecked();
+  await expect(cash).not.toBeChecked();
+
+  await debit.focus();
+  await page.keyboard.press("Control+2");
+  await page.keyboard.press("Alt+2");
+  await page.keyboard.press("0");
+  await expect(debit).toBeChecked();
+});
+
+test("Pagamento: as setas e o espaço andam entre as formas como antes, e o grupo segue radiogroup com o mesmo nome", async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name.includes("mobile"), DESKTOP_ONLY);
+  await openSaleLab(page, "claro");
+  const methods = methodGroup(page);
+  await expect(methods).toHaveAttribute("aria-label", "Método de pagamento");
+  const pix = methods.getByRole("radio", { name: "Pix" });
+  const cash = methods.getByRole("radio", { name: "Dinheiro" });
+  await pix.focus();
+  await page.keyboard.press("Space");
+  await expect(pix).toBeChecked();
+  await page.keyboard.press("ArrowDown");
+  await expect(cash).toBeChecked();
+  await expect(cash).toBeFocused();
+});
+
+test("Pagamento: cada forma traz o número decorativo e aria-keyshortcuts, o nome não muda e o cartão não cresce", async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name.includes("mobile"), DESKTOP_ONLY);
+  await openSaleLab(page, "claro");
+  const methods = methodGroup(page);
+  const radios = methods.getByRole("radio");
+  await expect(radios).toHaveCount(6);
+  for (let index = 0; index < 6; index += 1) {
+    // biome-ignore lint/performance/noAwaitInLoops: one option after the other
+    await expect(radios.nth(index)).toHaveAttribute(
+      "aria-keyshortcuts",
+      String(index + 1)
+    );
+  }
+  const names = [
+    "Pix",
+    "Dinheiro",
+    "Crédito",
+    "Débito",
+    "Transferência",
+    "Outro",
+  ];
+  for (const name of names) {
+    // biome-ignore lint/performance/noAwaitInLoops: one name after the other
+    await expect(methods.getByRole("radio", { exact: true, name })).toHaveCount(
+      1
+    );
+  }
+  const keys = methods.locator("[data-method-key]");
+  await expect(keys).toHaveCount(6);
+  await expect(keys.first()).toHaveAttribute("aria-hidden", "true");
+
+  const card = page
+    .locator('[data-slot="card"]')
+    .filter({ has: methods })
+    .first();
+  const heights = async () =>
+    card.evaluate((node) => node.getBoundingClientRect().height);
+  for (const width of [760, 900, 1024, 1280, 1536]) {
+    // biome-ignore lint/performance/noAwaitInLoops: the layout is measured width by width
+    await page.setViewportSize({ height: 900, width });
+    if (width >= 1280) {
+      await expect(keys.first()).toBeVisible();
+    }
+    const withKeys = await heights();
+    await keys.evaluateAll((nodes) => {
+      for (const node of nodes) {
+        (node as HTMLElement).style.display = "none";
+      }
+    });
+    const without = await heights();
+    await keys.evaluateAll((nodes) => {
+      for (const node of nodes) {
+        (node as HTMLElement).style.display = "";
+      }
+    });
+    expect(Math.abs(withKeys - without), `${width} px`).toBeLessThanOrEqual(1);
+  }
+});
+
+test("Pagamento: abaixo de 760 px ou com toque não há número, aria-keyshortcuts nem tecla", async ({
+  page,
+}, testInfo) => {
+  await openSaleLab(page, "claro");
+  if (!testInfo.project.name.includes("mobile")) {
+    await page.setViewportSize({ height: 800, width: 740 });
+  }
+  const methods = methodGroup(page);
+  await expect(methods.getByRole("radio")).toHaveCount(6);
+  await expect(methods.locator("[data-method-key]")).toHaveCount(0);
+  await expect(methods.locator("[aria-keyshortcuts]")).toHaveCount(0);
+  const pix = methods.getByRole("radio", { name: "Pix" });
+  await pix.focus();
+  await page.keyboard.press("2");
+  await expect(methods.getByRole("radio", { checked: true })).toHaveCount(0);
 });

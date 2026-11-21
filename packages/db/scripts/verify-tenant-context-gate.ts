@@ -21,7 +21,11 @@ import {
   withAuthorizedTenantTransaction,
 } from "../src/tenant-transaction";
 import { assertAllowedGateUrl, disposableHostPattern } from "./gate-hosts";
-import { becomeGateRole, inRolledBackTransaction } from "./gate-roles";
+import {
+  becomeGateRole,
+  inRolledBackTransaction,
+  rollbackQuietly,
+} from "./gate-roles";
 import { dropRlsGateFixture, recreateRlsGateFixture } from "./rls-gate-fixture";
 import { temporaryRuntimeUrl } from "./sales-gate-support";
 import { deleteOrganizationsWithAudit } from "./teardown-support";
@@ -125,8 +129,7 @@ async function expectForgedGucInsertDenied(
   values: string[],
   operationName: string
 ): Promise<void> {
-  await runtimeClient.query("BEGIN");
-  try {
+  await inRolledBackTransaction(runtimeClient, async () => {
     await runtimeClient.query(
       "SELECT set_config('app.user_id', $1, true), " +
         "set_config('app.organization_id', $2, true)",
@@ -137,9 +140,7 @@ async function expectForgedGucInsertDenied(
       "42501",
       operationName
     );
-  } finally {
-    await runtimeClient.query("ROLLBACK");
-  }
+  });
 }
 async function expectTenantAuthorizationError(
   operation: Promise<unknown>,
@@ -530,7 +531,7 @@ async function main() {
       await seedPocRow(seedB);
       await runtimeClient.query("COMMIT");
     } catch (error) {
-      await runtimeClient.query("ROLLBACK");
+      await rollbackQuietly(runtimeClient);
       throw error;
     }
     const restoredPocSeeds = await adminPool.query<{
@@ -989,8 +990,7 @@ async function main() {
     );
 
     // a refusal aborts the transaction: nothing runs after it, and the organization context never stays
-    await runtimeClient.query("BEGIN");
-    try {
+    await inRolledBackTransaction(runtimeClient, async () => {
       await expectSqlState(
         runtimeClient.query(
           "SELECT member_role FROM public.begin_tenant_request($1, $2, '{}'::text[], false, 1, 1, 30000, 20000, 60000)",
@@ -1004,9 +1004,7 @@ async function main() {
         "25P02",
         "a statement after a refused entry"
       );
-    } finally {
-      await runtimeClient.query("ROLLBACK");
-    }
+    });
 
     const sessionSettings = async () =>
       (

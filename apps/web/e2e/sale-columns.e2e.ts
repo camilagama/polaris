@@ -330,6 +330,8 @@ for (const pixels of [16, 20]) {
 
 const CARDS_TWO_FROM_REM = 18.5;
 const CARDS_THREE_FROM_REM = 26.5;
+const KEYS_TWO_FROM_REM = 21;
+const KEYS_THREE_FROM_REM = 32;
 
 for (const pixels of [16, 20]) {
   test(`letra de ${pixels} px: os cartões de método seguem a largura do grupo (uma, duas e três colunas) e "Transferência" cabe em todas`, async ({
@@ -363,6 +365,9 @@ for (const pixels of [16, 20]) {
         return {
           columns: getComputedStyle(node).gridTemplateColumns.split(" ").length,
           cut: cut.map((label) => label.textContent?.trim()),
+          numbers:
+            getComputedStyle(node.querySelector("[data-method-key]") as Element)
+              .display !== "none",
         };
       }, rem);
       expect(read.cut, `${rem} rem`).toEqual([]);
@@ -373,6 +378,10 @@ for (const pixels of [16, 20]) {
         expected = 2;
       }
       expect(read.columns, `${rem} rem`).toBe(expected);
+      expect(read.numbers, `${rem} rem: números`).toBe(
+        (rem >= KEYS_TWO_FROM_REM && rem < CARDS_THREE_FROM_REM) ||
+          rem >= KEYS_THREE_FROM_REM
+      );
       seen.add(read.columns);
     }
     expect([...seen].sort()).toEqual([1, 2, 3]);
