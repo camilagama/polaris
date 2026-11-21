@@ -20,7 +20,7 @@ A parede aparece duas vezes: com todas as execuções e só com as que rodaram o
 
 ## Tempo por arquivo de teste
 
-Com `CI` definido, as duas configs do Playwright (`playwright.pwa.config.ts` e `playwright.offline-poc.config.ts`) acrescentam o reporter `json`, que grava `apps/web/test-timings/timings-<nome>.json`. A pasta não é `test-results/`: o Playwright a esvazia no começo de cada execução, e o segundo comando do shard apagaria o arquivo do primeiro. Cada shard do gate de navegador sobe a pasta como o artefato `playwright-timings-shard-<n>` (retenção de 3 dias), pelo passo `upload-artifact` do job `offline-poc-browser-part`; esse passo só existe depois que o patch do workflow que acompanha o PR do script é aplicado ao `ci.yml`, e antes disso `--durations <id>` não acha artefato.
+Com `CI` definido, as duas configs do Playwright (`playwright.pwa.config.ts` e `playwright.offline-poc.config.ts`) acrescentam o reporter `json`, que grava `apps/web/test-timings/timings-<nome>.json`. A pasta não é `test-results/`: o Playwright a esvazia no começo de cada execução, e o segundo comando do shard apagaria o arquivo do primeiro. Cada shard do gate de navegador sobe a pasta como o artefato `playwright-timings-shard-<n>` (retenção de 3 dias), pelo passo `upload-artifact` do job `offline-poc-browser-part`, e o job `shard-coverage` baixa os mesmos artefatos (`pattern: playwright-timings-shard-*`) para conferir a cobertura dos shards. Uma execução anterior ao passo não tem o artefato, e `--durations <id>` não acha nada nela.
 
 ```sh
 node scripts/ci-timing.mjs --durations <id-da-execucao | pasta> [--out ci/test-durations.json]
