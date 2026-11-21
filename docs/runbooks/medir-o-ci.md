@@ -49,15 +49,18 @@ O job `shard-coverage` (`Offline browser gate (shard coverage)`) roda `scripts/c
 node scripts/ci-shard-coverage.mjs --plan plan.json --list offline-poc=list-offline-poc.json --list pwa=list-pwa.json --reports <pasta com playwright-timings-shard-<n>/timings-<suíte>.json>
 ```
 
-Ele reprova, com uma linha que diz o arquivo ou a contagem: arquivo do `--list` fora do plano, arquivo do plano fora do `--list`, arquivo em dois shards, shard sem o `timings-<suíte>.json` de uma suíte que tinha arquivos, shard que rodou arquivo de outro, e diferença entre os testes executados (com ao menos um resultado no relatório; o pulado por modificador conta, o que a execução não alcançou não) e os do `--list`, por suíte, arquivo e projeto. O plano, as listas e os relatórios ficam nos artefatos `shard-plan` e `playwright-timings-shard-<n>` do run.
+Ele reprova, com uma linha que diz o arquivo ou a contagem (num PR com seleção, compara com os arquivos selecionados: [o PR roda só o selecionado](#o-pr-roda-só-o-selecionado)): arquivo do `--list` fora do plano, arquivo do plano fora do `--list`, arquivo em dois shards, shard sem o `timings-<suíte>.json` de uma suíte que tinha arquivos, shard que rodou arquivo de outro, e diferença entre os testes executados (com ao menos um resultado no relatório; o pulado por modificador conta, o que a execução não alcançou não) e os do `--list`, por suíte, arquivo e projeto. O plano, as listas e os relatórios ficam nos artefatos `shard-plan` e `playwright-timings-shard-<n>` do run.
 
 ## Mapa de cobertura dos e2e e seletor de specs
 
-`e2e/coverage-map.mjs` diz que specs um diff pode quebrar; `scripts/ci-select-specs.mjs` lê a lista de arquivos do diff (argumentos ou entrada padrão) e imprime `{ "full": boolean, "specs": [...], "motivo": "..." }`. O seletor ainda não está ligado ao CI: a lista só vale como proposta até a suíte completa ser obrigatória no automerge.
+`e2e/coverage-map.mjs` diz que specs um diff pode quebrar; `scripts/ci-select-specs.mjs` lê a lista de arquivos do diff (argumentos ou entrada padrão) e imprime `{ "full": boolean, "specs": [...], "motivo": "..." }`. O job `shard-plan` o chama em todo pull request ([o PR roda só o selecionado](#o-pr-roda-só-o-selecionado)).
 
 ```sh
 git diff --name-only origin/main...HEAD | node scripts/ci-select-specs.mjs
+node scripts/ci-select-specs.mjs --diff HEAD^1 HEAD --out selection.json
 ```
+
+A segunda forma é a do CI: lê o diff no git e sai sempre com 0 e uma seleção. `CI_FULL=true`, `workflow_dispatch`, `push`, falha do `git diff` e falha do seletor dão `full: true`.
 
 Como decide, na ordem:
 
@@ -65,3 +68,35 @@ Como decide, na ordem:
 2. Senão, cada arquivo escolhe os specs do primeiro par do mapa cujo glob o casa; um spec alterado entra na própria lista. Texto (`.md` de `docs/` e `doc/`, `*.md` da raiz, `.md` das skills), teste unitário de `src/` fora dos diretórios que forçam e spec apagado selecionam nenhum spec.
 
 O mapa tem duas metades que o teste `scripts/ci-select-specs.test.mjs` confere contra o código: `SPEC_SCREENS` (as telas que cada spec abre, conferidas só contra os endereços escritos no arquivo e nos helpers dele: uma tela alcançada só por clique precisa ser declarada à mão) e `FILE_SCREENS` e `DIRECTORY_SCREENS` (as telas cujos imports alcançam o arquivo ou o diretório, conferidas contra o grafo de imports). O mesmo teste exige que todo spec que o `playwright test --list` dos três configs mostra esteja no mapa, que todo glob case um arquivo versionado e que todo spec citado exista. Spec novo: acrescente-o a `SPEC_SCREENS`. Arquivo de tela novo: sem entrada em `FILE_SCREENS` ele usa as telas do diretório, que é o lado seguro.
+
+## O PR roda só o selecionado
+
+No pull request, o job `shard-plan` faz o checkout com `fetch-depth: 2`, roda `node scripts/ci-select-specs.mjs --diff HEAD^1 HEAD --out apps/web/shard-plan/selection.json` (o commit testado contra o primeiro pai, a base do merge) e passa o arquivo ao plano: `scripts/ci-shard-plan.mjs --selection selection.json`. O plano reparte pelo tempo (LPT) só os arquivos que a seleção nomeia, pelo caminho do repositório (`apps/web/e2e/…`, `apps/web/e2e-pwa/…`), e usa no máximo um shard por arquivo, para nenhum shard subir só para não rodar nada. Os specs do `e2e-real` não entram no gate de navegador: o job `e2e-real` segue as suas próprias regras.
+
+| Situação | O que roda no gate de navegador |
+| --- | --- |
+| PR cujo diff o mapa alcança | só os specs da seleção, repartidos em até 10 shards |
+| PR que força a suíte toda (código compartilhado, helper de e2e, `.github/`, dependências) ou que toca caminho fora do mapa | tudo, como antes |
+| `workflow_dispatch`, `inputs.full` ou etiqueta `suite-completa` (`CI_FULL=true`) | tudo |
+| push na `main` | o gate não roda (como antes) |
+| seleção ilegível, `git diff` ou seletor com falha | tudo (falha segura: arquivo ausente, quebrado ou de formato desconhecido é `full`) |
+| seleção sem nenhum arquivo do gate (só texto, teste unitário, spec do `e2e-real` ou spec apagado) | os shards pulam de propósito |
+
+O plano guarda a seleção (`selection`) e a pasta de cada suíte no repositório (`repoDirs`). A guarda `shard-coverage` compara com isso: todo arquivo selecionado está em exatamente um shard e todo teste dele executou; arquivo planejado que a seleção não pede, ou que o `--list` não tem, reprova; spec selecionado numa pasta de suíte que nenhuma lista tem (caminho que o plano não soube pôr, ou arquivo sem nenhum teste) reprova em vez de a seleção encolher para nada: o conserto é do spec ou do mapa, e a etiqueta `suite-completa` não o contorna, porque a execução completa não tem seleção. O agregado `Offline persistence browser gate` aceita os shards pulados só quando o evento é `pull_request`, `CI_FULL` não é `true`, o plano e o `shard-coverage` passaram e o plano selecionou 0 arquivos; a regra de `CI_FULL` (só `success`) vem antes e continua valendo.
+
+**A suíte completa antes do merge é do automerge, não do workflow.** Nada no `ci.yml` a dispara sozinho. Com a chave ligada, o PR parcial verde não basta para mesclar: o automerge dispara o `workflow_dispatch` com `full` no head atualizado com a `main` e só mescla com ele verde (a chave `SUITE-COMPLETA` do script do automerge, fora do repositório). Sem a chave ligada, o PR mescla só com a suíte parcial: não aplique o `ci.yml` desta mudança com a chave desligada.
+
+**Forçar tudo num PR.** Ponha a etiqueta `suite-completa` antes do push (o `CI_FULL` é lido do evento do run; um run já feito não relê a etiqueta) ou dispare `Actions › CI › Run workflow` com `full` marcado.
+
+**Guarda por endereço literal.** O mapa só sabe que um spec abre uma tela pelos endereços escritos nele (`SCREEN_ROUTES`); uma tela alcançada só por clique, sem endereço escrito, passa sem guarda. Nenhum spec está assim hoje, e não há guarda por `page.url()`: quem mescla é a suíte completa, então uma seleção que erra custa uma rodada vermelha no dispatch (o tempo de uma suíte completa), e não um defeito na `main`. Se aparecer spec assim, declare a tela à mão em `SPEC_SCREENS`.
+
+**Medida (execução local, `ci/test-durations.json`, 10 shards, o mapa e as listas da `main` de 21/11).** A "parede" é a soma dos testes de cada arquivo dividida pelos workers da suíte, somada nos shards, sem os ~1,5 min de preparo por shard.
+
+| PR mesclado em 20/11 | Diff | Arquivos de spec | Soma das paredes | Shard mais lento |
+| --- | --- | ---: | ---: | ---: |
+| suíte toda | | 151 | 228,1 min | 22,8 min |
+| #1218, foco do Tentar novamente (Histórico, Estoque) | 4 arquivos de `inventory/` e `sales/` | 70 | 120,0 min | 12,0 min |
+| #1139, faixa sem conexão de Formas de receber | `payment-profiles/` e `DESIGN.md` | 61 | 104,1 min | 10,5 min |
+| #1206, aviso de venda de ontem | `sales/sale-draft-bar` | 56 | 101,7 min | 10,4 min |
+
+Uma tela só alcança metade da suíte: os specs que andam por todas as telas (guardas de interface, reflow, regressão visual) entram em qualquer mudança de tela. Reduzir isso é mudar o mapa, não a ligação.
