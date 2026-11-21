@@ -38,6 +38,10 @@ Mapa de contraste do desenho v5.1 (Petković, 20/10/2026), trazido para o reposi
 | `mark` / `accent` | marcador sobre item atual | composição | **3.15** | 3 | ✓ |
 | `mark-foreground` / `card` | texto de destaque esmeralda | composição | **8.05** | 7 | ✓ |
 | `mark-foreground` / `mark/10 sobre card` | texto esmeralda sobre bg-mark/10 | composição | **7.16** | 4.5 | ✓ |
+| `primary` / `sidebar` | arco do anel de Primeiros passos no menu (16 px) | ProgressRing | **16.36** | 3 | ✓ |
+| `primary` / `card` | arco do anel de Primeiros passos no bloco do Início | ProgressRing | **18.1** | 3 | ✓ |
+| `primary` / `primary/10 sobre card` | visto do passo feito, no quadro de 28 px | Primeiros passos | **14.73** | 3 | ✓ |
+| `muted-foreground` / `muted/50 sobre card` | texto do passo feito, na linha de fundo suave | Primeiros passos | **7.68** | 4.5 | ✓ |
 | `input` / `card` | borda de Input, Select, Checkbox, Radio, Switch desligado (cartão) | border-input | **3.36** | 3 | ✓ |
 | `input` / `background` | borda de campo sobre o fundo | border-input | **3.22** | 3 | ✓ |
 | `input` / `muted` | borda de campo sobre faixa neutra | border-input | **3.01** | 3 | ✓ |
@@ -125,6 +129,10 @@ Mapa de contraste do desenho v5.1 (Petković, 20/10/2026), trazido para o reposi
 | `mark` / `accent` | marcador sobre item atual | composição | **5.64** | 3 | ✓ |
 | `mark-foreground` / `card` | texto de destaque esmeralda | composição | **10.07** | 7 | ✓ |
 | `mark-foreground` / `mark/15 sobre card` | texto esmeralda sobre bg-mark/15 (escuro) | composição | **7.66** | 4.5 | ✓ |
+| `primary` / `sidebar` | arco do anel de Primeiros passos no menu (16 px) | ProgressRing | **15.43** | 3 | ✓ |
+| `primary` / `card` | arco do anel de Primeiros passos no bloco do Início | ProgressRing | **13.57** | 3 | ✓ |
+| `primary` / `primary/10 sobre card` | visto do passo feito, no quadro de 28 px | Primeiros passos | **10.41** | 3 | ✓ |
+| `muted-foreground` / `muted/50 sobre card` | texto do passo feito, na linha de fundo suave | Primeiros passos | **7.84** | 4.5 | ✓ |
 | `input` / `card` | borda de Input, Select, Checkbox, Radio, Switch desligado (cartão) | border-input | **3.89** | 3 | ✓ |
 | `input` / `background` | borda de campo sobre o fundo | border-input | **4.23** | 3 | ✓ |
 | `input` / `popover` | borda de campo em diálogo e menu | border-input | **3.63** | 3 | ✓ |
