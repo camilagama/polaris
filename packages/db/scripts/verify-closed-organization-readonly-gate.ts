@@ -45,6 +45,8 @@ import {
 import { runClock, storeDay } from "./gate-clock";
 import {
   replaceFunctionAsOwner,
+  rollbackAndRelease,
+  rollbackQuietly,
   setLoginRole,
   withGateRole,
 } from "./gate-roles";
@@ -861,11 +863,7 @@ async function run() {
       } catch (error: unknown) {
         return error instanceof Error ? error.message : String(error);
       } finally {
-        try {
-          await client.query("ROLLBACK");
-        } finally {
-          client.release();
-        }
+        await rollbackAndRelease(client);
       }
     };
     for (const [label, timezone, purgeAfterD] of [
@@ -1029,7 +1027,7 @@ async function run() {
         }
         return await operation(client);
       } finally {
-        await client.query("ROLLBACK").catch(() => undefined);
+        await rollbackQuietly(client);
         await client.end();
       }
     };
@@ -1190,7 +1188,7 @@ async function run() {
           await client.query(`${remove[1]} AND false`);
         });
       } finally {
-        await client.query("ROLLBACK").catch(() => undefined);
+        await rollbackQuietly(client);
         await client.end();
       }
     };
