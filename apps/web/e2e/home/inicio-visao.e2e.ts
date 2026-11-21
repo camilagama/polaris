@@ -56,6 +56,21 @@ async function openMenuFoot(page: Page) {
   }
 }
 
+/**
+ * The area chart arrives after the heading: its chunk is downloaded on demand, then the chart measures its box and
+ * draws. Each step waits for its own state, so a starved CPU delays the drawing without eating the budget of the next
+ * check: the network idle says the chunk was downloaded, the box that holds the place leaves when the chart takes it, the
+ * chart's box says it was mounted, the svg says it was measured and drawn.
+ */
+async function drawnAreaChart(page: Page, chart: Locator) {
+  await page.waitForLoadState("networkidle");
+  await expect(chart.locator("[data-chart-loading]")).toHaveCount(0);
+  const area = chart.locator("[data-chart-area]");
+  await expect(area).toBeAttached();
+  await expect(area.locator("svg").first()).toBeVisible();
+  return area;
+}
+
 /** "Mais" is a modal dialog: the page behind it waits for it to close. */
 async function closeMenuFoot(page: Page) {
   const panel = page.getByRole("dialog", { name: "Mais" });
@@ -367,9 +382,7 @@ test.describe("loja com venda", () => {
     await page.setViewportSize({ height: 740, width: 360 });
     const server = new FakeServer(SOLD);
     await openHome(page, server);
-    const chart = region(page, "Vendas por dia");
-    const area = chart.locator("[data-chart-area]");
-    await expect(area.locator("svg").first()).toBeVisible();
+    const area = await drawnAreaChart(page, region(page, "Vendas por dia"));
 
     // the box and the drawing of the chart ask for the horizontal drag only, so a finger that starts on the chart still
     // scrolls the page: a "none" anywhere between the drawing and the document takes the vertical gesture away
@@ -402,7 +415,7 @@ test.describe("loja com venda", () => {
     const server = new FakeServer(SOLD);
     await openHome(page, server);
     const chart = region(page, "Vendas por dia");
-    await expect(chart.locator("[data-chart-area] svg").first()).toBeVisible();
+    await drawnAreaChart(page, chart);
     await expect(chart.locator('input[type="range"]')).toHaveAttribute(
       "max",
       "22"
