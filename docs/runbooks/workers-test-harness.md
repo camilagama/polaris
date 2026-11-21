@@ -4,7 +4,7 @@ Plano: PR 121 (T-121a), PR 127 (T-127a) e T-121b (Web e Catalog). Os testes `*.w
 
 ## Como roda
 
-- Dentro de `bun run test` (job `checks`), como o projeto `admin-workerd` do `vitest.config.ts` raiz. Só esse arquivo: `bunx vitest run --project admin-workerd`.
+- Dentro de `bun run test` (job `checks`), como o projeto `admin-workerd` do `vitest.config.ts` raiz. Só esse arquivo: `bunx vitest run --project admin-workerd`. O projeto roda os testes em ordem aleatória (`sequence.shuffle` dos testes, que ele define porque não herda o da raiz; a ordem dos arquivos vem da raiz), com a semente na saída; para repetir a ordem: `bunx vitest run --project admin-workerd --sequence.seed=<semente>`.
 - O plugin usa a sua própria cópia de `wrangler`, `miniflare` e `workerd` (versões exatas do plugin). O `wrangler` dos apps não muda e o deploy também não.
 - Não precisa de PostgreSQL, de `.dev.vars`, de `.env` nem de credencial Cloudflare (não crie esses arquivos para o teste). O `wrangler.jsonc` do app é lido como está.
 

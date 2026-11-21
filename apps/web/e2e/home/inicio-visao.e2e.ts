@@ -152,10 +152,13 @@ test.describe("loja com venda", () => {
     const ring = meta.getByRole("img");
     await expect(ring).toHaveAttribute(
       "aria-label",
-      "53,4% da meta: R$ 2.670,60 de R$ 5.000,00"
+      "53,4% da meta: R$ 2.670,60 de R$ 5.000,00. Atrasada: o esperado até hoje era 71%."
     );
     await expect(ring).toContainText("53,4%da meta");
-    await expect(ring.locator("[data-ring-chart] svg")).toHaveAttribute(
+    await expect(
+      ring.locator("[data-ring-chart] svg:not([data-ring-marker])")
+    ).toHaveAttribute("aria-hidden", "true");
+    await expect(ring.locator("[data-ring-marker]")).toHaveAttribute(
       "aria-hidden",
       "true"
     );
@@ -235,7 +238,7 @@ test.describe("loja com venda", () => {
     ).toBe(true);
   });
 
-  test("a 1280 px Nova venda, Hoje e o mês ficam acima da dobra, em duas colunas", async ({
+  test("a 1280 px Nova venda, Hoje e o mês ficam acima da dobra: Hoje numa linha própria e os três do mês numa faixa de três colunas", async ({
     page,
   }) => {
     await page.setViewportSize({ height: 800, width: 1280 });
@@ -252,10 +255,26 @@ test.describe("loja com venda", () => {
     }
     const today = await region(page, "Vendas hoje").boundingBox();
     const month = await region(page, "Vendas em outubro").boundingBox();
-    expect(month?.x ?? 0).toBeGreaterThan(
-      (today?.x ?? 0) + (today?.width ?? 0)
+    const result = await region(page, "Resultado estimado").boundingBox();
+    const ticket = await region(page, "Ticket médio").boundingBox();
+    expect((month?.y ?? 0) >= (today?.y ?? 0) + (today?.height ?? 0)).toBe(
+      true
     );
-    expect(month?.y).toBe(today?.y);
+    expect(today?.x).toBe(month?.x);
+    expect(
+      Math.abs(
+        (today?.width ?? 0) -
+          ((ticket?.x ?? 0) + (ticket?.width ?? 0) - (month?.x ?? 0))
+      )
+    ).toBeLessThanOrEqual(1);
+    expect(result?.x ?? 0).toBeGreaterThan(
+      (month?.x ?? 0) + (month?.width ?? 0) - 1
+    );
+    expect(ticket?.x ?? 0).toBeGreaterThan(
+      (result?.x ?? 0) + (result?.width ?? 0) - 1
+    );
+    expect(result?.y).toBe(month?.y);
+    expect(ticket?.y).toBe(month?.y);
     expect(
       await page.evaluate(
         () => document.documentElement.scrollWidth <= window.innerWidth
@@ -1201,8 +1220,11 @@ test.describe("meta (AC-10, AC-11)", () => {
     await expect(meta.locator("[data-masked-money]")).toHaveCount(2);
     await expect(ring).toHaveAttribute(
       "aria-label",
-      "53,4% da meta: valor escondido de valor escondido"
+      "53,4% da meta: valor escondido de valor escondido. Atrasada: o esperado até hoje era 71%."
     );
+    // the pace is not a value: the word and the mark stay with the values hidden
+    await expect(meta.locator("[data-pace]")).toHaveText("Atrasada");
+    await expect(meta.locator("[data-ring-marker]")).toBeAttached();
     await expect(ring).toContainText("53,4%");
 
     server.scenario = { ...SOLD, goals: [] };

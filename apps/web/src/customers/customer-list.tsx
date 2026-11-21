@@ -17,6 +17,8 @@ import { productInitials } from "../catalog/product-search-model";
 import {
   ListNotice,
   OPENABLE_ROW_CLASS,
+  ROW_BODY_CLASS,
+  ROW_TEXT_CLASS,
   RowOpenButton,
 } from "../catalog/screen-parts";
 import type { PendingCustomer } from "../offline/customer-create";
@@ -261,13 +263,22 @@ function CustomerMain({
       >
         {productInitials(customer.name)}
       </span>
-      <span className="grid min-w-0 flex-1 @min-[26rem]:grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-0.5">
-        <span className="grid min-w-0 gap-0.5">
-          <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
-            <span className="font-medium [overflow-wrap:anywhere]">
-              {isAnonymized ? null : <span className="sr-only">Editar </span>}
-              {customer.name}
-            </span>
+      <span className={ROW_BODY_CLASS}>
+        <span className={ROW_TEXT_CLASS}>
+          <span className="font-medium [overflow-wrap:anywhere]">
+            {isAnonymized ? null : <span className="sr-only">Editar </span>}
+            {customer.name}
+          </span>
+          {hasContacts ? (
+            <ContactsLine
+              contacts={contacts}
+              hidden={!isAnonymized}
+              id={supportId}
+            />
+          ) : null}
+        </span>
+        {hasStateBadge || purchaseText ? (
+          <span className="flex min-w-0 flex-col items-start gap-1 min-[40rem]:items-end">
             {hasStateBadge ? (
               <Badge
                 aria-hidden={isAnonymized ? undefined : true}
@@ -281,23 +292,16 @@ function CustomerMain({
                 {customerStatusLabel(customer)}
               </Badge>
             ) : null}
-          </span>
-          {hasContacts ? (
-            <ContactsLine
-              contacts={contacts}
-              hidden={!isAnonymized}
-              id={supportId}
-            />
-          ) : null}
-        </span>
-        {purchaseText ? (
-          <span
-            aria-hidden={isAnonymized ? undefined : true}
-            className="@min-[26rem]:text-right text-muted-foreground text-support"
-            data-last-purchase=""
-            id={purchaseId}
-          >
-            {purchaseText}
+            {purchaseText ? (
+              <span
+                aria-hidden={isAnonymized ? undefined : true}
+                className="text-muted-foreground text-support"
+                data-last-purchase=""
+                id={purchaseId}
+              >
+                {purchaseText}
+              </span>
+            ) : null}
           </span>
         ) : null}
       </span>
@@ -305,17 +309,20 @@ function CustomerMain({
   );
   if (isAnonymized) {
     return (
-      <div className="flex min-w-0 flex-1 items-center gap-3 py-2.5">
-        {content}
-      </div>
+      <>
+        <div className="flex min-w-0 flex-1 items-center gap-3 py-2.5">
+          {content}
+        </div>
+        <span aria-hidden="true" className="size-ctl-md shrink-0" />
+      </>
     );
   }
   return (
     <RowOpenButton
       describedBy={
         [
-          hasStateBadge ? stateId : undefined,
           hasContacts ? supportId : undefined,
+          hasStateBadge ? stateId : undefined,
           purchaseText ? purchaseId : undefined,
           lockedReasonId,
           pendingLabelId,
@@ -563,7 +570,7 @@ export function CustomerList({
   }
   return (
     <Card className="gap-0 py-0">
-      <ul aria-label="Clientes" className="@container divide-y divide-border">
+      <ul aria-label="Clientes" className="divide-y divide-border">
         {customers.map((customer) => (
           <CustomerRow
             {...actions}

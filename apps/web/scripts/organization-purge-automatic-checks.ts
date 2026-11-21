@@ -28,6 +28,7 @@ import {
 import { ORGANIZATION_PURGE_REQUIRED_SCOPE } from "@polaris/domain/privacy/organization-purge";
 import {
   queryAsGateRole,
+  rollbackAndRelease,
   withGateRole,
 } from "../../../packages/db/scripts/gate-roles";
 import {
@@ -249,8 +250,7 @@ export async function asRole(
       client.query(statement, values)
     );
   } finally {
-    await client.query("ROLLBACK").catch(() => undefined);
-    client.release();
+    await rollbackAndRelease(client);
   }
 }
 
@@ -965,11 +965,10 @@ async function scenario(context: AutomaticPurgeContext): Promise<string[]> {
       [onTime.organizationId]
     );
     await restoreClient.query("COMMIT");
-  } catch (error) {
-    await restoreClient.query("ROLLBACK");
-    throw error;
-  } finally {
     restoreClient.release();
+  } catch (error) {
+    await rollbackAndRelease(restoreClient);
+    throw error;
   }
   const reopened = await purgeRow(owner, onTime.organizationId);
   assert.equal(reopened?.trigger, "closure_period");

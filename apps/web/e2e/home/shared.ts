@@ -968,3 +968,35 @@ export const alone = (cents: number): Scenario => ({
   days: { "2026-10-23": [cents, 3] },
   soldWithoutCost: 0,
 });
+
+/**
+ * What the Início lays out in its first block: the hero (the real tile or its skeleton, the first child of the row) and
+ * the three cells of the month, with the rounding each draws, so a strip (cells with no corners) tells from three cards.
+ */
+export async function heroAndMonth(page: Page) {
+  await settled(page);
+  return page.locator("[data-kpi-row]").evaluate((row) => {
+    const box = (element: Element) => {
+      const rect = element.getBoundingClientRect();
+      return {
+        height: rect.height,
+        left: rect.left + window.scrollX,
+        top: rect.top + window.scrollY,
+        width: rect.width,
+      };
+    };
+    const month = row.querySelector("[data-kpi-month]");
+    const cells = [...(month?.children ?? [])].filter(
+      (cell) =>
+        cell.hasAttribute("data-kpi") || cell.hasAttribute("data-kpi-skeleton")
+    );
+    return {
+      cells: cells.map((cell) => ({
+        ...box(cell),
+        radius: getComputedStyle(cell).borderTopLeftRadius,
+      })),
+      hero: row.firstElementChild ? box(row.firstElementChild) : null,
+      strip: month ? box(month) : null,
+    };
+  });
+}

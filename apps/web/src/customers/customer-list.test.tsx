@@ -143,7 +143,7 @@ describe("the list of customers", () => {
     expect(gone).not.toContain("data-row-open");
   });
 
-  it("describes the row button by its state badge and its contacts, both drawn with those ids", () => {
+  it("describes the row button by its contacts and then its state badge, both drawn with those ids", () => {
     const bia = customer(2, "Bia Souza", {
       archivedAt: "2026-10-14T12:00:00.000Z",
       email: "bia@exemplo.com",
@@ -152,8 +152,13 @@ describe("the list of customers", () => {
     const html = render({ customers: [bia], status: "archived" });
     const tag = ROW_BUTTON_TAG.exec(html)?.[0] ?? "missing";
     expect(tag).toContain(
-      `aria-describedby="customer-state-${bia.id} customer-support-${bia.id}"`
+      `aria-describedby="customer-support-${bia.id} customer-state-${bia.id}"`
     );
+    expect(DESCRIBED_BY.exec(tag)?.[1]?.split(" ")).toEqual([
+      `customer-support-${bia.id}`,
+      `customer-state-${bia.id}`,
+    ]);
+    expect(describedByText(html, tag).at(-1)).toBe("Arquivado");
     expect(html).toContain(`id="customer-state-${bia.id}"`);
     expect(html).toContain(`id="customer-support-${bia.id}"`);
   });
@@ -331,5 +336,48 @@ describe("the list of customers", () => {
       total: 1,
     });
     expect(html).toContain("Última compra em 01/10");
+  });
+});
+
+const ANONYMIZED_BADGE = /data-slot="badge"[^>]*>Anonimizado</;
+
+describe("the state badge of a customer row", () => {
+  const archived = () =>
+    render({
+      customers: [customer(1, "Ana Lima", { status: "archived" })],
+      status: "archived",
+    });
+
+  it("reads name, contacts, state and then the menu, the badge being the last part of the row button", () => {
+    const html = archived();
+    const name = html.indexOf("Ana Lima");
+    const phone = html.indexOf("(11)");
+    const badge = html.indexOf(">Arquivado<");
+    const menu = html.indexOf("Mais ações para Ana Lima");
+    expect(name).toBeGreaterThan(-1);
+    expect([name, phone, badge, menu]).toEqual(
+      [name, phone, badge, menu].sort((a, b) => a - b)
+    );
+    expect(html.indexOf("</button>", badge)).toBeLessThan(menu);
+  });
+
+  it("keeps the initials circle a circle", () => {
+    expect(archived()).toContain("rounded-full bg-muted");
+    expect(archived()).not.toContain("data-row-tile");
+  });
+
+  it("keeps the badge where the others are when the row has no menu: a spacer takes the menu's place", () => {
+    const html = render({
+      customers: [
+        customer(1, "Cliente anonimizado", {
+          anonymizedAt: "2026-10-15T12:00:00.000Z",
+          phone: null,
+        }),
+      ],
+    });
+    expect(html).toMatch(ANONYMIZED_BADGE);
+    expect(html).toContain(
+      '<span aria-hidden="true" class="size-ctl-md shrink-0">'
+    );
   });
 });

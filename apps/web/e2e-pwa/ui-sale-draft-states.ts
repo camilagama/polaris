@@ -1,6 +1,6 @@
 /// <reference lib="dom" />
 import type { Locator, Page, Route } from "@playwright/test";
-import { serveHome } from "./ui-home-states";
+import { NOW, serveHome } from "./ui-home-states";
 import { WORKER_MARK } from "./worker-mark";
 
 /**
@@ -16,7 +16,7 @@ const VARIANT = {
   productStatus: "active",
   quantity: 5,
   sku: "SKU-1",
-  updatedAt: "2026-10-14T12:00:00.000Z",
+  updatedAt: new Date(Date.parse(NOW) - 86_400_000).toISOString(),
   values: [{ optionName: "cor", optionValueName: "Azul" }],
   variantId: "0199c2d0-0000-7000-8000-0000000000b1",
   version: 1,
@@ -34,6 +34,7 @@ const menuLink = (page: Page, name: string): Locator =>
   page.getByRole("link", { exact: true, name }).filter({ visible: true });
 
 export async function repricedDraft(page: Page) {
+  await page.clock.setFixedTime(new Date(NOW));
   let entries = [VARIANT];
   await serveHome(page, { signedIn: true });
   await page.route("**/rpc/inventory/listBalances", (route: Route) =>

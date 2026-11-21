@@ -3,6 +3,7 @@ import CircleAlertIcon from "lucide-react/dist/esm/icons/circle-alert";
 import type * as React from "react";
 import { cn } from "@/lib/utils";
 import { Label } from "@/ui/label";
+import { Separator } from "@/ui/separator";
 
 /* Polaris v5.1: label 14/20, 6 px from label to control, help and error in 13/18 (the error weighs 500 and carries
    an icon, so color is never the only signal). A checked choice card has a `foreground/70` border and a
@@ -33,6 +34,22 @@ function FieldLegend({
       )}
       data-slot="field-legend"
       data-variant={variant}
+      {...props}
+    />
+  );
+}
+
+/* The 1 px rule between the sections of a long form. Ornament: each section is a `fieldset` whose legend names it, so
+   the sections read apart without the rule, and the rule stays out of the reading. */
+function FieldSeparator({
+  className,
+  ...props
+}: React.ComponentProps<typeof Separator>) {
+  return (
+    <Separator
+      aria-hidden="true"
+      className={cn("col-span-full", className)}
+      data-slot="field-separator"
       {...props}
     />
   );
@@ -164,6 +181,7 @@ export {
   FieldError,
   FieldLabel,
   FieldLegend,
+  FieldSeparator,
   FieldSet,
   FieldTitle,
 };

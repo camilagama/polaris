@@ -5,7 +5,6 @@ import type {
 } from "@polaris/db/public-catalog-reader";
 import { Link, rootRouteId, useMatch } from "@tanstack/react-router";
 import {
-  formatPrice,
   instagramLink,
   noPriceLabel,
   priceParts,
@@ -128,8 +127,7 @@ export function StoreView({
                 <span className="card-price">
                   {product.priceFrom ? (
                     <>
-                      a partir de{" "}
-                      <strong>{formatPrice(product.priceFrom)}</strong>
+                      a partir de <Price value={product.priceFrom} />
                     </>
                   ) : (
                     noPriceLabel(profile)
@@ -163,8 +161,9 @@ function Price({ value }: { value: string }) {
     <strong className="price">
       {parts ? (
         <>
-          <small>{parts.symbol}</small>
-          {parts.amount}
+          <small className="currency">{parts.symbol}</small>
+          {parts.whole}
+          <small className="cents">{parts.cents}</small>
         </>
       ) : (
         value

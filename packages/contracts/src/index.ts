@@ -371,6 +371,17 @@ const expense = z.object({
 
 export type ExpenseReadModel = z.infer<typeof expense>;
 
+const expenseCategoryTotal = z.object({
+  categoryId: z.string().uuid(),
+  count: z.number().int().positive(),
+  /** Exact BRL decimal with two places, as text. */
+  total: z.string(),
+});
+
+export type ExpenseCategoryTotalReadModel = z.infer<
+  typeof expenseCategoryTotal
+>;
+
 const expenseRule = z.object({
   amount: z.string(),
   archivedAt: z.string().datetime().nullable(),
@@ -1977,6 +1988,8 @@ export const polarisContract = {
           nextCursor: z.string().nullable(),
           /** Sum of every expense that matches the filter, not only this page. */
           total: z.string(),
+          /** The same sum per category, in no order; absent on an answer from a server that does not send it. */
+          totalsByCategory: z.array(expenseCategoryTotal).optional(),
         })
       ),
     listCategories: readProcedure

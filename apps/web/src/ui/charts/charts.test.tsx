@@ -2,6 +2,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { AreaChart } from "./area-chart";
 import { OnDemandAreaChart } from "./on-demand";
+import { RingChart } from "./ring-chart";
 import { Sparkline } from "./sparkline";
 
 /**
@@ -441,4 +442,54 @@ describe("the box that holds the place of an area chart before its chunk comes",
       expect(heightOf(empty)).toBe(height);
     });
   }
+});
+
+const MARK_PATH = /data-ring-marker=""[\s\S]*?<path d="([^"]*)"/;
+const POINT = /(-?[\d.]+),(-?[\d.]+)/g;
+const MARK_SVG = /<svg[^>]*aria-hidden="true"[^>]*data-ring-marker=""/;
+
+describe("RingChart marker", () => {
+  const points = (markup: string) =>
+    [...(MARK_PATH.exec(markup)?.[1] ?? "").matchAll(POINT)].map(
+      (match) => [Number(match[1]), Number(match[2])] as const
+    );
+  const ring = (marker?: number) =>
+    html(
+      <RingChart
+        color="var(--chart-sales)"
+        marker={marker}
+        progress={0.5}
+        size={112}
+        strokeWidth={10}
+      />
+    );
+
+  it("draws nothing without a marker", () => {
+    expect(ring()).not.toContain("data-ring-marker");
+  });
+
+  it("is aria-hidden and crosses the arc radially from the point the arc begins", () => {
+    const markup = ring(0.25);
+    expect(markup).toMatch(MARK_SVG);
+    const [from, to] = points(markup);
+    // a quarter of the way round from 9 o'clock is 12 o'clock: the mark is vertical, over the center line
+    expect(from?.[0]).toBeCloseTo(56, 5);
+    expect(to?.[0]).toBeCloseTo(56, 5);
+    expect(Math.hypot((to?.[0] ?? 0) - 56, (to?.[1] ?? 0) - 56)).toBeCloseTo(
+      48 + 3,
+      5
+    );
+    expect(
+      Math.hypot((from?.[0] ?? 0) - 56, (from?.[1] ?? 0) - 56)
+    ).toBeCloseTo(38 - 3, 5);
+  });
+
+  it("reaches the point where an arc of the same share ends, at every share", () => {
+    for (const share of [0.2, 0.6, 1]) {
+      const [, to] = points(ring(share));
+      const angle = -Math.PI / 2 + share * 2 * Math.PI;
+      expect(to?.[0]).toBeCloseTo(56 + 51 * Math.sin(angle), 5);
+      expect(to?.[1]).toBeCloseTo(56 - 51 * Math.cos(angle), 5);
+    }
+  });
 });

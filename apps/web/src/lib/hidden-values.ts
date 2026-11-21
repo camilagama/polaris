@@ -5,7 +5,8 @@ import { browserStorage } from "./theme";
  * "Esconder valores" (revisão de UI v7, § 6): a choice about who is around the screen, not about the account, so it is
  * kept on the device like the theme (`polaris-valores` in localStorage, one word of a closed list) and is the same on
  * the Início and on the Resultado. While it is on, every amount in reais is written "R$ ••••" and read "valor
- * escondido"; percents, counts and the shape of the charts stay.
+ * escondido"; percents, counts and the shape of the charts stay, except the share of each part of the cost, which
+ * would give the amount back.
  */
 const HIDDEN_VALUES_STORAGE_KEY = "polaris-valores";
 const HIDDEN = "escondidos";
