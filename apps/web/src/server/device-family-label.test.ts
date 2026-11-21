@@ -362,11 +362,25 @@ describe("the table of the Aparelhos screen follows DEVICE_FAMILY_LABELS", () =>
     for (const [browser, system] of parts) {
       expect(deviceKind(`${browser} no ${system}`)).not.toBe("unknown");
     }
-    for (const label of DEVICE_FAMILY_LABELS) {
-      if (!label.includes(" no ")) {
-        expect(deviceKind(label)).toBe("unknown");
-      }
+    const bare = [...DEVICE_FAMILY_LABELS].filter(
+      (label) => !label.includes(" no ")
+    );
+    expect(bare.length).toBeGreaterThan(0);
+    for (const label of bare) {
+      expect(deviceKind(label)).toBe("unknown");
     }
+  });
+
+  it("each system of the set has the kind the screen draws for it", () => {
+    expect(KIND_BY_SYSTEM).toEqual({
+      Android: "phone",
+      ChromeOS: "computer",
+      iPad: "tablet",
+      iPhone: "phone",
+      Linux: "computer",
+      Mac: "computer",
+      Windows: "computer",
+    });
   });
 
   it("an iPad in desktop mode is named a Mac and gets the computer icon; the iPad that says so is a tablet", () => {
