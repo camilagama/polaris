@@ -1,5 +1,5 @@
 import type { ExpenseCategoryReadModel } from "@polaris/contracts";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { cn } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/ui/card";
 import { Money } from "@/ui/money";
@@ -10,7 +10,13 @@ import { type CategoryShareRow, categoryShareRows } from "./expense-model";
 import type { ExpenseFilters, ExpenseListState } from "./use-expense-list";
 
 const TITLE_ID = "expense-by-category-title";
-const FIRST_SKELETON_LINES = 3;
+
+/**
+ * How many lines the last split of each store had, for the skeleton of the next read. A store that never showed the
+ * block has no entry and no skeleton: a month with no expense (or a server that sends no split) would take it away
+ * again and move the list.
+ */
+const seenLines = new Map<string, number>();
 
 export function showsCategoryBlock(filters: ExpenseFilters): boolean {
   return filters.categoryId === "" && filters.status === "active";
@@ -119,7 +125,7 @@ function ShareLine({ onPick, row }: ShareLineProps) {
   );
 }
 
-/** As many lines as the last split had (three on the first read), each as tall as a line of the split, so the list does not move. */
+/** As many lines as the last split had, each as tall as a line of the split, so the list does not move. */
 function ShareSkeleton({ lines }: { lines: number }) {
   return (
     <div aria-hidden="true" className="grid gap-1" data-share-skeleton="">
@@ -138,6 +144,7 @@ interface ExpenseByCategoryProps {
   /** The names come from the categories read: until it ends the lines could not be written, so the skeleton stays. */
   categoriesLoading: boolean;
   filters: ExpenseFilters;
+  organizationId: string;
   /** Applies the category to the filter bar of the list: the same filter the bar's own menu sets. */
   onPick: (categoryId: string) => void;
   state: ExpenseListState;
@@ -145,8 +152,8 @@ interface ExpenseByCategoryProps {
 
 /**
  * "Por categoria": where the month's expenses went, the five largest categories and the rest in "Outras (N)", from
- * the same read as the list (the sum of the lines is the "Total do período"). It holds its height as lines of skeleton
- * while that read is open and leaves out of the page when there is nothing to split: a category chosen, the voided
+ * the same read as the list (the sum of the lines is the "Total do período"). Once it has been on the screen it holds
+ * its height as lines of skeleton while the next read is open, and it leaves out of the page when there is nothing to split: a category chosen, the voided
  * ones, fewer than two categories, or an answer with no split.
  */
 export function ExpenseByCategory({
@@ -154,22 +161,24 @@ export function ExpenseByCategory({
   categoriesLoading,
   filters,
   onPick,
+  organizationId,
   state,
 }: ExpenseByCategoryProps) {
   const rows = useMemo(
     () => categoryShareRows(state.totalsByCategory, categories, state.total),
     [categories, state.total, state.totalsByCategory]
   );
-  const lastLines = useRef(FIRST_SKELETON_LINES);
-  useEffect(() => {
-    if (rows) {
-      lastLines.current = rows.length;
-    }
-  }, [rows]);
+  if (rows) {
+    seenLines.set(organizationId, rows.length);
+  }
   if (!showsCategoryBlock(filters) || state.error !== null) {
     return null;
   }
-  const reading = (state.isLoading || categoriesLoading) && rows === null;
+  const skeletonLines = seenLines.get(organizationId);
+  const reading =
+    skeletonLines !== undefined &&
+    (state.isLoading || categoriesLoading) &&
+    rows === null;
   if (!(reading || rows)) {
     return null;
   }
@@ -188,7 +197,7 @@ export function ExpenseByCategory({
             ))}
           </ul>
         ) : (
-          <ShareSkeleton lines={lastLines.current} />
+          <ShareSkeleton lines={skeletonLines ?? 0} />
         )}
       </CardContent>
     </Card>

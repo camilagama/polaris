@@ -49,11 +49,18 @@ const state = (overrides: Partial<ExpenseListState>): ExpenseListState => ({
   ...overrides,
 });
 
+let stores = 0;
+function nextStore() {
+  stores += 1;
+  return `org-${stores}`;
+}
+
 function render(
   overrides: Partial<ExpenseListState> = {},
   chosen: ExpenseFilters = filters,
   list: ExpenseCategoryReadModel[] = categories,
-  categoriesLoading = false
+  categoriesLoading = false,
+  organizationId = nextStore()
 ) {
   return renderToStaticMarkup(
     <ExpenseByCategory
@@ -61,6 +68,7 @@ function render(
       categoriesLoading={categoriesLoading}
       filters={chosen}
       onPick={noop}
+      organizationId={organizationId}
       state={state(overrides)}
     />
   );
@@ -112,14 +120,33 @@ describe("ExpenseByCategory", () => {
     expect(html.match(/<button/g)).toHaveLength(5);
   });
 
-  it("holds its place with lines of skeleton while the first read is open", () => {
-    const html = render({ isLoading: true, totalsByCategory: undefined });
+  it("has no skeleton on the first read of a store: with no split to show it would take the space away again", () => {
+    expect(render({ isLoading: true, totalsByCategory: undefined })).toBe("");
+  });
+
+  it("holds the place of the last split with as many skeleton lines while the next read is open", () => {
+    render({}, filters, categories, false, "org-seen");
+    const html = render(
+      { isLoading: true, totalsByCategory: undefined },
+      filters,
+      categories,
+      false,
+      "org-seen"
+    );
     expect(html).toContain("data-share-skeleton");
+    expect(html.match(/min-h-11/g)).toHaveLength(2);
     expect(html).not.toContain("<button");
   });
 
   it("keeps the skeleton while the categories are still read, so the block does not pop in", () => {
-    const html = render({}, filters, [], true);
+    render({}, filters, categories, false, "org-late");
+    const html = render(
+      { totalsByCategory: undefined },
+      filters,
+      [],
+      true,
+      "org-late"
+    );
     expect(html).toContain("data-share-skeleton");
   });
 

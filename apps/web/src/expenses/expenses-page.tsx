@@ -413,6 +413,7 @@ export function ExpensesPage() {
             categoriesLoading={categories.state.isLoading}
             filters={filters}
             onPick={handlePickCategory}
+            organizationId={organizationId}
             state={state}
           />
           <Card aria-labelledby={LIST_TITLE_ID} role="region">

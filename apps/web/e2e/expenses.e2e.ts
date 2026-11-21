@@ -143,7 +143,6 @@ class FakeExpenseServer {
   /** Answers the split of the total per category, as the current server does; off, as an old server that has no such field. */
   splitByCategory = false as boolean;
   listGate: Promise<void> | null = null;
-  categoriesGate: Promise<void> | null = null;
   private next = 100;
 
   /** Like the real server: reading generates the occurrences that fell due, each an ordinary expense. */
@@ -440,9 +439,6 @@ async function installServer(page: Page, server: FakeExpenseServer) {
     } | null;
     if (procedure === "expense/list") {
       await server.listGate;
-    }
-    if (procedure === "expense/listCategories") {
-      await server.categoriesGate;
     }
     const answer = server.handle(procedure, body?.json ?? {});
     await route.fulfill({
@@ -2310,9 +2306,8 @@ test("por categoria: cada linha escreve o nome, o percentual e o valor, a soma �
     "R$ 1.000,00"
   );
 
-  const widths = await block
-    .locator("[data-share-track]")
-    .evaluateAll((tracks) =>
+  const widths = () =>
+    block.locator("[data-share-track]").evaluateAll((tracks) =>
       tracks.map((track) => {
         const fill = track.firstElementChild as HTMLElement;
         return (
@@ -2321,9 +2316,9 @@ test("por categoria: cada linha escreve o nome, o percentual e o valor, a soma �
         );
       })
     );
-  expect(widths[0]).toBeCloseTo(1, 2);
-  expect(widths[1]).toBeCloseTo(0.5, 2);
-  expect(widths[2]).toBeCloseTo(1 / 6, 2);
+  await expect
+    .poll(async () => (await widths()).map((width) => Math.round(width * 100)))
+    .toEqual([100, 50, 17]);
   await expect(block.locator("[data-share-track]")).toHaveCount(3);
   await expect(
     block.locator('[data-share-track]:not([aria-hidden="true"])')
@@ -2402,7 +2397,7 @@ test("por categoria: um servidor sem totalsByCategory deixa a tela como era, sem
   await expect(page.getByText("Sem categoria")).toHaveCount(0);
 });
 
-test("por categoria: enquanto a leitura está aberta o bloco guarda o lugar em esqueleto com a forma das linhas e a lista não anda (CLS até 0,01)", async ({
+test("por categoria: ao trocar de mês o bloco guarda o lugar em esqueleto com a forma das linhas e a lista não anda (CLS até 0,01)", async ({
   page,
 }) => {
   await page.clock.setFixedTime(new Date(NOW));
@@ -2423,54 +2418,40 @@ test("por categoria: enquanto a leitura está aberta o bloco guarda o lugar em e
   });
   const server = new FakeExpenseServer();
   seedSplit(server);
+  for (const expense of [...server.expenses]) {
+    server.expenses.push({
+      ...expense,
+      competenceOn: "2026-09-14",
+      id: uuid(900 + server.expenses.length),
+    });
+  }
+  await openExpenses(page, server);
+  await expect(byCategory(page).locator("[data-share-line]")).toHaveCount(3);
+
   let release: () => void = () => undefined;
   server.listGate = new Promise<void>((resolve) => {
     release = resolve;
   });
-  await openExpenses(page, server);
-  const skeleton = byCategory(page).locator("[data-share-skeleton]");
-  await expect(skeleton).toBeVisible();
+  await chooseMonth(page, "setembro de 2026");
+  await expect(byCategory(page).locator("[data-share-skeleton]")).toBeVisible();
   const card = page.getByRole("region", { name: "Despesas do período" });
-  const [reserved] = await Promise.all([
-    placesOf({ list: card }),
-    page.evaluate(() => {
-      (window as unknown as { __shift: number }).__shift = 0;
-    }),
-  ]);
+  const reserved = await placesOf({ list: card });
+  await page.evaluate(() => {
+    (window as unknown as { __shift: number }).__shift = 0;
+  });
   release();
   await expect(byCategory(page).locator("[data-share-line]")).toHaveCount(3);
   await expect(page.locator("[data-expense-id]")).toHaveCount(5);
-  const settled = await placesOf({ list: card });
-  expectSamePlaces("com as linhas no lugar do esqueleto", reserved, settled);
+  expectSamePlaces(
+    "com as linhas no lugar do esqueleto",
+    reserved,
+    await placesOf({ list: card })
+  );
   expect(
     await page.evaluate(
       () => (window as unknown as { __shift: number }).__shift
     )
   ).toBeLessThanOrEqual(0.01);
-});
-
-test("por categoria: se a lista chega antes das categorias o esqueleto fica e a lista não anda quando as linhas entram", async ({
-  page,
-}) => {
-  await page.clock.setFixedTime(new Date(NOW));
-  const server = new FakeExpenseServer();
-  seedSplit(server);
-  let release: () => void = () => undefined;
-  server.categoriesGate = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-  await openExpenses(page, server);
-  await expect(page.locator("[data-expense-id]")).toHaveCount(5);
-  await expect(byCategory(page).locator("[data-share-skeleton]")).toBeVisible();
-  const card = page.getByRole("region", { name: "Despesas do período" });
-  const reserved = await placesOf({ list: card });
-  release();
-  await expect(byCategory(page).locator("[data-share-line]")).toHaveCount(3);
-  expectSamePlaces(
-    "com as categorias lidas depois da lista",
-    reserved,
-    await placesOf({ list: card })
-  );
 });
 
 test.describe("a 320 px com letra de 20 px", () => {
