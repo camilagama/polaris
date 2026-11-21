@@ -273,6 +273,7 @@ export function createExpenseRpcHandlers(dependencies: ExpenseRpcDependencies) {
         expenses: result.expenses.map(expenseReadModel),
         nextCursor: result.nextCursor,
         total: result.total,
+        totalsByCategory: result.totalsByCategory,
       };
     }
   );

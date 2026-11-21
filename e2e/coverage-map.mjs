@@ -410,7 +410,6 @@ export const FILE_SCREENS = [
       "apps/web/src/home/period-control.ts",
       "apps/web/src/home/use-first-steps-memory.ts",
       "apps/web/src/home/use-home-period.ts",
-      "apps/web/src/home/use-home-plan-limit.ts",
       "apps/web/src/home/use-home.ts",
     ],
     screens: ["home"],
@@ -844,6 +843,7 @@ export const SPEC_SCREENS = {
   ],
   "apps/web/e2e/legal-acceptance.e2e.ts": "all",
   "apps/web/e2e/leitor-de-tela-shell.e2e.ts": ["home", "products"],
+  "apps/web/e2e/listas-quadro-selo.e2e.ts": ["inventory", "settings"],
   "apps/web/e2e/lote-2-telas.e2e.ts": ["products", "customers", "settings"],
   "apps/web/e2e/money-nowrap-reflow.e2e.ts": [
     "sale",
@@ -851,6 +851,7 @@ export const SPEC_SCREENS = {
     "inventory",
   ],
   "apps/web/e2e/near-limit-notice.e2e.ts": ["products", "settings"],
+  "apps/web/e2e/plan-card.e2e.ts": "all",
   "apps/web/e2e/offline-attention.e2e.ts": ["settings", "attention"],
   "apps/web/e2e/offline-csp.e2e.ts": "lab",
   "apps/web/e2e/offline-devices.e2e.ts": [

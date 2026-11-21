@@ -1,4 +1,8 @@
 import CircleAlertIcon from "lucide-react/dist/esm/icons/circle-alert";
+import MonitorIcon from "lucide-react/dist/esm/icons/monitor";
+import MonitorSmartphoneIcon from "lucide-react/dist/esm/icons/monitor-smartphone";
+import SmartphoneIcon from "lucide-react/dist/esm/icons/smartphone";
+import TabletIcon from "lucide-react/dist/esm/icons/tablet";
 import { useCallback, useRef } from "react";
 import { Alert, AlertDescription } from "@/ui/alert";
 import { Badge } from "@/ui/badge";
@@ -15,7 +19,13 @@ import {
 } from "@/ui/dialog";
 import { Field, FieldContent, FieldDescription, FieldLabel } from "@/ui/field";
 import {
+  ROW_BODY_CLASS,
+  ROW_TEXT_CLASS,
+  RowTile,
+} from "../../catalog/screen-parts";
+import {
   confirmLabel,
+  type DeviceKind,
   type DeviceRow,
   END_OTHER_SESSIONS_HELP,
   END_OTHER_SESSIONS_LABEL,
@@ -160,6 +170,18 @@ function RevokeBody(props: RevokeFormProps) {
   );
 }
 
+const KIND_ICON: Readonly<Record<DeviceKind, typeof SmartphoneIcon>> = {
+  computer: MonitorIcon,
+  phone: SmartphoneIcon,
+  tablet: TabletIcon,
+  unknown: MonitorSmartphoneIcon,
+};
+
+function DeviceIcon({ kind }: { kind: DeviceKind }) {
+  const Icon = KIND_ICON[kind];
+  return <Icon />;
+}
+
 export function DeviceItem({
   actionError,
   busy,
@@ -207,23 +229,30 @@ export function DeviceItem({
   return (
     <li>
       <Card className="gap-2 px-(--card-spacing)">
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-          <p className="font-medium [overflow-wrap:anywhere]">
-            {row.labelText}
-          </p>
-          {row.isCurrent ? (
-            <Badge variant="outline">Este aparelho</Badge>
-          ) : null}
+        <div className="flex items-start gap-3">
+          <RowTile>
+            <DeviceIcon kind={row.kind} />
+          </RowTile>
+          <div className={ROW_BODY_CLASS}>
+            <div className={ROW_TEXT_CLASS}>
+              <p className="font-medium [overflow-wrap:anywhere]">
+                {row.labelText}
+              </p>
+              <p className="text-muted-foreground text-support">
+                Registrado em {row.registeredText} · visto por último em{" "}
+                {row.lastSeenText}
+              </p>
+              {row.isCurrent && !sessionGone ? (
+                <p className="text-muted-foreground text-support">
+                  {online ? THIS_DEVICE_ONLINE_HELP : THIS_DEVICE_OFFLINE_HELP}
+                </p>
+              ) : null}
+            </div>
+            {row.isCurrent ? (
+              <Badge variant="outline">Este aparelho</Badge>
+            ) : null}
+          </div>
         </div>
-        <p className="text-muted-foreground text-support">
-          Registrado em {row.registeredText} · visto por último em{" "}
-          {row.lastSeenText}
-        </p>
-        {row.isCurrent && !sessionGone ? (
-          <p className="text-muted-foreground text-support">
-            {online ? THIS_DEVICE_ONLINE_HELP : THIS_DEVICE_OFFLINE_HELP}
-          </p>
-        ) : null}
         {row.isCurrent ? null : (
           <>
             <Button

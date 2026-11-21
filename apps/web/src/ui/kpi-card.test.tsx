@@ -6,6 +6,7 @@ import {
   HeroValue,
   type KpiDelta,
   KPI_STRIP,
+  KPI_STRIP_THREE,
   KpiTile,
   KpiTileSkeleton,
 } from "./kpi-card";
@@ -17,6 +18,7 @@ import {
 
 const CLASS_ATTRIBUTE = /class="([^"]*)"/;
 const CURRENCY_SPAN = /<span class="([^"]*)" data-money-currency/;
+const FIT_IN_CQW_XL = /min\(var\(--text-value-xl\), ([\d.]+)cqw\)/;
 const FIT_IN_CQW = /min\(var\(--text-value-lg\), ([\d.]+)cqw\)/;
 const TEXT_IN_REM = /text-\[[\d.]+rem\]/;
 
@@ -204,6 +206,70 @@ describe("HeroValue sizes", () => {
     const skeleton = renderToStaticMarkup(<KpiTileSkeleton />);
     expect(skeleton).toContain("h-(--text-value-lg--line-height)");
     expect(skeleton).not.toContain("text-value-xl");
+  });
+});
+
+describe("HeroValue of the hero (xl)", () => {
+  const hero = (amount: string | null) =>
+    renderToStaticMarkup(<HeroValue amount={amount} size="xl" tile />);
+  const fit = (markup: string) => Number(FIT_IN_CQW_XL.exec(markup)?.[1]);
+
+  it("writes every amount in the xl box, with the line of xl, and the R$ and the cents a step smaller as in lg", () => {
+    for (const amount of ["129.90", "-99640.35", null]) {
+      const markup = hero(amount);
+      expect(markup).toContain("text-value-xl");
+      expect(markup).toContain("h-(--text-value-xl--line-height)");
+      expect(markup).not.toContain("text-value-lg");
+    }
+    expect(hero("129.90")).toContain("text-[0.56em]");
+    expect(hero("129.90")).toContain("text-[0.72em]");
+  });
+
+  it("steps down for a nine-digit amount, as the tile does, and never under the floor", () => {
+    const short = fit(hero("129.90"));
+    const nine = fit(hero("1234567.89"));
+    expect(nine).toBeLessThan(short);
+    expect(hero("1234567.89")).toContain(
+      "max(0.875rem, min(var(--text-value-xl)"
+    );
+    expect(fit(hero("-99640.35"))).toBeGreaterThan(nine);
+  });
+
+  it("is the same box for the hidden value, the missing one and the empty text", () => {
+    const empty = renderToStaticMarkup(
+      <HeroValue amount={null} emptyText="Sem números de hoje" size="xl" />
+    );
+    expect(empty).toContain("h-(--text-value-xl--line-height)");
+    expect(empty).toContain("Sem números de hoje");
+  });
+
+  it("is a tile of its own: the hero marks it, and the skeleton of the hero has the xl box", () => {
+    expect(tile({ hero: true })).toContain('data-kpi-hero=""');
+    expect(tile({})).not.toContain("data-kpi-hero");
+    const skeleton = renderToStaticMarkup(<KpiTileSkeleton hero />);
+    expect(skeleton).toContain("h-(--text-value-xl--line-height)");
+    expect(renderToStaticMarkup(<KpiTileSkeleton />)).toContain(
+      "h-(--text-value-lg--line-height)"
+    );
+  });
+});
+
+describe("the strip of the three tiles of the month", () => {
+  it("is three columns from 1024 px and one card from 1280 px, with a line between the cells", () => {
+    expect(KPI_STRIP_THREE).toContain("grid-cols-1");
+    expect(KPI_STRIP_THREE).toContain("lg:grid-cols-3");
+    expect(KPI_STRIP_THREE).toContain("xl:divide-x");
+    expect(KPI_STRIP_THREE).not.toContain("grid-cols-4");
+    expect(KPI_STRIP_THREE).not.toContain("md:grid-cols-");
+    expect(KPI_STRIP_THREE.match(/\bxl:rounded-xl\b/g)).toHaveLength(1);
+  });
+
+  it("makes its cells and its skeletons give up the card only from 1280 px", () => {
+    const skeleton = renderToStaticMarkup(<KpiTileSkeleton strip />);
+    expect(skeleton).toContain("xl:ring-0");
+    expect(renderToStaticMarkup(<KpiTileSkeleton />)).not.toContain(
+      "xl:ring-0"
+    );
   });
 });
 
