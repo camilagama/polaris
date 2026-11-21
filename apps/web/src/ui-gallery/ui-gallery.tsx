@@ -14,7 +14,6 @@ import { AnimatedFigure } from "@/ui/animated-figure";
 import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
 import { ButtonGroup } from "@/ui/button-group";
-import { OnDemandCalendar } from "@/ui/calendar-on-demand";
 import {
   Card,
   CardContent,
