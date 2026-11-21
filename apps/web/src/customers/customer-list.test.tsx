@@ -306,13 +306,12 @@ describe("the list of customers", () => {
     );
   });
 
-  it("goes under the contacts in a narrow card and beside them from 26 rem of card", () => {
+  it("goes under the contacts in a narrow window and at the right corner from 40 rem", () => {
     const html = render({
       customers: [customer(1, "Ana Lima", { lastPurchaseOn: "2026-11-18" })],
       total: 1,
     });
-    expect(html).toContain("@min-[26rem]:grid-cols-[minmax(0,1fr)_auto]");
-    expect(html).toContain("@container");
+    expect(html).toContain("min-[40rem]:items-end");
   });
 
   it("says Sem compras for a customer with none, and nothing where the purchases are not known", () => {

@@ -1,7 +1,7 @@
 import type { CustomerReadModel } from "@polaris/contracts";
 import MoreHorizontalIcon from "lucide-react/dist/esm/icons/ellipsis";
 import UsersIcon from "lucide-react/dist/esm/icons/users";
-import { useCallback, useState } from "react";
+import { type ReactNode, useCallback, useState } from "react";
 import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
 import { Card } from "@/ui/card";
@@ -201,6 +201,38 @@ interface ContactsLineProps {
   id: string;
 }
 
+interface RowTrailingProps {
+  badge: ReactNode;
+  /** The purchase text leaves the reading tree unless the row is only text (the customer was anonymized). */
+  hidden: boolean;
+  purchase: string | null;
+  purchaseId: string;
+}
+
+/** The state badge and the last purchase: under the contacts on a narrow window, at the right corner from 40 rem. */
+function RowTrailing({
+  badge,
+  hidden,
+  purchase,
+  purchaseId,
+}: RowTrailingProps) {
+  return (
+    <span className="flex min-w-0 flex-col items-start gap-1 min-[40rem]:items-end">
+      {badge}
+      {purchase ? (
+        <span
+          aria-hidden={hidden ? true : undefined}
+          className="text-muted-foreground text-support"
+          data-last-purchase=""
+          id={purchaseId}
+        >
+          {purchase}
+        </span>
+      ) : null}
+    </span>
+  );
+}
+
 function ContactsLine({ contacts, hidden, id }: ContactsLineProps) {
   return (
     <span
@@ -278,31 +310,26 @@ function CustomerMain({
           ) : null}
         </span>
         {hasStateBadge || purchaseText ? (
-          <span className="flex min-w-0 flex-col items-start gap-1 min-[40rem]:items-end">
-            {hasStateBadge ? (
-              <Badge
-                aria-hidden={isAnonymized ? undefined : true}
-                id={stateId}
-                variant={
-                  customer.status === "archived" && !isAnonymized
-                    ? "warning"
-                    : "outline"
-                }
-              >
-                {customerStatusLabel(customer)}
-              </Badge>
-            ) : null}
-            {purchaseText ? (
-              <span
-                aria-hidden={isAnonymized ? undefined : true}
-                className="text-muted-foreground text-support"
-                data-last-purchase=""
-                id={purchaseId}
-              >
-                {purchaseText}
-              </span>
-            ) : null}
-          </span>
+          <RowTrailing
+            badge={
+              hasStateBadge ? (
+                <Badge
+                  aria-hidden={isAnonymized ? undefined : true}
+                  id={stateId}
+                  variant={
+                    customer.status === "archived" && !isAnonymized
+                      ? "warning"
+                      : "outline"
+                  }
+                >
+                  {customerStatusLabel(customer)}
+                </Badge>
+              ) : null
+            }
+            hidden={!isAnonymized}
+            purchase={purchaseText}
+            purchaseId={purchaseId}
+          />
         ) : null}
       </span>
     </>
