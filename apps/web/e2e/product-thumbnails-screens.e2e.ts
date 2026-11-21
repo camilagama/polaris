@@ -15,6 +15,8 @@ const ORGANIZATION = {
   role: "owner",
   timezone: "America/Sao_Paulo",
 };
+const NOW = new Date("2026-10-14T12:00:00-03:00");
+const STAMP = NOW.toISOString();
 const id = (n: number) => `0199c2d0-0000-7000-8000-0000000000${n}`;
 const COVER_A = "0199c2d0-0000-7000-8000-000000000c01";
 const COVER_MISSING = "0199c2d0-0000-7000-8000-000000000c03";
@@ -36,14 +38,14 @@ const product = (n: number, name: string, coverAssetId: string | null) => ({
   archivedAt: null,
   categoryId: null,
   coverAssetId,
-  createdAt: "2026-10-14T12:00:00.000Z",
+  createdAt: STAMP,
   deletedAt: null,
   description: null,
   id: id(20 + n),
   name,
   organizationId: ORGANIZATION.id,
   status: "active",
-  updatedAt: "2026-10-14T12:00:00.000Z",
+  updatedAt: STAMP,
   version: 1,
 });
 
@@ -69,7 +71,7 @@ const entry = (
   productStatus: "active",
   quantity: 5,
   sku: `SKU-${n}${color}`,
-  updatedAt: "2026-10-14T12:00:00.000Z",
+  updatedAt: STAMP,
   values: [{ optionName: "color", optionValueName: color }],
   variantId: id(40 + n + (color === "Azul" ? 0 : 10)),
   version: 1,
@@ -117,6 +119,7 @@ async function installStore(
     products?: unknown[];
   }
 ): Promise<Store> {
+  await page.clock.setFixedTime(NOW);
   await page.goto("about:blank");
   const photo = await webp(page, 320, 320);
   const store: Store = { balanceRequests: [], thumbBatches: [] };
