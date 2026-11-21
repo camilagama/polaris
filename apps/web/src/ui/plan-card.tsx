@@ -4,13 +4,14 @@ import { Card } from "./card";
 
 /**
  * The strip of the card: bars that grow, in the muted tone, the last one in ink at low opacity. Tokens only, no
- * gradient and no bitmap, and nothing for a reader: the words say it all.
+ * gradient and no bitmap, and nothing for a reader: the words say it all. A window shorter than 56 rem leaves it out,
+ * so the destinations of the column keep their room.
  */
 function PlanCardArt() {
   return (
     <svg
       aria-hidden="true"
-      className="block h-10 w-full"
+      className="hidden h-10 w-full [@media(min-height:56rem)]:block"
       data-plan-card-art=""
       focusable="false"
       preserveAspectRatio="xMidYMid slice"
@@ -93,14 +94,16 @@ export function PlanCard({
   return (
     <Card className="gap-0 bg-background py-0" data-plan-card="">
       {art ? <PlanCardArt /> : null}
-      <div className="grid gap-2 p-3">
+      <div className="grid gap-2 p-3 [@media(min-width:47.5rem)_and_(max-height:45rem)]:gap-1.5 [@media(min-width:47.5rem)_and_(max-height:45rem)]:p-2">
         {usage === null ? null : (
           <div className="grid gap-1.5">
             <p className="text-foreground text-sm">{usage.text}</p>
             <PlanCardBar share={usage.share} />
           </div>
         )}
-        <p className="text-muted-foreground text-xs">{pitch}</p>
+        <p className="text-muted-foreground text-xs [@media(min-width:47.5rem)_and_(max-height:45rem)]:hidden">
+          {pitch}
+        </p>
         <a
           className={buttonVariants({
             className: "w-full",

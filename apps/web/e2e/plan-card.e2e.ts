@@ -48,7 +48,7 @@ test.describe("o cartão do plano Free", () => {
   test("1280 px: no pé da lateral, depois de Ajuda e contato, com o uso, o pitch e o botão de contorno", async ({
     page,
   }) => {
-    await page.setViewportSize({ height: 800, width: 1280 });
+    await page.setViewportSize({ height: 900, width: 1280 });
     const reads = await serveFoot(page, { plan: FREE_PLAN });
     await page.goto("/products");
     await expect(card(page)).toBeVisible();
@@ -83,17 +83,26 @@ test.describe("o cartão do plano Free", () => {
     const steps = await box(page.locator("[data-menu-first-steps]"));
     expect(steps.y + steps.height).toBeLessThanOrEqual(cardBox.y);
     await expect.poll(() => reads.plan).toBe(1);
+    // numa janela baixa a faixa de arte e o pitch saem para os destinos não perderem lugar; o uso e o botão ficam
+    await page.setViewportSize({ height: 700, width: 1280 });
+    await expect(card(page).locator("[data-plan-card-art]")).toBeHidden();
+    await expect(card(page).getByText(PITCH)).toBeHidden();
+    await expect(card(page)).toContainText(USE_TEXT);
+    await expect(proLink(page)).toBeVisible();
   });
 
   for (const size of [
-    { height: 720, width: 1280 },
-    { height: 600, width: 760 },
+    { fits: true, height: 800, width: 1280 },
+    { fits: true, height: 720, width: 1280 },
+    { fits: false, height: 600, width: 760 },
   ]) {
     test(`a lateral não perde destino com o cartão a ${size.width} x ${size.height}: mesma altura, Ajuda e contato a 1 toque, cartão preso ao pé`, async ({
       browser,
     }) => {
       const heights = async (plan: unknown) => {
-        const context = await browser.newContext({ viewport: size });
+        const context = await browser.newContext({
+          viewport: { height: size.height, width: size.width },
+        });
         const page = await context.newPage();
         await serveFoot(page, { plan });
         await page.goto("/products");
@@ -120,9 +129,17 @@ test.describe("o cartão do plano Free", () => {
         exact: true,
         name: "Ajuda e contato",
       });
+      if (size.fits) {
+        await expect(help).toBeInViewport({ ratio: 1 });
+        expect(
+          await page
+            .locator('[data-sidebar="content"]')
+            .evaluate((node) => node.scrollHeight - node.clientHeight)
+        ).toBeLessThanOrEqual(0);
+      }
       await help.scrollIntoViewIfNeeded();
       await expect(help).toBeInViewport({ ratio: 1 });
-      await expect(proLink(page)).toBeInViewport({ ratio: 1 });
+      await expect(card(page)).toBeInViewport({ ratio: 1 });
       const sidebarBox = await box(page.locator('[data-slot="sidebar"]'));
       const cardBox = await box(card(page));
       expect(cardBox.y + cardBox.height).toBeLessThanOrEqual(
