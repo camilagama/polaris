@@ -61,9 +61,9 @@ const SPECS: Readonly<Record<string, SpecRule>> = {
     why: "the window of 1280 px is not a phone",
   },
   "home/numero-em-mono.e2e.ts": {
-    bare: 4,
+    bare: 3,
     coarse: 1,
-    why: "the plain cases read the face of the figures and the late font at 360 and 1280 px, not a sweep of the width; the windows of 760 and 1280 px are not a phone",
+    why: "the plain cases read the face of the figures at 360 and 1280 px, not a sweep of the width; the windows of 760 and 1280 px are not a phone",
   },
   "home/valores-e-ranking.e2e.ts": {
     bare: 1,

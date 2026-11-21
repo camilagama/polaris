@@ -1,16 +1,7 @@
 /// <reference lib="dom" />
 
 import { expect, test } from "@playwright/test";
-import {
-  expectGeist,
-  expectMono,
-  familiesOf,
-  fontsLoaded,
-  holdMonoFont,
-  MONO,
-  shiftsSoFar,
-  watchShifts,
-} from "../mono-face";
+import { expectGeist, expectMono, familiesOf, MONO } from "../mono-face";
 import {
   assertNoPageScroll,
   assertNothingClipped,
@@ -130,8 +121,6 @@ test.describe("o visor cabe em todas as larguras (AC-2, AC-5)", () => {
                   scrollWidth: area?.scrollWidth ?? 0,
                   size: Number.parseFloat(getComputedStyle(node).fontSize),
                   text: node.textContent?.trim() ?? "",
-                  width:
-                    node.firstElementChild?.getBoundingClientRect().width ?? 0,
                 };
               })
             );
@@ -211,61 +200,4 @@ test.describe("o visor cabe em todas as larguras (AC-2, AC-5)", () => {
       }
     }
   });
-});
-
-test.describe("a chegada tardia da Geist Mono não move nada (AC-4)", () => {
-  for (const { height, width } of [
-    { height: 740, width: 360 },
-    { height: 800, width: 1280 },
-  ]) {
-    test(`a troca da face de reserva para a Geist Mono muda o número em até 2% e o CLS fica em 0,01, a ${width} px`, async ({
-      page,
-    }) => {
-      await page.setViewportSize({ height, width });
-      const mono = await holdMonoFont(page);
-      await page.addInitScript(() => {
-        (window as unknown as { __early: boolean }).__early = true;
-      });
-      await openHome(page, new FakeServer(alone(9_964_035)));
-      const principal = region(page, "Vendas hoje");
-      await expect(principal.locator("[data-kpi-value]")).toHaveText(
-        "R$ 99.640,35",
-        { timeout: 20_000 }
-      );
-      await settled(page);
-      expect(mono.held, "a fonte foi retida").toBeGreaterThan(0);
-      const measure = () =>
-        page.locator("[data-kpi-value]").evaluateAll((nodes) =>
-          nodes.map((node) => ({
-            height: node.getBoundingClientRect().height,
-            top: node.getBoundingClientRect().top + window.scrollY,
-            width: (node.firstElementChild ?? node).getBoundingClientRect()
-              .width,
-          }))
-        );
-      const before = await measure();
-      await watchShifts(page);
-      mono.release();
-      await expect
-        .poll(async () =>
-          (await fontsLoaded(page)).every((s) => s === "loaded")
-        )
-        .toBe(true);
-      await settled(page);
-      const after = await measure();
-      expect(await shiftsSoFar(page)).toBeLessThanOrEqual(0.01);
-      expect(after.length).toBe(before.length);
-      for (const [index, then] of before.entries()) {
-        const now = after[index];
-        expect(
-          Math.abs((now?.width ?? 0) - then.width) / then.width,
-          `a largura do número ${index + 1} mudou mais de 2%`
-        ).toBeLessThanOrEqual(0.02);
-        expect(Math.abs((now?.top ?? 0) - then.top)).toBeLessThanOrEqual(1);
-        expect(Math.abs((now?.height ?? 0) - then.height)).toBeLessThanOrEqual(
-          1
-        );
-      }
-    });
-  }
 });

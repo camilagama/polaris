@@ -32,35 +32,60 @@ export async function expectGeist(target: Locator, what: string) {
   expect(await firstFamily(target), `${what} em Geist`).toBe(SANS);
 }
 
+const MONO_FACE = "Geist Mono Variable";
+
+export function monoFaceStatus(page: Page) {
+  return page.evaluate(
+    (family) =>
+      [...document.fonts]
+        .filter((face) => face.family.replaceAll('"', "") === family)
+        .map((face) => face.status),
+    MONO_FACE
+  );
+}
+
 export function fontsLoaded(page: Page) {
-  return page.evaluate(async () => {
+  return page.evaluate(async (family) => {
     await document.fonts.ready;
     return [...document.fonts]
-      .filter((face) => face.family.includes("Geist Mono"))
+      .filter((face) => face.family.replaceAll('"', "") === family)
       .map((face) => face.status);
-  });
+  }, MONO_FACE);
 }
 
 /** Not `buffered`: only shifts after the call are counted. */
 export function watchShifts(page: Page) {
   return page.evaluate(() => {
     const shifts = { total: 0 };
-    (window as unknown as { __shifts: typeof shifts }).__shifts = shifts;
-    new PerformanceObserver((list) => {
+    const observer = new PerformanceObserver((list) => {
       for (const entry of list.getEntries()) {
-        const shift = entry as PerformanceEntry & { value: number };
-        shifts.total += shift.value;
+        shifts.total += (entry as PerformanceEntry & { value: number }).value;
       }
-    }).observe({ type: "layout-shift" });
+    });
+    observer.observe({ type: "layout-shift" });
+    Object.assign(window, { __shiftObserver: observer, __shifts: shifts });
   });
 }
 
+/** The shifts since `watchShifts`, after two frames and the records the observer still holds. */
 export function shiftsSoFar(page: Page): Promise<number> {
-  return page.evaluate(
-    () =>
-      (window as unknown as { __shifts?: { total: number } }).__shifts?.total ??
-      Number.NaN
-  );
+  return page.evaluate(async () => {
+    await new Promise<void>((resolve) =>
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+    );
+    const held = window as unknown as {
+      __shiftObserver?: PerformanceObserver;
+      __shifts?: { total: number };
+    };
+    for (const entry of held.__shiftObserver?.takeRecords() ?? []) {
+      if (held.__shifts) {
+        held.__shifts.total += (
+          entry as PerformanceEntry & { value: number }
+        ).value;
+      }
+    }
+    return held.__shifts?.total ?? Number.NaN;
+  });
 }
 
 /** The file is the hashed asset of the build, hence the glob. */

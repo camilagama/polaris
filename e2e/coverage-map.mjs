@@ -852,6 +852,7 @@ export const SPEC_SCREENS = {
     "inventory",
   ],
   "apps/web/e2e/near-limit-notice.e2e.ts": ["products", "settings"],
+  "apps/web/e2e/numero-em-mono-fonte.e2e.ts": ["home", "dashboard"],
   "apps/web/e2e/offline-attention.e2e.ts": ["settings", "attention"],
   "apps/web/e2e/offline-csp.e2e.ts": "lab",
   "apps/web/e2e/offline-devices.e2e.ts": [

@@ -50,9 +50,9 @@ const HERO_BOX =
   "h-(--text-value-lg--line-height) whitespace-nowrap font-mono font-semibold text-value-lg tabular-nums";
 
 /** A little more than the figure takes, so the fit does not rest on a fraction of a pixel (the area clips what overflows). */
-const FIGURE_FIT_MARGIN = 1.02;
+const FIGURE_FIT_MARGIN = 1.04;
 
-/** The floor of the figure of a tile: low enough for the longest amount a store writes (17 characters) in the narrowest area. */
+/** The floor of the figure of a tile: "R$ 1.234.567,89" fits the narrowest area at it; an amount longer than that is clipped by the area. */
 const TILE_FIGURE_FLOOR = "0.875rem";
 
 /** Geist Mono has one advance for every glyph, so the width in em is known without measuring each amount. */

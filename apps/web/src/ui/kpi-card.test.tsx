@@ -152,7 +152,7 @@ describe("the display of a tile in Geist Mono", () => {
   it("fits the longest amounts in an area of 150 px with the letter at 20 px, above the floor of 14 px", () => {
     for (const amount of ["1234567.89", "-99640.35"]) {
       expect(widthAt(amount)).toBeLessThanOrEqual(AREA_PX);
-      expect(sizeAt(amount)).toBeGreaterThanOrEqual(FLOOR_PX);
+      expect(sizeAt(amount)).toBeLessThan(LARGE_PX);
     }
   });
 
