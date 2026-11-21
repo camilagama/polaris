@@ -1345,14 +1345,6 @@ export function UiGallery() {
               hero
               id="galeria-kpi-hoje"
               note="3 vendas"
-              spark={
-                <OnDemandSparkline
-                  color="var(--chart-sales)"
-                  domain="zero"
-                  height={36}
-                  values={GALLERY_KPI_SERIES}
-                />
-              }
               title="Vendas hoje"
               value={<HeroValue amount="320.10" size="xl" tile />}
             />
