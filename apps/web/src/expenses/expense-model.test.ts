@@ -571,6 +571,60 @@ describe("categoryShareRows", () => {
     });
   });
 
+  it("writes the name the server sent for a category this screen has not read yet, never Sem categoria", () => {
+    const rows = categoryShareRows(
+      [
+        ...totalsOf("100.00"),
+        {
+          categoryId: "0199c2d0-0000-7000-8000-0000000000f1",
+          categoryName: "Brindes",
+          count: 1,
+          total: "30.00",
+        },
+        {
+          categoryArchived: true,
+          categoryId: "0199c2d0-0000-7000-8000-0000000000f2",
+          categoryName: "Feira",
+          count: 1,
+          total: "20.00",
+        },
+      ],
+      CATEGORIES,
+      "150.00"
+    );
+    expect(rows?.map((row) => [row.name, row.categoryId])).toEqual([
+      ["Aluguel", CATEGORIES[0]?.id],
+      ["Brindes", null],
+      ["Feira (arquivada)", null],
+    ]);
+    expect(rows?.map((row) => row.name)).not.toContain("Sem categoria");
+  });
+
+  it("keeps the local name and the filter of a category the screen already read", () => {
+    const rows = categoryShareRows(
+      [
+        {
+          categoryId: CATEGORIES[0]?.id as string,
+          categoryName: "Nome do servidor",
+          count: 1,
+          total: "100.00",
+        },
+        {
+          categoryId: "0199c2d0-0000-7000-8000-0000000000f1",
+          categoryName: "Brindes",
+          count: 1,
+          total: "30.00",
+        },
+      ],
+      CATEGORIES,
+      "130.00"
+    );
+    expect(rows?.[0]).toMatchObject({
+      categoryId: CATEGORIES[0]?.id,
+      name: "Aluguel",
+    });
+  });
+
   it.each([
     ["an answer with no split", undefined, "100.00"],
     ["a single category", totalsOf("100.00"), "100.00"],
