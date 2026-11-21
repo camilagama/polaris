@@ -608,7 +608,7 @@ export function PaymentProfilesPage() {
             }
           >
             <div className="flex items-center gap-1">
-              <ScreenTitle>Formas de receber</ScreenTitle>
+              <ScreenTitle>Formas de receber (ensaio)</ScreenTitle>
               <HelpTip about="Formas de receber">
                 Organize métodos, parcelamento, prazo de recebimento e taxas por
                 perfil.
