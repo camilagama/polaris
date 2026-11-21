@@ -1,7 +1,21 @@
 import CalendarClockIcon from "lucide-react/dist/esm/icons/calendar-clock";
+import SparklesIcon from "lucide-react/dist/esm/icons/sparkles";
 import { type MouseEvent, useSyncExternalStore } from "react";
+import { dialogEntries } from "@/ui/dialog-history";
+import { PlanCard as PlanCardBox } from "@/ui/plan-card";
 import { ProgressRing } from "@/ui/progress-ring";
-import { SidebarMenu, SidebarMenuButton, SidebarMenuItem } from "@/ui/sidebar";
+import {
+  SidebarMenu,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  useSidebar,
+} from "@/ui/sidebar";
+import { leaveForReturn } from "../lib/kept-for-return";
+import { isPlainClick } from "../subscription/limit-help";
+import { limitUsageText } from "../subscription/limit-help-model";
+import type { PlanCardView } from "../subscription/plan-notice";
+import { PRO_PITCH } from "../subscription/subscription-model";
+import { navigateInApp } from "./address";
 import {
   FIRST_STEPS_ANCHOR,
   FIRST_STEPS_TOTAL,
@@ -107,5 +121,78 @@ export function MenuProgress({
       {firstSteps === null ? null : <FirstStepsItem done={firstSteps} />}
       {chargeDay === null ? null : <TrialItem chargeDay={chargeDay} />}
     </SidebarMenu>
+  );
+}
+
+const PLAN_NAME = "Plano Free";
+const PRO_LABEL = "Conhecer o Pro";
+
+/**
+ * Opens the Assinatura inside the app, so a draft kept for the return stays (as "Conhecer o Pro" of the limit notices
+ * does); the "Mais" sheet of the phone closes first, and the step back it leaves in the history is taken before the
+ * new address is pushed.
+ */
+function useOpenSubscription(): (event: MouseEvent<HTMLAnchorElement>) => void {
+  const { isMobile, setOpenMobile } = useSidebar();
+  return (event) => {
+    if (!isPlainClick(event)) {
+      return;
+    }
+    event.preventDefault();
+    if (isMobile) {
+      setOpenMobile(false);
+    }
+    window.setTimeout(() => {
+      dialogEntries().afterSteps(() => {
+        leaveForReturn();
+        navigateInApp(SUBSCRIPTION_HREF);
+      });
+    }, 0);
+  };
+}
+
+/**
+ * The card of the Free plan, below the lines of progress: always, for the owner of a Free store. The card with its
+ * strip on the desktop, the compact one (no strip) in the "Mais" sheet, and only an icon with the text in the tooltip
+ * when the sidebar is folded (the folded column is 3 rem wide).
+ */
+export function PlanCard({ view }: { view: PlanCardView }) {
+  const { isMobile, state } = useSidebar();
+  const open = useOpenSubscription();
+  const { usage } = view;
+  if (!isMobile && state === "collapsed") {
+    const counted =
+      usage === null ? "" : `${usage.used} de ${usage.max} variantes`;
+    return (
+      <SidebarMenu data-plan-card-folded="">
+        <SidebarMenuItem>
+          <SidebarMenuButton
+            aria-label={`${PLAN_NAME}, ${counted ? `${counted}, ` : ""}conhecer o Pro`}
+            href={SUBSCRIPTION_HREF}
+            onClick={open}
+            tooltip={counted ? `${PLAN_NAME} · ${counted}` : PLAN_NAME}
+          >
+            <SparklesIcon aria-hidden />
+          </SidebarMenuButton>
+        </SidebarMenuItem>
+      </SidebarMenu>
+    );
+  }
+  return (
+    <PlanCardBox
+      art={!isMobile}
+      buttonLabel={PRO_LABEL}
+      href={SUBSCRIPTION_HREF}
+      onOpen={open}
+      pitch={PRO_PITCH}
+      usage={
+        usage === null
+          ? null
+          : {
+              share: usage.used / usage.max,
+              text: limitUsageText({ ...usage, subject: "variants" }),
+            }
+      }
+    />
   );
 }

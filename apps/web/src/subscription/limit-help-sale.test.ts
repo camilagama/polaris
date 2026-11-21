@@ -6,8 +6,8 @@ import { describe, expect, it } from "vitest";
 /**
  * AC-8 of the corte 1.6: the sale never meets a limit of the plan. No notice, link or way to the Pro on the screens of
  * the sale (Vender, the detail, the history), and the server's sale commands never check a limit, so a store at every
- * limit (variants, images, goals) still confirms its sales. The Início has one line at the end of the page (the near-limit
- * notice), so only the two files that carry it may name the help, and they are listed exactly.
+ * limit (variants, images, goals) still confirms its sales. The Início has no warning of the limit either: the card of the
+ * plan lives in the shell, so no file of the Início may name the help.
  */
 const src = fileURLToPath(new URL("..", import.meta.url));
 const db = fileURLToPath(
@@ -30,7 +30,6 @@ const isScreenSource = (name: string) =>
 
 const HOME_FORBIDDEN =
   /Conhecer o Pro|entitlement_limit_reached|chegou ao limite|LimitHelp\b|useLimitHelp/;
-const HOME_NEAR_LIMIT_LINE = ["home-page.tsx", "use-home-plan-limit.ts"];
 
 describe("a venda não muda com os limites do plano (corte 1.6, AC-8)", () => {
   it("as telas da venda não têm aviso, link nem caminho até o Pro", () => {
@@ -42,14 +41,14 @@ describe("a venda não muda com os limites do plano (corte 1.6, AC-8)", () => {
     }
   });
 
-  it("o Início só nomeia o aviso de limite nos dois arquivos da sua linha, e nunca o texto da recusa nem o link", () => {
+  it("o Início não nomeia o aviso de limite, nem o texto da recusa, nem o link", () => {
     const files = sourcesIn(join(src, "home"), isScreenSource);
     expect(files.length).toBeGreaterThan(10);
     const naming = files
       .filter((file) => LIMIT_ON_SCREEN.test(readFileSync(file, "utf8")))
       .map((file) => file.slice(file.lastIndexOf("/") + 1))
       .sort();
-    expect(naming).toEqual(HOME_NEAR_LIMIT_LINE);
+    expect(naming).toEqual([]);
     for (const file of files) {
       const text = readFileSync(file, "utf8");
       expect(text, file).not.toMatch(HOME_FORBIDDEN);

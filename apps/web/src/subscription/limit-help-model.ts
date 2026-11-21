@@ -179,34 +179,3 @@ export function freeableLineText(view: NearLimitView): string | null {
   const what = count === 1 ? "produto arquivado" : "produtos arquivados";
   return `Você tem ${count} ${what} sem estoque. Excluir libera vaga.`;
 }
-
-const HOME_SUBJECTS: readonly NearLimitSubject[] = ["variants", "images"];
-
-const shareOf = (view: NearLimitView) => view.usage.used / view.usage.max;
-
-/**
- * The one warning line of the Início, from one read of the plan: the same rule as the cadastro screens
- * (`nearLimitFor`) for variants and images, and the page says one line only, the most pressing: the count at its limit
- * or over it before the one that is only close, then the larger share, variants on a tie.
- */
-export function nearLimitForHome(input: {
-  billingSelfService: boolean;
-  canManageBilling: boolean;
-  plan: PlanRead | null;
-}): NearLimitView | null {
-  let best: NearLimitView | null = null;
-  for (const subject of HOME_SUBJECTS) {
-    const view = nearLimitFor({ ...input, subject });
-    if (view === null) {
-      continue;
-    }
-    const worse =
-      best === null ||
-      (view.kind === "reached" && best.kind === "near") ||
-      (view.kind === best.kind && shareOf(view) > shareOf(best));
-    if (worse) {
-      best = view;
-    }
-  }
-  return best;
-}

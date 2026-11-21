@@ -17,7 +17,6 @@ import {
 } from "../offline/runtime/runtime-context";
 import { useSessionOver } from "../offline/runtime/session-ended";
 import { useLocalWorkspace } from "../offline/runtime/use-local-workspace";
-import { NearLimitNotice } from "../subscription/limit-help";
 import { ClosedStoreLine, ReopenedNotice } from "./closed-store-line";
 import { AttentionBlock, AttentionNotes } from "./home-attention";
 import { ChartBlock } from "./home-chart";
@@ -57,7 +56,6 @@ import {
 } from "./use-first-steps-memory";
 import { type HomeFigures, type HomeState, useHome } from "./use-home";
 import { useHomePeriod } from "./use-home-period";
-import { useHomePlanLimit } from "./use-home-plan-limit";
 
 /**
  * The Início (`/`): "Nova venda" at once, at the top, depending on no read; then "Precisa de ação" (only when there is
@@ -958,15 +956,6 @@ function FigureArea({
   );
 }
 
-/** The plan's line sits under everything: it waits for the cards and the goal, and is not for a refused session. */
-function planLineWaits(
-  state: HomeState,
-  blocks: Blocks,
-  goalPending: boolean
-): boolean {
-  return state.sessionRefused || blocks.pending === true || goalPending;
-}
-
 /**
  * The blocks under the cards wait for the first answer of the goals of the store: the shape of the row of the chart is
  * that answer's (a card beside it, or a thin strip over it). A read again of the same store keeps what is on the screen.
@@ -1079,7 +1068,6 @@ export function HomePage() {
     picked.loading && online,
     state.goals.status
   );
-  const planLimit = useHomePlanLimit();
 
   // with the session refused nothing about the stock is known: only this device's own line can be said
   const stock: HomeState["stock"] =
@@ -1133,10 +1121,6 @@ export function HomePage() {
           />
         </PeriodControlProvider>
       </div>
-      <NearLimitNotice
-        hidden={planLineWaits(state, blocks, goalPending)}
-        view={planLimit}
-      />
     </div>
   );
 }
