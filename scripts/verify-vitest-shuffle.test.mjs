@@ -30,7 +30,9 @@ const VITEST_CONFIG_NAME = /^vitest\..*config\.[cm]?[jt]s$/;
 const SKIPPED_FOLDERS = new Set([
   ".codex-worktrees",
   ".git",
+  ".stryker-tmp",
   ".wrangler",
+  "coverage",
   "dist",
   "node_modules",
 ]);
@@ -289,6 +291,7 @@ describe("the list", () => {
         "vitest.config.ts",
         "apps/x/vitest.new.config.mts",
         "apps/x/node_modules/y/vitest.config.ts",
+        "packages/d/.stryker-tmp/sandbox/vitest.mutation.config.ts",
         "apps/x/vitest.setup.ts",
       ]) {
         mkdirSync(path.dirname(path.join(base, file)), { recursive: true });

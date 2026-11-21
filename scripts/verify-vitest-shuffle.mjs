@@ -14,7 +14,9 @@ import { stripComments } from "./verify-no-history-comments.mjs";
  * set `shuffle: true` (files and tests) or `shuffle: { files: true, tests: true }` with every key the list asks for to
  * the literal `true`; the keys of the blocks of one project add up, at any depth. An object of `projects: [...]` is a
  * project of its own: with `extends: true` and no `sequence` it inherits the root's, otherwise its own `sequence` has to
- * turn `tests` on. Not caught: a `shuffle` built in a variable or a spread, an order switched off from the command line.
+ * turn `tests` on. Not caught: a `shuffle` built in a variable or a spread, `projects` that is not an array literal
+ * (a variable, a spread) or is nested in another project, a regular expression literal with a quote in it, an order
+ * switched off from the command line.
  * Quoted keys (`"sequence":`) are not recognised and fail loudly. A config that is not in the list is not read.
  */
 const root = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
