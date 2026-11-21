@@ -1,7 +1,7 @@
 /// <reference lib="dom" />
 import type { Locator, Page, Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
-import { axeFaults } from "../e2e-pwa/ui-guardrails/measures";
+import { axeFaults, emptyIconFaults } from "../e2e-pwa/ui-guardrails/measures";
 import {
   datePickerButton,
   FORM_VIEWPORTS,
@@ -882,6 +882,7 @@ test("o vazio com categoria diz 'Nenhuma despesa encontrada com estes filtros.' 
   const empty = page.locator("[data-empty-state]");
   await expect(empty).toContainText(EMPTY_WITH_FILTERS);
   await expect(empty).toHaveAttribute("role", "status");
+  expect(await emptyIconFaults(page, 1)).toEqual([]);
   await expect(
     empty.getByRole("button", { exact: true, name: "Nova despesa" })
   ).toHaveCount(0);
@@ -1640,6 +1641,7 @@ test("o vazio do período é só a frase: o Nova despesa único é o do título,
   await expect(empty).toBeVisible();
   await expect(empty.getByText("Toque em")).toHaveCount(0);
   expect(await axeFaults(page, "[data-empty-state]")).toEqual([]);
+  expect(await emptyIconFaults(page, 1)).toEqual([]);
   const only = page.getByRole("button", { exact: true, name: "Nova despesa" });
   await expect(only).toHaveCount(1);
   await expect(empty.getByRole("button")).toHaveCount(0);

@@ -1,3 +1,4 @@
+import CheckIcon from "lucide-react/dist/esm/icons/check";
 import CircleAlertIcon from "lucide-react/dist/esm/icons/circle-alert";
 import TriangleAlertIcon from "lucide-react/dist/esm/icons/triangle-alert";
 import {
@@ -12,6 +13,7 @@ import { cn } from "@/lib/utils";
 import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
 import { Button, buttonVariants } from "@/ui/button";
 import { Card } from "@/ui/card";
+import { EmptyState } from "@/ui/empty-state";
 import { MoneyText } from "@/ui/hidden-values";
 import { ActionStrip } from "../app-shell/action-strip";
 import { tabHref } from "../app-shell/navigation-model";
@@ -142,7 +144,7 @@ export function AttentionFrame({
   );
 }
 
-/** A state of the page that is one line in a card: empty, the offline mode off or still getting ready. */
+/** A state of the page that is one line in a card: the offline mode off or still getting ready. */
 export function AttentionStateCard({
   children,
   role,
@@ -411,10 +413,12 @@ export function AttentionPanel({
   if (summary.items.length === 0) {
     return (
       <AttentionFrame>
-        <AttentionStateCard>
-          Nenhuma pendência de envio. Tudo o que foi feito sem internet foi
-          aceito.
-        </AttentionStateCard>
+        <EmptyState
+          afterRead
+          icon={CheckIcon}
+          support="Tudo o que foi feito sem internet foi aceito."
+          title="Nenhuma pendência de envio."
+        />
         {notices}
       </AttentionFrame>
     );

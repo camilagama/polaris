@@ -1,7 +1,7 @@
 /// <reference lib="dom" />
 import type { Page, Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
-import { axeFaults } from "../e2e-pwa/ui-guardrails/measures";
+import { axeFaults, emptyIconFaults } from "../e2e-pwa/ui-guardrails/measures";
 import { FORM_VIEWPORTS } from "./date-pickers";
 import { activateByKeyboard, expectFocusRing } from "./focus-ring";
 import {
@@ -676,6 +676,7 @@ test("Clientes: a lista vazia é só a frase curta, e o único Novo cliente é o
   await expect(empty.getByText("Nenhum cliente ainda.")).toBeVisible();
   await expect(page.getByText("Cadastre o primeiro")).toHaveCount(0);
   expect(await axeFaults(page, "[data-empty-state]")).toEqual([]);
+  expect(await emptyIconFaults(page, 1)).toEqual([]);
   await expect(empty.getByRole("button")).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Novo cliente" })).toHaveCount(
     1

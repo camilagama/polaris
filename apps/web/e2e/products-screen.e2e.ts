@@ -6,6 +6,7 @@ import {
   serveUnderProductionCsp,
   watchCspViolations,
 } from "./csp-fixture";
+import { emptyIconFaults } from "../e2e-pwa/ui-guardrails/measures";
 import { activateByKeyboard, expectFocusRing } from "./focus-ring";
 import { solidPng } from "./media-fixtures";
 import { outboxCommands } from "./outbox-commands";
@@ -765,6 +766,7 @@ test("sem produto, a tela convida a cadastrar o primeiro, e o botão abre o form
 }) => {
   await openServerScreen(page, { lists: [answer([])] });
   await expect(page.getByText("Nenhum produto ainda")).toBeVisible();
+  expect(await emptyIconFaults(page, 1)).toEqual([]);
   await page.getByRole("button", { name: "Novo produto" }).last().click();
   await expect(page.getByLabel("Nome do produto")).toBeFocused();
 });

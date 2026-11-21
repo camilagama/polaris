@@ -1,7 +1,10 @@
 /// <reference lib="dom" />
 import type { Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
-import { axeFaults } from "../../e2e-pwa/ui-guardrails/measures";
+import {
+  axeFaults,
+  emptyIconFaults,
+} from "../../e2e-pwa/ui-guardrails/measures";
 import {
   UPDATED_AT,
   UPDATED_NAME,
@@ -348,6 +351,7 @@ test("um mês sem vendas nem despesas mostra o estado vazio, sem cartões", asyn
   await expect(empty).toHaveCount(1);
   await expect(empty.getByRole("link", { name: "Nova venda" })).toBeVisible();
   expect(await axeFaults(page, "[data-empty-state]")).toEqual([]);
+  expect(await emptyIconFaults(page, 3)).toEqual([]);
   await expect(kpiCards(page)).toHaveCount(0);
   await expect(chain(page)).toHaveCount(0);
 });

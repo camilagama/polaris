@@ -215,6 +215,45 @@ export async function axeFaults(page: Page, within?: string) {
   );
 }
 
+/** A square inside a hidden tab stays in the DOM and is not counted. */
+export function emptyIconFaults(page: Page, squares: number) {
+  return page.evaluate((expected) => {
+    const found = [
+      ...document.querySelectorAll(
+        "[data-empty-state] [data-slot='empty-icon']"
+      ),
+    ].filter((square) => square.getClientRects().length > 0);
+    const faults = found.flatMap((square, index) => {
+      const box = square.getBoundingClientRect();
+      const svg = square.querySelector("svg.lucide");
+      const icon = svg?.getBoundingClientRect();
+      return [
+        box.width === 36 && box.height === 36
+          ? ""
+          : `quadro ${index}: ${box.width} x ${box.height} px`,
+        square.getAttribute("aria-hidden") === "true"
+          ? ""
+          : `quadro ${index}: sem aria-hidden`,
+        icon && icon.width === 16 && icon.height === 16
+          ? ""
+          : `ícone ${index}: ${icon?.width} px`,
+        svg && Number.parseFloat(getComputedStyle(svg).strokeWidth) === 2
+          ? ""
+          : `ícone ${index}: traço fora de 2`,
+      ].filter(Boolean);
+    });
+    const tops = new Set(
+      found.map((square) => Math.round(square.getBoundingClientRect().top))
+    );
+    if (tops.size > 1) {
+      faults.push("os quadros não ficam numa linha só");
+    }
+    return found.length === expected
+      ? faults
+      : [`${found.length} quadros, esperava ${expected}`, ...faults];
+  }, squares);
+}
+
 // ---- 1. nothing leaves its container --------------------------------------------------------------------
 
 /** In page: a horizontal scrollbar on the page itself. */
