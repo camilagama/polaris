@@ -588,7 +588,16 @@ function pageBlocks({
         ...NO_BLOCKS,
         // the chart's place stays, with its name: the goal beside it does not change columns
         chart: (
-          <HomeBlock id="home-chart" title="Vendas por dia">
+          <HomeBlock
+            footer={{
+              capability: "report:read",
+              href: "/dashboard",
+              label: "Ver o resultado",
+              link: false,
+            }}
+            id="home-chart"
+            title="Vendas por dia"
+          >
             <p className="text-muted-foreground">{NO_CONNECTION_NOTE}</p>
           </HomeBlock>
         ),
