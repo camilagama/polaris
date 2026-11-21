@@ -71,6 +71,7 @@ const sale: ConfirmedSaleView = {
     },
   ],
   saleId: SALE_ID,
+  summary: { itemCount: 2 },
   totals: [
     { key: "subtotal", label: "Subtotal", tone: "normal", value: "R$ 229,90" },
     {
@@ -148,10 +149,11 @@ describe("the sale as a receipt", () => {
   it("writes every amount of the lines in Geist Mono, at the right: items, subtotal, discount, total and the payment amounts", () => {
     const markup = render();
     const mono = markup.match(MONO_CELL) ?? [];
-    // the item prices, the subtotal, the discount, the payment amount and the processing fee, the total, the identifier
-    expect(mono).toHaveLength(7);
+    // the total and the count of the strip, the item prices, the subtotal, the discount, the payment amount and the processing fee, the identifier
+    expect(mono).toHaveLength(8);
     expect(markup).toMatch(ITEM_PRICES);
-    const cells = [...markup.matchAll(DD)].map((match) => match[1] ?? "");
+    const lines = markup.slice(markup.indexOf("border-dashed"));
+    const cells = [...lines.matchAll(DD)].map((match) => match[1] ?? "");
     const monoCells = cells.filter((cell) => cell.includes("font-mono"));
     expect(monoCells).toHaveLength(4);
     for (const cell of monoCells) {
@@ -192,6 +194,65 @@ describe("the sale as a receipt", () => {
     expect(dateBlock).toContain("Confirmada no servidor");
     expect(markup.indexOf("Desconto")).toBeLessThan(start);
     expect(start).toBeLessThan(markup.indexOf("Pagamento"));
+  });
+
+  it("writes the total once, in a strip of two terms: Total devido and Itens", () => {
+    const markup = render();
+    expect(markup.split("Total devido")).toHaveLength(2);
+    expect(markup.match(TOTAL_PARTS)).toHaveLength(1);
+    const strip = markup.slice(
+      markup.indexOf('<dl class="flex flex-wrap'),
+      markup.indexOf("border-dashed")
+    );
+    const terms = [...strip.matchAll(/<dt[^>]*>([^<]*)<\/dt>/g)].map(
+      (match) => match[1]
+    );
+    expect(terms).toEqual(["Total devido", "Itens"]);
+    expect(strip.match(/<dd/g)).toHaveLength(2);
+    expect(markup).not.toContain("Recebido");
+  });
+
+  it("writes Item in the singular for a sale of one line, as the history does", () => {
+    const markup = renderToStaticMarkup(
+      <SaleReceipt
+        sale={{ ...sale, summary: { itemCount: 1 } }}
+        status={<span>Confirmada</span>}
+      />
+    );
+    const terms = [...markup.matchAll(/<dt[^>]*>([^<]*)<\/dt>/g)].map(
+      (match) => match[1]
+    );
+    expect(terms.slice(0, 2)).toEqual(["Total devido", "Item"]);
+    expect(markup).toContain(">1</dd>");
+  });
+
+  it("writes the count of items from the sale, and masks the total of the strip with the values hidden", () => {
+    const strip = (markup: string) =>
+      markup.slice(
+        markup.indexOf('<dl class="flex flex-wrap'),
+        markup.indexOf("border-dashed")
+      );
+    expect(strip(render())).toMatch(TOTAL_PARTS);
+    expect(strip(render())).toContain(">2</dd>");
+    state.hidden = true;
+    const masked = strip(render());
+    expect(masked).not.toContain("219");
+    expect(masked.match(/data-masked-money/g)).toHaveLength(1);
+    expect(masked).toContain(">2</dd>");
+  });
+
+  it("keeps the strip with the cancellation notice above it", () => {
+    const markup = renderToStaticMarkup(
+      <SaleReceipt
+        before={<p>Venda cancelada</p>}
+        sale={sale}
+        status={<span>Cancelada</span>}
+      />
+    );
+    expect(markup.indexOf("Venda cancelada")).toBeLessThan(
+      markup.indexOf("Total devido")
+    );
+    expect(markup).toContain("Total devido");
   });
 
   it("has no ink button: the receipt only reads", () => {
