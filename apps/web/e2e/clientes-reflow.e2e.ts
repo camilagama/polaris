@@ -268,13 +268,10 @@ reflowTest(
     const asked = await openCustomers(page, 360, 16);
     await page.waitForLoadState("networkidle");
     const reads = asked.filter((name) => name !== DEVICE_REGISTRATION);
-    expect(new Set(reads), "cada chamada da abertura aparece").toEqual(
-      OPENING_CALLS
-    );
     expect(
-      reads.filter((name) => !OPENING_CALLS.has(name)),
-      "nenhuma chamada fora da lista esperada"
-    ).toEqual([]);
+      new Set(reads),
+      "cada chamada da abertura aparece e nenhuma rota fora da lista é chamada"
+    ).toEqual(OPENING_CALLS);
     expect(
       asked.filter(
         (name) => name.startsWith("customer/") && name !== "customer/list"
