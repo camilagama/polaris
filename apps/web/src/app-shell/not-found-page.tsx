@@ -1,4 +1,5 @@
 import { buttonVariants } from "@/ui/button";
+import { SkeletonArt } from "@/ui/skeleton-art";
 import { StatePanel } from "./state-panel";
 
 interface NotFoundPageProps {
@@ -27,6 +28,7 @@ export function NotFoundPage({ pathname }: NotFoundPageProps) {
       title="Página não encontrada"
       titleId="app-not-found-title"
     >
+      <SkeletonArt className="mb-3 hidden w-44 md:block" kind="home" />
       <p className="text-muted-foreground">
         O endereço{" "}
         <code className="break-all rounded-sm bg-muted px-1 font-mono text-foreground text-support">

@@ -813,6 +813,7 @@ test.describe("loja sem venda: o checklist (AC-22, AC-23)", () => {
   test("sem produto, o próximo passo é cadastrar; Meta e Atenção continuam", async ({
     page,
   }) => {
+    await page.setViewportSize({ height: 800, width: 1023 });
     await openHome(
       page,
       new FakeServer(
@@ -822,9 +823,11 @@ test.describe("loja sem venda: o checklist (AC-22, AC-23)", () => {
     const checklist = region(page, "Primeiros passos");
     await expect(checklist.getByRole("listitem")).toHaveText([
       "Loja criada (feito)",
-      "Cadastrar o 1º produtoCadastrar à mãoImportar planilha",
+      "Cadastrar o 1º produtoCadastrar à mãoImportar planilhaNome, preço e quantidade. Leva um minuto.",
       "Fazer a 1ª venda",
     ]);
+    await expect(checklist.locator("[data-step-preview]")).toHaveCount(0);
+    await expect(checklist.locator("[data-skeleton-art]")).toHaveCount(0);
     await expect(
       checklist.getByRole("heading", { name: "Primeiros passos" })
     ).toBeVisible();
@@ -997,6 +1000,119 @@ test.describe("loja sem venda: o checklist (AC-22, AC-23)", () => {
       .click();
     await expect(panel).toBeHidden();
     await expect(title).toBeInViewport();
+  });
+
+  const PREVIEW_STATES = [
+    [
+      "sem produto",
+      { all: 0, unknownCost: 0, withoutStock: 0, withStock: 0 },
+      "products",
+      ["/products?novo=1", "/products?importar=1"],
+      "Nome, preço e quantidade. Leva um minuto.",
+    ],
+    [
+      "com produto, sem saldo",
+      { all: 1, unknownCost: 1, withoutStock: 1, withStock: 0 },
+      "products",
+      [`/products?produto=${PRODUCT}`],
+      "Diga quantas unidades você tem para poder vender.",
+    ],
+    [
+      "com produto e saldo",
+      { all: 1, unknownCost: 0, withoutStock: 0, withStock: 1 },
+      "sale",
+      ["/sales"],
+      "Escolha o produto, a forma de receber e pronto.",
+    ],
+  ] as const;
+
+  async function checkPreviewState(
+    page: Page,
+    [state, stock, art, links, sentence]: (typeof PREVIEW_STATES)[number]
+  ) {
+    await page.setViewportSize({ height: 800, width: 1024 });
+    await openHome(page, new FakeServer(empty({ ...stock })));
+    const checklist = region(page, "Primeiros passos");
+    const preview = checklist.locator("[data-step-preview]");
+    await expect(preview, state).toHaveCount(1);
+    const steps = checklist.getByRole("list");
+    const [stepsBox, previewBox] = await Promise.all([
+      steps.boundingBox(),
+      preview.boundingBox(),
+    ]);
+    expect(previewBox?.x ?? 0, state).toBeGreaterThanOrEqual(
+      (stepsBox?.x ?? 0) + (stepsBox?.width ?? 0)
+    );
+    await expect(preview.locator(`[data-skeleton-art="${art}"]`)).toBeVisible();
+    await expect(preview.getByText(sentence)).toBeVisible();
+    await expect(checklist.getByText(sentence)).toHaveCount(1);
+    expect(
+      await checklist
+        .getByRole("link")
+        .evaluateAll((nodes) => nodes.map((node) => node.getAttribute("href"))),
+      state
+    ).toEqual([...links]);
+    await Promise.all(
+      links.flatMap((link) => [
+        expect(
+          preview.locator(`a[href="${link}"]`),
+          `${state}: ${link}`
+        ).toHaveCount(1),
+        expect(
+          steps.locator(`a[href="${link}"]`),
+          `${state}: ${link} fora dos passos`
+        ).toHaveCount(0),
+      ])
+    );
+    const decoration = preview.locator("svg[data-skeleton-art]");
+    await expect(decoration).toHaveAttribute("aria-hidden", "true");
+    await expect(preview.locator(".animate-pulse")).toHaveCount(0);
+    const height = (await checklist.boundingBox())?.height ?? 0;
+    await page.setViewportSize({ height: 800, width: 1023 });
+    await expect(preview, state).toHaveCount(0);
+    await expect(checklist.locator("[data-skeleton-art]")).toHaveCount(0);
+    await expect(checklist.getByText(sentence)).toHaveCount(1);
+    await expect(checklist.getByRole("link")).toHaveCount(links.length);
+    return height;
+  }
+
+  test("a partir de 1024 px, passos e prévia ficam lado a lado, com um só link por destino e a mesma altura nos três passos; abaixo, uma coluna com a frase no passo atual", async ({
+    page,
+  }) => {
+    const [first, second, third] = PREVIEW_STATES;
+    const heights = [
+      await checkPreviewState(page, first),
+      await checkPreviewState(page, second),
+      await checkPreviewState(page, third),
+    ];
+    for (const height of heights) {
+      expect(Math.abs(height - (heights[0] ?? 0))).toBeLessThanOrEqual(1);
+    }
+  });
+
+  test("a prévia segue o passo atual, não o ponteiro nem o foco", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 800, width: 1280 });
+    await openHome(
+      page,
+      new FakeServer(
+        empty({ all: 0, unknownCost: 0, withoutStock: 0, withStock: 0 })
+      )
+    );
+    const checklist = region(page, "Primeiros passos");
+    const preview = checklist.locator("[data-step-preview]");
+    await expect(preview).toHaveAttribute("data-step-preview", "product");
+    const items = checklist.getByRole("listitem");
+    await items.nth(2).hover();
+    await items.nth(0).hover();
+    await expect(preview).toHaveAttribute("data-step-preview", "product");
+    await checklist.getByRole("link", { name: "Cadastrar à mão" }).focus();
+    await expect(preview).toHaveAttribute("data-step-preview", "product");
+    await page.keyboard.press("Tab");
+    await expect(
+      checklist.getByRole("link", { name: "Importar planilha" })
+    ).toBeFocused();
   });
 
   for (const [state, stock, current] of [

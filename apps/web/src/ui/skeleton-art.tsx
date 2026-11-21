@@ -1,4 +1,4 @@
-import type { ReactElement } from "react";
+import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
 
 export type SkeletonArtKind = "home" | "products" | "sale";
@@ -6,7 +6,6 @@ export type SkeletonArtKind = "home" | "products" | "sale";
 const WIDTH = 160;
 const HEIGHT = 120;
 
-/** The page behind the drawing and the boxes on it: `--muted` and `--card` with a hairline of `--border`, so a shape reads by its outline. */
 const PAGE = "fill-muted stroke-border";
 const CARD = "fill-card stroke-border";
 const SHAPE = "fill-muted stroke-border";
@@ -36,7 +35,7 @@ function Bar({
   );
 }
 
-function Frame({ children }: { children: ReactElement | ReactElement[] }) {
+function Frame({ children }: { children: ReactNode }) {
   return (
     <>
       <rect
@@ -167,12 +166,6 @@ function Home() {
 
 const DRAWINGS = { home: Home, products: Products, sale: Sale } as const;
 
-/**
- * A drawing of the screen a step leads to, in inline SVG at 4:3: `--muted`, `--card` and `--border` for the shapes and
- * one line in the color of the entity (the sales green). It is decoration (`aria-hidden`, out of the tab order) that
- * never moves and has no loading skeleton's class: the sentence beside it says what the screen is for. Without a
- * sentence next to it the drawing is not used.
- */
 export function SkeletonArt({
   className,
   kind,

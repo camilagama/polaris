@@ -4,11 +4,14 @@ import CheckIcon from "lucide-react/dist/esm/icons/check";
 import ShoppingBagIcon from "lucide-react/dist/esm/icons/shopping-bag";
 import StoreIcon from "lucide-react/dist/esm/icons/store";
 import TagIcon from "lucide-react/dist/esm/icons/tag";
-import { useEffect, useMemo } from "react";
+import { type ReactNode, useEffect, useMemo, useRef } from "react";
+import { COLLAPSIBLE_QUERY } from "@/lib/breakpoints";
 import { cn } from "@/lib/utils";
+import { useMediaQuery } from "@/lib/use-mobile";
 import { buttonVariants } from "@/ui/button";
 import { MoneyText } from "@/ui/hidden-values";
 import { ProgressRing } from "@/ui/progress-ring";
+import { SkeletonArt, type SkeletonArtKind } from "@/ui/skeleton-art";
 import {
   currentFirstStep,
   FIRST_STEPS_ANCHOR,
@@ -20,7 +23,7 @@ import {
   useThumbnailSequence,
 } from "../catalog/product-thumbnail";
 import { formatBrlAmount, formatQuantity } from "../lib/format";
-import { checklistLink, checklistNext } from "./home-model";
+import { type ChecklistNext, checklistLink, checklistNext } from "./home-model";
 import { HomeBlock } from "./home-parts";
 import type { HomeChecklist } from "./use-home";
 
@@ -192,6 +195,20 @@ function StepsCount({ done }: { done: number }) {
   );
 }
 
+type NextKind = ChecklistNext["kind"];
+
+export const NEXT_STEP_SUPPORT: Record<NextKind, string> = {
+  product: "Nome, preço e quantidade. Leva um minuto.",
+  sale: "Escolha o produto, a forma de receber e pronto.",
+  stock: "Diga quantas unidades você tem para poder vender.",
+};
+
+export const NEXT_STEP_ART: Record<NextKind, SkeletonArtKind> = {
+  product: "products",
+  sale: "sale",
+  stock: "products",
+};
+
 /** The two ways of the step "Cadastrar o 1º produto" while it is not done (corte 2.5, T-5): by hand or a spreadsheet. */
 const FIRST_PRODUCT_WAYS = [
   { href: "/products?novo=1", label: "Cadastrar à mão", variant: "default" },
@@ -218,11 +235,102 @@ function FirstProductWays() {
   );
 }
 
-/**
- * The store that never sold (AC-22, § 5.4): three steps from its real data. While the first product is missing its
- * step has two small buttons (by hand, spreadsheet) and no button under the steps; after it, one button goes to the next step ("Dar entrada no estoque" on the
- * first product's panel while it has no stock).
- */
+function StepPreview({
+  animate,
+  children,
+  kind,
+}: {
+  animate: boolean;
+  children: ReactNode;
+  kind: NextKind;
+}) {
+  return (
+    <div className="grid content-start gap-3" data-step-preview={kind}>
+      <div
+        className={cn(
+          "grid gap-3",
+          animate &&
+            "motion-full:fade-in-0 motion-full:animate-in motion-full:duration-150"
+        )}
+        key={kind}
+      >
+        <SkeletonArt kind={NEXT_STEP_ART[kind]} />
+        <p className="min-h-[2lh]" data-step-support="">
+          {NEXT_STEP_SUPPORT[kind]}
+        </p>
+      </div>
+      <div className="flex min-h-ctl-md flex-wrap items-center gap-x-2 gap-y-4">
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function StepRow({
+  done,
+  index,
+  isCurrent,
+  support,
+  withWays,
+}: {
+  done: boolean;
+  index: number;
+  isCurrent: boolean;
+  support: string | null;
+  withWays: boolean;
+}) {
+  const tall = withWays || support !== null;
+  const line = tall ? "h-ctl-sm" : "";
+  const state = stepState(done, isCurrent);
+  const Icon = STEP_ICONS[index] ?? StoreIcon;
+  return (
+    <li
+      aria-current={isCurrent ? "step" : undefined}
+      className={cn(
+        "flex gap-2.5 rounded-md px-2 py-1",
+        tall ? "items-start" : "items-center",
+        state === "done" && "bg-muted/50"
+      )}
+    >
+      <span className={cn("flex items-center", line)}>
+        <span
+          aria-hidden="true"
+          className={cn(STEP_BOX, STEP_BOX_STATE[state])}
+          data-step-box={state}
+        >
+          {state === "done" ? (
+            <CheckIcon className="size-4" />
+          ) : (
+            <Icon className="size-4" />
+          )}
+        </span>
+      </span>
+      <span
+        className={cn(
+          "flex flex-wrap items-center gap-x-3 gap-y-2",
+          done && "text-muted-foreground"
+        )}
+      >
+        <span className={cn("flex items-center", line)}>
+          <span>
+            {STEPS[index]}
+            {done ? <span className="sr-only"> (feito)</span> : null}
+          </span>
+        </span>
+        {withWays ? <FirstProductWays /> : null}
+        {support ? (
+          <span
+            className="basis-full text-muted-foreground"
+            data-step-support=""
+          >
+            {support}
+          </span>
+        ) : null}
+      </span>
+    </li>
+  );
+}
+
 export function ChecklistBlock({ checklist }: { checklist: HomeChecklist }) {
   // the foot of the menu links here from any screen: the block comes after the reads, past the browser's own scroll
   useEffect(() => {
@@ -232,10 +340,19 @@ export function ChecklistBlock({ checklist }: { checklist: HomeChecklist }) {
         ?.scrollIntoView({ block: "center" });
     }
   }, []);
+  const wide = useMediaQuery(COLLAPSIBLE_QUERY);
   const next = checklistNext(checklist.firstProductId, checklist.hasStock);
+  const firstKind = useRef(next.kind);
   const link = checklistLink(next);
   const done = firstStepsDone(checklist);
   const current = currentFirstStep(done);
+  const button = link ? (
+    <a className={cn(buttonVariants(), "w-fit")} href={link.href}>
+      {link.label}
+    </a>
+  ) : (
+    <FirstProductWays />
+  );
   return (
     <HomeBlock
       action={<StepsCount done={done.filter(Boolean).length} />}
@@ -243,61 +360,32 @@ export function ChecklistBlock({ checklist }: { checklist: HomeChecklist }) {
       id={FIRST_STEPS_ANCHOR}
       title="Primeiros passos"
     >
-      <ol className="grid gap-1">
-        {STEPS.map((step, index) => {
-          const withWays = index === 1 && next.kind === "product";
-          // with the two buttons the step is taller: the box and the name sit on the height of the first line of buttons
-          const line = withWays ? "h-ctl-sm" : "";
-          const state = stepState(done[index] === true, index === current);
-          const Icon = STEP_ICONS[index] ?? StoreIcon;
-          return (
-            <li
-              aria-current={index === current ? "step" : undefined}
-              className={cn(
-                "flex gap-2.5 rounded-md px-2 py-1",
-                withWays ? "items-start" : "items-center",
-                state === "done" && "bg-muted/50"
-              )}
+      <div className="grid gap-(--card-spacing) lg:grid-cols-[minmax(0,1fr)_18rem] lg:items-start">
+        <ol className="grid gap-1">
+          {STEPS.map((step, index) => (
+            <StepRow
+              done={done[index] === true}
+              index={index}
+              isCurrent={index === current}
               key={step}
-            >
-              <span className={cn("flex items-center", line)}>
-                <span
-                  aria-hidden="true"
-                  className={cn(STEP_BOX, STEP_BOX_STATE[state])}
-                  data-step-box={state}
-                >
-                  {state === "done" ? (
-                    <CheckIcon className="size-4" />
-                  ) : (
-                    <Icon className="size-4" />
-                  )}
-                </span>
-              </span>
-              <span
-                className={cn(
-                  "flex flex-wrap items-center gap-x-3 gap-y-2",
-                  done[index] && "text-muted-foreground"
-                )}
-              >
-                <span className={cn("flex items-center", line)}>
-                  <span>
-                    {step}
-                    {done[index] ? (
-                      <span className="sr-only"> (feito)</span>
-                    ) : null}
-                  </span>
-                </span>
-                {withWays ? <FirstProductWays /> : null}
-              </span>
-            </li>
-          );
-        })}
-      </ol>
-      {link ? (
-        <a className={cn(buttonVariants(), "w-fit")} href={link.href}>
-          {link.label}
-        </a>
-      ) : null}
+              support={
+                !wide && index === current ? NEXT_STEP_SUPPORT[next.kind] : null
+              }
+              withWays={!wide && index === 1 && next.kind === "product"}
+            />
+          ))}
+        </ol>
+        {wide ? (
+          <StepPreview
+            animate={next.kind !== firstKind.current}
+            kind={next.kind}
+          >
+            {button}
+          </StepPreview>
+        ) : (
+          link && button
+        )}
+      </div>
     </HomeBlock>
   );
 }
