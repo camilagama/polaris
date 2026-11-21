@@ -238,7 +238,7 @@ test.describe("loja com venda", () => {
     ).toBe(true);
   });
 
-  test("a 1280 px Nova venda, Hoje e o mês ficam acima da dobra, em duas colunas", async ({
+  test("a 1280 px Nova venda, Hoje e o mês ficam acima da dobra: Hoje numa linha própria e os três do mês numa faixa de três colunas", async ({
     page,
   }) => {
     await page.setViewportSize({ height: 800, width: 1280 });
@@ -255,10 +255,26 @@ test.describe("loja com venda", () => {
     }
     const today = await region(page, "Vendas hoje").boundingBox();
     const month = await region(page, "Vendas em outubro").boundingBox();
-    expect(month?.x ?? 0).toBeGreaterThan(
-      (today?.x ?? 0) + (today?.width ?? 0)
+    const result = await region(page, "Resultado estimado").boundingBox();
+    const ticket = await region(page, "Ticket médio").boundingBox();
+    expect((month?.y ?? 0) >= (today?.y ?? 0) + (today?.height ?? 0)).toBe(
+      true
     );
-    expect(month?.y).toBe(today?.y);
+    expect(today?.x).toBe(month?.x);
+    expect(
+      Math.abs(
+        (today?.width ?? 0) -
+          ((ticket?.x ?? 0) + (ticket?.width ?? 0) - (month?.x ?? 0))
+      )
+    ).toBeLessThanOrEqual(1);
+    expect(result?.x ?? 0).toBeGreaterThan(
+      (month?.x ?? 0) + (month?.width ?? 0) - 1
+    );
+    expect(ticket?.x ?? 0).toBeGreaterThan(
+      (result?.x ?? 0) + (result?.width ?? 0) - 1
+    );
+    expect(result?.y).toBe(month?.y);
+    expect(ticket?.y).toBe(month?.y);
     expect(
       await page.evaluate(
         () => document.documentElement.scrollWidth <= window.innerWidth

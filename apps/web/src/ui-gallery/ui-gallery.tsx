@@ -1489,6 +1489,18 @@ export function UiGallery() {
                 <MoneyText text="18/10 · R$ 1.840,00" />
               </span>
             </div>
+            <KpiTile
+              entity="sales"
+              help={{
+                about: "Vendas hoje",
+                text: "Vendas líquidas de hoje. Compara com a média das 4 sextas-feiras anteriores.",
+              }}
+              hero
+              id="galeria-kpi-hoje"
+              note="3 vendas"
+              title="Vendas hoje"
+              value={<HeroValue amount="320.10" size="xl" tile />}
+            />
             <div className="grid gap-3 sm:grid-cols-2">
               <KpiTile
                 chip={
