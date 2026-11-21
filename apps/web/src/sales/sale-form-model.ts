@@ -2431,7 +2431,7 @@ function confirmedPaymentDetails(
     },
     {
       label: "Valor do pagamento",
-      tone: "plain",
+      tone: "known",
       value: formatBrlAmount(payment.amount),
     },
     { label: "Perfil de pagamento", tone: "plain", value: profile },
