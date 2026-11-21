@@ -2,8 +2,13 @@ import type {
   PaymentFeeConfigurationReadModel,
   PaymentProfileReadModel,
 } from "@polaris/contracts";
+import BanknoteIcon from "lucide-react/dist/esm/icons/banknote";
 import CircleAlertIcon from "lucide-react/dist/esm/icons/circle-alert";
+import CircleEllipsisIcon from "lucide-react/dist/esm/icons/circle-ellipsis";
 import CreditCardIcon from "lucide-react/dist/esm/icons/credit-card";
+import LandmarkIcon from "lucide-react/dist/esm/icons/landmark";
+import QrCodeIcon from "lucide-react/dist/esm/icons/qr-code";
+import WalletIcon from "lucide-react/dist/esm/icons/wallet";
 import { type ReactNode, useCallback } from "react";
 import { cn } from "@/lib/utils";
 import { Alert, AlertDescription } from "@/ui/alert";
@@ -15,6 +20,11 @@ import { EmptyState } from "@/ui/empty-state";
 import { Field, FieldLabel } from "@/ui/field";
 import { MoneyText } from "@/ui/hidden-values";
 import { connectionControlProps } from "../app-shell/connection-required-notice";
+import {
+  ROW_BODY_CLASS,
+  ROW_TEXT_CLASS,
+  RowTile,
+} from "../catalog/screen-parts";
 import { describeFee, settlementText } from "./payment-fee-model";
 import { methods } from "./payment-profile-form";
 
@@ -68,6 +78,25 @@ function ruleTitle(rule: PaymentProfileReadModel["rules"][number]): string {
   return `${method} · ${rule.installments}x · ${plan}`;
 }
 
+const METHOD_ICON: Readonly<
+  Record<PaymentProfileReadModel["rules"][number]["method"], typeof WalletIcon>
+> = {
+  bank_transfer: LandmarkIcon,
+  cash: BanknoteIcon,
+  credit_card: CreditCardIcon,
+  debit_card: CreditCardIcon,
+  other: CircleEllipsisIcon,
+  pix: QrCodeIcon,
+};
+
+/** One method on every rule draws that method; several (or none yet) draw the wallet that holds them all. */
+function ProfileIcon({ profile }: { profile: PaymentProfileReadModel }) {
+  const used = new Set(profile.rules.map((rule) => rule.method));
+  const [only] = used;
+  const Icon = used.size === 1 && only ? METHOD_ICON[only] : WalletIcon;
+  return <Icon />;
+}
+
 interface ProfileRowProps {
   onChangeLifecycle: (profile: PaymentProfileReadModel) => void;
   onEdit: (profile: PaymentProfileReadModel) => void;
@@ -93,20 +122,28 @@ function ProfileRow({
   const count = `${profile.rules.length} ${profile.rules.length === 1 ? "regra" : "regras"}`;
   return (
     <li className="grid gap-3 p-(--card-spacing)" data-profile-id={profile.id}>
-      <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-2">
-        <div className="min-w-0">
-          <p className="flex flex-wrap items-center gap-x-2 gap-y-1 font-medium [overflow-wrap:anywhere]">
-            {profile.name}
+      <div className="grid gap-x-3 gap-y-2 min-[40rem]:grid-cols-[minmax(0,1fr)_12.5rem]">
+        <div className="flex min-w-0 items-start gap-3">
+          <RowTile>
+            <ProfileIcon profile={profile} />
+          </RowTile>
+          <div className={ROW_BODY_CLASS}>
+            <div className={ROW_TEXT_CLASS}>
+              <p className="font-medium [overflow-wrap:anywhere]">
+                {profile.name}
+              </p>
+              <p className="text-muted-foreground text-support">{count}</p>
+            </div>
             <Badge variant={active ? "outline" : "warning"}>
               {active ? "Ativo" : "Arquivado"}
             </Badge>
-          </p>
-          <p className="text-muted-foreground text-support">{count}</p>
+          </div>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 min-[40rem]:grid min-[40rem]:grid-cols-2">
           {active ? (
             <Button
               aria-label={`Editar perfil ${profile.name}`}
+              className="min-[40rem]:col-start-1"
               data-profile-edit=""
               disabled={pending}
               onClick={handleEdit}
@@ -120,6 +157,7 @@ function ProfileRow({
           <Button
             {...connectionControlProps(online)}
             aria-label={`${active ? "Arquivar" : "Restaurar"} perfil ${profile.name}`}
+            className="min-[40rem]:col-start-2"
             disabled={pending}
             onClick={handleLifecycle}
             size="sm"

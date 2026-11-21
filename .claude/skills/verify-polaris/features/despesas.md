@@ -5,6 +5,7 @@ Despesas (`/expenses`) é a tela das despesas da loja, um destino do menu no gru
 ## Sub-features
 
 - `despesas` Lançamentos: "Nova despesa"; vazio: "Nenhuma despesa neste período." só a frase, sem botão (o "Nova despesa" único é o do título, sempre: lendo, vazio, com despesas, nas anuladas e nas outras partes); com uma categoria na barra "Filtrar despesas" o vazio é "Nenhuma despesa encontrada com estes filtros." com "Limpar filtros"; nas Anuladas sem categoria é "Nenhuma despesa anulada neste período.".
+- `despesas-por-categoria` o cartão `region "Por categoria"` acima da lista, só em Lançamentos com a Situação "Ativas", sem pílula de Categoria e com duas categorias ou mais no mês: uma linha por categoria (nome, percentual e valor escritos; a barra é `aria-hidden`), as cinco maiores e "Outras (N)". Cada linha de categoria é o `button` de nome "Filtrar por <categoria> …", que aplica a pílula de Categoria da barra e tira o bloco; tirar a pílula o traz de volta. Para ver, crie despesas de ao menos duas categorias no mês (`/rpc/expense/create` com o `origin` do projeto ou o formulário).
 - `despesas-recorrentes` e `despesas-categorias` as outras duas partes do segmentado, no mesmo endereço (`?ver=`).
 
 ## How to get to it (user POV)
