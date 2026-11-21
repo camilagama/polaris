@@ -4,7 +4,7 @@ Nota da frente "CI rápido sem esconder falha". A regra da frente: nenhuma checa
 
 ## O que muda no `ci.yml`
 
-Em cada um dos 7 jobs que rodam `bun install --frozen-lockfile` (`checks`, `database`, `audit`, `lighthouse`, `offline-poc-browser-part`, `offline-catalog-csp-browser`, `e2e-real`):
+Em cada um dos 8 jobs que rodam `bun install --frozen-lockfile` (`checks`, `database`, `audit`, `lighthouse`, `shard-plan`, `offline-poc-browser-part`, `offline-catalog-csp-browser`, `e2e-real`; o `shard-plan` entrou depois, com o reparto dos shards por tempo, e não tem o passo 4, porque não roda em `push`):
 
 1. **Restaura `node_modules`** (a raiz, `apps/*/node_modules` e `packages/*/node_modules`, que é onde o Bun cria a árvore e os vínculos dos workspaces) com `actions/cache/restore`, na mesma versão fixada por SHA do `actions/cache` que o arquivo já usava (v5.1.0).
 2. **Acerto exato**: o passo de `bun install` continua no lugar (e com o mesmo `id: install` no job `checks`, de que as condições dos demais passos dependem), mas só instala quando não houve acerto. Um passo pulado teria `outcome: skipped` e derrubaria em silêncio as dez checagens do `checks`; por isso a decisão fica dentro do `run`.
