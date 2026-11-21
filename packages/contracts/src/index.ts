@@ -372,7 +372,11 @@ const expense = z.object({
 export type ExpenseReadModel = z.infer<typeof expense>;
 
 const expenseCategoryTotal = z.object({
+  /** Whether the category is archived; sent with the name, absent from an older server. */
+  categoryArchived: z.boolean().optional(),
   categoryId: z.string().uuid(),
+  /** The name of the category, so a category this screen has not read yet is not written as unknown. */
+  categoryName: z.string().min(1).optional(),
   count: z.number().int().positive(),
   /** Exact BRL decimal with two places, as text. */
   total: z.string(),

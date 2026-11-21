@@ -415,7 +415,7 @@ export function formatMonthLabel(month: string): string {
 export interface CategoryShareRow {
   /** The amount as the server writes it ("1500.00"). */
   amount: string;
-  /** The category the line filters by; null for "Outras" and for the categories this screen does not know. */
+  /** The category the line filters by; null for "Outras" and for the categories this screen has not read yet (the line still carries the name the server sent). */
   categoryId: string | null;
   key: string;
   name: string;
@@ -474,6 +474,28 @@ export function percentsByLargestRemainder(parts: readonly bigint[]): number[] {
   return floors;
 }
 
+function categoryLabel(name: string, archived: boolean): string {
+  return archived ? `${name} (arquivada)` : name;
+}
+
+/** The id stays only for a category this screen has read: the filter bar can show it as a chip. */
+function nameOf(
+  entry: ExpenseCategoryTotalReadModel,
+  names: ReadonlyMap<string, string>
+): { id: string | null; name: string } | null {
+  const known = names.get(entry.categoryId);
+  if (known !== undefined) {
+    return { id: entry.categoryId, name: known };
+  }
+  if (entry.categoryName === undefined) {
+    return null;
+  }
+  return {
+    id: null,
+    name: categoryLabel(entry.categoryName, entry.categoryArchived === true),
+  };
+}
+
 function groupKnownCategories(
   totals: readonly ExpenseCategoryTotalReadModel[],
   categories: readonly ExpenseCategoryReadModel[]
@@ -481,7 +503,7 @@ function groupKnownCategories(
   const names = new Map(
     categories.map((item) => [
       item.id,
-      item.status === "archived" ? `${item.name} (arquivada)` : item.name,
+      categoryLabel(item.name, item.status === "archived"),
     ])
   );
   const grouped: CategoryCents[] = [];
@@ -491,11 +513,11 @@ function groupKnownCategories(
     if (cents === null) {
       return null;
     }
-    const name = names.get(entry.categoryId);
-    if (name === undefined) {
+    const named = nameOf(entry, names);
+    if (named === null) {
       unknown += cents;
     } else if (cents > 0n) {
-      grouped.push({ cents, id: entry.categoryId, name });
+      grouped.push({ cents, ...named });
     }
   }
   if (unknown > 0n) {
