@@ -24,10 +24,6 @@ export const GATE_ROLLBACK_LIST = {
     count: 1,
     reason: BEFORE_THE_RULE,
   },
-  "packages/db/scripts/bootstrap-rls-gate.ts": {
-    count: 3,
-    reason: BEFORE_THE_RULE,
-  },
   "packages/db/scripts/concurrency-support.ts": {
     count: 2,
     reason: BEFORE_THE_RULE,
@@ -42,10 +38,6 @@ export const GATE_ROLLBACK_LIST = {
   },
   "packages/db/scripts/prepare-tenant-context-gate.ts": {
     count: 1,
-    reason: BEFORE_THE_RULE,
-  },
-  "packages/db/scripts/rls-gate-fixture.ts": {
-    count: 3,
     reason: BEFORE_THE_RULE,
   },
   "packages/db/scripts/sales-gate-support.ts": {
