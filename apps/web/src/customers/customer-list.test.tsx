@@ -284,3 +284,46 @@ describe("the list of customers", () => {
     );
   });
 });
+
+const ANONYMIZED_BADGE = /data-slot="badge"[^>]*>Anonimizado</;
+
+describe("the state badge of a customer row", () => {
+  const archived = () =>
+    render({
+      customers: [customer(1, "Ana Lima", { status: "archived" })],
+      status: "archived",
+    });
+
+  it("reads name, contacts, state and then the menu, the badge being the last part of the row button", () => {
+    const html = archived();
+    const name = html.indexOf("Ana Lima");
+    const phone = html.indexOf("(11)");
+    const badge = html.indexOf(">Arquivado<");
+    const menu = html.indexOf("Mais ações para Ana Lima");
+    expect(name).toBeGreaterThan(-1);
+    expect([name, phone, badge, menu]).toEqual(
+      [name, phone, badge, menu].sort((a, b) => a - b)
+    );
+    expect(html.indexOf("</button>", badge)).toBeLessThan(menu);
+  });
+
+  it("keeps the initials circle a circle", () => {
+    expect(archived()).toContain("rounded-full bg-muted");
+    expect(archived()).not.toContain("data-row-tile");
+  });
+
+  it("keeps the badge where the others are when the row has no menu: a spacer takes the menu's place", () => {
+    const html = render({
+      customers: [
+        customer(1, "Cliente anonimizado", {
+          anonymizedAt: "2026-10-15T12:00:00.000Z",
+          phone: null,
+        }),
+      ],
+    });
+    expect(html).toMatch(ANONYMIZED_BADGE);
+    expect(html).toContain(
+      '<span aria-hidden="true" class="size-ctl-md shrink-0">'
+    );
+  });
+});

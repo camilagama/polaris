@@ -22,11 +22,34 @@ import {
  */
 export interface DeviceRow {
   id: string;
+  /** What the name says the device is, for the icon of the row. */
+  kind: DeviceKind;
   /** This is the device the screen is open on: it can only leave through "Sair". */
   isCurrent: boolean;
   labelText: string;
   lastSeenText: string;
   registeredText: string;
+}
+
+export type DeviceKind = "computer" | "phone" | "tablet" | "unknown";
+
+const KIND_BY_SYSTEM: Readonly<Record<string, DeviceKind>> = {
+  Android: "phone",
+  ChromeOS: "computer",
+  iPad: "tablet",
+  iPhone: "phone",
+  Linux: "computer",
+  Mac: "computer",
+  Windows: "computer",
+};
+
+/**
+ * The server names a device it was not told the name of by browser and system ("Chrome no Android", from a closed
+ * table); the system is the only thing it knows about the kind. A name the person typed, or none, says nothing.
+ */
+export function deviceKind(label: string | null): DeviceKind {
+  const system = label?.trim().split(" no ").at(-1) ?? "";
+  return KIND_BY_SYSTEM[system] ?? "unknown";
 }
 
 /** This device first, then the most recently seen; revoked devices are not shown. */
@@ -49,6 +72,7 @@ export function deviceRows(
     .map(({ device, isCurrent }) => ({
       id: device.id,
       isCurrent,
+      kind: deviceKind(device.label),
       labelText: device.label?.trim() || "Aparelho sem nome",
       lastSeenText: formatInstant(device.lastSeenAt),
       registeredText: formatInstant(device.createdAt),
