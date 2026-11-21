@@ -489,6 +489,8 @@ reflowTest(
     const strip = receipt.locator("dl.flex-wrap");
     await expect(strip.locator("dd").nth(0)).toContainText("1.200.000,00");
     await expectSplitTotalOnOneLine(page);
+    const [total, items] = await stripBoxes(page);
+    expect(items?.top).toBeGreaterThan(total?.top ?? Number.POSITIVE_INFINITY);
     await expectStripCellsApart(page);
     await assertNothingClipped(strip);
     await assertNoPageScroll(page);

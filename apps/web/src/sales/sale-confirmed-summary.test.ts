@@ -24,11 +24,7 @@ const fee = {
 
 const sale = (
   quantities: number[],
-  amount: string,
-  totals: { subtotal: string; totalDue: string } = {
-    subtotal: amount,
-    totalDue: amount,
-  }
+  amount: string
 ): ConfirmedSaleReadModel => ({
   adjustments: [],
   items: quantities.map((quantity, position) => item(position, quantity)),
@@ -60,9 +56,9 @@ const sale = (
     discountTotal: "0.00",
     freightTotal: "0.00",
     paymentSurchargeTotal: "0.00",
-    subtotal: totals.subtotal,
+    subtotal: amount,
     surchargeTotal: "0.00",
-    totalDue: totals.totalDue,
+    totalDue: amount,
   },
 });
 
