@@ -1,4 +1,3 @@
-import { authRelationalSchema } from "@polaris/db/auth-schema";
 import type { createDatabase } from "@polaris/db/client";
 import { FreshSessionRequiredError } from "@polaris/db/device-repository";
 import {
@@ -55,6 +54,7 @@ function createFixture(session: TenantRequestSession | null) {
   const readAccepted = vi.fn(async () => ({}));
   const getSession = vi.fn(async () => session);
   const createDatabaseMock = vi.fn(() => database);
+  const createAuthDatabaseMock = vi.fn(() => database);
   const createAuth = vi.fn(
     (_options: { baseURL: string; database: Database; secret: string }) => ({
       api: { getSession },
@@ -81,6 +81,8 @@ function createFixture(session: TenantRequestSession | null) {
   const dependencies: TenantRequestContextDependencies = {
     createAuth:
       createAuth as unknown as TenantRequestContextDependencies["createAuth"],
+    createAuthDatabase:
+      createAuthDatabaseMock as unknown as TenantRequestContextDependencies["createAuthDatabase"],
     createDatabase:
       createDatabaseMock as unknown as TenantRequestContextDependencies["createDatabase"],
     readAcceptedLegalVersions: readAccepted,
@@ -92,6 +94,7 @@ function createFixture(session: TenantRequestSession | null) {
     context: createTenantRequestContext(dependencies),
     sequence: createTenantRequestSequence(dependencies),
     createAuth,
+    createAuthDatabase: createAuthDatabaseMock,
     createDatabase: createDatabaseMock,
     database,
     getSession,
@@ -157,13 +160,11 @@ describe("tenant request context", () => {
       },
       baseInput.operation
     );
-    expect(fixture.createDatabase).toHaveBeenNthCalledWith(
-      1,
+    expect(fixture.createAuthDatabase).toHaveBeenCalledExactlyOnceWith(
       baseInput.bindings.AUTH_HYPERDRIVE?.connectionString,
-      { maxConnections: 1, schema: authRelationalSchema }
+      { maxConnections: 1 }
     );
-    expect(fixture.createDatabase).toHaveBeenNthCalledWith(
-      2,
+    expect(fixture.createDatabase).toHaveBeenCalledExactlyOnceWith(
       baseInput.bindings.HYPERDRIVE.connectionString,
       { maxConnections: 1 }
     );
@@ -191,6 +192,7 @@ describe("tenant request context", () => {
       })
     ).rejects.toMatchObject({ code: "authentication_unavailable" });
 
+    expect(fixture.createAuthDatabase).not.toHaveBeenCalled();
     expect(fixture.createDatabase).not.toHaveBeenCalled();
     expect(fixture.createAuth).not.toHaveBeenCalled();
   });
@@ -220,7 +222,8 @@ describe("tenant request context", () => {
       code: "session_required",
     });
 
-    expect(fixture.createDatabase).toHaveBeenCalledOnce();
+    expect(fixture.createAuthDatabase).toHaveBeenCalledOnce();
+    expect(fixture.createDatabase).not.toHaveBeenCalled();
     expect(fixture.runTransaction).not.toHaveBeenCalled();
     expect(fixture.database.pool.end).toHaveBeenCalledOnce();
   });
@@ -286,6 +289,7 @@ describe("tenant request context", () => {
       fixture.context({ ...baseInput, bindings: withoutAuthDatabase })
     ).rejects.toMatchObject({ code: "authentication_unavailable" });
 
+    expect(fixture.createAuthDatabase).not.toHaveBeenCalled();
     expect(fixture.createDatabase).not.toHaveBeenCalled();
     expect(fixture.getSession).not.toHaveBeenCalled();
   });
@@ -308,7 +312,8 @@ describe("tenant request context", () => {
       })
     ).resolves.toBe("tenant result");
 
-    expect(fixture.createDatabase).toHaveBeenCalledOnce();
+    expect(fixture.createAuthDatabase).toHaveBeenCalledOnce();
+    expect(fixture.createDatabase).not.toHaveBeenCalled();
     expect(fixture.database.pool.end).toHaveBeenCalledOnce();
   });
 });

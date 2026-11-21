@@ -1,4 +1,3 @@
-import { authRelationalSchema } from "@polaris/db/auth-schema";
 import type { BetterAuthPlugin } from "better-auth";
 import { memoryAdapter } from "better-auth/adapters/memory";
 import { testUtils } from "better-auth/plugins";
@@ -40,7 +39,7 @@ const shared = vi.hoisted(() => ({
 
 // the real handler and the real Better Auth: only the pool of the request is a stand-in
 vi.mock("@polaris/db/client", () => ({
-  createDatabase: () => ({
+  createAuthDatabase: () => ({
     db: {},
     pool: { end: () => Promise.resolve() },
   }),
@@ -227,13 +226,11 @@ describe("what a get-session costs the database", () => {
   async function sqlSession() {
     const signer = newMemoryAuth(secret, []);
     const signed = await signedIn(signer, "signer@example.invalid");
-    const { createDatabase } =
+    const { createAuthDatabase } =
       await vi.importActual<typeof import("@polaris/db/client")>(
         "@polaris/db/client"
       );
-    const { db, pool } = createDatabase("postgresql://sql.invalid/neondb", {
-      schema: authRelationalSchema,
-    });
+    const { db, pool } = createAuthDatabase("postgresql://sql.invalid/neondb");
     const now = new Date();
     const records: Record<string, Record<string, unknown>> & {
       session: Record<string, unknown>;
