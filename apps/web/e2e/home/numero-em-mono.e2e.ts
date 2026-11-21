@@ -143,7 +143,7 @@ test.describe("o visor cabe em todas as larguras (AC-2, AC-5)", () => {
   }
 
   reflowTest(
-    "um valor curto mantém o text-value-lg a 320 px com a letra em 20 px",
+    "um valor curto mantém o text-value-lg nos cartões do mês a 320 px com a letra em 20 px",
     async ({ page }) => {
       await openReflowViewport(page, {
         fontPixels: 20,
@@ -158,10 +158,21 @@ test.describe("o visor cabe em todas as larguras (AC-2, AC-5)", () => {
           timeout: 20_000,
         }
       );
-      const size = await principal
+      const sizes = await page
         .locator("[data-kpi-value]")
-        .evaluate((node) => Number.parseFloat(getComputedStyle(node).fontSize));
-      expect(size).toBeCloseTo(1.5 * 20, 1);
+        .evaluateAll((nodes) =>
+          nodes.map((node) =>
+            Number.parseFloat(getComputedStyle(node).fontSize)
+          )
+        );
+      const [hero, ...month] = sizes;
+      expect(
+        hero,
+        "o herói desce só até caber, nunca acima do xl"
+      ).toBeLessThanOrEqual(2 * 20 + 0.05);
+      for (const size of month) {
+        expect(size).toBeCloseTo(1.5 * 20, 1);
+      }
     }
   );
 
