@@ -1,7 +1,12 @@
-import { readdirSync } from "node:fs";
+import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { readJson, readLists, testsOfReport } from "./ci-shard-plan.mjs";
+import {
+  isSelected,
+  readJson,
+  readLists,
+  testsOfReport,
+} from "./ci-shard-plan.mjs";
 
 /**
  * The guard of the split of the browser gate: nothing the list has may go unplanned or unrun. Compares the files of the
@@ -9,6 +14,10 @@ import { readJson, readLists, testsOfReport } from "./ci-shard-plan.mjs";
  * the tests the shards ran (their `timings-<suite>.json`, in `playwright-timings-shard-<n>/`) with the tests the list
  * has, per suite, file and project. Any difference is a line that names the file, project or count, and the exit code
  * is 1.
+ *
+ * A plan that narrows (`plan.selection.full === false`, the pull request run) is compared with the listed tests of the
+ * selected files only: every selected file must be in exactly one shard and run, and a file the selection leaves out
+ * must be in none. A plan with no selection, or with `full: true`, is compared with the whole list.
  *
  * Usage:
  *   node scripts/ci-shard-coverage.mjs --plan plan.json --list offline-poc=list-offline-poc.json --list pwa=list-pwa.json
@@ -20,6 +29,9 @@ const REPORT_FILE = /^timings-(.+)\.json$/;
 
 export function reportsFromFolder(folder) {
   const found = [];
+  if (!existsSync(folder)) {
+    return found;
+  }
   for (const entry of readdirSync(folder, { withFileTypes: true })) {
     const match = SHARD_FOLDER.exec(entry.name);
     if (!(entry.isDirectory() && match)) {
@@ -46,7 +58,7 @@ function addCount(map, key, by = 1) {
   map.set(key, (map.get(key) ?? 0) + by);
 }
 
-function checkFiles(plan, lists, problems) {
+function plannedFiles(plan) {
   const planned = new Map();
   for (const shard of plan.shards ?? []) {
     for (const [suite, files] of Object.entries(shard.files ?? {})) {
@@ -56,20 +68,44 @@ function checkFiles(plan, lists, problems) {
       }
     }
   }
-  const listed = new Set();
+  return planned;
+}
+
+/** The files of every list (`everything`) and those of them the plan has to run (`selected`). */
+function listedFiles(plan, lists) {
+  const everything = new Set();
+  const selected = new Set();
   for (const [suite, report] of Object.entries(lists)) {
     for (const test of testsOfReport(report)) {
-      listed.add(`${suite} ${test.file}`);
+      everything.add(`${suite} ${test.file}`);
+      if (isSelected(plan, suite, test.file)) {
+        selected.add(`${suite} ${test.file}`);
+      }
     }
   }
-  for (const key of [...listed].sort()) {
+  return { everything, selected };
+}
+
+function checkFiles(plan, lists, problems) {
+  const planned = plannedFiles(plan);
+  const { everything, selected } = listedFiles(plan, lists);
+  for (const key of [...selected].sort()) {
     if (!planned.has(key)) {
       problems.push(`fora do plano: ${key} está no --list e em nenhum shard`);
     }
   }
+  for (const spec of plan.unlisted ?? []) {
+    problems.push(
+      `selecionado e fora do --list: ${spec} está na seleção e em nenhuma lista`
+    );
+  }
   for (const [key, shards] of [...planned].sort()) {
-    if (!listed.has(key)) {
+    if (!everything.has(key)) {
       problems.push(`fora da lista: ${key} está no plano e não no --list`);
+    } else if (!selected.has(key)) {
+      problems.push(
+        `fora da seleção: ${key} está no plano e a seleção do PR não o pede`
+      );
     }
     if (shards.length > 1) {
       problems.push(`em mais de um shard: ${key} (${shards.join(", ")})`);
@@ -77,11 +113,13 @@ function checkFiles(plan, lists, problems) {
   }
 }
 
-function countListed(lists) {
+function countListed(plan, lists) {
   const expected = new Map();
   for (const [suite, report] of Object.entries(lists)) {
     for (const test of testsOfReport(report)) {
-      addCount(expected, countKey(suite, test.file, test.project));
+      if (isSelected(plan, suite, test.file)) {
+        addCount(expected, countKey(suite, test.file, test.project));
+      }
     }
   }
   return expected;
@@ -138,7 +176,7 @@ function compareCounts(expected, ran, problems) {
 }
 
 function checkRuns(plan, lists, reports, problems) {
-  const expected = countListed(lists);
+  const expected = countListed(plan, lists);
   const ran = countRan(plan, reports, problems);
   checkReportsPresent(plan, reports, problems);
   compareCounts(expected, ran, problems);
@@ -204,11 +242,17 @@ function parseArgs(argv) {
 
 function main() {
   const options = parseArgs(process.argv.slice(2));
+  const plan = readJson(options.plan);
   const { problems, totals } = checkCoverage({
     lists: readLists(options.lists),
-    plan: readJson(options.plan),
+    plan,
     reports: reportsFromFolder(options.reports),
   });
+  console.log(
+    plan.selection?.full === false
+      ? `seleção do PR: ${plan.selection.specs.length} specs (${plan.selection.motivo})`
+      : "sem seleção: a suíte toda"
+  );
   for (const [suite, total] of Object.entries(totals)) {
     console.log(
       `${suite}: ${total.listed} no --list, ${total.ran} executados (${total.skipped} deles pulados)`

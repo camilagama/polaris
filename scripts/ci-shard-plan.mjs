@@ -1,5 +1,5 @@
 import { readFileSync, writeFileSync } from "node:fs";
-import { dirname, relative } from "node:path";
+import { dirname, isAbsolute, relative } from "node:path";
 import { pathToFileURL } from "node:url";
 
 /**
@@ -14,9 +14,14 @@ import { pathToFileURL } from "node:url";
  * in a shard was its summed test time over its workers (2.85 to 2.91 with 3 workers, 3.6 to 3.94 with 4, run
  * 44835784977). `--workers <suite>=<n>` overrides the number, to simulate the CI elsewhere.
  *
+ * With `--selection <file>` (the output of `scripts/ci-select-specs.mjs`) a pull request plans only the files whose
+ * repository path the selection names, and no more shards than files; `full: true`, a missing or unreadable file and a
+ * folder the plan cannot place in the repository plan every file. The plan keeps the selection and the repository
+ * folder of each suite (`repoDirs`), which is what the guard `scripts/ci-shard-coverage.mjs` compares the list with.
+ *
  * Usage:
  *   node scripts/ci-shard-plan.mjs --shards 4 --list offline-poc=list-offline-poc.json --list pwa=list-pwa.json
- *     [--durations ci/test-durations.json] [--workers <suite>=<n>] [--out plan.json]
+ *     [--durations ci/test-durations.json] [--workers <suite>=<n>] [--selection selection.json] [--out plan.json]
  *   node scripts/ci-shard-plan.mjs --filters plan.json --shard 2 --suite pwa
  *
  * The second form prints, one per line, the arguments of `playwright test` for the files of that shard and suite: the
@@ -137,13 +142,13 @@ export function workersOf(suite, lists, workers = {}) {
 const fileCount = (shard) =>
   Object.values(shard.files).reduce((n, list) => n + list.length, 0);
 
-export function planShards(files, count, testDirs = {}) {
+export function planShards(files, count, testDirs = {}, scope = {}) {
   if (!Number.isInteger(count) || count < 1) {
     throw new Error("the number of shards must be a whole number from 1 up");
   }
   const shards = Array.from({ length: count }, (_, index) => ({
-    files: {},
     estimatedMs: 0,
+    files: {},
     shard: index + 1,
   }));
   const order = [...files].sort(
@@ -173,12 +178,123 @@ export function planShards(files, count, testDirs = {}) {
   return {
     shards,
     testDirs,
-    workers: Object.fromEntries(files.map((f) => [f.suite, f.workers])),
     untimed: files
       .filter((f) => !f.timed)
       .map(({ file, suite }) => ({ file, suite })),
     version: 1,
+    workers: Object.fromEntries(files.map((f) => [f.suite, f.workers])),
+    ...(scope.selection ? { selection: scope.selection } : {}),
+    ...(scope.repoDirs ? { repoDirs: scope.repoDirs } : {}),
   };
+}
+
+const fullBecause = (motivo) => ({ full: true, motivo, specs: [] });
+
+/**
+ * The selection of a pull request, from the JSON of `ci-select-specs.mjs`. Anything that is not `{ full: false, specs:
+ * [strings] }` is the whole suite: the plan never narrows on a selection it cannot read.
+ */
+export function parseSelection(value) {
+  if (
+    value?.full === false &&
+    Array.isArray(value.specs) &&
+    value.specs.every((spec) => typeof spec === "string")
+  ) {
+    return {
+      full: false,
+      motivo: String(value.motivo ?? ""),
+      specs: [...new Set(value.specs)].sort(),
+    };
+  }
+  return fullBecause(
+    value?.full === true
+      ? String(value.motivo ?? "a suíte toda foi pedida")
+      : "seleção em formato desconhecido: a suíte toda roda"
+  );
+}
+
+export function readSelection(path) {
+  if (!path) {
+    return fullBecause("sem seleção: a suíte toda roda");
+  }
+  try {
+    return parseSelection(readJson(path));
+  } catch (error) {
+    return fullBecause(
+      `seleção ilegível (${error.message}): a suíte toda roda`
+    );
+  }
+}
+
+/** The folder of a suite's specs relative to the repository, as in the paths of the selector (`apps/web/e2e-pwa`). */
+export function repoDirOf(report, repoRoot = process.cwd()) {
+  const { rootDir } = report.config ?? {};
+  if (!rootDir) {
+    throw new Error("the --list report has no config.rootDir");
+  }
+  return relative(repoRoot, rootDir).split("\\").join("/");
+}
+
+const insideRepo = (dir) =>
+  dir !== "" && !dir.startsWith("..") && !isAbsolute(dir);
+
+/**
+ * Whether a listed file runs in this plan. A plan without a narrowing selection, or without the folder of the suite,
+ * takes every file: what the plan cannot place counts as selected, so the guard asks for it.
+ */
+export function isSelected(plan, suite, file) {
+  const { repoDirs, selection } = plan;
+  const dir = repoDirs?.[suite];
+  if (selection?.full !== false || !dir) {
+    return true;
+  }
+  return selection.specs.includes(`${dir}/${file}`);
+}
+
+/**
+ * The selection and the folders a plan of these lists keeps: the given selection when every suite folder is inside
+ * the repository, the whole suite otherwise.
+ */
+export function scopeOf(selection, lists, repoRoot = process.cwd()) {
+  const repoDirs = Object.fromEntries(
+    Object.entries(lists).map(([suite, report]) => [
+      suite,
+      repoDirOf(report, repoRoot),
+    ])
+  );
+  const outside = Object.entries(repoDirs).find(([, dir]) => !insideRepo(dir));
+  if (selection.full || !outside) {
+    return { repoDirs, selection };
+  }
+  return {
+    repoDirs,
+    selection: fullBecause(
+      `${outside[0]}: a pasta ${outside[1] || "(vazia)"} não está no repositório, a suíte toda roda`
+    ),
+  };
+}
+
+/** The files of `files` that the scope of the plan runs. */
+export function selectedFiles(files, scope) {
+  return files.filter((file) => isSelected(scope, file.suite, file.file));
+}
+
+/**
+ * The selected specs that live in a suite folder and that no list has: a path the plan cannot place, which the guard
+ * reports instead of letting the selection shrink to nothing.
+ */
+export function unlistedSelection(files, scope) {
+  if (scope.selection?.full !== false) {
+    return [];
+  }
+  const dirs = Object.values(scope.repoDirs ?? {});
+  const listed = new Set(
+    files.map((file) => `${scope.repoDirs[file.suite]}/${file.file}`)
+  );
+  return scope.selection.specs.filter(
+    (spec) =>
+      dirs.some((dir) => spec.startsWith(`${dir}/`)) && !listed.has(spec)
+  );
 }
 
 const REGEX_SPECIAL = /[.*+?^${}()|[\]\\]/g;
@@ -199,6 +315,14 @@ export function filtersOf(plan, shardNumber, suite) {
 
 const minutes = (ms) => (ms / 60_000).toFixed(1).replace(".", ",");
 
+export function plannedFileCount(plan) {
+  return plan.shards.reduce(
+    (total, shard) =>
+      total + Object.values(shard.files).reduce((n, l) => n + l.length, 0),
+    0
+  );
+}
+
 export function renderPlan(plan) {
   const times = plan.shards.map((s) => s.estimatedMs);
   const mid = median(times);
@@ -213,6 +337,13 @@ export function renderPlan(plan) {
     "",
     `Mais lento − mais rápido: ${minutes(spread)} min, ${mid ? ((100 * spread) / mid).toFixed(1).replace(".", ",") : "-"}% da mediana (${minutes(mid)} min).`,
   ];
+  if (plan.selection) {
+    lines.push(
+      plan.selection.full
+        ? `Seleção: a suíte toda (${plan.selection.motivo}).`
+        : `Seleção: ${plannedFileCount(plan)} de ${plan.listedFiles ?? "?"} arquivos (${plan.selection.motivo}).`
+    );
+  }
   if (plan.untimed.length > 0) {
     lines.push(
       `Sem tempo (contados pela mediana): ${plan.untimed.map((f) => `${f.suite}:${f.file}`).join(", ")}.`
@@ -265,11 +396,42 @@ export function parseArgs(argv) {
       options.shard = Number(value());
     } else if (arg === "--suite") {
       options.suite = value();
+    } else if (arg === "--selection") {
+      options.selection = value();
     } else {
       throw new Error(`unknown argument ${arg}`);
     }
   }
   return options;
+}
+
+/**
+ * The plan of the browser gate for these lists. A narrowing selection plans only its files and at most one shard per
+ * file, so that no shard starts with nothing to run; the whole suite plans every file in `shards` shards.
+ */
+export function buildPlan({
+  durations,
+  lists,
+  repoRoot,
+  selection,
+  shards,
+  workers,
+}) {
+  const scope = scopeOf(selection, lists, repoRoot);
+  const all = weighFiles(durations, lists, workers);
+  const files = selectedFiles(all, scope);
+  const testDirs = Object.fromEntries(
+    Object.entries(lists).map(([suite, report]) => [suite, testDirOf(report)])
+  );
+  const count =
+    scope.selection.full === false
+      ? Math.max(1, Math.min(shards, files.length))
+      : shards;
+  return {
+    ...planShards(files, count, testDirs, scope),
+    listedFiles: all.length,
+    unlisted: unlistedSelection(all, scope),
+  };
 }
 
 function main() {
@@ -290,15 +452,13 @@ function main() {
       throw new Error(`${suite}: the --list has no test`);
     }
   }
-  const durations = readJson(options.durations ?? DEFAULT_DURATIONS);
-  const testDirs = Object.fromEntries(
-    Object.entries(lists).map(([suite, report]) => [suite, testDirOf(report)])
-  );
-  const plan = planShards(
-    weighFiles(durations, lists, options.workers),
-    options.shards,
-    testDirs
-  );
+  const plan = buildPlan({
+    durations: readJson(options.durations ?? DEFAULT_DURATIONS),
+    lists,
+    selection: readSelection(options.selection),
+    shards: options.shards,
+    workers: options.workers,
+  });
   const text = `${JSON.stringify(plan, null, 2)}\n`;
   if (options.out) {
     writeFileSync(options.out, text);
