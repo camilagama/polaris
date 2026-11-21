@@ -1,5 +1,6 @@
 import type {
   ExpenseCategoryReadModel,
+  ExpenseCategoryTotalReadModel,
   ExpenseReadModel,
 } from "@polaris/contracts";
 import {
@@ -408,4 +409,147 @@ export function formatMonthLabel(month: string): string {
     return month;
   }
   return `${monthNames[parsed.month - 1]} de ${parsed.year}`;
+}
+
+/** One line of "Por categoria": what the person reads (name, share, amount) and how long the bar is. */
+export interface CategoryShareRow {
+  /** The amount as the server writes it ("1500.00"). */
+  amount: string;
+  /** The category the line filters by; null for "Outras" and for the categories this screen does not know. */
+  categoryId: string | null;
+  key: string;
+  name: string;
+  /** Whole percent; the lines add up to 100. */
+  percent: number;
+  /** 0 to 100: the share of the longest line, which fills the track. */
+  width: number;
+}
+
+const DECIMAL_CENTS = /^(\d+)\.(\d{2})$/;
+const CATEGORY_SHARE_LINES = 5;
+const MIN_CATEGORIES = 2;
+const UNKNOWN_CATEGORY_NAME = "Sem categoria";
+
+function centsOf(amount: string): bigint | null {
+  const match = DECIMAL_CENTS.exec(amount);
+  return match ? BigInt(`${match[1]}${match[2]}`) : null;
+}
+
+function centsToAmount(cents: bigint): string {
+  const digits = cents.toString().padStart(3, "0");
+  return `${digits.slice(0, -2)}.${digits.slice(-2)}`;
+}
+
+interface CategoryCents {
+  cents: bigint;
+  id: string | null;
+  name: string;
+}
+
+function compareBigInt(a: bigint, b: bigint): number {
+  if (a === b) {
+    return 0;
+  }
+  return a > b ? 1 : -1;
+}
+
+/** Whole percents of `parts` over their sum that add up to 100: the floor of each, and the rest to the largest remainders. */
+export function percentsByLargestRemainder(parts: readonly bigint[]): number[] {
+  const whole = parts.reduce((sum, part) => sum + part, 0n);
+  if (whole <= 0n) {
+    return parts.map(() => 0);
+  }
+  const floors = parts.map((part) => Number((part * 100n) / whole));
+  const remainders = parts
+    .map((part, index) => ({ index, rest: (part * 100n) % whole }))
+    .sort((a, b) => compareBigInt(b.rest, a.rest) || a.index - b.index);
+  let left = 100 - floors.reduce((sum, value) => sum + value, 0);
+  for (const { index } of remainders) {
+    if (left <= 0) {
+      break;
+    }
+    floors[index] = (floors[index] ?? 0) + 1;
+    left -= 1;
+  }
+  return floors;
+}
+
+function groupKnownCategories(
+  totals: readonly ExpenseCategoryTotalReadModel[],
+  categories: readonly ExpenseCategoryReadModel[]
+): CategoryCents[] | null {
+  const names = new Map(
+    categories.map((item) => [
+      item.id,
+      item.status === "archived" ? `${item.name} (arquivada)` : item.name,
+    ])
+  );
+  const grouped: CategoryCents[] = [];
+  let unknown = 0n;
+  for (const entry of totals) {
+    const cents = centsOf(entry.total);
+    if (cents === null) {
+      return null;
+    }
+    const name = names.get(entry.categoryId);
+    if (name === undefined) {
+      unknown += cents;
+    } else if (cents > 0n) {
+      grouped.push({ cents, id: entry.categoryId, name });
+    }
+  }
+  if (unknown > 0n) {
+    grouped.push({ cents: unknown, id: null, name: UNKNOWN_CATEGORY_NAME });
+  }
+  return grouped;
+}
+
+/**
+ * The lines of "Por categoria": the five largest categories of the filter from the largest down, and the rest added
+ * up in "Outras (N)". Null (no block) with fewer than two categories, with an answer that has no `totalsByCategory`,
+ * or when the lines do not add up to `total` to the centavo: a figure that does not match the one on screen is not
+ * shown.
+ */
+export function categoryShareRows(
+  totalsByCategory: readonly ExpenseCategoryTotalReadModel[] | undefined,
+  categories: readonly ExpenseCategoryReadModel[],
+  total: string
+): CategoryShareRow[] | null {
+  if (totalsByCategory === undefined) {
+    return null;
+  }
+  const grouped = groupKnownCategories(totalsByCategory, categories);
+  if (grouped === null || grouped.length < MIN_CATEGORIES) {
+    return null;
+  }
+  grouped.sort(
+    (a, b) =>
+      compareBigInt(b.cents, a.cents) || a.name.localeCompare(b.name, "pt-BR")
+  );
+  const lines = grouped.slice(0, CATEGORY_SHARE_LINES);
+  const rest = grouped.slice(CATEGORY_SHARE_LINES);
+  if (rest.length > 0) {
+    lines.push({
+      cents: rest.reduce((sum, item) => sum + item.cents, 0n),
+      id: null,
+      name: `Outras (${rest.length})`,
+    });
+  }
+  const whole = lines.reduce((sum, line) => sum + line.cents, 0n);
+  if (whole !== centsOf(total)) {
+    return null;
+  }
+  const percents = percentsByLargestRemainder(lines.map((line) => line.cents));
+  const longest = lines.reduce(
+    (max, line) => (line.cents > max ? line.cents : max),
+    0n
+  );
+  return lines.map((line, index) => ({
+    amount: centsToAmount(line.cents),
+    categoryId: line.id,
+    key: line.id ?? `other-${index}`,
+    name: line.name,
+    percent: percents[index] ?? 0,
+    width: Number((line.cents * 10_000n) / longest) / 100,
+  }));
 }

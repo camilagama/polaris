@@ -172,6 +172,29 @@ describe.each([
 });
 
 /**
+ * The bar of "Por categoria" (Despesas): `--chart-2`, the color of the expenses in the bar of parts of the Resultado,
+ * over the `--muted` track it grows on. The bar is a drawing beside the written name, share and amount, and still
+ * reaches the 3:1 of a graphic element (WCAG 1.4.11) in both themes.
+ */
+describe.each([
+  ["Tema claro", tokens(block(":root"))],
+  [
+    "Tema escuro",
+    new Map([...tokens(block(":root")), ...tokens(block(".dark"))]),
+  ],
+])("contraste da barra de Por categoria, %s", (section, palette) => {
+  it("`chart-2` / `muted` is in the map and reaches 3:1", () => {
+    const row = pairs(section).find(
+      (item) => item.foreground === "`chart-2`" && item.background === "`muted`"
+    );
+    expect(row, `chart-2 / muted is not in "${section}"`).toBeDefined();
+    expect(
+      ratio(color("`chart-2`", palette), color("`muted`", palette))
+    ).toBeGreaterThanOrEqual(3);
+  });
+});
+
+/**
  * The step of the hour of the "Primeiros passos" (Início): its number is `mark-foreground` over the tint of the circle
  * (`mark/10`, `mark/15` in the dark) and its border is `mark` over the card. Both pairs are rows of the tables above;
  * this one says they cannot leave the map, and holds the number to the 4.5:1 of text and the border to the 3:1 of a

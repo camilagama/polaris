@@ -1,4 +1,7 @@
-import type { ExpenseReadModel } from "@polaris/contracts";
+import type {
+  ExpenseCategoryTotalReadModel,
+  ExpenseReadModel,
+} from "@polaris/contracts";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { orpcClient } from "../lib/orpc";
 import { readWithRetry } from "../lib/read-with-retry";
@@ -24,6 +27,8 @@ export interface ExpenseListState {
   nextCursor: string | null;
   /** Exact decimal text for the whole filter, not only the loaded page. */
   total: string;
+  /** The same total per category; absent when the answer has no such field. */
+  totalsByCategory?: ExpenseCategoryTotalReadModel[] | undefined;
 }
 
 const PAGE_SIZE = 50;
@@ -36,6 +41,7 @@ const initialState: ExpenseListState = {
   isLoadingMore: false,
   nextCursor: null,
   total: "0.00",
+  totalsByCategory: undefined,
 };
 
 /**
@@ -92,6 +98,7 @@ export function useExpenseList(
           isLoadingMore: false,
           nextCursor: result.nextCursor,
           total: result.total,
+          totalsByCategory: result.totalsByCategory,
         });
       } catch (caughtError) {
         if (requestSequence === sequence.current) {
@@ -132,6 +139,7 @@ export function useExpenseList(
         isLoadingMore: false,
         nextCursor: result.nextCursor,
         total: result.total,
+        totalsByCategory: result.totalsByCategory,
       }));
     } catch (caughtError) {
       if (requestSequence === sequence.current) {
