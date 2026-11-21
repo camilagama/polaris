@@ -24,6 +24,8 @@ const ORGANIZATION = {
   role: "owner",
   timezone: "America/Sao_Paulo",
 };
+const NOW = new Date("2026-10-24T12:00:00-03:00");
+const STAMP = NOW.toISOString();
 /** What the limit text must never say: the category, the Assinatura, archiving, the product as the unit. */
 const FORBIDDEN_IN_LIMIT_TEXT = /categoria|assinatura|arquiv|produtos/i;
 const QUANTITY_FOR_COST_TEXT = /Informe quantos você tem para guardar o custo/;
@@ -46,14 +48,14 @@ const rpc = (json: unknown, status = 200) => ({
 const createdProduct = (name: string, productId: string) => ({
   archivedAt: null,
   categoryId: null,
-  createdAt: "2026-10-24T12:00:00.000Z",
+  createdAt: STAMP,
   deletedAt: null,
   description: null,
   id: productId,
   name,
   organizationId: ORGANIZATION.id,
   status: "active",
-  updatedAt: "2026-10-24T12:00:00.000Z",
+  updatedAt: STAMP,
   version: 1,
 });
 
@@ -83,6 +85,7 @@ async function openScreen(
   { creates = [], path = "/products" }: ScreenOptions = {}
 ) {
   const bodies: CreateBody[] = [];
+  await page.clock.setFixedTime(NOW);
   await page.route("**/api/auth/get-session", (route) =>
     route.fulfill({
       body: JSON.stringify({ session: { id: "s" }, user: { id: "u" } }),

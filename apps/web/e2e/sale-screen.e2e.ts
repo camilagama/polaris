@@ -34,19 +34,23 @@ const rpc = (body: unknown) => ({
   headers: { ...WORKER_MARK },
 });
 
+const NOW = new Date("2026-10-01T12:00:00-03:00");
+const STAMP = NOW.toISOString();
+
 const PROFILE = {
   archivedAt: null,
-  createdAt: "2026-10-01T12:00:00.000Z",
+  createdAt: STAMP,
   id: "0199c2d0-0000-7000-8000-0000000000c1",
   name: "Maquininha do laboratório",
   organizationId: "0199c2d0-0000-7000-8000-00000000a001",
   rules: [],
   status: "active",
-  updatedAt: "2026-10-01T12:00:00.000Z",
+  updatedAt: STAMP,
   version: 1,
 };
 
 async function openSaleLab(page: Page, stored: string) {
+  await page.clock.setFixedTime(NOW);
   await page.addInitScript((theme) => {
     window.localStorage.setItem("polaris-tema", theme);
   }, stored);

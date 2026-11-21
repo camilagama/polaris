@@ -75,14 +75,19 @@ const badRequest = rpc(
   400
 );
 
+const NOW = new Date("2026-10-02T12:00:00-03:00");
+const DAY = 86_400_000;
+const CREATED_AT = new Date(NOW.getTime() - DAY).toISOString();
+const ARCHIVED_AT = NOW.toISOString();
+
 const fee = (mode: string, percentage: string | null) => ({
   fixedAmount: null,
   mode,
   percentage,
 });
 const profile = (n: number, name: string, status = "active") => ({
-  archivedAt: status === "archived" ? "2026-10-02T12:00:00.000Z" : null,
-  createdAt: "2026-10-01T12:00:00.000Z",
+  archivedAt: status === "archived" ? ARCHIVED_AT : null,
+  createdAt: CREATED_AT,
   id: `0199c2d0-0000-7000-8000-0000000000c${n}`,
   name,
   organizationId: ORGANIZATION.id,
@@ -98,7 +103,7 @@ const profile = (n: number, name: string, status = "active") => ({
     },
   ],
   status,
-  updatedAt: "2026-10-01T12:00:00.000Z",
+  updatedAt: CREATED_AT,
   version: 1,
 });
 const MACHINE = profile(1, "Maquininha da loja");
@@ -114,6 +119,7 @@ const title = (page: Page) =>
 // ---- the lab: the same screen without the shell ---------------------------------------------------------------
 
 async function openLab(page: Page, stored = "claro") {
+  await page.clock.setFixedTime(NOW);
   await page.addInitScript((theme) => {
     window.localStorage.setItem("polaris-tema", theme);
   }, stored);
@@ -293,6 +299,7 @@ interface ServerOptions {
 
 async function openServerScreen(page: Page, { lists, others }: ServerOptions) {
   let calls = 0;
+  await page.clock.setFixedTime(NOW);
   await page.route("**/api/auth/get-session", (route) =>
     route.fulfill({
       body: JSON.stringify({ session: { id: "s" }, user: { id: "u" } }),

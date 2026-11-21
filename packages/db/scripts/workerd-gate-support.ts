@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import type { AdminPool } from "./sales-gate-support";
 import { temporaryRuntimeUrl } from "./sales-gate-support";
 import {
+  runDigest,
   type SuiteExpectation,
   suiteSummaryProblems,
 } from "./workerd-suite-summary";
@@ -20,8 +21,6 @@ export const repositoryRoot = fileURLToPath(
   new URL("../../..", import.meta.url)
 );
 const VITEST_TIMEOUT_MS = 5 * 60_000;
-const failureLine =
-  /FAIL|Error|expected|Expected|Received|✗|×|Tests |Test Files/;
 const lineBreak = /\r?\n/;
 const urlPattern = /postgres(?:ql)?:\/\/\S+/gi;
 
@@ -64,7 +63,7 @@ export function temporaryLogins(
 
 export interface RunResult {
   code: number;
-  /** The lines that say what failed: the runner of the gates shows only the last lines of a gate. */
+  /** The seed line of the shuffle and the lines that say what failed: the runner of the gates shows only the last lines of a gate. */
   digest: string[];
   /** Every line, with the URLs of databases redacted. */
   lines: string[];
@@ -145,10 +144,7 @@ export function runWorkerdVitest(
       const problems =
         code === 0 ? suiteSummaryProblems(readReport(), expectation) : [];
       rmSync(reportDirectory, { force: true, recursive: true });
-      const digest = [
-        ...lines.filter((line) => failureLine.test(line)).slice(-30),
-        ...problems,
-      ];
+      const digest = runDigest(lines, problems);
       lines.push(...problems);
       resolve({
         code: problems.length > 0 ? 1 : (code ?? 1),
