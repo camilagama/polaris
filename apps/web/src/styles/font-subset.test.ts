@@ -1,4 +1,5 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
+import { brotliDecompressSync } from "node:zlib";
 import { join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -13,7 +14,7 @@ import { describe, expect, it } from "vitest";
  *
  * Out of the sweep: tests, comments, and the two folders that are no screen of the shop: the labs (`offline-poc/`)
  * and the character sample page (`ui-gallery/`, which lists the glyphs on purpose). Geist Mono has its own subset
- * and is not checked here. `server/` is swept too: nothing there needs the exceptions today, and a character that
+ * and is checked on its own at the end (the characters of the display). `server/` is swept too: nothing there needs the exceptions today, and a character that
  * the e-mails or the logs need and Geist lacks is one more line of `EXCEPTIONS`, with its reason.
  */
 const src = fileURLToPath(new URL("..", import.meta.url));
@@ -396,5 +397,177 @@ describe("texto da interface x unicode-range da Geist embutida", () => {
         faceRanges('@font-face { font-family: "Geist Variable"; }', FACE_FAMILY)
       ).toThrow("unicode-range");
     });
+  });
+});
+
+/*
+ * Geist Mono sets the display of the app (the figure of the KPI cards and the percents). A character the file does not
+ * have is drawn by another font, with another advance, and the figure loses the one thing the face is there for. The
+ * `unicode-range` only says what the face declares, so this reads what the woff2 file holds: its `cmap`, out of the
+ * brotli stream (the `cmap` is never transformed).
+ */
+const MONO_FAMILY = "Geist Mono Variable";
+const MONO_FILE = fileURLToPath(
+  new URL(
+    "../../node_modules/@fontsource-variable/geist-mono/files/geist-mono-latin-wght-normal.woff2",
+    import.meta.url
+  )
+);
+
+/** The characters of the display: "R$", the digits, the separators, the percent, the signs, the mask dots and the dash. */
+const DISPLAY_CHARACTERS = "R$0123456789.,%+\u2212-\u2022\u2014 ";
+
+const WOFF2_TAGS = [
+  "cmap",
+  "head",
+  "hhea",
+  "hmtx",
+  "maxp",
+  "name",
+  "OS/2",
+  "post",
+  "cvt ",
+  "fpgm",
+  "glyf",
+  "loca",
+  "prep",
+];
+const GLYF_AND_LOCA = new Set(["glyf", "loca"]);
+const CONTINUATION = 128;
+const TAG_INDEX_RANGE = 64;
+const GLYPH_RANGE = 0x1_00_00;
+const ALL_TAGS = 63;
+
+function base128(view: DataView, at: number): [number, number] {
+  let value = 0;
+  for (let index = 0; index < 5; index += 1) {
+    const byte = view.getUint8(at + index);
+    value = value * CONTINUATION + (byte % CONTINUATION);
+    if (byte < CONTINUATION) {
+      return [value, at + index + 1];
+    }
+  }
+  throw new Error("woff2: UIntBase128 longo demais");
+}
+
+/** The `cmap` table of a woff2 file, as the bytes of the font. */
+function woff2Cmap(file: Buffer): Buffer {
+  const view = new DataView(file.buffer, file.byteOffset, file.byteLength);
+  if (view.getUint32(0) !== 0x77_4f_46_32) {
+    throw new Error("não é woff2");
+  }
+  const count = view.getUint16(12);
+  const compressedSize = view.getUint32(20);
+  let at = 48;
+  const sizes: { stored: number; tag: string }[] = [];
+  for (let index = 0; index < count; index += 1) {
+    const flags = view.getUint8(at);
+    at += 1;
+    const known = flags % TAG_INDEX_RANGE;
+    let tag = WOFF2_TAGS[known] ?? `#${known}`;
+    if (known === ALL_TAGS) {
+      tag = file.toString("latin1", at, at + 4);
+      at += 4;
+    }
+    const version = Math.floor(flags / TAG_INDEX_RANGE);
+    const [original, afterOriginal] = base128(view, at);
+    at = afterOriginal;
+    const transformed = GLYF_AND_LOCA.has(tag) ? version === 0 : version !== 0;
+    let stored = original;
+    if (transformed) {
+      [stored, at] = base128(view, at);
+    }
+    sizes.push({ stored, tag });
+  }
+  const tables = brotliDecompressSync(file.subarray(at, at + compressedSize));
+  let offset = 0;
+  for (const { stored, tag } of sizes) {
+    if (tag === "cmap") {
+      return tables.subarray(offset, offset + stored);
+    }
+    offset += stored;
+  }
+  throw new Error("woff2 sem cmap");
+}
+
+/** The code points a `cmap` maps to a glyph other than .notdef (the subtables of format 4 and 12 of the Windows or Unicode platforms). */
+function cmapCovers(cmap: Buffer): (codePoint: number) => boolean {
+  const view = new DataView(cmap.buffer, cmap.byteOffset, cmap.byteLength);
+  const records = view.getUint16(2);
+  const subtables: number[] = [];
+  for (let index = 0; index < records; index += 1) {
+    const platform = view.getUint16(4 + index * 8);
+    if (platform === 0 || platform === 3) {
+      subtables.push(view.getUint32(4 + index * 8 + 4));
+    }
+  }
+  const glyphIn4 = (base: number, codePoint: number): number => {
+    const segments = view.getUint16(base + 6) / 2;
+    const ends = base + 14;
+    const starts = ends + segments * 2 + 2;
+    const deltas = starts + segments * 2;
+    const ranges = deltas + segments * 2;
+    for (let segment = 0; segment < segments; segment += 1) {
+      if (codePoint > view.getUint16(ends + segment * 2)) {
+        continue;
+      }
+      const start = view.getUint16(starts + segment * 2);
+      if (codePoint < start) {
+        return 0;
+      }
+      const delta = view.getInt16(deltas + segment * 2);
+      const range = view.getUint16(ranges + segment * 2);
+      if (range === 0) {
+        return (codePoint + delta + GLYPH_RANGE) % GLYPH_RANGE;
+      }
+      const glyph = view.getUint16(
+        ranges + segment * 2 + range + (codePoint - start) * 2
+      );
+      return glyph === 0 ? 0 : (glyph + delta + GLYPH_RANGE) % GLYPH_RANGE;
+    }
+    return 0;
+  };
+  const glyphIn12 = (base: number, codePoint: number): number => {
+    const groups = view.getUint32(base + 12);
+    for (let group = 0; group < groups; group += 1) {
+      const at = base + 16 + group * 12;
+      const start = view.getUint32(at);
+      if (codePoint >= start && codePoint <= view.getUint32(at + 4)) {
+        return view.getUint32(at + 8) + codePoint - start;
+      }
+    }
+    return 0;
+  };
+  return (codePoint) =>
+    subtables.some((base) => {
+      const format = view.getUint16(base);
+      if (format === 4) {
+        return glyphIn4(base, codePoint) !== 0;
+      }
+      return format === 12 && glyphIn12(base, codePoint) !== 0;
+    });
+}
+
+describe("Geist Mono do visor", () => {
+  const characters = [...DISPLAY_CHARACTERS].map(
+    (char) => char.codePointAt(0) ?? 0
+  );
+  const monoRanges = faceRanges(readFileSync(CSS, "utf8"), MONO_FAMILY);
+  const covers = cmapCovers(woff2Cmap(readFileSync(MONO_FILE)));
+
+  it("o unicode-range da face declara os caracteres do visor", () => {
+    const missing = characters.filter((code) => !inRanges(code, monoRanges));
+    expect(missing.map(fmt)).toEqual([]);
+  });
+
+  it("o arquivo da fonte tem um glifo para cada um deles", () => {
+    const missing = characters.filter((code) => !covers(code));
+    expect(missing.map(fmt)).toEqual([]);
+  });
+
+  it("controle plantado: o leitor do cmap reprova um caractere que a fonte não tem", () => {
+    expect(covers(0x27_13)).toBe(false);
+    expect(covers(0x4e_00)).toBe(false);
+    expect(covers("5".codePointAt(0) ?? 0)).toBe(true);
   });
 });

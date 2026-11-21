@@ -16,6 +16,7 @@ import {
   FORM_WIDTHS,
   sizeFor,
 } from "./form-dialog-checks";
+import { expectGeist, expectMono } from "./mono-face";
 import { expectSamePlaces, placesOf } from "./same-place";
 import { serveLabWorker, WORKER_MARK } from "./worker-mark";
 
@@ -871,6 +872,36 @@ test("com Esconder valores ligado (v7 § 6), a aba Metas também esconde os reai
   await expect(goal.getByRole("progressbar")).toHaveAttribute(
     "aria-valuetext",
     "valor escondido de valor escondido, 45,0%"
+  );
+  await expectMono(
+    goal.locator('[data-slot="progress-value"]'),
+    "o percentual com os valores escondidos"
+  );
+});
+
+test("o percentual do progresso da meta é Geist Mono, e o nome e os valores seguem em Geist", async ({
+  page,
+}) => {
+  const server = new FakeGoalServer();
+  server.seed({
+    kind: "net_sales",
+    name: "Meta de outubro",
+    target: "1000.00",
+  });
+  await openGoals(page, server);
+  const goal = card(page, "Meta de outubro");
+  await expect(goal).toContainText("45,0%");
+  await expectMono(
+    goal.locator('[data-slot="progress-value"]'),
+    "o percentual do progresso"
+  );
+  await expectGeist(
+    goal.getByRole("heading", { name: "Meta de outubro" }),
+    "o nome da meta"
+  );
+  await expectGeist(
+    goal.locator('[data-slot="progress"] > span').first(),
+    "os valores da meta"
   );
 });
 

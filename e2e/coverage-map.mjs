@@ -808,6 +808,7 @@ export const SPEC_SCREENS = {
     "dashboard",
     "expenses",
   ],
+  "apps/web/e2e/dashboard/numero-em-mono.e2e.ts": ["home", "dashboard"],
   "apps/web/e2e/dashboard/periodo-e-controle.e2e.ts": ["home", "dashboard"],
   "apps/web/e2e/dashboard/reflow-320.e2e.ts": [
     "home",
@@ -834,6 +835,7 @@ export const SPEC_SCREENS = {
     "sale-detail",
     "expenses",
   ],
+  "apps/web/e2e/home/numero-em-mono.e2e.ts": ["home", "inventory"],
   "apps/web/e2e/home/offline-e-leituras.e2e.ts": ["home", "sale"],
   "apps/web/e2e/home/ritmo-e-plano.e2e.ts": ["home", "settings"],
   "apps/web/e2e/home/valores-e-ranking.e2e.ts": [

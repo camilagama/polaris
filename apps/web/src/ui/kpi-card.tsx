@@ -16,7 +16,7 @@ import { AnimatedFigure } from "./animated-figure";
 import { Card } from "./card";
 import { HelpTip } from "./help-tip";
 import { MoneyText } from "./hidden-values";
-import { Money } from "./money";
+import { maskedAmountWidthEm, Money, splitAmountWidthEm } from "./money";
 import { Skeleton } from "./skeleton";
 
 /**
@@ -45,35 +45,38 @@ const SIGN = /^[+-]/;
  * The box of the number: one line of a fixed height, so "R$ 129,90" (with the "R$" and the cents smaller), "R$ ••••"
  * (whose dots may come from another font) and "—" take the same height, and nothing under them moves when the values
  * are hidden or a day is read. Every card has the one size, `text-value-lg` (30 px line; 28 on a phone), with no card
- * above the others: the "R$" and the number are the same size, weight and line in all of them. The size is one of the
- * tokens of the scale; `leading-*` sets the line whatever the size class says, and goes after the size classes of its
- * own variant, because the merge of the classes drops a `leading-*` that comes before one.
+ * above the others: the "R$" and the number are the same size, weight and line in all of them. The figure is the display
+ * of the card, in Geist Mono (every digit the same width, so it does not dance when it updates) and with no tracking:
+ * negative spacing squeezes the fixed cells. The size is one of the tokens of the scale; `leading-*` sets the line
+ * whatever the size class says, and goes after the size classes of its own variant, because the merge of the classes
+ * drops a `leading-*` that comes before one.
  */
 const HERO_BOX =
-  "h-(--text-value-lg--line-height) whitespace-nowrap font-semibold text-value-lg tabular-nums tracking-[-0.035em]";
+  "h-(--text-value-lg--line-height) whitespace-nowrap font-mono font-semibold text-value-lg tabular-nums";
 
-/** The width of a character of the figure, in em at `text-value-lg`: measured over the amounts a tile writes ("R$ 99.640,35"), with the "R$" and the cents a step smaller. */
-const FIGURE_CHARACTER_EM = 0.44;
+/** A little more than the figure takes, so the fit does not rest on a fraction of a pixel (the area clips what overflows). */
+const FIGURE_FIT_MARGIN = 1.02;
 
 /** The floor of the figure of a tile: low enough for the longest amount a store writes (17 characters) in the narrowest area. */
 const TILE_FIGURE_FLOOR = "0.875rem";
 
 /**
- * The size of the figure of a tile, from the width of its own area (a container, `cqw`) and the characters it writes, so
- * a long amount steps down to fit and a short one keeps `text-value-lg`: the area never grows with the number.
+ * The size of the figure of a tile, from the width of its own area (a container, `cqw`) and the width the amount takes
+ * in em (Geist Mono has one advance for every glyph, so the width is known, not measured per amount), so a long amount
+ * steps down to fit and a short one keeps `text-value-lg`: the area never grows with the number.
  */
-function tileFigureSize(characters: number): CSSProperties {
-  const fit = (100 / (Math.max(characters, 1) * FIGURE_CHARACTER_EM)).toFixed(
-    2
-  );
+function tileFigureSize(widthEm: number): CSSProperties {
+  const fit = (100 / (widthEm * FIGURE_FIT_MARGIN)).toFixed(2);
   return {
     fontSize: `max(${TILE_FIGURE_FLOOR}, min(var(--text-value-lg), ${fit}cqw))`,
   };
 }
 
-/** What the amount is written as, for the width it takes: hidden values are always the same seven characters. */
-function writtenLength(amount: string, hidden: boolean): number {
-  return hidden ? "R$ ••••".length : formatBrlAmount(amount).length;
+/** What the amount is written as, for the width it takes: hidden values are always the same "R$ ••••". */
+function writtenWidthEm(amount: string, hidden: boolean): number {
+  return hidden
+    ? maskedAmountWidthEm()
+    : splitAmountWidthEm(formatBrlAmount(amount));
 }
 
 export function HeroValue({
@@ -94,12 +97,14 @@ export function HeroValue({
   const [hidden] = useHiddenValues();
   const size =
     tile && amount !== null
-      ? tileFigureSize(writtenLength(amount, hidden))
+      ? tileFigureSize(writtenWidthEm(amount, hidden))
       : undefined;
   if (amount === null && emptyText) {
     return (
       <p className={cn(HERO_BOX, "text-muted-foreground")}>
-        <span className="font-medium text-sm tracking-normal">{emptyText}</span>
+        <span className="font-medium font-sans text-sm tracking-normal">
+          {emptyText}
+        </span>
       </p>
     );
   }
@@ -199,7 +204,11 @@ function MoneyChipText({ text }: { text: string }) {
  */
 function chipText(delta: KpiDelta, named: boolean, hidden: boolean): ReactNode {
   const seen = (
-    <span aria-hidden="true" data-kpi-delta-text="">
+    <span
+      aria-hidden="true"
+      className={delta.money ? undefined : "font-mono"}
+      data-kpi-delta-text=""
+    >
       {delta.money ? <MoneyChipText text={delta.text} /> : delta.text}
     </span>
   );
