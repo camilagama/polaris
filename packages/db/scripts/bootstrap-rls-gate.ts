@@ -3,7 +3,7 @@ import { randomBytes } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { Pool } from "pg";
-import { rollbackAndRelease } from "./gate-roles";
+import { inCommittedTransaction, rollbackAndRelease } from "./gate-roles";
 
 const adminConnectionString = process.env.POLARIS_RLS_ADMIN_DATABASE_URL;
 const disposableMarker = process.env.POLARIS_RLS_CONFIRM_DISPOSABLE;
@@ -564,16 +564,9 @@ try {
   );
 
   if (!isRecoverableFixture) {
-    const migrationClient = await pool.connect();
-    try {
-      await migrationClient.query("BEGIN");
-      await migrationClient.query(migrationSql);
-      await migrationClient.query("COMMIT");
-      migrationClient.release();
-    } catch (error) {
-      await rollbackAndRelease(migrationClient);
-      throw error;
-    }
+    await inCommittedTransaction(pool, (migrationClient) =>
+      migrationClient.query(migrationSql)
+    );
   }
   await pool.query(`GRANT USAGE ON SCHEMA public TO ${runtimeRole}`);
   await pool.query(
@@ -582,9 +575,7 @@ try {
        TO ${runtimeRole}`
   );
 
-  const client = await pool.connect();
-  try {
-    await client.query("BEGIN");
+  await inCommittedTransaction(pool, async (client) => {
     await client.query("SELECT set_config($1, $2, true)", [
       "app.organization_id",
       "org_a",
@@ -603,12 +594,7 @@ try {
        VALUES ('org_b', 'seed-b', 'synthetic data for org_b')
        ON CONFLICT (organization_id, token) DO NOTHING`
     );
-    await client.query("COMMIT");
-    client.release();
-  } catch (error) {
-    await rollbackAndRelease(client);
-    throw error;
-  }
+  });
 
   const roleCheck = await pool.query<{
     bypassRls: boolean;
