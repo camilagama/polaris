@@ -19,7 +19,7 @@ const KINDS = [
 const PASSO = /Passo (\d) de/;
 const FILLED = /data-filled="(true|false)"/g;
 const CLASSES = /class="([^"]*)"/g;
-const TAGS = /<[^>]*>/g;
+const TEXT_NODE = />[^<>]+</;
 const MOTION = /transition|duration|animate/;
 
 const draw = (kind: ImportStep["kind"]) =>
@@ -56,7 +56,7 @@ describe("ImportStepBar", () => {
   it("is decoration: hidden from the reader, with no text", () => {
     const markup = draw("preview");
     expect(markup.startsWith('<div aria-hidden="true"')).toBe(true);
-    expect(markup.replace(TAGS, "")).toBe("");
+    expect(TEXT_NODE.test(markup)).toBe(false);
   });
 
   it("moves only where the interface moves", () => {
