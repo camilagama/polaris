@@ -94,6 +94,7 @@ const rpc = (json: unknown) => ({
 });
 
 async function openCustomers(page: Page, width: number, fontPixels: number) {
+  const asked: string[] = [];
   await openReflowViewport(page, { fontPixels, width });
   await page.route("**/api/auth/get-session", (route) =>
     route.fulfill({
@@ -108,6 +109,7 @@ async function openCustomers(page: Page, width: number, fontPixels: number) {
       "/rpc/",
       ""
     );
+    asked.push(procedure);
     if (procedure === "organization/listMine") {
       return route.fulfill(rpc({ organizations: [ORGANIZATION] }));
     }
@@ -126,6 +128,7 @@ async function openCustomers(page: Page, width: number, fontPixels: number) {
   ).toBeVisible();
   await expect(page.locator("[data-customer-id]")).toHaveCount(ACTIVE.length);
   await expectReflowFont(page, fontPixels);
+  return asked;
 }
 
 /** The lines the contacts of one row take: the top of each contact box, and whether it is whole. */
@@ -255,6 +258,31 @@ reflowTest(
 );
 
 const WIDE_WINDOW = 1280;
+/** The device's own registration after the session opens: the shell's call, not something the list screen reads. */
+const DEVICE_REGISTRATION = "device/register";
+
+reflowTest(
+  "a abertura de Clientes faz só organization/listMine e customer/list, sem customer/get, e a última compra aparece nas linhas que a têm",
+  async ({ page }) => {
+    const asked = await openCustomers(page, 360, 16);
+    await page.waitForLoadState("networkidle");
+    const reads = asked.filter((name) => name !== DEVICE_REGISTRATION);
+    expect([...reads].sort()).toEqual(
+      ["customer/list", "organization/listMine"].sort()
+    );
+    expect(asked).not.toContain("customer/get");
+    await expect(page.locator("[data-last-purchase]")).toHaveText([
+      "Última compra em 18/12/2025",
+      "Última compra há 2 dias",
+      "Sem compras",
+    ]);
+    await expect(
+      page
+        .locator(`[data-customer-id="${SHORT.id}"]`)
+        .locator("[data-last-purchase]")
+    ).toHaveCount(0);
+  }
+);
 
 for (const width of [360, WIDE_WINDOW]) {
   reflowTest(

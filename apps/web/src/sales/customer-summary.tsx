@@ -26,7 +26,8 @@ function Indicator({
 
 /**
  * What the customer bought: the count, the total and the last day, from the same read that named the customer. The
- * total is the amount owed by those sales, as the history shows it. The day is told from the store's today.
+ * total is net sales (the amount owed by each sale minus what its returns gave back), and a sale that is cancelled or
+ * returned in full is not a purchase, as in the contract. The day is told from the store's today.
  */
 function CustomerSummary({ summary }: { summary: Summary }) {
   const { organization } = useCurrentOrganization();

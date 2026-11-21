@@ -30,6 +30,7 @@ interface SpecRule {
 }
 
 const SPECS: Readonly<Record<string, SpecRule>> = {
+  "cliente-da-venda-reflow.e2e.ts": { bare: 0, coarse: 0, why: "" },
   "clientes-reflow.e2e.ts": {
     bare: 0,
     coarse: 2,
