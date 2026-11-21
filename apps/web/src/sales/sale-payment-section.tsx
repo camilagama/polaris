@@ -526,13 +526,13 @@ export function PaymentSection({
                         {keysEnabled && index < MAX_KEYED_METHODS ? (
                           <span
                             aria-hidden="true"
-                            className="inline-flex h-4 min-w-4 items-center justify-center rounded-sm border px-1 font-sans text-muted-foreground text-xs leading-none"
+                            className="@min-[21rem]:@max-[26.5rem]:inline-flex @min-[32rem]:inline-flex hidden h-4 min-w-4 items-center justify-center rounded-sm border px-1 font-sans text-muted-foreground text-xs leading-none"
                             data-method-key={index + 1}
                           >
                             {index + 1}
                           </span>
                         ) : null}
-                        {label}
+                        <span>{label}</span>
                       </FieldTitle>
                     </FieldContent>
                     <RadioGroupItem
