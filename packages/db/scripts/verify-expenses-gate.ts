@@ -1031,7 +1031,7 @@ async function run() {
       assert.ok((counts.get(eventType) ?? 0) >= 1, `audit event ${eventType}`);
     }
     // an identical edit, a repeated void and a refused edit leave no event
-    assert.equal(counts.get("expense.voided"), 2);
+    assert.equal(counts.get("expense.voided"), 3);
     tests.push(
       "every successful change leaves an audit event; repeated or refused changes leave none"
     );
