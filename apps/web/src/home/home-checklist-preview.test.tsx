@@ -56,15 +56,15 @@ describe("the sentences of the preview", () => {
     }
   });
 
-  it("promise nothing the app does not do: the product takes name, price and quantity", () => {
+  it("promise nothing the app does not do: the product asks for the name, and price and stock are optional", () => {
     expect(NEXT_STEP_SUPPORT.product).toBe(
-      "Nome, preço e quantidade. Leva um minuto."
+      "Nome, preço e quantas unidades você tem. Só o nome é obrigatório."
     );
     expect(NEXT_STEP_SUPPORT.stock).toBe(
       "Diga quantas unidades você tem para poder vender."
     );
     expect(NEXT_STEP_SUPPORT.sale).toBe(
-      "Escolha o produto, a forma de receber e pronto."
+      "Escolha o produto, o pagamento e confirme."
     );
   });
 
@@ -147,5 +147,18 @@ describe.each([
 
   it("has one link per destination", () => {
     expect(hrefs(html)).toEqual([...links]);
+  });
+
+  it("reads the step name, then its sentence, then the buttons of the first product", () => {
+    const current = CURRENT_ROW.exec(html)?.[0] ?? "";
+    const sentence = current.indexOf(NEXT_STEP_SUPPORT[kind]);
+    expect(sentence).toBeGreaterThan(0);
+    const firstLink = current.indexOf("<a ");
+    if (kind === "product") {
+      expect(current.indexOf("Cadastrar o 1º produto")).toBeLessThan(sentence);
+      expect(sentence).toBeLessThan(firstLink);
+    } else {
+      expect(firstLink).toBe(-1);
+    }
   });
 });

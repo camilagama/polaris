@@ -198,8 +198,8 @@ function StepsCount({ done }: { done: number }) {
 type NextKind = ChecklistNext["kind"];
 
 export const NEXT_STEP_SUPPORT: Record<NextKind, string> = {
-  product: "Nome, preço e quantidade. Leva um minuto.",
-  sale: "Escolha o produto, a forma de receber e pronto.",
+  product: "Nome, preço e quantas unidades você tem. Só o nome é obrigatório.",
+  sale: "Escolha o produto, o pagamento e confirme.",
   stock: "Diga quantas unidades você tem para poder vender.",
 };
 
@@ -321,7 +321,6 @@ function StepRow({
             {done ? <span className="sr-only"> (feito)</span> : null}
           </span>
         </span>
-        {withWays ? <FirstProductWays /> : null}
         {support ? (
           <span
             className="basis-full text-muted-foreground"
@@ -330,6 +329,7 @@ function StepRow({
             {support}
           </span>
         ) : null}
+        {withWays ? <FirstProductWays /> : null}
       </span>
     </li>
   );

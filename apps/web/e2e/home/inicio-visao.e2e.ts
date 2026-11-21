@@ -839,7 +839,7 @@ test.describe("loja sem venda: o checklist (AC-22, AC-23)", () => {
     const checklist = region(page, "Primeiros passos");
     await expect(checklist.getByRole("listitem")).toHaveText([
       "Loja criada (feito)",
-      "Cadastrar o 1º produtoCadastrar à mãoImportar planilhaNome, preço e quantidade. Leva um minuto.",
+      "Cadastrar o 1º produtoNome, preço e quantas unidades você tem. Só o nome é obrigatório.Cadastrar à mãoImportar planilha",
       "Fazer a 1ª venda",
     ]);
     await expect(checklist.locator("[data-step-preview]")).toHaveCount(0);
@@ -1024,7 +1024,7 @@ test.describe("loja sem venda: o checklist (AC-22, AC-23)", () => {
       { all: 0, unknownCost: 0, withoutStock: 0, withStock: 0 },
       "products",
       ["/products?novo=1", "/products?importar=1"],
-      "Nome, preço e quantidade. Leva um minuto.",
+      "Nome, preço e quantas unidades você tem. Só o nome é obrigatório.",
     ],
     [
       "com produto, sem saldo",
@@ -1038,7 +1038,7 @@ test.describe("loja sem venda: o checklist (AC-22, AC-23)", () => {
       { all: 1, unknownCost: 0, withoutStock: 0, withStock: 1 },
       "sale",
       ["/sales"],
-      "Escolha o produto, a forma de receber e pronto.",
+      "Escolha o produto, o pagamento e confirme.",
     ],
   ] as const;
 
