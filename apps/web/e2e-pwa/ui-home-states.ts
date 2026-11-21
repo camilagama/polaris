@@ -16,7 +16,7 @@ export const ORGANIZATION = {
   timezone: "America/Sao_Paulo",
 };
 /** `23/10/2026` at noon in Brasília: the month of the figures is the server's, whatever the device's date. */
-export const NOW = "2026-10-23T15:00:00.000Z";
+export const NOW = new Date("2026-10-23T15:00:00.000Z");
 const DAY = 86_400_000;
 const RPC_PREFIX = /^\/rpc\//;
 
@@ -99,7 +99,7 @@ function summary(
       returns: zero,
     },
     daily,
-    generatedAt: NOW,
+    generatedAt: NOW.toISOString(),
     period: { from, to },
     quality: {
       anticipationFeesUnknown: 0,
@@ -408,7 +408,7 @@ export async function startHomeLab(page: Page, user: string) {
  * with the chart drawn, and the copy kept. Returns the lab's user, to start it again on the same device.
  */
 export async function readHomeInLab(page: Page): Promise<string> {
-  await page.clock.setFixedTime(new Date(NOW));
+  await page.clock.setFixedTime(NOW);
   const network: { down: boolean } = { down: Boolean(false) };
   labNetworks.set(page, network);
   await page.route("**/rpc/**", (route: Route) => {

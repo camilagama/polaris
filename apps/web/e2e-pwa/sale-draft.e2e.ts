@@ -514,7 +514,7 @@ test("AC-3: trocar de loja apaga a venda da loja deixada e a tentativa resolvida
   await serveTwoStores(page, testInfo);
   await openSale(page);
   await buildCart(page);
-  await page.clock.setFixedTime(new Date(NOW));
+  await page.clock.setFixedTime(NOW);
   await page.evaluate(
     ({ at, key }) =>
       window.sessionStorage.setItem(
@@ -527,7 +527,7 @@ test("AC-3: trocar de loja apaga a venda da loja deixada e a tentativa resolvida
           unsettled: false,
         })
       ),
-    { at: NOW, key: ATTEMPT_KEY }
+    { at: NOW.toISOString(), key: ATTEMPT_KEY }
   );
 
   await chooseStore(page, "Outra loja");
@@ -579,7 +579,7 @@ test("AC-3 e AC-6: trocar de loja e voltar com a resposta perdida: o mesmo carri
 
 const REMOVE_NAME = /^Remover/;
 const HOUR = 60 * 60 * 1000;
-const CLOCK_NOW = new Date(NOW);
+const CLOCK_NOW = NOW;
 const SEEDED_STARTED_AT = new Date(
   CLOCK_NOW.getTime() - 3 * HOUR
 ).toISOString();
