@@ -8,8 +8,7 @@ import {
   type TestInfo,
 } from "@playwright/test";
 import type { PolarisRpcClient } from "@polaris/contracts";
-import { authRelationalSchema } from "@polaris/db/auth-schema";
-import { createDatabase } from "@polaris/db/client";
+import { createAuthDatabase } from "@polaris/db/client";
 import type { BetterAuthPlugin } from "better-auth";
 import { testUtils } from "better-auth/plugins";
 import { PREFERRED_ORGANIZATION_KEY } from "../src/lib/current-organization-model";
@@ -50,7 +49,7 @@ interface AuthHelpers {
   saveUser: (user: { id: string }) => Promise<{ id: string }>;
 }
 
-type Sql = ReturnType<typeof createDatabase>["pool"];
+type Sql = ReturnType<typeof createAuthDatabase>["pool"];
 
 export interface JourneyUser {
   headers: Headers;
@@ -128,9 +127,9 @@ let helpersPromise:
 function authHelpers() {
   helpersPromise ??= (async () => {
     const run = ensureRunEnvironment();
-    const { db, pool } = createDatabase(
+    const { db, pool } = createAuthDatabase(
       databaseUrl(ownerDatabaseUrl(), runDatabaseName(run.runId)),
-      { maxConnections: 2, schema: authRelationalSchema }
+      { maxConnections: 2 }
     );
     const auth = createBetterAuth({
       baseURL: "http://127.0.0.1",

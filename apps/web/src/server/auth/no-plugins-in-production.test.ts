@@ -59,12 +59,13 @@ vi.mock("better-auth", async (importOriginal) => ({
   },
 }));
 
-vi.mock("@polaris/db/client", () => ({
-  createDatabase: () => ({
+vi.mock("@polaris/db/client", () => {
+  const stand = () => ({
     db: {},
     pool: { end: () => Promise.resolve() },
-  }),
-}));
+  });
+  return { createAuthDatabase: stand, createDatabase: stand };
+});
 
 const { handleBetterAuthRequest } = await import("./handler");
 const { createAuthenticatedRequestContext } = await import(
@@ -123,6 +124,10 @@ describe("no Better Auth plugin runs in production", () => {
   it("the session read of the request context builds Better Auth without plugins", async () => {
     captured.options.length = 0;
     const context = createAuthenticatedRequestContext({
+      createAuthDatabase: (() => ({
+        db: {},
+        pool: { end: () => Promise.resolve() },
+      })) as never,
       createDatabase: (() => ({
         db: {},
         pool: { end: () => Promise.resolve() },

@@ -1,8 +1,7 @@
 // biome-ignore-all lint/performance/noAwaitInLoops: a gate runs its probes strictly one at a time, for a clear failure
 import assert from "node:assert/strict";
 import { randomBytes, randomInt, randomUUID } from "node:crypto";
-import { authRelationalSchema } from "@polaris/db/auth-schema";
-import { createDatabase } from "@polaris/db/client";
+import { createAuthDatabase, createDatabase } from "@polaris/db/client";
 import { LEGAL_DOCUMENTS } from "@polaris/domain/legal/legal-documents";
 import { configureLogging } from "@polaris/observability/logger";
 import type { BetterAuthPlugin } from "better-auth";
@@ -153,10 +152,7 @@ async function run() {
     };
     // one Better Auth, as the handler builds one per request: its own pool of one connection, the authentication role
     const newAuth = (requestId: string) => {
-      const database = createDatabase(authUrl, {
-        maxConnections: 1,
-        schema: authRelationalSchema,
-      });
+      const database = createAuthDatabase(authUrl, { maxConnections: 1 });
       const auth = createBetterAuth({
         baseURL,
         database: database.db,
