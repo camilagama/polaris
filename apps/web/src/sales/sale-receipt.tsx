@@ -47,7 +47,7 @@ export function SaleReceipt({ before, sale, status }: SaleReceiptProps) {
                 </dt>
                 <dd>
                   <Money
-                    className="font-mono font-semibold tracking-[-0.035em]"
+                    className="font-semibold"
                     size="lg"
                     text={total.value}
                   />

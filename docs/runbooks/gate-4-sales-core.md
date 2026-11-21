@@ -6,7 +6,7 @@ O Gate 4 prova seis propriedades: venda atômica, estoque correto, dinheiro corr
 
 ## Execução padrão: PostgreSQL 18 local ou do CI
 
-O Gate 4 roda como os demais gates de banco: num PostgreSQL 18 que não é o Neon. No pull request, quem roda é o job "PostgreSQL 18 gates" do CI (`bun run --filter @polaris/db gates:ci`); não há passo manual nem acesso a Neon. Para reproduzir ou depurar antes do push, rode o mesmo numa instância local.
+O Gate 4 roda como os demais gates de banco: num PostgreSQL 18 que não é o Neon. No pull request, quem roda são os jobs "PostgreSQL 18 gates (main)" e "PostgreSQL 18 gates (definer-hardening)" do CI (`gates:ci-database` e `gates:ci-definer-hardening`, as duas metades de `gates:ci`, a suíte inteira que se roda numa instância local); não há passo manual nem acesso a Neon. Para reproduzir ou depurar antes do push, rode o mesmo numa instância local.
 
 **O que a suíte `ci` cobre e o que só roda em Neon.** A suíte `ci` inclui `inventory`, `customers`, `media-upload`, `media-schema`, `media-derivatives`, `tenant-context` e `rls`, que antes ficavam de fora pela trava de hostname. As propriedades de venda do Gate 4 (venda, cancelamento, devolução, vínculo de cliente, datas e o cenário ponta a ponta `gate4`) e o `customers` do executor rodam no CI. O que continua só em Neon está em [O que só roda em Neon](#o-que-só-roda-em-neon).
 
@@ -63,7 +63,7 @@ O `rls` só roda contra o PostgreSQL local (`localOnly` no executor): `gates:all
 
 ## Corridas: quando o `gates:concurrency` é obrigatório
 
-O job `PostgreSQL 18 gates` do CI roda `gates:ci` com **1 rodada** de cada corrida; corrida intermitente é justamente o que 1 rodada não pega. Por isso a suíte `gates:concurrency` (as corridas da [matriz de concorrência](../architecture/concurrency-matrix.md), **N = 3 rodadas**, o padrão da suíte) é obrigatória em dois momentos, sem job novo no CI:
+Os jobs `PostgreSQL 18 gates (main)` e `PostgreSQL 18 gates (definer-hardening)` do CI rodam `gates:ci-database` e `gates:ci-definer-hardening` (as duas metades de `gates:ci`) com **1 rodada** de cada corrida; corrida intermitente é justamente o que 1 rodada não pega. Por isso a suíte `gates:concurrency` (as corridas da [matriz de concorrência](../architecture/concurrency-matrix.md), **N = 3 rodadas**, o padrão da suíte) é obrigatória em dois momentos, sem job novo no CI:
 
 - **Em todo PR que mexa numa proteção listada na matriz** (um lock, um índice único, a ordem de lock, um gatilho ou uma função que uma corrida da matriz prova): o autor roda `CI=true bun run --filter @polaris/db gates:concurrency` num banco novo e registra o resultado na seção "Verificação" do PR. Se o PR é de outra área (sem PostgreSQL local), a área db ou o Arrascaeta roda antes do merge e registra o resultado no PR; o CI sozinho (1 rodada) não cumpre a regra. Mudou a corrida ou criou uma proteção nova: a linha da matriz muda no mesmo PR.
 - **Antes de cada prova de release** (item 4 do [checklist de release](./release-checklist.md#4-gates-de-banco-em-neon-descartável-block)): `gates:concurrency` com 3 rodadas, num PostgreSQL 18 descartável e novo, a partir do SHA candidato, além da suíte `all` em Neon.
