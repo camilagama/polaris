@@ -30,7 +30,7 @@ export const HomeRoleProvider = HomeRole.Provider;
  * The foot of a framed block (from 760 px): one link to the screen the block is a summary of. `link` false keeps the
  * foot's line empty (the destination needs the connection and there is none), so the block does not change height.
  */
-export interface BlockFooter {
+interface BlockFooter {
   capability: string;
   href: string;
   label: string;

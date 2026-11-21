@@ -2,13 +2,17 @@ import ArrowRightIcon from "lucide-react/dist/esm/icons/arrow-right";
 import type * as React from "react";
 import { cn } from "@/lib/utils";
 
+const CARD_SURFACE =
+  "overflow-hidden rounded-xl text-card-foreground text-sm shadow-xs ring-1 ring-foreground/[0.06] dark:shadow-[inset_0_1px_0_var(--card-glow)]";
+
 /* Polaris v5.1: 12 px of breathing room with touch, 16 with a mouse (`--card-spacing`); a 6% ring plus a short
    shadow, and in the dark theme a 1 px glow at the top (`--card-glow`, OKLCH). */
 function Card({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
       className={cn(
-        "group/card flex flex-col gap-(--card-spacing) overflow-hidden rounded-xl bg-card py-(--card-spacing) text-card-foreground text-sm shadow-xs ring-1 ring-foreground/[0.06] [--card-spacing:--spacing(3)] dark:shadow-[inset_0_1px_0_var(--card-glow)] md:[--card-spacing:--spacing(4)]",
+        "group/card flex flex-col gap-(--card-spacing) bg-card py-(--card-spacing) [--card-spacing:--spacing(3)] md:[--card-spacing:--spacing(4)]",
+        CARD_SURFACE,
         className
       )}
       data-slot="card"
@@ -72,7 +76,8 @@ function CardFrame({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
       className={cn(
-        "group/card group/frame flex flex-col gap-(--card-spacing) overflow-hidden rounded-xl bg-card px-(--card-spacing) py-(--card-spacing) text-card-foreground text-sm shadow-xs ring-1 ring-foreground/[0.06] [--card-spacing:--spacing(3)] [--frame-gap:--spacing(1)] md:gap-(--frame-gap) md:bg-muted md:p-(--frame-gap) dark:shadow-[inset_0_1px_0_var(--card-glow)] md:[--card-spacing:--spacing(4)]",
+        "group/card group/frame flex flex-col gap-(--card-spacing) bg-card px-(--card-spacing) py-(--card-spacing) [--card-spacing:--spacing(3)] [--frame-gap:--spacing(1)] md:gap-(--frame-gap) md:bg-muted md:p-(--frame-gap) md:[--card-spacing:--spacing(4)]",
+        CARD_SURFACE,
         className
       )}
       data-slot="card-frame"

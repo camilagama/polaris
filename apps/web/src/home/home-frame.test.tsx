@@ -160,7 +160,9 @@ describe("o pé de cada bloco do Início", () => {
       "owner",
       <ChartBlock summary={summary("2026-11-03", "2026-11-09")} today={today} />
     );
-    expect(footerHref(range)).toBe("/dashboard?de=2026-11-03&amp;ate=2026-11-09");
+    expect(footerHref(range)).toBe(
+      "/dashboard?de=2026-11-03&amp;ate=2026-11-09"
+    );
     expect(range).toContain("Ver o resultado");
   });
 
