@@ -236,14 +236,18 @@ function FirstProductWays() {
 }
 
 function StepPreview({
-  animate,
   children,
   kind,
 }: {
-  animate: boolean;
   children: ReactNode;
   kind: NextKind;
 }) {
+  const opened = useRef(kind);
+  const changed = useRef<boolean>(false);
+  if (kind !== opened.current) {
+    changed.current = true;
+  }
+  const animate = changed.current;
   return (
     <div className="grid content-start gap-3" data-step-preview={kind}>
       <div
@@ -342,7 +346,6 @@ export function ChecklistBlock({ checklist }: { checklist: HomeChecklist }) {
   }, []);
   const wide = useMediaQuery(COLLAPSIBLE_QUERY);
   const next = checklistNext(checklist.firstProductId, checklist.hasStock);
-  const firstKind = useRef(next.kind);
   const link = checklistLink(next);
   const done = firstStepsDone(checklist);
   const current = currentFirstStep(done);
@@ -376,12 +379,7 @@ export function ChecklistBlock({ checklist }: { checklist: HomeChecklist }) {
           ))}
         </ol>
         {wide ? (
-          <StepPreview
-            animate={next.kind !== firstKind.current}
-            kind={next.kind}
-          >
-            {button}
-          </StepPreview>
+          <StepPreview kind={next.kind}>{button}</StepPreview>
         ) : (
           link && button
         )}

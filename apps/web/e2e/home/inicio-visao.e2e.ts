@@ -1090,6 +1090,41 @@ test.describe("loja sem venda: o checklist (AC-22, AC-23)", () => {
     }
   });
 
+  for (const [width, tolerance] of [
+    [360, 30],
+    [1023, 30],
+    [1024, 1],
+    [1280, 1],
+  ] as const) {
+    test(`o esqueleto dos primeiros passos tem a altura do bloco: ${width} px`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ height: 800, width });
+      const server = new FakeServer(
+        empty({ all: 0, unknownCost: 0, withoutStock: 0, withStock: 0 })
+      );
+      let answer: () => void = () => undefined;
+      server.held.set(
+        "inventory/listBalances",
+        new Promise((resolve) => {
+          answer = resolve;
+        })
+      );
+      await openHome(page, server);
+      const skeleton = page
+        .getByRole("status")
+        .filter({ hasText: "Carregando os primeiros passos…" });
+      await expect(skeleton).toBeVisible();
+      const loading = (await skeleton.boundingBox())?.height ?? 0;
+      answer();
+      await expect(region(page, "Primeiros passos")).toBeVisible();
+      await expect(skeleton).toHaveCount(0);
+      const loaded =
+        (await region(page, "Primeiros passos").boundingBox())?.height ?? 0;
+      expect(Math.abs(loaded - loading)).toBeLessThanOrEqual(tolerance);
+    });
+  }
+
   test("a prévia segue o passo atual, não o ponteiro nem o foco", async ({
     page,
   }) => {
