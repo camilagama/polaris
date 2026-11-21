@@ -874,8 +874,9 @@ async function runParallel(
   admin: Client,
   context: Context,
   runs: PlannedRun<Gate>[],
-  workers: number
-): Promise<GateResult[]> {
+  workers: number,
+  whileCopiesWait: () => Promise<GateResult[]>
+): Promise<{ parallel: GateResult[]; waiting: GateResult[] }> {
   const copies = Array.from(
     { length: Math.min(workers, runs.length) },
     (_, index) => copyDatabaseName(context.database, index + 1)
@@ -892,21 +893,27 @@ async function runParallel(
       console.log(
         `--- ${runs.length} runs in parallel, in ${copies.length} copies of ${context.database}: ${copies.join(", ")}`
       );
-      return await drainQueue(runs, copies.length, ({ gate, run }, worker) => {
-        const database = copies[worker - 1] as string;
-        return runAndReport(
-          gate,
-          {
-            ...context,
-            copy: true,
-            database,
-            runtimeUrl: urlForDatabase(context.runtimeUrl, database),
-            superuserUrl: undefined,
-            url: urlForDatabase(context.url, database),
-          },
-          run
-        );
-      });
+      const waiting = await whileCopiesWait();
+      const parallel = await drainQueue(
+        runs,
+        copies.length,
+        ({ gate, run }, worker) => {
+          const database = copies[worker - 1] as string;
+          return runAndReport(
+            gate,
+            {
+              ...context,
+              copy: true,
+              database,
+              runtimeUrl: urlForDatabase(context.runtimeUrl, database),
+              superuserUrl: undefined,
+              url: urlForDatabase(context.url, database),
+            },
+            run
+          );
+        }
+      );
+      return { parallel, waiting };
     },
     async () => {
       const failures: unknown[] = [];
@@ -931,44 +938,6 @@ async function runParallel(
       );
     }
   );
-}
-
-const ROLE_CATALOGS_VACUUM = "VACUUM pg_authid, pg_auth_members";
-
-/**
- * The parallel phase creates and drops many temporary roles, and the dead rows it leaves in the catalogs of roles slow
- * down the gates that read them afterwards (`definer-hardening`). Vacuuming them needs more than the owner has, so it
- * goes through the superuser URL. It only speeds the gates up: without the URL, or if the VACUUM fails, a warning is
- * printed and the gates run as before.
- */
-async function vacuumRoleCatalogs(input: {
-  branch: string;
-  database: string;
-  superuserUrl: string | undefined;
-}): Promise<void> {
-  if (!input.superuserUrl) {
-    console.warn(
-      "--- no POLARIS_GATE_SUPERUSER_URL: the catalogs of roles are not vacuumed between the phases"
-    );
-    return;
-  }
-  try {
-    const { admin } = await connectToGateTarget({
-      branch: input.branch,
-      database: input.database,
-      url: input.superuserUrl,
-    });
-    try {
-      await admin.query(ROLE_CATALOGS_VACUUM);
-      console.log(`--- ${ROLE_CATALOGS_VACUUM}`);
-    } finally {
-      await admin.end();
-    }
-  } catch (error) {
-    console.warn(
-      `--- ${ROLE_CATALOGS_VACUUM} failed, the gates go on: ${redact(String(error))}`
-    );
-  }
 }
 
 async function main() {
@@ -1048,22 +1017,30 @@ async function main() {
       };
 
       const plan = planGateRuns(selected, Boolean(superuserUrl), workers);
-      if (plan.parallel.length > 0) {
-        results.push(
-          ...(await runParallel(admin, context, plan.parallel, workers))
-        );
-      }
-      if (plan.serial.length > 0) {
-        if (plan.parallel.length > 0) {
-          await vacuumRoleCatalogs({ branch, database, superuserUrl });
+      const runSerial = async (): Promise<GateResult[]> => {
+        const serial: GateResult[] = [];
+        if (plan.serial.length > 0) {
+          console.log(
+            `--- ${plan.serial.length} runs one at a time, in ${database}`
+          );
         }
-        console.log(
-          `--- ${plan.serial.length} runs one at a time, in ${database}`
+        for (const { gate, run } of plan.serial) {
+          // biome-ignore lint/performance/noAwaitInLoops: gates must run strictly one at a time on one database
+          serial.push(await runAndReport(gate, context, run));
+        }
+        return serial;
+      };
+      if (plan.parallel.length > 0) {
+        const { parallel, waiting } = await runParallel(
+          admin,
+          context,
+          plan.parallel,
+          workers,
+          runSerial
         );
-      }
-      for (const { gate, run } of plan.serial) {
-        // biome-ignore lint/performance/noAwaitInLoops: gates must run strictly one at a time on one database
-        results.push(await runAndReport(gate, context, run));
+        results.push(...parallel, ...waiting);
+      } else {
+        results.push(...(await runSerial()));
       }
     },
     async () => {
