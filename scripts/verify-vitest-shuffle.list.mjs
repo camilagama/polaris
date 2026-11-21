@@ -10,8 +10,10 @@
 export const VITEST_SHUFFLE_LIST = {
   "apps/admin/vitest.workers-db.config.ts": { needs: ["tests"] },
   "apps/catalog/vitest.workers-db.config.ts": { needs: ["tests"] },
+  "apps/web/vitest.workers-db.config.ts": { needs: ["files", "tests"] },
   "vitest.admin-worker.config.ts": { needs: ["files", "tests"] },
   "vitest.catalog-worker.config.ts": { needs: ["files", "tests"] },
   "vitest.config.ts": { needs: ["files", "tests"] },
   "vitest.datas.config.ts": { needs: ["files", "tests"] },
+  "vitest.web-worker.config.ts": { needs: ["files", "tests"] },
 };

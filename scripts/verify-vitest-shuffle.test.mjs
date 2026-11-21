@@ -221,7 +221,7 @@ describe("the problems the guard reports", () => {
 });
 
 describe("the list", () => {
-  it("is exactly the six configs that have the shuffle on, with what each sets", () => {
+  it("is exactly the eight configs that have the shuffle on, with what each sets", () => {
     expect(
       Object.entries(VITEST_SHUFFLE_LIST).map(([file, { needs }]) => [
         file,
@@ -230,10 +230,12 @@ describe("the list", () => {
     ).toEqual([
       ["apps/admin/vitest.workers-db.config.ts", ["tests"]],
       ["apps/catalog/vitest.workers-db.config.ts", ["tests"]],
+      ["apps/web/vitest.workers-db.config.ts", both],
       ["vitest.admin-worker.config.ts", both],
       ["vitest.catalog-worker.config.ts", both],
       ["vitest.config.ts", both],
       ["vitest.datas.config.ts", both],
+      ["vitest.web-worker.config.ts", both],
     ]);
   });
 
@@ -260,7 +262,7 @@ describe("the list", () => {
     }
   });
 
-  it("holds for the repository: the six configs keep the random order", () => {
+  it("holds for the repository: the eight configs keep the random order", () => {
     expect(checkRepository()).toEqual([]);
   });
 });
