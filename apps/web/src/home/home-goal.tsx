@@ -203,7 +203,7 @@ function ActiveGoal({
   others: number;
   /** The estimate by the rhythm of the last 7 days, with a connection and the daily series only. */
   projection?: GoalProjection | null;
-  /** The store's today, for the mark of the pace; null without a connection (no mark, no word). */
+  /** The store's today, for the mark of the pace; null while the figures are not read (no mark, no word). */
   today?: string | null;
 }) {
   const { progress } = goal;

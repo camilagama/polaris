@@ -2,12 +2,6 @@ import type { GoalReadModel } from "@polaris/contracts";
 import type { PaceState } from "@/ui/pace-line";
 import { goalProgressWidth } from "./goal-model";
 
-/**
- * Where the goal should be today if the sales were the same every day: the share of the period already over, against
- * what the goal measured so far. It is not the projection (where the rhythm of the last 7 days leads); the two never
- * share a sentence.
- */
-
 export type GoalPaceState = PaceState;
 
 export interface GoalPace {
@@ -39,6 +33,10 @@ function daysBetween(from: string, to: string): number {
 }
 
 /**
+ * Where the goal should be today if the sales were the same every day: the share of the period already over, against
+ * what the goal measured so far. It is not the projection (where the rhythm of the last 7 days leads); the two never
+ * share a sentence.
+ *
  * The pace of an active goal on the store's `today` (YYYY-MM-DD, the store's time zone), or null where there is
  * nothing to say: paused, reached, period over, not begun, progress not read, no `today`, and the first day of the
  * period (nothing is over yet, so the mark would sit on the start). The days over are the whole days before today;
@@ -70,18 +68,16 @@ export function goalPace(
     return null;
   }
   const doneTenths = Math.round(goalProgressWidth(progress.percent) * 10);
-  const expectedScaled = over * TENTHS;
+  // the state is decided against the same whole percent the screen writes, so the word never contradicts the number
+  const expectedPercent = Math.round((over * 100) / total);
+  const expectedTenths = expectedPercent * (TENTHS / 100);
   let state: GoalPaceState = "behind";
-  if (doneTenths * total > expectedScaled) {
+  if (doneTenths > expectedTenths) {
     state = "ahead";
-  } else if ((doneTenths + ON_PACE_TENTHS) * total >= expectedScaled) {
+  } else if (doneTenths + ON_PACE_TENTHS >= expectedTenths) {
     state = "on_pace";
   }
-  return {
-    expectedPercent: Math.round((over * 100) / total),
-    position: (over * 100) / total,
-    state,
-  };
+  return { expectedPercent, position: (over * 100) / total, state };
 }
 
 /** The state in words for the name of the ring and the bar: "Atrasada: o esperado até hoje era 60%." */

@@ -90,12 +90,17 @@ describe("goalPace", () => {
       expect(goalPace(goal("0.0"), today)?.state).toBe("behind");
     });
 
-    it("compares in exact tenths where the expected is not one", () => {
+    it("decides against the whole percent the screen writes, never against a hidden fraction", () => {
       const thirds = "2026-11-11";
-      expect(goalPace(goal("33.3"), thirds)?.state).toBe("on_pace");
-      expect(goalPace(goal("33.4"), thirds)?.state).toBe("ahead");
-      expect(goalPace(goal("28.4"), thirds)?.state).toBe("on_pace");
-      expect(goalPace(goal("28.3"), thirds)?.state).toBe("behind");
+      expect(goalPace(goal("33.0"), thirds)?.expectedPercent).toBe(33);
+      expect(goalPace(goal("33.0"), thirds)?.state).toBe("on_pace");
+      expect(goalPace(goal("33.1"), thirds)?.state).toBe("ahead");
+      expect(goalPace(goal("28.0"), thirds)?.state).toBe("on_pace");
+      expect(goalPace(goal("27.9"), thirds)?.state).toBe("behind");
+      // 8 of 30 days is 26,67%, written 27%: 26,7% done is not "Adiantada" next to a 27%
+      const eighth = goalPace(goal("26.7"), "2026-11-09");
+      expect(eighth?.expectedPercent).toBe(27);
+      expect(eighth?.state).toBe("on_pace");
     });
 
     it("reads a progress that is not positive as nothing done", () => {
