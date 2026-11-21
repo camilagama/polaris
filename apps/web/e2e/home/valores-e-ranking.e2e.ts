@@ -134,6 +134,7 @@ async function rankingRows(page: Page): Promise<RankingRow[]> {
 }
 
 const BIG_SALE = 9_964_035;
+const NINE_DIGITS = 123_456_789;
 
 /** Below 760 px, or with a finger, the scale of money comes down a step (theme.css, "Touch … or a narrow screen"). */
 const PHONE_WIDTH = 760;
@@ -175,30 +176,40 @@ test.describe("o padrão único dos valores nos cartões do Início (AC-3.1, AC-
     "`Page.setFontSizes` is a Chrome DevTools command"
   );
 
-  for (const width of [360, 1280]) {
-    test(`os quatro cartões têm o valor e o R$ no mesmo tamanho, em peso 600, a ${width} px`, async ({
+  for (const width of [360, 760, 1024, 1280]) {
+    test(`Vendas hoje mede text-value-xl e os três do mês text-value-lg, o R$ igual nos três, em peso 600, a ${width} px`, async ({
       page,
     }) => {
       await openReflowViewport(page, { fontPixels: 16, height: 800, width });
       await openHome(page, new FakeServer(SOLD));
       await expect(region(page, "Vendas hoje")).toContainText("R$ 320,10");
-      const reads = await readHeroes(page);
-      expect(reads.map((read) => read.card)).toEqual(KPI_IDS);
+      const [hero, ...month] = await readHeroes(page);
+      expect(
+        [hero, ...month].map((read) => read?.card),
+        "um herói e três cartões, nesta ordem"
+      ).toEqual(KPI_IDS);
       const coarse = await page.evaluate(
         () => matchMedia("(pointer: coarse)").matches
       );
-      const lg = width < PHONE_WIDTH || coarse ? 24 : 26;
+      const touch = width < PHONE_WIDTH || coarse;
+      const lg = touch ? 24 : 26;
+      const xl = touch ? 32 : 36;
+      expect(hero?.size, "o valor de Hoje: text-value-xl").toBe(xl);
       expect(
-        reads.map((read) => read.size),
-        "o valor: text-value-lg nos quatro, sem um principal maior"
-      ).toEqual([lg, lg, lg, lg]);
+        month.map((read) => read.size),
+        "o valor dos três do mês: text-value-lg, todos iguais"
+      ).toEqual([lg, lg, lg]);
       expect(
-        new Set(reads.map((read) => read.currency)).size,
-        "o R$ tem um tamanho só nos quatro"
+        new Set(month.map((read) => read.currency)).size,
+        "o R$ tem um tamanho só nos três do mês"
       ).toBe(1);
-      expect(reads[0]?.currency).toBeLessThan(lg);
-      expect(new Set(reads.map((read) => read.currencyWeight)).size).toBe(1);
-      expect(reads.map((read) => read.weight)).toEqual([
+      expect(month[0]?.currency).toBeLessThan(lg);
+      expect(hero?.currency).toBeGreaterThan(month[0]?.currency ?? 0);
+      expect(hero?.currency).toBeLessThan(xl);
+      expect(
+        new Set([hero, ...month].map((read) => read?.currencyWeight)).size
+      ).toBe(1);
+      expect([hero, ...month].map((read) => read?.weight)).toEqual([
         "600",
         "600",
         "600",
@@ -213,8 +224,15 @@ test.describe("o padrão único dos valores nos cartões do Início (AC-3.1, AC-
     [320, 20],
     [320, 24],
   ] as const) {
-    for (const cents of [BIG_SALE, -BIG_SALE]) {
-      const text = `${cents < 0 ? "-" : ""}R$ 99.640,35`;
+    const amounts = [BIG_SALE, -BIG_SALE];
+    if (width === 320) {
+      amounts.push(NINE_DIGITS);
+    }
+    for (const cents of amounts) {
+      const text =
+        cents === NINE_DIGITS
+          ? "R$ 1.234.567,89"
+          : `${cents < 0 ? "-" : ""}R$ 99.640,35`;
       test(`${text} em Vendas hoje não corta nem quebra a ${width} px com a letra em ${fontPixels} px`, async ({
         page,
       }, testInfo) => {
@@ -228,14 +246,30 @@ test.describe("o padrão único dos valores nos cartões do Início (AC-3.1, AC-
         await assertNothingClipped(principal);
         const [today, ...rest] = await readHeroes(page);
         const lg = 1.5 * fontPixels;
+        const xl = 2 * fontPixels;
         const floor = 0.875 * fontPixels;
-        for (const read of [today, ...rest]) {
+        for (const [index, read] of [today, ...rest].entries()) {
           expect(
             read?.size,
             "o valor desce só até caber na área dele, nunca abaixo do piso"
-          ).toBeLessThanOrEqual(lg + 0.01);
+          ).toBeLessThanOrEqual((index === 0 ? xl : lg) + 0.01);
           expect(read?.size).toBeGreaterThanOrEqual(floor - 0.01);
         }
+        const [figure, spark] = await principal.evaluate((card) => {
+          const right = (selector: string) =>
+            card.querySelector(selector)?.getBoundingClientRect();
+          const number = right("[data-money-number]");
+          const drawing = right("[data-kpi-spark]");
+          const box = card.getBoundingClientRect();
+          return [
+            number ? number.right : Number.NaN,
+            drawing ? drawing.left : box.right,
+          ];
+        });
+        expect(
+          figure,
+          "o número termina antes de a sparkline começar"
+        ).toBeLessThanOrEqual((spark ?? 0) + 0.5);
         testInfo.annotations.push({
           description: `Vendas hoje ${today?.size} px, KPIs ${rest[0]?.size} px`,
           type: "medida",
