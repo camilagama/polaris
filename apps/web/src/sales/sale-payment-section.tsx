@@ -1,7 +1,7 @@
 import PlusIcon from "lucide-react/dist/esm/icons/plus";
 import Trash2Icon from "lucide-react/dist/esm/icons/trash-2";
 import TriangleAlertIcon from "lucide-react/dist/esm/icons/triangle-alert";
-import { useCallback, useState } from "react";
+import { type KeyboardEvent, useCallback, useState } from "react";
 import { useStoreToday } from "../lib/use-store-today";
 import { Alert, AlertDescription } from "@/ui/alert";
 import { Button } from "@/ui/button";
@@ -35,6 +35,11 @@ import {
   SelectField,
   TextField,
 } from "./sale-fields";
+import {
+  MAX_KEYED_METHODS,
+  methodForKey,
+  useMethodKeysEnabled,
+} from "./payment-method-keys";
 import {
   ADJUSTMENT_KINDS,
   type AdjustmentDraft,
@@ -452,6 +457,24 @@ export function PaymentSection({
     (value: unknown) => onMethodChange(typeof value === "string" ? value : ""),
     [onMethodChange]
   );
+  const keysEnabled = useMethodKeysEnabled();
+  const handleMethodKey = useCallback(
+    (event: KeyboardEvent<HTMLDivElement>) => {
+      if (!keysEnabled || disabled) {
+        return;
+      }
+      const picked = methodForKey(event, SALE_METHOD_CARDS);
+      if (picked === null) {
+        return;
+      }
+      event.preventDefault();
+      onMethodChange(picked[0]);
+      const radios =
+        event.currentTarget.querySelectorAll<HTMLElement>('[role="radio"]');
+      radios[SALE_METHOD_CARDS.indexOf(picked)]?.focus();
+    },
+    [disabled, keysEnabled, onMethodChange]
+  );
   const handleAnticipation = useCallback(
     (checked: boolean) => onAnticipationChange(checked),
     [onAnticipationChange]
@@ -487,10 +510,11 @@ export function PaymentSection({
               className="@[18.5rem]:grid-cols-2 @[26.5rem]:grid-cols-3 grid-cols-1"
               disabled={disabled}
               id="sale-method"
+              onKeyDown={handleMethodKey}
               onValueChange={handleMethod}
               value={form.payment.method === "" ? null : form.payment.method}
             >
-              {SALE_METHOD_CARDS.map(([method, label]) => (
+              {SALE_METHOD_CARDS.map(([method, label], index) => (
                 <FieldLabel
                   className="has-data-disabled:opacity-50"
                   htmlFor={`sale-method-${method}`}
@@ -498,9 +522,25 @@ export function PaymentSection({
                 >
                   <Field orientation="horizontal">
                     <FieldContent>
-                      <FieldTitle>{label}</FieldTitle>
+                      <FieldTitle>
+                        {keysEnabled && index < MAX_KEYED_METHODS ? (
+                          <span
+                            aria-hidden="true"
+                            className="inline-flex h-4 min-w-4 items-center justify-center rounded-sm border px-1 font-sans text-muted-foreground text-xs leading-none"
+                            data-method-key={index + 1}
+                          >
+                            {index + 1}
+                          </span>
+                        ) : null}
+                        {label}
+                      </FieldTitle>
                     </FieldContent>
                     <RadioGroupItem
+                      aria-keyshortcuts={
+                        keysEnabled && index < MAX_KEYED_METHODS
+                          ? String(index + 1)
+                          : undefined
+                      }
                       id={`sale-method-${method}`}
                       value={method}
                     />
