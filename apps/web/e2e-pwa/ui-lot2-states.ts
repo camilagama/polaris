@@ -14,7 +14,8 @@ import { serveLabWorker, WORKER_MARK } from "./worker-mark";
  * `e2e/lote-2-telas.e2e.ts` and `e2e/usabilidade-lote-1.e2e.ts`, and in the captures of the pull request.
  */
 const ORGANIZATION_ID = "0199c2d0-0000-7000-8000-00000000a001";
-const DAY = "2026-10-14T12:00:00.000Z";
+const NOW = new Date("2026-10-15T12:00:00.000Z");
+const DAY = new Date(NOW.getTime() - 86_400_000).toISOString();
 const id = (n: number) =>
   `0199c2d0-0000-7000-8000-${String(n).padStart(12, "0")}`;
 
@@ -28,6 +29,7 @@ const STRIP = "Esta tela precisa de conexão.";
 
 /** Starts the runtime of the lab for the screen and waits until it is ready. */
 async function startLab(page: Page, screen: string) {
+  await page.clock.setFixedTime(NOW);
   await serveLabWorker(page);
   await page.goto(`/offline-screens-lab?screen=${screen}`);
   await page.getByLabel("Usuário").fill(`guardrails-${crypto.randomUUID()}`);

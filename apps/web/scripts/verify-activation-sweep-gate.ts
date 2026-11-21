@@ -9,7 +9,10 @@ import {
 import { ACTIVATION_EMAIL_EVENT_STATEMENT } from "@polaris/db/activation-email-events";
 import { createDatabase } from "@polaris/db/client";
 import { outboxIdempotencyKey } from "@polaris/domain/events/outbox";
-import { withGateRole } from "../../../packages/db/scripts/gate-roles";
+import {
+  rollbackAndRelease,
+  withGateRole,
+} from "../../../packages/db/scripts/gate-roles";
 import {
   disposableHostPattern,
   gateBranchPattern,
@@ -268,11 +271,7 @@ async function run() {
           }
         }
       } finally {
-        const rolledBack = await client.query("ROLLBACK").then(
-          () => true,
-          () => false
-        );
-        client.release(!rolledBack);
+        await rollbackAndRelease(client);
       }
       return [...found].sort();
     };
@@ -538,11 +537,10 @@ async function run() {
           }
         });
         await client.query("COMMIT");
-      } catch (error) {
-        await client.query("ROLLBACK").catch(() => undefined);
-        throw error;
-      } finally {
         client.release();
+      } catch (error) {
+        await rollbackAndRelease(client);
+        throw error;
       }
     };
     await sweep(false, ten);
@@ -654,8 +652,7 @@ async function run() {
         assert.deepEqual(await stepsOf(store), [], "the lock is held");
       }
     } finally {
-      await holder.query("ROLLBACK").catch(() => undefined);
-      holder.release();
+      await rollbackAndRelease(holder);
     }
 
     const raced = await Promise.all([
