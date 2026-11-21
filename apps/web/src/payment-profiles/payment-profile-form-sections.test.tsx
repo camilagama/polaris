@@ -67,8 +67,12 @@ describe("sections of the payment profile form", () => {
     expect(order.indexOf("payment-profile-name")).toBeLessThan(
       order.indexOf("payment-add-rule")
     );
+    const removeButtons = order.flatMap((entry, position) =>
+      entry?.startsWith("Remover regra") ? [position] : []
+    );
+    expect(removeButtons).toHaveLength(2);
     expect(order.indexOf("payment-add-rule")).toBeGreaterThan(
-      order.findLastIndex((entry) => entry?.startsWith("Remover regra"))
+      Math.max(...removeButtons)
     );
   });
 });
