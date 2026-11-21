@@ -22,6 +22,7 @@ export const repositoryRoot = fileURLToPath(
 const VITEST_TIMEOUT_MS = 5 * 60_000;
 const failureLine =
   /FAIL|Error|expected|Expected|Received|✗|×|Tests |Test Files/;
+const seedLine = /Running tests with seed/;
 const lineBreak = /\r?\n/;
 const urlPattern = /postgres(?:ql)?:\/\/\S+/gi;
 
@@ -145,8 +146,10 @@ export function runWorkerdVitest(
       const problems =
         code === 0 ? suiteSummaryProblems(readReport(), expectation) : [];
       rmSync(reportDirectory, { force: true, recursive: true });
+      // the seed comes after the failures, so the runner of the gates (which keeps the last lines of a gate) still shows it
       const digest = [
         ...lines.filter((line) => failureLine.test(line)).slice(-30),
+        ...lines.filter((line) => seedLine.test(line)).slice(0, 1),
         ...problems,
       ];
       lines.push(...problems);
