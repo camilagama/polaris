@@ -35,21 +35,11 @@ export const E2E_FIXED_DATES_LIST = {
     reason: BEFORE_THE_RULE,
   },
   "apps/web/e2e-pwa/ui-device-states.ts": { count: 5, reason: BEFORE_THE_RULE },
-  "apps/web/e2e-pwa/ui-lot2-states.ts": { count: 1, reason: BEFORE_THE_RULE },
-  "apps/web/e2e-pwa/ui-payment-states.ts": {
-    count: 3,
-    reason: BEFORE_THE_RULE,
-  },
-  "apps/web/e2e-pwa/ui-sale-draft-states.ts": {
-    count: 1,
-    reason: BEFORE_THE_RULE,
-  },
   "apps/web/e2e-pwa/ui-sale-states.ts": { count: 6, reason: BEFORE_THE_RULE },
   "apps/web/e2e-pwa/ui-shell-isolation.e2e.ts": {
     count: 17,
     reason: BEFORE_THE_RULE,
   },
-  "apps/web/e2e-pwa/ui-stock-states.ts": { count: 3, reason: BEFORE_THE_RULE },
   "apps/web/e2e-pwa/update.e2e.ts": { count: 1, reason: BEFORE_THE_RULE },
   "apps/web/e2e-real/calendar.test.ts": { count: 7, reason: BEFORE_THE_RULE },
   "apps/web/e2e/home/cartoes-e-grafico.e2e.ts": {
