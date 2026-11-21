@@ -114,7 +114,7 @@ Ensaio sem CI: com a lista de arquivos de um PR (`gh pr view <n> --json files -q
 O piso do job de gates era a série: o fuzz de 240 grafos do `definer-hardening` (~45 s mais 16 a 60 s) depois da fase paralela. O `definer-hardening` roda agora no job `PostgreSQL 18 gates (definer-hardening)`, com um PostgreSQL 18 próprio e em paralelo ao `PostgreSQL 18 gates (main)`, que fica com o resto da suíte `ci` (a fase paralela em 4 cópias e as outras séries). O job `PostgreSQL 18 gates` é o coletor: verde só com os dois, e é o nome que os deploys exigem. Nada saiu: o fuzz tem os mesmos 240 grafos, nenhum timeout subiu (o do job novo é 30 min, o do principal segue 60) e nenhum teste foi pulado.
 
 ```sh
-bun run --filter @polaris/db gates:ci                    # a suíte inteira, num job só (local, ou o CI antes do patch)
+bun run --filter @polaris/db gates:ci                    # a suíte inteira, num job só (local e a prova de liberação em Neon; o CI roda as duas metades abaixo)
 bun run --filter @polaris/db gates:ci-database           # o job principal
 bun run --filter @polaris/db gates:ci-definer-hardening  # o job do definer-hardening
 ```
