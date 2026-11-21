@@ -25,15 +25,17 @@ const MAIN_MINIMUM_REM = 24;
 const SIDEBAR_KEY = "sidebar_state";
 const LAB_PROFILE = /Maquininha do laboratório/;
 const SHIRT_OPTION = /Camiseta do laboratório · Azul/;
+const NOW = new Date("2026-10-01T12:00:00-03:00");
+const STAMP = NOW.toISOString();
 const PROFILE = {
   archivedAt: null,
-  createdAt: "2026-10-01T12:00:00.000Z",
+  createdAt: STAMP,
   id: "0199c2d0-0000-7000-8000-0000000000c1",
   name: "Maquininha do laboratório",
   organizationId: "0199c2d0-0000-7000-8000-00000000a001",
   rules: [],
   status: "active",
-  updatedAt: "2026-10-01T12:00:00.000Z",
+  updatedAt: STAMP,
   version: 1,
 };
 
@@ -163,6 +165,7 @@ for (const [pixels, width, columns] of [
 
 /** The lab of the offline screens has no shell: the sale is as wide as the window less the lab's own margin. */
 async function openLabSale(page: Page, pixels: number, width: number) {
+  await page.clock.setFixedTime(NOW);
   await page.setViewportSize({ height: 640, width });
   await setBrowserFont(page, pixels);
   await page.route("**/rpc/paymentProfile/list", (route) =>

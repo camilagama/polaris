@@ -87,36 +87,5 @@ export const E2E_FIXED_DATES_LIST = {
     count: 2,
     reason: BEFORE_THE_RULE,
   },
-  "apps/web/e2e/payment-profiles-screen.e2e.ts": {
-    count: 3,
-    reason: BEFORE_THE_RULE,
-  },
   "apps/web/e2e/product-import.e2e.ts": { count: 1, reason: BEFORE_THE_RULE },
-  "apps/web/e2e/product-media-screen.e2e.ts": {
-    count: 2,
-    reason: BEFORE_THE_RULE,
-  },
-  "apps/web/e2e/product-opening-stock.e2e.ts": {
-    count: 2,
-    reason: BEFORE_THE_RULE,
-  },
-  "apps/web/e2e/product-thumbnails-screens.e2e.ts": {
-    count: 3,
-    reason: BEFORE_THE_RULE,
-  },
-  "apps/web/e2e/products-screen.e2e.ts": { count: 2, reason: BEFORE_THE_RULE },
-  "apps/web/e2e/sale-columns.e2e.ts": { count: 2, reason: BEFORE_THE_RULE },
-  "apps/web/e2e/sale-screen.e2e.ts": { count: 2, reason: BEFORE_THE_RULE },
-  "apps/web/e2e/session-ended-screens.e2e.ts": {
-    count: 5,
-    reason: BEFORE_THE_RULE,
-  },
-  "apps/web/e2e/usabilidade-formularios.e2e.ts": {
-    count: 2,
-    reason: BEFORE_THE_RULE,
-  },
-  "apps/web/e2e/venda-trocar-preco.e2e.ts": {
-    count: 1,
-    reason: BEFORE_THE_RULE,
-  },
 };

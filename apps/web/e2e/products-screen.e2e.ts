@@ -34,6 +34,8 @@ const ORGANIZATION = {
   role: "owner",
   timezone: "America/Sao_Paulo",
 };
+const NOW = new Date("2026-10-14T12:00:00-03:00");
+const STAMP = NOW.toISOString();
 const id = (n: number) => `0199c2d0-0000-7000-8000-0000000000${n}`;
 
 const rpc = (json: unknown, status = 200) => ({
@@ -92,14 +94,14 @@ const bodyMarkup = (page: Page) =>
 const product = (n: number, name: string, status = "active") => ({
   archivedAt: null,
   categoryId: null,
-  createdAt: "2026-10-14T12:00:00.000Z",
+  createdAt: STAMP,
   deletedAt: null,
   description: null,
   id: id(20 + n),
   name,
   organizationId: ORGANIZATION.id,
   status,
-  updatedAt: "2026-10-14T12:00:00.000Z",
+  updatedAt: STAMP,
   version: 1,
 });
 
@@ -428,6 +430,7 @@ async function openServerScreen(
   { lists, others, path = "/products" }: ServerOptions
 ) {
   let calls = 0;
+  await page.clock.setFixedTime(NOW);
   await page.route("**/api/auth/get-session", (route) =>
     route.fulfill({
       body: JSON.stringify({ session: { id: "s" }, user: { id: "u" } }),

@@ -22,6 +22,8 @@ const WARNING =
 const SHIRT_OPTION = /Camiseta do teste · Azul/;
 const PRICE_FIELD = /Preço de tabela · /;
 const SHOTS = process.env.T111_SHOTS;
+const NOW = new Date("2026-10-14T12:00:00-03:00");
+const STAMP = NOW.toISOString();
 
 const rpc = (json: unknown, status = 200) => ({
   body: JSON.stringify({ json, meta: [] }),
@@ -49,7 +51,7 @@ const SHIRT_ENTRY = {
   productStatus: "active",
   quantity: 5,
   sku: "CAM-AZ-M",
-  updatedAt: "2026-10-14T12:00:00.000Z",
+  updatedAt: STAMP,
   values: [{ optionName: "color", optionValueName: "Azul" }],
   variantId: VARIANT_ID,
   version: 1,
@@ -57,14 +59,14 @@ const SHIRT_ENTRY = {
 const PRODUCT = {
   archivedAt: null,
   categoryId: null,
-  createdAt: "2026-10-14T12:00:00.000Z",
+  createdAt: STAMP,
   deletedAt: null,
   description: null,
   id: PRODUCT_ID,
   name: "Camiseta do teste",
   organizationId: ORGANIZATION.id,
   status: "active",
-  updatedAt: "2026-10-14T12:00:00.000Z",
+  updatedAt: STAMP,
   version: 1,
 };
 const CONFIGURATION = {
@@ -90,6 +92,7 @@ async function openScreen(
   handlers: Record<string, (route: Route) => Promise<void>>
 ) {
   let alive = true;
+  await page.clock.setFixedTime(NOW);
   await page.route("**/api/auth/get-session", (route) =>
     route.fulfill({
       body: JSON.stringify(
@@ -176,13 +179,13 @@ test("venda: com o carrinho montado, o 401 diz 'A venda não foi registrada.' e 
 
 const CATEGORY = (index: number) => ({
   archivedAt: null,
-  createdAt: "2026-10-14T12:00:00.000Z",
+  createdAt: STAMP,
   deletedAt: null,
   id: `0199c2d0-0000-7000-8000-${String(index).padStart(12, "0")}`,
   name: `Categoria ${index}`,
   organizationId: ORGANIZATION.id,
   status: "active",
-  updatedAt: "2026-10-14T12:00:00.000Z",
+  updatedAt: STAMP,
 });
 
 /** A long list, a short screen, and the page scrolled away from the top. */
