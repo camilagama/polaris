@@ -1111,16 +1111,29 @@ test.describe("pé do menu: primeiros passos e teste grátis", () => {
     await expect(
       page.locator('[data-sidebar="footer"]').getByRole("link")
     ).toHaveCount(2);
-    // two lines each, taller than a destination (32 px) and not cut by it
-    expect(steps?.height ?? 0).toBeGreaterThan(40);
+    // the steps are one line as tall as a destination (32 px) with the ring in the place of an icon; the trial keeps its two lines
+    const destination = await sidebar(page)
+      .getByRole("link", { exact: true, name: "Produtos" })
+      .boundingBox();
+    expect(steps?.height ?? 0).toBeCloseTo(destination?.height ?? 0, 0);
     expect(trial?.height ?? 0).toBeGreaterThan(48);
-    for (const link of [stepsLink(page), trialLink(page)]) {
-      // biome-ignore lint/performance/noAwaitInLoops: one link at a time
-      const cut = await link.evaluate(
+    await expect(stepsLink(page).locator("[data-progress-ring]")).toBeVisible();
+    await expect(stepsLink(page).locator("svg")).toHaveCount(1);
+    await expect(stepsLink(page).locator("[data-progress-ring]")).toHaveCSS(
+      "width",
+      "16px"
+    );
+    // the two lines of the trial are whole; the one line of the steps has its name and its figure whole (like a destination, its box is shorter than its line)
+    expect(
+      await trialLink(page).evaluate(
         (element) => element.scrollHeight > element.clientHeight
-      );
-      expect(cut).toBe(false);
-    }
+      )
+    ).toBe(false);
+    expect(
+      await stepsLink(page)
+        .locator("span.truncate")
+        .evaluate((element) => element.scrollWidth > element.clientWidth)
+    ).toBe(false);
     // the foot and the limit notice at the end of Produtos share the memory of the plan: one read for both (after the screen, hence expect.poll)
     await expect.poll(() => reads.plan).toBe(1);
     // and no second one later: two frames, the page's clock 11 s ahead (a read late by a timer or by the 10 s of the memory fires), then the network idle, and the count is still 1
@@ -1226,6 +1239,11 @@ test.describe("pé do menu: primeiros passos e teste grátis", () => {
       await expect(link).toBeVisible();
       const box = await link.boundingBox();
       expect(box?.width ?? 99).toBeLessThanOrEqual(48);
+      const mark = await link.locator("svg").first().boundingBox();
+      expect(mark?.width).toBeCloseTo(16, 0);
+      expect((mark?.x ?? 0) + (mark?.width ?? 0)).toBeLessThanOrEqual(
+        (box?.x ?? 0) + (box?.width ?? 0)
+      );
       await link.hover();
       await expect(page.locator("[data-slot=tooltip-content]")).toHaveText(
         tooltip
@@ -1309,6 +1327,11 @@ test.describe("pé do menu: primeiros passos e teste grátis", () => {
     const trialBox = await trial.boundingBox();
     const legalBox = await legal.boundingBox();
     expect(stepsBox?.y ?? 0).toBeLessThan(trialBox?.y ?? 0);
+    // the steps have the height of any other line of the sheet (44 px with touch)
+    const helpBox = await panel
+      .getByRole("link", { exact: true, name: "Ajuda e contato" })
+      .boundingBox();
+    expect(stepsBox?.height ?? 0).toBeCloseTo(helpBox?.height ?? 0, 0);
     expect((trialBox?.y ?? 0) + (trialBox?.height ?? 0)).toBeLessThanOrEqual(
       legalBox?.y ?? 0
     );

@@ -1,13 +1,18 @@
 import type { PeriodSummaryReadModel } from "@polaris/contracts";
 import { Money } from "@polaris/domain/money/money";
 import CheckIcon from "lucide-react/dist/esm/icons/check";
+import ShoppingBagIcon from "lucide-react/dist/esm/icons/shopping-bag";
+import StoreIcon from "lucide-react/dist/esm/icons/store";
+import TagIcon from "lucide-react/dist/esm/icons/tag";
 import { useEffect, useMemo } from "react";
 import { cn } from "@/lib/utils";
 import { buttonVariants } from "@/ui/button";
 import { MoneyText } from "@/ui/hidden-values";
+import { ProgressRing } from "@/ui/progress-ring";
 import {
   currentFirstStep,
   FIRST_STEPS_ANCHOR,
+  FIRST_STEPS_TOTAL,
   firstStepsDone,
 } from "../app-shell/first-steps";
 import {
@@ -158,6 +163,35 @@ export function TopProductsBlock({
 
 const STEPS = ["Loja criada", "Cadastrar o 1º produto", "Fazer a 1ª venda"];
 
+/** The icon of each step: the store has no destination in the menu; Produtos and Vender keep the icon they have there. */
+const STEP_ICONS = [StoreIcon, TagIcon, ShoppingBagIcon] as const;
+
+/** The box of a step's icon: the same 28 px in the three states, so the state moves nothing. */
+const STEP_BOX = "grid size-7 shrink-0 place-items-center rounded-md border";
+
+const STEP_BOX_STATE = {
+  current: "border-mark bg-mark/10 text-mark-foreground dark:bg-mark/15",
+  done: "border-transparent bg-primary/10 text-primary",
+  todo: "text-muted-foreground",
+} as const;
+
+function stepState(isDone: boolean, isCurrent: boolean) {
+  if (isDone) {
+    return "done";
+  }
+  return isCurrent ? "current" : "todo";
+}
+
+/** The count beside the title: the ring and "N de 3", the figure always written. */
+function StepsCount({ done }: { done: number }) {
+  return (
+    <span className="flex items-center gap-1.5 text-muted-foreground tabular-nums">
+      <ProgressRing done={done} total={FIRST_STEPS_TOTAL} />
+      {done} de {FIRST_STEPS_TOTAL}
+    </span>
+  );
+}
+
 /** The two ways of the step "Cadastrar o 1º produto" while it is not done (corte 2.5, T-5): by hand or a spreadsheet. */
 const FIRST_PRODUCT_WAYS = [
   { href: "/products?novo=1", label: "Cadastrar à mão", variant: "default" },
@@ -204,36 +238,39 @@ export function ChecklistBlock({ checklist }: { checklist: HomeChecklist }) {
   const current = currentFirstStep(done);
   return (
     <HomeBlock
+      action={<StepsCount done={done.filter(Boolean).length} />}
       className="lg:col-span-2"
       id={FIRST_STEPS_ANCHOR}
       title="Primeiros passos"
     >
-      <ol className="grid gap-2">
+      <ol className="grid gap-1">
         {STEPS.map((step, index) => {
           const withWays = index === 1 && next.kind === "product";
-          // with the two buttons the step is taller: number and name sit on the height of the first line of buttons
+          // with the two buttons the step is taller: the box and the name sit on the height of the first line of buttons
           const line = withWays ? "h-ctl-sm" : "";
+          const state = stepState(done[index] === true, index === current);
+          const Icon = STEP_ICONS[index] ?? StoreIcon;
           return (
             <li
               aria-current={index === current ? "step" : undefined}
               className={cn(
-                "flex gap-2.5",
-                withWays ? "items-start" : "items-center"
+                "flex gap-2.5 rounded-md px-2 py-1",
+                withWays ? "items-start" : "items-center",
+                state === "done" && "bg-muted/50"
               )}
               key={step}
             >
               <span className={cn("flex items-center", line)}>
                 <span
                   aria-hidden="true"
-                  className={cn(
-                    "grid size-5 shrink-0 place-items-center rounded-full border text-xs tabular-nums",
-                    done[index] &&
-                      "border-primary bg-primary text-primary-foreground",
-                    index === current &&
-                      "border-mark bg-mark/10 text-mark-foreground dark:bg-mark/15"
-                  )}
+                  className={cn(STEP_BOX, STEP_BOX_STATE[state])}
+                  data-step-box={state}
                 >
-                  {done[index] ? <CheckIcon className="size-3" /> : index + 1}
+                  {state === "done" ? (
+                    <CheckIcon className="size-4" />
+                  ) : (
+                    <Icon className="size-4" />
+                  )}
                 </span>
               </span>
               <span
