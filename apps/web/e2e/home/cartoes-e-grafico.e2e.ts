@@ -8,6 +8,7 @@ import {
   expectInvisibleTable,
   FakeServer,
   goal,
+  heroAndMonth,
   openHome,
   periodButton,
   placeOf,
@@ -1028,7 +1029,7 @@ test.describe("cartões de KPI: o valor e o minigráfico têm áreas que o núme
   };
 
   for (const size of SIZES) {
-    test(`valor curto, valor longo e estimativa incompleta: o cartão, o minigráfico e a área do número ficam do mesmo tamanho, e os quatro cartões têm a mesma altura (${size.width} px)`, async ({
+    test(`valor curto, valor longo e estimativa incompleta: o cartão, o minigráfico e a área do número ficam do mesmo tamanho, e os três do mês têm a mesma altura (${size.width} px)`, async ({
       page,
     }) => {
       await page.setViewportSize(size);
@@ -1044,10 +1045,12 @@ test.describe("cartões de KPI: o valor e o minigráfico têm áreas que o núme
       const [short, long, incomplete] = reads;
       expect(short?.length).toBe(4);
       for (const read of [short, long, incomplete]) {
-        const heights = (read ?? []).map((tile) => tile.tile?.height ?? 0);
+        const heights = (read ?? [])
+          .slice(1)
+          .map((tile) => tile.tile?.height ?? 0);
         expect(
           Math.max(...heights) - Math.min(...heights),
-          "os quatro cartões têm a mesma altura"
+          "os três cartões do mês têm a mesma altura"
         ).toBeLessThanOrEqual(1);
       }
       for (const read of [long, incomplete]) {
@@ -1163,4 +1166,204 @@ test.describe("cartões de KPI: o valor e o minigráfico têm áreas que o núme
       expect(tile.tile?.height).toBeCloseTo(rest[index]?.tile?.height ?? 0, 0);
     }
   });
+});
+
+test.describe("Vendas hoje é o herói: uma linha própria, com a mesma caixa em todo estado", () => {
+  const [first, second, today] = Object.keys(SOLD.days).slice(-3);
+  const HERO_LONG: Scenario = {
+    ...SOLD,
+    days: {
+      ...SOLD.days,
+      [first ?? ""]: [8000, 1],
+      [second ?? ""]: [99_964_035, 6],
+      [today ?? ""]: [123_456_789, 2],
+    },
+  };
+
+  for (const size of SIZES) {
+    test(`valor, valor longo, valores escondidos, esqueleto e outro período: o herói tem a mesma altura e o mesmo lugar (${size.width} px)`, async ({
+      page,
+    }) => {
+      await page.setViewportSize(size);
+      const server = new FakeServer(SOLD);
+      await openHome(page, server);
+      await expect(region(page, "Vendas hoje")).toContainText("R$ 320,10");
+      const { hero: base } = await heroAndMonth(page);
+      expect(base?.height ?? 0).toBeGreaterThan(0);
+      const same = async (when: string, place = true) => {
+        const { hero } = await heroAndMonth(page);
+        expect(hero?.height, `${when}: altura`).toBeCloseTo(
+          base?.height ?? Number.NaN,
+          0
+        );
+        if (place) {
+          expect(hero?.top, `${when}: lugar`).toBeCloseTo(
+            base?.top ?? Number.NaN,
+            0
+          );
+        }
+        expect(hero?.width, `${when}: largura`).toBeCloseTo(
+          base?.width ?? Number.NaN,
+          0
+        );
+      };
+
+      await page.getByRole("button", { name: "Esconder valores" }).click();
+      await expect(
+        region(page, "Vendas hoje").locator("[data-masked-money]")
+      ).toBeVisible();
+      await same("valores escondidos");
+      await page.getByRole("button", { name: "Esconder valores" }).click();
+
+      await choosePeriod(page, "Mês passado");
+      await expect(periodButton(page)).toContainText("01/09 a 30/09");
+      await expect(region(page, "Vendas em setembro")).toBeVisible();
+      await same("outro período");
+
+      server.scenario = HERO_LONG;
+      await page.reload();
+      await expect(
+        region(page, "Vendas hoje").locator("[data-kpi-value]")
+      ).toHaveText("R$ 1.234.567,89", { timeout: 20_000 });
+      await same("valor de nove dígitos");
+
+      let answer: () => void = () => undefined;
+      server.held.set(
+        "report/periodSummary",
+        new Promise((resolve) => {
+          answer = resolve;
+        })
+      );
+      await page.reload();
+      await expect(
+        page.locator("[data-kpi-row] [data-kpi-skeleton]")
+      ).toHaveCount(4);
+      await same("esqueleto", false);
+      answer();
+    });
+  }
+});
+
+test.describe("os três do mês: uma coluna até 1023 px, três colunas a partir de 1024 e uma faixa a partir de 1280", () => {
+  const INCOMPLETE_MONTH: Scenario = {
+    ...SOLD,
+    results: Object.fromEntries(
+      Object.keys(SOLD.days)
+        .slice(-3)
+        .map((day, index) => [day, index === 1 ? null : 9603])
+    ),
+  };
+
+  const STATES = [
+    ["com valores", SOLD],
+    ["com estimativa incompleta", INCOMPLETE_MONTH],
+  ] as const;
+
+  for (const [name, scenario] of STATES) {
+    test(`a faixa só existe a partir de 1280 px, e os três cartões têm a mesma altura nos dois lados (${name})`, async ({
+      page,
+    }) => {
+      const at = async (width: number) => {
+        await page.setViewportSize({ height: 800, width });
+        await openHome(page, new FakeServer(scenario));
+        await expect(region(page, "Resultado estimado")).toContainText("R$");
+        return heroAndMonth(page);
+      };
+      const narrow = await at(1279);
+      const wide = await at(1280);
+      for (const layout of [narrow, wide]) {
+        const [sales, result, ticket] = layout.cells;
+        expect(layout.cells).toHaveLength(3);
+        expect(result?.top).toBeCloseTo(sales?.top ?? Number.NaN, 0);
+        expect(ticket?.top).toBeCloseTo(sales?.top ?? Number.NaN, 0);
+        expect(result?.left).toBeGreaterThan(sales?.left ?? Number.NaN);
+        expect(ticket?.left).toBeGreaterThan(result?.left ?? Number.NaN);
+        const heights = layout.cells.map((cell) => cell.height);
+        expect(Math.max(...heights) - Math.min(...heights)).toBeLessThanOrEqual(
+          1
+        );
+        expect(layout.hero?.width).toBeCloseTo(layout.strip?.width ?? 0, 0);
+        expect(layout.hero?.left).toBeCloseTo(layout.strip?.left ?? 0, 0);
+        expect(
+          (layout.strip?.top ?? 0) >=
+            (layout.hero?.top ?? 0) + (layout.hero?.height ?? 0)
+        ).toBe(true);
+      }
+      const gap = (layout: typeof narrow) =>
+        (layout.cells[1]?.left ?? 0) -
+        ((layout.cells[0]?.left ?? 0) + (layout.cells[0]?.width ?? 0));
+      expect(
+        gap(narrow),
+        "1279 px: três cartões soltos"
+      ).toBeGreaterThanOrEqual(11);
+      expect(
+        narrow.cells.every((cell) => Number.parseFloat(cell.radius) > 0)
+      ).toBe(true);
+      expect(
+        Math.abs(gap(wide)),
+        "1280 px: células coladas"
+      ).toBeLessThanOrEqual(1);
+      expect(wide.cells.every((cell) => cell.radius === "0px")).toBe(true);
+    });
+  }
+
+  for (const [width, columns] of [
+    [759, 1],
+    [760, 1],
+    [1023, 1],
+    [1024, 3],
+  ] as const) {
+    test(`a ${width} px os três do mês estão em ${columns} ${columns === 1 ? "coluna" : "colunas"}`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ height: 800, width });
+      await openHome(page, new FakeServer(SOLD));
+      await expect(region(page, "Resultado estimado")).toContainText("R$");
+      const { cells } = await heroAndMonth(page);
+      const lefts = new Set(cells.map((cell) => Math.round(cell.left)));
+      expect(lefts.size).toBe(columns);
+      expect(cells.every((cell) => Number.parseFloat(cell.radius) > 0)).toBe(
+        true
+      );
+    });
+  }
+
+  for (const width of [1279, 1280]) {
+    test(`carregando: os três esqueletos ficam nos lugares dos cartões que chegam (${width} px)`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ height: 800, width });
+      const server = new FakeServer(SOLD);
+      let answer: () => void = () => undefined;
+      server.held.set(
+        "report/periodSummary",
+        new Promise((resolve) => {
+          answer = resolve;
+        })
+      );
+      await openHome(page, server);
+      await expect(
+        page.locator("[data-kpi-row] [data-kpi-skeleton]")
+      ).toHaveCount(4);
+      const loading = await heroAndMonth(page);
+      answer();
+      await expect(region(page, "Resultado estimado")).toContainText("R$");
+      const loaded = await heroAndMonth(page);
+      expect(loaded.cells).toHaveLength(3);
+      for (const [index, cell] of loaded.cells.entries()) {
+        const waiting = loading.cells[index];
+        expect(cell.left, `cartão ${index}`).toBeCloseTo(waiting?.left ?? 0, 0);
+        expect(
+          cell.top - (loaded.hero?.top ?? 0),
+          `cartão ${index}: distância do herói`
+        ).toBeCloseTo((waiting?.top ?? 0) - (loading.hero?.top ?? 0), 0);
+        expect(cell.width, `cartão ${index}`).toBeCloseTo(
+          waiting?.width ?? 0,
+          0
+        );
+        expect(cell.radius).toBe(waiting?.radius);
+      }
+      expect(loaded.hero?.height).toBeCloseTo(loading.hero?.height ?? 0, 0);
+    });
+  }
 });
