@@ -1340,7 +1340,7 @@ export function UiGallery() {
                   </div>
                 </figure>
               ))}
-              <figure className="m-0 grid w-12 gap-2">
+              <figure className="m-0 grid w-fit gap-2">
                 <figcaption className="text-muted-foreground text-xs">
                   Recolhido
                 </figcaption>
