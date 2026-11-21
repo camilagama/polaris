@@ -394,6 +394,12 @@ function readBlocks(
 }
 
 /**
+ * What the "Primeiros passos" skeleton keeps, half way between the block with the two buttons of the 2nd step (stacked
+ * under 640 px, in a row from there) and the one with the button under the steps, which is the shape not known while it reads.
+ */
+const STEPS_SKELETON_HEIGHT = "min-h-52 max-sm:min-h-60";
+
+/**
  * The cards are still to come: the figures, or what hangs on them. The checklist is read only when the figures counted
  * no sale (with a sale counted the cards come at once), and the stock's read waits for the figures.
  */
@@ -446,7 +452,7 @@ function figureBlocks(
       ...NO_BLOCKS,
       main: steps ? (
         <BlockSkeleton
-          className="lg:col-span-2"
+          className={cn(STEPS_SKELETON_HEIGHT, "lg:col-span-2")}
           label="Carregando os primeiros passos…"
           lines={3}
         />

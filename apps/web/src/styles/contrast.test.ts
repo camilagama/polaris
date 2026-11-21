@@ -209,6 +209,44 @@ describe.each([
 });
 
 /**
+ * The ring and the box of the "Primeiros passos" (menu and Início): the arc of the ring is ink over the sidebar and over
+ * the card, the check is ink over `primary/10`, and the words of a done step are `muted-foreground` over the soft row
+ * (`muted/50`). The drawings are graphic elements (3:1, WCAG 1.4.11) and the words are text (4.5:1). Each pair is a row of
+ * the tables above; this one says they cannot leave the map.
+ */
+describe.each([
+  ["Tema claro", tokens(block(":root"))],
+  [
+    "Tema escuro",
+    new Map([...tokens(block(":root")), ...tokens(block(".dark"))]),
+  ],
+])("contraste do anel e do passo feito, %s", (section, palette) => {
+  const rows = pairs(section);
+
+  it.each([
+    ["`primary`", "`sidebar`", 3],
+    ["`primary`", "`card`", 3],
+    ["`primary`", "`primary/10 sobre card`", 3],
+    ["`muted-foreground`", "`muted/50 sobre card`", 4.5],
+  ] as const)(
+    "%s / %s reaches %d:1 and is in the map",
+    (foreground, background, bar) => {
+      const row = rows.find(
+        (item) =>
+          item.foreground === foreground && item.background === background
+      );
+      expect(
+        row,
+        `${foreground} / ${background} is not in "${section}"`
+      ).toBeDefined();
+      expect(
+        ratio(color(foreground, palette), color(background, palette))
+      ).toBeGreaterThanOrEqual(bar);
+    }
+  );
+});
+
+/**
  * The timeline of the sale detail (src/sales/sale-timeline.tsx), over the card: the word in `card-foreground` and the
  * time in `muted-foreground` are text (4.5:1), and the three dots (the sale's `chart-sales`, `destructive`, and the
  * supporting `muted-foreground`) are graphic elements that carry no meaning alone (WCAG 1.4.11, 3:1). Each pair is a row
