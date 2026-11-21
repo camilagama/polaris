@@ -2347,7 +2347,7 @@ interface ConfirmedSaleItemView {
 
 /** The figure beside the total at the top of the receipt, from what the sale already carries. */
 interface ConfirmedSaleSummary {
-  /** Sum of the quantities of the items. */
+  /** Number of lines of the sale, the same figure the history list shows. */
   itemCount: number;
 }
 
@@ -2365,7 +2365,7 @@ export interface ConfirmedSaleView {
 
 function confirmedSummary(sale: ConfirmedSaleReadModel): ConfirmedSaleSummary {
   return {
-    itemCount: sale.items.reduce((sum, item) => sum + item.quantity, 0),
+    itemCount: sale.items.length,
   };
 }
 

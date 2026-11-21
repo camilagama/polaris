@@ -1,6 +1,11 @@
 import type { ConfirmedSaleReadModel } from "@polaris/contracts";
 import { describe, expect, it } from "vitest";
 import { confirmedSaleView } from "./sale-form-model";
+import {
+  historyLoaded,
+  historyRows,
+  initialHistoryState,
+} from "./sale-history-model";
 
 const ID = "11111111-1111-4111-8111-111111111111";
 
@@ -63,20 +68,51 @@ const sale = (
 });
 
 describe("the figure beside the total of the receipt", () => {
-  it("sums the quantities of every line", () => {
+  it("counts the lines of the sale, not the sum of their quantities", () => {
     const view = confirmedSaleView(sale([2, 3, 1], "60.00"));
-    expect(view.summary).toEqual({ itemCount: 6 });
+    expect(view.summary).toEqual({ itemCount: 3 });
   });
 
-  it("counts the quantities, not the lines, and keeps the thousands", () => {
+  it("counts one line of quantity 1200 as one", () => {
     const view = confirmedSaleView(sale([1200], "12000.50"));
-    expect(view.summary.itemCount).toBe(1200);
+    expect(view.summary.itemCount).toBe(1);
   });
 
   it("agrees with the lines the receipt shows, and does not claim what was received", () => {
     const view = confirmedSaleView(sale([4, 5], "90.00"));
     expect(view.items).toHaveLength(2);
-    expect(view.summary.itemCount).toBe(9);
+    expect(view.summary.itemCount).toBe(2);
     expect(Object.keys(view.summary)).toEqual(["itemCount"]);
+  });
+
+  it("shows the same number as the history row of the same sale: one line of quantity 2 is 1", () => {
+    const detail = confirmedSaleView(sale([2], "20.00"));
+    const [row] = historyRows(
+      historyLoaded(
+        initialHistoryState(),
+        {
+          hasMore: false,
+          sales: [
+            {
+              cancelledAt: null,
+              confirmedAt: "2026-05-01T12:00:01.000Z",
+              customerId: null,
+              customerName: null,
+              hasReturns: false,
+              id: ID,
+              itemCount: 1,
+              occurredAt: "2026-05-01T12:00:00.000Z",
+              occurredOn: "2026-05-01",
+              paymentMethod: "pix",
+              status: "confirmed",
+              totalDue: "20.00",
+            },
+          ],
+        },
+        "filtro-a"
+      )
+    );
+    expect(detail.summary.itemCount).toBe(1);
+    expect(row?.itemCountText).toBe(`${detail.summary.itemCount} item`);
   });
 });

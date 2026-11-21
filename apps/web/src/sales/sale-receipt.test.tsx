@@ -212,6 +212,20 @@ describe("the sale as a receipt", () => {
     expect(markup).not.toContain("Recebido");
   });
 
+  it("writes Item in the singular for a sale of one line, as the history does", () => {
+    const markup = renderToStaticMarkup(
+      <SaleReceipt
+        sale={{ ...sale, summary: { itemCount: 1 } }}
+        status={<span>Confirmada</span>}
+      />
+    );
+    const terms = [...markup.matchAll(/<dt[^>]*>([^<]*)<\/dt>/g)].map(
+      (match) => match[1]
+    );
+    expect(terms.slice(0, 2)).toEqual(["Total devido", "Item"]);
+    expect(markup).toContain(">1</dd>");
+  });
+
   it("writes the count of items from the sale, and masks the total of the strip with the values hidden", () => {
     const strip = (markup: string) =>
       markup.slice(

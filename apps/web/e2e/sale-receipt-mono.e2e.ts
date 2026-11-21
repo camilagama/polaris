@@ -409,12 +409,12 @@ const stripBoxes = (page: Page): Promise<StripBox[]> =>
       })
     );
 
-test("faixa do recibo a 360 px: Total devido e Itens lado a lado, sem Recebido, e o total escrito uma vez", async ({
+test("faixa do recibo a 360 px: Total devido e Item lado a lado, sem Recebido, e o total escrito uma vez", async ({
   page,
 }) => {
   await openDetail(page, { sale: ORDINARY, size: { height: 740, width: 360 } });
   const strip = receiptOf(page).locator("dl.flex-wrap");
-  await expect(strip.locator("dt")).toHaveText(["Total devido", "Itens"]);
+  await expect(strip.locator("dt")).toHaveText(["Total devido", "Item"]);
   await expect(strip.locator("dd").nth(0)).toContainText("209,90");
   await expect(strip.locator("dd").nth(1)).toHaveText("1");
   const [total, items] = await stripBoxes(page);

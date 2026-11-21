@@ -54,7 +54,9 @@ export function SaleReceipt({ before, sale, status }: SaleReceiptProps) {
                 </dd>
               </div>
               <div className="grid grow gap-1">
-                <dt className="font-medium text-muted-foreground">Itens</dt>
+                <dt className="font-medium text-muted-foreground">
+                  {sale.summary.itemCount === 1 ? "Item" : "Itens"}
+                </dt>
                 <dd className="font-mono text-value-md tabular-nums">
                   {formatQuantity(sale.summary.itemCount)}
                 </dd>
