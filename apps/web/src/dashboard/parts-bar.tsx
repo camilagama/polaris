@@ -120,7 +120,7 @@ export function PartsBar({
           ))}
         </div>
       )}
-      <ul className="flex flex-wrap gap-x-4 gap-y-1 text-sm">
+      <ul className="grid gap-y-1 text-sm sm:flex sm:flex-wrap sm:gap-x-4">
         {parts.map((part, index) => {
           const mark = partMark(part);
           const percent = percents[index];
