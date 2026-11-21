@@ -3,6 +3,7 @@ import { saoPauloDateOf } from "@polaris/domain/billing/provider-period";
 import { tabHref } from "../app-shell/navigation-model";
 import { clockPartsInTimezone } from "../lib/dates";
 import { formatCalendarDate } from "../lib/format";
+import { subscribePlanUsageChanges } from "../lib/plan-usage-changes";
 
 /**
  * The part of the Assinatura the shell needs on every screen (the notice of grace at the top, AS-35, the trial at the
@@ -394,6 +395,31 @@ export function planNoticeIsOld(
     now < remembered.readAt
   );
 }
+
+/**
+ * A write that changes what the plan counts (or the plan) leaves the kept use behind the server's: the line of use goes
+ * from the card until the next read of the plan puts the new number, so the menu never says a count the screen's own
+ * warning contradicts. The state, the dates and the card itself stay, and no read starts because of it.
+ */
+function forgetKeptUse(): void {
+  const store = sessionStore();
+  try {
+    const kept = JSON.parse(storedText(store) ?? "null") as Record<
+      string,
+      unknown
+    > | null;
+    if (kept === null || typeof kept !== "object" || kept.variants === null) {
+      return;
+    }
+    inMemory = JSON.stringify({ ...kept, variants: null });
+    store?.setItem(PLAN_NOTICE_KEY, inMemory);
+  } catch {
+    // the page's memory still has what it had
+  }
+  tell();
+}
+
+subscribePlanUsageChanges(forgetKeptUse);
 
 /** The session is over: what the notice kept of the plan goes with it. */
 export function clearPlanNotice(

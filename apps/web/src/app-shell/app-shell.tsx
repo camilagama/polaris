@@ -540,7 +540,7 @@ function ShellNotices({
   );
 }
 
-/** The screens where the card of the plan is not drawn: the sale, which never meets the plan, and the Assinatura itself. */
+/** Where the card of the plan is not drawn: the sale, which never meets the plan, the Assinatura itself and the 404 (no route). */
 const NO_PLAN_CARD: readonly RouteId[] = ["sale", "subscription"];
 
 /**
@@ -573,7 +573,7 @@ function useShellProgress(
         : trialChargeDay(planFacts, saoPauloDateOf(now)),
     firstSteps: useFirstSteps(organization?.organizationId ?? null),
     planCard:
-      routeId !== undefined && NO_PLAN_CARD.includes(routeId)
+      routeId === undefined || NO_PLAN_CARD.includes(routeId)
         ? null
         : planCardFor(planFacts),
     planFacts,

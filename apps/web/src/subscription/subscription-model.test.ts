@@ -1,5 +1,6 @@
 import type { BillingPlanView } from "@polaris/contracts";
 import { describe, expect, it } from "vitest";
+import { notifyPlanUsageChanged } from "../lib/plan-usage-changes";
 import {
   accessDateText,
   clearPlanNotice,
@@ -1140,6 +1141,22 @@ describe("the memory of the notice of grace (sessionStorage, by store)", () => {
       );
       expect(rememberedPlanNotice("loja-a", store)?.variants).toBeNull();
     }
+  });
+
+  it("a write that changes the use takes the kept count out and keeps the rest, with no read", () => {
+    rememberPlanNotice("loja-a", GRACE_FACTS, 1000, null);
+    expect(rememberedPlanNotice("loja-a", null)?.variants).toEqual({
+      max: 50,
+      used: 12,
+    });
+    notifyPlanUsageChanged();
+    expect(rememberedPlanNotice("loja-a", null)).toMatchObject({
+      accessEndsAt: GRACE_FACTS.accessEndsAt,
+      readAt: 1000,
+      state: "grace",
+      variants: null,
+    });
+    clearPlanNotice(null);
   });
 
   it("never gives one store's plan to another", () => {

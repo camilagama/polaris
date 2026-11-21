@@ -5,7 +5,7 @@ import { expect, test } from "@playwright/test";
 import { json, serveFoot, TRIAL_PLAN } from "./shell-server";
 
 /**
- * O cartão do plano no pé do menu (S-29, S-30, S-33): sempre visível para o dono de uma loja Free, sem fechar, na
+ * O cartão do plano no pé do menu: sempre visível para o dono de uma loja Free, sem fechar, na
  * lateral, recolhido e na folha "Mais", sem nenhuma leitura a mais do plano.
  */
 
@@ -20,6 +20,7 @@ const FREE_PLAN = {
   usage: { goals: 0, images: 3, variants: 12 },
 };
 
+const FREE_STATES = new Set(["free", "free_over_limit"]);
 const USE_TEXT = "Você usa 12 de 50 variantes no plano Free.";
 const PITCH =
   "Catálogo público no ar, vendas sem internet e mais variantes, imagens e metas.";
@@ -98,6 +99,9 @@ test.describe("o cartão do plano Free", () => {
         await page.goto("/products");
         await expect(page.locator("[data-menu-first-steps]")).toBeVisible();
         await page.waitForLoadState("networkidle");
+        if (FREE_STATES.has(String(Reflect.get(plan as object, "state")))) {
+          await expect(card(page)).toBeVisible();
+        }
         const found = await nav(page)
           .getByRole("link")
           .evaluateAll((all) =>
@@ -191,7 +195,7 @@ test.describe("o cartão do plano Free", () => {
     }
   });
 
-  test("não aparece em Nova venda nem na Assinatura; aparece no Histórico", async ({
+  test("não aparece em Nova venda, na Assinatura nem no 404; aparece no Histórico", async ({
     page,
   }) => {
     await page.setViewportSize({ height: 800, width: 1280 });
@@ -208,6 +212,11 @@ test.describe("o cartão do plano Free", () => {
     await expect(
       page.getByRole("heading", { level: 1, name: "Configurações" })
     ).toBeVisible();
+    await page.waitForLoadState("networkidle");
+    await expect(card(page)).toHaveCount(0);
+    await page.goto("/uma-rota-que-nao-existe");
+    await expect(page.locator("main")).toBeVisible();
+    await expect(page.locator("[data-menu-first-steps]")).toBeVisible();
     await page.waitForLoadState("networkidle");
     await expect(card(page)).toHaveCount(0);
   });
@@ -262,7 +271,7 @@ test.describe("o cartão do plano Free", () => {
     ).toBe(true);
   });
 
-  test("360 px: no fim da folha Mais, compacto, antes dos links legais, com área de 44 px", async ({
+  test("360 px: no fim da folha Mais, compacto, antes dos links legais, com o botão inteiro à vista", async ({
     page,
   }) => {
     await page.setViewportSize({ height: 740, width: 360 });
@@ -331,5 +340,34 @@ test.describe("o cartão do plano Free", () => {
     release();
     await expect(card(page)).toBeVisible();
     expect(await tops()).toEqual(before);
+  });
+
+  test("aberto já sem conexão e sem leitura guardada: sem cartão e sem leitura; a conexão que chega lê uma vez e traz o cartão", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 800, width: 1280 });
+    await page.addInitScript(() => {
+      Object.defineProperty(window, "polarisOffline", {
+        configurable: true,
+        value: true,
+      });
+      Object.defineProperty(navigator, "onLine", {
+        configurable: true,
+        get: () => !("polarisOffline" in window),
+      });
+    });
+    const reads = await serveFoot(page, { plan: FREE_PLAN });
+    await page.goto("/products");
+    await expect(page.locator("[data-menu-first-steps]")).toBeVisible();
+    expect(await page.evaluate(() => navigator.onLine)).toBe(false);
+    await page.waitForLoadState("networkidle");
+    await expect(card(page)).toHaveCount(0);
+    expect(reads.plan).toBe(0);
+    await page.evaluate(() => {
+      Reflect.deleteProperty(window, "polarisOffline");
+      window.dispatchEvent(new Event("online"));
+    });
+    await expect(card(page)).toContainText(USE_TEXT, { timeout: 15_000 });
+    expect(reads.plan).toBe(1);
   });
 });
