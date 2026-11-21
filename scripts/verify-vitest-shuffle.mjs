@@ -15,10 +15,11 @@ import { stripComments } from "./verify-no-history-comments.mjs";
  * the literal `true`; the keys of the blocks of one project add up, at any depth. An object of `projects: [...]` is a
  * project of its own. Without `extends: true` its own `sequence` has to turn `tests` on. With `extends: true` it
  * inherits the root's order, because Vitest merges the `sequence` of the project into the root's key by key (`mergeConfig`
- * in its project resolution): `sequence: { seed: 1 }`, `shuffle: {}` and `shuffle: { files: false }` keep the root's
- * `shuffle.tests`. Only the forms known to keep it are accepted: no `shuffle` in the project's `sequence` blocks,
- * `shuffle: true`, or `shuffle: { ... }` whose only keys are `files` (any literal) and `tests: true`. Anything else
- * (`shuffle: false`, `tests: false`, a variable, a spread, a quoted key, a nested object) is refused.
+ * in its project resolution): `sequence: { seed: 1 }` keeps the root's `shuffle`. An object `shuffle` in the project
+ * does not: when the root's is the boolean `true`, the merge replaces it by the project's object, and Vitest reads a
+ * missing `tests` as off. Only the forms known to keep the tests order are accepted: no `shuffle` in the project's
+ * `sequence` blocks, `shuffle: true`, or `shuffle: { ... }` whose only keys are `files` (a literal) and `tests: true`,
+ * the latter always written out. Anything else (`shuffle: false`, `tests: false`, a variable, a spread, a quoted key, a nested object) is refused.
  * Not caught: a `shuffle` built in a variable or a spread outside an `extends: true` project, `projects` that is not an
  * array literal (a variable, a spread) or is nested in another project, a regular expression literal with a quote in it,
  * an order switched off from the command line.
@@ -43,7 +44,6 @@ const SHUFFLE_WORD = /\bshuffle\b/g;
 const SHUFFLE_KEY_START = /^\s*:\s*/;
 const QUOTED_KEY = /(""|''|``)\s*:/;
 const SPREAD = /\.\.\./;
-const TESTS_KEY = /\btests\b/;
 const TRUE_VALUE = /^true\b/;
 const FILES_OR_TESTS_LITERAL = /\b(files|tests)\s*:\s*(true|false)\b/g;
 const UNKNOWN_SYNTAX = /[{}[\]()]|=>|\?/;
@@ -183,10 +183,7 @@ function shuffleValueKeepsTests(value) {
   if (UNKNOWN_SYNTAX.test(rest) || UNKNOWN_KEY.test(rest)) {
     return false;
   }
-  return (
-    (!TESTS_KEY.test(inner) || SHUFFLE_KEY("tests").test(inner)) &&
-    !TESTS_FALSE.test(inner)
-  );
+  return SHUFFLE_KEY("tests").test(inner) && !TESTS_FALSE.test(inner);
 }
 
 function sequenceBodyKeepsTests(body) {

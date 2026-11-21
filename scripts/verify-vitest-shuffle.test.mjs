@@ -261,11 +261,7 @@ describe("each project has its own order", () => {
   });
 
   it("passes an extending project whose own sequence leaves the shuffle alone", () => {
-    for (const sequence of [
-      "{ seed: 1 }",
-      "{ shuffle: {} }",
-      "{ shuffle: { files: false } }",
-    ]) {
+    for (const sequence of ["{ seed: 1 }", "{ seed: 1, retry: 2 }"]) {
       expect(
         problemsFor(
           projectsConfig(`{ extends: true, test: { sequence: ${sequence} } }`)
@@ -277,6 +273,10 @@ describe("each project has its own order", () => {
 
   it("refuses an extending project whose own sequence turns the shuffle off", () => {
     for (const sequence of [
+      "{ shuffle: {} }",
+      "{ shuffle: { files: false } }",
+      "{ shuffle: { files: true } }",
+      "{ seed: 1, shuffle: { files: true } }",
       "{ shuffle: false }",
       "{ seed: 1, shuffle: false }",
       "{ shuffle: { tests: false } }",
@@ -320,6 +320,7 @@ describe("each project has its own order", () => {
       "{ shuffle: true }",
       "{ shuffle: { tests: true } }",
       "{ shuffle: { files: true, tests: true } }",
+      "{ shuffle: { files: false, tests: true } }",
     ]) {
       expect(
         problemsFor(
