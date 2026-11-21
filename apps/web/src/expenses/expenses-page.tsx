@@ -21,6 +21,7 @@ import { focusLater } from "../lib/focus";
 import { orpcClient } from "../lib/orpc";
 import { markPeriodSummaryStale } from "../lib/period-summary-stale";
 import { ExpenseCategoriesPanel } from "./expense-categories-panel";
+import { ExpenseByCategory } from "./expense-by-category";
 import { ActionNotice, LoadError } from "./expense-fields";
 import { ExpenseForm } from "./expense-form";
 import { ExpenseFiltersBar, focusFilterAfterClear } from "./expense-filters";
@@ -309,6 +310,11 @@ export function ExpensesPage() {
       })),
     []
   );
+  const handlePickCategory = useCallback((categoryId: string) => {
+    setChoices((current) => ({ ...current, categoryId }));
+    // the block leaves the screen with the filter, and the button that had the focus with it
+    focusFilterAfterClear();
+  }, []);
   const handleClearFilters = useCallback(() => {
     setChoices((current) => ({ ...current, categoryId: "" }));
     focusFilterAfterClear();
@@ -402,6 +408,14 @@ export function ExpensesPage() {
               />
             </DialogContent>
           </Dialog>
+          <ExpenseByCategory
+            categories={categories.state.categories}
+            categoriesLoading={categories.state.isLoading}
+            filters={filters}
+            onPick={handlePickCategory}
+            organizationId={organizationId}
+            state={state}
+          />
           <Card aria-labelledby={LIST_TITLE_ID} role="region">
             <CardHeader className="gap-3">
               <CardTitle aria-level={2} id={LIST_TITLE_ID} role="heading">

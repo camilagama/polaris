@@ -38,6 +38,10 @@ Mapa de contraste do desenho v5.1 (Petković, 20/10/2026), trazido para o reposi
 | `mark` / `accent` | marcador sobre item atual | composição | **3.15** | 3 | ✓ |
 | `mark-foreground` / `card` | texto de destaque esmeralda | composição | **8.05** | 7 | ✓ |
 | `mark-foreground` / `mark/10 sobre card` | texto esmeralda sobre bg-mark/10 | composição | **7.16** | 4.5 | ✓ |
+| `primary` / `sidebar` | arco do anel de Primeiros passos no menu (16 px) | ProgressRing | **16.36** | 3 | ✓ |
+| `primary` / `card` | arco do anel de Primeiros passos no bloco do Início | ProgressRing | **18.1** | 3 | ✓ |
+| `primary` / `primary/10 sobre card` | visto do passo feito, no quadro de 28 px | Primeiros passos | **14.73** | 3 | ✓ |
+| `muted-foreground` / `muted/50 sobre card` | texto do passo feito, na linha de fundo suave | Primeiros passos | **7.68** | 4.5 | ✓ |
 | `input` / `card` | borda de Input, Select, Checkbox, Radio, Switch desligado (cartão) | border-input | **3.36** | 3 | ✓ |
 | `input` / `background` | borda de campo sobre o fundo | border-input | **3.22** | 3 | ✓ |
 | `input` / `muted` | borda de campo sobre faixa neutra | border-input | **3.01** | 3 | ✓ |
@@ -58,9 +62,12 @@ Mapa de contraste do desenho v5.1 (Petković, 20/10/2026), trazido para o reposi
 | `mark-foreground` / `chart-sales/12 sobre card` | chip de variação que sobe (v7) | DeltaChip | **7.06** | 4.5 | ✓ |
 | `muted-foreground` / `muted` | chip de variação que cai ou fica igual (v7) | DeltaChip | **7.26** | 4.5 | ✓ |
 | `chart-2` / `card` | série 2 | Chart | **3.64** | 3 | ✓ |
+| `chart-2` / `muted` | barra de "Por categoria" (Despesas) sobre a trilha | Chart | **3.26** | 3 | ✓ |
 | `chart-3` / `card` | série 3 | Chart | **6.79** | 3 | ✓ |
 | `chart-4` / `card` | série 4 | Chart | **12.27** | 3 | ✓ |
 | `chart-5` / `card` | série 5 | Chart | **18.09** | 3 | ✓ |
+| `foreground` / `chart-heat-1` | traço do ritmo da meta sobre o trilho verde do anel (sobre o arco, o traço se lê pela folga de `card` de 2 px: `chart-sales` / `card` acima e `foreground` / `card`) | Meta (anel) | **12.99** | 3 | ✓ |
+| `foreground` / `chart-result/18 sobre card` | traço do ritmo da meta sobre o trilho índigo do anel (sobre o arco, `chart-result` / `card` acima) | Meta (anel) | **13.97** | 3 | ✓ |
 | `primary-foreground` / `primary/88 sobre background` | rótulo do botão principal em hover (hover:bg-primary/88) | Button default, Badge default | **13.01** | 7 | ✓ |
 | `destructive` / `destructive/15 sobre card` | botão destrutivo em hover (hover:bg-destructive/15) | Button destructive | **5.74** | 4.5 | ✓ |
 | `warning` / `warning/10 sobre card` | texto de aviso sobre o próprio tom (Alert/Badge warning) | Alert, Badge warning | **6.51** | 4.5 | ✓ |
@@ -123,6 +130,10 @@ Mapa de contraste do desenho v5.1 (Petković, 20/10/2026), trazido para o reposi
 | `mark` / `accent` | marcador sobre item atual | composição | **5.64** | 3 | ✓ |
 | `mark-foreground` / `card` | texto de destaque esmeralda | composição | **10.07** | 7 | ✓ |
 | `mark-foreground` / `mark/15 sobre card` | texto esmeralda sobre bg-mark/15 (escuro) | composição | **7.66** | 4.5 | ✓ |
+| `primary` / `sidebar` | arco do anel de Primeiros passos no menu (16 px) | ProgressRing | **15.43** | 3 | ✓ |
+| `primary` / `card` | arco do anel de Primeiros passos no bloco do Início | ProgressRing | **13.57** | 3 | ✓ |
+| `primary` / `primary/10 sobre card` | visto do passo feito, no quadro de 28 px | Primeiros passos | **10.41** | 3 | ✓ |
+| `muted-foreground` / `muted/50 sobre card` | texto do passo feito, na linha de fundo suave | Primeiros passos | **7.84** | 4.5 | ✓ |
 | `input` / `card` | borda de Input, Select, Checkbox, Radio, Switch desligado (cartão) | border-input | **3.89** | 3 | ✓ |
 | `input` / `background` | borda de campo sobre o fundo | border-input | **4.23** | 3 | ✓ |
 | `input` / `popover` | borda de campo em diálogo e menu | border-input | **3.63** | 3 | ✓ |
@@ -148,9 +159,12 @@ Mapa de contraste do desenho v5.1 (Petković, 20/10/2026), trazido para o reposi
 | `mark-foreground` / `chart-sales/12 sobre card` | chip de variação que sobe (v7) | DeltaChip | **8.62** | 4.5 | ✓ |
 | `muted-foreground` / `muted` | chip de variação que cai ou fica igual (v7) | DeltaChip | **7.05** | 4.5 | ✓ |
 | `chart-2` / `card` | série 2 | Chart | **4.22** | 3 | ✓ |
+| `chart-2` / `muted` | barra de "Por categoria" (Despesas) sobre a trilha | Chart | **3.45** | 3 | ✓ |
 | `chart-3` / `card` | série 3 | Chart | **6.69** | 3 | ✓ |
 | `chart-4` / `card` | série 4 | Chart | **9.85** | 3 | ✓ |
 | `chart-5` / `card` | série 5 | Chart | **14.22** | 3 | ✓ |
+| `foreground` / `chart-heat-1` | traço do ritmo da meta sobre o trilho verde do anel (sobre o arco, o traço se lê pela folga de `card` de 2 px: `chart-sales` / `card` acima e `foreground` / `card`) | Meta (anel) | **8.58** | 3 | ✓ |
+| `foreground` / `chart-result/18 sobre card` | traço do ritmo da meta sobre o trilho índigo do anel (sobre o arco, `chart-result` / `card` acima) | Meta (anel) | **11.31** | 3 | ✓ |
 | `primary-foreground` / `primary/88 sobre background` | rótulo do botão principal em hover (hover:bg-primary/88) | Button default, Badge default | **11.6** | 7 | ✓ |
 | `destructive` / `destructive/20 sobre card` | botão destrutivo e selo de erro no escuro (dark:bg-destructive/15, hover /20) | Button destructive, Badge destructive | **5.19** | 4.5 | ✓ |
 | `warning` / `warning/10 sobre card` | texto de aviso sobre o próprio tom (Alert/Badge warning) | Alert, Badge warning | **7.4** | 4.5 | ✓ |

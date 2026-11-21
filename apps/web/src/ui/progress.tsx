@@ -8,9 +8,13 @@ import { cn } from "@/lib/utils";
 function Progress({
   className,
   children,
+  marker,
   value,
   ...props
-}: ProgressPrimitive.Root.Props) {
+}: ProgressPrimitive.Root.Props & {
+  /** Where a reference mark crosses the bar, 0 to 100 (a drawing only: say what it means in text). */
+  marker?: number | undefined;
+}) {
   return (
     <ProgressPrimitive.Root
       className={cn("flex flex-wrap gap-3", className)}
@@ -19,10 +23,26 @@ function Progress({
       {...props}
     >
       {children}
-      <ProgressTrack>
-        <ProgressIndicator />
-      </ProgressTrack>
+      <div className="relative w-full">
+        <ProgressTrack>
+          <ProgressIndicator />
+        </ProgressTrack>
+        {marker === undefined ? null : <ProgressMarker position={marker} />}
+      </div>
     </ProgressPrimitive.Root>
+  );
+}
+
+/* A 2 px mark in the text color, 4 px taller than the bar, with 2 px of the card behind it on each side so it reads on
+   the filled part and on the track alike. It does not move: animating a reference draws the eye to what did not change. */
+function ProgressMarker({ position }: { position: number }) {
+  return (
+    <span
+      aria-hidden="true"
+      className="absolute -top-0.5 h-2 w-0.5 -translate-x-1/2 bg-foreground shadow-[0_0_0_0.125rem_var(--card)]"
+      data-slot="progress-marker"
+      style={{ left: `${position}%` }}
+    />
   );
 }
 

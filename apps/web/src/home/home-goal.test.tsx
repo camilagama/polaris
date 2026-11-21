@@ -1,7 +1,9 @@
 import type { GoalReadModel } from "@polaris/contracts";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { GoalBlock, OfflineGoalBlock } from "./home-goal";
+import { goalPace } from "../dashboard/goal-pace";
+import { helpTipTextProblem } from "../ui/help-tip-text";
+import { GoalBlock, goalHelpText, OfflineGoalBlock } from "./home-goal";
 
 const october: GoalReadModel = {
   achievedValue: "166619.00",
@@ -22,6 +24,13 @@ const october: GoalReadModel = {
 };
 
 const noRetry = () => undefined;
+
+const RING_LABEL = /aria-label="([^"]*)"[^>]*data-goal-ring/;
+const PACE_SLOT = /<p class="[^"]*" data-pace="([^"]*)">/;
+const PACE_ICON = /<svg[^>]*class="[^"]*size-3[^"]*"[^>]*aria-hidden="true"/;
+const PACE_WORD = /Adiantada|No ritmo|Atrasada/;
+const HELP_ONLY_PACE = /^O traço marca/;
+const HELP_ONLY_PROJECTION = /^Estimativa/;
 
 const SENTENCE_CLASS = /<p class="([^"]*)">Defina quanto/;
 
@@ -150,5 +159,112 @@ describe("a faixa fina da Meta (sem meta para o mês)", () => {
   it("a meta em andamento fica em pé quando está num par (o anel e os números no meio)", () => {
     const html = view({ goal: active, kind: "active", others: 0 });
     expect(html).toContain("group-data-[pair]/row:@min-[60rem]/home:flex-col");
+  });
+});
+
+describe("o ritmo da Meta (o traço e a palavra)", () => {
+  const progress = (
+    percent: string,
+    over: Partial<GoalReadModel["progress"] & object> = {}
+  ) => ({
+    percent,
+    periodEnded: false,
+    reached: false,
+    value: "1500.00",
+    ...over,
+  });
+  const active: GoalReadModel = {
+    ...october,
+    achievedValue: null,
+    endsOn: "2026-11-30",
+    progress: progress("30.0"),
+    settledAt: null,
+    startsOn: "2026-11-01",
+    status: "active",
+    target: "5000.00",
+  };
+  const view = (goal: GoalReadModel, today: string | null) =>
+    renderToStaticMarkup(
+      <GoalBlock
+        block={{ data: [goal], status: "ready" }}
+        onRetry={noRetry}
+        projection={null}
+        today={today}
+        view={{ goal, kind: "active", others: 0 }}
+      />
+    );
+  const label = (html: string) => RING_LABEL.exec(html)?.[1];
+  const slot = (html: string) => PACE_SLOT.exec(html)?.[1];
+
+  it("diz o estado em palavras, no nome do anel e na linha sob o atingido", () => {
+    const html = view(active, "2026-11-19");
+    expect(slot(html)).toBe("behind");
+    expect(text(html)).toContain("Atrasada");
+    expect(label(html)).toBe(
+      "30,0% da meta: R$ 1.500,00 de R$ 5.000,00. Atrasada: o esperado até hoje era 60%."
+    );
+  });
+
+  it("escreve as três palavras", () => {
+    expect(
+      text(view({ ...active, progress: progress("80.0") }, "2026-11-19"))
+    ).toContain("Adiantada");
+    expect(
+      text(view({ ...active, progress: progress("58.0") }, "2026-11-19"))
+    ).toContain("No ritmo");
+  });
+
+  it("o ícone é enfeite: aria-hidden", () => {
+    const html = view(active, "2026-11-19");
+    expect(html).toMatch(PACE_ICON);
+  });
+
+  it.each([
+    ["no primeiro dia do período", active, "2026-11-01"],
+    ["antes do início", active, "2026-10-30"],
+    ["sem o dia da loja (sem conexão)", active, null],
+    ["com a meta pausada", { ...active, paused: true }, "2026-11-19"],
+    [
+      "com a meta atingida",
+      { ...active, progress: progress("100.0", { reached: true }) },
+      "2026-11-19",
+    ],
+    [
+      "com o período acabado",
+      { ...active, progress: progress("30.0", { periodEnded: true }) },
+      "2026-12-02",
+    ],
+    ["sem o progresso lido", { ...active, progress: null }, "2026-11-19"],
+  ])(
+    "não escreve palavra nem entra no nome do anel %s",
+    (_name, goal, today) => {
+      const html = view(goal, today);
+      expect(html).not.toMatch(PACE_WORD);
+      expect(html).not.toContain("o esperado até hoje");
+    }
+  );
+
+  it("a linha da palavra fica reservada com a meta medida, com ou sem palavra", () => {
+    expect(slot(view(active, "2026-11-01"))).toBe("");
+    expect(slot(view(active, null))).toBe("");
+    expect(slot(view(active, "2026-11-19"))).toBe("behind");
+    expect(
+      slot(view({ ...active, paused: true }, "2026-11-19"))
+    ).toBeUndefined();
+  });
+
+  it("o (i) explica o traço, dentro do limite de um texto de ajuda", () => {
+    const pace = goalPace(active, "2026-11-19");
+    const both = goalHelpText({ kind: "no_sales" }, pace);
+    expect(both).toContain(
+      "O traço marca onde a meta estaria hoje se as vendas fossem iguais todos os dias."
+    );
+    expect(both).toContain("Estimativa: a média dos últimos 7 dias");
+    expect(helpTipTextProblem(both ?? "")).toBeNull();
+    expect(goalHelpText(null, pace)).toMatch(HELP_ONLY_PACE);
+    expect(goalHelpText({ kind: "no_sales" }, null)).toMatch(
+      HELP_ONLY_PROJECTION
+    );
+    expect(goalHelpText(null, null)).toBeNull();
   });
 });

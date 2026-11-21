@@ -16,6 +16,13 @@ import {
   FORM_WIDTHS,
   sizeFor,
 } from "./form-dialog-checks";
+import {
+  assertNoPageScroll,
+  assertNothingClipped,
+  expectReflowFont,
+  openReflowViewport,
+  reflowTest,
+} from "./reflow";
 import { expectSamePlaces, placesOf } from "./same-place";
 import { serveLabWorker, WORKER_MARK } from "./worker-mark";
 
@@ -870,8 +877,11 @@ test("com Esconder valores ligado (v7 § 6), a aba Metas também esconde os reai
   await expect(goal).not.toContainText(AN_AMOUNT);
   await expect(goal.getByRole("progressbar")).toHaveAttribute(
     "aria-valuetext",
-    "valor escondido de valor escondido, 45,0%"
+    "valor escondido de valor escondido, 45,0%. Adiantada: o esperado até hoje era 42%."
   );
+  // the pace is not a value: the word and the mark stay with the values hidden
+  await expect(goal.locator("[data-pace]")).toHaveText("Adiantada");
+  await expect(goal.locator("[data-slot=progress-marker]")).toBeAttached();
 });
 
 test("o histórico de uma meta sem mudanças diz que o alvo nunca mudou", async ({
@@ -1468,4 +1478,145 @@ test("três 503 seguidos nas metas mostram o erro, depois de duas repetições",
     { timeout: 15_000 }
   );
   expect(server.listCalls).toBe(3);
+});
+
+/** The mark of the pace on the bar of a goal, read as the share of the bar it sits at (its center over the track). */
+async function markShareOnBar(goal: Locator) {
+  return await goal.evaluate((root) => {
+    const track = root
+      .querySelector<HTMLElement>("[data-slot=progress-track]")
+      ?.getBoundingClientRect();
+    const mark = root
+      .querySelector<HTMLElement>("[data-slot=progress-marker]")
+      ?.getBoundingClientRect();
+    if (!(track && mark)) {
+      return null;
+    }
+    return {
+      center: mark.left + mark.width / 2 - track.left,
+      markHeight: mark.height,
+      markWidth: mark.width,
+      trackHeight: track.height,
+      trackWidth: track.width,
+    };
+  });
+}
+
+const SPOKEN_PACE = /esperado/;
+const EXPECTED_READS: Record<string, number> = {
+  "goal/list": 1,
+  "report/dailySales": 1,
+  "report/periodSummary": 1,
+};
+
+test.describe("o ritmo da meta na barra (no dia 14/10: 13 dos 31 dias do período passaram)", () => {
+  const EXPECTED = 13 / 31;
+
+  for (const [target, word] of [
+    ["1000.00", "Adiantada"],
+    ["1100.00", "No ritmo"],
+    ["1400.00", "Atrasada"],
+  ] as const) {
+    test(`com R$ 450,00 de R$ ${target}: "${word}", escrita, no nome da barra, e o traço onde 13 ÷ 31 manda`, async ({
+      page,
+    }) => {
+      const server = new FakeGoalServer();
+      server.seed({ kind: "net_sales", name: "Meta de outubro", target });
+      await openGoals(page, server);
+      const goal = card(page, "Meta de outubro");
+      await expect(goal.locator("[data-pace]")).toHaveText(word);
+      await expect(goal.getByRole("progressbar")).toHaveAttribute(
+        "aria-valuetext",
+        new RegExp(`\\. ${word}: o esperado até hoje era 42%\\.$`)
+      );
+      const mark = goal.locator("[data-slot=progress-marker]");
+      await expect(mark).toHaveAttribute("aria-hidden", "true");
+      await expect(
+        goal.locator("[data-pace] svg[aria-hidden=true]")
+      ).toHaveCount(1);
+      const place = await markShareOnBar(goal);
+      expect(place).not.toBeNull();
+      expect(
+        Math.abs((place?.center ?? 0) - (place?.trackWidth ?? 0) * EXPECTED)
+      ).toBeLessThanOrEqual(1);
+      expect(place?.markWidth).toBe(2);
+      expect((place?.markHeight ?? 0) - (place?.trackHeight ?? 0)).toBe(4);
+      expect(await axeFaults(page, "[data-slot=card]")).toEqual([]);
+    });
+  }
+
+  test("sem traço nem palavra no primeiro dia do período; a altura do cartão é a mesma com e sem a palavra", async ({
+    page,
+  }) => {
+    const server = new FakeGoalServer();
+    server.seed({ kind: "net_sales", name: "Com palavra", target: "1000.00" });
+    server.seed({
+      kind: "net_sales",
+      name: "Primeiro dia",
+      startsOn: "2026-10-14",
+      target: "1000.00",
+    });
+    await openGoals(page, server);
+    const first = card(page, "Primeiro dia");
+    await expect(first.getByRole("progressbar")).toBeVisible();
+    await expect(first.locator("[data-slot=progress-marker]")).toHaveCount(0);
+    await expect(first.locator("[data-pace]")).toHaveText("");
+    await expect(first.getByRole("progressbar")).not.toHaveAttribute(
+      "aria-valuetext",
+      SPOKEN_PACE
+    );
+    const withWord = card(page, "Com palavra");
+    await expect(withWord.locator("[data-pace]")).toHaveText("Adiantada");
+    const [a, b] = await Promise.all([
+      withWord.boundingBox(),
+      first.boundingBox(),
+    ]);
+    expect(Math.abs((a?.height ?? 0) - (b?.height ?? 0))).toBeLessThan(1);
+  });
+
+  test("abrir a aba não pede nada além do que pedia", async ({ page }) => {
+    const server = new FakeGoalServer();
+    server.seed({
+      kind: "net_sales",
+      name: "Meta de outubro",
+      target: "1000.00",
+    });
+    const procedures: string[] = [];
+    page.on("request", (request) => {
+      const match = rpcPrefix.exec(new URL(request.url()).pathname);
+      if (match && request.method() === "POST") {
+        procedures.push(new URL(request.url()).pathname.replace(rpcPrefix, ""));
+      }
+    });
+    await openGoals(page, server);
+    await expect(card(page, "Meta de outubro")).toBeVisible();
+    await page.waitForLoadState("networkidle");
+    const counts: Record<string, number> = {};
+    for (const name of procedures) {
+      counts[name] = (counts[name] ?? 0) + 1;
+    }
+    expect(counts).toEqual(EXPECTED_READS);
+  });
+});
+
+test.describe("Meta a 320 px com a letra do navegador em 20 px", () => {
+  reflowTest(
+    "a palavra do ritmo e o percentual da meta sem corte nem rolagem",
+    async ({ page }) => {
+      await openReflowViewport(page, { fontPixels: 20, width: 320 });
+      const server = new FakeGoalServer();
+      server.seed({
+        kind: "net_sales",
+        name: "Meta de outubro",
+        target: "1400.00",
+      });
+      await openGoals(page, server);
+      await expectReflowFont(page, 20);
+      const goal = card(page, "Meta de outubro");
+      await expect(goal.locator("[data-pace]")).toHaveText("Atrasada");
+      await expect(goal).toContainText("32,1%");
+      await assertNothingClipped(goal);
+      await assertNoPageScroll(page);
+    }
+  );
 });

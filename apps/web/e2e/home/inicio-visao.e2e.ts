@@ -152,10 +152,13 @@ test.describe("loja com venda", () => {
     const ring = meta.getByRole("img");
     await expect(ring).toHaveAttribute(
       "aria-label",
-      "53,4% da meta: R$ 2.670,60 de R$ 5.000,00"
+      "53,4% da meta: R$ 2.670,60 de R$ 5.000,00. Atrasada: o esperado até hoje era 71%."
     );
     await expect(ring).toContainText("53,4%da meta");
-    await expect(ring.locator("[data-ring-chart] svg")).toHaveAttribute(
+    await expect(
+      ring.locator("[data-ring-chart] svg:not([data-ring-marker])")
+    ).toHaveAttribute("aria-hidden", "true");
+    await expect(ring.locator("[data-ring-marker]")).toHaveAttribute(
       "aria-hidden",
       "true"
     );
@@ -835,9 +838,14 @@ test.describe("loja sem venda: o checklist (AC-22, AC-23)", () => {
     const checklist = region(page, "Primeiros passos");
     await expect(checklist.getByRole("listitem")).toHaveText([
       "Loja criada (feito)",
-      "2Cadastrar o 1º produtoCadastrar à mãoImportar planilha",
-      "3Fazer a 1ª venda",
+      "Cadastrar o 1º produtoCadastrar à mãoImportar planilha",
+      "Fazer a 1ª venda",
     ]);
+    await expect(
+      checklist.getByRole("heading", { name: "Primeiros passos" })
+    ).toBeVisible();
+    await expect(checklist).toContainText("1 de 3");
+    await expect(checklist.locator("[data-progress-ring]")).toHaveCount(1);
     // no button under the steps repeats the two ways of the step
     await expect(checklist.getByRole("link")).toHaveText([
       "Cadastrar à mão",
@@ -913,7 +921,7 @@ test.describe("loja sem venda: o checklist (AC-22, AC-23)", () => {
     );
     await openHome(page, server);
     const checklist = region(page, "Primeiros passos");
-    await expect(checklist).toContainText("2Cadastrar o 1º produto");
+    await expect(checklist).toContainText("Cadastrar o 1º produto");
     const foot = (done: number) =>
       page.getByRole("link", {
         exact: true,
@@ -1055,6 +1063,7 @@ test.describe("loja sem venda: o checklist (AC-22, AC-23)", () => {
           )
         );
         for (const box of circles) {
+          expect(box?.width).toBeCloseTo(28, 0);
           expect(box?.width).toBeCloseTo(circles[0]?.width ?? 0, 0);
           expect(box?.height).toBeCloseTo(circles[0]?.height ?? 0, 0);
         }
@@ -1211,8 +1220,11 @@ test.describe("meta (AC-10, AC-11)", () => {
     await expect(meta.locator("[data-masked-money]")).toHaveCount(2);
     await expect(ring).toHaveAttribute(
       "aria-label",
-      "53,4% da meta: valor escondido de valor escondido"
+      "53,4% da meta: valor escondido de valor escondido. Atrasada: o esperado até hoje era 71%."
     );
+    // the pace is not a value: the word and the mark stay with the values hidden
+    await expect(meta.locator("[data-pace]")).toHaveText("Atrasada");
+    await expect(meta.locator("[data-ring-marker]")).toBeAttached();
     await expect(ring).toContainText("53,4%");
 
     server.scenario = { ...SOLD, goals: [] };
