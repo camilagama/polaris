@@ -44,13 +44,14 @@ const answer = (body: string) => ({
 const rpcBody = (json: unknown) => answer(JSON.stringify(json));
 const rpc = (json: unknown) => rpcBody({ json, meta: [] });
 
-async function openSaleDetail(page: Page) {
+async function openSaleDetail(page: Page, name?: string) {
   const answers = saleDetailAnswers({ withReturn: true });
   const customer = answers["customer/get"] as object;
   const withSummary = {
     ...answers,
     "customer/get": {
       ...customer,
+      ...(name === undefined ? {} : { name }),
       summary: {
         lastPurchaseOn: LAST_PURCHASE_ON,
         purchaseCount: PURCHASES,
@@ -85,6 +86,10 @@ async function openSaleDetail(page: Page) {
   return page.locator("[data-customer-summary]");
 }
 
+const LONG_NAME =
+  "Maria Aparecida dos Santos Albuquerque Figueiredo Nascimento";
+const UNBROKEN_NAME = "MariaAparecidaDosSantosAlbuquerqueFigueiredoNascimento";
+
 reflowTest(
   "a 320 px com letra de 20 px o resumo do cliente da venda lê inteiro, com total de milhões, várias compras e a data com ano",
   async ({ page }) => {
@@ -100,3 +105,30 @@ reflowTest(
     await assertNoPageScroll(page);
   }
 );
+
+for (const name of [LONG_NAME, UNBROKEN_NAME]) {
+  reflowTest(
+    `a 320 px com letra de 20 px o nome longo do cliente da venda fica dentro do cartão, sem rolagem lateral (${name.includes(" ") ? "com espaços" : "sem espaços"})`,
+    async ({ page }) => {
+      await openSaleDetail(page, name);
+      const card = page.locator("section[aria-labelledby=sale-customer-title]");
+      const current = card.getByRole("status").filter({ hasText: name });
+      await expect(current).toBeVisible();
+      await expect(current).toHaveText(name);
+      const box = await card.boundingBox();
+      const written = await current.boundingBox();
+      expect(box, "o cartão está na tela").not.toBeNull();
+      expect(written, "o nome está na tela").not.toBeNull();
+      expect(
+        (written?.x ?? 0) + (written?.width ?? 0),
+        "o nome não passa da borda direita do cartão"
+      ).toBeLessThanOrEqual((box?.x ?? 0) + (box?.width ?? 0) + 0.5);
+      expect(
+        written?.x ?? 0,
+        "o nome não passa da borda esquerda"
+      ).toBeGreaterThanOrEqual((box?.x ?? 0) - 0.5);
+      await assertNothingClipped(card);
+      await assertNoPageScroll(page);
+    }
+  );
+}
