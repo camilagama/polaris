@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import type { RuntimeSnapshot } from "./offline-runtime";
+import { type RuntimeSnapshot, SESSION_RECHECK_MS } from "./offline-runtime";
 import { MAX_TICK_MS, startSyncScheduler, TICK_MS } from "./sync-scheduler";
 
 async function flush() {
@@ -233,15 +233,43 @@ describe("the interval grows while there is no work", () => {
     expect(t.syncNow).toHaveBeenCalledTimes(before + 1);
   }
 
-  it("goes 60, 120, 240, 300 and stays at 300 s while nothing happens", async () => {
+  it("goes 60, 120, 240, 480 and 600 and stays at 600 s while nothing happens", async () => {
     const t = idle();
 
     await tickAfter(t, 60_000);
     await tickAfter(t, 120_000);
     await tickAfter(t, 240_000);
+    await tickAfter(t, 480_000);
     await tickAfter(t, MAX_TICK_MS);
     await tickAfter(t, MAX_TICK_MS);
-    expect(MAX_TICK_MS).toBe(300_000);
+    expect(MAX_TICK_MS).toBe(600_000);
+  });
+
+  it("an idle visible tab pulls 8 times in the first hour and 146 in 24 h, and the session rule rereads on 6 of the 8 and 144 of the 146", async () => {
+    const t = idle();
+    let confirmedAt = 0;
+    let pulls = 0;
+    let rereads = 0;
+    const hour = { pulls: 0, rereads: 0 };
+    for (let minute = 1; minute <= 24 * 60; minute += 1) {
+      const before = t.syncNow.mock.calls.length;
+      // biome-ignore lint/performance/noAwaitInLoops: the clock moves one minute at a time, in order
+      await t.advance(60_000);
+      if (t.syncNow.mock.calls.length > before) {
+        pulls += 1;
+        if (t.now() - confirmedAt >= SESSION_RECHECK_MS) {
+          rereads += 1;
+          confirmedAt = t.now();
+        }
+      }
+      if (minute === 60) {
+        hour.pulls = pulls;
+        hour.rereads = rereads;
+      }
+    }
+
+    expect(hour).toEqual({ pulls: 8, rereads: 6 });
+    expect({ pulls, rereads }).toEqual({ pulls: 146, rereads: 144 });
   });
 
   it("a pull with changes brings the interval back to 60 s", async () => {
@@ -314,6 +342,7 @@ describe("the interval grows while there is no work", () => {
     t.state.reason = "sync_failed";
     await tickAfter(t, 240_000);
     expect(t.liveDelays()).toContain(TICK_MS);
+    expect(t.liveDelays()).not.toContain(480_000);
     expect(t.liveDelays()).not.toContain(MAX_TICK_MS);
   });
 

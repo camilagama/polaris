@@ -25,7 +25,7 @@ import {
   disposableHostPattern,
   isLocalGateHost,
 } from "./gate-hosts";
-import { setLoginRole } from "./gate-roles";
+import { rollbackQuietly, setLoginRole } from "./gate-roles";
 import { archiveThenDeleteProduct } from "./product-lifecycle-support";
 
 const gateDatabase =
@@ -132,6 +132,7 @@ async function withTenant<T>(
       authenticatedUserId: fixture.userId,
       capability,
       requestedOrganizationId: fixture.organizationId,
+      requireLegalAcceptance: false,
     },
     operation
   );
@@ -239,7 +240,7 @@ async function withRuntimeTenant<T>(
     await client.query("COMMIT");
     return result;
   } catch (error) {
-    await client.query("ROLLBACK");
+    await rollbackQuietly(client);
     throw error;
   }
 }

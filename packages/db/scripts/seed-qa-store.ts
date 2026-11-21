@@ -610,6 +610,7 @@ export async function seedQaStore(
         authenticatedUserId: options.userId,
         capability,
         requestedOrganizationId: options.organizationId,
+        requireLegalAcceptance: false,
       },
       operation
     );

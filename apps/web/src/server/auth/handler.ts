@@ -1,5 +1,5 @@
 import { bumpUserAuthorizationEpoch } from "@polaris/db/authorization-epoch";
-import { createDatabase } from "@polaris/db/client";
+import { createAuthDatabase } from "@polaris/db/client";
 import { logger } from "@polaris/observability/logger";
 import { isAPIError } from "better-auth/api";
 import {
@@ -773,7 +773,7 @@ async function withAuthRuntime(
   const { auth } = entry;
 
   const safeRequestId = safeRequestIdOf(requestId);
-  const { db, pool } = createDatabase(authConnectionString, {
+  const { db, pool } = createAuthDatabase(authConnectionString, {
     maxConnections: 1,
   });
   const pending: Promise<unknown>[] = [];

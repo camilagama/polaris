@@ -14,7 +14,7 @@ import {
   disposableHostPattern,
   isLocalGateHost,
 } from "./gate-hosts";
-import { setLoginRole } from "./gate-roles";
+import { inRolledBackTransaction, setLoginRole } from "./gate-roles";
 import { gateBranchPattern, temporaryRuntimeUrl } from "./sales-gate-support";
 
 const gateDatabase =
@@ -156,6 +156,7 @@ async function withTenant<T>(
       authenticatedUserId: fixture.userId,
       capability,
       requestedOrganizationId: fixture.organizationId,
+      requireLegalAcceptance: false,
     },
     operation
   );
@@ -433,8 +434,7 @@ async function main(): Promise<void> {
     assert.equal(await cleanup.claimOrphan(orphanKey), true);
     assert.equal(await cleanup.claimOrphan(orphanKey), true);
 
-    await tenantClient.query("BEGIN");
-    try {
+    await inRolledBackTransaction(tenantClient, async () => {
       await setTenantContext(tenantClient, fixture);
       await expectSqlState(
         () => insertMediaAsset(tenantClient, fixture, orphanKey),
@@ -445,9 +445,7 @@ async function main(): Promise<void> {
           message: "media storage key is already claimed for cleanup",
         }
       );
-    } finally {
-      await tenantClient.query("ROLLBACK");
-    }
+    });
 
     const raceKey = mediaStorageKey({
       organizationId: fixture.organizationId,

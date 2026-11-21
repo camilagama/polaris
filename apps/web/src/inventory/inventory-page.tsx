@@ -43,6 +43,7 @@ import {
   readStockLinkFilters,
   readStockLinkSearch,
   type StockAttentionLink,
+  type StockMoreView,
   type StockRow,
   stockCountText,
   stockCoverIds,
@@ -259,6 +260,14 @@ function LoadingCard({ message }: { message: string }) {
   );
 }
 
+/** "Carregar mais", the retry of the refresh warning and the retry of the full-screen error never show together, and a re-read always passes through a loading render between them, so the hook sees one render with none. */
+function hasFocusableControl(
+  more: StockMoreView,
+  fullScreenError: boolean
+): boolean {
+  return more.visible || more.refreshFailed || fullScreenError;
+}
+
 /**
  * Current balance of every variant, with the three stock commands: receive,
  * count and write off. Balances change only through those commands.
@@ -323,7 +332,9 @@ export function InventoryPage() {
   const today = useStoreToday(organization.timezone);
   const view = stockListView(state, filters, offline);
   const more = stockMoreView(state, listKey);
-  const focus = useFocusTitleWhenGone<HTMLHeadingElement>(more.visible);
+  const focus = useFocusTitleWhenGone<HTMLHeadingElement>(
+    hasFocusableControl(more, view.kind === "error")
+  );
   const coverIds = useMemo(() => stockCoverIds(state.entries), [state.entries]);
   useThumbnailSequence(coverIds);
   const countText = (() => {
@@ -484,7 +495,9 @@ export function InventoryPage() {
           <AlertDescription className="flex flex-wrap items-center gap-x-3 gap-y-1">
             {LIST_REFRESH_FAILED_TEXT}
             <Button
+              onBlur={focus.onBlur}
               onClick={handleReload}
+              onFocus={focus.onFocus}
               size="sm"
               type="button"
               variant="link"
@@ -501,7 +514,9 @@ export function InventoryPage() {
           <AlertDescription className="flex flex-wrap items-center gap-x-3 gap-y-1">
             {view.message}
             <Button
+              onBlur={focus.onBlur}
               onClick={handleReload}
+              onFocus={focus.onFocus}
               size="sm"
               type="button"
               variant="link"

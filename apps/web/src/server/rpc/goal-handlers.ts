@@ -10,6 +10,7 @@ import {
   updateGoal,
   createGoal,
 } from "@polaris/db/goal-repository";
+import type { GoalProgress } from "@polaris/db/goal-repository";
 import type { PeriodReadCounts } from "@polaris/db/economics-repository";
 import { logger, opaqueId } from "@polaris/observability/logger";
 import type { WorkerBindings } from "../environment";
@@ -77,9 +78,7 @@ function addReads(tally: GoalReadTally, reads: PeriodReadCounts): void {
   }
 }
 
-function settlementsOf(
-  progress: Awaited<ReturnType<GoalRepository["evaluateActiveGoals"]>>
-) {
+function settlementsOf(progress: readonly GoalProgress[]) {
   return progress.flatMap((entry) =>
     entry.settlement
       ? [
@@ -175,7 +174,7 @@ export function createGoalRpcHandlers(dependencies: GoalRpcDependencies) {
     context: GoalRpcContext,
     organizationId: string
   ) => {
-    const progress = await run(
+    const { progress } = await run(
       context,
       organizationId,
       (transaction, identity) =>
@@ -213,11 +212,12 @@ export function createGoalRpcHandlers(dependencies: GoalRpcDependencies) {
             (reads) => addReads(tally, reads)
           );
           return {
-            goals: await repository.listGoals(transaction, identity, {
-              status: input.status,
-            }),
-            paused: await repository.listPausedGoalIds(transaction, identity),
-            progress: evaluated,
+            goals:
+              input.status === "all"
+                ? evaluated.goals
+                : evaluated.goals.filter((row) => row.status === input.status),
+            paused: evaluated.paused,
+            progress: evaluated.progress,
           };
         },
         "repeatable read"

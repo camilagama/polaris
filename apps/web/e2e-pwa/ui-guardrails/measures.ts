@@ -876,7 +876,7 @@ function repeatedBySrOnly(element: Element, labelNodes: Element[]) {
  * In page: the elements whose accessible name is said twice by the markup: by a `title`, by an `aria-description` or
  * `aria-describedby` that repeat it, or by `sr-only` text with the same words next to it or inside it. A neighbor that
  * is the source of the name (the label of a field, a `labelledby` target) is not a repetition. It reads the markup, not
- * what a reader says: `ui-guardrails.e2e.ts` says so in the control cases.
+ * what a reader says: `ui-guardrails/controle-medidas.e2e.ts` says so in the control cases.
  */
 function repeatedNames(known: KnownRepeatedName[]) {
   const faults: string[] = [];
@@ -915,7 +915,7 @@ export interface KnownRepeatedName {
 }
 
 /**
- * The repetitions the screens of `ui-screens.ts` have, each with its cause. The list is exact (`ui-guardrails.e2e.ts` compares it entry by entry and proves each one still happens, so a fix has to take
+ * The repetitions the screens of `ui-screens.ts` have, each with its cause. The list is exact (`ui-guardrails/controle-medidas.e2e.ts` compares it entry by entry and proves each one still happens, so a fix has to take
  * its entry out), and what it excuses is a selector and an attribute, never a screen.
  */
 export const KNOWN_REPEATED_NAMES: readonly KnownRepeatedName[] = [

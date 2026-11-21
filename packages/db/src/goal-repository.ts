@@ -384,23 +384,34 @@ export interface GoalProgress {
   version: number;
 }
 
+export interface ActiveGoalsEvaluation {
+  /** Every goal of the organization, whatever its status, as read for the evaluation. */
+  goals: Awaited<ReturnType<typeof listGoals>>;
+  /** The active goals the plan pauses, as `listPausedGoalIds` computed them for the evaluation. */
+  paused: string[];
+  progress: GoalProgress[];
+}
+
 /**
  * The progress of every active goal, measured over its period so far (from the
  * start to the earlier of the end and today) with the same economics the
  * dashboard shows. Read-only: run it in a REPEATABLE READ transaction (the
  * economics read requires it), then settle what it says in a second, short
- * transaction (`settleGoals`).
+ * transaction (`settleGoals`). It also hands back the goals and the paused ids
+ * it read, so a caller that lists them does not read them again.
  */
 export async function evaluateActiveGoals(
   transaction: TenantRequestTransaction,
   identity: TenantRequestIdentity,
   /** Told the rows each goal's period read (counts only), for the per-request record. */
   onRead?: (reads: PeriodReadCounts) => void
-): Promise<GoalProgress[]> {
+): Promise<ActiveGoalsEvaluation> {
   requireGoalCapability(identity);
   const today = await organizationToday(transaction, identity);
-  const active = await listGoals(transaction, identity, { status: "active" });
-  const paused = new Set(await listPausedGoalIds(transaction, identity));
+  const goalRows = await listGoals(transaction, identity);
+  const active = goalRows.filter((goal) => goal.status === "active");
+  const pausedIds = await listPausedGoalIds(transaction, identity);
+  const paused = new Set(pausedIds);
   const progress: GoalProgress[] = [];
   for (const goal of active) {
     // a paused goal is not measured (a goal whose period has ended is never paused:
@@ -430,7 +441,7 @@ export async function evaluateActiveGoals(
       version: goal.version,
     });
   }
-  return progress;
+  return { goals: goalRows, paused: pausedIds, progress };
 }
 
 export interface GoalSettlementInput {

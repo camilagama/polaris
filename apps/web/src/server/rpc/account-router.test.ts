@@ -1,8 +1,12 @@
 import { createORPCClient } from "@orpc/client";
 import { RPCLink } from "@orpc/client/fetch";
 import { buildOfflineLeaseClaims } from "@polaris/domain/offline/offline-lease";
-import { LEGAL_DOCUMENTS } from "@polaris/domain/legal/legal-documents";
-import { describe, expect, it, vi } from "vitest";
+import { LegalAcceptancePendingError } from "@polaris/db/tenant-transaction";
+import {
+  LEGAL_DOCUMENTS,
+  pendingLegalDocuments,
+} from "@polaris/domain/legal/legal-documents";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { signOfflineLease } from "../../lib/offline-lease-token";
 import { createServerApp } from "../app";
 import { createAuthenticatedRequestContext } from "../authenticated-request-context";
@@ -15,13 +19,23 @@ import type { SyncCommandHandler } from "../sync/push";
 import { createTenantRequestContext } from "../tenant-request-context";
 import { createRpcRouter } from "./router";
 
+const NOW = new Date("2026-11-19T02:50:00.000Z");
+
+beforeEach(() => {
+  vi.useFakeTimers({ now: NOW, toFake: ["Date"] });
+});
+
+afterEach(() => {
+  vi.useRealTimers();
+});
+
 const organizationId = "7b9c212a-f90b-4e05-9e9a-0c0eb1c9c9b0";
 const deviceId = "0199c2d0-0000-7000-8000-0000000000d1";
 const requestId = "5f0a6c1e-3b9d-4f5e-8a7b-1c2d3e4f5a6b";
 const userId = "session-user-legal";
 const leaseSecret = "s".repeat(40);
 const session = {
-  session: { createdAt: new Date(), id: "session-row-legal" },
+  session: { createdAt: new Date(NOW), id: "session-row-legal" },
   user: { emailVerified: true, id: userId },
 };
 const pendingBoth = [
@@ -64,6 +78,8 @@ const uuid = (n: number) =>
 function setup(
   options: {
     accepted?: Accepted;
+    /** A failure of the check at the entry of the tenant transaction (the database, a missing grant). */
+    entryFailure?: Error;
     readAccepted?: typeof readAcceptedLegalVersions;
     workerBindings?: WorkerBindings;
   } = {}
@@ -80,13 +96,24 @@ function setup(
       return Promise.resolve("recorded" as const);
     }
   );
+  // the entry of the transaction as the database does it (begin_tenant_request): when asked, the acceptance first,
+  // from the same record the gate reads, before any work
   const tenantTransaction = vi.fn(
-    (
+    async (
       _database: unknown,
-      input: { capability: string },
+      input: { capability: string; requireLegalAcceptance: boolean },
       operation: (transaction: unknown, identity: unknown) => Promise<unknown>
-    ) =>
-      operation(
+    ) => {
+      if (input.requireLegalAcceptance) {
+        if (options.entryFailure) {
+          throw options.entryFailure;
+        }
+        const pending = pendingLegalDocuments(accepted);
+        if (pending.length > 0) {
+          throw new LegalAcceptancePendingError(pending);
+        }
+      }
+      return await operation(
         {},
         {
           capability: input.capability,
@@ -94,11 +121,16 @@ function setup(
           role: "owner",
           userId,
         }
-      )
+      );
+    }
   );
   const dependencies = {
     createAuth: (() => ({
       api: { getSession: vi.fn(async () => session) },
+    })) as never,
+    createAuthDatabase: (() => ({
+      db: {},
+      pool: { end: poolEnd, query: poolQuery },
     })) as never,
     createDatabase: (() => ({
       db: {},
@@ -231,7 +263,7 @@ async function failureOf(promise: Promise<unknown>): Promise<ErrorView> {
 }
 
 async function lease() {
-  const issuedAt = new Date(Date.now() - 3_600_000);
+  const issuedAt = new Date(NOW.getTime() - 3_600_000);
   return await signOfflineLease(
     buildOfflineLeaseClaims({
       capabilities: ["customer:update"],
@@ -253,7 +285,7 @@ async function pushInput() {
       {
         baseVersion: null,
         commandId: uuid(1),
-        createdAt: new Date().toISOString(),
+        createdAt: NOW.toISOString(),
         deviceId,
         lease: await lease(),
         payload: { name: "Cliente 1" },
@@ -276,11 +308,13 @@ describe("the legal acceptance control through the router", () => {
         pending: pendingBoth,
         reason: "legal_acceptance_required",
       });
-      expect(t.readAccepted).toHaveBeenCalledWith(
-        expect.objectContaining({ query: expect.any(Function) }),
-        userId
+      // checked at the entry of the tenant transaction, not read again at the gate
+      expect(t.readAccepted).not.toHaveBeenCalled();
+      expect(t.tenantTransaction).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ requireLegalAcceptance: true }),
+        expect.any(Function)
       );
-      expect(t.tenantTransaction).not.toHaveBeenCalled();
       expect(t.listSales).not.toHaveBeenCalled();
     });
 
@@ -294,7 +328,6 @@ describe("the legal acceptance control through the router", () => {
         pending: pendingBoth,
         reason: "legal_acceptance_required",
       });
-      expect(t.tenantTransaction).not.toHaveBeenCalled();
       expect(t.runSyncCommand).not.toHaveBeenCalled();
     });
 
@@ -459,17 +492,31 @@ describe("the legal acceptance control through the router", () => {
       });
     });
 
-    it("fails closed when the acceptance cannot be read: SERVICE_UNAVAILABLE, nothing runs", async () => {
+    it("fails closed when the gate cannot read the acceptance: SERVICE_UNAVAILABLE, nothing runs", async () => {
       const t = setup({
         readAccepted: () => Promise.reject(new Error("db down")),
+      });
+
+      const error = await failureOf(t.client.device.check({ deviceId }));
+
+      expect(error.code).toBe("SERVICE_UNAVAILABLE");
+      expect(error.data?.reason).toBeUndefined();
+      expect(JSON.stringify(error)).not.toContain("db down");
+      expect(t.touchDevice).not.toHaveBeenCalled();
+    });
+
+    it("fails closed when the entry cannot check it: the 503 of an unexpected fault, never a refusal of the session, nothing runs", async () => {
+      const t = setup({
+        entryFailure: new Error(
+          "permission denied for function legal_acceptance_pending"
+        ),
       });
 
       const error = await failureOf(t.client.sale.list({ organizationId }));
 
       expect(error.code).toBe("SERVICE_UNAVAILABLE");
-      expect(error.data?.reason).toBeUndefined();
-      expect(JSON.stringify(error)).not.toContain("db down");
-      expect(t.tenantTransaction).not.toHaveBeenCalled();
+      expect(error.data?.reason).toBe("server_busy");
+      expect(JSON.stringify(error)).not.toContain("permission denied");
       expect(t.listSales).not.toHaveBeenCalled();
     });
   });

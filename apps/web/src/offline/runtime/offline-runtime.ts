@@ -5,8 +5,8 @@ import {
   isDefiniteRpcRejection,
   isLegalAcceptanceRefusal,
   isOrganizationClosedRefusal,
-  isSessionChangedRefusal,
   isPlatformCut,
+  isSessionChangedRefusal,
   isTransientReadFailure,
   rpcErrorCode,
 } from "../../lib/rpc-error";
@@ -307,6 +307,28 @@ function isSessionRefusal(error: unknown): boolean {
   return code === "UNAUTHORIZED" || code === "FORBIDDEN";
 }
 
+function isWrongUserLease(error: unknown): boolean {
+  return error instanceof Error && error.message === "lease_wrong_user";
+}
+
+/**
+ * The only failures of asking for the lease that say the remembered device is not this person's: the server's
+ * definite refusal, or a readable lease that is not this user's, organization's and device's (an unreadable one, or
+ * this person's own that only reads as ended by the device clock, says nothing about whose the device is). Whatever
+ * else went wrong (no answer, an unknown error) is no news about the device, and registering another one would not fix it.
+ */
+function isDeviceForgettingFailure(error: unknown): boolean {
+  if (isWrongUserLease(error)) {
+    return true;
+  }
+  return (
+    isDefiniteRpcRejection(error) &&
+    !isPlanRefusal(error) &&
+    !isLegalAcceptanceRefusal(error) &&
+    !isClosedRefusal(error)
+  );
+}
+
 /**
  * The runtime already knows the store was closed (a call of this page was refused for it): no lease is asked for it
  * again, and whatever was on its way ends as the server's own refusal would.
@@ -399,16 +421,21 @@ const DEVICE_CHECK_KEY = "polaris.offline.device-checked";
  */
 const DEVICE_CHECK_REUSE_MS = RENEW_BEFORE_MS;
 /**
- * A confirmation of who is signed in is reused by the syncs that follow it, so
- * the ticks of an idle tab cost one get-session per window, not one each. Never
- * reused when something is queued: the push must not leave under somebody
- * else's session (the server would refuse and record that for good). It only
- * bounds how long a first user's runtime may keep reading and queueing after
- * somebody else signed in. The server reads the session on every request, so the
- * window only governs a pull with nothing queued; the opening is what opens it,
- * and a change of the connection or the return to the page forgets it.
+ * A confirmation of who is signed in is reused by the syncs that follow it
+ * within a fixed 6 minutes. The idle tick ceiling (10 minutes) is above that
+ * window, so an idle tab at the ceiling finds the window already closed at
+ * every tick and reads the get-session once per tick; the reuse only spares
+ * the syncs that come sooner (the opening's own, a nudge, a faster tick). It is
+ * a literal, not derived from the tick, so changing the tick never moves the
+ * window without a review. Never reused when something is
+ * queued: the push must not leave under somebody else's session (the server
+ * would refuse and record that for good). It only bounds how long a first
+ * user's runtime may keep reading and queueing after somebody else signed in.
+ * The server reads the session on every request, so the window only governs a
+ * pull with nothing queued; the opening is what opens it, and a change of the
+ * connection or the return to the page forgets it.
  */
-const SESSION_RECHECK_MS = 300_000;
+export const SESSION_RECHECK_MS = 360_000;
 const EMPTY_COUNTS: PendingWork = { pending: 0, rejected: 0, sending: 0 };
 
 /** What one sync run was started for, so a late answer never acts on whoever opened after it. */
@@ -1194,6 +1221,7 @@ export class OfflineRuntime {
     const ran = await exclusive(name, () => this.runSync(pull));
     if (!ran) {
       this.lastOutcome = "not_run";
+      this.pullIdle = false; // nothing was pulled: the idle verdict of the earlier pull must not stretch the next interval
     }
   }
 
@@ -1687,9 +1715,26 @@ export class OfflineRuntime {
       throw error;
     }
     // a lease for somebody else is never kept, whatever the server said
-    if (!this.leaseIsUsable(issued.lease, userId, organizationId, deviceId)) {
+    const claims = readUnverifiedOfflineLease(issued.lease);
+    const standing = leaseStanding(
+      claims,
+      { deviceId, organizationId, userId },
+      this.now().getTime()
+    );
+    if (standing !== "usable") {
       if (usable) {
         return usable.lease;
+      }
+      // neither an unreadable lease nor this person's own that the device clock already reads as ended says whose the device is: both keep it
+      if (claims === null) {
+        throw new Error("lease_unreadable");
+      }
+      if (standing === "expired") {
+        if (cached.expired) {
+          // the queue's expired state, as when there is no answer at all
+          throw new OfflineAccessExpiredError("offline_access_expired");
+        }
+        throw new Error("lease_expired_on_arrival");
       }
       throw new Error("lease_wrong_user");
     }
@@ -1712,35 +1757,53 @@ export class OfflineRuntime {
     this.checkedSession = confirmed ? sessionId : null;
     this.sweepLegacyLeases();
     const deviceId = await this.ensureDevice(userId);
+    let lease: string;
     try {
-      const lease = await this.ensureLease(userId, organizationId, deviceId);
-      await this.open(userId, organizationId, deviceId, lease, generation);
+      lease = await this.ensureLease(userId, organizationId, deviceId);
     } catch (error) {
       if (error instanceof OfflineAccessExpiredError) {
         // the device and the lease are this person's: only time ran out, so nothing is forgotten
         await this.openExpired(userId, organizationId, deviceId, generation);
         return;
       }
-      if (
-        !this.dependencies.isOnline() ||
-        // no answer is not a refusal: the remembered device is not somebody else's for that
-        isConnectionFailure(error) ||
-        (error instanceof Error && error.message === "no_lease_offline") ||
-        isPlanRefusal(error) ||
-        // the device is not somebody else's: the server only waits for the acceptance, or the store was closed
-        isLegalAcceptanceRefusal(error) ||
-        isClosedRefusal(error)
-      ) {
+      if (!this.forgetsDeviceAfter(error, isDeviceForgettingFailure)) {
         throw error;
       }
-      // The remembered device may belong to another user of this browser:
-      // forget it and register again, once.
-      this.dependencies.keyValues.remove(DEVICE_KEY);
-      this.forgetDeviceCheck();
-      const fresh = await this.ensureDevice(userId);
-      const lease = await this.ensureLease(userId, organizationId, fresh);
-      await this.open(userId, organizationId, fresh, lease, generation);
+      await this.openOnAnotherDevice(userId, organizationId, generation);
+      return;
     }
+    try {
+      await this.open(userId, organizationId, deviceId, lease, generation);
+    } catch (error) {
+      // a refusal of the first read says nothing about whose the device is: only a lease for somebody else does
+      if (!this.forgetsDeviceAfter(error, isWrongUserLease)) {
+        throw error;
+      }
+      await this.openOnAnotherDevice(userId, organizationId, generation);
+    }
+  }
+
+  private forgetsDeviceAfter(
+    error: unknown,
+    says: (error: unknown) => boolean
+  ): boolean {
+    return this.dependencies.isOnline() && says(error);
+  }
+
+  /**
+   * The remembered device may belong to another user of this browser:
+   * forget it and register again, once.
+   */
+  private async openOnAnotherDevice(
+    userId: string,
+    organizationId: string,
+    generation: number
+  ) {
+    this.dependencies.keyValues.remove(DEVICE_KEY);
+    this.forgetDeviceCheck();
+    const fresh = await this.ensureDevice(userId);
+    const lease = await this.ensureLease(userId, organizationId, fresh);
+    await this.open(userId, organizationId, fresh, lease, generation);
   }
 
   private async open(
@@ -2543,7 +2606,7 @@ export class OfflineRuntime {
 
   /**
    * Whether the last full sync (send and pull) was answered, sent nothing and pulled nothing new. A run that
-   * failed, got no answer, was cut at its pull or only pushed is not idle: the scheduler lets its interval grow
+   * failed, got no answer, did not get the lock (another tab was syncing), was cut at its pull or only pushed is not idle: the scheduler lets its interval grow
    * only after an idle one.
    */
   lastPullWasIdle(): boolean {

@@ -12,17 +12,21 @@ const ONE_TURN_AFTER_THE_CLICK =
 const ABSENCE_IS_THE_TEST =
   "o tempo é o comportamento testado: a espera prova a ausência (nada se repete sozinho, nada muda antes do prazo); um sinal positivo não provaria isso";
 
+const SIMULATED_LATENCY =
+  "a espera é a latência de uma resposta simulada dentro de page.route: o tempo é o que o servidor falso leva para responder";
+
 export const BLIND_WAITS_LIST = {
-  "apps/web/e2e-pwa/lazy-retry.e2e.ts": { count: 2, reason: BEFORE_THE_RULE },
-  "apps/web/e2e-pwa/motion-level.e2e.ts": { count: 3, reason: BEFORE_THE_RULE },
-  "apps/web/e2e-pwa/sale-detail-operations.e2e.ts": {
-    count: 2,
-    reason: BEFORE_THE_RULE,
+  "apps/web/e2e-pwa/motion-level.e2e.ts": {
+    count: 1,
+    reason: ONE_TURN_AFTER_THE_CLICK,
   },
-  "apps/web/e2e-pwa/ui-charts.e2e.ts": { count: 6, reason: BEFORE_THE_RULE },
+  "apps/web/e2e-pwa/ui-charts.e2e.ts": {
+    count: 1,
+    reason: ABSENCE_IS_THE_TEST,
+  },
   "apps/web/e2e-pwa/ui-date-pickers.e2e.ts": {
-    count: 2,
-    reason: BEFORE_THE_RULE,
+    count: 1,
+    reason: ONE_TURN_AFTER_THE_CLICK,
   },
   "apps/web/e2e-pwa/ui-entry-states.ts": { count: 1, reason: BEFORE_THE_RULE },
   "apps/web/e2e-pwa/ui-filter-bar-dialog.e2e.ts": {
@@ -33,13 +37,10 @@ export const BLIND_WAITS_LIST = {
     count: 2,
     reason: ONE_TURN_AFTER_THE_CLICK,
   },
-  "apps/web/e2e-pwa/ui-guardrails.e2e.ts": {
+  "apps/web/e2e-pwa/ui-guardrails/controle-movimento.e2e.ts": {
     count: 1,
     reason: BEFORE_THE_RULE,
   },
-  "apps/web/e2e-pwa/ui-help-tip.e2e.ts": { count: 1, reason: BEFORE_THE_RULE },
-  "apps/web/e2e-pwa/ui-home-states.ts": { count: 1, reason: BEFORE_THE_RULE },
-  "apps/web/e2e-pwa/ui-screens.ts": { count: 3, reason: BEFORE_THE_RULE },
   "apps/web/e2e-pwa/update-moments.e2e.ts": {
     count: 7,
     reason: BEFORE_THE_RULE,
@@ -62,16 +63,23 @@ export const BLIND_WAITS_LIST = {
     reason: BEFORE_THE_RULE,
   },
   "apps/web/e2e/app-shell.e2e.ts": { count: 1, reason: BEFORE_THE_RULE },
-  "apps/web/e2e/close-store.e2e.ts": { count: 1, reason: BEFORE_THE_RULE },
   "apps/web/e2e/closed-store-device.e2e.ts": {
     count: 1,
     reason: BEFORE_THE_RULE,
   },
-  "apps/web/e2e/closed-store.e2e.ts": { count: 1, reason: BEFORE_THE_RULE },
-  "apps/web/e2e/dashboard.e2e.ts": { count: 2, reason: BEFORE_THE_RULE },
-  "apps/web/e2e/expenses.e2e.ts": { count: 1, reason: BEFORE_THE_RULE },
-  "apps/web/e2e/home.e2e.ts": { count: 3, reason: BEFORE_THE_RULE },
-  "apps/web/e2e/lote-2-telas.e2e.ts": { count: 2, reason: BEFORE_THE_RULE },
+  "apps/web/e2e/dashboard/mes-e-copia.e2e.ts": {
+    count: 1,
+    reason: BEFORE_THE_RULE,
+  },
+  "apps/web/e2e/dashboard/reflow-320.e2e.ts": {
+    count: 1,
+    reason: BEFORE_THE_RULE,
+  },
+  "apps/web/e2e/home/offline-e-leituras.e2e.ts": {
+    count: 1,
+    reason: BEFORE_THE_RULE,
+  },
+  "apps/web/e2e/home/shared.ts": { count: 2, reason: BEFORE_THE_RULE },
   "apps/web/e2e/offline-devices.e2e.ts": {
     count: 3,
     reason: ABSENCE_IS_THE_TEST,
@@ -86,11 +94,5 @@ export const BLIND_WAITS_LIST = {
     count: 2,
     reason: BEFORE_THE_RULE,
   },
-  "apps/web/e2e/password-screens.e2e.ts": { count: 1, reason: BEFORE_THE_RULE },
-  "apps/web/e2e/payment-profiles-screen.e2e.ts": {
-    count: 3,
-    reason: BEFORE_THE_RULE,
-  },
-  "apps/web/e2e/products-screen.e2e.ts": { count: 1, reason: BEFORE_THE_RULE },
-  "apps/web/e2e/sign-in.e2e.ts": { count: 4, reason: BEFORE_THE_RULE },
+  "apps/web/e2e/sign-in.e2e.ts": { count: 1, reason: SIMULATED_LATENCY },
 };

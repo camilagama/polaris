@@ -51,7 +51,7 @@ import {
 } from "./concurrency-support";
 import { runClock, storeDay, storeNoon } from "./gate-clock";
 import { assertAllowedGateUrl, disposableHostPattern } from "./gate-hosts";
-import { setLoginRole } from "./gate-roles";
+import { inRolledBackTransaction, setLoginRole } from "./gate-roles";
 import { archiveThenDeleteProduct } from "./product-lifecycle-support";
 import {
   confirmPlainSale,
@@ -198,6 +198,7 @@ async function createTestProduct(
       authenticatedUserId: fixture.userId,
       capability: "product:create",
       requestedOrganizationId: fixture.organizationId,
+      requireLegalAcceptance: false,
     },
     (transaction, identity) =>
       createProduct(transaction, identity, {
@@ -219,6 +220,7 @@ async function getDefaultVariantId(
       authenticatedUserId: fixture.userId,
       capability: "catalog:read",
       requestedOrganizationId: fixture.organizationId,
+      requireLegalAcceptance: false,
     },
     (transaction) =>
       transaction
@@ -253,6 +255,7 @@ async function withTenant<T>(
       authenticatedUserId: fixture.userId,
       capability,
       requestedOrganizationId: fixture.organizationId,
+      requireLegalAcceptance: false,
     },
     operation
   );
@@ -264,17 +267,14 @@ async function withRuntimeGucs<T>(
   organizationId: string,
   operation: () => Promise<T>
 ): Promise<T> {
-  await client.query("BEGIN");
-  try {
+  return await inRolledBackTransaction(client, async () => {
     await client.query(
       "SELECT set_config('app.user_id', $1, true), " +
         "set_config('app.organization_id', $2, true)",
       [userId, organizationId]
     );
     return await operation();
-  } finally {
-    await client.query("ROLLBACK");
-  }
+  });
 }
 
 async function main(): Promise<void> {
@@ -1321,6 +1321,7 @@ async function main(): Promise<void> {
                 authenticatedUserId: fixtureA.userId,
                 capability: "inventory:adjust",
                 requestedOrganizationId: fixtureA.organizationId,
+                requireLegalAcceptance: false,
               },
               (transaction, identity) =>
                 inventoryCount(transaction, identity, {
@@ -1430,6 +1431,7 @@ async function main(): Promise<void> {
                 authenticatedUserId: fixtureA.userId,
                 capability: "inventory:adjust",
                 requestedOrganizationId: fixtureA.organizationId,
+                requireLegalAcceptance: false,
               },
               (transaction, identity) =>
                 receiveStock(transaction, identity, {
@@ -1463,6 +1465,7 @@ async function main(): Promise<void> {
                 authenticatedUserId: fixtureA.userId,
                 capability: "inventory:adjust",
                 requestedOrganizationId: fixtureA.organizationId,
+                requireLegalAcceptance: false,
               },
               (transaction, identity) =>
                 writeOffStock(transaction, identity, {
@@ -1960,6 +1963,7 @@ async function main(): Promise<void> {
                 authenticatedUserId: fixtureA.userId,
                 capability: "product:update",
                 requestedOrganizationId: fixtureA.organizationId,
+                requireLegalAcceptance: false,
               },
               (transaction, identity) =>
                 deleteProduct(transaction, identity, {
@@ -1975,6 +1979,7 @@ async function main(): Promise<void> {
                 authenticatedUserId: fixtureA.userId,
                 capability: "inventory:adjust",
                 requestedOrganizationId: fixtureA.organizationId,
+                requireLegalAcceptance: false,
               },
               (transaction, identity) =>
                 receiveStock(transaction, identity, {

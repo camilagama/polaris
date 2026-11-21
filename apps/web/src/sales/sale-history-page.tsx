@@ -40,6 +40,7 @@ import {
   type HistoryFilters,
   historyFooterView,
   historyView,
+  type LoadMoreView,
   loadMoreView,
   PERIOD_TOTAL_HELP,
   PERIOD_TOTAL_LABEL,
@@ -147,6 +148,14 @@ function HistoryTotalFooter({
   );
 }
 
+/** "Carregar mais", the retry of the refresh warning and the retry of the full-screen error never show together, and a re-read always passes through a loading render between them, so the hook sees one render with none. */
+function hasFocusableControl(
+  more: LoadMoreView,
+  fullScreenError: boolean
+): boolean {
+  return more.visible || more.refreshFailed || fullScreenError;
+}
+
 /** Newest-first list of confirmed and cancelled sales, filterable on the server. */
 export function SaleHistoryPage() {
   const { organization, organizationId } = useCurrentOrganization();
@@ -197,7 +206,9 @@ export function SaleHistoryPage() {
     [setFilters]
   );
   const more = loadMoreView(state, listKey);
-  const focus = useFocusTitleWhenGone<HTMLHeadingElement>(more.visible);
+  const focus = useFocusTitleWhenGone<HTMLHeadingElement>(
+    hasFocusableControl(more, view.kind === "error")
+  );
 
   return (
     <div className="grid gap-4 font-sans text-foreground text-sm antialiased">
@@ -216,7 +227,14 @@ export function SaleHistoryPage() {
         <Alert variant="warning">
           <AlertDescription className="flex flex-wrap items-center gap-x-3 gap-y-1">
             {LIST_REFRESH_FAILED_TEXT}
-            <Button onClick={reload} size="sm" type="button" variant="link">
+            <Button
+              onBlur={focus.onBlur}
+              onClick={reload}
+              onFocus={focus.onFocus}
+              size="sm"
+              type="button"
+              variant="link"
+            >
               <RefreshCwIcon aria-hidden="true" data-icon="inline-start" />
               Tentar novamente
             </Button>
@@ -240,7 +258,14 @@ export function SaleHistoryPage() {
         <Alert variant="destructive">
           <AlertDescription className="flex flex-wrap items-center gap-x-3 gap-y-1">
             {view.message}
-            <Button onClick={reload} size="sm" type="button" variant="link">
+            <Button
+              onBlur={focus.onBlur}
+              onClick={reload}
+              onFocus={focus.onFocus}
+              size="sm"
+              type="button"
+              variant="link"
+            >
               <RefreshCwIcon aria-hidden="true" data-icon="inline-start" />
               Tentar novamente
             </Button>

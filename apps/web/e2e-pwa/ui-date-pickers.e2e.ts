@@ -3,7 +3,7 @@ import type { Locator, Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 import { watchCspViolations } from "../e2e/csp-fixture";
 import { expectMotionLevel } from "./motion-expect";
-import { axeFaults } from "./ui-guardrails";
+import { axeFaults } from "./ui-guardrails/measures";
 
 /**
  * The date pickers of src/ui/ in the gallery: the calendar chunk loads on demand; one date is chosen with a
@@ -275,6 +275,7 @@ test("Safari com rede: o botão é Recarregar a página, nada recarrega sozinho 
   page,
 }) => {
   const count = { asked: 0 };
+  await page.clock.install();
   await chunkFailsLikeSafari(page, count);
   await page.goto("/ui-galeria");
   await expect(inlineBox(page)).toHaveText(`${FAILED_TEXT}${RELOAD_TEXT}`);
@@ -284,8 +285,9 @@ test("Safari com rede: o botão é Recarregar a página, nada recarrega sozinho 
   await page.evaluate(() => {
     (window as unknown as { stillHere: boolean }).stillHere = true;
   });
-  // a while with the box open: the page is not reloaded by itself
-  await page.waitForTimeout(500);
+  // a while with the box open: the page's clock runs on and the page is not reloaded by itself
+  await page.clock.runFor(500);
+  await page.evaluate(() => 0);
   expect(
     await page.evaluate(
       () => (window as unknown as { stillHere?: boolean }).stillHere

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { createDatabase } from "@polaris/db/client";
+import { createAuthDatabase } from "@polaris/db/client";
 import type { BetterAuthPlugin } from "better-auth";
 import { testUtils } from "better-auth/plugins";
 import { createBetterAuth } from "../src/server/auth";
@@ -35,7 +35,7 @@ async function main() {
     throw new Error("The auth gate Worker configuration is invalid.");
   }
 
-  const { db, pool } = createDatabase(databaseUrl, { maxConnections: 1 });
+  const { db, pool } = createAuthDatabase(databaseUrl, { maxConnections: 1 });
   let helpers: TestAuthHelpers | undefined;
   let fixtureUserId: string | undefined;
 

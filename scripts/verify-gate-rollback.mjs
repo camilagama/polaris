@@ -22,7 +22,7 @@ import { GATE_ROLLBACK_LIST } from "./verify-gate-rollback.list.mjs";
  * runs SQL (`query`, `sql`, `exec`, `run`, `send` or `statement` in it); for any other name the literal has to be in capitals, since
  * a lowercase `"rollback"` is as likely a command name or a mode of a test helper (`callWorker("rollback")`) as a statement.
  * Not counted, because they do not send the text: the keywords that take a condition (`if (`, `while (`...), the assertion and comparison
- * calls (`toBe(`, `toEqual(`, `expect*(`, `assert*(`, `includes(`, `has(`...), the collection calls that record a statement (`push(`, `add(`, `set(`), the log and error calls (`log(`, `error(`, `new Error(`...), and a literal
+ * calls (`toBe(`, `toEqual(`, `expect*(`, `assert*(`, `includes(`, `has(`...), the test and suite declarations (`it(`, `test(`, `describe(` and their member forms `.skip(`, `.only(`, `.todo(`, `.concurrent(` and `.fails(`, whose title can be the word `ROLLBACK`; the member name is exempt whatever its receiver, and `it.each(rows)("ROLLBACK")` is never read as a call with that literal), the collection calls that record a statement (`push(`, `add(`, `set(`), the log and error calls (`log(`, `error(`, `new Error(`...), and a literal
  * that is one side of `===`, `!==`, `==` or `!=`. These are lists of names, so a new non-sending call that trips the rule is added to `NOT_SENDING_CALLS`, with a test.
  *
  * Not caught: a statement held in a variable first (`const sql = "ROLLBACK"; query(sql)`), one passed as
@@ -50,12 +50,15 @@ const NOT_SENDING_CALLS = new Set([
   "add",
   "calledWith",
   "catch",
+  "concurrent",
   "debug",
+  "describe",
   "endsWith",
   "equal",
   "equals",
   "error",
   "Error",
+  "fails",
   "for",
   "get",
   "has",
@@ -63,17 +66,22 @@ const NOT_SENDING_CALLS = new Set([
   "includes",
   "indexOf",
   "info",
+  "it",
   "lastIndexOf",
   "log",
   "ok",
+  "only",
   "push",
   "replace",
   "return",
   "set",
+  "skip",
   "split",
   "startsWith",
   "stringContaining",
   "switch",
+  "test",
+  "todo",
   "trace",
   "typeof",
   "warn",

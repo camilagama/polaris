@@ -1,9 +1,11 @@
+import { spawnSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
   classifyChanges,
+  fullSuiteRequested,
   OPERATIONS_FILES,
   reloadSentinelRuns,
 } from "./ci-changed.mjs";
@@ -152,6 +154,9 @@ const EXPECTED_OPERATIONS_FILES = [
   "scripts/gate5-real-devices.sh",
   "scripts/e2e-flaky-report.mjs",
   "scripts/e2e-flaky-report.test.mjs",
+  "scripts/check-protegidos.ts",
+  "scripts/check-protegidos.test.mjs",
+  "tests/protegidos.txt",
   ".github/workflows/deploy-staging.yml",
 ];
 
@@ -695,5 +700,54 @@ describe("the sentinel of reloads with the worker", () => {
       ])
     ).toBe(false);
     expect(reloadSentinelRuns([])).toBe(false);
+  });
+});
+
+describe("the full suite on demand", () => {
+  it("is requested by every manual dispatch, even with `full` off, and by the label the workflow reports", () => {
+    for (const CI_FULL of [undefined, "true", "false"]) {
+      expect(
+        fullSuiteRequested({ GITHUB_EVENT_NAME: "workflow_dispatch", CI_FULL })
+      ).toBe(true);
+    }
+    expect(
+      fullSuiteRequested({ GITHUB_EVENT_NAME: "pull_request", CI_FULL: "true" })
+    ).toBe(true);
+  });
+
+  it("leaves pull requests and pushes as they were without the label", () => {
+    expect(fullSuiteRequested({ GITHUB_EVENT_NAME: "pull_request" })).toBe(
+      false
+    );
+    expect(
+      fullSuiteRequested({ GITHUB_EVENT_NAME: "pull_request", CI_FULL: "" })
+    ).toBe(false);
+    expect(
+      fullSuiteRequested({
+        GITHUB_EVENT_NAME: "pull_request",
+        CI_FULL: "false",
+      })
+    ).toBe(false);
+    expect(fullSuiteRequested({ GITHUB_EVENT_NAME: "push" })).toBe(false);
+    expect(fullSuiteRequested({})).toBe(false);
+  });
+
+  it("makes the script print every area as needed, whatever the commit changed", () => {
+    const result = spawnSync("node", ["scripts/ci-changed.mjs"], {
+      cwd: root,
+      encoding: "utf8",
+      env: {
+        PATH: process.env.PATH,
+        GITHUB_EVENT_NAME: "pull_request",
+        CI_FULL: "true",
+      },
+    });
+    expect(result.status).toBe(0);
+    expect(result.stdout.trim().split("\n")).toEqual([
+      "browser=true",
+      "dependencies=true",
+      "e2e=true",
+      "reloads=true",
+    ]);
   });
 });

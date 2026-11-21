@@ -17,6 +17,7 @@ import { changeSaleCustomerLink } from "../src/sale-customer-link-repository";
 import { listSales } from "../src/sale-query-repository";
 import { createSaleReturn } from "../src/sale-return-repository";
 import { runClock, storeDay, storeNoon } from "./gate-clock";
+import { inRolledBackTransaction } from "./gate-roles";
 import { archiveThenDeleteProduct } from "./product-lifecycle-support";
 import {
   confirmPlainSale,
@@ -32,6 +33,14 @@ import {
   temporaryRuntimeUrl,
   withTenantAs,
 } from "./sales-gate-support";
+import {
+  checkOtherRuntimeCannotList,
+  checkUserOrganizationsCatalog,
+  checkUserOrganizationsEquality,
+  checkUserOrganizationsLeaveNoSetting,
+  checkUserOrganizationsRefusals,
+  listedBySeparateStatements,
+} from "./user-organizations-gate-checks";
 
 /**
  * The read models behind the web screens: the organizations of a session user,
@@ -139,6 +148,37 @@ async function run() {
     );
     tests.push(
       "organization.listMine reads only the session user's active memberships of active organizations, with name, time zone and role; a stranger has none and a padded id is refused"
+    );
+
+    await checkUserOrganizationsCatalog(admin.pool);
+    await checkOtherRuntimeCannotList(admin.pool, tenantA.userId);
+    const runtimeClient = await runtimeDatabase.pool.connect();
+    try {
+      await checkUserOrganizationsRefusals(runtimeClient, tenantB.userId);
+      await checkUserOrganizationsLeaveNoSetting(
+        runtimeClient,
+        tenantA.userId,
+        mine
+      );
+      assert.deepEqual(
+        mine,
+        await inRolledBackTransaction(runtimeClient, () =>
+          listedBySeparateStatements(runtimeClient, tenantA.userId)
+        ),
+        "listUserOrganizations answers what the reference reading in separate statements answers"
+      );
+    } finally {
+      runtimeClient.release();
+    }
+    assert.deepEqual(
+      await listUserOrganizations(runtimeDatabase.db, tenantA.userId),
+      mine,
+      "a second listUserOrganizations on the one connection of the pool answers the same"
+    );
+    const compared = await checkUserOrganizationsEquality(admin.pool);
+    assert.equal(compared.length, 6);
+    tests.push(
+      `list_user_organizations is SECURITY INVOKER with a pinned search_path and EXECUTE only for the tenant runtime, returns the four fields, refuses a null, empty or padded user with 42501, keeps every setting local (session values come back after COMMIT and ROLLBACK, on one connection) and leaves both empty for the rest of its transaction, and answers exactly what the separate statements answer (${compared.join("; ")})`
     );
 
     // ------------------------------------------- 2. the stock balance list

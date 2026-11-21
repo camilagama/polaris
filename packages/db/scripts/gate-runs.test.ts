@@ -1,17 +1,39 @@
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { basename, dirname, join, resolve, sep } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
   AS_SUPERUSER,
   assertCiOwnerSetup,
   assertSuperuserCasesProved,
   checkCiOwnerSetup,
+  copyDatabaseName,
+  databaseAclStatements,
+  drainQueue,
+  GATE_WORKERS,
+  gateWorkers,
   inheritedEnvironment,
+  planGateRuns,
   runMarkers,
   runsOf,
+  runsSerially,
   runThenCleanUp,
+  SERIAL_GATES,
   SUPERUSER_RUN_FOLLOWS,
+  urlForDatabase,
 } from "./gate-runs";
 
 const OWNER_IS_SUPERUSER = /and the owner is a superuser/;
+const WORKERS_RANGE = /must be a whole number from 1 to 8/;
+const WORKERS_NEON = /for a local Postgres only/;
 const NO_RUN_AFTER = /superuser run after this one/;
 const NOT_SUPERUSER = /not connected as a superuser/;
 const CI_FIX =
@@ -238,5 +260,722 @@ describe("runThenCleanUp", () => {
     );
     expect(result).toBe("done");
     expect(cleanups).toBe(1);
+  });
+});
+
+describe("planGateRuns", () => {
+  const gates = [
+    { name: "rls-forced-catalog" },
+    { name: "sales-aggregate" },
+    { name: "audit-retention", superuser: "also" as const },
+    { name: "expenses" },
+    { name: "plain-only", superuser: "only" as const },
+    { name: "web-worker" },
+  ];
+  const labels = (runs: { run: { label: string } }[]) =>
+    runs.map(({ run }) => run.label);
+
+  it("keeps every run serial, in order, with one worker", () => {
+    const plan = planGateRuns(gates, true, 1);
+    expect(plan.parallel).toEqual([]);
+    expect(labels(plan.serial)).toEqual([
+      "rls-forced-catalog",
+      "sales-aggregate",
+      "audit-retention",
+      "audit-retention (superuser)",
+      "expenses",
+      "plain-only",
+      "web-worker",
+    ]);
+  });
+
+  it("queues only the gates outside SERIAL_GATES without a superuser need", () => {
+    const plan = planGateRuns(gates, true, 4);
+    expect(labels(plan.parallel)).toEqual(["sales-aggregate", "expenses"]);
+    expect(labels(plan.serial)).toEqual([
+      "rls-forced-catalog",
+      "audit-retention",
+      "audit-retention (superuser)",
+      "plain-only",
+      "web-worker",
+    ]);
+  });
+
+  it("keeps a gate with a superuser need serial without the superuser URL", () => {
+    expect(runsSerially("plain-only", "only")).toBe(true);
+    expect(labels(planGateRuns(gates, false, 4).serial)).toContain(
+      "plain-only"
+    );
+  });
+});
+
+describe("gateWorkers", () => {
+  it("is 4 locally and 1 against Neon by default", () => {
+    expect(gateWorkers({}, true)).toBe(4);
+    expect(gateWorkers({}, false)).toBe(1);
+    expect(gateWorkers({ [GATE_WORKERS]: "" }, true)).toBe(4);
+  });
+
+  it("takes a whole number from 1 to 8 locally", () => {
+    expect(gateWorkers({ [GATE_WORKERS]: "1" }, true)).toBe(1);
+    expect(gateWorkers({ [GATE_WORKERS]: "8" }, true)).toBe(8);
+    for (const raw of ["0", "9", "2.5", "-1", "abc", " 3"]) {
+      expect(() => gateWorkers({ [GATE_WORKERS]: raw }, true)).toThrow(
+        WORKERS_RANGE
+      );
+    }
+  });
+
+  it("refuses more than one worker against Neon", () => {
+    expect(gateWorkers({ [GATE_WORKERS]: "1" }, false)).toBe(1);
+    expect(() => gateWorkers({ [GATE_WORKERS]: "2" }, false)).toThrow(
+      WORKERS_NEON
+    );
+  });
+});
+
+describe("copyDatabaseName and urlForDatabase", () => {
+  it("points the URL at the copy and keeps the rest", () => {
+    expect(copyDatabaseName("polaris_gate", 3)).toBe("polaris_gate_p3");
+    expect(
+      urlForDatabase(
+        "postgresql://owner:secret@localhost:5432/polaris_gate?sslmode=disable",
+        "polaris_gate_p3"
+      )
+    ).toBe(
+      "postgresql://owner:secret@localhost:5432/polaris_gate_p3?sslmode=disable"
+    );
+  });
+});
+
+describe("drainQueue", () => {
+  it("runs one item at a time per worker and keeps the order of the items", async () => {
+    const running = new Set<number>();
+    const seen: number[][] = [];
+    let peak = 0;
+    const gates: Array<() => void> = [];
+    const results = drainQueue([10, 20, 30, 40, 50], 2, (item, worker) => {
+      expect(running.has(worker)).toBe(false);
+      running.add(worker);
+      peak = Math.max(peak, running.size);
+      seen.push([item, worker]);
+      return new Promise<string>((settle) => {
+        gates.push(() => {
+          running.delete(worker);
+          settle(`${item}@${worker}`);
+        });
+      });
+    });
+    // the first item a worker finishes frees it for the next one of the queue
+    for (let step = 0; step < 5; step += 1) {
+      // biome-ignore lint/performance/noAwaitInLoops: each item is released only after the queue handed it out
+      await expect.poll(() => gates.length).toBeGreaterThan(0);
+      gates.shift()?.();
+    }
+    const out = await results;
+    expect(peak).toBe(2);
+    expect(out.map((entry) => entry.split("@")[0])).toEqual([
+      "10",
+      "20",
+      "30",
+      "40",
+      "50",
+    ]);
+    expect(seen.slice(0, 2)).toEqual([
+      [10, 1],
+      [20, 2],
+    ]);
+  });
+
+  it("uses no more workers than items and returns nothing for no items", async () => {
+    const workers = new Set<number>();
+    await drainQueue([1], 4, (_item, worker) => {
+      workers.add(worker);
+      return Promise.resolve();
+    });
+    expect([...workers]).toEqual([1]);
+    expect(await drainQueue([], 4, () => Promise.resolve(1))).toEqual([]);
+  });
+
+  it("lets the other workers end before a rejection propagates", async () => {
+    const finished: number[] = [];
+    await expect(
+      drainQueue([1, 2, 3], 2, async (item) => {
+        if (item === 1) {
+          throw new Error("broken runner");
+        }
+        await Promise.resolve();
+        finished.push(item);
+      })
+    ).rejects.toThrow("broken runner");
+    expect(finished).toEqual([2, 3]);
+  });
+});
+
+describe("databaseAclStatements", () => {
+  it("gives nothing for the default ACL", () => {
+    expect(databaseAclStatements("copy", "neondb_owner", null)).toEqual([]);
+  });
+
+  it("starts from no privilege and grants the template's, quoted", () => {
+    expect(
+      databaseAclStatements('co"py', "neondb_owner", [
+        {
+          grantee: "PUBLIC",
+          grantor: "owner",
+          is_grantable: false,
+          privilege_type: "CONNECT",
+        },
+        {
+          grantee: "neondb_owner",
+          grantor: "owner",
+          is_grantable: false,
+          privilege_type: "TEMPORARY",
+        },
+        {
+          grantee: "polaris_x",
+          grantor: "owner",
+          is_grantable: true,
+          privilege_type: "CREATE",
+        },
+      ])
+    ).toEqual([
+      'REVOKE ALL ON DATABASE "co""py" FROM PUBLIC, "neondb_owner"',
+      'GRANT CONNECT ON DATABASE "co""py" TO PUBLIC',
+      'GRANT TEMPORARY ON DATABASE "co""py" TO "neondb_owner"',
+      'GRANT CREATE ON DATABASE "co""py" TO "polaris_x" WITH GRANT OPTION',
+    ]);
+  });
+});
+
+// What a gate does, in its script or in a gate helper it imports, that reaches past its database: a role granted to
+// the session user, or a read of the roles, memberships, locks or backends of the whole cluster.
+const CLUSTER_TOUCHES: readonly [string, RegExp][] = [
+  [
+    "grants a role to the session user",
+    /withGateRole|becomeGateRole|queryAsFunctionOwner|replaceFunctionAsOwner|TO\s+(SESSION_USER|CURRENT_USER)\b/i,
+  ],
+  ["reads memberships", /pg_auth_members|pg_has_role/],
+  ["reads roles", /\bpg_roles\b|\bpg_authid\b/],
+  ["alters a role", /ALTER ROLE/],
+  ["reads locks", /\bpg_locks\b/],
+  [
+    "reads or ends backends",
+    /pg_stat_activity|pg_terminate_backend|pg_cancel_backend/,
+  ],
+  [
+    "creates, alters or drops a database",
+    /(CREATE|ALTER|DROP) DATABASE|ALTER SYSTEM/,
+  ],
+];
+
+const BLOCK_COMMENT = /\/\*[\s\S]*?\*\//g;
+const LINE_COMMENT = /^\s*\/\/.*$/gm;
+
+// the code without its block and whole-line comments, which name statements the code never runs
+function withoutComments(source: string): string {
+  return source.replace(BLOCK_COMMENT, "").replace(LINE_COMMENT, "");
+}
+
+function clusterTouches(source: string): string[] {
+  const code = withoutComments(source);
+  return CLUSTER_TOUCHES.filter(([, pattern]) => pattern.test(code)).map(
+    ([touch]) => touch
+  );
+}
+
+const RELATIVE_IMPORT = /from "(\.{1,2}\/[^"]+)"/g;
+
+/**
+ * The gate's script and every gate helper it reaches through relative imports, transitively: the files under a
+ * `scripts` folder (the product code under `src` is what the gates test, not how they reach the cluster).
+ */
+function gateSources(entry: string): Map<string, string> {
+  const found = new Map<string, string>();
+  const pending = [entry];
+  while (pending.length > 0) {
+    const file = pending.pop() as string;
+    if (found.has(file) || !existsSync(file)) {
+      continue;
+    }
+    const text = readFileSync(file, "utf8");
+    found.set(file, text);
+    for (const [, specifier] of text.matchAll(RELATIVE_IMPORT)) {
+      const target = resolve(dirname(file), specifier as string);
+      const withExtension = target.endsWith(".ts") ? target : `${target}.ts`;
+      if (withExtension.includes(`${sep}scripts${sep}`)) {
+        pending.push(withExtension);
+      }
+    }
+  }
+  return found;
+}
+
+// Gate helpers read by hand, with the touches they have: what they reach stays inside the gate's database (or, for
+// gate-roles.ts, the definitions, whose callers are scanned where they call them). Exact, so a change to one fails here.
+const HELPERS_READ: Readonly<Record<string, string[]>> = {
+  // the observer of a race reads pg_stat_activity only `WHERE datname = current_database()`, and pg_roles and
+  // pg_has_role of its own user for pg_read_all_stats
+  "concurrency-support.ts": [
+    "reads memberships",
+    "reads roles",
+    "reads or ends backends",
+  ],
+  "gate-roles.ts": ["grants a role to the session user", "reads memberships"],
+};
+
+function touchesOf(entry: string): string[] {
+  const touches = new Set<string>();
+  for (const [file, text] of gateSources(entry)) {
+    if (
+      !(
+        dirname(file) === SCRIPTS_DIR &&
+        Object.hasOwn(HELPERS_READ, basename(file))
+      )
+    ) {
+      for (const touch of clusterTouches(text)) {
+        touches.add(touch);
+      }
+    }
+  }
+  return CLUSTER_TOUCHES.map(([touch]) => touch).filter((touch) =>
+    touches.has(touch)
+  );
+}
+
+// The parallel gates whose touches stay inside their own database, each read against the code: exact, so a gate that
+// stops touching leaves the list and one that touches more fails.
+const PARALLEL_DESPITE: Readonly<Record<string, string[]>> = {
+  // event-outbox-policies.ts names the roles of the outbox's policies through pg_roles; it lists no other role
+  "event-outbox": ["reads roles"],
+  // pg_stat_activity of its own temporary login
+  "home-writes": ["reads or ends backends"],
+  // pg_roles of the two outbox roles by name; pg_stat_activity of its own temporary login
+  "outbox-dispatcher": ["reads roles", "reads or ends backends"],
+  // pg_roles of named roles; ALTER ROLE of its own temporary login (its time zone)
+  "review-hardening": ["reads roles", "alters a role"],
+};
+
+const GATE_TUPLE = /\[\s*"([a-z0-9-]+)",\s*"([^"]+\.ts)",?\s*\]/g;
+const GATE_OBJECT = /name: "([a-z0-9-]+)",\s*script: "([^"]+\.ts)"/g;
+const SUITE_CI = /\bci: \[([^\]]*)\]/;
+const QUOTED_NAME = /"([a-z0-9-]+)"/g;
+const SCRIPTS_DIR = dirname(fileURLToPath(import.meta.url));
+const RUNNER = readFileSync(join(SCRIPTS_DIR, "run-gates.ts"), "utf8");
+
+function gateScripts(): Map<string, string> {
+  const found = new Map<string, string>();
+  for (const pattern of [GATE_TUPLE, GATE_OBJECT]) {
+    for (const [, name, script] of RUNNER.matchAll(pattern)) {
+      found.set(name as string, join(SCRIPTS_DIR, script as string));
+    }
+  }
+  return found;
+}
+
+describe("SERIAL_GATES against the gates' code", () => {
+  const scripts = gateScripts();
+
+  it("reads every gate of the runner: each name the runner declares, and every gate of the ci suite", () => {
+    const declared = [...RUNNER.matchAll(/name: "([a-z0-9-]+)"/g)].length;
+    const tuples = [...RUNNER.matchAll(GATE_TUPLE)].length;
+    expect(scripts.size).toBe(declared + tuples);
+    const ci = [
+      ...(SUITE_CI.exec(RUNNER)?.[1] ?? "").matchAll(QUOTED_NAME),
+    ].map(([, name]) => name as string);
+    expect(ci.length).toBeGreaterThan(80);
+    expect(ci.filter((name) => !scripts.has(name))).toEqual([]);
+    for (const script of scripts.values()) {
+      expect(existsSync(script), script).toBe(true);
+    }
+  });
+
+  it("names only gates of the runner", () => {
+    expect(
+      Object.keys(SERIAL_GATES).filter((name) => !scripts.has(name))
+    ).toEqual([]);
+  });
+
+  it("finds a touch in a planted gate and none in a clean one", () => {
+    expect(
+      clusterTouches("await withGateRole(admin, OWNER, () => run());")
+    ).toEqual(["grants a role to the session user"]);
+    expect(clusterTouches("GRANT polaris_x TO session_user")).toEqual([
+      "grants a role to the session user",
+    ]);
+    expect(
+      clusterTouches("SELECT 1 FROM pg_catalog.pg_auth_members AS m")
+    ).toEqual(["reads memberships"]);
+    expect(clusterTouches("SELECT * FROM pg_locks")).toEqual(["reads locks"]);
+    expect(clusterTouches("CREATE DATABASE x")).toEqual([
+      "creates, alters or drops a database",
+    ]);
+    expect(clusterTouches("SELECT 1 FROM public.sales")).toEqual([]);
+    expect(
+      clusterTouches(
+        "/** the marker `ALTER DATABASE … SET` stores */\n  // pg_locks is not read here\nconst x = 1;"
+      )
+    ).toEqual([]);
+    expect(
+      clusterTouches('const sql = "SELECT 1"; // then FROM pg_locks')
+    ).toEqual(["reads locks"]);
+  });
+
+  it("finds a touch in a helper the gate imports, and skips the product code", () => {
+    const root = mkdtempSync(join(tmpdir(), "gate-runs-"));
+    try {
+      mkdirSync(join(root, "scripts"));
+      mkdirSync(join(root, "src"));
+      writeFileSync(
+        join(root, "scripts", "verify-x-gate.ts"),
+        'import { check } from "./x-checks";\nimport { repo } from "../src/repo";\n'
+      );
+      writeFileSync(
+        join(root, "scripts", "x-checks.ts"),
+        'import { more } from "./x-more";\nexport const check = 1;\n'
+      );
+      writeFileSync(
+        join(root, "scripts", "x-more.ts"),
+        "await withGateRole(client, ROLE, work);\n"
+      );
+      writeFileSync(join(root, "src", "repo.ts"), "SELECT 1 FROM pg_locks\n");
+      expect(touchesOf(join(root, "scripts", "verify-x-gate.ts"))).toEqual([
+        "grants a role to the session user",
+      ]);
+    } finally {
+      rmSync(root, { force: true, recursive: true });
+    }
+    expect(
+      [...gateSources(scripts.get("read-models") as string).keys()].map(
+        (file) => basename(file)
+      )
+    ).toContain("user-organizations-gate-checks.ts");
+  });
+
+  it("has the touches of the helpers read by hand exactly as listed", () => {
+    const read: Record<string, string[]> = {};
+    for (const helper of Object.keys(HELPERS_READ)) {
+      read[helper] = clusterTouches(
+        readFileSync(join(SCRIPTS_DIR, helper), "utf8")
+      );
+    }
+    expect(read).toEqual(HELPERS_READ);
+  });
+
+  it("leaves in the parallel queue only gates whose touches were read and listed", () => {
+    const touching: Record<string, string[]> = {};
+    for (const [name, script] of scripts) {
+      if (Object.hasOwn(SERIAL_GATES, name)) {
+        continue;
+      }
+      const touches = touchesOf(script);
+      if (touches.length > 0) {
+        touching[name] = touches;
+      }
+    }
+    expect(touching).toEqual(PARALLEL_DESPITE);
+  });
+});
+
+// Any statement that creates a role, and the name right after it: a bare or quoted identifier, made of literal text and
+// `${…}` interpolations. A name that is not there (`%I`, a concatenation) cannot be read, and is reported as such.
+const ROLE_CREATION = /CREATE\s+(?:ROLE|USER|GROUP)\b/gi;
+const ROLE_NAME = /^\s+(?:IF\s+NOT\s+EXISTS\s+)?"?((?:\$\{[^}]*\}|[\w$])+)/i;
+const GENERATOR_CALL = /\b(?:randomUUID|randomBytes)\s*\(/;
+const INTERPOLATION = /\$\{([^}]*)\}/g;
+const IDENTIFIER = /[A-Za-z_]\w*/g;
+
+interface Assignment {
+  index: number;
+  value: string;
+}
+
+// The assignments to `variable` before `at` that are still in scope there: none of the text between them and `at` closes
+// the block they are in, so a same-named variable of another function is not read.
+function visibleAssignments(
+  variable: string,
+  code: string,
+  at: number
+): Assignment[] {
+  const pattern = new RegExp(
+    String.raw`(?:\b(?:const|let|var)\s+)?(?<![.\w])${variable}\b(?:\s*:[^=;]+)?\s*=(?![=>])\s*([^;]*);`,
+    "g"
+  );
+  return [...code.matchAll(pattern)]
+    .filter((match) => {
+      let depth = 0;
+      for (const char of code.slice(match.index + match[0].length, at)) {
+        if (char === "{") {
+          depth += 1;
+        } else if (char === "}") {
+          depth -= 1;
+        }
+        if (depth < 0) {
+          return false;
+        }
+      }
+      return match.index < at;
+    })
+    .map((match) => ({ index: match.index, value: match[1] as string }));
+}
+
+// A value is drawn when it calls a generator, or interpolates a variable whose every visible assignment is drawn.
+function isDrawn(
+  value: string,
+  code: string,
+  at: number,
+  seen: ReadonlySet<string>
+): boolean {
+  if (GENERATOR_CALL.test(value)) {
+    return true;
+  }
+  const names = [...value.matchAll(INTERPOLATION)].flatMap(
+    ([, expression]) => (expression ?? "").match(IDENTIFIER) ?? []
+  );
+  return names.some((name) => {
+    const key = `${name}@${at}`;
+    if (seen.has(key)) {
+      return false;
+    }
+    const assignments = visibleAssignments(name, code, at);
+    return (
+      assignments.length > 0 &&
+      assignments.every((assignment) =>
+        isDrawn(
+          assignment.value,
+          code,
+          assignment.index,
+          new Set(seen).add(key)
+        )
+      )
+    );
+  });
+}
+
+/**
+ * The roles a source creates under a name that two gates running at the same time would share: a literal name, a name
+ * that cannot be read, or one that is not drawn, directly or through variables in scope in the same file, by `randomUUID`
+ * or `randomBytes` (a parameter or an import is not followed, so it is reported too).
+ */
+function fixedRoleNames(source: string): string[] {
+  const code = withoutComments(source);
+  const fixed: string[] = [];
+  for (const creation of code.matchAll(ROLE_CREATION)) {
+    const end = creation.index + creation[0].length;
+    const name = ROLE_NAME.exec(code.slice(end))?.[1];
+    if (name === undefined) {
+      fixed.push("name not readable");
+    } else if (!name.includes("${")) {
+      fixed.push(name);
+    } else if (!isDrawn(name, code, end, new Set())) {
+      fixed.push(`name ${name}`);
+    }
+  }
+  return fixed;
+}
+
+function fixedRoleNamesOf(entry: string): Record<string, string[]> {
+  const found: Record<string, string[]> = {};
+  for (const [file, text] of gateSources(entry)) {
+    const names = fixedRoleNames(text);
+    if (names.length > 0) {
+      found[basename(file)] = names;
+    }
+  }
+  return found;
+}
+
+describe("CREATE ROLE with a fixed name outside SERIAL_GATES", () => {
+  // `@{` stands for the interpolation of a template literal, which the linter refuses inside a string
+  const planted = (...code: string[]) =>
+    code.join("\n").replaceAll("@{", `$${"{"}`);
+
+  it("finds a fixed name in a planted gate", () => {
+    expect(fixedRoleNames("CREATE ROLE polaris_x NOLOGIN")).toEqual([
+      "polaris_x",
+    ]);
+    expect(
+      fixedRoleNames('query(`create role IF NOT EXISTS "gate_y" NOLOGIN`)')
+    ).toEqual(["gate_y"]);
+    expect(fixedRoleNames("CREATE\n  ROLE\n  gate_multiline")).toEqual([
+      "gate_multiline",
+    ]);
+    expect(fixedRoleNames("CREATE USER gate_user LOGIN")).toEqual([
+      "gate_user",
+    ]);
+    expect(fixedRoleNames("CREATE GROUP gate_group")).toEqual(["gate_group"]);
+  });
+
+  it("finds a name that is a variable not drawn, or not readable", () => {
+    const fixed = (...code: string[]) => fixedRoleNames(planted(...code));
+    expect(
+      fixed('const role = "gate_z";', 'await q(`CREATE ROLE "@{role}" LOGIN`);')
+    ).toEqual([planted("name @{role}")]);
+    expect(
+      fixed(
+        "let login: string | undefined;",
+        "login = `gate_@{randomUUID()}`;",
+        "login = `fixed`;",
+        "await q(`CREATE ROLE @{login}`);"
+      )
+    ).toEqual([planted("name @{login}")]);
+    expect(
+      fixed("async function f(name) { await q(`CREATE ROLE @{name}`); }")
+    ).toEqual([planted("name @{name}")]);
+    expect(
+      fixed(
+        'const suffix = "fixed";',
+        "const role = `gate_@{suffix}`;",
+        "await q(`CREATE ROLE @{role}`);"
+      )
+    ).toEqual([planted("name @{role}")]);
+    expect(
+      fixed(
+        "const quoted = (name: string) => name;",
+        'const prefix = "gate";',
+        "await q(`CREATE ROLE @{quoted(prefix)}`);"
+      )
+    ).toEqual([planted("name @{quoted(prefix)}")]);
+    expect(fixed("await q(`CREATE ROLE gate_@{prefix}`);")).toEqual([
+      planted("name gate_@{prefix}"),
+    ]);
+    expect(
+      fixed(
+        "DO $$ BEGIN EXECUTE format('CREATE ROLE %I', 'gate_fixed'); END $$"
+      )
+    ).toEqual(["name not readable"]);
+    expect(fixed("await q('CREATE ROLE ' + name);")).toEqual([
+      "name not readable",
+    ]);
+    expect(fixed('await q("CREATE ROLE " + name);')).toEqual([
+      "name not readable",
+    ]);
+  });
+
+  it("reads a variable only where it is in scope", () => {
+    expect(
+      fixedRoleNames(
+        planted(
+          "async function drawn() {",
+          "  const role = `gate_@{randomUUID()}`;",
+          "  await q(`CREATE ROLE @{role}`);",
+          "}",
+          "async function given(role: string) {",
+          "  await q(`CREATE ROLE @{role}`);",
+          "}"
+        )
+      )
+    ).toEqual([planted("name @{role}")]);
+    expect(
+      fixedRoleNames(
+        planted(
+          "async function f() {",
+          "  const role = `gate_@{randomUUID()}`;",
+          "  if (ready) {",
+          "    await q(`CREATE ROLE @{role}`);",
+          "  }",
+          "}"
+        )
+      )
+    ).toEqual([]);
+  });
+
+  it("accepts a name drawn from randomUUID or randomBytes, directly or through a variable, and ignores comments", () => {
+    expect(
+      fixedRoleNames(
+        planted(
+          'const role = `@{prefix}_@{randomUUID().replaceAll("-", "")}`;',
+          'await q(`CREATE ROLE "@{role}" LOGIN`);'
+        )
+      )
+    ).toEqual([]);
+    expect(
+      fixedRoleNames(
+        planted(
+          "let login: string | undefined;",
+          'const suffix = randomUUID().replaceAll("-", "");',
+          "login = `gate_@{suffix}`;",
+          "await q(`CREATE ROLE @{login}`);"
+        )
+      )
+    ).toEqual([]);
+    expect(
+      fixedRoleNames(
+        planted(
+          "const login = `gate_@{randomBytes(6).toString()}`;",
+          "await q(`CREATE ROLE @{login}`);"
+        )
+      )
+    ).toEqual([]);
+    expect(
+      fixedRoleNames(
+        planted(
+          'const suffix = randomUUID().replaceAll("-", "");',
+          "let login: string | undefined;",
+          "login = `a_@{suffix}`;",
+          "login = `b_@{suffix}`;",
+          "await q(`CREATE ROLE @{login}`);"
+        )
+      )
+    ).toEqual([]);
+    expect(
+      fixedRoleNames(
+        planted(
+          'await q(`CREATE ROLE "gate_@{randomUUID().replaceAll("-", "")}" LOGIN`);'
+        )
+      )
+    ).toEqual([]);
+    expect(
+      fixedRoleNames(
+        "// CREATE ROLE polaris_x\n/** CREATE ROLE gate_y */\nconst a = 1;"
+      )
+    ).toEqual([]);
+  });
+
+  it("finds the fixed names of the serial gates, so the scan is not empty", () => {
+    const scripts = gateScripts();
+    expect(
+      fixedRoleNamesOf(scripts.get("migrations-without-superuser") as string)
+    ).toHaveProperty(["verify-migrations-without-superuser-gate.ts"]);
+    expect(
+      fixedRoleNamesOf(scripts.get("definer-hardening") as string)
+    ).toHaveProperty(["verify-definer-hardening-gate.ts"]);
+  });
+
+  it("finds a fixed name in a helper a planted gate imports", () => {
+    const root = mkdtempSync(join(tmpdir(), "gate-runs-"));
+    try {
+      mkdirSync(join(root, "scripts"));
+      writeFileSync(
+        join(root, "scripts", "verify-x-gate.ts"),
+        'import { make } from "./x-roles";\n'
+      );
+      writeFileSync(
+        join(root, "scripts", "x-roles.ts"),
+        'await q("CREATE ROLE gate_shared NOLOGIN");\n'
+      );
+      expect(
+        fixedRoleNamesOf(join(root, "scripts", "verify-x-gate.ts"))
+      ).toEqual({ "x-roles.ts": ["gate_shared"] });
+    } finally {
+      rmSync(root, { force: true, recursive: true });
+    }
+  });
+
+  it("leaves no fixed name in a gate of the parallel queue or in the helpers it imports", () => {
+    const fixed: Record<string, Record<string, string[]>> = {};
+    let scanned = 0;
+    for (const [name, script] of gateScripts()) {
+      if (Object.hasOwn(SERIAL_GATES, name)) {
+        continue;
+      }
+      scanned += 1;
+      const names = fixedRoleNamesOf(script);
+      if (Object.keys(names).length > 0) {
+        fixed[name] = names;
+      }
+    }
+    expect(scanned).toBeGreaterThan(50);
+    expect(fixed).toEqual({});
   });
 });

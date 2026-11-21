@@ -458,6 +458,7 @@ async function run() {
           capability: "product:update",
           isolationLevel: "repeatable read",
           requestedOrganizationId: lifecycle.organizationId,
+          requireLegalAcceptance: false,
         },
         (transaction, identity) =>
           deleteProduct(transaction, identity, {

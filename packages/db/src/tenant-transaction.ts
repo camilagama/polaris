@@ -2,9 +2,15 @@ import {
   hasCapabilityForRole,
   rolesWithCapability,
 } from "@polaris/domain/authorization/capabilities";
+import {
+  isLegalDocumentId,
+  LEGAL_DOCUMENT_IDS,
+  LEGAL_DOCUMENTS,
+  type LegalDocumentId,
+} from "@polaris/domain/legal/legal-documents";
 import { type SQL, sql } from "drizzle-orm";
 import type { createDatabase } from "./client";
-import { raised } from "./database-refusal";
+import { detailOf, raised } from "./database-refusal";
 import type { createRlsPocDatabase } from "./rls-poc-client";
 
 type PocDatabase = ReturnType<typeof createRlsPocDatabase>["db"];
@@ -40,6 +46,12 @@ export interface AuthorizedTenantTransactionInput {
    */
   isolationLevel?: "read committed" | "repeatable read";
   requestedOrganizationId: string;
+  /**
+   * Whether the entry checks the legal acceptance of the user (ADR 0100) before the membership. No default, so a caller
+   * that did not decide does not compile: the request context passes whether the control is on and the request is not
+   * exempt; a caller whose request already passed the check, or that runs without a request, passes `false`.
+   */
+  requireLegalAcceptance: boolean;
   /** The verified session's id; see `TenantRequestIdentity.sessionId`. */
   sessionId?: string;
 }
@@ -66,6 +78,35 @@ export class TenantAuthorizationError extends Error {
     this.code = code;
     this.name = "TenantAuthorizationError";
   }
+}
+
+/**
+ * The entry refused because the user still has documents to accept (ADR 0100). It is not a refusal of the
+ * authorization: the request context turns it into its own refusal, with what is pending, so a client keeps its offline
+ * copy and offers the acceptance instead of taking it for a refused session.
+ */
+export class LegalAcceptancePendingError extends Error {
+  readonly documents: readonly LegalDocumentId[];
+
+  constructor(documents: readonly LegalDocumentId[]) {
+    super("legal_acceptance_required");
+    this.documents = documents;
+    this.name = "LegalAcceptancePendingError";
+  }
+}
+
+/**
+ * The pending documents the entry wrote in the DETAIL of its refusal, in the order of `LEGAL_DOCUMENT_IDS`. A detail
+ * that does not read as a list of known documents counts as everything pending: the refusal stands either way.
+ */
+export function pendingDocumentsOf(
+  detail: string | undefined
+): LegalDocumentId[] {
+  const named = (detail ?? "").split(",");
+  if (!named.every(isLegalDocumentId)) {
+    return [...LEGAL_DOCUMENT_IDS];
+  }
+  return LEGAL_DOCUMENT_IDS.filter((document) => named.includes(document));
 }
 
 /**
@@ -136,6 +177,7 @@ export function withAuthorizedTenantTransaction<T>(
     capability,
     isolationLevel = "read committed",
     requestedOrganizationId,
+    requireLegalAcceptance,
     sessionId,
   } = input;
 
@@ -156,7 +198,8 @@ export function withAuthorizedTenantTransaction<T>(
           beginTenantRequestStatement(
             authenticatedUserId,
             requestedOrganizationId,
-            capability
+            capability,
+            requireLegalAcceptance
           )
         );
         const [row] = (result as unknown as { rows: { member_role: string }[] })
@@ -166,6 +209,12 @@ export function withAuthorizedTenantTransaction<T>(
         }
         role = row.member_role;
       } catch (error: unknown) {
+        if (raised(error, "42501", "legal_acceptance_required")) {
+          // biome-ignore lint/style/useErrorCause: The refusal is the domain's own; the database detail only names the documents.
+          throw new LegalAcceptancePendingError(
+            pendingDocumentsOf(detailOf(error))
+          );
+        }
         const refusal = tenantRefusalOf(error);
         if (refusal) {
           // biome-ignore lint/style/useErrorCause: The refusal is the domain's own; the database message only picks it.
@@ -199,18 +248,21 @@ function tenantRefusalOf(
 }
 
 /**
- * The single statement after BEGIN: timeouts, `app.user_id`, membership, capability, `app.organization_id` and the
- * organization's status, checked by `public.begin_tenant_request` in that order. The roles go as one `text[]` built
- * element by element: drizzle expands a JS array inside `sql` into a parenthesized list, not an array parameter.
+ * The single statement after BEGIN: timeouts, `app.user_id`, the legal acceptance when asked for, membership,
+ * capability, `app.organization_id` and the organization's status, checked by `public.begin_tenant_request` in that
+ * order. The minimum accepted versions always go, from `LEGAL_DOCUMENTS`, the only place that holds them. The roles go
+ * as one `text[]` built element by element: drizzle expands a JS array inside `sql` into a parenthesized list, not an
+ * array parameter.
  */
 function beginTenantRequestStatement(
   authenticatedUserId: string,
   requestedOrganizationId: string,
-  capability: string
+  capability: string,
+  requireLegalAcceptance: boolean
 ): SQL {
   const roles = rolesWithCapability(capability);
   return sql`SELECT member_role FROM public.begin_tenant_request(${authenticatedUserId}, ${requestedOrganizationId}, ARRAY[${sql.join(
     roles.map((role) => sql`${role}`),
     sql`, `
-  )}]::text[], ${TENANT_STATEMENT_TIMEOUT_MS}::integer, ${TENANT_LOCK_TIMEOUT_MS}::integer, ${TENANT_IDLE_IN_TRANSACTION_TIMEOUT_MS}::integer)`;
+  )}]::text[], ${requireLegalAcceptance}::boolean, ${LEGAL_DOCUMENTS.terms.minAcceptedVersion}::integer, ${LEGAL_DOCUMENTS.privacy.minAcceptedVersion}::integer, ${TENANT_STATEMENT_TIMEOUT_MS}::integer, ${TENANT_LOCK_TIMEOUT_MS}::integer, ${TENANT_IDLE_IN_TRANSACTION_TIMEOUT_MS}::integer)`;
 }

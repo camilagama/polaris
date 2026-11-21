@@ -17,6 +17,9 @@ const CLEARED_COOKIE = /max-age=0/i;
 const SQL_TABLE = /from "(session|user)"/;
 const SQL_SELECT_LIST = /^select (.*?) from /;
 const SQL_QUOTED_NAME = /"(\w+)"/g;
+const SQL_SESSION_COLUMN = /"session"\."(\w+)"/g;
+const SQL_USER_COLUMN = /"session_user"\."(\w+)"/g;
+const SQL_USER_ARRAY = /json_build_array\((.*?)\) as "data"/;
 
 function bindingsWith(secret: string): WorkerBindings {
   return {
@@ -36,7 +39,7 @@ const shared = vi.hoisted(() => ({
 
 // the real handler and the real Better Auth: only the pool of the request is a stand-in
 vi.mock("@polaris/db/client", () => ({
-  createDatabase: () => ({
+  createAuthDatabase: () => ({
     db: {},
     pool: { end: () => Promise.resolve() },
   }),
@@ -217,19 +220,22 @@ describe("what a get-session costs the database", () => {
 
   /**
    * A signed cookie from a memory instance with the same secret, and then the same Better Auth on the real Drizzle
-   * adapter, over a pool that only records the statements and answers with the one session and user of the test:
-   * what counts is how many statements one request sends.
+   * adapter with the relations the handler gives it, over a pool that only records the statements and answers with the
+   * one session and user of the test: what counts is how many statements one request sends.
    */
   async function sqlSession() {
     const signer = newMemoryAuth(secret, []);
     const signed = await signedIn(signer, "signer@example.invalid");
-    const { createDatabase } =
+    const { createAuthDatabase } =
       await vi.importActual<typeof import("@polaris/db/client")>(
         "@polaris/db/client"
       );
-    const { db, pool } = createDatabase("postgresql://sql.invalid/neondb");
+    const { db, pool } = createAuthDatabase("postgresql://sql.invalid/neondb");
     const now = new Date();
-    const records: Record<string, Record<string, unknown>> = {
+    const records: Record<string, Record<string, unknown>> & {
+      session: Record<string, unknown>;
+      user: Record<string, unknown>;
+    } = {
       session: {
         created_at: now,
         expires_at: new Date(now.getTime() + 7 * dayMilliseconds),
@@ -256,6 +262,23 @@ describe("what a get-session costs the database", () => {
       text: string;
     }) => {
       shared.statements.push(config.text);
+      if (config.text.includes("left join lateral")) {
+        const userDataAt = config.text.indexOf('"session_user"."data"');
+        expect(userDataAt).toBeGreaterThan(-1);
+        const sessionColumns = [
+          ...config.text.slice(0, userDataAt).matchAll(SQL_SESSION_COLUMN),
+        ].map((match) => match[1] as string);
+        const userColumns = [
+          ...(SQL_USER_ARRAY.exec(config.text)?.[1] ?? "").matchAll(
+            SQL_USER_COLUMN
+          ),
+        ].map((match) => match[1] as string);
+        const joined = [
+          ...sessionColumns.map((name) => records.session[name]),
+          userColumns.map((name) => records.user[name]),
+        ];
+        return Promise.resolve({ fields: [], rowCount: 1, rows: [joined] });
+      }
       const table = SQL_TABLE.exec(config.text)?.[1];
       const record = table ? records[table] : undefined;
       const columns = [
@@ -285,17 +308,17 @@ describe("what a get-session costs the database", () => {
     shared.statements.length = 0;
   });
 
-  it("is 2 statements, the session and then its user", async () => {
+  it("is 1 statement, the session with its user", async () => {
     const { headers } = await sqlSession();
     shared.statements.length = 0;
 
     const response = await getSession(secret, headers);
 
     expect(await response.json()).toMatchObject({ user: { id: "user-1" } });
-    expect(shared.statements).toHaveLength(2);
+    expect(shared.statements).toHaveLength(1);
   });
 
-  it("was 4 with the read before the route, which is how the other routes still go", async () => {
+  it("is 2 with the read before the route, which is how the other routes still go", async () => {
     const { headers } = await sqlSession();
     const request = () =>
       new Request(`${baseURL}/api/auth/get-session`, { headers });
@@ -312,6 +335,6 @@ describe("what a get-session costs the database", () => {
       }
     );
 
-    expect(shared.statements).toHaveLength(4);
+    expect(shared.statements).toHaveLength(2);
   });
 });

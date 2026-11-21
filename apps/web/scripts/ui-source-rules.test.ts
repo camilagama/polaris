@@ -8,7 +8,7 @@ import { SCREENS } from "../e2e-pwa/ui-screens";
  * Source rules of the interface guardrails (items 4 and 5): what the review of the CSS and the classes finds
  * by reading, a test reads. They run on `src/ui`, on `src/styles` and on the source folders of every
  * screen (`sourceDirs` in e2e-pwa/ui-screens.ts); the measured checks (overflow, touch, axe, motion, focus) are in
- * e2e-pwa/ui-guardrails.e2e.ts. Each rule has a control case: `sourceFaults` runs on a text that has the fault.
+ * e2e-pwa/ui-guardrails/. Each rule has a control case: `sourceFaults` runs on a text that has the fault.
  *
  * 4. only OKLCH and only tokens: no `#hex`, `rgb(`, `hsl(` and the like; no color keyword nor Tailwind palette
  *    class; an `oklch(…)` literal lives only in the token sheet (`packages/ui/src/theme.css`).

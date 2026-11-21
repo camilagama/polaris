@@ -7,6 +7,7 @@ import {
   FORM_WIDTHS,
   sizeFor,
 } from "../e2e/form-dialog-checks";
+import { runClockFor } from "../e2e/run-clock-for";
 import { DETAIL_SALE_ID, saleDetailAnswers } from "./sale-detail-fixture";
 import { WORKER_MARK } from "./worker-mark";
 
@@ -289,6 +290,7 @@ test.describe("the customer of the sale", () => {
   test("Trocar cliente without another active customer is off, reads why and does nothing on Enter", async ({
     page,
   }) => {
+    await page.clock.install();
     const asked = await openCustomer(page);
     // the choice is made in a dialog: the button that opens it, then the one that sends the choice
     await page.getByRole("button", { name: "Trocar cliente" }).click();
@@ -300,13 +302,14 @@ test.describe("the customer of the sale", () => {
     await expect(swap).toBeFocused();
     await page.keyboard.press("Enter");
     // let a call that would be made reach the route
-    await page.waitForTimeout(300);
+    await runClockFor(page, 300);
     expect(count(asked, "sale/reassignCustomer")).toBe(0);
   });
 
   test("Associar cliente with nobody chosen is off, reads why and does nothing on Enter", async ({
     page,
   }) => {
+    await page.clock.install();
     const link = saleDetailAnswers({ withReturn: true })[
       "sale/getCustomerLink"
     ] as object;
@@ -323,7 +326,7 @@ test.describe("the customer of the sale", () => {
     );
     await assign.focus();
     await page.keyboard.press("Enter");
-    await page.waitForTimeout(300);
+    await runClockFor(page, 300);
     expect(count(asked, "sale/assignCustomer")).toBe(0);
   });
 });

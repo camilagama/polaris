@@ -1,5 +1,5 @@
 /// <reference lib="dom" />
-// Only types from Playwright: the e2e-pwa helpers are read under Vitest by the source rules.
+// Only types from Playwright at the top: the e2e-pwa helpers are read under Vitest by the source rules, so `expect` is loaded inside the function that polls.
 import type { Page, Route } from "@playwright/test";
 import { serveHealth, serveLabWorker, WORKER_MARK } from "./worker-mark";
 
@@ -7,7 +7,7 @@ import { serveHealth, serveLabWorker, WORKER_MARK } from "./worker-mark";
  * The reads of the Início (`/`) answered by the test, synthetic data only: the month and the days before it with the
  * daily series and the ranking, an active goal, three variants with no stock and a store that already sold. The
  * shell check (`ui-shell-isolation.e2e.ts`) and the CSP check (`ui-csp.e2e.ts`) open the real page with them, so the
- * chart and its chunk are drawn under the real rules. The states and the errors are proved in `e2e/home.e2e.ts`.
+ * chart and its chunk are drawn under the real rules. The states and the errors are proved in `e2e/home/`.
  */
 export const ORGANIZATION = {
   id: "0199c2d0-0000-7000-8000-00000000a001",
@@ -173,13 +173,24 @@ const GOAL = {
   version: 1,
 };
 
+/** The opening's one list (every status, 100 variants): three with no stock and a known cost, so only S shows. */
+function isWideRead(input: Record<string, unknown>) {
+  return (
+    input.productStatus === "all" &&
+    input.limit === 100 &&
+    input.stock === undefined &&
+    input.cost === undefined
+  );
+}
+
 function balances(input: Record<string, unknown>) {
-  const count = input.stock === "without_stock" ? 3 : 0;
+  const wide = isWideRead(input);
+  const count = input.stock === "without_stock" || wide ? 3 : 0;
   return {
     entries: Array.from({ length: count }, (_, index) => ({
       isDefaultVariant: true,
       listPrice: "10.00",
-      movingAverageCost: null,
+      movingAverageCost: wide ? "5.00" : null,
       productId: `0199c2d0-0000-7000-8000-0000000001${index}0`,
       productName: `Produto ${index + 1}`,
       productStatus: "active",
@@ -425,13 +436,13 @@ export async function readHomeInLab(page: Page): Promise<string> {
     .getByRole("region", { name: "Vendas por dia" })
     .getByRole("img")
     .waitFor();
-  // biome-ignore lint/performance/noAwaitInLoops: waits for the copy the read keeps
-  for (let tries = 0; (await homeCopyKeys(page)).length < 3; tries += 1) {
-    if (tries > 50) {
-      throw new Error("o Início não guardou a cópia");
-    }
-    await page.waitForTimeout(100);
-  }
+  const { expect } = await import("@playwright/test");
+  await expect
+    .poll(async () => (await homeCopyKeys(page)).length, {
+      message: "o Início não guardou a cópia",
+      timeout: 10_000,
+    })
+    .toBeGreaterThanOrEqual(3);
   return user;
 }
 

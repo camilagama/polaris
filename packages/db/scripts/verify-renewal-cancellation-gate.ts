@@ -14,7 +14,7 @@ import {
   requestOrganizationClosure,
 } from "../src/organization-closure-repository";
 import { PURGE_BILLING_FACT_KEYS } from "../src/purge-datasets";
-import { withGateRole } from "./gate-roles";
+import { rollbackAndRelease, withGateRole } from "./gate-roles";
 import {
   createTenantFixture,
   disposableHostPattern,
@@ -268,8 +268,7 @@ async function run() {
           client.query(statement, values)
         );
       } finally {
-        await client.query("ROLLBACK");
-        client.release();
+        await rollbackAndRelease(client);
       }
     };
     const insert =
@@ -353,8 +352,7 @@ async function run() {
         );
         return result.rowCount;
       } finally {
-        await client.query("ROLLBACK");
-        client.release();
+        await rollbackAndRelease(client);
       }
     };
     assert.equal(await visible(linked.organizationId), 1);

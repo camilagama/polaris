@@ -111,3 +111,36 @@ test("showScreenAlone: pílula que não para falha com o seletor e o orçamento,
   expect(failure?.message).toContain("caixa ainda mudando");
   expect(failure?.message).toContain("500 ms");
 });
+
+test("showScreenAlone: cauda do spring da pílula, com a caixa quase parada e o ícone ainda escalado, também é esperada", async ({
+  page,
+}) => {
+  await page.setContent(`
+<div data-slot="filter-pill" id="pill" style="width: 100px; height: 20px;">
+  <svg class="lucide" width="16" height="16"></svg>
+</div>
+<script>
+  const pill = document.getElementById("pill");
+  const startedAt = performance.now();
+  const step = () => {
+    const elapsed = performance.now() - startedAt;
+    const scale = elapsed < 700 ? 1 + 0.0008 * Math.exp(-elapsed / 120) : 1;
+    pill.style.transform = "scale(" + scale + ")";
+    requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+</script>
+`);
+
+  await showScreenAlone(page);
+
+  const state = await page.evaluate(() => {
+    const pill = document.getElementById("pill") as HTMLElement;
+    return {
+      iconWidth: pill.querySelector("svg")?.getBoundingClientRect().width,
+      scaled: !new DOMMatrix(getComputedStyle(pill).transform).isIdentity,
+    };
+  });
+  expect(state.scaled).toBe(false);
+  expect(state.iconWidth).toBeCloseTo(16, 3);
+});

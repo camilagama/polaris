@@ -7,6 +7,8 @@ import {
   transitionCategoryLifecycle,
 } from "./category";
 
+const AT = new Date("2026-11-19T15:00:00.000Z");
+
 describe("catalog category rules", () => {
   it("trims category names and counts Unicode code points", () => {
     expect(normalizeCategoryName("  Escritório  ")).toBe("Escritório");
@@ -24,8 +26,8 @@ describe("catalog category rules", () => {
 
   it("derives a deleted tombstone before considering its archived timestamp", () => {
     expect(deriveCategoryLifecycle(null, null)).toBe("active");
-    expect(deriveCategoryLifecycle(new Date(), null)).toBe("archived");
-    expect(deriveCategoryLifecycle(new Date(), new Date())).toBe("deleted");
+    expect(deriveCategoryLifecycle(AT, null)).toBe("archived");
+    expect(deriveCategoryLifecycle(AT, AT)).toBe("deleted");
   });
 
   it("archives and restores categories without changing a deleted tombstone", () => {

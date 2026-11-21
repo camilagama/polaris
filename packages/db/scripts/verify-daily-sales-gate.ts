@@ -185,6 +185,7 @@ class Fixture {
         capability: "report:read",
         isolationLevel: "repeatable read",
         requestedOrganizationId: tenant.organizationId,
+        requireLegalAcceptance: false,
       },
       async (tx, identity) => {
         const facts = await readPeriodFacts(tx, identity, period);

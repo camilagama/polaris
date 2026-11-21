@@ -3,7 +3,11 @@ import assert from "node:assert/strict";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { Client } from "pg";
 import { createDatabase } from "../src/client";
-import { replaceFunctionAsOwner, withGateRole } from "./gate-roles";
+import {
+  inRolledBackTransaction,
+  replaceFunctionAsOwner,
+  withGateRole,
+} from "./gate-roles";
 import {
   disposableHostPattern,
   expectSqlState,
@@ -41,6 +45,7 @@ const FUNCTIONS = {
   versions: "public.legal_acceptance_versions(text)",
 };
 const TRIGGER_FUNCTION = "public.legal_acceptance_immutable()";
+const PENDING_HELPER = "public.legal_acceptance_pending(text,integer,integer)";
 const RUNTIME_ROLES = [
   "polaris_pr11_runtime",
   "polaris_auth_runtime",
@@ -763,6 +768,154 @@ async function run() {
       "isolation by user: each user's versions are only their own (another user, a stranger and a user with nothing see nobody else's rows), a user ID that is not of the Better Auth shape raises 22023, and the authentication, tenant and Admin runtimes are refused (42501) on every statement on the table, and the tenant and Admin runtimes also on both functions; a user context in the session changes nothing"
     );
 
+    // ---- the narrow door of the tenant runtime: legal_acceptance_pending answers only the documents below their minimum
+    const pendingOf = async (
+      client: Client,
+      user: string | null,
+      minimums: [number | null, number | null] = [1, 1]
+    ) =>
+      (
+        await client.query<{ document: string }>(
+          "SELECT document FROM public.legal_acceptance_pending($1, $2, $3)",
+          [user, ...minimums]
+        )
+      ).rows.map((row) => row.document);
+    const [helper] = (
+      await owner.pool.query<{
+        arguments: string[] | null;
+        config: string[] | null;
+        definer: boolean;
+        executors: string[];
+        owner: string;
+        result: string;
+      }>(
+        `SELECT p.prosecdef AS definer, p.proconfig AS config, r.rolname AS owner, p.proargnames AS arguments,
+                pg_get_function_result(p.oid) AS result,
+                ARRAY(
+                  SELECT DISTINCT CASE WHEN a.grantee = 0 THEN 'PUBLIC' ELSE pg_get_userbyid(a.grantee)::text END
+                    FROM aclexplode(p.proacl) AS a ORDER BY 1
+                ) AS executors
+           FROM pg_proc p JOIN pg_roles r ON r.oid = p.proowner WHERE p.oid = $1::regprocedure`,
+        [PENDING_HELPER]
+      )
+    ).rows;
+    assert.deepEqual(helper, {
+      arguments: ["p_user", "p_min_terms", "p_min_privacy", "document"],
+      config: ["search_path=pg_catalog, pg_temp"],
+      definer: true,
+      executors: [OWNER_ROLE, runtimeRole].sort(),
+      owner: OWNER_ROLE,
+      result: "TABLE(document text)",
+    });
+    for (const role of RUNTIME_ROLES) {
+      const can = await owner.pool.query<{ ok: boolean }>(
+        "SELECT has_function_privilege($1, $2::regprocedure, 'EXECUTE') AS ok",
+        [role, PENDING_HELPER]
+      );
+      assert.equal(can.rows[0]?.ok, role === runtimeRole, `pending: ${role}`);
+    }
+    assert.doesNotMatch(
+      await definitionOf(owner.pool as unknown as Client, PENDING_HELPER),
+      FORBIDDEN_TABLES
+    );
+    assert.deepEqual(await pendingOf(tenantClient, userA), ["privacy"]);
+    assert.deepEqual(await pendingOf(tenantClient, userBurst), ["terms"]);
+    assert.deepEqual(await pendingOf(tenantClient, freshUser("nobody")), [
+      "terms",
+      "privacy",
+    ]);
+    assert.deepEqual(await pendingOf(tenantClient, userA, [2, 1]), [
+      "terms",
+      "privacy",
+    ]);
+    assert.deepEqual(await pendingOf(tenantClient, userBurst, [1000, 1]), [
+      "terms",
+    ]);
+    const invalidCalls: [
+      string,
+      string | null,
+      [number | null, number | null],
+    ][] = [
+      ["NULL user", null, [1, 1]],
+      ["empty user", "", [1, 1]],
+      ["user with a space", "x y", [1, 1]],
+      ["NULL terms minimum", userA, [null, 1]],
+      ["NULL privacy minimum", userA, [1, null]],
+      ["zero minimum", userA, [0, 1]],
+      ["minimum 1001", userA, [1, 1001]],
+    ];
+    for (const [label, user, minimums] of invalidCalls) {
+      await expectSqlState(
+        () => pendingOf(tenantClient, user, minimums),
+        "22023",
+        `pending refuses ${label}`
+      );
+    }
+    for (const [label, client] of [
+      ["auth", authClient],
+      ["admin", adminClient],
+    ] as const) {
+      await expectSqlState(
+        () => pendingOf(client, userA),
+        "42501",
+        `${label} cannot call pending`
+      );
+    }
+    for (const statement of [
+      "SELECT * FROM public.legal_acceptance_versions($1)",
+      `SELECT 1 FROM ${TABLE} WHERE user_id = $1`,
+    ]) {
+      await expectSqlState(
+        () => tenantClient.query(statement, [userA]),
+        "42501",
+        `the tenant runtime still cannot run ${statement.slice(0, 40)}`
+      );
+    }
+    // the probe tells the real body from one that forgets the user (anyone's acceptance would count)
+    const pendingMutationClient = await owner.pool.connect();
+    try {
+      const original = await definitionOf(
+        pendingMutationClient as unknown as Client,
+        PENDING_HELPER
+      );
+      const from = "WHERE accepted.user_id = p_user AND accepted.document";
+      assert.ok(original.includes(from), "the text to mutate exists");
+      const forgotten = await inRolledBackTransaction(
+        pendingMutationClient,
+        async () => {
+          await replaceFunctionAsOwner(
+            pendingMutationClient,
+            PENDING_HELPER,
+            original.replace(from, "WHERE accepted.document")
+          );
+          return await withGateRole(pendingMutationClient, runtimeRole, () =>
+            pendingOf(
+              pendingMutationClient as unknown as Client,
+              freshUser("nobody-mutant")
+            )
+          );
+        }
+      );
+      assert.deepEqual(
+        forgotten,
+        [],
+        "without the user, a stranger reads as having accepted"
+      );
+      assert.equal(
+        await definitionOf(
+          pendingMutationClient as unknown as Client,
+          PENDING_HELPER
+        ),
+        original,
+        "the helper is back to what the migration made"
+      );
+    } finally {
+      pendingMutationClient.release();
+    }
+    tests.push(
+      "legal_acceptance_pending, the narrow door of the tenant runtime (migration 0138): SECURITY DEFINER of the owner role, search_path = pg_catalog, pg_temp, executable by polaris_pr11_runtime only (not PUBLIC, not the authentication or Admin runtimes), answers only the names of the documents below their minimum (never a version, a hash, an instant or a request ID): one document, the other, both for a stranger and for a raised minimum; a user out of the Better Auth shape or a minimum that is NULL, 0 or 1001 raises 22023; the tenant runtime still cannot read the table nor call legal_acceptance_versions; and a helper that forgets the user is caught"
+    );
+
     // ---- append-only
     const rowsStay = await ownerClient.query<{ count: string }>(
       `SELECT count(*)::text AS count FROM ${TABLE}`
@@ -991,8 +1144,7 @@ async function run() {
         assert.notEqual(mutated, original);
         const probe = probes[index];
         assert.ok(probe);
-        await mutationClient.query("BEGIN");
-        try {
+        await inRolledBackTransaction(mutationClient, async () => {
           await replaceFunctionAsOwner(mutationClient, signature, mutated);
           // the mutant is called by the authentication runtime, as in production; the probe reads and writes the table
           // on the gate's own connection, which owns it and bypasses RLS, so the rows are visible
@@ -1011,9 +1163,7 @@ async function run() {
               sqlState(error) === "23514",
             `the probes catch the mutation: ${label}`
           );
-        } finally {
-          await mutationClient.query("ROLLBACK");
-        }
+        });
         assert.equal(
           await definitionOf(mutationClient, signature),
           original,

@@ -46,6 +46,7 @@ import {
 } from "../src/tenant-transaction";
 import { runClock, shiftDay, storeDay } from "./gate-clock";
 import { assertAllowedGateUrl } from "./gate-hosts";
+import { rollbackQuietly } from "./gate-roles";
 import { assertDisposableEnvironment, type MarkerClient } from "./gate-target";
 import { archiveThenDeleteProduct } from "./product-lifecycle-support";
 import {
@@ -419,6 +420,7 @@ async function assertSame(
       capability: "report:read",
       isolationLevel: "repeatable read",
       requestedOrganizationId: tenant.organizationId,
+      requireLegalAcceptance: false,
     },
     async (tx, identity) => [
       await readPeriodSummary(tx, identity, period, {
@@ -1378,6 +1380,7 @@ async function assertVolume(
 ) {
   const store = await propertyStore(scenarios, "volume");
   const client = await admin.connect();
+  let rolledBack = true;
   try {
     await setCommandTriggers(admin, false);
     await client.query("BEGIN");
@@ -1399,10 +1402,10 @@ async function assertVolume(
     }
     await client.query("COMMIT");
   } catch (error) {
-    await client.query("ROLLBACK");
+    rolledBack = await rollbackQuietly(client);
     throw error;
   } finally {
-    client.release();
+    client.release(!rolledBack);
     await setCommandTriggers(admin, true);
   }
   await admin.query(
@@ -1885,6 +1888,7 @@ async function writeCase(
     rows.expenses.push(expenseRow(store, slotStart, expense, null));
   }
   const client = await admin.connect();
+  let rolledBack = true;
   try {
     await client.query("BEGIN");
     for (const [table, statement] of INSERTS) {
@@ -1895,10 +1899,10 @@ async function writeCase(
     }
     await client.query("COMMIT");
   } catch (error) {
-    await client.query("ROLLBACK");
+    rolledBack = await rollbackQuietly(client);
     throw error;
   } finally {
-    client.release();
+    client.release(!rolledBack);
   }
 }
 

@@ -11,8 +11,10 @@ const SCRIPT_DRIVEN_SELECTOR = '[data-slot="filter-pill"]';
  * by itself; nor image decoding, which `getAnimations` does not list.
  *
  * The filter pills enter with a spring of `motion` that runs in script, so `getAnimations` does not list it and the
- * pill, and the icon inside it, would be measured while still scaled: their boxes must also stay unchanged for
- * `STABLE_FRAMES` frames in a row. A screen with no pill yet counts as still, so the caller waits for its pills to be
+ * pill, and the icon inside it, would be measured while still scaled: the boxes of the pill and of its icon must stay
+ * unchanged for `STABLE_FRAMES` frames in a row and the pill's transform must be the identity. The box alone is not
+ * enough: the tail of the spring changes a box by less than the two decimals compared while the icon is still scaled
+ * (16.01 px). A screen with no pill yet counts as still, so the caller waits for its pills to be
  * drawn before calling. The selector is not wider because other script-driven movement (the loading
  * shimmer of the charts) never stops.
  *
@@ -45,13 +47,19 @@ export async function showScreenAlone(
         let stableFor = 0;
         const boxes = () =>
           [...document.querySelectorAll(selector)]
+            .flatMap((pill) => [pill, pill.querySelector("svg.lucide")])
             .map((element) => {
-              const box = element.getBoundingClientRect();
+              const box = element?.getBoundingClientRect() ?? new DOMRect();
               return [box.x, box.y, box.width, box.height]
                 .map((value) => value.toFixed(2))
                 .join(",");
             })
             .join(";");
+        const scaled = () =>
+          [...document.querySelectorAll(selector)].some((pill) => {
+            const { transform } = getComputedStyle(pill);
+            return transform !== "none" && !new DOMMatrix(transform).isIdentity;
+          });
         const unfinished = () =>
           document
             .getAnimations()
@@ -65,7 +73,7 @@ export async function showScreenAlone(
         const check = () => {
           const left = unfinished();
           const current = boxes();
-          stableFor = current === lastBoxes ? stableFor + 1 : 0;
+          stableFor = current === lastBoxes && !scaled() ? stableFor + 1 : 0;
           lastBoxes = current;
           if (left.length === 0 && stableFor >= frames) {
             resolve([]);

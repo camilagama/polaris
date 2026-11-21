@@ -1,3 +1,5 @@
+import { rollbackAndRelease } from "./gate-roles";
+
 const SCOPE_CALL =
   "( SELECT closed_export_organization() AS closed_export_organization)";
 
@@ -32,7 +34,7 @@ export interface ClosedExportPolicyRow {
 
 interface PolicyReadClient {
   query: <T>(text: string, values?: unknown[]) => Promise<{ rows: T[] }>;
-  release: (error?: Error) => void;
+  release: (destroy?: boolean) => void;
 }
 
 export interface PolicyReadPool {
@@ -49,7 +51,6 @@ export async function readClosedExportPolicies(
   role: string
 ): Promise<ClosedExportPolicyRow[]> {
   const client = await pool.connect();
-  let broken: Error | undefined;
   try {
     await client.query("BEGIN READ ONLY");
     await client.query(POLICY_READ_SEARCH_PATH_SQL);
@@ -59,11 +60,6 @@ export async function readClosedExportPolicies(
     );
     return rows;
   } finally {
-    try {
-      await client.query("ROLLBACK");
-    } catch (error) {
-      broken = error instanceof Error ? error : new Error(String(error));
-    }
-    client.release(broken);
+    await rollbackAndRelease(client);
   }
 }

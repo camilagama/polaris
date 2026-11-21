@@ -249,6 +249,12 @@ async function expectNoSidewaysScroll(page: Page) {
   expect(found.past).toEqual([]);
 }
 
+/** Runs the clock and then sends one call of its own: it reaches the route after any resend the run let go. */
+async function runClockFor(page: Page, milliseconds: number) {
+  await page.clock.runFor(milliseconds);
+  await page.evaluate(() => fetch("/rpc/settle").catch(() => undefined));
+}
+
 test("a 320 px nada transborda: a lista, a edição com as duas taxas e os erros nos campos", async ({
   page,
 }, testInfo) => {
@@ -579,6 +585,7 @@ test("arquivar e restaurar dizem o resultado e a lista acompanha", async ({
 test("salvar com o 503 server_busy diz que pode ter sido salvo, oferece só 'Fechar e conferir' e não repete sozinho", async ({
   page,
 }) => {
+  await page.clock.install();
   let creates = 0;
   await openServerScreen(page, {
     lists: [answer([])],
@@ -603,7 +610,7 @@ test("salvar com o 503 server_busy diz que pode ter sido salvo, oferece só 'Fec
   await expect(
     page.getByRole("button", { name: "Tentar novamente" })
   ).toHaveCount(0);
-  await page.waitForTimeout(6000);
+  await runClockFor(page, 6000);
   expect(creates).toBe(1);
 });
 
@@ -634,6 +641,7 @@ test("salvar que o servidor cortou, com o prefixo 'O servidor está ocupado.', t
 test("arquivar com o 503 server_busy diz que pode ter sido salvo, lê a lista de novo e não repete sozinho", async ({
   page,
 }) => {
+  await page.clock.install();
   let archives = 0;
   let lists = 0;
   await openServerScreen(page, {
@@ -662,7 +670,7 @@ test("arquivar com o 503 server_busy diz que pode ter sido salvo, lê a lista de
   await expect(
     page.getByRole("button", { name: "Tentar novamente" })
   ).toHaveCount(0);
-  await page.waitForTimeout(6000);
+  await runClockFor(page, 6000);
   expect(archives).toBe(1);
   await page.getByRole("button", { name: "Novo perfil" }).click();
   await expect(
@@ -673,6 +681,7 @@ test("arquivar com o 503 server_busy diz que pode ter sido salvo, lê a lista de
 test("restaurar com o 503 sem motivo diz que pode ter sido salvo, lê a lista de novo e não repete sozinho", async ({
   page,
 }) => {
+  await page.clock.install();
   let restores = 0;
   let lists = 0;
   await openServerScreen(page, {
@@ -704,7 +713,7 @@ test("restaurar com o 503 sem motivo diz que pode ter sido salvo, lê a lista de
   await expect(
     page.getByRole("button", { name: "Tentar novamente" })
   ).toHaveCount(0);
-  await page.waitForTimeout(6000);
+  await runClockFor(page, 6000);
   expect(restores).toBe(1);
 });
 

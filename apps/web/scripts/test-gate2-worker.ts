@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import { createORPCClient } from "@orpc/client";
 import { RPCLink } from "@orpc/client/fetch";
 import type { PolarisRpcClient } from "@polaris/contracts";
-import { createDatabase } from "@polaris/db/client";
+import { createAuthDatabase, createDatabase } from "@polaris/db/client";
 import { deleteOrganizationsWithAudit } from "../../../packages/db/scripts/teardown-support";
 import type { BetterAuthPlugin } from "better-auth";
 import { testUtils } from "better-auth/plugins";
@@ -471,7 +471,9 @@ async function main() {
   sensitiveValues.add(connectionString);
   sensitiveValues.add(databaseUrl.password);
 
-  const { db, pool } = createDatabase(connectionString, { maxConnections: 3 });
+  const { db, pool } = createAuthDatabase(connectionString, {
+    maxConnections: 3,
+  });
   const fixtureUsers: string[] = [];
   const fixtureOrganizations: string[] = [];
   const temporaryLogins: TemporaryLogin[] = [];

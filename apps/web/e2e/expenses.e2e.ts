@@ -1,7 +1,7 @@
 /// <reference lib="dom" />
 import type { Locator, Page, Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
-import { axeFaults } from "../e2e-pwa/ui-guardrails";
+import { axeFaults } from "../e2e-pwa/ui-guardrails/measures";
 import {
   datePickerButton,
   FORM_VIEWPORTS,
@@ -535,6 +535,12 @@ async function fillExpense(
   await page.getByLabel("Descrição").fill(values.description);
 }
 
+/** Runs the clock and then sends one call of its own: it reaches the route after any resend the run let go. */
+async function runClockFor(page: Page, milliseconds: number) {
+  await page.clock.runFor(milliseconds);
+  await page.evaluate(() => fetch("/rpc/settle").catch(() => undefined));
+}
+
 test("registra uma despesa com valor em formato brasileiro e a soma do período aparece", async ({
   page,
 }) => {
@@ -559,6 +565,7 @@ test("registra uma despesa com valor em formato brasileiro e a soma do período 
 test("registrar com o 503 server_busy diz que pode ter sido salva, não repete sozinho e não oferece tentar de novo", async ({
   page,
 }) => {
+  await page.clock.install();
   const server = new FakeExpenseServer();
   let created = 0;
   await openExpenses(page, server, (target) =>
@@ -598,7 +605,7 @@ test("registrar com o 503 server_busy diz que pode ter sido salva, não repete s
   ).toHaveCount(0);
   await expect(page.getByText("salva neste aparelho")).toHaveCount(0);
   // a write is never sent again by itself (the reads try twice more at ~1.5 s and ~4 s)
-  await page.waitForTimeout(6000);
+  await runClockFor(page, 6000);
   expect(created).toBe(1);
   expect(server.expenses).toHaveLength(0);
   await expect(page.getByLabel("Descrição")).toHaveValue("Conta de luz");

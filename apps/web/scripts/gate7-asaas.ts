@@ -156,6 +156,7 @@ async function authorizeCheckout(cycleMonths: 1 | 6 | 12) {
         authenticatedUserId: required("user", values.user),
         capability: "billing:manage",
         requestedOrganizationId: required("organization", values.organization),
+        requireLegalAcceptance: false,
       },
       async (transaction, identity) => ({
         ...checkoutPriceOf(await listBillingPrices(transaction), cycleMonths),

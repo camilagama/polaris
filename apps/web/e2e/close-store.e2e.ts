@@ -3,6 +3,7 @@ import type { Page, Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 import { buildOfflineLeaseClaims } from "@polaris/domain/offline/offline-lease";
 import { signOfflineLease } from "../src/lib/offline-lease-token";
+import { runClockFor } from "./run-clock-for";
 import { serveHealth, WORKER_MARK } from "./worker-mark";
 
 const ORGANIZATION = {
@@ -73,7 +74,7 @@ async function serveRuntime(page: Page) {
     route.fulfill(rpc({ device: DEVICE, devices: [DEVICE] }))
   );
   await page.route("**/rpc/offline/issueLease", async (route) => {
-    const issuedAt = new Date();
+    const issuedAt = new Date(NOW);
     const expiresAt = new Date(issuedAt.getTime() + 72 * HOUR);
     const lease = await signOfflineLease(
       buildOfflineLeaseClaims({
@@ -202,7 +203,7 @@ async function waitForQueue(page: Page) {
 
 async function leaveOneRefused(page: Page) {
   await page.evaluate(
-    async ({ deviceId, organizationId }) => {
+    async ({ at, deviceId, organizationId }) => {
       const names = (await indexedDB.databases())
         .map(({ name }) => name ?? "")
         .filter((name) => name.startsWith("polaris-outbox-"));
@@ -216,7 +217,6 @@ async function leaveOneRefused(page: Page) {
               ["commands", "meta"],
               "readwrite"
             );
-            const at = new Date().toISOString();
             tx.objectStore("commands").put({
               attempts: 1,
               baseVersion: null,
@@ -242,7 +242,11 @@ async function leaveOneRefused(page: Page) {
         });
       }
     },
-    { deviceId: DEVICE.id, organizationId: ORGANIZATION.id }
+    {
+      at: NOW.toISOString(),
+      deviceId: DEVICE.id,
+      organizationId: ORGANIZATION.id,
+    }
   );
   await page.reload();
 }
@@ -360,6 +364,7 @@ test("Voltar fecha sem pedir nada, e a recusa do servidor tem texto próprio sem
 test("entrada de mais de 15 minutos: o texto próprio, sem dizer que só o dono encerra, e nenhuma segunda chamada", async ({
   page,
 }) => {
+  await page.clock.install({ time: NOW });
   const calls = await openScreen(page, {
     closure: (route) =>
       route.fulfill(
@@ -383,7 +388,7 @@ test("entrada de mais de 15 minutos: o texto próprio, sem dizer que só o dono 
   );
   await expect(dialog(page)).not.toContainText("dono");
   await expect(dialog(page)).not.toContainText("fresh_session_required");
-  await page.waitForTimeout(1500);
+  await runClockFor(page, 1500);
   expect(calls.closures).toHaveLength(1);
 });
 
