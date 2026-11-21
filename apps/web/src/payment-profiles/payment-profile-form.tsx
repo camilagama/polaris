@@ -1,6 +1,6 @@
 import PlusIcon from "lucide-react/dist/esm/icons/plus";
 import Trash2Icon from "lucide-react/dist/esm/icons/trash-2";
-import { type FormEvent, type ReactNode, useCallback } from "react";
+import { type FormEvent, Fragment, type ReactNode, useCallback } from "react";
 import { Button } from "@/ui/button";
 import {
   Dialog,
@@ -11,7 +11,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/ui/dialog";
-import { FieldLegend, FieldSet } from "@/ui/field";
+import { FieldLegend, FieldSeparator, FieldSet } from "@/ui/field";
 import {
   ConnectionRequiredDialogNotice,
   connectionControlProps,
@@ -177,10 +177,8 @@ function RuleEditor({
   );
   const credit = rule.method === "credit_card";
   return (
-    <FieldSet className="@container min-w-0 gap-4 not-first:border-t not-first:pt-4">
-      <FieldLegend className="mb-3" variant="label">
-        Regra {index + 1}
-      </FieldLegend>
+    <FieldSet className="@container min-w-0 gap-4">
+      <FieldLegend className="mb-3">Regra {index + 1}</FieldLegend>
       <div className="grid @md:grid-cols-2 gap-4">
         <SelectField
           id={ruleFieldId(rule, "method")}
@@ -257,6 +255,8 @@ function RuleEditor({
 }
 
 interface PaymentProfileFormProps {
+  /** The profile asked for is already on the list: the main button says "Criar mesmo assim". */
+  confirmDuplicate: boolean;
   draft: ProfileDraft;
   editingName: string | null;
   /** The problems of the fields, by the id of the field. */
@@ -267,8 +267,6 @@ interface PaymentProfileFormProps {
   finalFocus: () => HTMLElement | boolean;
   onAddRule: () => void;
   onCancel: () => void;
-  /** The profile asked for is already on the list: the main button says "Criar mesmo assim". */
-  confirmDuplicate: boolean;
   /** The form has finished closing: the draft can be emptied without the form changing under the fade. */
   onClosed: () => void;
   /** Esc and "Fechar": the form closes and what was typed is kept, in memory, for the next opening. */
@@ -363,6 +361,7 @@ export function PaymentProfileForm({
               onChange={onNameChange}
               value={draft.name}
             />
+            <FieldSeparator />
             <div className="flex flex-wrap items-center justify-between gap-3">
               <h3 className="text-section">Regras de pagamento</h3>
               <Button
@@ -378,15 +377,17 @@ export function PaymentProfileForm({
             </div>
             <div className="grid gap-4">
               {draft.rules.map((rule, index) => (
-                <RuleEditor
-                  canRemove={draft.rules.length > 1}
-                  errors={errors}
-                  index={index}
-                  key={rule.draftId}
-                  onRemove={onRemoveRule}
-                  onUpdate={onUpdateRule}
-                  rule={rule}
-                />
+                <Fragment key={rule.draftId}>
+                  {index > 0 ? <FieldSeparator /> : null}
+                  <RuleEditor
+                    canRemove={draft.rules.length > 1}
+                    errors={errors}
+                    index={index}
+                    onRemove={onRemoveRule}
+                    onUpdate={onUpdateRule}
+                    rule={rule}
+                  />
+                </Fragment>
               ))}
             </div>
           </DialogBody>

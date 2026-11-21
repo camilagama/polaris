@@ -77,6 +77,7 @@ import {
   FieldError,
   FieldLabel,
   FieldLegend,
+  FieldSeparator,
   FieldSet,
   FieldTitle,
 } from "@/ui/field";
@@ -1162,6 +1163,33 @@ export function UiGallery() {
                     id="galeria-dicas"
                   />
                 </Field>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle aria-level={3} role="heading">
+                  Formulário em seções
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="grid gap-4">
+                <FieldSet>
+                  <FieldLegend>Produto</FieldLegend>
+                  <Field>
+                    <FieldLabel htmlFor="galeria-secao-nome">Nome</FieldLabel>
+                    <Input id="galeria-secao-nome" />
+                  </Field>
+                </FieldSet>
+                <FieldSeparator />
+                <FieldSet>
+                  <FieldLegend>Preço e estoque</FieldLegend>
+                  <Field>
+                    <FieldLabel htmlFor="galeria-secao-preco">
+                      Preço de tabela
+                    </FieldLabel>
+                    <Input id="galeria-secao-preco" inputMode="decimal" />
+                  </Field>
+                </FieldSet>
               </CardContent>
             </Card>
           </Section>
