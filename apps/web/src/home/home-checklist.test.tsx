@@ -69,7 +69,9 @@ describe("the checklist of the Início marks the step of the hour", () => {
       true,
     ]);
     expect(icon(rows[2] as string)).toBe("shopping-bag");
-    expect(text(rows[2] as string)).toBe("Fazer a 1ª venda");
+    expect(text(rows[2] as string)).toBe(
+      "Fazer a 1ª venda Diga quantas unidades você tem para poder vender."
+    );
   });
 
   it("a done step has the check in place of the icon, a soft row and the words for the screen reader, never the mark", () => {
