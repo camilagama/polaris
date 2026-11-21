@@ -33,9 +33,9 @@ const START_ANGLE = -Math.PI / 2;
 /** Beyond the arc on each side, the mark runs this far (the card behind it makes the gap). */
 const MARK_OVERSHOOT = 3;
 const MARK_GAP = 2;
+const MARK_WIDTH = 2;
 /** Between the edge of the box and the arc: the padding the block of Bklit UI keeps for itself. */
 const MARGIN = 8;
-const MARK_WIDTH = 2;
 
 /**
  * A radial 2 px mark in the text color across the arc, with 2 px of the card on each side of it so it reads on the
@@ -83,14 +83,6 @@ function RingMarker({
   );
 }
 
-/**
- * One progress ring (Bklit UI's `RingChart` with one `Ring`), with no center: the screen writes its own text in the
- * hole, so the `ChartStatFlow` of the block (and the `@number-flow/react` it brings) never enters the ring: the percent in the
- * hole is the screen's, plain text. It is `aria-hidden`:
- * the screen says the same in words, in its own summary. No hover (the ring is controlled and never read: no glow and
- * no growing), and below the `full` level of motion (a phone, `prefers-reduced-motion`) it is drawn finished, with no
- * entrance (v7 § 7).
- */
 /** The letter at which `size` of a fluid ring is written: 1 rem is this many pixels. */
 const DESIGN_LETTER = 16;
 
@@ -103,7 +95,11 @@ function useBoxSide(fluid: boolean, fallback: number) {
     if (!(fluid && element)) {
       return;
     }
-    const read = () => setSide(element.getBoundingClientRect().width);
+    const read = () => {
+      if (element.offsetWidth > 0) {
+        setSide(element.offsetWidth);
+      }
+    };
     read();
     const observer = new ResizeObserver(read);
     observer.observe(element);
@@ -112,6 +108,14 @@ function useBoxSide(fluid: boolean, fallback: number) {
   return { box, side: fluid ? side : fallback };
 }
 
+/**
+ * One progress ring (Bklit UI's `RingChart` with one `Ring`), with no center: the screen writes its own text in the
+ * hole, so the `ChartStatFlow` of the block (and the `@number-flow/react` it brings) never enters the ring: the percent in the
+ * hole is the screen's, plain text. It is `aria-hidden`:
+ * the screen says the same in words, in its own summary. No hover (the ring is controlled and never read: no glow and
+ * no growing), and below the `full` level of motion (a phone, `prefers-reduced-motion`) it is drawn finished, with no
+ * entrance (v7 § 7).
+ */
 export function RingChart({
   className,
   color,

@@ -70,7 +70,7 @@ const SPECS: Readonly<Record<string, SpecRule>> = {
   "home/meta-anel-largura.e2e.ts": {
     bare: 0,
     coarse: 1,
-    why: "the windows of 760 and 1280 px are not a phone",
+    why: "the window of 1280 px is not a phone",
   },
   "home/meta-ritmo.e2e.ts": {
     bare: 0,
