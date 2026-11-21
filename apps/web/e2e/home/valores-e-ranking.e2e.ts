@@ -222,7 +222,11 @@ test.describe("o padrão único dos valores nos cartões do Início (AC-3.1, AC-
 
   test("a 1280 px a área do número de um cartão de quatro colunas tem 128 px: um valor de quatro dígitos de milhar desce até caber, na conta do ajuste, e não corta", async ({
     page,
-  }) => {
+  }, testInfo) => {
+    test.skip(
+      testInfo.project.name === "chromium-mobile-emulated",
+      "with a finger text-value-lg is 24 px and the amount may still fit the area: the step-down is the mouse case"
+    );
     await openReflowViewport(page, {
       fontPixels: 16,
       height: 800,
