@@ -19,14 +19,14 @@ const E2E = fileURLToPath(new URL("../e2e/", import.meta.url));
 interface SpecRule {
   /** Plain `test(` calls in the part of the file that sweeps (a case that is not a reflow measure). */
   bare: number;
+  /** Titles of the plain `test(` calls before `from` that read like a reflow case (320 px, 20 px) and stay plain. */
+  before?: readonly string[];
   /** `reflowTest(` calls that leave the finger case out with `coarse:`. */
   coarse: number;
   /** The first line of the part of the file that sweeps, when the spec is a big file that sweeps in one place. */
   from?: string;
   /** Why each plain `test(` and each `coarse:` stays. */
   why: string;
-  /** Titles of the plain `test(` calls before `from` that read like a reflow case (320 px, 20 px) and stay plain. */
-  before?: readonly string[];
 }
 
 const SPECS: Readonly<Record<string, SpecRule>> = {
@@ -38,9 +38,9 @@ const SPECS: Readonly<Record<string, SpecRule>> = {
   },
   "dashboard/reflow-320.e2e.ts": {
     bare: 0,
+    before: ["a 320 px, o valor do cartão não quebra em duas linhas"],
     coarse: 0,
     from: 'test.describe("o passo a passo do Resultado a 320 px com a letra do navegador em 24, 20 e 16 px"',
-    before: ["a 320 px, o valor do cartão não quebra em duas linhas"],
     why: "one card read at the default font, not the sweep with the browser font at 24, 20 and 16 px",
   },
   "despesas-reflow.e2e.ts": { bare: 0, coarse: 0, why: "" },
@@ -73,11 +73,19 @@ const SPECS: Readonly<Record<string, SpecRule>> = {
     from: 'test.describe("Meta a 320 px com a letra do navegador em 20 px"',
     why: "",
   },
+  "home/numero-em-mono.e2e.ts": {
+    bare: 3,
+    coarse: 1,
+    why: "the plain cases read the face of the figures at 360 and 1280 px, not a sweep of the width; the windows of 760 and 1280 px are not a phone",
+  },
   "home/valores-e-ranking.e2e.ts": {
     bare: 1,
+    before: [
+      "R$ 1.234.567,89 em Vendas hoje a 320 px com a letra em 24 px: o corte medido é o da lista, nem mais nem menos",
+    ],
     coarse: 4,
     from: 'test.describe("Mais vendidos do mês a 320 px com a letra do navegador em 20 px"',
-    why: "the heights test opens its own browser contexts, which a finger case would not share; the windows of 1024 to 1361 px are not a phone",
+    why: "the heights test opens its own browser contexts, which a finger case would not share; the windows of 1024 to 1361 px are not a phone; the case of the nine-digit figure at 24 px is a measured report (a best effort, not a promise) of one cut, and the case that asserts that value is the one at 20 px",
   },
   "listas-quadro-selo.e2e.ts": {
     bare: 0,
@@ -130,7 +138,7 @@ const OTHER: Readonly<Record<string, string>> = {
 const REFLOW_IMPORT = /from "\.{1,2}\/reflow"/;
 
 function reflowFiles() {
-  return readdirSync(E2E, { recursive: true, encoding: "utf8" })
+  return readdirSync(E2E, { encoding: "utf8", recursive: true })
     .map((name) => name.split(sep).join("/"))
     .filter((name) => name.endsWith(".e2e.ts"))
     .filter(
@@ -224,7 +232,7 @@ describe("the reflow specs run with a finger too", () => {
 
   it("the other specs of a folder of e2e/ keep no plain test that reads like a reflow case", () => {
     const named = new Set([...Object.keys(SPECS), ...Object.keys(OTHER)]);
-    const inFolders = readdirSync(E2E, { recursive: true, encoding: "utf8" })
+    const inFolders = readdirSync(E2E, { encoding: "utf8", recursive: true })
       .map((name) => name.split(sep).join("/"))
       .filter((name) => name.includes("/") && name.endsWith(".e2e.ts"))
       .filter((name) => !named.has(name));

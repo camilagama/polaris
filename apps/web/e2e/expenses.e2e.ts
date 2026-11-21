@@ -15,6 +15,7 @@ import {
   FORM_WIDTHS,
   sizeFor,
 } from "./form-dialog-checks";
+import { expectGeist, expectMono } from "./mono-face";
 import {
   assertNoEllipsis,
   assertNoPageScroll,
@@ -583,6 +584,27 @@ test("registra uma despesa com valor em formato brasileiro e a soma do período 
   expect(server.expenses[0]?.amount).toBe("1500.50");
   await expect(page.getByText("Total do período").locator("..")).toContainText(
     "1.500,50"
+  );
+});
+
+test("o total do período é Geist Mono e o valor de cada despesa da lista segue em Geist", async ({
+  page,
+}) => {
+  const server = new FakeExpenseServer();
+  await openExpenses(page, server);
+  await fillExpense(page, {
+    amount: "1.500,50",
+    category: "Aluguel",
+    description: "Aluguel de outubro",
+  });
+  await page.getByRole("button", { name: "Registrar despesa" }).click();
+  await expect(page.getByText("Despesa registrada.")).toBeVisible();
+  const total = page.getByText("Total do período").locator("..");
+  await expect(total).toContainText("1.500,50");
+  await expectMono(total.locator("[data-money]"), "o total do período");
+  await expectGeist(
+    row(page, "Aluguel de outubro").locator("[data-money]"),
+    "o valor da despesa na lista"
   );
 });
 
