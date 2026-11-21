@@ -10,7 +10,6 @@ import {
   openDashboard,
 } from "./shared";
 
-const REAIS = /R\$/;
 const SIZES = [
   { height: 740, width: 360 },
   { height: 800, width: 1280 },
