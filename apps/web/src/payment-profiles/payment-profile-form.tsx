@@ -1,7 +1,6 @@
-import PlusIcon from "lucide-react/dist/esm/icons/plus";
 import Trash2Icon from "lucide-react/dist/esm/icons/trash-2";
 import { type FormEvent, type ReactNode, useCallback } from "react";
-import { ADD_ROW_ACTION } from "@/lib/add-row-action";
+import { AddRowButton } from "@/lib/add-row-button";
 import { Button } from "@/ui/button";
 import {
   Dialog,
@@ -377,17 +376,9 @@ export function PaymentProfileForm({
                   rule={rule}
                 />
               ))}
-              <Button
-                className={ADD_ROW_ACTION}
-                id="payment-add-rule"
-                onClick={onAddRule}
-                size="lg"
-                type="button"
-                variant="outline"
-              >
-                <PlusIcon aria-hidden="true" data-icon="inline-start" />
+              <AddRowButton id="payment-add-rule" onClick={onAddRule}>
                 Adicionar regra
-              </Button>
+              </AddRowButton>
             </div>
           </DialogBody>
           <ConnectionRequiredDialogNotice online={online} />

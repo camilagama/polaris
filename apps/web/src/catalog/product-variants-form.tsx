@@ -4,7 +4,6 @@ import type {
   ProductVariantOptionName,
 } from "@polaris/contracts";
 import ListPlusIcon from "lucide-react/dist/esm/icons/list-plus";
-import PlusIcon from "lucide-react/dist/esm/icons/plus";
 import {
   type FormEvent,
   useCallback,
@@ -12,7 +11,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { ADD_ROW_ACTION } from "@/lib/add-row-action";
+import { AddRowButton } from "@/lib/add-row-button";
 import { Alert, AlertDescription } from "@/ui/alert";
 import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
@@ -738,17 +737,12 @@ export function ProductVariantConfigurationForm({
             Nenhuma combinação adicionada.
           </p>
         )}
-        <Button
-          className={ADD_ROW_ACTION}
+        <AddRowButton
           disabled={!validation.canAdd || busy}
           onClick={handleAddCombination}
-          size="lg"
-          type="button"
-          variant="outline"
         >
-          <PlusIcon aria-hidden="true" data-icon="inline-start" />
           Adicionar combinação
-        </Button>
+        </AddRowButton>
       </div>
 
       {!validation.combinationsAreUnique && variants.length > 1 ? (
