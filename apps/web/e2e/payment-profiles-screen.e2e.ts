@@ -1,6 +1,7 @@
 /// <reference lib="dom" />
 import type { Page, Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
+import { emptyIconFaults } from "../e2e-pwa/ui-guardrails/measures";
 import {
   expectFormDialogLayout,
   expectKeyboardKeepsMainButton,
@@ -357,6 +358,7 @@ test("sem perfil a tela diz que nenhum foi cadastrado; só com arquivados diz qu
 }) => {
   await openServerScreen(page, { lists: [answer([])] });
   await expect(page.getByText("Nenhum perfil cadastrado")).toBeVisible();
+  expect(await emptyIconFaults(page, 1)).toEqual([]);
 
   await page.unroute("**/rpc/**");
   await openServerScreen(page, { lists: [answer([OLD_LINK])] });

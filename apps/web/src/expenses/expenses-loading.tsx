@@ -26,7 +26,7 @@ export function ExpensesLoading() {
       />
       <Skeleton
         aria-hidden="true"
-        className="h-[20.3125rem] w-full rounded-xl md:h-[19.875rem]"
+        className="h-[21.5625rem] w-full rounded-xl md:h-[22.25rem]"
       />
     </div>
   );

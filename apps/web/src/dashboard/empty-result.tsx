@@ -1,5 +1,10 @@
+import ChartColumnIcon from "lucide-react/dist/esm/icons/chart-column";
+import ShoppingBagIcon from "lucide-react/dist/esm/icons/shopping-bag";
+import WalletIcon from "lucide-react/dist/esm/icons/wallet";
 import { buttonVariants } from "@/ui/button";
 import { EMPTY_TITLE_MAX, EmptyState } from "@/ui/empty-state";
+
+const RESULT_ICONS = [ShoppingBagIcon, WalletIcon, ChartColumnIcon];
 
 interface EmptyResultProps {
   /** `expense:create`: the Despesas screen has this button only for who can use it, under the name of its own. */
@@ -28,7 +33,7 @@ function emptyResultText(period: string) {
 export function EmptyResult({ canCreateExpense, period }: EmptyResultProps) {
   const { support, title } = emptyResultText(period);
   return (
-    <EmptyState afterRead support={support} title={title}>
+    <EmptyState afterRead icon={RESULT_ICONS} support={support} title={title}>
       <a className={buttonVariants()} href="/sales">
         Nova venda
       </a>

@@ -1,9 +1,10 @@
 import type { CategoryReadModel, ProductReadModel } from "@polaris/contracts";
 import MoreHorizontalIcon from "lucide-react/dist/esm/icons/ellipsis";
-import PackageIcon from "lucide-react/dist/esm/icons/package";
+import TagIcon from "lucide-react/dist/esm/icons/tag";
 import { useCallback, useMemo } from "react";
 import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
+import { EmptyState } from "@/ui/empty-state";
 import { Card } from "@/ui/card";
 import {
   DropdownMenu,
@@ -357,22 +358,21 @@ export function ProductList({
 
   if (total === 0) {
     return (
-      <ListNotice>
+      <EmptyState
+        afterRead
+        icon={TagIcon}
+        title={
+          status === "active"
+            ? "Nenhum produto ainda"
+            : "Nenhum produto arquivado."
+        }
+      >
         {status === "active" ? (
-          <>
-            <PackageIcon
-              aria-hidden="true"
-              className="size-6 text-muted-foreground"
-            />
-            <p className="font-medium">Nenhum produto ainda</p>
-            <Button onClick={onNew} type="button">
-              Novo produto
-            </Button>
-          </>
-        ) : (
-          <p className="text-muted-foreground">Nenhum produto arquivado.</p>
-        )}
-      </ListNotice>
+          <Button onClick={onNew} type="button">
+            Novo produto
+          </Button>
+        ) : null}
+      </EmptyState>
     );
   }
 
