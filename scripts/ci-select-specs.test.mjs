@@ -1,6 +1,14 @@
 import { spawnSync } from "node:child_process";
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import {
+  existsSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+} from "node:fs";
 import { createRequire } from "node:module";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -56,16 +64,24 @@ function playwrightSpecs() {
   const cli = createRequire(path.join(web, "package.json")).resolve(
     "@playwright/test/cli"
   );
-  return CONFIGS.flatMap(([config, folder]) => {
-    const result = spawnSync(
-      "node",
-      [cli, "test", "--config", config, "--list", "--reporter=json"],
-      { cwd: web, encoding: "utf8", maxBuffer: 256 * 1024 * 1024 }
-    );
-    expect(result.status, result.stderr).toBe(0);
-    const report = JSON.parse(result.stdout);
-    return report.suites.map((suite) => `apps/web/${folder}/${suite.file}`);
-  });
+  const folderOfReports = mkdtempSync(path.join(tmpdir(), "ci-select-specs-"));
+  try {
+    return CONFIGS.flatMap(([config, folder]) => {
+      const report = path.join(folderOfReports, `${folder}.json`);
+      const env = { ...gitEnvironment(), PLAYWRIGHT_JSON_OUTPUT_NAME: report };
+      env.CI = "";
+      const result = spawnSync(
+        "node",
+        [cli, "test", "--config", config, "--list", "--reporter=json"],
+        { cwd: web, encoding: "utf8", env, maxBuffer: 256 * 1024 * 1024 }
+      );
+      expect(result.status, result.stderr).toBe(0);
+      const { suites } = JSON.parse(readFileSync(report, "utf8"));
+      return suites.map((suite) => `apps/web/${folder}/${suite.file}`);
+    });
+  } finally {
+    rmSync(folderOfReports, { force: true, recursive: true });
+  }
 }
 
 const sourceExtensions = ["", ".ts", ".tsx", "/index.ts", "/index.tsx"];
