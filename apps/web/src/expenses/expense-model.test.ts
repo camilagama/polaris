@@ -1,7 +1,12 @@
 import { EARLIEST_EXPENSE_COMPETENCE } from "@polaris/domain/expenses/expense";
+import type {
+  ExpenseCategoryReadModel,
+  ExpenseCategoryTotalReadModel,
+} from "@polaris/contracts";
 import { describe, expect, it } from "vitest";
 import { formatDate } from "@/ui/date-values";
 import {
+  categoryShareRows,
   EARLIEST_COMPETENCE_REASON,
   EARLIEST_EXPENSE_MONTH,
   EXPENSE_GROUP_ORDER,
@@ -18,6 +23,7 @@ import {
   moneyInputMessage,
   moneyInputText,
   parseMoneyInput,
+  percentsByLargestRemainder,
   shiftMonth,
   validateExpenseDraft,
 } from "./expense-model";
@@ -384,5 +390,208 @@ describe("EARLIEST_COMPETENCE_REASON", () => {
       `Só a partir de ${formatDate(EARLIEST_EXPENSE_COMPETENCE)}`
     );
     expect(EARLIEST_COMPETENCE_REASON).toBe("Só a partir de 01/01/2000");
+  });
+});
+
+function category(index: number, name: string): ExpenseCategoryReadModel {
+  return {
+    archivedAt: null,
+    createdAt: "2026-10-01T00:00:00.000Z",
+    groupKey: "other",
+    id: `0199c2d0-0000-7000-8000-00000000c${String(index).padStart(3, "0")}`,
+    name,
+    organizationId: "org",
+    status: "active",
+    systemKey: null,
+    updatedAt: "2026-10-01T00:00:00.000Z",
+    version: 1,
+  };
+}
+
+const CATEGORIES = [
+  "Aluguel",
+  "Embalagem",
+  "Frete",
+  "Imposto",
+  "Marketing",
+  "Software",
+  "Taxas",
+].map((name, index) => category(index, name));
+
+function totalsOf(...amounts: string[]): ExpenseCategoryTotalReadModel[] {
+  return amounts.map((total, index) => ({
+    categoryId: (CATEGORIES[index] as ExpenseCategoryReadModel).id,
+    count: 1,
+    total,
+  }));
+}
+
+function sumCents(amounts: string[]): string {
+  const cents = amounts.reduce(
+    (sum, amount) => sum + BigInt(amount.replace(".", "")),
+    0n
+  );
+  const digits = cents.toString().padStart(3, "0");
+  return `${digits.slice(0, -2)}.${digits.slice(-2)}`;
+}
+
+describe("percentsByLargestRemainder", () => {
+  it.each([
+    [
+      [1, 1, 1],
+      [34, 33, 33],
+    ],
+    [
+      [1, 1],
+      [50, 50],
+    ],
+    [
+      [200, 100],
+      [67, 33],
+    ],
+    [
+      [5, 995],
+      [1, 99],
+    ],
+    [
+      [0, 0],
+      [0, 0],
+    ],
+  ])("splits %j into %j, adding up to 100", (parts, expected) => {
+    const result = percentsByLargestRemainder(parts.map(BigInt));
+    expect(result).toEqual(expected);
+    if (parts.some((part) => part > 0)) {
+      expect(result.reduce((sum, value) => sum + value, 0)).toBe(100);
+    }
+  });
+});
+
+describe("categoryShareRows", () => {
+  it("lists the categories from the largest down, the longest bar filling the track, the shares adding up to 100", () => {
+    const amounts = ["300.00", "1200.50", "99.99"];
+    const rows = categoryShareRows(
+      totalsOf(...amounts),
+      CATEGORIES,
+      sumCents(amounts)
+    );
+    expect(rows?.map((row) => row.name)).toEqual([
+      "Embalagem",
+      "Aluguel",
+      "Frete",
+    ]);
+    expect(rows?.map((row) => row.amount)).toEqual([
+      "1200.50",
+      "300.00",
+      "99.99",
+    ]);
+    expect(rows?.[0]?.width).toBe(100);
+    expect(rows?.[1]?.width).toBeCloseTo(24.99, 1);
+    expect(rows?.reduce((sum, row) => sum + row.percent, 0)).toBe(100);
+  });
+
+  it("keeps the five largest and adds the rest up in Outras (N), at the end, with no category to filter by", () => {
+    const amounts = [
+      "500.00",
+      "400.00",
+      "300.00",
+      "200.00",
+      "100.00",
+      "60.00",
+      "40.00",
+    ];
+    const rows = categoryShareRows(
+      totalsOf(...amounts),
+      CATEGORIES,
+      sumCents(amounts)
+    );
+    expect(rows).toHaveLength(6);
+    expect(rows?.at(-1)).toMatchObject({
+      amount: "100.00",
+      categoryId: null,
+      name: "Outras (2)",
+    });
+    const sum = rows?.reduce(
+      (total, row) => total + BigInt(row.amount.replace(".", "")),
+      0n
+    );
+    expect(sum).toBe(160_000n);
+  });
+
+  it("lets Outras take the whole track when the rest is larger than any category", () => {
+    const amounts = [
+      "100.00",
+      "90.00",
+      "80.00",
+      "70.00",
+      "60.00",
+      "50.00",
+      "50.00",
+    ];
+    const rows = categoryShareRows(
+      totalsOf(...amounts),
+      CATEGORIES,
+      sumCents(amounts)
+    );
+    expect(rows?.at(-1)?.name).toBe("Outras (2)");
+    expect(rows?.at(-1)?.width).toBe(100);
+    expect(rows?.[0]?.width).toBe(100);
+  });
+
+  it("breaks a tie by name", () => {
+    const rows = categoryShareRows(
+      totalsOf("100.00", "100.00"),
+      CATEGORIES,
+      "200.00"
+    );
+    expect(rows?.map((row) => row.name)).toEqual(["Aluguel", "Embalagem"]);
+  });
+
+  it("writes the ids this screen does not know as one Sem categoria", () => {
+    const rows = categoryShareRows(
+      [
+        ...totalsOf("100.00"),
+        {
+          categoryId: "0199c2d0-0000-7000-8000-0000000000f1",
+          count: 1,
+          total: "30.00",
+        },
+        {
+          categoryId: "0199c2d0-0000-7000-8000-0000000000f2",
+          count: 1,
+          total: "20.00",
+        },
+      ],
+      CATEGORIES,
+      "150.00"
+    );
+    expect(rows?.at(-1)).toMatchObject({
+      amount: "50.00",
+      categoryId: null,
+      name: "Sem categoria",
+    });
+  });
+
+  it.each([
+    ["an answer with no split", undefined, "100.00"],
+    ["a single category", totalsOf("100.00"), "100.00"],
+    [
+      "lines that do not add up to the total",
+      totalsOf("100.00", "50.00"),
+      "150.01",
+    ],
+    ["an amount that is not a decimal", totalsOf("100.00", "abc"), "100.00"],
+  ])("leaves the block out for %s", (_name, totals, total) => {
+    expect(categoryShareRows(totals, CATEGORIES, total)).toBeNull();
+  });
+
+  it("stays exact with sums that do not fit a float", () => {
+    const amounts = ["999999999999999999.99", "999999999999999999.99"];
+    const rows = categoryShareRows(
+      totalsOf(...amounts),
+      CATEGORIES,
+      sumCents(amounts)
+    );
+    expect(rows?.map((row) => row.percent)).toEqual([50, 50]);
+    expect(rows?.[0]?.amount).toBe("999999999999999999.99");
   });
 });
