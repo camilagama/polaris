@@ -1,4 +1,5 @@
 import type { ExpenseReadModel } from "@polaris/contracts";
+import WalletIcon from "lucide-react/dist/esm/icons/wallet";
 import { useCallback } from "react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/ui/badge";
@@ -10,11 +11,7 @@ import { ListTotalFooter } from "../catalog/screen-parts";
 import { useConnectionOnline } from "../lib/browser-connection";
 import { formatBrlAmount, formatCalendarDate } from "../lib/format";
 import { sumBrlAmounts } from "../lib/sum-brl";
-import {
-  LIST_NOTE_MIN_HEIGHT_CLASS,
-  ListNote,
-  LoadError,
-} from "./expense-fields";
+import { ListNote, LoadError } from "./expense-fields";
 import { formatMonthLabel } from "./expense-model";
 import type { ExpenseFilters, ExpenseListState } from "./use-expense-list";
 
@@ -237,6 +234,7 @@ function EmptyExpenses({
       <EmptyState
         afterRead
         bare
+        icon={WalletIcon}
         title={
           filters.status === "voided"
             ? "Nenhuma despesa anulada neste período."
@@ -249,6 +247,7 @@ function EmptyExpenses({
     <EmptyState
       afterRead
       bare
+      icon={WalletIcon}
       title="Nenhuma despesa encontrada com estes filtros."
     >
       <Button onClick={onClearFilters} type="button" variant="outline">
@@ -258,8 +257,8 @@ function EmptyExpenses({
   );
 }
 
-/** The empty list reserves the loading box's height, so the list that arrives empty does not push the screen. */
-const EMPTY_BOX_CLASS = `grid ${LIST_NOTE_MIN_HEIGHT_CLASS} content-center`;
+/** The empty list takes the loading box's height, so the list that arrives empty does not push the screen. */
+const EMPTY_BOX_CLASS = "grid min-h-[6.5rem] content-center";
 
 export function ExpenseList({
   busyKey,

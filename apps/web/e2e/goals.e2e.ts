@@ -1,7 +1,7 @@
 /// <reference lib="dom" />
 import type { Locator, Page, Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
-import { axeFaults } from "../e2e-pwa/ui-guardrails/measures";
+import { axeFaults, emptyIconFaults } from "../e2e-pwa/ui-guardrails/measures";
 import {
   datePickerButton,
   expectWholeMonthWhileTyping,
@@ -480,6 +480,7 @@ test("cria uma meta e mostra o progresso com a barra", async ({ page }) => {
   await expect(page.getByRole("button", { name: "Nova meta" })).toHaveCount(1);
   await expect(empty.getByRole("button")).toHaveCount(0);
   expect(await axeFaults(page, "[data-empty-state]")).toEqual([]);
+  expect(await emptyIconFaults(page, 1)).toEqual([]);
   // no goal in progress: the tab has no count (AC-13)
   await expect(
     page.getByRole("tab", { exact: true, name: "Metas" })

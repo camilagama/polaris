@@ -70,6 +70,8 @@ const DRAWS_ICONS = [
   "histórico lista",
   "estoque lista",
   "resultado metas",
+  "resultado sem dados",
+  "pendências vazio",
 ];
 
 const CONTEXTS = [
