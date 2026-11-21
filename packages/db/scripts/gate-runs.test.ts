@@ -682,57 +682,261 @@ describe("SERIAL_GATES against the gates' code", () => {
 const ROLE_CREATION = /CREATE\s+(?:ROLE|USER|GROUP)\b/gi;
 const ROLE_NAME = /^\s+(?:IF\s+NOT\s+EXISTS\s+)?"?((?:\$\{[^}]*\}|[\w$])+)/i;
 const GENERATOR_CALL = /\b(?:randomUUID|randomBytes)\s*\(/;
-const INTERPOLATION = /\$\{([^}]*)\}/g;
 const IDENTIFIER = /[A-Za-z_]\w*/g;
+const DECLARATION = /^(?:const|let|var)\b/;
 
 interface Assignment {
   index: number;
   value: string;
 }
 
-// The assignments to `variable` before `at` that are still in scope there: none of the text between them and `at` closes
-// the block they are in, so a same-named variable of another function is not read.
+interface Group {
+  inner: string;
+  interpolation: boolean;
+}
+
+const OPENERS: Record<string, string> = { "(": ")", "[": "]", "{": "}" };
+
+// The index just past the literal or bracket pair that opens at `from`, reading nested ones and escapes.
+function skipPast(text: string, from: number): number {
+  const open = text[from] as string;
+  let at = from + 1;
+  if (open === '"' || open === "'") {
+    while (at < text.length && text[at] !== open) {
+      at += text[at] === "\\" ? 2 : 1;
+    }
+    return at + 1;
+  }
+  if (open === "`") {
+    while (at < text.length && text[at] !== "`") {
+      if (text[at] === "\\") {
+        at += 2;
+      } else if (text.startsWith("${", at)) {
+        at = skipPast(text, at + 1);
+      } else {
+        at += 1;
+      }
+    }
+    return at + 1;
+  }
+  const close = OPENERS[open] as string;
+  while (at < text.length && text[at] !== close) {
+    const char = text[at] as string;
+    at +=
+      char in OPENERS || "\"'`".includes(char) ? skipPast(text, at) - at : 1;
+  }
+  return at + 1;
+}
+
+/**
+ * The text of an expression with everything that is not at its top level blanked out (string and template text, and the
+ * inside of brackets and interpolations, which come back as groups), so operators and calls can be read on what is left.
+ */
+function maskTopLevel(text: string): { flat: string; groups: Group[] } {
+  const flat = text.split("");
+  const groups: Group[] = [];
+  const blank = (from: number, to: number) => {
+    for (let at = from; at < to; at += 1) {
+      flat[at] = " ";
+    }
+  };
+  const interpolation = (from: number) => {
+    const end = skipPast(text, from + 1);
+    groups.push({ inner: text.slice(from + 2, end - 1), interpolation: true });
+    blank(from, end);
+    return end;
+  };
+  let at = 0;
+  while (at < text.length) {
+    const char = text[at] as string;
+    if (text.startsWith("${", at)) {
+      at = interpolation(at);
+    } else if (char in OPENERS) {
+      const end = skipPast(text, at);
+      groups.push({ inner: text.slice(at + 1, end - 1), interpolation: false });
+      blank(at + 1, end - 1);
+      at = end;
+    } else if (char === '"' || char === "'") {
+      const end = skipPast(text, at);
+      blank(at + 1, end - 1);
+      at = end;
+    } else if (char === "`") {
+      let inside = at + 1;
+      while (inside < text.length && text[inside] !== "`") {
+        if (text[inside] === "\\") {
+          blank(inside, inside + 2);
+          inside += 2;
+        } else if (text.startsWith("${", inside)) {
+          inside = interpolation(inside);
+        } else {
+          blank(inside, inside + 1);
+          inside += 1;
+        }
+      }
+      at = inside + 1;
+    } else {
+      at += 1;
+    }
+  }
+  return { flat: flat.join(""), groups };
+}
+
+function isTernaryQuestion(flat: string, at: number): boolean {
+  return (
+    flat[at] === "?" &&
+    flat[at + 1] !== "?" &&
+    flat[at + 1] !== "." &&
+    flat[at - 1] !== "?"
+  );
+}
+
+/**
+ * The values an expression can take: both arms of a `?:` (its condition is not a value), and every operand of `||` or
+ * `??`. Anything else is one value.
+ */
+function branchesOf(text: string): string[] {
+  const { flat } = maskTopLevel(text);
+  const question = [...flat].findIndex((_, at) => isTernaryQuestion(flat, at));
+  if (question >= 0) {
+    let nested = 0;
+    for (let at = question + 1; at < flat.length; at += 1) {
+      if (isTernaryQuestion(flat, at)) {
+        nested += 1;
+      } else if (flat[at] === ":") {
+        if (nested === 0) {
+          return [
+            ...branchesOf(text.slice(question + 1, at)),
+            ...branchesOf(text.slice(at + 1)),
+          ];
+        }
+        nested -= 1;
+      }
+    }
+    return branchesOf(text.slice(question + 1));
+  }
+  const operands: string[] = [];
+  let from = 0;
+  for (let at = 0; at < flat.length - 1; at += 1) {
+    const pair = flat.slice(at, at + 2);
+    if (pair === "||" || pair === "??") {
+      operands.push(text.slice(from, at));
+      from = at + 2;
+      at += 1;
+    }
+  }
+  operands.push(text.slice(from));
+  return operands;
+}
+
+// The code with the text of its string and template literals blanked, same length, so a `role = 'x'` inside SQL is not
+// read as an assignment.
+function withoutLiterals(code: string): string {
+  const chars = code.split("");
+  let at = 0;
+  while (at < code.length) {
+    if ("\"'`".includes(code[at] as string)) {
+      const end = Math.min(skipPast(code, at), code.length);
+      for (let inside = at + 1; inside < end - 1; inside += 1) {
+        chars[inside] = " ";
+      }
+      at = end;
+    } else {
+      at += 1;
+    }
+  }
+  return chars.join("");
+}
+
+// The assignments that can set the value `variable` has at `at`. Every plain assignment counts, wherever it is (inside a
+// block that closed before `at`, or after it in a loop, it may still reach a variable declared outside), as does a
+// `for (variable of|in …)` without a declaration. A declaration, and a loop that declares it, count only before `at` and
+// while their block is open, so a same-named variable of another function is not read.
 function visibleAssignments(
   variable: string,
   code: string,
   at: number
 ): Assignment[] {
-  const pattern = new RegExp(
-    String.raw`(?:\b(?:const|let|var)\s+)?(?<![.\w])${variable}\b(?:\s*:[^=;]+)?\s*=(?![=>])\s*([^;]*);`,
-    "g"
+  const text = withoutLiterals(code);
+  const assignment = new RegExp(
+    String.raw`(?:\b(?:const|let|var)\s+)?(?<![.\w])${variable}\b(?:\s*:[^=;]+)?\s*(?:\|\||&&|\?\?)?=(?![=>])\s*([^;]*);`,
+    "dg"
   );
-  return [...code.matchAll(pattern)]
-    .filter((match) => {
-      let depth = 0;
-      for (const char of code.slice(match.index + match[0].length, at)) {
-        if (char === "{") {
-          depth += 1;
-        } else if (char === "}") {
-          depth -= 1;
-        }
-        if (depth < 0) {
-          return false;
-        }
+  const loop = new RegExp(
+    String.raw`\bfor\s*(?:await\s*)?\(\s*((?:const|let|var)\s+)?(?<![.\w])${variable}\s+(?:of|in)\b([^)]*)\)`,
+    "dg"
+  );
+  const assignedBy = (match: RegExpMatchArray, group: number): Assignment => {
+    const [start, stop] = (match.indices as RegExpIndicesArray)[group] as [
+      number,
+      number,
+    ];
+    return { index: match.index, value: code.slice(start, stop) };
+  };
+  const stillOpen = (from: number, loopBody: boolean): boolean => {
+    let depth = 0;
+    let entered = false;
+    for (const char of text.slice(from, at)) {
+      if (char === "{") {
+        depth += 1;
+        entered = true;
+      } else if (char === "}") {
+        depth -= 1;
+      } else if (char === ";" && loopBody && !entered) {
+        return false;
       }
-      return match.index < at;
-    })
-    .map((match) => ({ index: match.index, value: match[1] as string }));
+      if (depth < 0 || (loopBody && entered && depth === 0)) {
+        return false;
+      }
+    }
+    return true;
+  };
+  const assignments = [...text.matchAll(assignment)]
+    .filter(
+      (match) =>
+        !DECLARATION.test(match[0]) ||
+        (match.index < at && stillOpen(match.index + match[0].length, false))
+    )
+    .map((match) => assignedBy(match, 1));
+  const loops = [...text.matchAll(loop)]
+    .filter(
+      (match) =>
+        match[1] === undefined ||
+        (match.index < at && stillOpen(match.index + match[0].length, true))
+    )
+    .map((match) => assignedBy(match, 2));
+  return [...assignments, ...loops];
 }
 
-// A value is drawn when it calls a generator, or interpolates a variable whose every visible assignment is drawn.
+// A value is drawn when each value it can take calls a generator, or interpolates a variable whose every visible
+// assignment is drawn. Only what is inside an interpolation is read as a variable.
 function isDrawn(
   value: string,
   code: string,
   at: number,
-  seen: ReadonlySet<string>
+  seen: ReadonlySet<string>,
+  interpolated = false
 ): boolean {
-  if (GENERATOR_CALL.test(value)) {
+  const branches = branchesOf(value);
+  if (branches.length > 1) {
+    return branches.every((branch) =>
+      isDrawn(branch, code, at, seen, interpolated)
+    );
+  }
+  const { flat, groups } = maskTopLevel(value);
+  if (GENERATOR_CALL.test(flat)) {
     return true;
   }
-  const names = [...value.matchAll(INTERPOLATION)].flatMap(
-    ([, expression]) => (expression ?? "").match(IDENTIFIER) ?? []
-  );
-  return names.some((name) => {
+  if (
+    groups.some((group) =>
+      isDrawn(group.inner, code, at, seen, interpolated || group.interpolation)
+    )
+  ) {
+    return true;
+  }
+  if (!interpolated) {
+    return false;
+  }
+  return (flat.match(IDENTIFIER) ?? []).some((name) => {
     const key = `${name}@${at}`;
     if (seen.has(key)) {
       return false;
@@ -755,7 +959,8 @@ function isDrawn(
 /**
  * The roles a source creates under a name that two gates running at the same time would share: a literal name, a name
  * that cannot be read, or one that is not drawn, directly or through variables in scope in the same file, by `randomUUID`
- * or `randomBytes` (a parameter or an import is not followed, so it is reported too).
+ * or `randomBytes` (a parameter or an import is not followed, so it is reported too). A generator anywhere inside a call or
+ * a bracket counts as drawing, and a destructuring assignment is not read.
  */
 function fixedRoleNames(source: string): string[] {
   const code = withoutComments(source);
@@ -878,6 +1083,267 @@ describe("CREATE ROLE with a fixed name outside SERIAL_GATES", () => {
         )
       )
     ).toEqual([]);
+  });
+
+  it("finds a name that a block gives a fixed value", () => {
+    const fixed = (...code: string[]) => fixedRoleNames(planted(...code));
+    const drawn = "let role = `g_@{randomUUID()}`;";
+    expect(
+      fixed(
+        drawn,
+        "if (reuse) {",
+        '  role = "fixo";',
+        "}",
+        "await q(`CREATE ROLE @{role}`);"
+      )
+    ).toEqual([planted("name @{role}")]);
+    expect(
+      fixed(
+        drawn,
+        "for (const item of items) {",
+        "  role = item;",
+        "}",
+        "await q(`CREATE ROLE @{role}`);"
+      )
+    ).toEqual([planted("name @{role}")]);
+    expect(
+      fixed(
+        drawn,
+        "try {",
+        '  role = "fixo";',
+        "} catch {",
+        "  role = `g_@{randomUUID()}`;",
+        "}",
+        "await q(`CREATE ROLE @{role}`);"
+      )
+    ).toEqual([planted("name @{role}")]);
+    expect(
+      fixed(
+        drawn,
+        'if (reuse) role = "fixo";',
+        "await q(`CREATE ROLE @{role}`);"
+      )
+    ).toEqual([planted("name @{role}")]);
+    expect(
+      fixed(
+        drawn,
+        "if (reuse) {",
+        "  role = `h_@{randomUUID()}`;",
+        "}",
+        "await q(`CREATE ROLE @{role}`);"
+      )
+    ).toEqual([]);
+    expect(
+      fixed(
+        "async function other() {",
+        "  const role = 1;",
+        "}",
+        drawn,
+        "await q(`CREATE ROLE @{role}`);"
+      )
+    ).toEqual([]);
+  });
+
+  it("finds a name given a fixed value after the creation, by a compound assignment or by a loop", () => {
+    const fixed = (...code: string[]) => fixedRoleNames(planted(...code));
+    const drawn = "let role = `g_@{randomUUID()}`;";
+    expect(
+      fixed(
+        drawn,
+        "for (const name of names) {",
+        "  await q(`CREATE ROLE @{role}`);",
+        "  role = name;",
+        "}"
+      )
+    ).toEqual([planted("name @{role}")]);
+    expect(
+      fixed(
+        "async function make() {",
+        "  await q(`CREATE ROLE @{role}`);",
+        "}",
+        drawn,
+        'role = "fixo";'
+      )
+    ).toEqual([planted("name @{role}")]);
+    expect(
+      fixed(
+        "let role: string | undefined;",
+        "if (ready) role = `g_@{randomUUID()}`;",
+        'role ??= "fixo";',
+        "await q(`CREATE ROLE @{role}`);"
+      )
+    ).toEqual([planted("name @{role}")]);
+    expect(
+      fixed(drawn, 'role ||= "fixo";', "await q(`CREATE ROLE @{role}`);")
+    ).toEqual([planted("name @{role}")]);
+    expect(
+      fixed(
+        drawn,
+        "role ||= `h_@{randomUUID()}`;",
+        "await q(`CREATE ROLE @{role}`);"
+      )
+    ).toEqual([]);
+    expect(
+      fixed(
+        "let role: string;",
+        "for (role of names) {",
+        "  await q(`CREATE ROLE @{role}`);",
+        "}"
+      )
+    ).toEqual([planted("name @{role}")]);
+    expect(
+      fixed(
+        "for (const role of names) {",
+        "  await q(`CREATE ROLE @{role}`);",
+        "}"
+      )
+    ).toEqual([planted("name @{role}")]);
+  });
+
+  it("reports a plain assignment to the same name in another function, and ends on malformed text", () => {
+    expect(
+      fixedRoleNames(
+        planted(
+          "function a() {",
+          "  let role: string;",
+          '  role = "x";',
+          "}",
+          "function b() {",
+          "  const role = `g_@{randomUUID()}`;",
+          "  return q(`CREATE ROLE @{role}`);",
+          "}"
+        )
+      )
+    ).toEqual([planted("name @{role}")]);
+    for (const code of [
+      "const role = (reuse ? `a_@{randomUUID()}",
+      'const role = "unclosed',
+      "const role = `g_@{randomUUID()",
+      "const role = [reuse ? 1 :",
+      "const role = a ?",
+      "const role = a ? b \\",
+    ]) {
+      expect(() =>
+        fixedRoleNames(planted(code, "await q(`CREATE ROLE @{role}`);"))
+      ).not.toThrow();
+    }
+  });
+
+  it("does not read SQL text or a loop that closed as an assignment", () => {
+    expect(
+      fixedRoleNames(
+        planted(
+          "const role = `g_@{randomUUID()}`;",
+          "await q(`CREATE ROLE @{role}`);",
+          "await q(\"UPDATE memberships SET role = 'seller' WHERE id = $1\");",
+          "await q(`UPDATE memberships SET role = 'owner'; SELECT 1`);",
+          "for (const role of ROLES) {",
+          "  await q(`GRANT @{role} TO x`);",
+          "}"
+        )
+      )
+    ).toEqual([]);
+    expect(
+      fixedRoleNames(
+        planted(
+          "const role = `g_@{randomUUID()}`;",
+          "for (const role of ROLES) {",
+          "  await q(`GRANT @{role} TO x`);",
+          "}",
+          "await q(`CREATE ROLE @{role}`);"
+        )
+      )
+    ).toEqual([]);
+    expect(
+      fixedRoleNames(
+        planted(
+          "let role = `g_@{randomUUID()}`;",
+          "for await (role of names) {",
+          "  await q(`CREATE ROLE @{role}`);",
+          "}"
+        )
+      )
+    ).toEqual([planted("name @{role}")]);
+    expect(
+      fixedRoleNames(
+        planted(
+          "const role = `g_@{randomUUID()}`;",
+          "for (const role of names) await q(`CREATE ROLE @{role}`);"
+        )
+      )
+    ).toEqual([planted("name @{role}")]);
+  });
+
+  it("finds a name drawn in only one branch of a value", () => {
+    const fixed = (...code: string[]) => fixedRoleNames(planted(...code));
+    expect(
+      fixed(
+        'const role = reuse ? "fixo" : `g_@{randomUUID()}`;',
+        "await q(`CREATE ROLE @{role}`);"
+      )
+    ).toEqual([planted("name @{role}")]);
+    expect(
+      fixed(
+        'const role = reuse ? `g_@{randomUUID()}` : "fixo";',
+        "await q(`CREATE ROLE @{role}`);"
+      )
+    ).toEqual([planted("name @{role}")]);
+    expect(
+      fixed(
+        'const role = a ? `g_@{randomUUID()}` : b ? `h_@{randomUUID()}` : "fixo";',
+        "await q(`CREATE ROLE @{role}`);"
+      )
+    ).toEqual([planted("name @{role}")]);
+    expect(
+      fixed(
+        'const role = given || "fixo" || `g_@{randomUUID()}`;',
+        "await q(`CREATE ROLE @{role}`);"
+      )
+    ).toEqual([planted("name @{role}")]);
+    expect(
+      fixed('const role = given ?? "fixo";', "await q(`CREATE ROLE @{role}`);")
+    ).toEqual([planted("name @{role}")]);
+    expect(
+      fixed(
+        'const role = `g_@{reuse ? "fixo" : randomUUID()}`;',
+        "await q(`CREATE ROLE @{role}`);"
+      )
+    ).toEqual([planted("name @{role}")]);
+    expect(
+      fixed(
+        'const role = "g_" + (reuse ? "fixo" : randomUUID());',
+        "await q(`CREATE ROLE @{role}`);"
+      )
+    ).toEqual([planted("name @{role}")]);
+    expect(
+      fixed("await q(`CREATE ROLE @{reuse ? shared : randomUUID()}`);")
+    ).toEqual([planted("name @{reuse ? shared : randomUUID()}")]);
+    expect(
+      fixed(
+        "const role = reuse",
+        "  ? `g_@{randomUUID()}`",
+        "  : `h_@{randomBytes(6).toString()}`;",
+        "await q(`CREATE ROLE @{role}`);"
+      )
+    ).toEqual([]);
+    expect(
+      fixed(
+        "const role = reuse?.name ?? `g_@{randomUUID()}`;",
+        "await q(`CREATE ROLE @{role}`);"
+      )
+    ).toEqual([planted("name @{role}")]);
+    expect(
+      fixed(
+        "const role = first ?? second ?? `g_@{randomUUID()}`;",
+        "await q(`CREATE ROLE @{role}`);"
+      )
+    ).toEqual([planted("name @{role}")]);
+    expect(
+      fixed(
+        'const role = `g_@{randomUUID()}` || "fixo";',
+        "await q(`CREATE ROLE @{role}`);"
+      )
+    ).toEqual([planted("name @{role}")]);
   });
 
   it("accepts a name drawn from randomUUID or randomBytes, directly or through a variable, and ignores comments", () => {
