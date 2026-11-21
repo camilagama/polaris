@@ -11,6 +11,8 @@ export interface RingChartProps {
   className?: string;
   /** The color of the arc: a token of the chart palette. */
   color: ChartColor;
+  /** Where a reference mark crosses the ring, from 0 to 1 of the way round (a drawing only: the screen says what it means). */
+  marker?: number | undefined;
   /** How much of the ring is done, from 0 to 1; more than 1 is a full ring. */
   progress: number;
   /** The side of the square, in pixels. */
@@ -19,6 +21,57 @@ export interface RingChartProps {
   strokeWidth: number;
   /** The color of the track under the arc, a CSS color (the border of the theme when absent). */
   track?: string;
+}
+
+/** Where the arc begins, in the radians of d3's arc (0 is 12 o'clock, clockwise): the mark counts from the same point. */
+const START_ANGLE = -Math.PI / 2;
+/** Beyond the arc on each side, the mark runs this far (the card behind it makes the gap). */
+const MARK_OVERSHOOT = 3;
+const MARK_GAP = 2;
+const MARK_WIDTH = 2;
+
+/**
+ * A radial 2 px mark in the text color across the arc, with 2 px of the card on each side of it so it reads on the
+ * filled arc and on the track. It does not move.
+ */
+function RingMarker({
+  marker,
+  size,
+  strokeWidth,
+}: {
+  marker: number;
+  size: number;
+  strokeWidth: number;
+}) {
+  const outer = size / 2 - 8;
+  const inner = outer - strokeWidth;
+  const angle = START_ANGLE + Math.min(Math.max(marker, 0), 1) * 2 * Math.PI;
+  const center = size / 2;
+  const point = (radius: number) =>
+    `${center + radius * Math.sin(angle)},${center - radius * Math.cos(angle)}`;
+  const line = `M${point(inner - MARK_OVERSHOOT)} L${point(outer + MARK_OVERSHOOT)}`;
+  return (
+    <svg
+      aria-hidden="true"
+      className="absolute inset-0 overflow-visible"
+      data-ring-marker=""
+      height={size}
+      width={size}
+    >
+      <path
+        d={line}
+        fill="none"
+        stroke="var(--card)"
+        strokeWidth={MARK_WIDTH + 2 * MARK_GAP}
+      />
+      <path
+        d={line}
+        fill="none"
+        stroke="var(--foreground)"
+        strokeWidth={MARK_WIDTH}
+      />
+    </svg>
+  );
 }
 
 /**
@@ -32,6 +85,7 @@ export interface RingChartProps {
 export function RingChart({
   className,
   color,
+  marker,
   progress,
   size,
   strokeWidth,
@@ -46,7 +100,7 @@ export function RingChart({
   return (
     <span
       aria-hidden="true"
-      className={cn("pointer-events-none block", className)}
+      className={cn("pointer-events-none relative block", className)}
       data-ring-chart=""
       // the block draws the track in `--border`: here it is the color the screen asks for, only inside the ring
       style={
@@ -65,11 +119,15 @@ export function RingChart({
           hoveredIndex={null}
           ringGap={0}
           size={size}
+          startAngle={START_ANGLE}
           strokeWidth={strokeWidth}
         >
           <Ring animate={!still} index={0} showGlow={false} />
         </BklitRingChart>
       </MotionConfig>
+      {marker === undefined ? null : (
+        <RingMarker marker={marker} size={size} strokeWidth={strokeWidth} />
+      )}
     </span>
   );
 }
