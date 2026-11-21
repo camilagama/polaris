@@ -17,7 +17,8 @@ interface SaleReceiptProps {
 /**
  * The confirmed sale exactly as stored, as a receipt (DESIGN.md v5.1): the total right under the title, because
  * the eye looks for it first; the perforation; then the items, the adjustments and the three dates; then the payment,
- * and the identifier at the end, in mono and without emphasis. The order is the order of the DOM, so a screen reader
+ * and the identifier at the end, in mono and without emphasis. The amounts of the lines are in Geist Mono and end at
+ * the right edge, the names and the labels in Geist. The order is the order of the DOM, so a screen reader
  * reads what the eye sees.
  */
 export function SaleReceipt({ before, sale, status }: SaleReceiptProps) {
@@ -38,13 +39,13 @@ export function SaleReceipt({ before, sale, status }: SaleReceiptProps) {
           {before}
           {total ? (
             <dl>
-              <div className="flex items-baseline justify-between gap-3">
+              <div className="flex flex-wrap items-baseline justify-between gap-x-3">
                 <dt className="font-medium text-muted-foreground">
                   {total.label}
                 </dt>
-                <dd>
+                <dd className="ml-auto">
                   <Money
-                    className="font-semibold tracking-[-0.035em]"
+                    className="font-mono font-semibold tracking-[-0.035em]"
                     size="lg"
                     text={total.value}
                   />
@@ -55,12 +56,17 @@ export function SaleReceipt({ before, sale, status }: SaleReceiptProps) {
         </CardContent>
         {total ? <Perforation /> : null}
         <CardContent className="grid gap-4 py-(--card-spacing)">
-          <ConfirmedItems headingId="sale-detail-items" items={sale.items} />
+          <ConfirmedItems
+            headingId="sale-detail-items"
+            items={sale.items}
+            receipt
+          />
           <dl className="grid gap-2">
             {rows.map((row) => (
               <LeaderRow
                 key={row.key}
                 label={row.label}
+                mono
                 tone={row.tone}
                 value={<MoneyText text={row.value} />}
               />
@@ -74,7 +80,7 @@ export function SaleReceipt({ before, sale, status }: SaleReceiptProps) {
         </CardContent>
         <CardContent className="grid gap-2 border-border border-t py-(--card-spacing)">
           <h3 className="font-medium">Pagamento</h3>
-          <ConfirmedDetails details={sale.paymentDetails} />
+          <ConfirmedDetails details={sale.paymentDetails} receipt />
           <p className="text-muted-foreground text-support">{sale.note}</p>
           <p className="pt-1 font-mono text-muted-foreground text-xs [overflow-wrap:anywhere]">
             <span className="sr-only">Identificador da venda: </span>
