@@ -2574,3 +2574,54 @@ test("variantes: 'Adicionar todas as combinações' põe 12 linhas no rascunho e
     });
   });
 });
+
+test("Novo produto a 360 x 740: o formulário em seções cresce só o que valem as legendas e os fios, e 'Cadastrar produto' segue à vista", async ({
+  page,
+}) => {
+  await page.setViewportSize({ height: 740, width: 360 });
+  await openServerScreen(page, { lists: [answer([])] });
+  await page.getByRole("button", { name: "Novo produto" }).first().click();
+  const form = page.locator("#product-form");
+  await expect(form).toBeVisible();
+  await expect(form.getByRole("group", { name: "Produto" })).toBeVisible();
+  await expect(
+    form.getByRole("group", { name: "Preço e estoque" })
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Cadastrar produto" })
+  ).toBeInViewport({ ratio: 1 });
+
+  const measured = await form.evaluate((element) => {
+    const height = (node: Element) => node.getBoundingClientRect().height;
+    const gap = Number.parseFloat(getComputedStyle(element).rowGap);
+    const legends = [
+      ...element.querySelectorAll("fieldset > legend:not(.sr-only)"),
+    ].map((legend) => {
+      const margin = Number.parseFloat(getComputedStyle(legend).marginBottom);
+      return height(legend) + margin;
+    });
+    const separators = element.querySelectorAll(
+      "[data-slot=field-separator]"
+    ).length;
+    const fields = [
+      ...element.querySelectorAll("fieldset > [data-slot=field]"),
+    ].filter((node) => height(node) > 0);
+    const collapsible = element.querySelector("[data-slot=collapsible]");
+    const hint = element.querySelector(":scope > p");
+    const rowsBefore = fields.length + 2;
+    const fieldHeights = fields.reduce((sum, node) => sum + height(node), 0);
+    const detailsHeight =
+      (collapsible ? height(collapsible) : 0) + (hint ? height(hint) : 0);
+    return {
+      before: fieldHeights + detailsHeight + gap * (rowsBefore - 1),
+      chrome:
+        legends.reduce((sum, value) => sum + value, 0) + separators * (gap + 1),
+      height: height(element),
+      separators,
+    };
+  });
+  expect(measured.separators).toBe(2);
+  expect(measured.height - measured.before).toBeLessThanOrEqual(
+    measured.chrome + 1
+  );
+});

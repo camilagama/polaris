@@ -11,6 +11,7 @@ import { type FormEvent, useCallback, useState } from "react";
 import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/ui/card";
+import { FieldLegend, FieldSeparator, FieldSet } from "@/ui/field";
 import { connectionControlProps } from "../app-shell/connection-required-notice";
 import { formatQuantity } from "../lib/format";
 import { listCountText } from "./list-page-model";
@@ -179,57 +180,64 @@ export function ProfileForm(props: ProfileFormProps) {
             O que você digitar aqui é o que aparece. Nada é copiado do seu
             cadastro, do seu login ou do plano.
           </p>
-          <ProductTextField
-            error={problemOf("publicName", problem)}
-            id="public-name"
-            label="Nome público"
-            maxLength={MAX_PUBLIC_NAME}
-            onChange={handleName}
-            value={draft.publicName}
-          />
-          <ProductTextField
-            autoCapitalize="none"
-            className="[&_[data-slot=field-description]]:[overflow-wrap:anywhere]"
-            error={problemOf("slug", problem)}
-            hint={`${preview} · de 3 a 40 letras minúsculas, números e hífens, único entre todas as lojas.`}
-            id="public-slug"
-            label="Endereço"
-            maxLength={40}
-            onChange={handleSlug}
-            spellCheck={false}
-            value={draft.slug}
-          />
-          <ProductTextAreaField
-            error={problemOf("description", problem)}
-            hint={`${MAX_PUBLIC_DESCRIPTION - draft.description.length} caracteres restantes.`}
-            id="public-description"
-            label="Descrição"
-            maxLength={MAX_PUBLIC_DESCRIPTION}
-            onChange={handleDescription}
-            optional
-            value={draft.description}
-          />
-          <ProductTextField
-            error={problemOf("whatsapp", problem)}
-            id="public-whatsapp"
-            inputMode="tel"
-            label="WhatsApp"
-            onChange={handleWhatsapp}
-            optional
-            placeholder="11 91234-5678"
-            value={draft.whatsapp}
-          />
-          <ProductTextField
-            autoCapitalize="none"
-            error={problemOf("instagram", problem)}
-            id="public-instagram"
-            label="Instagram"
-            onChange={handleInstagram}
-            optional
-            placeholder="minhaloja"
-            spellCheck={false}
-            value={draft.instagram}
-          />
+          <FieldSet>
+            <FieldLegend>Como a loja aparece</FieldLegend>
+            <ProductTextField
+              error={problemOf("publicName", problem)}
+              id="public-name"
+              label="Nome público"
+              maxLength={MAX_PUBLIC_NAME}
+              onChange={handleName}
+              value={draft.publicName}
+            />
+            <ProductTextField
+              autoCapitalize="none"
+              className="[&_[data-slot=field-description]]:[overflow-wrap:anywhere]"
+              error={problemOf("slug", problem)}
+              hint={`${preview} · de 3 a 40 letras minúsculas, números e hífens, único entre todas as lojas.`}
+              id="public-slug"
+              label="Endereço"
+              maxLength={40}
+              onChange={handleSlug}
+              spellCheck={false}
+              value={draft.slug}
+            />
+            <ProductTextAreaField
+              error={problemOf("description", problem)}
+              hint={`${MAX_PUBLIC_DESCRIPTION - draft.description.length} caracteres restantes.`}
+              id="public-description"
+              label="Descrição"
+              maxLength={MAX_PUBLIC_DESCRIPTION}
+              onChange={handleDescription}
+              optional
+              value={draft.description}
+            />
+          </FieldSet>
+          <FieldSeparator />
+          <FieldSet>
+            <FieldLegend>Contato</FieldLegend>
+            <ProductTextField
+              error={problemOf("whatsapp", problem)}
+              id="public-whatsapp"
+              inputMode="tel"
+              label="WhatsApp"
+              onChange={handleWhatsapp}
+              optional
+              placeholder="11 91234-5678"
+              value={draft.whatsapp}
+            />
+            <ProductTextField
+              autoCapitalize="none"
+              error={problemOf("instagram", problem)}
+              id="public-instagram"
+              label="Instagram"
+              onChange={handleInstagram}
+              optional
+              placeholder="minhaloja"
+              spellCheck={false}
+              value={draft.instagram}
+            />
+          </FieldSet>
         </CardContent>
         <CardContent>
           <div className="grid gap-2 min-[30rem]:flex min-[30rem]:items-center min-[30rem]:gap-3">

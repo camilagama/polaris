@@ -258,15 +258,33 @@ a {
   font-weight: 500;
   text-wrap: pretty;
 }
+/* The price reads in one go ("R$49,90"): the symbol and the cents are smaller inline pieces on the same baseline, not separate blocks. */
+.price {
+  font-weight: 600;
+  color: var(--foreground);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.price .currency {
+  margin-right: 0.25rem;
+  font-size: 0.8em;
+  font-weight: 500;
+  color: var(--muted-foreground);
+}
+.price .cents {
+  font-size: 0.8em;
+}
 .card-price {
   font-size: 0.8125rem;
   font-variant-numeric: tabular-nums;
   line-height: 1.125rem;
   color: var(--muted-foreground);
 }
-.card-price strong {
-  font-weight: 600;
-  color: var(--foreground);
+.card-price .price {
+  font-size: 0.9375rem;
+}
+.variants .price {
+  font-size: 1rem;
 }
 
 .more {
@@ -362,17 +380,6 @@ a {
 }
 .variants li:first-child {
   border-top: 0;
-}
-.variants .price {
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-.variants .price small {
-  margin-right: 0.25rem;
-  font-size: 0.75rem;
-  font-weight: 500;
-  color: var(--muted-foreground);
 }
 .variants .unknown {
   font-size: 0.8125rem;
