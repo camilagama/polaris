@@ -480,14 +480,21 @@ describe("the scheduled handler of the web worker", () => {
     });
     await runScheduled("19 * * * *", bindings);
     const { dispatchExport, dispatchRenewal } = fixture.events;
-    expect(standard.sent).toEqual([{ ...dispatchExport, attempt: 1 }]);
-    expect(critical.sent).toEqual([{ ...dispatchRenewal, attempt: 1 }]);
-    expect(media.sent).toEqual([]);
+    // only this test's own events: the maintenance lane writes notices of its own, which this dispatcher also sends when that test ran first
+    const ownIds = [dispatchExport.eventId, dispatchRenewal.eventId];
+    const ownSent = (queue: { sent: unknown[] }) =>
+      queue.sent.filter((message) =>
+        ownIds.includes((message as { eventId: string }).eventId)
+      );
+    expect(ownSent(standard)).toEqual([{ ...dispatchExport, attempt: 1 }]);
+    expect(ownSent(critical)).toEqual([{ ...dispatchRenewal, attempt: 1 }]);
+    expect(ownSent(media)).toEqual([]);
     expect(
       events().filter((entry) => entry.event === "outbox_dispatch_complete")
     ).toHaveLength(1);
 
     // the same window again: the lease is refused, so the dispatcher does not even run
+    const sentBefore = standard.sent.length + critical.sent.length;
     await runScheduled("19 * * * *", bindings);
     const skipped = events().filter(
       (entry) => entry.event === "scheduled_job_skipped"
@@ -496,8 +503,9 @@ describe("the scheduled handler of the web worker", () => {
     expect(
       events().filter((entry) => entry.event === "outbox_dispatch_complete")
     ).toHaveLength(1);
-    expect(standard.sent).toHaveLength(1);
-    expect(critical.sent).toHaveLength(1);
+    expect(standard.sent.length + critical.sent.length).toBe(sentBefore);
+    expect(ownSent(standard)).toHaveLength(1);
+    expect(ownSent(critical)).toHaveLength(1);
   });
 
   it("the maintenance lane runs its five jobs, and the ones that cannot reach their database fail alone", async () => {
