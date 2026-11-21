@@ -61,6 +61,8 @@ Mapa de contraste do desenho v5.1 (Petković, 20/10/2026), trazido para o reposi
 | `chart-3` / `card` | série 3 | Chart | **6.79** | 3 | ✓ |
 | `chart-4` / `card` | série 4 | Chart | **12.27** | 3 | ✓ |
 | `chart-5` / `card` | série 5 | Chart | **18.09** | 3 | ✓ |
+| `foreground` / `chart-heat-1` | traço do ritmo da meta sobre o trilho verde do anel (sobre o arco, o traço se lê pela folga de `card` de 2 px: `chart-sales` / `card` acima e `foreground` / `card`) | Meta (anel) | **12.99** | 3 | ✓ |
+| `foreground` / `chart-result/18 sobre card` | traço do ritmo da meta sobre o trilho índigo do anel (sobre o arco, `chart-result` / `card` acima) | Meta (anel) | **13.97** | 3 | ✓ |
 | `primary-foreground` / `primary/88 sobre background` | rótulo do botão principal em hover (hover:bg-primary/88) | Button default, Badge default | **13.01** | 7 | ✓ |
 | `destructive` / `destructive/15 sobre card` | botão destrutivo em hover (hover:bg-destructive/15) | Button destructive | **5.74** | 4.5 | ✓ |
 | `warning` / `warning/10 sobre card` | texto de aviso sobre o próprio tom (Alert/Badge warning) | Alert, Badge warning | **6.51** | 4.5 | ✓ |
@@ -151,6 +153,8 @@ Mapa de contraste do desenho v5.1 (Petković, 20/10/2026), trazido para o reposi
 | `chart-3` / `card` | série 3 | Chart | **6.69** | 3 | ✓ |
 | `chart-4` / `card` | série 4 | Chart | **9.85** | 3 | ✓ |
 | `chart-5` / `card` | série 5 | Chart | **14.22** | 3 | ✓ |
+| `foreground` / `chart-heat-1` | traço do ritmo da meta sobre o trilho verde do anel (sobre o arco, o traço se lê pela folga de `card` de 2 px: `chart-sales` / `card` acima e `foreground` / `card`) | Meta (anel) | **8.58** | 3 | ✓ |
+| `foreground` / `chart-result/18 sobre card` | traço do ritmo da meta sobre o trilho índigo do anel (sobre o arco, `chart-result` / `card` acima) | Meta (anel) | **11.31** | 3 | ✓ |
 | `primary-foreground` / `primary/88 sobre background` | rótulo do botão principal em hover (hover:bg-primary/88) | Button default, Badge default | **11.6** | 7 | ✓ |
 | `destructive` / `destructive/20 sobre card` | botão destrutivo e selo de erro no escuro (dark:bg-destructive/15, hover /20) | Button destructive, Badge destructive | **5.19** | 4.5 | ✓ |
 | `warning` / `warning/10 sobre card` | texto de aviso sobre o próprio tom (Alert/Badge warning) | Alert, Badge warning | **7.4** | 4.5 | ✓ |

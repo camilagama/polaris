@@ -152,10 +152,13 @@ test.describe("loja com venda", () => {
     const ring = meta.getByRole("img");
     await expect(ring).toHaveAttribute(
       "aria-label",
-      "53,4% da meta: R$ 2.670,60 de R$ 5.000,00"
+      "53,4% da meta: R$ 2.670,60 de R$ 5.000,00. Atrasada: o esperado até hoje era 71%."
     );
     await expect(ring).toContainText("53,4%da meta");
-    await expect(ring.locator("[data-ring-chart] svg")).toHaveAttribute(
+    await expect(
+      ring.locator("[data-ring-chart] svg:not([data-ring-marker])")
+    ).toHaveAttribute("aria-hidden", "true");
+    await expect(ring.locator("[data-ring-marker]")).toHaveAttribute(
       "aria-hidden",
       "true"
     );
@@ -1195,8 +1198,11 @@ test.describe("meta (AC-10, AC-11)", () => {
     await expect(meta.locator("[data-masked-money]")).toHaveCount(2);
     await expect(ring).toHaveAttribute(
       "aria-label",
-      "53,4% da meta: valor escondido de valor escondido"
+      "53,4% da meta: valor escondido de valor escondido. Atrasada: o esperado até hoje era 71%."
     );
+    // the pace is not a value: the word and the mark stay with the values hidden
+    await expect(meta.locator("[data-pace]")).toHaveText("Atrasada");
+    await expect(meta.locator("[data-ring-marker]")).toBeAttached();
     await expect(ring).toContainText("53,4%");
 
     server.scenario = { ...SOLD, goals: [] };

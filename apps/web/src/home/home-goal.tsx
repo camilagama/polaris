@@ -4,6 +4,7 @@ import { Badge } from "@/ui/badge";
 import { Card } from "@/ui/card";
 import { buttonVariants } from "@/ui/button";
 import { MoneyText } from "@/ui/hidden-values";
+import { PaceLine } from "@/ui/pace-line";
 import { Skeleton } from "@/ui/skeleton";
 import { OnDemandRingChart } from "@/ui/charts/on-demand";
 import {
@@ -12,6 +13,12 @@ import {
   goalProgressWidth,
   goalTitle,
 } from "../dashboard/goal-model";
+import {
+  type GoalPace,
+  goalPace,
+  goalPaceLine,
+  goalPaceSpoken,
+} from "../dashboard/goal-pace";
 import {
   MASKED_SPOKEN,
   maskMoney,
@@ -74,11 +81,13 @@ function ringColors(kind: GoalReadModel["kind"]): {
  */
 function GoalRing({
   goal,
+  pace,
   percent,
   spoken,
   width,
 }: {
   goal: GoalReadModel;
+  pace: GoalPace | null;
   percent: string;
   spoken: string;
   width: number;
@@ -96,6 +105,7 @@ function GoalRing({
         className="col-start-1 row-start-1"
         progress={width / 100}
         size={RING_SIZE}
+        {...(pace ? { marker: pace.position / 100 } : {})}
         strokeWidth={RING_WIDTH}
         {...ringColors(goal.kind)}
       />
@@ -136,6 +146,19 @@ function goalState(goal: GoalReadModel): string | null {
 const PROJECTION_HELP =
   "Estimativa: a média dos últimos 7 dias repetida até o fim da meta.";
 
+/** What it says of the mark on the ring. */
+const PACE_HELP =
+  "O traço marca onde a meta estaria hoje se as vendas fossem iguais todos os dias.";
+
+export function goalHelpText(
+  projection: GoalProjection | null,
+  pace: GoalPace | null
+): string | null {
+  const parts = [projection ? PROJECTION_HELP : null, pace ? PACE_HELP : null];
+  const text = parts.filter(Boolean).join(" ");
+  return text === "" ? null : text;
+}
+
 /** The estimate under the amounts (v7 § 3 item 9): where the current rhythm takes the goal. */
 function ProjectionLine({ projection }: { projection: GoalProjection }) {
   if (projection.kind === "no_sales") {
@@ -172,6 +195,7 @@ function ActiveGoal({
   goal,
   others,
   projection = null,
+  today = null,
 }: {
   /** "faltam 6 dias", with a connection only. */
   daysLeft?: string | null;
@@ -179,9 +203,13 @@ function ActiveGoal({
   others: number;
   /** The estimate by the rhythm of the last 7 days, with a connection and the daily series only. */
   projection?: GoalProjection | null;
+  /** The store's today, for the mark of the pace; null without a connection (no mark, no word). */
+  today?: string | null;
 }) {
   const { progress } = goal;
   const state = goalState(goal);
+  const pace = goalPace(goal, today);
+  const measured = state === null;
   const period = goalPeriodShort(goal);
   return (
     <>
@@ -201,7 +229,8 @@ function ActiveGoal({
           <GoalRing
             goal={goal}
             percent={formatGoalPercent(progress.percent)}
-            spoken={`${formatGoalPercent(progress.percent)} da meta: ${formatGoalValue(goal.kind, progress.value)} de ${formatGoalValue(goal.kind, goal.target)}`}
+            pace={pace}
+            spoken={`${formatGoalPercent(progress.percent)} da meta: ${formatGoalValue(goal.kind, progress.value)} de ${formatGoalValue(goal.kind, goal.target)}${pace ? `. ${goalPaceSpoken(pace)}` : ""}`}
             width={goalProgressWidth(progress.percent)}
           />
           <div className="grid min-w-0 gap-0.5 group-data-[pair]/row:@min-[60rem]/home:justify-items-center">
@@ -213,6 +242,7 @@ function ActiveGoal({
                 text={`de ${formatGoalValue(goal.kind, goal.target)}`}
               />
             </p>
+            {measured ? <PaceLine {...goalPaceLine(pace)} /> : null}
             {projection ? <ProjectionLine projection={projection} /> : null}
           </div>
         </div>
@@ -407,6 +437,10 @@ export function GoalBlock({
     );
   }
   const pastMonth = pastMonthOf(view, today);
+  const helpText =
+    view.kind === "active"
+      ? goalHelpText(projection, goalPace(view.goal, today))
+      : null;
   const strip = view.kind === "none" || pastMonth !== null;
   return (
     <HomeBlock
@@ -415,9 +449,7 @@ export function GoalBlock({
         : {})}
       id="home-goal"
       title={pastMonth ? monthGoalTitle(monthTitle(pastMonth)) : "Meta"}
-      {...(view.kind === "active" && projection
-        ? { help: { about: "Meta", text: PROJECTION_HELP } }
-        : {})}
+      {...(helpText ? { help: { about: "Meta", text: helpText } } : {})}
     >
       {view.kind === "active" ? (
         <ActiveGoal
@@ -425,6 +457,7 @@ export function GoalBlock({
           goal={view.goal}
           others={view.others}
           projection={projection}
+          today={today}
         />
       ) : null}
       {view.kind === "settled" ? (
