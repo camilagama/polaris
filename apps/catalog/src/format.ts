@@ -19,7 +19,7 @@ export function formatPrice(price: string): string {
 
 /**
  * The pieces of a list price for a page that sets the symbol and the cents apart: "R$", "1.234" and ",50".
- * Glued back in that order they are the text of `formatPrice`; null when it is not a price.
+ * Glued back in that order, with a space after the symbol, they are the text of `formatPrice`; null when it is not a price.
  */
 export function priceParts(
   price: string

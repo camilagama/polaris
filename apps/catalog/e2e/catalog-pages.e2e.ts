@@ -297,6 +297,20 @@ for (const size of SIZES) {
         expect(Math.min(...ratios), ratios.join(" ")).toBeGreaterThanOrEqual(
           4.5
         );
+        await page.locator(".card").first().hover();
+        await page
+          .locator(".card")
+          .first()
+          .evaluate((element) =>
+            Promise.all(element.getAnimations().map((a) => a.finished))
+          );
+        const hovered = await contrastAgainstCard(page, [
+          ".card-price .currency",
+          ".card-price .cents",
+        ]);
+        expect(Math.min(...hovered), hovered.join(" ")).toBeGreaterThanOrEqual(
+          4.5
+        );
         await open(page, PRODUCT);
         const variantRatios = await contrastAgainstCard(page, [
           ".variants .price",
@@ -402,25 +416,42 @@ test("o catálogo nunca define cookie, em nenhuma rota pública", async ({
 test.describe("a 320 px", () => {
   test.use({ viewport: { height: 640, width: 320 } });
 
-  for (const [name, url] of [
-    ["da lista", STORE],
-    ["da variante", PRODUCT],
+  for (const [name, url, holder] of [
+    ["da lista", STORE, ".card"],
+    ["da variante", PRODUCT, ".variants li"],
   ] as const) {
-    test(`o preço ${name} não quebra nem rola de lado (S-51)`, async ({
+    test(`o preço ${name} não quebra, não sai do cartão e a página não rola de lado, nem com 7 dígitos (S-51)`, async ({
       page,
     }) => {
       await open(page, url);
       const prices = page.locator(".price");
-      const count = await prices.count();
-      expect(count).toBeGreaterThan(0);
-      for (let index = 0; index < count; index += 1) {
-        // biome-ignore lint/performance/noAwaitInLoops: one price at a time, for a readable failure
-        const heights = await prices.nth(index).evaluate((element) => {
-          const rects = element.getClientRects();
-          return rects.length;
-        });
-        expect(heights).toBe(1);
-      }
+      expect(await prices.count()).toBeGreaterThan(0);
+      await prices.first().evaluate((element) => {
+        const whole = Array.from(element.childNodes).find(
+          (node) => node.nodeType === Node.TEXT_NODE
+        );
+        if (whole) {
+          whole.textContent = "1.234.567";
+        }
+      });
+      await expect(prices.first()).toHaveText("R$1.234.567,90");
+      const fit = await prices.evaluateAll(
+        (elements, selector) =>
+          elements.map((element) => {
+            const box = element.getBoundingClientRect();
+            const holderBox = element
+              .closest(selector)
+              ?.getBoundingClientRect();
+            return {
+              inside:
+                box.left >= (holderBox?.left ?? 0) &&
+                box.right <= (holderBox?.right ?? 0),
+              lines: element.getClientRects().length,
+            };
+          }),
+        holder
+      );
+      expect(fit.every((one) => one.lines === 1 && one.inside)).toBe(true);
       const overflow = await page.evaluate(
         () =>
           document.documentElement.scrollWidth -
