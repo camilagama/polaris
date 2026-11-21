@@ -9,6 +9,13 @@ import { pgWorkerdAliases } from "./scripts/workerd-harness.mjs";
 export default defineConfig({
   resolve: { alias: pgWorkerdAliases },
   test: {
+    // Random file and test order exposes tests that lean on state another test
+    // left behind. The seed is printed on every run (and by the gate on a failure);
+    // to replay it, add `seed: <seed>` to this `sequence` in your own copy, because
+    // the gate hands no arguments to Vitest. The project below has no `extends`, so
+    // it does not inherit the shuffle of the tests: it sets that itself, while the
+    // order of the files and the seed come from here.
+    sequence: { shuffle: { files: true, tests: true } },
     projects: ["apps/admin/vitest.workers-db.config.ts"],
   },
 });
