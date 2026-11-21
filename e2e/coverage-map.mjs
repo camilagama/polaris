@@ -1,0 +1,997 @@
+/**
+ * Which e2e specs a change of code can break. The pairs of `COVERAGE_MAP` go from a glob of changed code to the specs
+ * that must run for it; `scripts/ci-select-specs.mjs` reads them and falls back to the whole suite for any path no
+ * pair names. When in doubt a path maps to more specs, never to fewer.
+ *
+ * The specs run the built app, so they do not import the screens: what ties a spec to code is the screen it opens.
+ * The map therefore has two verified halves, and `COVERAGE_MAP` is derived from them:
+ *  - `SPEC_SCREENS`: the screens each spec opens (the addresses it visits, the `?screen=` of the offline lab, the
+ *    gallery). `all` is a spec that walks every screen or whose reach cannot be pinned, so it runs for any screen code.
+ *  - `DIRECTORY_SCREENS`: the screens whose import closure reaches a directory of `apps/web/src`.
+ * `scripts/ci-select-specs.test.mjs` recomputes the second half from the imports and the first from the routes, and
+ * fails with the line to add when either one is short.
+ *
+ * What the selector never maps (so it never narrows): `apps/web/src/{app-shell,lib,ui,offline,styles}`, the Worker,
+ * `packages/{contracts,domain}`, the configs, the lockfile and the helpers and fixtures of the e2e folders.
+ */
+
+/** A screen is named by the entry file of its page; the closure of its imports is what the directory table checks. */
+export const SCREEN_ENTRY_POINTS = {
+  acceptance: ["apps/web/src/legal/acceptance/acceptance-page.tsx"],
+  attention: ["apps/web/src/offline/runtime/attention-page.tsx"],
+  "closed-store": ["apps/web/src/organization/closed-store-page.tsx"],
+  customers: ["apps/web/src/customers/customers-page.tsx"],
+  dashboard: ["apps/web/src/dashboard/dashboard-page.tsx"],
+  expenses: ["apps/web/src/expenses/expenses-page.tsx"],
+  help: ["apps/web/src/help/help-page.tsx"],
+  home: ["apps/web/src/home/home-page.tsx"],
+  inventory: ["apps/web/src/inventory/inventory-page.tsx"],
+  legal: ["apps/web/src/legal/legal-app.tsx"],
+  products: ["apps/web/src/catalog/catalog-products-screen.tsx"],
+  sale: ["apps/web/src/sales/sale-page.tsx"],
+  "sale-detail": ["apps/web/src/sales/sale-detail-page.tsx"],
+  "sale-history": ["apps/web/src/sales/sale-history-page.tsx"],
+  settings: ["apps/web/src/settings/settings-screen.tsx"],
+  "sign-in": [
+    "apps/web/src/sign-in/confirm-email-page.tsx",
+    "apps/web/src/sign-in/forgot-password-page.tsx",
+    "apps/web/src/sign-in/reset-password-page.tsx",
+    "apps/web/src/sign-in/sign-in-page.tsx",
+    "apps/web/src/sign-in/sign-up-page.tsx",
+    "apps/web/src/sign-in/unlock-page.tsx",
+  ],
+  "ui-gallery": ["apps/web/src/ui-gallery/ui-gallery.tsx"],
+};
+
+/** What each address and lab query of a spec means, to compare with what the spec says it opens. */
+export const SCREEN_ROUTES = {
+  acceptance: [/\/aceite/],
+  attention: [/\/attention/, /screen=attention/, /offline-attention-lab/],
+  "closed-store": [/closed-store|loja-encerrada/],
+  customers: [/\/customers/, /screen=customers/],
+  dashboard: [/\/dashboard/, /screen=dashboard/],
+  expenses: [/\/expenses/, /screen=expenses/],
+  help: [/\/ajuda/],
+  home: [/["'`]\/["'`]/, /screen=home/],
+  inventory: [/\/inventory/, /\/stock["'`]/, /screen=stock/],
+  legal: [/\/termos/, /\/privacidade/],
+  products: [/\/products/, /\/categories/, /screen=products/],
+  sale: [/["'`]\/sales(?:["'`?])/, /screen=sale\b/],
+  "sale-detail": [/\/sales\/detail/, /screen=sale-detail/],
+  "sale-history": [/\/sales\/history/, /screen=history/],
+  settings: [
+    /\/configuracoes/,
+    /\/subscription/,
+    /\/devices/,
+    /\/payment-profiles/,
+    /\/public-catalog/,
+    /\/conta\/seguranca/,
+    /screen=(?:devices|payment-profiles|change-password)/,
+  ],
+  "sign-in": [
+    /\/entrar/,
+    /\/criar-conta/,
+    /\/confirmar-email/,
+    /\/esqueci/,
+    /\/redefinir/,
+    /\/desbloquear/,
+  ],
+  "ui-gallery": [/ui-galeria/, /ui-pecas-do-shell/],
+};
+
+/**
+ * The directories of `apps/web/src` that have a pair. Each lists the screens whose import closure reaches it: a change
+ * in `sales` can break every screen that shows a sale, not only the sale screen. The directories outside this table
+ * (`app-shell`, `lib`, `ui`, `offline`, `styles`, `pwa`, `observability`, the entry `main.tsx`) run the whole suite.
+ */
+export const DIRECTORY_SCREENS = {
+  catalog: [
+    "acceptance",
+    "closed-store",
+    "customers",
+    "dashboard",
+    "expenses",
+    "home",
+    "inventory",
+    "products",
+    "sale",
+    "sale-history",
+    "settings",
+  ],
+  customers: ["customers"],
+  dashboard: [
+    "dashboard",
+    "expenses",
+    "home",
+    "sale",
+    "sale-detail",
+    "sale-history",
+  ],
+  "data-export": ["closed-store", "home", "settings"],
+  expenses: [
+    "dashboard",
+    "expenses",
+    "home",
+    "sale",
+    "sale-detail",
+    "sale-history",
+    "settings",
+  ],
+  help: ["help"],
+  home: [
+    "acceptance",
+    "attention",
+    "closed-store",
+    "customers",
+    "dashboard",
+    "expenses",
+    "home",
+    "inventory",
+    "products",
+    "sale",
+    "sale-detail",
+    "sale-history",
+    "settings",
+  ],
+  inventory: [
+    "attention",
+    "inventory",
+    "products",
+    "sale",
+    "sale-detail",
+    "sale-history",
+  ],
+  legal: ["acceptance", "legal"],
+  organization: [
+    "acceptance",
+    "attention",
+    "closed-store",
+    "customers",
+    "dashboard",
+    "expenses",
+    "home",
+    "inventory",
+    "products",
+    "sale",
+    "sale-detail",
+    "sale-history",
+    "settings",
+    "sign-in",
+  ],
+  "payment-profiles": ["settings"],
+  sales: [
+    "acceptance",
+    "attention",
+    "closed-store",
+    "customers",
+    "dashboard",
+    "expenses",
+    "home",
+    "inventory",
+    "products",
+    "sale",
+    "sale-detail",
+    "sale-history",
+    "settings",
+  ],
+  settings: ["settings"],
+  "sign-in": [
+    "acceptance",
+    "closed-store",
+    "home",
+    "legal",
+    "products",
+    "settings",
+    "sign-in",
+  ],
+  subscription: [
+    "acceptance",
+    "attention",
+    "closed-store",
+    "customers",
+    "dashboard",
+    "expenses",
+    "home",
+    "inventory",
+    "products",
+    "sale",
+    "sale-detail",
+    "sale-history",
+    "settings",
+  ],
+  "ui-gallery": ["ui-gallery"],
+};
+
+/**
+ * Files that reach fewer screens than their directory (each file lists the screens whose import closure contains it).
+ * A path in no group takes the screens of its directory, which is the safe side: a new file runs more specs until it
+ * is listed here, and the test names the line to add only when the table is short, never when it is long.
+ */
+export const FILE_SCREENS = [
+  {
+    files: [
+      "apps/web/src/legal/acceptance/acceptance-model.ts",
+      "apps/web/src/legal/acceptance/acceptance-page.tsx",
+      "apps/web/src/legal/acceptance/acceptance-texts.ts",
+    ],
+    screens: ["acceptance"],
+  },
+  {
+    files: ["apps/web/src/catalog/thumbnail-cache.ts"],
+    screens: [
+      "acceptance",
+      "closed-store",
+      "customers",
+      "home",
+      "inventory",
+      "products",
+      "sale",
+      "settings",
+    ],
+  },
+  {
+    files: ["apps/web/src/inventory/stock-target.ts"],
+    screens: ["attention", "inventory", "products", "sale"],
+  },
+  {
+    files: ["apps/web/src/sales/last-prices-model.ts"],
+    screens: ["attention", "products", "sale"],
+  },
+  {
+    files: ["apps/web/src/sales/sale-variant-picker-model.ts"],
+    screens: ["attention", "sale"],
+  },
+  {
+    files: [
+      "apps/web/src/organization/closed-queue-section.tsx",
+      "apps/web/src/organization/closed-refresh-notice.tsx",
+      "apps/web/src/organization/closed-store-page.tsx",
+    ],
+    screens: ["closed-store"],
+  },
+  {
+    files: ["apps/web/src/organization/closed-store-model.ts"],
+    screens: ["closed-store", "home", "settings"],
+  },
+  {
+    files: [
+      "apps/web/src/data-export/data-export-cards.tsx",
+      "apps/web/src/data-export/data-export-list.tsx",
+      "apps/web/src/organization/closed-queue-model.ts",
+      "apps/web/src/organization/closure-model.ts",
+      "apps/web/src/organization/use-device-queue.ts",
+    ],
+    screens: ["closed-store", "settings"],
+  },
+  {
+    files: ["apps/web/src/sales/sale-fields.tsx"],
+    screens: [
+      "customers",
+      "dashboard",
+      "expenses",
+      "inventory",
+      "products",
+      "sale",
+      "sale-detail",
+      "settings",
+    ],
+  },
+  {
+    files: [
+      "apps/web/src/catalog/list-page-model.ts",
+      "apps/web/src/catalog/screen-parts.tsx",
+    ],
+    screens: ["customers", "expenses", "products", "sale-history", "settings"],
+  },
+  {
+    files: [
+      "apps/web/src/catalog/product-search-model.ts",
+      "apps/web/src/catalog/product-thumbnail.tsx",
+      "apps/web/src/catalog/thumbnail-queue.ts",
+      "apps/web/src/catalog/thumbnail-transport.ts",
+    ],
+    screens: ["customers", "home", "inventory", "products", "sale", "settings"],
+  },
+  {
+    files: [
+      "apps/web/src/catalog/product-fields.tsx",
+      "apps/web/src/catalog/product-list.tsx",
+      "apps/web/src/catalog/products-page-parts.tsx",
+    ],
+    screens: ["customers", "products", "settings"],
+  },
+  {
+    files: [
+      "apps/web/src/dashboard/dashboard-page.tsx",
+      "apps/web/src/dashboard/empty-result.tsx",
+      "apps/web/src/dashboard/goal-card.tsx",
+      "apps/web/src/dashboard/goal-errors.ts",
+      "apps/web/src/dashboard/goal-form.tsx",
+      "apps/web/src/dashboard/goal-history.tsx",
+      "apps/web/src/dashboard/goals-panel.tsx",
+      "apps/web/src/dashboard/offline-copy-notice.tsx",
+      "apps/web/src/dashboard/parts-bar.tsx",
+      "apps/web/src/dashboard/quality-banner.tsx",
+      "apps/web/src/dashboard/result-cards.tsx",
+      "apps/web/src/dashboard/result-chain.tsx",
+      "apps/web/src/dashboard/result-chart.tsx",
+      "apps/web/src/dashboard/use-goal-commands.ts",
+      "apps/web/src/dashboard/use-goal-history.ts",
+      "apps/web/src/dashboard/use-goals.ts",
+    ],
+    screens: ["dashboard"],
+  },
+  {
+    files: [
+      "apps/web/src/expenses/expense-errors.ts",
+      "apps/web/src/expenses/expense-fields.tsx",
+      "apps/web/src/expenses/use-command-runner.ts",
+    ],
+    screens: ["dashboard", "expenses"],
+  },
+  {
+    files: [
+      "apps/web/src/dashboard/dashboard-model.ts",
+      "apps/web/src/dashboard/goal-model.ts",
+      "apps/web/src/dashboard/missing-input.ts",
+      "apps/web/src/home/home-kpis.ts",
+      "apps/web/src/home/home-model.ts",
+      "apps/web/src/home/home-rhythm-model.ts",
+    ],
+    screens: ["dashboard", "expenses", "home", "sale-detail"],
+  },
+  {
+    files: [
+      "apps/web/src/dashboard/dashboard-errors.ts",
+      "apps/web/src/dashboard/period-picker.tsx",
+      "apps/web/src/dashboard/result-kpis.ts",
+      "apps/web/src/dashboard/result-series.ts",
+      "apps/web/src/dashboard/use-period-summary.ts",
+    ],
+    screens: ["dashboard", "home"],
+  },
+  {
+    files: [
+      "apps/web/src/catalog/product-errors.ts",
+      "apps/web/src/catalog/products-link-model.ts",
+      "apps/web/src/subscription/limit-help-model.ts",
+    ],
+    screens: ["dashboard", "home", "inventory", "products", "settings"],
+  },
+  {
+    files: ["apps/web/src/subscription/limit-help.tsx"],
+    screens: ["dashboard", "home", "products", "settings"],
+  },
+  {
+    files: [
+      "apps/web/src/expenses/expense-categories-panel.tsx",
+      "apps/web/src/expenses/expense-category-form.tsx",
+      "apps/web/src/expenses/expense-filters.tsx",
+      "apps/web/src/expenses/expense-form.tsx",
+      "apps/web/src/expenses/expense-list.tsx",
+      "apps/web/src/expenses/expense-rule-form.tsx",
+      "apps/web/src/expenses/expense-rule-model.ts",
+      "apps/web/src/expenses/expense-rules-panel.tsx",
+      "apps/web/src/expenses/expense-view.ts",
+      "apps/web/src/expenses/expenses-page.tsx",
+      "apps/web/src/expenses/month-picker.tsx",
+      "apps/web/src/expenses/use-expense-categories.ts",
+      "apps/web/src/expenses/use-expense-list.ts",
+      "apps/web/src/expenses/use-expense-rules.ts",
+      "apps/web/src/expenses/use-form-dialog.ts",
+    ],
+    screens: ["expenses"],
+  },
+  {
+    files: [
+      "apps/web/src/home/home-copy.ts",
+      "apps/web/src/home/previous-window-copy.ts",
+      "apps/web/src/home/rhythm-copy.ts",
+    ],
+    screens: ["expenses", "home", "sale-detail"],
+  },
+  {
+    files: [
+      "apps/web/src/home/closed-store-line.tsx",
+      "apps/web/src/home/home-attention.tsx",
+      "apps/web/src/home/home-chart.tsx",
+      "apps/web/src/home/home-figures.tsx",
+      "apps/web/src/home/home-goal.tsx",
+      "apps/web/src/home/home-kpi-cards.tsx",
+      "apps/web/src/home/home-lower-blocks.tsx",
+      "apps/web/src/home/home-page.tsx",
+      "apps/web/src/home/home-parts.tsx",
+      "apps/web/src/home/home-period-row.tsx",
+      "apps/web/src/home/home-period.ts",
+      "apps/web/src/home/home-rhythm.tsx",
+      "apps/web/src/home/period-control.ts",
+      "apps/web/src/home/use-first-steps-memory.ts",
+      "apps/web/src/home/use-home-period.ts",
+      "apps/web/src/home/use-home-plan-limit.ts",
+      "apps/web/src/home/use-home.ts",
+    ],
+    screens: ["home"],
+  },
+  {
+    files: [
+      "apps/web/src/inventory/inventory-page.tsx",
+      "apps/web/src/inventory/queue-offline-stock.ts",
+      "apps/web/src/inventory/stock-action-strip.tsx",
+      "apps/web/src/inventory/stock-command-panel.tsx",
+      "apps/web/src/inventory/stock-filters.tsx",
+      "apps/web/src/inventory/stock-list-model.ts",
+      "apps/web/src/inventory/stock-panel-fields.tsx",
+      "apps/web/src/inventory/stock-row-actions.tsx",
+      "apps/web/src/inventory/use-stock-attention.ts",
+      "apps/web/src/inventory/use-stock-entry-link.ts",
+      "apps/web/src/inventory/use-stock-list.ts",
+    ],
+    screens: ["inventory"],
+  },
+  {
+    files: ["apps/web/src/inventory/stock-command-model.ts"],
+    screens: ["inventory", "products"],
+  },
+  {
+    files: ["apps/web/src/inventory/stock-entry-link.ts"],
+    screens: ["inventory", "sale", "sale-detail", "sale-history"],
+  },
+  {
+    files: [
+      "apps/web/src/legal/legal-app.tsx",
+      "apps/web/src/legal/legal-content.ts",
+      "apps/web/src/legal/legal-frame.tsx",
+      "apps/web/src/legal/legal-page.tsx",
+      "apps/web/src/legal/markdown.ts",
+    ],
+    screens: ["legal"],
+  },
+  {
+    files: [
+      "apps/web/src/catalog/catalog-products-screen.tsx",
+      "apps/web/src/catalog/categories-model.ts",
+      "apps/web/src/catalog/categories-page.tsx",
+      "apps/web/src/catalog/category-form.tsx",
+      "apps/web/src/catalog/category-list.tsx",
+      "apps/web/src/catalog/local-products.ts",
+      "apps/web/src/catalog/media-commands-model.ts",
+      "apps/web/src/catalog/media-crop-model.ts",
+      "apps/web/src/catalog/product-commands.ts",
+      "apps/web/src/catalog/product-delete-dialog.tsx",
+      "apps/web/src/catalog/product-dialog.tsx",
+      "apps/web/src/catalog/product-form.tsx",
+      "apps/web/src/catalog/product-import-csv.ts",
+      "apps/web/src/catalog/product-import-failed-csv.ts",
+      "apps/web/src/catalog/product-import-rows.ts",
+      "apps/web/src/catalog/product-import-send.ts",
+      "apps/web/src/catalog/product-import/import-file-step.tsx",
+      "apps/web/src/catalog/product-import/import-frame.tsx",
+      "apps/web/src/catalog/product-import/import-model.ts",
+      "apps/web/src/catalog/product-import/import-preview-step.tsx",
+      "apps/web/src/catalog/product-import/import-result-step.tsx",
+      "apps/web/src/catalog/product-import/import-rows-table.tsx",
+      "apps/web/src/catalog/product-import/import-run-step.tsx",
+      "apps/web/src/catalog/product-import/product-import-dialog.tsx",
+      "apps/web/src/catalog/product-import/use-product-import.ts",
+      "apps/web/src/catalog/product-media-crop.tsx",
+      "apps/web/src/catalog/product-media-file-picker.tsx",
+      "apps/web/src/catalog/product-media-list.tsx",
+      "apps/web/src/catalog/product-media-panel.tsx",
+      "apps/web/src/catalog/product-opening-model.ts",
+      "apps/web/src/catalog/product-variant-parts.tsx",
+      "apps/web/src/catalog/product-variant-price-model.ts",
+      "apps/web/src/catalog/product-variant-price-section.tsx",
+      "apps/web/src/catalog/product-variant-sku-section.tsx",
+      "apps/web/src/catalog/product-variants-form.tsx",
+      "apps/web/src/catalog/product-variants-model.ts",
+      "apps/web/src/catalog/product-variants-panel.tsx",
+      "apps/web/src/catalog/products-page.tsx",
+      "apps/web/src/catalog/use-product-delete.ts",
+      "apps/web/src/catalog/use-products-data.ts",
+      "apps/web/src/catalog/use-products-link.ts",
+    ],
+    screens: ["products"],
+  },
+  {
+    files: [
+      "apps/web/src/sales/confirm-on-server.ts",
+      "apps/web/src/sales/confirm-outcome.ts",
+      "apps/web/src/sales/first-sale-id.ts",
+      "apps/web/src/sales/last-payment-model.ts",
+      "apps/web/src/sales/queue-offline-sale.ts",
+      "apps/web/src/sales/sale-confirmed-panel.tsx",
+      "apps/web/src/sales/sale-draft-bar.tsx",
+      "apps/web/src/sales/sale-draft-restore.ts",
+      "apps/web/src/sales/sale-item-editor.tsx",
+      "apps/web/src/sales/sale-page.tsx",
+      "apps/web/src/sales/sale-payment-section.tsx",
+      "apps/web/src/sales/sale-variant-picker.tsx",
+      "apps/web/src/sales/use-sale-catalog.ts",
+      "apps/web/src/sales/use-sale-draft-stamps.ts",
+    ],
+    screens: ["sale"],
+  },
+  {
+    files: [
+      "apps/web/src/sales/operation-failure-notice.tsx",
+      "apps/web/src/sales/sale-cancel-panel.tsx",
+      "apps/web/src/sales/sale-detail-page.tsx",
+      "apps/web/src/sales/sale-id-missing.tsx",
+      "apps/web/src/sales/sale-notice-region.tsx",
+      "apps/web/src/sales/sale-operation-actions.tsx",
+      "apps/web/src/sales/sale-reason-fields.tsx",
+      "apps/web/src/sales/sale-receipt.tsx",
+      "apps/web/src/sales/sale-return-panel.tsx",
+      "apps/web/src/sales/sale-return-table.tsx",
+      "apps/web/src/sales/sale-timeline.tsx",
+      "apps/web/src/sales/use-step-focus.ts",
+    ],
+    screens: ["sale-detail"],
+  },
+  {
+    files: ["apps/web/src/sales/sale-history-list.tsx"],
+    screens: ["sale-detail", "sale-history"],
+  },
+  {
+    files: [
+      "apps/web/src/sales/local-history.ts",
+      "apps/web/src/sales/sale-history-empty.tsx",
+      "apps/web/src/sales/sale-history-filters.tsx",
+      "apps/web/src/sales/sale-history-page.tsx",
+      "apps/web/src/sales/use-history-period-total.ts",
+      "apps/web/src/sales/use-sale-history.ts",
+    ],
+    screens: ["sale-history"],
+  },
+  {
+    files: [
+      "apps/web/src/sales/confirmed-sale-parts.tsx",
+      "apps/web/src/sales/sale-customer-link-model.ts",
+      "apps/web/src/sales/sale-customer-panel.tsx",
+    ],
+    screens: ["sale", "sale-detail"],
+  },
+  {
+    files: [
+      "apps/web/src/sales/sale-cancellation-model.ts",
+      "apps/web/src/sales/sale-history-model.ts",
+      "apps/web/src/sales/sale-return-model.ts",
+      "apps/web/src/sales/sale-summary-panel.tsx",
+    ],
+    screens: ["sale", "sale-detail", "sale-history"],
+  },
+  {
+    files: [
+      "apps/web/src/sales/offline-sale-panels.tsx",
+      "apps/web/src/sales/pending-sales.ts",
+      "apps/web/src/sales/sale-count-label.tsx",
+      "apps/web/src/sales/sale-count-text.ts",
+    ],
+    screens: ["sale", "sale-history"],
+  },
+  {
+    files: [
+      "apps/web/src/catalog/public-catalog-errors.ts",
+      "apps/web/src/catalog/public-catalog-model.ts",
+      "apps/web/src/catalog/public-catalog-page.tsx",
+      "apps/web/src/catalog/public-catalog-panels.tsx",
+      "apps/web/src/data-export/data-export-page.tsx",
+      "apps/web/src/organization/close-store-section.tsx",
+      "apps/web/src/sign-in/change-password-page.tsx",
+      "apps/web/src/subscription/subscription-commands-model.ts",
+      "apps/web/src/subscription/subscription-commands.tsx",
+      "apps/web/src/subscription/subscription-model.ts",
+      "apps/web/src/subscription/subscription-offer.tsx",
+      "apps/web/src/subscription/subscription-page.tsx",
+      "apps/web/src/subscription/subscription-parts.tsx",
+      "apps/web/src/subscription/subscription-waiting.tsx",
+    ],
+    screens: ["settings"],
+  },
+  {
+    files: ["apps/web/src/sign-in/new-password-field.tsx"],
+    screens: ["settings", "sign-in"],
+  },
+  {
+    files: [
+      "apps/web/src/sign-in/confirm-email-page.tsx",
+      "apps/web/src/sign-in/email-sign-in-form.tsx",
+      "apps/web/src/sign-in/forgot-password-page.tsx",
+      "apps/web/src/sign-in/google-start.ts",
+      "apps/web/src/sign-in/reset-password-page.tsx",
+      "apps/web/src/sign-in/sign-in-page.tsx",
+      "apps/web/src/sign-in/sign-up-page.tsx",
+      "apps/web/src/sign-in/unlock-page.tsx",
+    ],
+    screens: ["sign-in"],
+  },
+];
+
+/**
+ * The screens each spec opens. `all`: it walks every screen or its reach is not pinned, so any screen code selects it.
+ * `lab`: it opens a lab of the offline build (`apps/web/src/offline-poc`) and no screen. `admin`: it reads the sheet of
+ * the Admin app.
+ */
+export const SPEC_SCREENS = {
+  "apps/web/e2e-pwa/admin-waiting-alignment.e2e.ts": "admin",
+  "apps/web/e2e-pwa/app-shell.e2e.ts": "all",
+  "apps/web/e2e-pwa/boot-retry.e2e.ts": ["home", "inventory", "dashboard"],
+  "apps/web/e2e-pwa/dialog-voltar.e2e.ts": ["legal", "ui-gallery"],
+  "apps/web/e2e-pwa/home-offline.e2e.ts": ["home"],
+  "apps/web/e2e-pwa/lazy-retry.e2e.ts": ["home"],
+  "apps/web/e2e-pwa/legal-pages.e2e.ts": ["home", "legal"],
+  "apps/web/e2e-pwa/motion-level.e2e.ts": "all",
+  "apps/web/e2e-pwa/product-thumbnail.e2e.ts": ["ui-gallery"],
+  "apps/web/e2e-pwa/recarga-com-worker.e2e.ts": ["sign-in"],
+  "apps/web/e2e-pwa/run-clock-for.e2e.ts": ["home"],
+  "apps/web/e2e-pwa/sair-e-recarregar.e2e.ts": ["home", "sign-in"],
+  "apps/web/e2e-pwa/sale-detail-operations.e2e.ts": ["sale-detail"],
+  "apps/web/e2e-pwa/sale-detail-ordem.e2e.ts": [
+    "sale",
+    "sale-detail",
+    "inventory",
+  ],
+  "apps/web/e2e-pwa/sale-draft.e2e.ts": ["home", "sale", "inventory"],
+  "apps/web/e2e-pwa/show-screen-alone.e2e.ts": "all",
+  "apps/web/e2e-pwa/sign-in.e2e.ts": ["home", "sign-in"],
+  "apps/web/e2e-pwa/ui-acao-no-titulo.e2e.ts": "all",
+  "apps/web/e2e-pwa/ui-botao-atualizar.e2e.ts": "all",
+  "apps/web/e2e-pwa/ui-charts.e2e.ts": ["home", "ui-gallery"],
+  "apps/web/e2e-pwa/ui-components.e2e.ts": ["ui-gallery"],
+  "apps/web/e2e-pwa/ui-csp.e2e.ts": ["home", "ui-gallery"],
+  "apps/web/e2e-pwa/ui-date-pickers-digitar.e2e.ts": [
+    "inventory",
+    "ui-gallery",
+  ],
+  "apps/web/e2e-pwa/ui-date-pickers-leitor-de-tela.e2e.ts": ["ui-gallery"],
+  "apps/web/e2e-pwa/ui-date-pickers.e2e.ts": ["ui-gallery"],
+  "apps/web/e2e-pwa/ui-dialog-form.e2e.ts": ["ui-gallery"],
+  "apps/web/e2e-pwa/ui-filter-bar-dialog.e2e.ts": ["legal", "ui-gallery"],
+  "apps/web/e2e-pwa/ui-filter-bar.e2e.ts": ["ui-gallery"],
+  "apps/web/e2e-pwa/ui-guardrails/controle-medidas.e2e.ts": "all",
+  "apps/web/e2e-pwa/ui-guardrails/controle-movimento.e2e.ts": "all",
+  "apps/web/e2e-pwa/ui-guardrails/telas-01.e2e.ts": "all",
+  "apps/web/e2e-pwa/ui-guardrails/telas-02.e2e.ts": "all",
+  "apps/web/e2e-pwa/ui-guardrails/telas-03.e2e.ts": "all",
+  "apps/web/e2e-pwa/ui-guardrails/telas-04.e2e.ts": "all",
+  "apps/web/e2e-pwa/ui-guardrails/telas-05.e2e.ts": "all",
+  "apps/web/e2e-pwa/ui-guardrails/telas-06.e2e.ts": "all",
+  "apps/web/e2e-pwa/ui-guardrails/telas-07.e2e.ts": "all",
+  "apps/web/e2e-pwa/ui-guardrails/telas-08.e2e.ts": "all",
+  "apps/web/e2e-pwa/ui-guardrails/telas-09.e2e.ts": "all",
+  "apps/web/e2e-pwa/ui-guardrails/telas-10.e2e.ts": "all",
+  "apps/web/e2e-pwa/ui-guardrails/telas-11.e2e.ts": "all",
+  "apps/web/e2e-pwa/ui-guardrails/telas-12.e2e.ts": "all",
+  "apps/web/e2e-pwa/ui-guardrails/telas-13.e2e.ts": "all",
+  "apps/web/e2e-pwa/ui-guardrails/telas-14.e2e.ts": "all",
+  "apps/web/e2e-pwa/ui-help-tip.e2e.ts": ["dashboard", "ui-gallery"],
+  "apps/web/e2e-pwa/ui-history-line.e2e.ts": ["sale-history"],
+  "apps/web/e2e-pwa/ui-icones.e2e.ts": "all",
+  "apps/web/e2e-pwa/ui-loading-skeleton.e2e.ts": [
+    "sale",
+    "sale-history",
+    "sale-detail",
+    "inventory",
+  ],
+  "apps/web/e2e-pwa/ui-mesmo-botao.e2e.ts": "all",
+  "apps/web/e2e-pwa/ui-money-mascara.e2e.ts": ["inventory", "ui-gallery"],
+  "apps/web/e2e-pwa/ui-sem-caixa-alta.e2e.ts": "all",
+  "apps/web/e2e-pwa/ui-shell-isolation.e2e.ts": "all",
+  "apps/web/e2e-pwa/ui-sidebar-menu.e2e.ts": "all",
+  "apps/web/e2e-pwa/ui-stock-attention.e2e.ts": [
+    "inventory",
+    "settings",
+    "attention",
+  ],
+  "apps/web/e2e-pwa/ui-stock-cost.e2e.ts": ["inventory"],
+  "apps/web/e2e-pwa/ui-vao-contagem.e2e.ts": ["inventory", "products"],
+  "apps/web/e2e-pwa/ui-visual.e2e.ts": "all",
+  "apps/web/e2e-pwa/update-moments.e2e.ts": ["home", "sale"],
+  "apps/web/e2e-pwa/update.e2e.ts": "all",
+  "apps/web/e2e-pwa/valores-escondidos-todas-as-telas.e2e.ts": "all",
+  "apps/web/e2e-pwa/valores-escondidos.e2e.ts": "all",
+  "apps/web/e2e-real/cls/layout-shift.e2e.ts": "all",
+  "apps/web/e2e-real/harness/chave-do-runtime.e2e.ts": ["home", "settings"],
+  "apps/web/e2e-real/harness/relogio-retry.e2e.ts": ["home"],
+  "apps/web/e2e-real/harness/relogio.e2e.ts": ["home"],
+  "apps/web/e2e-real/jornadas/cliente.e2e.ts": ["home", "sale", "customers"],
+  "apps/web/e2e-real/jornadas/despesa.e2e.ts": [
+    "home",
+    "dashboard",
+    "expenses",
+  ],
+  "apps/web/e2e-real/jornadas/devolucao.e2e.ts": [
+    "home",
+    "sale-detail",
+    "dashboard",
+  ],
+  "apps/web/e2e-real/jornadas/dicas-por-duas-portas.e2e.ts": [
+    "home",
+    "settings",
+  ],
+  "apps/web/e2e-real/jornadas/encerramento-aparelho.e2e.ts": [
+    "home",
+    "sale",
+    "closed-store",
+    "attention",
+  ],
+  "apps/web/e2e-real/jornadas/encerramento.e2e.ts": [
+    "home",
+    "settings",
+    "closed-store",
+  ],
+  "apps/web/e2e-real/jornadas/erro-de-tela.e2e.ts": [
+    "home",
+    "products",
+    "customers",
+  ],
+  "apps/web/e2e-real/jornadas/estoque-produto-ida-e-volta.e2e.ts": [
+    "home",
+    "inventory",
+  ],
+  "apps/web/e2e-real/jornadas/estoque-produto-sem-conexao.e2e.ts": [
+    "home",
+    "inventory",
+  ],
+  "apps/web/e2e-real/jornadas/estoque.e2e.ts": ["home", "sale", "inventory"],
+  "apps/web/e2e-real/jornadas/excluir-produto-arquivado.e2e.ts": [
+    "home",
+    "sale-history",
+    "sale-detail",
+    "products",
+  ],
+  "apps/web/e2e-real/jornadas/historico-total-liquido.e2e.ts": [
+    "home",
+    "dashboard",
+  ],
+  "apps/web/e2e-real/jornadas/inicio-grade.e2e.ts": ["home"],
+  "apps/web/e2e-real/jornadas/inicio.e2e.ts": ["home"],
+  "apps/web/e2e-real/jornadas/onboarding.e2e.ts": [
+    "home",
+    "products",
+    "sign-in",
+  ],
+  "apps/web/e2e-real/jornadas/primeira-venda.e2e.ts": [
+    "home",
+    "sale",
+    "dashboard",
+    "expenses",
+  ],
+  "apps/web/e2e-real/jornadas/produto.e2e.ts": ["home", "sale", "products"],
+  "apps/web/e2e-real/jornadas/resultado-historico-offline.e2e.ts": [
+    "home",
+    "dashboard",
+  ],
+  "apps/web/e2e-real/jornadas/resultado-historico.e2e.ts": [
+    "home",
+    "dashboard",
+  ],
+  "apps/web/e2e-real/jornadas/sair-e-recarregar.e2e.ts": ["home", "sign-in"],
+  "apps/web/e2e-real/jornadas/valor-kpi.e2e.ts": ["home", "dashboard"],
+  "apps/web/e2e-real/jornadas/venda-saldo-curto-sem-conexao.e2e.ts": [
+    "home",
+    "sale",
+  ],
+  "apps/web/e2e-real/jornadas/venda-sem-estoque.e2e.ts": [
+    "home",
+    "sale",
+    "inventory",
+  ],
+  "apps/web/e2e-real/jornadas/venda.e2e.ts": ["home", "sale"],
+  "apps/web/e2e-real/pilha/fumaca.e2e.ts": ["home", "dashboard"],
+  "apps/web/e2e-real/pilha/hyperdrive-papeis.e2e.ts": ["home"],
+  "apps/web/e2e-real/pilha/isolamento.e2e.ts": ["home"],
+  "apps/web/e2e-real/pilha/limite-de-taxa.e2e.ts": ["home"],
+  "apps/web/e2e/app-shell.e2e.ts": "all",
+  "apps/web/e2e/breakpoints-rem.e2e.ts": ["home", "sale", "products"],
+  "apps/web/e2e/carregando-so-leitor.e2e.ts": ["home", "customers", "expenses"],
+  "apps/web/e2e/clientes-erros.e2e.ts": ["customers"],
+  "apps/web/e2e/clientes-reflow.e2e.ts": ["inventory", "customers"],
+  "apps/web/e2e/close-store.e2e.ts": ["settings", "closed-store"],
+  "apps/web/e2e/closed-store-device.e2e.ts": [
+    "sale",
+    "closed-store",
+    "sign-in",
+  ],
+  "apps/web/e2e/closed-store-routing.e2e.ts": ["home", "closed-store"],
+  "apps/web/e2e/closed-store-sale.e2e.ts": ["sale"],
+  "apps/web/e2e/closed-store.e2e.ts": ["home", "closed-store", "sign-in"],
+  "apps/web/e2e/dashboard/caixa-do-grafico.e2e.ts": ["home", "dashboard"],
+  "apps/web/e2e/dashboard/faixa-de-kpis.e2e.ts": ["home", "dashboard"],
+  "apps/web/e2e/dashboard/grafico-e-periodos.e2e.ts": ["home", "dashboard"],
+  "apps/web/e2e/dashboard/mes-e-copia.e2e.ts": [
+    "home",
+    "sale",
+    "dashboard",
+    "expenses",
+  ],
+  "apps/web/e2e/dashboard/periodo-e-controle.e2e.ts": ["home", "dashboard"],
+  "apps/web/e2e/dashboard/reflow-320.e2e.ts": [
+    "home",
+    "inventory",
+    "dashboard",
+  ],
+  "apps/web/e2e/data-export-screen.e2e.ts": ["settings"],
+  "apps/web/e2e/despesas-primeira-tela.e2e.ts": ["home", "expenses"],
+  "apps/web/e2e/despesas-reflow.e2e.ts": ["inventory", "expenses"],
+  "apps/web/e2e/email-preference-reflow.e2e.ts": ["inventory", "settings"],
+  "apps/web/e2e/email-preference.e2e.ts": ["settings"],
+  "apps/web/e2e/estoque-reflow.e2e.ts": ["inventory", "products"],
+  "apps/web/e2e/expenses.e2e.ts": ["inventory", "expenses"],
+  "apps/web/e2e/formas-de-receber-sem-conexao.e2e.ts": ["settings"],
+  "apps/web/e2e/goals.e2e.ts": ["dashboard"],
+  "apps/web/e2e/historico-reflow.e2e.ts": ["sale-history", "inventory"],
+  "apps/web/e2e/history-period-total.e2e.ts": ["sale-history"],
+  "apps/web/e2e/history-period.e2e.ts": ["sale-history"],
+  "apps/web/e2e/history-total.e2e.ts": ["sale-history"],
+  "apps/web/e2e/home/cartoes-e-grafico.e2e.ts": ["home"],
+  "apps/web/e2e/home/inicio-visao.e2e.ts": "all",
+  "apps/web/e2e/home/janela-anterior.e2e.ts": [
+    "home",
+    "sale-detail",
+    "expenses",
+  ],
+  "apps/web/e2e/home/offline-e-leituras.e2e.ts": ["home", "sale"],
+  "apps/web/e2e/home/ritmo-e-plano.e2e.ts": ["home", "settings"],
+  "apps/web/e2e/home/valores-e-ranking.e2e.ts": [
+    "home",
+    "inventory",
+    "products",
+  ],
+  "apps/web/e2e/legal-acceptance.e2e.ts": "all",
+  "apps/web/e2e/leitor-de-tela-shell.e2e.ts": ["home", "products"],
+  "apps/web/e2e/lote-2-telas.e2e.ts": ["products", "customers", "settings"],
+  "apps/web/e2e/money-nowrap-reflow.e2e.ts": [
+    "sale",
+    "sale-detail",
+    "inventory",
+  ],
+  "apps/web/e2e/near-limit-notice.e2e.ts": ["products", "settings"],
+  "apps/web/e2e/offline-attention.e2e.ts": ["settings", "attention"],
+  "apps/web/e2e/offline-csp.e2e.ts": "lab",
+  "apps/web/e2e/offline-devices.e2e.ts": [
+    "home",
+    "customers",
+    "settings",
+    "sign-in",
+  ],
+  "apps/web/e2e/offline-entry.e2e.ts": ["home", "sign-in"],
+  "apps/web/e2e/offline-kill-reopen.e2e.ts": ["customers"],
+  "apps/web/e2e/offline-local-collections.e2e.ts": "lab",
+  "apps/web/e2e/offline-local-store-open-lock.e2e.ts": "lab",
+  "apps/web/e2e/offline-logout.e2e.ts": "lab",
+  "apps/web/e2e/offline-outbox.e2e.ts": "lab",
+  "apps/web/e2e/offline-poc.e2e.ts": "lab",
+  "apps/web/e2e/offline-runtime-api.e2e.ts": ["sale", "settings", "sign-in"],
+  "apps/web/e2e/offline-runtime.e2e.ts": "lab",
+  "apps/web/e2e/offline-sair.e2e.ts": ["customers", "settings", "sign-in"],
+  "apps/web/e2e/offline-screens-rede-em-voo.e2e.ts": ["customers"],
+  "apps/web/e2e/offline-screens.e2e.ts": ["inventory"],
+  "apps/web/e2e/offline-sync-cadence.e2e.ts": ["customers", "settings"],
+  "apps/web/e2e/offline-thumbnails.e2e.ts": "lab",
+  "apps/web/e2e/parar-dicas-reflow.e2e.ts": ["inventory"],
+  "apps/web/e2e/password-screens.e2e.ts": ["home", "settings", "sign-in"],
+  "apps/web/e2e/payment-profiles-screen.e2e.ts": ["settings"],
+  "apps/web/e2e/pendencias-reflow.e2e.ts": ["home", "inventory", "attention"],
+  "apps/web/e2e/plan-limits.e2e.ts": ["products", "dashboard", "settings"],
+  "apps/web/e2e/product-import.e2e.ts": ["products"],
+  "apps/web/e2e/product-limit-plan.e2e.ts": ["products", "settings"],
+  "apps/web/e2e/product-media-screen.e2e.ts": ["products"],
+  "apps/web/e2e/product-opening-stock.e2e.ts": ["sale", "products"],
+  "apps/web/e2e/product-thumbnails-screens.e2e.ts": [
+    "sale",
+    "inventory",
+    "products",
+  ],
+  "apps/web/e2e/products-screen.e2e.ts": ["inventory", "products"],
+  "apps/web/e2e/reflow-helper.e2e.ts": ["inventory"],
+  "apps/web/e2e/reflow-rotas.e2e.ts": "all",
+  "apps/web/e2e/sale-columns.e2e.ts": ["home", "sale"],
+  "apps/web/e2e/sale-draft-midnight.e2e.ts": ["sale"],
+  "apps/web/e2e/sale-item-reflow.e2e.ts": ["sale", "inventory"],
+  "apps/web/e2e/sale-screen.e2e.ts": ["sale"],
+  "apps/web/e2e/session-ended-screens.e2e.ts": [
+    "sale",
+    "products",
+    "dashboard",
+  ],
+  "apps/web/e2e/session-ended.e2e.ts": ["products", "sign-in"],
+  "apps/web/e2e/settings-groups.e2e.ts": ["inventory", "settings"],
+  "apps/web/e2e/settings-tabs-draft.e2e.ts": ["settings"],
+  "apps/web/e2e/shell-header.e2e.ts": "all",
+  "apps/web/e2e/shell-reflow.e2e.ts": "all",
+  "apps/web/e2e/sign-in.e2e.ts": ["home", "sale-history", "legal", "sign-in"],
+  "apps/web/e2e/stock-panel-mount.e2e.ts": ["inventory"],
+  "apps/web/e2e/stock-screen.e2e.ts": ["home", "inventory", "products"],
+  "apps/web/e2e/subscription-commands.e2e.ts": ["settings"],
+  "apps/web/e2e/subscription-screen.e2e.ts": ["home", "expenses", "settings"],
+  "apps/web/e2e/subtitulos-no-i.e2e.ts": "all",
+  "apps/web/e2e/turnstile-real.e2e.ts": ["sign-in"],
+  "apps/web/e2e/usabilidade-formularios.e2e.ts": ["settings"],
+  "apps/web/e2e/usabilidade-lote-1.e2e.ts": ["home", "settings", "sign-in"],
+  "apps/web/e2e/venda-trocar-preco.e2e.ts": ["sale"],
+};
+
+const SPEC_FOLDERS = [
+  "apps/web/e2e/",
+  "apps/web/e2e-pwa/",
+  "apps/web/e2e-real/",
+];
+
+const specsOf = (matches) =>
+  Object.entries(SPEC_SCREENS)
+    .filter(([, screens]) => matches(screens))
+    .map(([spec]) => spec);
+
+/** Specs that run for any change of screen code. */
+export const ALL_SCREEN_SPECS = specsOf((screens) => screens === "all");
+
+/** The specs of the screens in `names`, plus the ones that run for any screen. */
+export function specsForScreens(names) {
+  return [
+    ...ALL_SCREEN_SPECS,
+    ...specsOf(
+      (screens) =>
+        Array.isArray(screens) && screens.some((name) => names.includes(name))
+    ),
+  ].sort();
+}
+
+/**
+ * Pairs `{ code, specs }`: a changed path selects the `specs` (globs or paths) of the FIRST pair whose `code` globs
+ * match it, so a narrow pair goes before the wider one that would also match. `screens`, when present, is what the
+ * test checks against the imports. An empty `specs` says no spec reads the path; the test greps the e2e folders to
+ * keep that true.
+ */
+export const COVERAGE_MAP = [
+  {
+    // a unit test is no part of any bundle; no source file imports one
+    code: ["apps/web/src/**/*.test.ts", "apps/web/src/**/*.test.tsx"],
+    specs: [],
+  },
+  {
+    // no file of the e2e folders reads prose
+    code: ["docs/**", "doc/**", "*.md", ".claude/skills/**/*.md"],
+    specs: [],
+  },
+  ...FILE_SCREENS.map(({ files, screens }) => ({
+    code: files,
+    screens,
+    specs: specsForScreens(screens),
+  })),
+  {
+    // the page `/ui-pecas-do-shell` of the gallery specs is a lab of the offline build, which also serves `apps/web/e2e`
+    code: ["apps/web/src/offline-poc/screens-lab-shell-pieces.tsx"],
+    specs: [...specsForScreens(["ui-gallery"]), "apps/web/e2e/**/*.e2e.ts"],
+  },
+  {
+    // the labs of the offline build serve only the specs of `apps/web/e2e`
+    code: ["apps/web/src/offline-poc/**"],
+    specs: ["apps/web/e2e/**/*.e2e.ts"],
+  },
+  {
+    // the Worker is stubbed by every spec but the real stack's; two stubbed specs import the server's own modules
+    code: ["apps/web/src/server/**"],
+    specs: [
+      "apps/web/e2e-real/**/*.e2e.ts",
+      "apps/web/e2e/offline-sair.e2e.ts",
+      "apps/web/e2e/parar-dicas-reflow.e2e.ts",
+    ],
+  },
+  {
+    code: ["apps/web/e2e-pwa/ui-visual.e2e.ts-snapshots/**"],
+    specs: ["apps/web/e2e-pwa/ui-visual.e2e.ts"],
+  },
+  {
+    // the spec reads this sheet from disk; nothing else in the e2e folders reads the Admin app
+    code: ["apps/admin/ui/**"],
+    specs: ["apps/web/e2e-pwa/admin-waiting-alignment.e2e.ts"],
+  },
+  ...Object.entries(DIRECTORY_SCREENS).map(([directory, screens]) => ({
+    code: [`apps/web/src/${directory}/**`],
+    screens,
+    specs: specsForScreens(screens),
+  })),
+];
+
+export { SPEC_FOLDERS };
