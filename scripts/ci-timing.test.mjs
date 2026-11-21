@@ -5,6 +5,7 @@ import { deflateRawSync } from "node:zlib";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   billedMinutes,
+  databaseWallOf,
   groupOf,
   percentile,
   renderMarkdown,
@@ -217,6 +218,69 @@ describe("billedMinutes and wallOf", () => {
       job("b", { end: 500, installEnd: 50, started: 3 }),
     ];
     expect(wallOf({ run_started_at: at(-20) }, jobs)).toBe(520);
+  });
+});
+
+describe("databaseWallOf", () => {
+  const gates = (name, started, end, conclusion = "success") => ({
+    ...job(name, { end, installEnd: started + 50, started }),
+    conclusion,
+  });
+
+  it("is the one job's own time before the split", () => {
+    expect(
+      databaseWallOf([
+        job("Checks", { end: 400, installEnd: 60, started: 3 }),
+        gates("PostgreSQL 18 gates", 10, 310),
+      ])
+    ).toBe(300);
+  });
+
+  it("runs from the start of the first part to the end of the last, and leaves the collecting job out", () => {
+    expect(
+      databaseWallOf([
+        gates("PostgreSQL 18 gates (definer-hardening)", 40, 250),
+        gates("PostgreSQL 18 gates (main)", 12, 230),
+        gates("PostgreSQL 18 gates", 260, 275),
+      ])
+    ).toBe(238);
+  });
+
+  it("leaves out a cancelled job, which has times but no result", () => {
+    expect(
+      databaseWallOf([
+        gates("PostgreSQL 18 gates (main)", 12, 230),
+        gates("PostgreSQL 18 gates (definer-hardening)", 40, 900, "cancelled"),
+      ])
+    ).toBe(218);
+  });
+
+  it("skips a skipped job and gives null when none ran", () => {
+    expect(
+      databaseWallOf([
+        gates("PostgreSQL 18 gates (main)", 12, 230, "skipped"),
+        gates("PostgreSQL 18 gates", 12, 230, "skipped"),
+      ])
+    ).toBeNull();
+    expect(
+      databaseWallOf([job("Checks", { end: 9, installEnd: 5, started: 1 })])
+    ).toBeNull();
+  });
+
+  it("reaches the summary and the markdown", () => {
+    const text = renderMarkdown({
+      pull_request: summarize([
+        {
+          jobs: [
+            gates("PostgreSQL 18 gates (main)", 12, 230),
+            gates("PostgreSQL 18 gates (definer-hardening)", 40, 250),
+          ],
+          run: { id: 1, run_started_at: at(0) },
+        },
+      ]),
+    });
+    expect(text).toContain("Parede dos gates de PostgreSQL");
+    expect(text).toContain("p50 **4,0 min**");
   });
 });
 

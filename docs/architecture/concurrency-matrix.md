@@ -25,7 +25,7 @@ Um segundo aviso, que a prova por remoção ensinou: **muitas corridas têm mais
 
 ### Quando rodar `gates:concurrency`
 
-O job `PostgreSQL 18 gates` do CI roda `gates:ci` com 1 rodada por corrida, e corrida intermitente é o que 1 rodada não pega. Por isso o workflow `Concurrency nightly` (`.github/workflows/concurrency-nightly.yml`) roda `gates:concurrency` com **N = 3 rodadas** toda noite na `main` (04:30 de Brasília), fora dos PRs; um vermelho ali é corrida intermitente a investigar com `POLARIS_CONCURRENCY_REPEAT=10`. Além disso, a suíte com N = 3 é obrigatória:
+Os jobs `PostgreSQL 18 gates (main)` e `PostgreSQL 18 gates (definer-hardening)` do CI rodam `gates:ci-database` e `gates:ci-definer-hardening` (as duas metades de `gates:ci`) com 1 rodada por corrida, e corrida intermitente é o que 1 rodada não pega. Por isso o workflow `Concurrency nightly` (`.github/workflows/concurrency-nightly.yml`) roda `gates:concurrency` com **N = 3 rodadas** toda noite na `main` (04:30 de Brasília), fora dos PRs; um vermelho ali é corrida intermitente a investigar com `POLARIS_CONCURRENCY_REPEAT=10`. Além disso, a suíte com N = 3 é obrigatória:
 
 - **em todo PR que mexa numa proteção desta matriz** (lock, índice único, ordem de lock, gatilho ou função que uma linha abaixo prova): o autor roda e registra o resultado em "Verificação" do PR;
 - **antes de cada prova de release**, num PostgreSQL 18 descartável e novo, a partir do SHA candidato ([item 4 do checklist de release](../runbooks/release-checklist.md#4-gates-de-banco-em-neon-descartável-block)).
