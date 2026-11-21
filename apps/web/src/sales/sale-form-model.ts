@@ -2345,12 +2345,10 @@ interface ConfirmedSaleItemView {
   label: string;
 }
 
-/** The two figures beside the total at the top of the receipt, both from what the sale already carries. */
+/** The figure beside the total at the top of the receipt, from what the sale already carries. */
 interface ConfirmedSaleSummary {
   /** Sum of the quantities of the items. */
   itemCount: number;
-  /** The payment stored with the sale (the read model carries one), as `formatBrlAmount` writes it. */
-  received: string;
 }
 
 export interface ConfirmedSaleView {
@@ -2368,7 +2366,6 @@ export interface ConfirmedSaleView {
 function confirmedSummary(sale: ConfirmedSaleReadModel): ConfirmedSaleSummary {
   return {
     itemCount: sale.items.reduce((sum, item) => sum + item.quantity, 0),
-    received: formatBrlAmount(sale.payment.amount),
   };
 }
 

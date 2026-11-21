@@ -16,9 +16,9 @@ interface SaleReceiptProps {
 }
 
 /**
- * The confirmed sale exactly as stored, as a receipt (DESIGN.md v5.1): right under the title, a strip of three, the
- * total (the biggest, because the eye looks for it first), what was received and the count of items, and the total is
- * written only there; the perforation; then the items, the adjustments and the three dates; then the payment,
+ * The confirmed sale exactly as stored, as a receipt (DESIGN.md v5.1): right under the title, a strip of two, the
+ * total (the biggest, because the eye looks for it first) and the count of items, and the total is written only
+ * there; the perforation; then the items, the adjustments and the three dates; then the payment,
  * and the identifier at the end, in mono and without emphasis. The amounts of the lines are in Geist Mono and end at
  * the right edge, the names and the labels in Geist. The order is the order of the DOM, so a screen reader
  * reads what the eye sees.
@@ -40,8 +40,8 @@ export function SaleReceipt({ before, sale, status }: SaleReceiptProps) {
           </div>
           {before}
           {total ? (
-            <dl className="@container flex flex-wrap gap-x-6 gap-y-3">
-              <div className="grid @min-[20rem]:grow-[1.4] @min-[20rem]:basis-auto basis-full gap-1">
+            <dl className="flex flex-wrap gap-x-6 gap-y-3">
+              <div className="grid grow-[1.4] gap-1">
                 <dt className="font-medium text-muted-foreground">
                   {total.label}
                 </dt>
@@ -53,17 +53,7 @@ export function SaleReceipt({ before, sale, status }: SaleReceiptProps) {
                   />
                 </dd>
               </div>
-              <div className="grid flex-auto gap-1">
-                <dt className="font-medium text-muted-foreground">Recebido</dt>
-                <dd>
-                  <Money
-                    className="font-mono"
-                    size="md"
-                    text={sale.summary.received}
-                  />
-                </dd>
-              </div>
-              <div className="grid flex-auto gap-1">
+              <div className="grid grow gap-1">
                 <dt className="font-medium text-muted-foreground">Itens</dt>
                 <dd className="font-mono text-value-md tabular-nums">
                   {formatQuantity(sale.summary.itemCount)}

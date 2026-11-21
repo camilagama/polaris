@@ -281,9 +281,9 @@ for (const size of [
     const card = amounts.filter((item) => item.group === "card");
     const payment = amounts.filter((item) => item.group === "payment");
     const strip = amounts.filter((item) => item.group === "strip");
-    // item prices, subtotal and discount at the card; the total and what was received in the strip; the amount and the fee at the payment block
+    // item prices, subtotal and discount at the card; the total in the strip; the amount and the fee at the payment block
     expect(card).toHaveLength(3);
-    expect(strip).toHaveLength(2);
+    expect(strip).toHaveLength(1);
     expect(payment).toHaveLength(2);
     for (const item of amounts) {
       expect(item.family.startsWith(`"${MONO_FAMILY}"`), item.text).toBe(true);
@@ -324,7 +324,7 @@ for (const size of [
   }) => {
     await openDetail(page, { hidden: true, sale: ORDINARY, size });
     const amounts = await measureAmounts(page);
-    expect(amounts).toHaveLength(7);
+    expect(amounts).toHaveLength(6);
     for (const item of amounts) {
       expect(item.text).toContain("••••");
       expect(item.family.startsWith(`"${MONO_FAMILY}"`), item.text).toBe(true);
@@ -335,11 +335,7 @@ for (const size of [
       SLACK_PIXELS
     );
     const strip = receiptOf(page).locator("dl.flex-wrap");
-    await expect(strip.locator("dd")).toHaveText([
-      MASKED_MONEY_CELL,
-      MASKED_MONEY_CELL,
-      "1",
-    ]);
+    await expect(strip.locator("dd")).toHaveText([MASKED_MONEY_CELL, "1"]);
   });
 }
 
@@ -384,6 +380,25 @@ const expectStripCellsApart = async (page: Page) => {
   }
 };
 
+const expectSplitTotalOnOneLine = async (page: Page) => {
+  const parts = await receiptOf(page)
+    .locator("dl.flex-wrap")
+    .evaluate((strip) =>
+      ["[data-money-currency]", "[data-money-number]"].map((selector) => {
+        const box = strip.querySelector(selector)?.getBoundingClientRect();
+        return { bottom: box?.bottom ?? 0, top: box?.top ?? 0 };
+      })
+    );
+  const [currency, number] = parts;
+  expect(
+    currency?.bottom,
+    "the R$ and the number share a line"
+  ).toBeGreaterThan(number?.top ?? Number.POSITIVE_INFINITY);
+  expect(number?.bottom).toBeGreaterThan(
+    currency?.top ?? Number.POSITIVE_INFINITY
+  );
+};
+
 const stripBoxes = (page: Page): Promise<StripBox[]> =>
   receiptOf(page)
     .locator("dl.flex-wrap")
@@ -394,42 +409,35 @@ const stripBoxes = (page: Page): Promise<StripBox[]> =>
       })
     );
 
-test("faixa do recibo a 360 px: Total sozinho na primeira linha, Recebido e Itens lado a lado na seguinte", async ({
+test("faixa do recibo a 360 px: Total devido e Itens lado a lado, sem Recebido, e o total escrito uma vez", async ({
   page,
 }) => {
   await openDetail(page, { sale: ORDINARY, size: { height: 740, width: 360 } });
   const strip = receiptOf(page).locator("dl.flex-wrap");
-  await expect(strip.locator("dt")).toHaveText([
-    "Total devido",
-    "Recebido",
-    "Itens",
-  ]);
+  await expect(strip.locator("dt")).toHaveText(["Total devido", "Itens"]);
   await expect(strip.locator("dd").nth(0)).toContainText("209,90");
-  await expect(strip.locator("dd").nth(1)).toContainText("209,90");
-  await expect(strip.locator("dd").nth(2)).toHaveText("1");
-  const [total, received, items] = await stripBoxes(page);
-  expect(received?.top).toBeGreaterThan(total?.top ?? 0);
-  expect(items?.top).toBe(received?.top);
-  expect(items?.left).toBeGreaterThan(received?.left ?? 0);
+  await expect(strip.locator("dd").nth(1)).toHaveText("1");
+  const [total, items] = await stripBoxes(page);
+  expect(items?.top).toBe(total?.top);
+  expect(items?.left).toBeGreaterThan(total?.left ?? 0);
+  await expect(receiptOf(page).getByText("Recebido")).toHaveCount(0);
   expect(
     await receiptOf(page).getByText("Total devido", { exact: true }).count()
   ).toBe(1);
 });
 
-test("faixa do recibo a 1280 px: os três lado a lado, o Total o mais largo e o maior", async ({
+test("faixa do recibo a 1280 px: as duas lado a lado, o Total o mais largo e o maior", async ({
   page,
 }) => {
   await openDetail(page, {
     sale: ORDINARY,
     size: { height: 800, width: 1280 },
   });
-  const [total, received, items] = await stripBoxes(page);
-  expect(received?.top).toBe(total?.top);
+  const [total, items] = await stripBoxes(page);
   expect(items?.top).toBe(total?.top);
-  expect(total?.left).toBeLessThan(received?.left ?? 0);
-  expect(received?.left).toBeLessThan(items?.left ?? 0);
+  expect(total?.left).toBeLessThan(items?.left ?? 0);
   expect(total?.width).toBeGreaterThan(
-    received?.width ?? Number.POSITIVE_INFINITY
+    items?.width ?? Number.POSITIVE_INFINITY
   );
   const sizes = await receiptOf(page)
     .locator("dl.flex-wrap dd")
@@ -461,7 +469,7 @@ test("faixa do recibo: nenhuma leitura a mais do que a tela já fazia", async ({
     }
   });
   await openDetail(page, { sale: ORDINARY, size: { height: 740, width: 360 } });
-  await expect(receiptOf(page).locator("dl.flex-wrap dd").nth(1)).toContainText(
+  await expect(receiptOf(page).locator("dl.flex-wrap dd").nth(0)).toContainText(
     "209,90"
   );
   expect(procedures.filter((name) => name === "sale/get")).toHaveLength(1);
@@ -473,15 +481,14 @@ test("faixa do recibo: nenhuma leitura a mais do que a tela já fazia", async ({
 });
 
 reflowTest(
-  "faixa do recibo a 320 px com a letra a 20 px: Total, Recebido e Itens sem rolagem e sem corte, e os valores escondidos mascaram Total e Recebido",
+  "faixa do recibo a 320 px com a letra a 20 px: Total devido e Itens sem rolagem e sem corte",
   async ({ page }) => {
     await openDetail(page, { fontPixels: 20, sale: HUGE });
     await expectReflowFont(page, 20);
     const receipt = receiptOf(page);
     const strip = receipt.locator("dl.flex-wrap");
     await expect(strip.locator("dd").nth(0)).toContainText("1.200.000,00");
-    await expect(strip.locator("dd").nth(1)).toContainText("1.200.000,00");
-    expect(await assertAmountsOnOneLine(strip)).toBeGreaterThanOrEqual(1);
+    await expectSplitTotalOnOneLine(page);
     await expectStripCellsApart(page);
     await assertNothingClipped(strip);
     await assertNoPageScroll(page);
@@ -489,15 +496,11 @@ reflowTest(
 );
 
 reflowTest(
-  "faixa do recibo escondida a 320 px com a letra a 20 px: Total e Recebido em máscara, Itens à vista, sem rolagem",
+  "faixa do recibo escondida a 320 px com a letra a 20 px: Total em máscara, Itens à vista, sem rolagem",
   async ({ page }) => {
     await openDetail(page, { fontPixels: 20, hidden: true, sale: HUGE });
     const strip = receiptOf(page).locator("dl.flex-wrap");
-    await expect(strip.locator("dd")).toHaveText([
-      MASKED_MONEY_CELL,
-      MASKED_MONEY_CELL,
-      "1",
-    ]);
+    await expect(strip.locator("dd")).toHaveText([MASKED_MONEY_CELL, "1"]);
     await assertNothingClipped(strip);
     await assertNoPageScroll(page);
   }
