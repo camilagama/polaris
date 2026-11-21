@@ -26,9 +26,30 @@ Com `CI` definido, as duas configs do Playwright (`playwright.pwa.config.ts` e `
 node scripts/ci-timing.mjs --durations <id-da-execucao | pasta> [--out ci/test-durations.json]
 ```
 
-Com um id, baixa os artefatos da execução (precisa de `GITHUB_TOKEN`); com uma pasta, lê os `timings-*.json` dela. Soma a duração por arquivo, projeto e suíte (`pwa` ou `offline-poc`), contando todas as tentativas e dando cada teste ao arquivo da suíte de topo do relatório, o que o `--shard` reparte, e não ao `spec.file` onde o `test()` foi chamado (um auxiliar como `e2e/reflow.ts` cria testes de ~20 specs), e grava `ci/test-durations.json` ordenado e sem relógio, de modo que os mesmos relatórios dão sempre o mesmo arquivo. Use os relatórios de uma execução só: somar execuções diferentes soma o tempo delas.
+Com um id, baixa os artefatos da execução (precisa de `GITHUB_TOKEN`); com uma pasta, lê os `timings-*.json` dela. Soma a duração por arquivo, projeto e suíte (`pwa` ou `offline-poc`), contando todas as tentativas e dando cada teste ao arquivo da suíte de topo do relatório, a unidade que o plano dos shards reparte, e não ao `spec.file` onde o `test()` foi chamado (um auxiliar como `e2e/reflow.ts` cria testes de ~20 specs), e grava `ci/test-durations.json` ordenado e sem relógio, de modo que os mesmos relatórios dão sempre o mesmo arquivo. Use os relatórios de uma execução só: somar execuções diferentes soma o tempo delas.
 
-O `ci/test-durations.json` versionado vem da execução 44819387058 do CI (head 68042d5f, 4 artefatos `playwright-timings-shard-N`, 254 linhas arquivo × projeto). Regere-o com o comando acima sobre uma execução verde mais recente quando a distribuição dos testes mudar.
+O `ci/test-durations.json` versionado vem da execução 44835784977 do CI (head 1ed3a4ab, a última do PR que dividiu o `home.e2e.ts`, a primeira verde com os três arquivos grandes já divididos em `ui-guardrails/`, `dashboard/` e `home/`; 4 artefatos `playwright-timings-shard-N`, 274 linhas arquivo × projeto, 151 arquivos). Regere-o com o comando acima sobre uma execução verde mais recente quando a distribuição dos testes mudar: o plano dos shards lê esse arquivo.
+
+## Reparto dos shards por tempo
+
+O gate de navegador não usa mais o `--shard` do Playwright, que corta a lista de testes em fatias contíguas sem olhar o tempo (e põe o mesmo arquivo em dois shards). O job `shard-plan` (`Offline browser gate (plan)`) lista os testes de cada config com os mesmos projetos que os shards rodam e chama `scripts/ci-shard-plan.mjs`:
+
+```sh
+node scripts/ci-shard-plan.mjs --shards 4 --list offline-poc=list-offline-poc.json --list pwa=list-pwa.json [--durations ci/test-durations.json] [--workers <suíte>=<n>] [--out plan.json]
+node scripts/ci-shard-plan.mjs --filters plan.json --shard 2 --suite pwa
+```
+
+A unidade é o arquivo, com todos os projetos dele. O peso de um arquivo é a soma dos seus tempos nos projetos em que ele está listado, dividida pelos workers da sua config (`config.workers` do `--list`, que no CI é o mesmo número dos shards: 3 no `offline-poc`, 4 no `pwa`): no run 44835784977 a parede de cada suíte num shard foi a soma dos testes dividida por 2,85 a 2,91 com 3 workers e por 3,6 a 3,94 com 4. Os arquivos vão do mais pesado ao mais leve, cada um para o shard com menos peso até ali (LPT; empate vai para o shard de número menor). Arquivo listado sem tempo entra com a mediana dos tempos conhecidos e aparece em `untimed` no plano; arquivo do `test-durations.json` que a lista não tem mais fica de fora. A segunda forma imprime, uma por linha, os argumentos do `playwright test` do shard e da suíte: o CLI lê cada argumento como expressão regular sobre o caminho absoluto, então o filtro é ancorado na pasta de testes e no fim (`//e2e-pwa/home\.e2e\.ts$/`), e um `home.e2e.ts` solto pegaria também `dashboard-home.e2e.ts`. Suíte sem arquivo num shard não roda nele.
+
+Para simular o plano fora do CI, rode o `--list` das duas configs com `CI=true` e passe `--workers offline-poc=3 --workers pwa=4` (a máquina local tem outro número de núcleos). Com o `test-durations.json` acima, 4 shards dão 22,0 min estimados cada (diferença de 0,1% da mediana); no mesmo run, com o `--shard`, a soma das duas suítes por shard foi de 17,8 a 29,3 min.
+
+O job `shard-coverage` (`Offline browser gate (shard coverage)`) roda `scripts/ci-shard-coverage.mjs` depois dos shards, mesmo quando um deles falhou, e entra no agregado `Offline persistence browser gate`:
+
+```sh
+node scripts/ci-shard-coverage.mjs --plan plan.json --list offline-poc=list-offline-poc.json --list pwa=list-pwa.json --reports <pasta com playwright-timings-shard-<n>/timings-<suíte>.json>
+```
+
+Ele reprova, com uma linha que diz o arquivo ou a contagem: arquivo do `--list` fora do plano, arquivo do plano fora do `--list`, arquivo em dois shards, shard sem o `timings-<suíte>.json` de uma suíte que tinha arquivos, shard que rodou arquivo de outro, e diferença entre os testes executados (com ao menos um resultado no relatório; o pulado por modificador conta, o que a execução não alcançou não) e os do `--list`, por suíte, arquivo e projeto. O plano, as listas e os relatórios ficam nos artefatos `shard-plan` e `playwright-timings-shard-<n>` do run.
 
 ## Mapa de cobertura dos e2e e seletor de specs
 
