@@ -45,7 +45,7 @@ describe("what a Workers suite run must show besides its exit code", () => {
 describe("the digest of a Workers suite run", () => {
   const seed = ' Running tests with seed "1795222905413"';
 
-  it("puts the shuffle seed first, before the failure lines that come earlier in the output", () => {
+  it("puts the shuffle seed first, ahead of the failure lines", () => {
     const digest = runDigest(
       [" RUN v4", seed, " FAIL  a.test.ts > leaks", "AssertionError: x"],
       []

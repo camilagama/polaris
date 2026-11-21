@@ -9,7 +9,7 @@ export default defineConfig({
   resolve: { alias: pgWorkerdAliases },
   test: {
     // Random order exposes tests that lean on state another test left behind. The seed
-    // shows in the output of the gate with POLARIS_WORKERD_GATE_VERBOSE=1. The order of
+    // is the first line of the failure summary of the gate. The order of
     // the tests is set in the project (apps/catalog/vitest.workers-db.config.ts), which
     // the `sequence` of a root config does not reach; there is one test file today.
     sequence: { shuffle: { files: true, tests: true } },
