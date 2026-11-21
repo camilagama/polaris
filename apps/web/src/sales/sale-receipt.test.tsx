@@ -1,12 +1,31 @@
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ConfirmedSaleView } from "./sale-form-model";
-import { SaleHistoryList } from "./sale-history-list";
 import type { HistoryRow } from "./sale-history-model";
-import { SaleReceipt } from "./sale-receipt";
+
+const state = vi.hoisted(() => ({ hidden: false }));
+
+vi.mock("@/lib/hidden-values", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/hidden-values")>()),
+  useHiddenValues: () => [state.hidden, () => undefined],
+}));
+
+const { SaleHistoryList } = await import("./sale-history-list");
+const { SaleReceipt } = await import("./sale-receipt");
 
 const FRAME = /\bborder|\bring|\bshadow/;
 const MUTED_BLOCK = /<dl class="[^"]*bg-muted[^"]*"/g;
+const MONO_CELL = /<(?:dd|span|p)\b[^>]*class="[^"]*font-mono[^"]*"[^>]*>/g;
+const DD = /<dd class="([^"]*)"/g;
+const ITEM_PRICES =
+  /<span class="[^"]*text-right font-mono[^"]*">2 × <span[^>]*>R\$ /;
+const PIX_CELL = /text-right text-sm[^"]*">Pix</;
+const NOT_APPLICABLE_CELL =
+  /text-right text-sm[^"]*"><span class="text-muted-foreground">não se aplica/;
+const MONO_ITEM_NAME = /font-mono[^>]*>Calça jeans/;
+const MONO_DATE = /font-mono[^>]*>15\/10\/2026/;
+const MASKED_TOTAL =
+  /data-money-currency="">R\$ <\/span><span data-money-number="">••••</;
 const TOTAL_PARTS =
   /data-money-currency="">R\$ <\/span><span data-money-number="">219<\/span><span[^>]*data-money-cents="">,90</;
 const SALE_ID = "77777777-7777-4777-8777-777777777777";
@@ -22,7 +41,20 @@ const sale: ConfirmedSaleView = {
     },
   ],
   note: "O método de pagamento registrado não comprova liquidação.",
-  paymentDetails: [{ label: "Método", tone: "plain", value: "Pix" }],
+  paymentDetails: [
+    { label: "Método", tone: "plain", value: "Pix" },
+    { label: "Valor do pagamento", tone: "known", value: "R$ 219,90" },
+    {
+      label: "Taxa de processamento",
+      tone: "known",
+      value: "R$ 5,50 (2,5% do total devido)",
+    },
+    {
+      label: "Taxa de antecipação",
+      tone: "not_applicable",
+      value: "não se aplica",
+    },
+  ],
   replayed: false,
   saleDetails: [
     { label: "Venda", tone: "plain", value: SALE_ID },
@@ -55,6 +87,10 @@ const render = () =>
   renderToStaticMarkup(
     <SaleReceipt sale={sale} status={<span>Confirmada</span>} />
   );
+
+beforeEach(() => {
+  state.hidden = false;
+});
 
 describe("the sale as a receipt", () => {
   it("puts the identifier last, in mono, and not among the dates at the top", () => {
@@ -93,17 +129,58 @@ describe("the sale as a receipt", () => {
     expect(order).toEqual([...order].sort((a, b) => a - b));
   });
 
-  it("sets the dates and the payment back as a muted block with no border, two columns from 760 px", () => {
+  it("sets the dates and the payment back as muted blocks with no border; the dates in two columns from 760 px, the payment as lines", () => {
     const markup = render();
     const blocks = markup.match(MUTED_BLOCK) ?? [];
     expect(blocks).toHaveLength(2);
     for (const block of blocks) {
       expect(block).toContain("rounded-lg");
       expect(block).toContain("p-4");
-      expect(block).toContain("md:grid-cols-2");
       expect(block).not.toMatch(FRAME);
     }
-    expect(markup).toContain('class="text-muted-foreground text-xs">Método<');
+    expect(blocks[0]).toContain("md:grid-cols-2");
+    expect(blocks[1]).not.toContain("md:grid-cols-2");
+    expect(markup).toContain(
+      'class="text-muted-foreground text-xs">Data da venda<'
+    );
+  });
+
+  it("writes every amount of the lines in Geist Mono, at the right: items, subtotal, discount, total and the payment amounts", () => {
+    const markup = render();
+    const mono = markup.match(MONO_CELL) ?? [];
+    // the item prices, the subtotal, the discount, the payment amount and the processing fee, the total, the identifier
+    expect(mono).toHaveLength(7);
+    expect(markup).toMatch(ITEM_PRICES);
+    const cells = [...markup.matchAll(DD)].map((match) => match[1] ?? "");
+    const monoCells = cells.filter((cell) => cell.includes("font-mono"));
+    expect(monoCells).toHaveLength(4);
+    for (const cell of monoCells) {
+      expect(cell).toContain("tabular-nums");
+      expect(cell).toContain("text-right");
+    }
+  });
+
+  it("keeps the names, the labels, the words of the payment and the dates in Geist", () => {
+    const markup = render();
+    const paymentStart = markup.indexOf("Método");
+    const payment = markup.slice(paymentStart);
+    expect(payment).toMatch(PIX_CELL);
+    expect(payment).toMatch(NOT_APPLICABLE_CELL);
+    expect(markup).not.toMatch(MONO_ITEM_NAME);
+    expect(markup).not.toMatch(MONO_DATE);
+  });
+
+  it("keeps the mask in the same cells: mono, at the right, '••••' where the amount was", () => {
+    const shown = render();
+    state.hidden = true;
+    const masked = render();
+    expect(masked).not.toContain("219,90");
+    expect(masked).toContain("data-masked-money");
+    expect(masked.match(MONO_CELL)).toHaveLength(
+      shown.match(MONO_CELL)?.length ?? -1
+    );
+    expect(masked.match(DD)).toEqual(shown.match(DD));
+    expect(masked).toMatch(MASKED_TOTAL);
   });
 
   it("keeps the three dates in one block, after the items and the adjustments", () => {

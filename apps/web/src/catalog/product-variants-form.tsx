@@ -3,7 +3,6 @@ import type {
   ProductVariantConfigurationReadModel,
   ProductVariantOptionName,
 } from "@polaris/contracts";
-import CirclePlusIcon from "lucide-react/dist/esm/icons/circle-plus";
 import ListPlusIcon from "lucide-react/dist/esm/icons/list-plus";
 import {
   type FormEvent,
@@ -12,6 +11,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { AddRowButton } from "@/lib/add-row-button";
 import { Alert, AlertDescription } from "@/ui/alert";
 import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
@@ -483,7 +483,23 @@ export function ProductVariantConfigurationForm({
     setVariants((current) => [...current, { values }]);
     setSaveError(null);
     clearGenerateNotice();
-  }, [clearGenerateNotice, optionNames, validation.canAdd]);
+    const [firstField] = optionNames;
+    if (firstField) {
+      focusLater(() =>
+        document
+          .getElementById(
+            `product-variant-${product.id}-${variants.length}-${firstField}`
+          )
+          ?.focus()
+      );
+    }
+  }, [
+    clearGenerateNotice,
+    optionNames,
+    product.id,
+    validation.canAdd,
+    variants.length,
+  ]);
 
   const handleValueChange = useCallback(
     (index: number, name: ProductVariantOptionName, value: string) => {
@@ -698,28 +714,36 @@ export function ProductVariantConfigurationForm({
         </Badge>
       </div>
 
-      {variants.length > 0 ? (
-        <ol className="grid gap-3">
-          {variants.map((variant, index) => (
-            <CombinationRow
-              index={index}
-              isPending={busy}
-              // combinations have no identity before they are saved: the position is the key
-              key={index}
-              onRemove={handleRemoveCombination}
-              onValueChange={handleValueChange}
-              optionNames={optionNames}
-              optionValues={optionValues}
-              productId={product.id}
-              variant={variant}
-            />
-          ))}
-        </ol>
-      ) : (
-        <p className="text-muted-foreground text-support">
-          Nenhuma combinação adicionada.
-        </p>
-      )}
+      <div className="grid gap-3">
+        {variants.length > 0 ? (
+          <ol className="grid gap-3">
+            {variants.map((variant, index) => (
+              <CombinationRow
+                index={index}
+                isPending={busy}
+                // combinations have no identity before they are saved: the position is the key
+                key={index}
+                onRemove={handleRemoveCombination}
+                onValueChange={handleValueChange}
+                optionNames={optionNames}
+                optionValues={optionValues}
+                productId={product.id}
+                variant={variant}
+              />
+            ))}
+          </ol>
+        ) : (
+          <p className="text-muted-foreground text-support">
+            Nenhuma combinação adicionada.
+          </p>
+        )}
+        <AddRowButton
+          disabled={!validation.canAdd || busy}
+          onClick={handleAddCombination}
+        >
+          Adicionar combinação
+        </AddRowButton>
+      </div>
 
       {!validation.combinationsAreUnique && variants.length > 1 ? (
         <Alert variant="destructive">
@@ -742,16 +766,6 @@ export function ProductVariantConfigurationForm({
       ) : null}
 
       <div className="flex flex-col gap-3 min-[30rem]:flex-row min-[30rem]:justify-end">
-        <Button
-          className={WRAPPING_ACTION}
-          disabled={!validation.canAdd || busy}
-          onClick={handleAddCombination}
-          type="button"
-          variant="outline"
-        >
-          <CirclePlusIcon aria-hidden="true" data-icon="inline-start" />
-          Adicionar combinação
-        </Button>
         <Button
           className={WRAPPING_ACTION}
           disabled={!allCombinations.canAdd}

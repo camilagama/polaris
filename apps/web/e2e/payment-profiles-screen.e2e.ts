@@ -1,6 +1,7 @@
 /// <reference lib="dom" />
 import type { Page, Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
+import { emptyIconFaults } from "../e2e-pwa/ui-guardrails/measures";
 import {
   expectFormDialogLayout,
   expectKeyboardKeepsMainButton,
@@ -188,10 +189,17 @@ async function useEveryControl(page: Page) {
   await expect(
     page.getByRole("combobox", { exact: true, name: "Método" }).nth(1)
   ).toBeFocused();
+  const addRule = page.getByRole("button", { name: "Adicionar regra" });
+  const [ruleBox, rowBox] = await Promise.all([
+    page.getByRole("group", { name: "Regra 2" }).boundingBox(),
+    addRule.boundingBox(),
+  ]);
+  expect(rowBox?.y ?? 0).toBeGreaterThanOrEqual(
+    (ruleBox?.y ?? 0) + (ruleBox?.height ?? 0)
+  );
+  expect(rowBox?.width ?? 0).toBeGreaterThanOrEqual((ruleBox?.width ?? 0) - 1);
   await page.getByRole("button", { name: "Remover regra 2" }).click();
-  await expect(
-    page.getByRole("button", { name: "Adicionar regra" })
-  ).toBeFocused();
+  await expect(addRule).toBeFocused();
 
   // cancelling the edit gives the focus back to the button of the profile
   await page.getByRole("button", { name: "Cancelar edição" }).click();
@@ -357,6 +365,7 @@ test("sem perfil a tela diz que nenhum foi cadastrado; só com arquivados diz qu
 }) => {
   await openServerScreen(page, { lists: [answer([])] });
   await expect(page.getByText("Nenhum perfil cadastrado")).toBeVisible();
+  expect(await emptyIconFaults(page, 1)).toEqual([]);
 
   await page.unroute("**/rpc/**");
   await openServerScreen(page, { lists: [answer([OLD_LINK])] });

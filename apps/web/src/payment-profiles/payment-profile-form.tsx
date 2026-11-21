@@ -1,6 +1,6 @@
-import PlusIcon from "lucide-react/dist/esm/icons/plus";
 import Trash2Icon from "lucide-react/dist/esm/icons/trash-2";
 import { type FormEvent, Fragment, type ReactNode, useCallback } from "react";
+import { AddRowButton } from "@/lib/add-row-button";
 import { Button } from "@/ui/button";
 import {
   Dialog,
@@ -362,19 +362,7 @@ export function PaymentProfileForm({
               value={draft.name}
             />
             <FieldSeparator />
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <h3 className="text-section">Regras de pagamento</h3>
-              <Button
-                id="payment-add-rule"
-                onClick={onAddRule}
-                size="sm"
-                type="button"
-                variant="outline"
-              >
-                <PlusIcon aria-hidden="true" data-icon="inline-start" />
-                Adicionar regra
-              </Button>
-            </div>
+            <h3 className="text-section">Regras de pagamento</h3>
             <div className="grid gap-4">
               {draft.rules.map((rule, index) => (
                 <Fragment key={rule.draftId}>
@@ -389,6 +377,9 @@ export function PaymentProfileForm({
                   />
                 </Fragment>
               ))}
+              <AddRowButton id="payment-add-rule" onClick={onAddRule}>
+                Adicionar regra
+              </AddRowButton>
             </div>
           </DialogBody>
           <ConnectionRequiredDialogNotice online={online} />

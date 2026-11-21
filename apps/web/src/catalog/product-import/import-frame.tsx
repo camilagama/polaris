@@ -3,6 +3,7 @@ import type { ReactNode, Ref } from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
 import { DialogBody, DialogFooter } from "@/ui/dialog";
 import { FORM_ELEMENT_CLASS } from "@/ui/dialog-layout";
+import type { ImportStep } from "./use-product-import";
 
 /** The id of the notice that says the import needs a connection: the buttons it keeps off point at it. */
 export const IMPORT_OFFLINE_ID = "product-import-offline";
@@ -54,6 +55,60 @@ export function StepFrame({
         </div>
       </DialogBody>
       <DialogFooter>{footer}</DialogFooter>
+    </div>
+  );
+}
+
+export const IMPORT_STEP_COUNT = 4;
+const SEGMENTS = [1, 2, 3, 4] as const;
+
+const STEP_NUMBER: Record<ImportStep["kind"], number> = {
+  file: 1,
+  paused: 3,
+  paused_busy: 3,
+  preview: 2,
+  result: 4,
+  running: 3,
+};
+
+const STEP_NAME: Record<ImportStep["kind"], string> = {
+  file: "Arquivo",
+  paused: "Importando",
+  paused_busy: "Importando",
+  preview: "Prévia",
+  result: "Resultado",
+  running: "Importando",
+};
+
+/** The line the screen reader hears under the title: "Passo 2 de 4 · Prévia". */
+export function importStepText(kind: ImportStep["kind"]): string {
+  return `Passo ${STEP_NUMBER[kind]} de ${IMPORT_STEP_COUNT} · ${STEP_NAME[kind]}`;
+}
+
+/**
+ * Four segments under the title: the done steps and the current one in ink, the rest muted. It is decoration
+ * (`aria-hidden`): the line above already says the step. The place is always taken, so the dialog keeps its height from
+ * one step to the next. The fill of the new step grows from the left only where the interface moves (`motion-full:`).
+ */
+export function ImportStepBar({ kind }: { kind: ImportStep["kind"] }) {
+  const current = STEP_NUMBER[kind];
+  return (
+    <div
+      aria-hidden="true"
+      className="flex h-1 gap-1"
+      data-slot="import-step-bar"
+    >
+      {SEGMENTS.map((number) => (
+        <span
+          className="relative h-full flex-1 overflow-hidden rounded-full bg-muted"
+          key={number}
+        >
+          <span
+            className="absolute inset-0 origin-left bg-foreground motion-full:transition-transform motion-full:duration-200 data-[filled=false]:scale-x-0"
+            data-filled={number <= current}
+          />
+        </span>
+      ))}
     </div>
   );
 }

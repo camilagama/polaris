@@ -20,6 +20,8 @@ import { useLimitHelp } from "../../subscription/limit-help";
 import { IMPORT_PICK_BUTTON_ID, ImportFileStep } from "./import-file-step";
 import {
   ImportOfflineNotice,
+  ImportStepBar,
+  importStepText,
   OFFLINE_DETAIL,
   OFFLINE_DETAIL_AFTER,
   OFFLINE_DETAIL_RUN,
@@ -36,15 +38,6 @@ import { type ImportStep, useProductImport } from "./use-product-import";
  * precache (there is no import offline). Esc and × keep the file and the preview while the page is open; nothing
  * closes the dialog while rows are on their way; after the result it closes for good.
  */
-
-const STEP_NAMES: Record<ImportStep["kind"], string> = {
-  file: "Passo 1 de 4 · Arquivo",
-  paused: "Passo 3 de 4 · Importando",
-  paused_busy: "Passo 3 de 4 · Importando",
-  preview: "Passo 2 de 4 · Prévia",
-  result: "Passo 4 de 4 · Resultado",
-  running: "Passo 3 de 4 · Importando",
-};
 
 /** The file is kept on the first two steps; once rows went, what matters is where the import continues. */
 const OFFLINE_DETAILS: Record<ImportStep["kind"], string> = {
@@ -224,7 +217,8 @@ export function ProductImportDialog({
       >
         <DialogHeader>
           <DialogTitle>Importar planilha</DialogTitle>
-          <DialogDescription>{STEP_NAMES[step.kind]}</DialogDescription>
+          <DialogDescription>{importStepText(step.kind)}</DialogDescription>
+          <ImportStepBar kind={step.kind} />
         </DialogHeader>
         {body}
       </DialogContent>

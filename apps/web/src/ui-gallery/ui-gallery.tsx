@@ -1,11 +1,15 @@
 import { type ChangeEvent, useEffect, useRef, useState } from "react";
+import ChartColumnIcon from "lucide-react/dist/esm/icons/chart-column";
 import CheckIcon from "lucide-react/dist/esm/icons/check";
 import { ChartStates } from "./chart-states";
 import CloudOffIcon from "lucide-react/dist/esm/icons/cloud-off";
 import InfoIcon from "lucide-react/dist/esm/icons/info";
 import MinusIcon from "lucide-react/dist/esm/icons/minus";
 import PlusIcon from "lucide-react/dist/esm/icons/plus";
+import ShoppingBagIcon from "lucide-react/dist/esm/icons/shopping-bag";
 import TriangleAlertIcon from "lucide-react/dist/esm/icons/triangle-alert";
+import UsersIcon from "lucide-react/dist/esm/icons/users";
+import WalletIcon from "lucide-react/dist/esm/icons/wallet";
 import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
 import { AnimatedFigure } from "@/ui/animated-figure";
 import { Badge } from "@/ui/badge";
@@ -19,7 +23,7 @@ import {
   CardTitle,
 } from "@/ui/card";
 import { OnDemandCalendar } from "@/ui/calendar-on-demand";
-import { OnDemandSparkline } from "@/ui/charts/on-demand";
+import { OnDemandRingChart, OnDemandSparkline } from "@/ui/charts/on-demand";
 import { Checkbox } from "@/ui/checkbox";
 import {
   Combobox,
@@ -65,6 +69,13 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/ui/dropdown-menu";
+import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@/ui/empty";
 import { EmptyState } from "@/ui/empty-state";
 import { HelpTip } from "@/ui/help-tip";
 import { HideValuesButton, MoneyText } from "@/ui/hidden-values";
@@ -99,7 +110,9 @@ import {
   PopoverTitle,
   PopoverTrigger,
 } from "@/ui/popover";
+import { PaceLine, type PaceState } from "@/ui/pace-line";
 import { Progress, ProgressLabel, ProgressValue } from "@/ui/progress";
+import { ProgressRing } from "@/ui/progress-ring";
 import { RadioGroup, RadioGroupItem } from "@/ui/radio-group";
 import { RefreshButton } from "@/ui/refresh-button";
 import { SearchField } from "@/ui/search-field";
@@ -266,6 +279,101 @@ function showToast() {
 const GALLERY_KPI_SERIES = [
   120, 180, 180, 260, 410, 410, 520, 690, 760, 760, 880, 1010, 1200, 1340,
 ] as const;
+
+const PACE_WORDS: Record<PaceState, string> = {
+  ahead: "Adiantada",
+  behind: "Atrasada",
+  on_pace: "No ritmo",
+};
+
+/** Where the mark of the pace stands in the examples: 60% of the period is over. */
+const PACE_MARKER = 60;
+
+const PACE_EXAMPLES: readonly {
+  color: "var(--chart-result)" | "var(--chart-sales)";
+  progress: number;
+  state: PaceState;
+  track: string;
+}[] = [
+  {
+    color: "var(--chart-sales)",
+    progress: 20,
+    state: "behind",
+    track: "var(--chart-heat-1)",
+  },
+  {
+    color: "var(--chart-sales)",
+    progress: 60,
+    state: "on_pace",
+    track: "var(--chart-heat-1)",
+  },
+  {
+    color: "var(--chart-sales)",
+    progress: 100,
+    state: "ahead",
+    track: "var(--chart-heat-1)",
+  },
+  {
+    color: "var(--chart-result)",
+    progress: 20,
+    state: "behind",
+    track: "color-mix(in oklch, var(--chart-result) 18%, var(--card))",
+  },
+  {
+    color: "var(--chart-result)",
+    progress: 60,
+    state: "on_pace",
+    track: "color-mix(in oklch, var(--chart-result) 18%, var(--card))",
+  },
+  {
+    color: "var(--chart-result)",
+    progress: 100,
+    state: "ahead",
+    track: "color-mix(in oklch, var(--chart-result) 18%, var(--card))",
+  },
+];
+
+/** The mark of the pace on the ring and on the bar, in the three states and in both entity colors. */
+function PaceExamples() {
+  return (
+    <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      {PACE_EXAMPLES.map((example) => (
+        <li
+          className="grid gap-2 rounded-lg p-3 ring-1 ring-foreground/[0.06]"
+          data-pace-example={`${example.state}-${example.progress}`}
+          key={`${example.color}-${example.progress}`}
+        >
+          <div className="flex items-center gap-4">
+            <div
+              aria-label={`${example.progress}% da meta. ${PACE_WORDS[example.state]}: o esperado até hoje era ${PACE_MARKER}%.`}
+              className="relative size-28 shrink-0"
+              role="img"
+            >
+              <OnDemandRingChart
+                color={example.color}
+                marker={PACE_MARKER / 100}
+                progress={example.progress / 100}
+                size={112}
+                strokeWidth={10}
+                track={example.track}
+              />
+            </div>
+            <PaceLine label={PACE_WORDS[example.state]} state={example.state} />
+          </div>
+          <Progress
+            aria-label="Progresso da meta"
+            aria-valuetext={`${example.progress}%. ${PACE_WORDS[example.state]}: o esperado até hoje era ${PACE_MARKER}%.`}
+            marker={PACE_MARKER}
+            value={example.progress}
+          >
+            <ProgressLabel>Meta de vendas</ProgressLabel>
+            <ProgressValue />
+          </Progress>
+        </li>
+      ))}
+    </ul>
+  );
+}
 
 function Section({
   children,
@@ -1296,10 +1404,22 @@ export function UiGallery() {
               <ProgressLabel>Meta de vendas</ProgressLabel>
               <ProgressValue />
             </Progress>
+            <ul className="flex flex-wrap gap-x-6 gap-y-2 text-muted-foreground tabular-nums">
+              {[1, 2].map((done) => (
+                <li className="flex items-center gap-1.5" key={done}>
+                  <ProgressRing done={done} total={3} />
+                  {done} de 3
+                </li>
+              ))}
+            </ul>
             <div aria-hidden="true" className="grid gap-2">
               <Skeleton className="h-4 w-2/3" />
               <Skeleton className="h-4 w-1/3" />
             </div>
+          </Section>
+
+          <Section title="Ritmo da meta">
+            <PaceExamples />
           </Section>
 
           <Section title="Área de rolagem">
@@ -1410,7 +1530,11 @@ export function UiGallery() {
           </Section>
 
           <Section title="Estado vazio">
-            <EmptyState afterRead title="Nenhum cliente ainda.">
+            <EmptyState
+              afterRead
+              icon={UsersIcon}
+              title="Nenhum cliente ainda."
+            >
               <Button type="button">
                 <PlusIcon aria-hidden="true" data-icon="inline-start" />
                 Novo cliente
@@ -1418,6 +1542,13 @@ export function UiGallery() {
             </EmptyState>
             <EmptyState
               afterRead
+              icon={CheckIcon}
+              support="Tudo o que foi feito sem internet foi aceito."
+              title="Nenhuma pendência de envio."
+            />
+            <EmptyState
+              afterRead
+              icon={[ShoppingBagIcon, WalletIcon, ChartColumnIcon]}
               support="Escolha outro período ou registre vendas e despesas."
               title="Sem vendas nem despesas em 1 a 31 de outubro"
             >
@@ -1426,6 +1557,28 @@ export function UiGallery() {
                 Nova despesa
               </Button>
             </EmptyState>
+            <EmptyState
+              afterRead
+              support="Escolha outro período ou registre vendas e despesas."
+              title="Sem vendas nem despesas em 1 a 31 de outubro"
+            >
+              <Button type="button">Nova venda</Button>
+            </EmptyState>
+            <Card>
+              <CardContent>
+                <Empty>
+                  <EmptyMedia variant="icon">
+                    <CloudOffIcon aria-hidden="true" />
+                  </EmptyMedia>
+                  <EmptyHeader>
+                    <EmptyTitle>As peças, montadas à mão</EmptyTitle>
+                    <EmptyDescription>
+                      Quadro, frase e apoio, sem o cartão do EmptyState.
+                    </EmptyDescription>
+                  </EmptyHeader>
+                </Empty>
+              </CardContent>
+            </Card>
           </Section>
 
           <Section title="Dinheiro">
