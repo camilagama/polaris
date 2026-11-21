@@ -15,6 +15,7 @@ import {
   CollapsiblePanel,
   CollapsibleTrigger,
 } from "@/ui/collapsible";
+import { FieldLegend, FieldSeparator, FieldSet } from "@/ui/field";
 import { focusLater } from "../lib/focus";
 import { SelectField } from "../sales/sale-fields";
 import { ProductTextAreaField, ProductTextField } from "./product-fields";
@@ -40,6 +41,8 @@ export const emptyDraft: ProductDraft = {
 
 /** The `<form>` of the product's data: the footer's button of the dialog submits it from any tab (`form=`). */
 export const PRODUCT_FORM_ID = "product-form";
+
+const SECTION_CLASS = "col-span-full grid gap-4 md:grid-cols-2";
 
 /** The choice that clears the category: the Select has no empty value of its own. */
 const NO_CATEGORY = "none";
@@ -153,48 +156,56 @@ export function ProductForm({
       noValidate
       onSubmit={onSubmit}
     >
-      <ProductTextField
-        className="col-span-full"
-        error={nameError}
-        id="product-name"
-        label="Nome do produto"
-        onChange={handleName}
-        value={draft.name}
-      />
+      <FieldSet className={SECTION_CLASS}>
+        <FieldLegend>Produto</FieldLegend>
+        <ProductTextField
+          className="col-span-full"
+          error={nameError}
+          id="product-name"
+          label="Nome do produto"
+          onChange={handleName}
+          value={draft.name}
+        />
+      </FieldSet>
+      <FieldSeparator />
       {editing ? null : (
         <>
-          <ProductTextField
-            addon="R$"
-            error={openingErrors.listPrice}
-            id="product-list-price"
-            inputMode="decimal"
-            label="Preço de tabela"
-            onChange={handleListPrice}
-            optional
-            placeholder="Ex.: 49,90"
-            value={draft.listPrice}
-          />
-          <ProductTextField
-            className="md:col-start-1"
-            error={openingErrors.quantity}
-            hint="Deixe vazio se ainda não tem estoque."
-            id="product-quantity"
-            inputMode="numeric"
-            label="Quantos você tem agora"
-            onChange={handleQuantity}
-            value={draft.quantity}
-          />
-          <ProductTextField
-            addon="R$"
-            error={openingErrors.unitCost}
-            id="product-unit-cost"
-            inputMode="decimal"
-            label="Custo de cada unidade"
-            onChange={handleUnitCost}
-            optional
-            placeholder="Ex.: 12,50"
-            value={draft.unitCost}
-          />
+          <FieldSet className={SECTION_CLASS}>
+            <FieldLegend>Preço e estoque</FieldLegend>
+            <ProductTextField
+              addon="R$"
+              error={openingErrors.listPrice}
+              id="product-list-price"
+              inputMode="decimal"
+              label="Preço de tabela"
+              onChange={handleListPrice}
+              optional
+              placeholder="Ex.: 49,90"
+              value={draft.listPrice}
+            />
+            <ProductTextField
+              className="md:col-start-1"
+              error={openingErrors.quantity}
+              hint="Deixe vazio se ainda não tem estoque."
+              id="product-quantity"
+              inputMode="numeric"
+              label="Quantos você tem agora"
+              onChange={handleQuantity}
+              value={draft.quantity}
+            />
+            <ProductTextField
+              addon="R$"
+              error={openingErrors.unitCost}
+              id="product-unit-cost"
+              inputMode="decimal"
+              label="Custo de cada unidade"
+              onChange={handleUnitCost}
+              optional
+              placeholder="Ex.: 12,50"
+              value={draft.unitCost}
+            />
+          </FieldSet>
+          <FieldSeparator />
         </>
       )}
       <Collapsible
@@ -213,26 +224,26 @@ export function ProductForm({
           <DetailsIcon aria-hidden="true" data-icon="inline-end" />
         </CollapsibleTrigger>
         {/* kept mounted while closed: what was typed in it survives closing and opening */}
-        <CollapsiblePanel
-          className="grid gap-4 px-3 pb-3 md:grid-cols-2"
-          keepMounted
-        >
-          <SelectField
-            id="product-category"
-            label="Categoria"
-            onChange={handleCategory}
-            options={options}
-            placeholder="Sem categoria"
-            value={draft.categoryId === "" ? NO_CATEGORY : draft.categoryId}
-          />
-          <ProductTextAreaField
-            className="col-span-full"
-            id="product-description"
-            label="Descrição"
-            onChange={handleDescription}
-            optional
-            value={draft.description}
-          />
+        <CollapsiblePanel className="px-3 pb-3" keepMounted>
+          <FieldSet className={SECTION_CLASS}>
+            <FieldLegend className="sr-only">Mais detalhes</FieldLegend>
+            <SelectField
+              id="product-category"
+              label="Categoria"
+              onChange={handleCategory}
+              options={options}
+              placeholder="Sem categoria"
+              value={draft.categoryId === "" ? NO_CATEGORY : draft.categoryId}
+            />
+            <ProductTextAreaField
+              className="col-span-full"
+              id="product-description"
+              label="Descrição"
+              onChange={handleDescription}
+              optional
+              value={draft.description}
+            />
+          </FieldSet>
         </CollapsiblePanel>
       </Collapsible>
       {editing ? null : (
