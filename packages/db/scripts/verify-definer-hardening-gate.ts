@@ -1446,13 +1446,10 @@ async function run() {
         READER_NAME,
       ],
     ] as const) {
-      await client.query("BEGIN");
-      try {
+      await inRolledBackTransaction(client, async () => {
         await client.query(statement);
         await assert.rejects(assertOwnerRolesClean(client), floor);
-      } finally {
-        await client.query("ROLLBACK");
-      }
+      });
     }
     await assertOwnerRolesClean(client);
     tests.push(

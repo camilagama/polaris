@@ -36,20 +36,8 @@ export const GATE_ROLLBACK_LIST = {
     count: 1,
     reason: BEFORE_THE_RULE,
   },
-  "packages/db/scripts/verify-account-key-gate.ts": {
-    count: 1,
-    reason: BEFORE_THE_RULE,
-  },
   "packages/db/scripts/verify-auth-tables-row-security-gate.ts": {
     count: 5,
-    reason: BEFORE_THE_RULE,
-  },
-  "packages/db/scripts/verify-definer-hardening-gate.ts": {
-    count: 1,
-    reason: BEFORE_THE_RULE,
-  },
-  "packages/db/scripts/verify-definer-owners-gate.ts": {
-    count: 4,
     reason: BEFORE_THE_RULE,
   },
   "packages/db/scripts/verify-gate2-runtime.ts": {

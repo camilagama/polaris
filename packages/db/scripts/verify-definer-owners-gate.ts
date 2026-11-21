@@ -2,7 +2,11 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { Client } from "pg";
-import { withGateRole } from "./gate-roles";
+import {
+  inRolledBackTransaction,
+  rollbackQuietly,
+  withGateRole,
+} from "./gate-roles";
 import {
   disposableHostPattern,
   expectSqlState,
@@ -192,17 +196,13 @@ async function run() {
     settings: Record<string, string>,
     role: string | undefined,
     body: () => Promise<T>
-  ): Promise<T> => {
-    await client.query("BEGIN");
-    try {
+  ): Promise<T> =>
+    await inRolledBackTransaction(client, async () => {
       for (const [name, value] of Object.entries(settings)) {
         await client.query("SELECT set_config($1, $2, true)", [name, value]);
       }
       return role ? await withGateRole(client, role, body) : await body();
-    } finally {
-      await client.query("ROLLBACK");
-    }
-  };
+    });
   const refused = (
     role: string,
     settings: Record<string, string>,
@@ -1016,7 +1016,7 @@ async function run() {
           await client.query("COMMIT");
           return revoked;
         } catch (error) {
-          await client.query("ROLLBACK");
+          await rollbackQuietly(client);
           throw error;
         }
       })();
@@ -1086,7 +1086,7 @@ async function run() {
         assert.ok(result.rows[0]);
         return result.rows[0];
       } catch (error) {
-        await client.query("ROLLBACK");
+        await rollbackQuietly(client);
         throw error;
       }
     };
@@ -1470,8 +1470,7 @@ async function run() {
     // the billing owner sees only the recent active stores and who has a welcome, whatever is asked: rows it must not
     // see are written first in the same rolled-back transaction (a store of two days ago, a store closing, a notice of
     // the cycle), next to the ones it must (a store of now and its welcome), so the probe is never empty
-    await client.query("BEGIN");
-    try {
+    await inRolledBackTransaction(client, async () => {
       const probeUser = `definer-owners-welcome-${suffix}`;
       await client.query(
         `INSERT INTO public."user" (id, name, email, email_verified) VALUES ($1, 'Nome de teste', $2, true)`,
@@ -1510,9 +1509,7 @@ async function run() {
         ).rows.map((row) => row.kind);
         assert.deepEqual(seenNotices, ["welcome"], "only who has a welcome");
       });
-    } finally {
-      await client.query("ROLLBACK");
-    }
+    });
     tests.push(
       "the functions of the billing notices (0101 and 0102) are SECURITY DEFINER with a fixed search_path: billing_notice_recipient of polaris_notice_recipient_owner (EXECUTE: the authentication role) and welcome_notice_candidates, billing_notice_store and billing_notice_sweep_zones of polaris_billing_owner (EXECUTE: the billing role); each owner holds exactly its functions, privileges and policies, and, outside the scope of their functions, the billing owner sees only the active stores of the last 24 hours, the owners and who has a welcome (the scopes of 0102 are proved in the billing-notices gate)"
     );
