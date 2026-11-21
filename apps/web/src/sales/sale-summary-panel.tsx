@@ -41,21 +41,30 @@ function Unknown({ children }: { children: ReactNode }) {
 /** A row of the receipt: label, dotted leader, value. A `<div>` with `<dt>` and `<dd>` inside a `<dl>`. */
 export function LeaderRow({
   label,
+  mono = false,
   tone = "normal",
   value,
 }: {
   label: string;
+  /** The value in Geist Mono (the receipt of the confirmed sale): wider than Geist, so the leader gives up its minimum to the value. */
+  mono?: boolean;
   tone?: "discount" | "normal" | "total";
   value: ReactNode;
 }) {
   return (
     <div className="flex items-baseline gap-2">
-      <dt className="flex min-w-0 flex-1 items-baseline gap-2 after:min-w-4 after:flex-1 after:-translate-y-0.75 after:border-input after:border-b after:border-dotted after:content-['']">
+      <dt
+        className={cn(
+          "flex min-w-0 flex-1 items-baseline gap-2 after:flex-1 after:-translate-y-0.75 after:border-input after:border-b after:border-dotted after:content-['']",
+          mono ? "after:min-w-0" : "after:min-w-4"
+        )}
+      >
         {label}
       </dt>
       <dd
         className={cn(
           "text-right font-medium tabular-nums",
+          mono && "font-mono",
           tone === "discount" && "text-warning"
         )}
       >
