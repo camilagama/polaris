@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { Pool } from "pg";
-import { rollbackAndRelease } from "./gate-roles";
+import { inCommittedTransaction } from "./gate-roles";
 
 /**
  * `rls_poc_operations` lives only while the gate that proves RLS on it runs: the app's database does not have it.
@@ -28,23 +28,14 @@ const rlsGateSeeds = [
 
 export async function recreateRlsGateFixture(pool: Pool): Promise<void> {
   const statements = await readFile(fixtureMigration, "utf8");
-  const client = await pool.connect();
-  try {
-    await client.query("BEGIN");
+  await inCommittedTransaction(pool, async (client) => {
     await client.query("DROP TABLE IF EXISTS public.rls_poc_operations");
     await client.query(statements);
-    await client.query("COMMIT");
-    client.release();
-  } catch (error) {
-    await rollbackAndRelease(client);
-    throw error;
-  }
+  });
 }
 
 export async function seedRlsGateFixture(pool: Pool): Promise<void> {
-  const client = await pool.connect();
-  try {
-    await client.query("BEGIN");
+  await inCommittedTransaction(pool, async (client) => {
     for (const seed of rlsGateSeeds) {
       // biome-ignore lint/performance/noAwaitInLoops: one connection, one statement at a time
       await client.query("SELECT set_config('app.organization_id', $1, true)", [
@@ -55,27 +46,15 @@ export async function seedRlsGateFixture(pool: Pool): Promise<void> {
         [seed.organizationId, seed.token, seed.value]
       );
     }
-    await client.query("COMMIT");
-    client.release();
-  } catch (error) {
-    await rollbackAndRelease(client);
-    throw error;
-  }
+  });
 }
 
 export async function dropRlsGateFixture(pool: Pool): Promise<void> {
-  const client = await pool.connect();
-  try {
-    await client.query("BEGIN");
+  await inCommittedTransaction(pool, async (client) => {
     // a connection left inside a transaction on the table would hold the drop until the runner's time limit
     await client.query("SET LOCAL lock_timeout = '10s'");
     await client.query("DROP TABLE IF EXISTS public.rls_poc_operations");
-    await client.query("COMMIT");
-    client.release();
-  } catch (error) {
-    await rollbackAndRelease(client);
-    throw error;
-  }
+  });
 }
 
 /** The seeded fixture lives exactly while `run` runs, on the owner URL given. */
