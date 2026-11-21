@@ -12,7 +12,6 @@ import type { ExpenseFilters, ExpenseListState } from "./use-expense-list";
 const TITLE_ID = "expense-by-category-title";
 const FIRST_SKELETON_LINES = 3;
 
-/** Only the plain month of the active expenses is split by category: a category on the bar or the voided ones leave it out. */
 export function showsCategoryBlock(filters: ExpenseFilters): boolean {
   return filters.categoryId === "" && filters.status === "active";
 }
@@ -60,7 +59,6 @@ interface ShareLineProps {
 
 const LINE_CLASS = "grid w-full gap-1.5 rounded-md px-1 py-2 text-left";
 
-/** Name on the left (it breaks), share and amount on the right (they do not); under them the bar. */
 function ShareLineBody({
   action,
   row,

@@ -75,7 +75,6 @@ const answer = (json: unknown) => ({
   headers: { ...WORKER_MARK },
 });
 
-/** The month's expenses spread over three categories, one with a long name, the amounts large. */
 const SPLIT_EXPENSES = EXPENSES.map((expense, index) => {
   const target = CATEGORIES[index % 3] as (typeof CATEGORIES)[number];
   return {

@@ -142,7 +142,6 @@ class FakeExpenseServer {
   calls: string[] = [];
   /** Answers the split of the total per category, as the current server does; off, as an old server that has no such field. */
   splitByCategory = false as boolean;
-  /** Holds the answer of `expense/list` until released: the screen stays on its first read. */
   listGate: Promise<void> | null = null;
   private next = 100;
 
@@ -2273,7 +2272,6 @@ const categoryButton = (page: Page, name: string) =>
     name: new RegExp(`^Filtrar por ${name}( |$)`),
   });
 
-/** Marketing 600, Aluguel 300 and Impostos 100 in the month: 60%, 30% and 10% of R$ 1.000,00. */
 function seedSplit(server: FakeExpenseServer) {
   server.splitByCategory = true;
   seedExpense(server, 1, "300.00", 0);
