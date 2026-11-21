@@ -33,6 +33,8 @@ const customer = (
 
 const ROW_BUTTON_ANA =
   /<button[^>]*data-row-open=""[^>]*>(?:(?!<\/button>).)*<span class="sr-only">Editar <\/span>Ana Lima<\/span>/s;
+const LAST_PURCHASE_LINE =
+  /<span[^>]*data-last-purchase=""[^>]*>([^<]*)<\/span>/;
 const ROW_BUTTON_TAG = /<button[^>]*data-row-open=""[^>]*>/;
 /** A button that opens before the one before it closed. */
 const BUTTON_IN_BUTTON = /<button(?:(?!<\/button>).)*<button/s;
@@ -51,6 +53,7 @@ const base: Props = {
   query: "",
   status: "active",
   syncStates: new Map(),
+  today: "2026-11-21",
   total: 1,
   updateStates: new Map(),
 };
@@ -282,5 +285,51 @@ describe("the list of customers", () => {
     expect(ROW_BUTTON_TAG.exec(both)?.[0]).toContain(
       `aria-describedby="customer-support-${ana.id} customer-locked-${ana.id} customer-pending-${ana.id}"`
     );
+  });
+
+  it("tells the last purchase on the right of the row, small and muted, and describes the button by it", () => {
+    const ana = customer(1, "Ana Lima", { lastPurchaseOn: "2026-11-18" });
+    const html = render({ customers: [ana], total: 1 });
+    const line = LAST_PURCHASE_LINE.exec(html);
+    expect(line?.[1]).toBe("Última compra há 3 dias");
+    expect(line?.[0]).toContain("text-muted-foreground");
+    expect(line?.[0]).toContain("text-support");
+    expect(line?.[0]).toContain(`id="customer-purchase-${ana.id}"`);
+    expect(line?.[0]).toContain('aria-hidden="true"');
+    expect(ROW_BUTTON_TAG.exec(html)?.[0]).toContain(
+      `customer-purchase-${ana.id}`
+    );
+  });
+
+  it("goes under the contacts in a narrow card and beside them from 26 rem of card", () => {
+    const html = render({
+      customers: [customer(1, "Ana Lima", { lastPurchaseOn: "2026-11-18" })],
+      total: 1,
+    });
+    expect(html).toContain("@min-[26rem]:grid-cols-[minmax(0,1fr)_auto]");
+    expect(html).toContain("@container");
+  });
+
+  it("says Sem compras for a customer with none, and nothing where the purchases are not known", () => {
+    const none = render({
+      customers: [customer(1, "Ana Lima", { lastPurchaseOn: null })],
+      total: 1,
+    });
+    expect(none).toContain(">Sem compras<");
+    const unknown = render({
+      customers: [customer(1, "Ana Lima")],
+      total: 1,
+    });
+    expect(unknown).not.toContain("data-last-purchase");
+    expect(unknown).not.toContain("Sem compras");
+  });
+
+  it("counts the days from the store's today it was given", () => {
+    const html = render({
+      customers: [customer(1, "Ana Lima", { lastPurchaseOn: "2026-10-01" })],
+      today: "2026-11-21",
+      total: 1,
+    });
+    expect(html).toContain("Última compra em 01/10");
   });
 });

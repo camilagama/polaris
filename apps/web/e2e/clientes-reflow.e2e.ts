@@ -31,6 +31,8 @@ const ORGANIZATION = {
 };
 const NOW = new Date("2026-10-14T12:00:00-03:00");
 const DAY = NOW.toISOString();
+const daysAgo = (days: number) =>
+  new Date(NOW.getTime() - days * 86_400_000).toISOString().slice(0, 10);
 const id = (n: number) => `0199c2d0-0000-7000-8000-0000000000${n}`;
 
 const LONG_NAME =
@@ -54,9 +56,16 @@ const customer = (n: number, name: string, extra: object = {}) => ({
 });
 
 const ONLY_EMAIL = "caio.prado.de.almeida.junior@exemplo.com";
-const WIDE = customer(1, LONG_NAME, { email: LONG_EMAIL });
-const ONLY_PHONE = customer(2, "Bia Souza");
-const NO_PHONE = customer(3, "Caio Prado", { email: ONLY_EMAIL, phone: null });
+const WIDE = customer(1, LONG_NAME, {
+  email: LONG_EMAIL,
+  lastPurchaseOn: daysAgo(300),
+});
+const ONLY_PHONE = customer(2, "Bia Souza", { lastPurchaseOn: daysAgo(2) });
+const NO_PHONE = customer(3, "Caio Prado", {
+  email: ONLY_EMAIL,
+  lastPurchaseOn: null,
+  phone: null,
+});
 const SHORT = customer(4, "Ana", { email: "a@b.co", phone: "1133334444" });
 const ACTIVE = [WIDE, ONLY_PHONE, NO_PHONE, SHORT];
 const ARCHIVED_WIDE = customer(5, "Dora Archived Customer", {

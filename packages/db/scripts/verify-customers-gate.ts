@@ -467,7 +467,17 @@ async function run() {
       tenantA,
       (transaction, identity) => getCustomer(transaction, identity, first.id)
     );
-    assert.deepEqual(ownCustomer, ownCustomerFromList);
+    // `get` adds the summary to the row `list` gives; with no sale the last purchase is the same null in both
+    const { summary: ownSummary, ...ownCustomerFields } = ownCustomer;
+    assert.deepEqual(
+      { ...ownCustomerFields, lastPurchaseOn: ownSummary.lastPurchaseOn },
+      ownCustomerFromList
+    );
+    assert.deepEqual(ownSummary, {
+      lastPurchaseOn: null,
+      purchaseCount: 0,
+      totalSpent: "0",
+    });
     const missingCustomerError = await withTenant(
       runtime.db,
       tenantB,

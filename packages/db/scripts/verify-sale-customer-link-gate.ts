@@ -8,7 +8,13 @@ import {
 } from "@polaris/domain/sales/sale-customer-link";
 import { SaleNotFoundError } from "@polaris/domain/sales/sale-errors";
 import { createDatabase } from "../src/client";
-import { archiveCustomer, createCustomer } from "../src/customer-repository";
+import { Client } from "pg";
+import {
+  archiveCustomer,
+  createCustomer,
+  getCustomer,
+  listCustomers,
+} from "../src/customer-repository";
 import { receiveStock } from "../src/inventory-repository";
 import { createProduct } from "../src/product-repository";
 import {
@@ -16,7 +22,9 @@ import {
   changeSaleCustomerLink,
   getSaleCustomerLink,
 } from "../src/sale-customer-link-repository";
+import { cancelSale } from "../src/sale-cancellation-repository";
 import { confirmSale } from "../src/sale-repository";
+import { createSaleReturn } from "../src/sale-return-repository";
 import { TenantAuditEventError } from "../src/tenant-audit";
 import { TenantAuthorizationError } from "../src/tenant-transaction";
 import {
@@ -122,7 +130,7 @@ async function run() {
       );
     }
 
-    async function newSale(tenant: TenantFixture, label: string) {
+    async function newSale(tenant: TenantFixture, label: string, hoursAgo = 3) {
       const product = await withTenantAs(
         runtimeDatabase.db,
         tenant,
@@ -173,7 +181,7 @@ async function run() {
                 variantId,
               },
             ],
-            occurredAt: recentInstant(),
+            occurredAt: recentInstant(hoursAgo),
             payment: { anticipationRequested: false, method: "pix" },
             paymentProfile: null,
             requestId: randomUUID(),
@@ -1088,6 +1096,205 @@ async function run() {
     assert.equal(guardAcl.rows[0]?.can_execute, false);
     tests.push(
       "PostgreSQL itself rejects version gaps, invalid transitions, first-version unassign, archived or foreign customers, cross-organization inserts; runtime has SELECT+INSERT only under FORCE RLS, no UPDATE/DELETE/TRUNCATE, and other tenants see nothing"
+    );
+
+    // ------------------------------------------- what a customer bought, in the read that names the customer
+    const buyer = await newCustomer(tenantA, "Comprador");
+    const other = await newCustomer(tenantA, "Outro");
+    const idle = await newCustomer(tenantA, "Sem compra");
+    const buyerOfB = await newCustomer(tenantB, "Comprador de B");
+    const kept = await newSale(tenantA, "P1");
+    const keptReturned = await newSale(tenantA, "P2");
+    const cancelledSale = await newSale(tenantA, "P3");
+    const moved = await newSale(tenantA, "P4");
+    const received = await newSale(tenantA, "P5");
+    const older = await newSale(tenantA, "P7", 96);
+    const removed = await newSale(tenantA, "P8");
+    const saleOfBuyerB = await newSale(tenantB, "P6");
+    for (const [tenant, saleId, customerId] of [
+      [tenantA, kept, buyer.id],
+      [tenantA, keptReturned, buyer.id],
+      [tenantA, cancelledSale, buyer.id],
+      [tenantA, moved, buyer.id],
+      [tenantA, received, other.id],
+      [tenantA, older, buyer.id],
+      [tenantA, removed, buyer.id],
+      [tenantB, saleOfBuyerB, buyerOfB.id],
+    ] as const) {
+      // biome-ignore lint/performance/noAwaitInLoops: each assignment is its own version history
+      await change(tenant, {
+        action: "assign",
+        customerId,
+        expectedVersion: 0,
+        saleId,
+      });
+    }
+    await change(tenantA, {
+      action: "reassign",
+      customerId: other.id,
+      expectedVersion: 1,
+      saleId: moved,
+    });
+    await change(tenantA, {
+      action: "reassign",
+      customerId: buyer.id,
+      expectedVersion: 1,
+      saleId: received,
+    });
+    await change(tenantA, {
+      action: "unassign",
+      expectedVersion: 1,
+      saleId: removed,
+    });
+    await withTenantAs(
+      runtimeDatabase.db,
+      tenantA,
+      "sale:cancel",
+      (transaction, identity) =>
+        cancelSale(transaction, identity, {
+          commandId: randomUUID(),
+          commandVersion: 1,
+          saleId: cancelledSale,
+        })
+    );
+    await withTenantAs(
+      runtimeDatabase.db,
+      tenantA,
+      "sale:return",
+      (transaction, identity) =>
+        createSaleReturn(transaction, identity, {
+          commandId: randomUUID(),
+          commandVersion: 1,
+          items: [{ position: 0, restockedQuantity: 1, returnedQuantity: 1 }],
+          saleId: keptReturned,
+        })
+    );
+
+    const sentStatements: string[] = [];
+    const originalQuery = Client.prototype.query;
+    Client.prototype.query = function recordedQuery(
+      this: Client,
+      ...args: unknown[]
+    ) {
+      const [first] = args;
+      sentStatements.push(
+        typeof first === "string"
+          ? first
+          : String((first as { text?: string }).text)
+      );
+      return (originalQuery as (...inner: unknown[]) => unknown).apply(
+        this,
+        args
+      );
+    } as typeof Client.prototype.query;
+    let overhead = 0;
+    let listCount = 0;
+    let getCount = 0;
+    let listed: Awaited<ReturnType<typeof listCustomers>>;
+    let summarized: Awaited<ReturnType<typeof getCustomer>>;
+    try {
+      await withTenantAs(runtimeDatabase.db, tenantA, "customer:update", () =>
+        Promise.resolve()
+      );
+      overhead = sentStatements.length;
+      sentStatements.length = 0;
+      listed = await withTenantAs(
+        runtimeDatabase.db,
+        tenantA,
+        "customer:update",
+        (transaction, identity) =>
+          listCustomers(transaction, identity, { status: "all" })
+      );
+      listCount = sentStatements.length;
+      sentStatements.length = 0;
+      summarized = await withTenantAs(
+        runtimeDatabase.db,
+        tenantA,
+        "customer:update",
+        (transaction, identity) => getCustomer(transaction, identity, buyer.id)
+      );
+      getCount = sentStatements.length;
+    } finally {
+      Client.prototype.query = originalQuery;
+    }
+    assert.ok(overhead > 0);
+    assert.equal(
+      listCount,
+      overhead + 1,
+      "customer.list stays one statement beyond the entry of the tenant transaction"
+    );
+    assert.equal(
+      getCount,
+      overhead + 1,
+      "customer.get stays one statement beyond the entry of the tenant transaction"
+    );
+
+    const countedDays = await admin.pool.query<{ last: string }>(
+      "SELECT max(occurred_on)::text AS last FROM public.sales WHERE id = ANY($1::uuid[])",
+      [[kept, keptReturned, received, older]]
+    );
+    const lastDay = countedDays.rows[0]?.last;
+    assert.ok(lastDay);
+    const olderDay = await admin.pool.query<{ day: string }>(
+      "SELECT occurred_on::text AS day FROM public.sales WHERE id = $1",
+      [older]
+    );
+    assert.ok((olderDay.rows[0]?.day ?? lastDay) < lastDay);
+    // two items of 19.90 and a freight of 5.00: 44.80 due for each counted sale, the return not taken out; the sale of
+    // the customer that was removed from it (a last version with no customer) counts for nobody
+    assert.deepEqual(summarized.summary, {
+      lastPurchaseOn: lastDay,
+      purchaseCount: 4,
+      totalSpent: "179.20",
+    });
+    const rowOf = (id: string) => listed.find((row) => row.id === id);
+    assert.equal(rowOf(buyer.id)?.lastPurchaseOn, lastDay);
+    assert.equal(rowOf(other.id)?.lastPurchaseOn, lastDay);
+    assert.equal(rowOf(idle.id)?.lastPurchaseOn, null);
+    assert.equal(
+      listed.some((row) => row.id === buyerOfB.id),
+      false
+    );
+    const alone = await withTenantAs(
+      runtimeDatabase.db,
+      tenantA,
+      "customer:update",
+      (transaction, identity) => getCustomer(transaction, identity, idle.id)
+    );
+    assert.deepEqual(alone.summary, {
+      lastPurchaseOn: null,
+      purchaseCount: 0,
+      totalSpent: "0",
+    });
+    const ofOther = await withTenantAs(
+      runtimeDatabase.db,
+      tenantA,
+      "customer:update",
+      (transaction, identity) => getCustomer(transaction, identity, other.id)
+    );
+    assert.equal(ofOther.summary.purchaseCount, 1);
+    assert.equal(ofOther.summary.totalSpent, "44.80");
+    const ofB = await withTenantAs(
+      runtimeDatabase.db,
+      tenantB,
+      "customer:update",
+      (transaction, identity) => getCustomer(transaction, identity, buyerOfB.id)
+    );
+    assert.equal(ofB.summary.purchaseCount, 1);
+    assert.equal(ofB.summary.totalSpent, "44.80");
+    await assert.rejects(
+      () =>
+        withTenantAs(
+          runtimeDatabase.db,
+          tenantB,
+          "customer:update",
+          (transaction, identity) =>
+            getCustomer(transaction, identity, buyer.id)
+        ),
+      CustomerNotFoundError
+    );
+    tests.push(
+      "customer.list and customer.get answer the last purchase and the summary in one statement each: only confirmed, not cancelled sales whose current attribution is the customer count, the total is the total due with the return not taken out, and another store neither sees nor adds to them"
     );
 
     console.log(
