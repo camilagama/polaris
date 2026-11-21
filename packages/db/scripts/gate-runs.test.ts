@@ -870,7 +870,7 @@ function visibleAssignments(
       number,
       number,
     ];
-    return { index: match.index, value: code.slice(start, stop) };
+    return { index: match.index ?? 0, value: code.slice(start, stop) };
   };
   const stillOpen = (from: number, loopBody: boolean): boolean => {
     let depth = 0;
