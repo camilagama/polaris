@@ -60,6 +60,18 @@ const SPECS: Readonly<Record<string, SpecRule>> = {
     coarse: 1,
     why: "the window of 1280 px is not a phone",
   },
+  "goals.e2e.ts": {
+    bare: 0,
+    coarse: 0,
+    from: 'test.describe("Meta a 320 px com a letra do navegador em 20 px"',
+    why: "",
+  },
+  "home/meta-ritmo.e2e.ts": {
+    bare: 0,
+    coarse: 0,
+    from: 'test.describe("Meta a 320 px com a letra do navegador em 20 px"',
+    why: "",
+  },
   "home/numero-em-mono.e2e.ts": {
     bare: 3,
     coarse: 1,

@@ -8,6 +8,7 @@ import type { GoalReadModel } from "@polaris/contracts";
 import { useCallback, useState } from "react";
 import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
+import { PaceLine } from "@/ui/pace-line";
 import { Card, CardContent } from "@/ui/card";
 import {
   Dialog,
@@ -37,6 +38,7 @@ import {
   goalStatusLabel,
   goalTitle,
 } from "./goal-model";
+import { goalPace, goalPaceLine, goalPaceSpoken } from "./goal-pace";
 import type { GoalOutcome } from "./use-goal-commands";
 
 interface GoalCardProps {
@@ -92,9 +94,11 @@ function progressTargetText(goal: GoalReadModel): string {
 function GoalProgress({
   goal,
   pausedHelp = null,
+  today,
 }: {
   goal: GoalReadModel;
   pausedHelp?: LimitHelpView | null;
+  today: string;
 }) {
   const { progress } = goal;
   const [hidden] = useHiddenValues();
@@ -123,24 +127,31 @@ function GoalProgress({
     hidden ? maskMoney(text, MASKED_SPOKEN) : text;
   const valueText = formatGoalValue(goal.kind, progress.value);
   const percentText = formatGoalPercent(progress.percent);
+  const pace = goalPace(goal, today);
   return (
-    <Progress
-      aria-label={`Progresso de ${goalTitle(goal)}`}
-      aria-valuetext={spoken(`${valueText} de ${targetText}, ${percentText}`)}
-      value={width}
-    >
-      <span className="font-medium text-sm tabular-nums">
-        <span className="font-semibold">
-          <MoneyText text={valueText} />
-        </span>{" "}
-        <span className="font-normal text-muted-foreground">
-          de <MoneyText text={targetText} />
+    <div className="grid gap-1.5">
+      <Progress
+        aria-label={`Progresso de ${goalTitle(goal)}`}
+        aria-valuetext={spoken(
+          `${valueText} de ${targetText}, ${percentText}${pace ? `. ${goalPaceSpoken(pace)}` : ""}`
+        )}
+        {...(pace ? { marker: pace.position } : {})}
+        value={width}
+      >
+        <span className="font-medium text-sm tabular-nums">
+          <span className="font-semibold">
+            <MoneyText text={valueText} />
+          </span>{" "}
+          <span className="font-normal text-muted-foreground">
+            de <MoneyText text={targetText} />
+          </span>
         </span>
-      </span>
-      <ProgressValue className="font-medium font-mono text-foreground">
-        {() => percentText}
-      </ProgressValue>
-    </Progress>
+        <ProgressValue className="font-medium font-mono text-foreground">
+          {() => percentText}
+        </ProgressValue>
+      </Progress>
+      <PaceLine {...goalPaceLine(pace)} />
+    </div>
   );
 }
 
@@ -391,7 +402,7 @@ export function ActiveGoalCard({
     <Card>
       <CardContent className="grid gap-3">
         <GoalHeader goal={goal} today={today} />
-        <GoalProgress goal={goal} pausedHelp={pausedHelp} />
+        <GoalProgress goal={goal} pausedHelp={pausedHelp} today={today} />
         {mode === "edit" ? (
           <GoalEditForm
             disabled={busyKey !== null}
