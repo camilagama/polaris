@@ -874,9 +874,8 @@ async function runParallel(
   admin: Client,
   context: Context,
   runs: PlannedRun<Gate>[],
-  workers: number,
-  whileCopiesWait: () => Promise<GateResult[]>
-): Promise<{ parallel: GateResult[]; waiting: GateResult[] }> {
+  workers: number
+): Promise<GateResult[]> {
   const copies = Array.from(
     { length: Math.min(workers, runs.length) },
     (_, index) => copyDatabaseName(context.database, index + 1)
@@ -893,27 +892,21 @@ async function runParallel(
       console.log(
         `--- ${runs.length} runs in parallel, in ${copies.length} copies of ${context.database}: ${copies.join(", ")}`
       );
-      const waiting = await whileCopiesWait();
-      const parallel = await drainQueue(
-        runs,
-        copies.length,
-        ({ gate, run }, worker) => {
-          const database = copies[worker - 1] as string;
-          return runAndReport(
-            gate,
-            {
-              ...context,
-              copy: true,
-              database,
-              runtimeUrl: urlForDatabase(context.runtimeUrl, database),
-              superuserUrl: undefined,
-              url: urlForDatabase(context.url, database),
-            },
-            run
-          );
-        }
-      );
-      return { parallel, waiting };
+      return await drainQueue(runs, copies.length, ({ gate, run }, worker) => {
+        const database = copies[worker - 1] as string;
+        return runAndReport(
+          gate,
+          {
+            ...context,
+            copy: true,
+            database,
+            runtimeUrl: urlForDatabase(context.runtimeUrl, database),
+            superuserUrl: undefined,
+            url: urlForDatabase(context.url, database),
+          },
+          run
+        );
+      });
     },
     async () => {
       const failures: unknown[] = [];
@@ -1017,30 +1010,19 @@ async function main() {
       };
 
       const plan = planGateRuns(selected, Boolean(superuserUrl), workers);
-      const runSerial = async (): Promise<GateResult[]> => {
-        const serial: GateResult[] = [];
-        if (plan.serial.length > 0) {
-          console.log(
-            `--- ${plan.serial.length} runs one at a time, in ${database}`
-          );
-        }
-        for (const { gate, run } of plan.serial) {
-          // biome-ignore lint/performance/noAwaitInLoops: gates must run strictly one at a time on one database
-          serial.push(await runAndReport(gate, context, run));
-        }
-        return serial;
-      };
       if (plan.parallel.length > 0) {
-        const { parallel, waiting } = await runParallel(
-          admin,
-          context,
-          plan.parallel,
-          workers,
-          runSerial
+        results.push(
+          ...(await runParallel(admin, context, plan.parallel, workers))
         );
-        results.push(...parallel, ...waiting);
-      } else {
-        results.push(...(await runSerial()));
+      }
+      if (plan.serial.length > 0) {
+        console.log(
+          `--- ${plan.serial.length} runs one at a time, in ${database}`
+        );
+      }
+      for (const { gate, run } of plan.serial) {
+        // biome-ignore lint/performance/noAwaitInLoops: gates must run strictly one at a time on one database
+        results.push(await runAndReport(gate, context, run));
       }
     },
     async () => {
