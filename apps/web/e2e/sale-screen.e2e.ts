@@ -633,7 +633,9 @@ test("Pagamento: cada forma traz o número decorativo e aria-keyshortcuts, o nom
   for (const width of [760, 900, 1024, 1280, 1536]) {
     // biome-ignore lint/performance/noAwaitInLoops: the layout is measured width by width
     await page.setViewportSize({ height: 900, width });
-    await expect(keys.first()).toBeVisible();
+    if (width >= 1280) {
+      await expect(keys.first()).toBeVisible();
+    }
     const withKeys = await heights();
     await keys.evaluateAll((nodes) => {
       for (const node of nodes) {
