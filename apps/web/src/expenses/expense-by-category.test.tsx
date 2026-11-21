@@ -120,6 +120,24 @@ describe("ExpenseByCategory", () => {
     expect(html.match(/<button/g)).toHaveLength(5);
   });
 
+  it("writes a category created in another tab by the name the server sent, as a plain line", () => {
+    const html = render({
+      total: "2030.00",
+      totalsByCategory: [
+        ...totals,
+        {
+          categoryId: "0199c2d0-0000-7000-8000-00000000c0ff",
+          categoryName: "Brindes",
+          count: 1,
+          total: "30.00",
+        },
+      ],
+    });
+    expect(html).toContain("Brindes");
+    expect(html).not.toContain("Sem categoria");
+    expect(html.match(/<button/g)).toHaveLength(2);
+  });
+
   it("has no skeleton on the first read of a store: with no split to show it would take the space away again", () => {
     expect(render({ isLoading: true, totalsByCategory: undefined })).toBe("");
   });

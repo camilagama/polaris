@@ -14,6 +14,7 @@ const { DeltaChip } = await import("../ui/kpi-card");
 
 const BASIS = "em relação a setembro (1 a 14/09)";
 const NAME = /aria-label="([^"]*)"/;
+const HIDDEN_SIGN = /aria-hidden="true"[^>]* data-kpi-delta-text=""/;
 const SR_ONLY = /class="sr-only"/g;
 const VISIBLE = /data-kpi-delta-text="">(.*?)<\/span>(?:<\/span>)?/;
 
@@ -95,7 +96,7 @@ describe("one spoken path a chip", () => {
       const markup = chip(delta as Delta);
       expect(markup.match(SR_ONLY)).toBeNull();
       expect(markup.match(/aria-label=/g)).toHaveLength(1);
-      expect(markup).toContain('aria-hidden="true" data-kpi-delta-text=""');
+      expect(markup).toMatch(HIDDEN_SIGN);
     }
   });
 
@@ -104,7 +105,7 @@ describe("one spoken path a chip", () => {
     expect(markup).not.toContain("aria-label=");
     expect(markup.match(SR_ONLY)).toHaveLength(1);
     expect(markup).toContain('class="sr-only">subiu 30,0 por cento</span>');
-    expect(markup).toContain('aria-hidden="true" data-kpi-delta-text=""');
+    expect(markup).toMatch(HIDDEN_SIGN);
   });
 });
 

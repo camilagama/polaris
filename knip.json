@@ -45,7 +45,6 @@
       "ignoreDependencies": [
         "cloudflare",
         "@fontsource-variable/geist",
-        "@fontsource-variable/geist-mono",
         "tw-animate-css",
         "@polaris/ui"
       ],

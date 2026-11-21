@@ -20,7 +20,7 @@ import { pathToFileURL } from "node:url";
  * folder of each suite (`repoDirs`), which is what the guard `scripts/ci-shard-coverage.mjs` compares the list with.
  *
  * Usage:
- *   node scripts/ci-shard-plan.mjs --shards 4 --list offline-poc=list-offline-poc.json --list pwa=list-pwa.json
+ *   node scripts/ci-shard-plan.mjs --shards 10 --list offline-poc=list-offline-poc.json --list pwa=list-pwa.json
  *     [--durations ci/test-durations.json] [--workers <suite>=<n>] [--selection selection.json] [--out plan.json]
  *   node scripts/ci-shard-plan.mjs --filters plan.json --shard 2 --suite pwa
  *
@@ -316,11 +316,7 @@ export function filtersOf(plan, shardNumber, suite) {
 const minutes = (ms) => (ms / 60_000).toFixed(1).replace(".", ",");
 
 export function plannedFileCount(plan) {
-  return plan.shards.reduce(
-    (total, shard) =>
-      total + Object.values(shard.files).reduce((n, l) => n + l.length, 0),
-    0
-  );
+  return plan.shards.reduce((total, shard) => total + fileCount(shard), 0);
 }
 
 export function renderPlan(plan) {

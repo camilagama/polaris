@@ -735,20 +735,31 @@ export async function listExpenses(
   // one statement: the rows per category and, from the ROLLUP, the total of the whole filter
   const grouped = await transaction
     .select({
+      archivedAt: sql<string | null>`max(${expenseCategories.archivedAt})`,
       categoryId: expenses.categoryId,
+      categoryName: sql<string>`max(${expenseCategories.name})`,
       count: sql<number>`count(*)::int`,
       isTotal: sql<boolean>`grouping(${expenses.categoryId}) = 1`,
       // no numeric(20,2) cast: a sum of many valid amounts may need 19+ digits
       total: sql<string>`coalesce(sum(${expenses.amount}), 0.00)::text`,
     })
     .from(expenses)
+    .innerJoin(
+      expenseCategories,
+      and(
+        eq(expenseCategories.organizationId, expenses.organizationId),
+        eq(expenseCategories.id, expenses.categoryId)
+      )
+    )
     .where(and(...filters))
     .groupBy(sql`rollup (${expenses.categoryId})`);
   const totals = grouped.find((row) => row.isTotal);
   const totalsByCategory = grouped
     .filter((row) => !row.isTotal)
     .map((row) => ({
+      categoryArchived: row.archivedAt !== null,
       categoryId: row.categoryId,
+      categoryName: row.categoryName,
       count: row.count,
       total: row.total,
     }));

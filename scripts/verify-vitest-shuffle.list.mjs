@@ -2,7 +2,8 @@
  * The Vitest configs whose random order `verify-vitest-shuffle.mjs` keeps on, and what each must set. `needs` is the
  * list of `shuffle` keys that have to be `true` (`["files", "tests"]`, or `["tests"]` for a project that only
  * orders its tests). A config that turns the shuffle on is added here in the same change; a config that is not
- * listed is not checked.
+ * listed is not checked. `verify-vitest-shuffle.test.mjs` finds every Vitest config of the repository, so a new one has
+ * to be listed here or named in `VITEST_SHUFFLE_EXEMPT` with the reason it keeps no random order.
  */
 const ROOT_ORDERS_FILES_AND_TESTS =
   "ordena arquivos e testes; o que a raiz liga não chega a um projeto carregado de arquivo, que liga o seu";
@@ -47,4 +48,9 @@ export const VITEST_SHUFFLE_LIST = {
     needs: ["files", "tests"],
     reason: ROOT_ORDERS_FILES_AND_TESTS,
   },
+};
+
+export const VITEST_SHUFFLE_EXEMPT = {
+  "packages/domain/vitest.mutation.config.ts":
+    "só escolhe quais testes do domínio o run de mutação roda; não é uma suíte, e a ordem aleatória fica nos configs da suíte",
 };

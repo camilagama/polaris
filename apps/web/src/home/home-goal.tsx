@@ -121,8 +121,8 @@ function GoalRing({
       >
         <span
           className={cn(
-            "font-semibold tabular-nums leading-6 tracking-tight",
-            // "100,0%" fits the hole of 76 px at 20 px; a goal far past its target is written smaller
+            "font-mono font-semibold tabular-nums leading-6",
+            // "100,0%" in Geist Mono (6 characters of 0.6 em, 72 px at 20 px) fits the hole of 76 px; a goal far past its target is written smaller
             percent.length > 6 ? "text-base" : "text-xl"
           )}
         >

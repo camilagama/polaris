@@ -94,7 +94,13 @@ interface ExpenseClient {
       expenses: ExpenseReadModel[];
       nextCursor: string | null;
       total: string;
-      totalsByCategory?: { categoryId: string; count: number; total: string }[];
+      totalsByCategory?: {
+        categoryArchived?: boolean;
+        categoryId: string;
+        categoryName?: string;
+        count: number;
+        total: string;
+      }[];
     }>;
     listCategories: (
       input: unknown
@@ -225,7 +231,9 @@ describe("expense RPCs", () => {
       total: "2000.50",
       totalsByCategory: [
         {
+          categoryArchived: false,
           categoryId: "0199c2d0-0000-7000-8000-0000000000c1",
+          categoryName: "Aluguel",
           count: 2,
           total: "2000.50",
         },
@@ -250,7 +258,9 @@ describe("expense RPCs", () => {
       total: "2000.50",
       totalsByCategory: [
         {
+          categoryArchived: false,
           categoryId: "0199c2d0-0000-7000-8000-0000000000c1",
+          categoryName: "Aluguel",
           count: 2,
           total: "2000.50",
         },

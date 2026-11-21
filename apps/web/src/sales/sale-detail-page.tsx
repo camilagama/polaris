@@ -317,7 +317,7 @@ function ReadyDetailPanels({
       ) : null}
       <SaleCustomerPanel
         headingLevel={2}
-        key={saleId}
+        key={`${saleId}:${detail.cancellation === null ? "confirmed" : "cancelled"}:${view.returnPanelKey}`}
         organizationId={organizationId}
         saleId={saleId}
       />

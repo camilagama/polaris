@@ -27,8 +27,10 @@ vi.mock("../lib/orpc", () => ({
   },
 }));
 
+import { StaticOrganizationProvider } from "../lib/current-organization";
 import { SaleCustomerPanel } from "./sale-customer-panel";
 
+const TOTAL_TEXT = /R\$\s?310,90/;
 const organizationId = "org_1";
 const saleId = "77777777-7777-4777-8777-777777777777";
 const ana = "a0000000-0000-4000-8000-000000000001";
@@ -71,11 +73,20 @@ function link(customerId: string | null): SaleCustomerLinkReadModel {
 
 function renderPanel() {
   return render(
-    <SaleCustomerPanel
-      headingLevel={2}
-      organizationId={organizationId}
-      saleId={saleId}
-    />
+    <StaticOrganizationProvider
+      organization={{
+        id: organizationId,
+        name: "Loja do teste",
+        role: "owner",
+        timezone: "America/Sao_Paulo",
+      }}
+    >
+      <SaleCustomerPanel
+        headingLevel={2}
+        organizationId={organizationId}
+        saleId={saleId}
+      />
+    </StaticOrganizationProvider>
   );
 }
 
@@ -112,6 +123,76 @@ describe("the customer panel of a sale", () => {
     expect(getCustomer).toHaveBeenCalledTimes(1);
     expect(getCustomer).toHaveBeenCalledWith({ id: ana, organizationId });
     expect(listCustomers).not.toHaveBeenCalled();
+  });
+
+  it("shows what the customer bought from the same read that names it, with no read of its own", async () => {
+    vi.useFakeTimers({
+      now: new Date("2026-11-21T15:00:00.000Z"),
+      toFake: ["Date"],
+    });
+    try {
+      getCustomerLink.mockResolvedValue(link(ana));
+      getCustomer.mockResolvedValue({
+        ...customer(ana, "Ana Atual"),
+        summary: {
+          lastPurchaseOn: "2026-11-21",
+          purchaseCount: 4,
+          totalSpent: "310.9",
+        },
+      });
+      renderPanel();
+      const terms = await screen.findByText("Total gasto");
+      const list = terms.closest("dl");
+      expect(list).not.toBeNull();
+      expect(within(list as HTMLElement).getByText("Compras").tagName).toBe(
+        "DT"
+      );
+      expect(within(list as HTMLElement).getByText("4").tagName).toBe("DD");
+      expect(within(list as HTMLElement).getByText("Hoje").tagName).toBe("DD");
+      expect(within(list as HTMLElement).getByText(TOTAL_TEXT)).toBeTruthy();
+      expect(getCustomer).toHaveBeenCalledTimes(1);
+      expect(listCustomers).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("shows no summary when the answer has none (an older server) or the customer was anonymized", async () => {
+    getCustomerLink.mockResolvedValue(link(ana));
+    getCustomer.mockResolvedValue(customer(ana, "Ana Atual"));
+    const first = renderPanel();
+    await screen.findAllByText("Ana Atual");
+    expect(screen.queryByText("Total gasto")).toBeNull();
+    expect(screen.queryByText("Ainda sem compras.")).toBeNull();
+    first.unmount();
+
+    getCustomer.mockResolvedValue({
+      ...customer(ana, "Cliente anonimizado"),
+      anonymizedAt: "2026-02-01T00:00:00.000Z",
+      summary: { lastPurchaseOn: null, purchaseCount: 0, totalSpent: "0" },
+    });
+    renderPanel();
+    await screen.findAllByText("Cliente anonimizado");
+    expect(screen.queryByText("Ainda sem compras.")).toBeNull();
+  });
+
+  it("says Ainda sem compras. for a customer with no purchase, and nothing while it is read", async () => {
+    getCustomerLink.mockResolvedValue(link(ana));
+    let answer: (value: CustomerReadModel) => void = () => undefined;
+    getCustomer.mockReturnValue(
+      new Promise<CustomerReadModel>((resolve) => {
+        answer = resolve;
+      })
+    );
+    renderPanel();
+    await screen.findByText("Carregando cliente…");
+    expect(screen.queryByText("Ainda sem compras.")).toBeNull();
+    answer({
+      ...customer(ana, "Ana Atual"),
+      summary: { lastPurchaseOn: null, purchaseCount: 0, totalSpent: "0" },
+    });
+    await screen.findByText("Ainda sem compras.");
+    expect(screen.queryByText("Total gasto")).toBeNull();
   });
 
   it("reads the list only when the choice of customer opens", async () => {

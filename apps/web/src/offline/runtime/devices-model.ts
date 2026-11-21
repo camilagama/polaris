@@ -33,7 +33,13 @@ export interface DeviceRow {
 
 export type DeviceKind = "computer" | "phone" | "tablet" | "unknown";
 
-const KIND_BY_SYSTEM: Readonly<Record<string, DeviceKind>> = {
+/**
+ * Limit of what the name carries: the server only knows the system from the headers, so an Android tablet arrives as
+ * "Android" and is a phone here, and Safari on an iPad in desktop mode says "Macintosh" and arrives as "Safari no
+ * Mac", a computer here. Nothing in the request tells those apart, so the detection stays as it is. Both tables follow
+ * `DEVICE_FAMILY_LABELS` of `server/device-family-label.ts`, and a test in that folder fails when one of them differs.
+ */
+export const KIND_BY_SYSTEM: Readonly<Record<string, DeviceKind>> = {
   Android: "phone",
   ChromeOS: "computer",
   iPad: "tablet",
@@ -43,7 +49,7 @@ const KIND_BY_SYSTEM: Readonly<Record<string, DeviceKind>> = {
   Windows: "computer",
 };
 
-const FAMILY_BROWSERS: ReadonlySet<string> = new Set([
+export const FAMILY_BROWSERS: ReadonlySet<string> = new Set([
   "Chrome",
   "Edge",
   "Firefox",

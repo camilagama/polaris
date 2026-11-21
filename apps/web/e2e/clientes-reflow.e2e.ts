@@ -36,6 +36,8 @@ const ORGANIZATION = {
 };
 const NOW = new Date("2026-10-14T12:00:00-03:00");
 const DAY = NOW.toISOString();
+const daysAgo = (days: number) =>
+  new Date(NOW.getTime() - days * 86_400_000).toISOString().slice(0, 10);
 const id = (n: number) => `0199c2d0-0000-7000-8000-0000000000${n}`;
 
 const LONG_NAME =
@@ -59,9 +61,16 @@ const customer = (n: number, name: string, extra: object = {}) => ({
 });
 
 const ONLY_EMAIL = "caio.prado.de.almeida.junior@exemplo.com";
-const WIDE = customer(1, LONG_NAME, { email: LONG_EMAIL });
-const ONLY_PHONE = customer(2, "Bia Souza");
-const NO_PHONE = customer(3, "Caio Prado", { email: ONLY_EMAIL, phone: null });
+const WIDE = customer(1, LONG_NAME, {
+  email: LONG_EMAIL,
+  lastPurchaseOn: daysAgo(300),
+});
+const ONLY_PHONE = customer(2, "Bia Souza", { lastPurchaseOn: daysAgo(2) });
+const NO_PHONE = customer(3, "Caio Prado", {
+  email: ONLY_EMAIL,
+  lastPurchaseOn: null,
+  phone: null,
+});
 const SHORT = customer(4, "Ana", { email: "a@b.co", phone: "1133334444" });
 const ACTIVE = [WIDE, ONLY_PHONE, NO_PHONE, SHORT];
 const ARCHIVED_WIDE = customer(5, "Dora Archived Customer", {
@@ -85,6 +94,7 @@ const rpc = (json: unknown) => ({
 });
 
 async function openCustomers(page: Page, width: number, fontPixels: number) {
+  const asked: string[] = [];
   await openReflowViewport(page, { fontPixels, width });
   await page.route("**/api/auth/get-session", (route) =>
     route.fulfill({
@@ -99,6 +109,7 @@ async function openCustomers(page: Page, width: number, fontPixels: number) {
       "/rpc/",
       ""
     );
+    asked.push(procedure);
     if (procedure === "organization/listMine") {
       return route.fulfill(rpc({ organizations: [ORGANIZATION] }));
     }
@@ -117,6 +128,7 @@ async function openCustomers(page: Page, width: number, fontPixels: number) {
   ).toBeVisible();
   await expect(page.locator("[data-customer-id]")).toHaveCount(ACTIVE.length);
   await expectReflowFont(page, fontPixels);
+  return asked;
 }
 
 /** The lines the contacts of one row take: the top of each contact box, and whether it is whole. */
@@ -246,6 +258,33 @@ reflowTest(
 );
 
 const WIDE_WINDOW = 1280;
+/** The device's own registration after the session opens: the shell's call, not something the list screen reads. */
+const DEVICE_REGISTRATION = "device/register";
+
+reflowTest(
+  "a abertura de Clientes faz só organization/listMine e customer/list, sem customer/get, e a última compra aparece nas linhas que a têm",
+  async ({ page }) => {
+    const asked = await openCustomers(page, 360, 16);
+    await page.waitForLoadState("networkidle");
+    const reads = asked.filter((name) => name !== DEVICE_REGISTRATION);
+    expect([...reads].sort()).toEqual(
+      ["customer/list", "organization/listMine"].sort()
+    );
+    expect(asked.filter((name) => name.startsWith("customer/"))).toEqual([
+      "customer/list",
+    ]);
+    await expect(page.locator("[data-last-purchase]")).toHaveText([
+      "Última compra em 18/12/2025",
+      "Última compra há 2 dias",
+      "Sem compras",
+    ]);
+    await expect(
+      page
+        .locator(`[data-customer-id="${SHORT.id}"]`)
+        .locator("[data-last-purchase]")
+    ).toHaveCount(0);
+  }
+);
 
 for (const width of [360, WIDE_WINDOW]) {
   reflowTest(

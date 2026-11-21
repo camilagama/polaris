@@ -366,3 +366,195 @@ export function databaseAclStatements(
     ),
   ];
 }
+
+/** The suite of every gate the CI proves against its own Postgres 18; `gates:ci` runs all of it in one job. */
+export const CI_SUITE = "ci";
+
+/** The suite of the job that keeps everything the other jobs do not take. */
+export const CI_MAIN_JOB = "ci-database";
+
+/**
+ * Gates that run in a job of their own in the CI, each job with its own Postgres 18, beside the main job: a serial gate
+ * whose wall is the floor of the gates' job (the fuzz of 240 role graphs of `definer-hardening` is ~45 s, then 16 to 60 s
+ * in the main job after the parallel phase). Each key is a suite name and a `gates:<suite>` script of `package.json`; the
+ * main job takes the rest of `ci`, so a gate added to `ci` lands in the main job unless it is listed here.
+ */
+export const CI_SEPARATE_JOBS: Readonly<Record<string, readonly string[]>> = {
+  "ci-definer-hardening": ["definer-hardening"],
+};
+
+/**
+ * The suites of the CI jobs: every key of `separate` with its gates, and `CI_MAIN_JOB` with the rest of `ci`, in the
+ * order of `ci`. A separate gate that is not in `ci`, or that two jobs list, is a mistake, not a gate that silently
+ * stops running.
+ */
+export function ciJobSuites(
+  ci: readonly string[],
+  separate: Readonly<Record<string, readonly string[]>> = CI_SEPARATE_JOBS
+): Record<string, string[]> {
+  const taken = new Map<string, string>();
+  for (const [job, names] of Object.entries(separate)) {
+    for (const name of names) {
+      assert.ok(
+        ci.includes(name),
+        `${job} lists ${name}, which is not a gate of the ${CI_SUITE} suite`
+      );
+      const other = taken.get(name);
+      assert.equal(
+        other,
+        undefined,
+        `${name} is listed by ${other} and by ${job}`
+      );
+      taken.set(name, job);
+    }
+  }
+  return {
+    [CI_MAIN_JOB]: ci.filter((name) => !taken.has(name)),
+    ...Object.fromEntries(
+      Object.entries(separate).map(([job, names]) => [job, [...names]])
+    ),
+  };
+}
+
+/**
+ * What the union of the jobs' gates gets wrong against the suite: a gate that no job runs, a gate that two runs
+ * cover, and a gate of a job that the suite does not have. Empty when every gate of `suite` runs exactly once.
+ */
+export function coverageProblems(
+  suite: readonly string[],
+  runs: readonly string[]
+): string[] {
+  const counts = new Map<string, number>();
+  for (const name of runs) {
+    counts.set(name, (counts.get(name) ?? 0) + 1);
+  }
+  const inSuite = new Set(suite);
+  return [
+    ...suite
+      .filter((name) => !counts.has(name))
+      .map((name) => `${name} is in ${CI_SUITE} and no job runs it`),
+    ...[...counts]
+      .filter(([, count]) => count > 1)
+      .map(([name, count]) => `${name} runs ${count} times`),
+    ...[...counts.keys()]
+      .filter((name) => !inSuite.has(name))
+      .map((name) => `${name} runs in a job and is not in ${CI_SUITE}`),
+  ];
+}
+
+const WORKFLOW_GATES_RUN_ONE =
+  /bun run --filter @polaris\/db gates:ci[\w-]*(?=\s|$)/m;
+const TRAILING_COMMENT = /\s#.*$/;
+
+function withoutComments(workflow: string): string {
+  return workflow
+    .split("\n")
+    .map((line) => line.replace(TRAILING_COMMENT, ""))
+    .filter((line) => !line.trimStart().startsWith("#"))
+    .join("\n");
+}
+const WORKFLOW_GATES_RUN =
+  /bun run --filter @polaris\/db (gates:ci[\w-]*)(?=\s|$)/g;
+const RUN_GATES_SCRIPT = /^bun scripts\/run-gates\.ts((?: [\w-]+)+)$/;
+
+/**
+ * The gates the `gates:ci*` commands of a workflow run, one name per run, in the order the workflow lists them. A
+ * command that resolves to a script or a suite that does not exist throws: a typo must not read as a job that runs
+ * nothing. Comment lines do not count.
+ */
+export function workflowGateRuns(
+  workflow: string,
+  packageScripts: Readonly<Record<string, string>>,
+  suites: Readonly<Record<string, readonly string[]>>
+): string[] {
+  const text = withoutComments(workflow);
+  const runs: string[] = [];
+  for (const [, script] of text.matchAll(WORKFLOW_GATES_RUN)) {
+    const command = packageScripts[script as string];
+    assert.ok(command, `the workflow runs ${script}, which package.json lacks`);
+    const suiteNames = RUN_GATES_SCRIPT.exec(command)?.[1]?.trim().split(" ");
+    assert.ok(
+      suiteNames,
+      `${script} is not a run-gates.ts command: ${command}`
+    );
+    for (const suite of suiteNames) {
+      const names = suites[suite];
+      assert.ok(
+        names,
+        `${script} runs the suite ${suite}, which does not exist`
+      );
+      runs.push(...names);
+    }
+  }
+  return runs;
+}
+
+export interface WorkflowJob {
+  id: string;
+  name: string;
+  needs: string[];
+  text: string;
+}
+
+const JOB_HEADER = /^ {2}([\w-]+):\s*$/;
+const NEEDS_LINE = /^ {4}needs:\s*(.*)$/m;
+const NAME_LINE = /^ {4}name:\s*(.*)$/m;
+
+/** The jobs of a workflow, `jobs:` section only: id, `name:`, `needs:` (a name or an inline list) and the text. */
+export function workflowJobs(workflow: string): WorkflowJob[] {
+  const lines = workflow.split("\n");
+  const from = lines.indexOf("jobs:");
+  assert.notEqual(from, -1, "the workflow has no jobs: section");
+  const jobs: WorkflowJob[] = [];
+  let current: { id: string; lines: string[] } | undefined;
+  const close = () => {
+    if (current) {
+      const text = current.lines.join("\n");
+      const needs = (NEEDS_LINE.exec(text)?.[1] ?? "")
+        .replace(/^\[|\]$/g, "")
+        .split(",")
+        .map((entry) => entry.trim())
+        .filter(Boolean);
+      jobs.push({
+        id: current.id,
+        name: NAME_LINE.exec(text)?.[1]?.trim() ?? current.id,
+        needs,
+        text,
+      });
+    }
+  };
+  for (const line of lines.slice(from + 1)) {
+    const header = JOB_HEADER.exec(line);
+    if (header) {
+      close();
+      current = { id: header[1] as string, lines: [line] };
+    } else {
+      current?.lines.push(line);
+    }
+  }
+  close();
+  return jobs;
+}
+
+/**
+ * What stops a job that runs gates from blocking the deploys: every job with a `gates:ci*` command must be the job named
+ * `collector`, or be in its `needs`, since the deploys and the required check read only that name.
+ */
+export function collectorProblems(
+  workflow: string,
+  collector: string
+): string[] {
+  const jobs = workflowJobs(withoutComments(workflow));
+  const named = jobs.find((job) => job.name === collector);
+  if (!named) {
+    return [`no job is named ${collector}`];
+  }
+  return jobs
+    .filter(
+      (job) => job.id !== named.id && WORKFLOW_GATES_RUN_ONE.test(job.text)
+    )
+    .filter((job) => !named.needs.includes(job.id))
+    .map(
+      (job) => `${job.id} runs gates and is not in the needs of ${collector}`
+    );
+}

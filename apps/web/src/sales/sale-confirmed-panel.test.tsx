@@ -18,6 +18,7 @@ const SALE: ConfirmedSaleView = {
   replayed: false,
   saleDetails: [{ label: "Venda", tone: "plain", value: SALE_ID }],
   saleId: SALE_ID,
+  summary: { itemCount: 2 },
   totals: [],
 };
 

@@ -27,6 +27,7 @@ import {
 } from "@polaris/domain/organization/closure-deadlines";
 import { ORGANIZATION_PURGE_REQUIRED_SCOPE } from "@polaris/domain/privacy/organization-purge";
 import {
+  inCommittedTransaction,
   queryAsGateRole,
   rollbackAndRelease,
   withGateRole,
@@ -949,9 +950,7 @@ async function scenario(context: AutomaticPurgeContext): Promise<string[]> {
   );
   // the runbook's block for an automatic purge, as it is written there (the row came back with the backup: the
   // conflict reopens it, keeping the trigger and the empty references)
-  const restoreClient = await owner.connect();
-  try {
-    await restoreClient.query("BEGIN");
+  await inCommittedTransaction(owner, async (restoreClient) => {
     await restoreClient.query(
       "UPDATE public.organizations SET status = 'purge_pending' WHERE id = $1 AND status <> 'purged'",
       [onTime.organizationId]
@@ -964,12 +963,7 @@ async function scenario(context: AutomaticPurgeContext): Promise<string[]> {
               last_error_code = NULL, purged_at = NULL, swept_at = NULL, storage_touched_at = now()`,
       [onTime.organizationId]
     );
-    await restoreClient.query("COMMIT");
-    restoreClient.release();
-  } catch (error) {
-    await rollbackAndRelease(restoreClient);
-    throw error;
-  }
+  });
   const reopened = await purgeRow(owner, onTime.organizationId);
   assert.equal(reopened?.trigger, "closure_period");
   assert.equal(reopened?.scheduled_by, null);
