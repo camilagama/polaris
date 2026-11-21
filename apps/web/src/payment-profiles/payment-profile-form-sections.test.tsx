@@ -57,7 +57,7 @@ describe("sections of the payment profile form", () => {
     expect(dialog.querySelector("fieldset[class*='border-t']")).toBeNull();
   });
 
-  it("keeps the name before the rules and the focus order of the fields", () => {
+  it("keeps the name before the rules and the add row after them in the focus order", () => {
     const dialog = drawForm(2);
     const order = [
       ...dialog.querySelectorAll(
@@ -67,8 +67,8 @@ describe("sections of the payment profile form", () => {
     expect(order.indexOf("payment-profile-name")).toBeLessThan(
       order.indexOf("payment-add-rule")
     );
-    expect(order.indexOf("payment-add-rule")).toBeLessThan(
-      order.findIndex((entry) => entry?.startsWith("Remover regra 1"))
+    expect(order.indexOf("payment-add-rule")).toBeGreaterThan(
+      order.findLastIndex((entry) => entry?.startsWith("Remover regra"))
     );
   });
 });
