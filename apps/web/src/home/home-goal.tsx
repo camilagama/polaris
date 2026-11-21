@@ -49,6 +49,12 @@ const LINK =
  * With no goal the card is a thin strip from 960 px of content: the title, a sentence and the way to set one on one
  * row, and the chart takes the row under it (`data-goal-strip` is what the grid of the page reads).
  */
+const GOAL_FOOTER = {
+  capability: "goal:manage",
+  href: "/dashboard?aba=metas",
+  label: "Ver as metas",
+} as const;
+
 const STRIP_ATTRIBUTES = { "data-goal-strip": "" } as const;
 const STRIP_CLASS =
   "@min-[60rem]/home:flex-row @min-[60rem]/home:flex-wrap @min-[60rem]/home:items-center @min-[60rem]/home:gap-x-6 @min-[60rem]/home:gap-y-1 @min-[60rem]/home:py-3";
@@ -445,8 +451,8 @@ export function GoalBlock({
   return (
     <HomeBlock
       {...(strip
-        ? { attributes: STRIP_ATTRIBUTES, className: STRIP_CLASS }
-        : {})}
+        ? { attributes: STRIP_ATTRIBUTES, className: STRIP_CLASS, plain: true }
+        : { footer: GOAL_FOOTER })}
       id="home-goal"
       title={pastMonth ? monthGoalTitle(monthTitle(pastMonth)) : "Meta"}
       {...(helpText ? { help: { about: "Meta", text: helpText } } : {})}
@@ -505,8 +511,8 @@ export function OfflineGoalBlock({ goal }: { goal: OfflineGoal }) {
   return (
     <HomeBlock
       {...(strip
-        ? { attributes: STRIP_ATTRIBUTES, className: STRIP_CLASS }
-        : {})}
+        ? { attributes: STRIP_ATTRIBUTES, className: STRIP_CLASS, plain: true }
+        : { footer: { ...GOAL_FOOTER, link: false } })}
       id="home-goal"
       title={title}
     >

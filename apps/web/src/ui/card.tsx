@@ -65,7 +65,7 @@ function CardContent({ className, ...props }: React.ComponentProps<"div">) {
 /*
  * The framed card (Início blocks, from 760 px): a `--muted` frame with the title on it, the panel in `--card` inside
  * with a radius concentric to the frame's, and an optional foot on the frame. Under 760 px the frame is the plain card
- * above and the panel dissolves into it (`contents`), so the screen keeps the box it had before the frame existed.
+ * above and the panel has no box of its own (no padding, fill or ring), so the screen keeps the box it had before.
  * `--card` against `--muted` does not reach 3:1 in either theme, so the panel carries a 1 px `--border` line.
  */
 function CardFrame({ className, ...props }: React.ComponentProps<"div">) {
@@ -99,7 +99,7 @@ function CardFramePanel({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
       className={cn(
-        "max-md:contents md:flex md:min-w-0 md:flex-1 md:flex-col md:gap-(--card-spacing) md:rounded-[calc(var(--radius-xl)-var(--frame-gap))] md:bg-card md:p-(--card-spacing) md:text-card-foreground md:ring-1 md:ring-border",
+        "flex min-w-0 flex-1 flex-col gap-(--card-spacing) md:rounded-[calc(var(--radius-xl)-var(--frame-gap))] md:bg-card md:p-(--card-spacing) md:ring-1 md:ring-border",
         className
       )}
       data-slot="card-frame-panel"

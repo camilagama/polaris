@@ -25,6 +25,7 @@ import {
   useHiddenValues,
 } from "../lib/hidden-values";
 import { useIsMobile } from "../lib/use-mobile";
+import { addressWithPeriod, presetOfPeriod } from "../dashboard/result-period";
 import { chartValue, periodShort } from "./home-model";
 import { HomeBlock } from "./home-parts";
 
@@ -263,8 +264,19 @@ export function ChartBlock({
 }) {
   const grouped = summary.granularity === "month";
   const title = grouped ? "Vendas por mês" : "Vendas por dia";
+  const preset = presetOfPeriod(summary.period, today);
   return (
     <HomeBlock
+      footer={{
+        capability: "report:read",
+        href: addressWithPeriod(
+          "/dashboard",
+          preset === "custom"
+            ? { custom: summary.period, preset }
+            : { custom: null, preset }
+        ),
+        label: "Ver o resultado",
+      }}
       help={{ about: title, text: chartHelp(grouped) }}
       id="home-chart"
       title={title}

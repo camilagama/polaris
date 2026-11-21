@@ -65,6 +65,79 @@ async function closeMenuFoot(page: Page) {
   }
 }
 
+const FRAMED_BLOCKS = [
+  "Meta",
+  "Vendas por dia",
+  "Ritmo de vendas",
+  "Mais vendidos do mês",
+];
+
+const BLOCK_FEET = [
+  ["Vendas por dia", "Ver o resultado", "/dashboard"],
+  ["Meta", "Ver as metas", "/dashboard?aba=metas"],
+  ["Mais vendidos do mês", "Ver os produtos", "/products"],
+] as const;
+
+/** From 760 px the frame is `--muted` and the panel has its own fill and 16 px; under it the panel has no box at all. */
+async function expectFrameLooks(block: Locator, name: string, framed: boolean) {
+  await expect(block).toBeVisible();
+  const looks = await block.evaluate((frame) => {
+    const panel = frame.querySelector("[data-slot=card-frame-panel]");
+    const heading = frame.querySelector("h2");
+    if (!(panel && heading)) {
+      return null;
+    }
+    return {
+      frameBackground: getComputedStyle(frame).backgroundColor,
+      headingInsidePanel: panel.contains(heading),
+      panelBackground: getComputedStyle(panel).backgroundColor,
+      panelPadding: Number.parseFloat(getComputedStyle(panel).paddingLeft),
+    };
+  });
+  expect(looks, `${name}: moldura e painel`).not.toBeNull();
+  expect(looks?.headingInsidePanel).toBe(false);
+  expect(looks?.panelPadding, `${name}: painel`).toBe(framed ? 16 : 0);
+  if (framed) {
+    expect(looks?.frameBackground, `${name}: moldura`).not.toBe(
+      looks?.panelBackground
+    );
+  } else {
+    expect(looks?.panelBackground, `${name}: sem painel`).toBe(
+      "rgba(0, 0, 0, 0)"
+    );
+  }
+}
+
+/** The foot is a link to the destination inside the frame, with a 44 px touch area when the pointer is coarse; under 760 px it is not there. */
+async function expectFoot(
+  page: Page,
+  name: string,
+  label: string,
+  href: string,
+  framed: boolean
+) {
+  const link = region(page, name).getByRole("link", { name: label });
+  if (!framed) {
+    await expect(link).toHaveCount(0);
+    return;
+  }
+  await expect(link).toHaveAttribute("href", href);
+  const touch = await link.evaluate((element) => ({
+    area: Number.parseFloat(getComputedStyle(element, "::before").height),
+    coarse: matchMedia("(pointer: coarse)").matches,
+  }));
+  if (touch.coarse) {
+    expect(touch.area, `${name}: área de toque do pé`).toBeGreaterThanOrEqual(
+      44
+    );
+  }
+  const box = await link.boundingBox();
+  const frame = await region(page, name).boundingBox();
+  expect((box?.y ?? 0) + (box?.height ?? 0)).toBeLessThanOrEqual(
+    (frame?.y ?? 0) + (frame?.height ?? 0)
+  );
+}
+
 test.describe("loja com venda", () => {
   test("mostra Hoje, o mês pelo nome, a meta, a atenção, os mais vendidos e o gráfico, na ordem do AC-4 (360 px)", async ({
     page,
@@ -281,6 +354,28 @@ test.describe("loja com venda", () => {
       )
     ).toBe(true);
   });
+
+  for (const width of [759, 760]) {
+    const framed = width >= 760;
+    test(`a moldura dos blocos ${framed ? "existe" : "não existe"} a ${width} px: ${framed ? "painel sobre a moldura, com o pé dos três blocos que levam a outra tela" : "o cartão de sempre, sem pé"}`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ height: 800, width });
+      await openHome(page, new FakeServer({ ...SOLD, goals: [goal({})] }));
+      await expect(region(page, "Vendas hoje")).toContainText("R$ 320,10");
+      for (const name of FRAMED_BLOCKS) {
+        // biome-ignore lint/performance/noAwaitInLoops: one block at a time
+        await expectFrameLooks(region(page, name), name, framed);
+      }
+      for (const [name, label, href] of BLOCK_FEET) {
+        // biome-ignore lint/performance/noAwaitInLoops: one block at a time
+        await expectFoot(page, name, label, href, framed);
+      }
+      await expect(
+        region(page, "Ritmo de vendas").locator("[data-slot=card-frame-footer]")
+      ).toHaveCount(0);
+    });
+  }
 
   test("Nova venda leva à Venda num toque (AC-2), e a barra mantém Vender a um toque", async ({
     page,

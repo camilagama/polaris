@@ -325,3 +325,41 @@ describe("contraste do contorno do campo sobre muted, tema escuro", () => {
     ).toBeGreaterThanOrEqual(3);
   });
 });
+
+/**
+ * The framed card (Início blocks, from 760 px): the title and the foot sit on `--muted`, and the panel in `--card` stands
+ * out of it. `--card` against `--muted` does not reach the 3:1 of a graphic edge in either theme, so the panel must carry
+ * the 1 px `--border` line (AC-2.4); the test reads the class of the panel and fails if the line goes while the pair is
+ * under 3:1, and holds the text on the frame to the 4.5:1 of text.
+ */
+const cardSource = readFileSync(
+  new URL("../ui/card.tsx", import.meta.url),
+  "utf8"
+);
+const PANEL_CLASS = /function CardFramePanel[\s\S]*?cn\(\s*"([^"]*)"/;
+
+describe.each([
+  ["Tema claro", tokens(block(":root"))],
+  [
+    "Tema escuro",
+    new Map([...tokens(block(":root")), ...tokens(block(".dark"))]),
+  ],
+])("contraste da moldura do cartão, %s", (_section, palette) => {
+  it("o painel tem o fio de --border enquanto --card sobre --muted fica abaixo de 3:1", () => {
+    const edge = ratio(color("`card`", palette), color("`muted`", palette));
+    const panel = PANEL_CLASS.exec(cardSource)?.[1] ?? "";
+    expect(panel).not.toBe("");
+    if (edge < 3) {
+      expect(panel.split(" ")).toContain("md:ring-1");
+      expect(panel.split(" ")).toContain("md:ring-border");
+    }
+  });
+
+  it("o título e o pé (foreground) e a ação de cabeçalho (muted-foreground) leem sobre --muted com 4,5:1", () => {
+    for (const text of ["`foreground`", "`muted-foreground`"]) {
+      expect(
+        ratio(color(text, palette), color("`muted`", palette))
+      ).toBeGreaterThanOrEqual(4.5);
+    }
+  });
+});

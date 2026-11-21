@@ -23,6 +23,10 @@ Mapa de contraste do desenho v5.1 (Petković, 20/10/2026), trazido para o reposi
 | `foreground` / `muted` | texto em linha com hover e em faixa neutra | Table, Button ghost | **16.19** | 7 | ✓ |
 | `foreground` / `muted` | valor no bloco rebaixado do cartão (14 px) | ConfirmedDetails | **16.19** | 7 | ✓ |
 | `muted-foreground` / `muted` | rótulo no bloco rebaixado do cartão (12 px) | ConfirmedDetails | **7.22** | 4.5 | ✓ |
+| `foreground` / `muted` | título e link do pé do bloco com moldura (Início, `Card` `framed`) | CardFrame | **16.19** | 4.5 | ✓ |
+| `muted-foreground` / `muted` | ação de cabeçalho e contagem na moldura ("Últimas 12 semanas", "1 de 5") | CardFrame | **7.22** | 4.5 | ✓ |
+| `card` / `muted` | painel sobre a moldura: não chega a 3:1, então o painel leva o fio de `--border` | CardFramePanel | **1.12** | 1.0 | ✓ |
+| `border` / `muted` | fio do painel sobre a moldura (decorativo; o título e o conteúdo identificam o bloco) | CardFramePanel | **1.15** | 1.0 | ✓ |
 | `warning` / `muted` | valor desconhecido no bloco rebaixado do cartão | ConfirmedDetails | **6.78** | 4.5 | ✓ |
 | `sidebar-foreground` / `sidebar` | item do menu lateral | Sidebar | **9.81** | 7 | ✓ |
 | `sidebar-accent-foreground` / `sidebar-accent` | item atual do menu lateral | SidebarMenuButton | **14.78** | 7 | ✓ |
@@ -115,6 +119,10 @@ Mapa de contraste do desenho v5.1 (Petković, 20/10/2026), trazido para o reposi
 | `foreground` / `muted` | texto em linha com hover e em faixa neutra | Table, Button ghost | **11.58** | 7 | ✓ |
 | `foreground` / `muted` | valor no bloco rebaixado do cartão (14 px) | ConfirmedDetails | **11.58** | 7 | ✓ |
 | `muted-foreground` / `muted` | rótulo no bloco rebaixado do cartão (12 px) | ConfirmedDetails | **7.01** | 4.5 | ✓ |
+| `foreground` / `muted` | título e link do pé do bloco com moldura (Início, `Card` `framed`) | CardFrame | **11.61** | 4.5 | ✓ |
+| `muted-foreground` / `muted` | ação de cabeçalho e contagem na moldura ("Últimas 12 semanas", "1 de 5") | CardFrame | **7.01** | 4.5 | ✓ |
+| `card` / `muted` | painel sobre a moldura: não chega a 3:1, então o painel leva o fio de `--border` | CardFramePanel | **1.22** | 1.0 | ✓ |
+| `border sobre muted` / `muted` | fio do painel sobre a moldura (decorativo; o título e o conteúdo identificam o bloco); `border` é `branco a 6%` | CardFramePanel | **1.2** | 1.0 | ✓ |
 | `warning` / `muted` | valor desconhecido no bloco rebaixado do cartão | ConfirmedDetails | **7.48** | 4.5 | ✓ |
 | `sidebar-foreground` / `sidebar` | item do menu lateral | Sidebar | **9.48** | 7 | ✓ |
 | `sidebar-accent-foreground` / `sidebar-accent` | item atual do menu lateral | SidebarMenuButton | **14.19** | 7 | ✓ |
