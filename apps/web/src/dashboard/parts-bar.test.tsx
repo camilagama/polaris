@@ -9,6 +9,8 @@ vi.mock("@/lib/hidden-values", async (importOriginal) => ({
   useHiddenValues: () => [state.hidden, () => undefined],
 }));
 
+const BAR_WIDTH = /style="width:([\d.]+)%"/g;
+
 const { PartsBar, partPercents } = await import("./parts-bar");
 
 beforeEach(() => {
@@ -108,6 +110,31 @@ describe("the parts of the cost", () => {
   });
 });
 
+describe("a refunded part in the bar", () => {
+  it("draws no width for a negative part and the others fill the bar", () => {
+    const markup = renderToStaticMarkup(
+      <PartsBar
+        chain={{
+          ...chain,
+          anticipationFees: "0.00",
+          cogs: "-5.00",
+          linkedExpenses: "0.00",
+          operatingExpenses: "11.00",
+          processingFees: "7.00",
+        }}
+        quality={quality(0)}
+      />
+    );
+    const widths = [...markup.matchAll(BAR_WIDTH)].map((match) =>
+      Number(match[1])
+    );
+    expect(markup).not.toContain("width:-");
+    expect(widths).toHaveLength(3);
+    expect(widths[0]).toBe(0);
+    expect((widths[1] ?? 0) + (widths[2] ?? 0)).toBeCloseTo(100, 5);
+  });
+});
+
 describe("the percent of each part", () => {
   const sums = (values: Array<number | null>) =>
     values.reduce<number>((sum, value) => sum + (value ?? 0), 0);
@@ -140,6 +167,48 @@ describe("the percent of each part", () => {
         });
       }
     }
+  });
+
+  it("gives a refunded (negative) part 0% and still adds the others up to 100", () => {
+    const cases: [string[], string][] = [
+      [["-0.50", "-0.50", "101.00"], "100.00"],
+      [["-10.00", "-20.00", "130.00"], "100.00"],
+      [["-0.01", "-0.01", "0.03"], "0.01"],
+      [["-3.33", "-3.33", "9.99"], "3.33"],
+      [["-1.00", "40.00", "-2.00"], "37.00"],
+      [["-5.00", "7.00", "11.00"], "13.00"],
+    ];
+    for (const [values, total] of cases) {
+      const percents = partPercents(
+        values.map((value) => ({ value })),
+        total
+      );
+      expect(sums(percents), values.join("/")).toBe(100);
+      for (const percent of percents) {
+        expect(percent, values.join("/")).toBeGreaterThanOrEqual(0);
+      }
+    }
+    expect(
+      partPercents(
+        [{ value: "-0.50" }, { value: "-0.50" }, { value: "101.00" }],
+        "100.00"
+      )
+    ).toEqual([0, 0, 100]);
+  });
+
+  it("gives no part a percent without a total, refund or not", () => {
+    expect(
+      partPercents(
+        [{ value: null }, { value: "-5.00" }, { value: "10.00" }],
+        null
+      )
+    ).toEqual([null, null, null]);
+  });
+
+  it("gives no part a percent when the refunds leave nothing positive to divide", () => {
+    expect(
+      partPercents([{ value: "-4.00" }, { value: "-1.00" }], "-5.00")
+    ).toEqual([null, null]);
   });
 
   it("gives a known part with a zero value 0%, not nothing", () => {
