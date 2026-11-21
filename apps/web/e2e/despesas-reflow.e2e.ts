@@ -75,9 +75,36 @@ const answer = (json: unknown) => ({
   headers: { ...WORKER_MARK },
 });
 
+const SPLIT_EXPENSES = EXPENSES.map((expense, index) => {
+  const target = CATEGORIES[index % 3] as (typeof CATEGORIES)[number];
+  return {
+    ...expense,
+    amount: "1234567.89",
+    categoryGroup: target.groupKey,
+    categoryId: target.id,
+    categoryName: target.name,
+  };
+});
+
+function splitTotals() {
+  return CATEGORIES.map((target) => {
+    const own = SPLIT_EXPENSES.filter(
+      (expense) => expense.categoryId === target.id
+    );
+    return {
+      categoryId: target.id,
+      count: own.length,
+      total: (own.length * 1_234_567.89).toFixed(2),
+    };
+  });
+}
+
 async function openExpenses(
   page: Page,
-  { categoriesFail = false }: { categoriesFail?: boolean } = {}
+  {
+    categoriesFail = false,
+    split = false,
+  }: { categoriesFail?: boolean; split?: boolean } = {}
 ) {
   await page.clock.setFixedTime(new Date(NOW));
   await serveLabWorker(page);
@@ -93,12 +120,20 @@ async function openExpenses(
           : route.fulfill(answer({ categories: CATEGORIES }));
       case "expense/list":
         return route.fulfill(
-          answer({
-            count: EXPENSES.length,
-            expenses: EXPENSES,
-            nextCursor: null,
-            total: (EXPENSES.length * 1500.5).toFixed(2),
-          })
+          split
+            ? answer({
+                count: SPLIT_EXPENSES.length,
+                expenses: SPLIT_EXPENSES,
+                nextCursor: null,
+                total: (SPLIT_EXPENSES.length * 1_234_567.89).toFixed(2),
+                totalsByCategory: splitTotals(),
+              })
+            : answer({
+                count: EXPENSES.length,
+                expenses: EXPENSES,
+                nextCursor: null,
+                total: (EXPENSES.length * 1500.5).toFixed(2),
+              })
         );
       case "expense/listRules":
         return route.fulfill(answer({ rules: [] }));
@@ -283,6 +318,52 @@ test.describe("a 320 px com letra de 20 px", () => {
         .click();
       await expect(editor).toHaveCount(0);
       await expect(pill).toBeFocused();
+    }
+  );
+
+  reflowTest(
+    "o bloco Por categoria quebra o nome comprido, não corta o valor, não rola a página e a linha mantém 44 px de alvo",
+    async ({ page }) => {
+      await openReflowViewport(page);
+      await openExpenses(page, { split: true });
+      await expectReflowFont(page);
+      const block = page.getByRole("region", {
+        exact: true,
+        name: "Por categoria",
+      });
+      await expect(block).toBeVisible();
+      const lines = block.locator("[data-share-line]");
+      await expect(lines).toHaveCount(3);
+      await expect(
+        block.getByRole("button", {
+          name: new RegExp(`^Filtrar por ${LONG_CATEGORY}`),
+        })
+      ).toBeVisible();
+      await assertNothingClipped(block);
+      await assertNoEllipsis(block);
+      await assertNoPageScroll(page);
+      const heights = await lines.evaluateAll((elements) =>
+        elements.map((element) => element.getBoundingClientRect().height)
+      );
+      for (const height of heights) {
+        expect(height).toBeGreaterThanOrEqual(TOUCH);
+      }
+      const figuresInside = await lines.evaluateAll((elements) =>
+        elements.map((element) => {
+          const rect = element.getBoundingClientRect();
+          return [...element.querySelectorAll("[data-money]")].every(
+            (money) => {
+              const at = money.getBoundingClientRect();
+              return at.left >= rect.left - 0.5 && at.right <= rect.right + 0.5;
+            }
+          );
+        })
+      );
+      expect(figuresInside, "an amount is cut by its line").toEqual([
+        true,
+        true,
+        true,
+      ]);
     }
   );
 

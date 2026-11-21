@@ -822,7 +822,7 @@ export const SPEC_SCREENS = {
   "apps/web/e2e/estoque-reflow.e2e.ts": ["inventory", "products"],
   "apps/web/e2e/expenses.e2e.ts": ["inventory", "expenses"],
   "apps/web/e2e/formas-de-receber-sem-conexao.e2e.ts": ["settings"],
-  "apps/web/e2e/goals.e2e.ts": ["dashboard"],
+  "apps/web/e2e/goals.e2e.ts": ["inventory", "dashboard"],
   "apps/web/e2e/historico-reflow.e2e.ts": ["sale-history", "inventory"],
   "apps/web/e2e/history-period-total.e2e.ts": ["sale-history"],
   "apps/web/e2e/history-period.e2e.ts": ["sale-history"],
@@ -834,6 +834,7 @@ export const SPEC_SCREENS = {
     "sale-detail",
     "expenses",
   ],
+  "apps/web/e2e/home/meta-ritmo.e2e.ts": ["home", "inventory"],
   "apps/web/e2e/home/offline-e-leituras.e2e.ts": ["home", "sale"],
   "apps/web/e2e/home/ritmo-e-plano.e2e.ts": ["home", "settings"],
   "apps/web/e2e/home/valores-e-ranking.e2e.ts": [
@@ -893,6 +894,7 @@ export const SPEC_SCREENS = {
   "apps/web/e2e/sale-columns.e2e.ts": ["home", "sale"],
   "apps/web/e2e/sale-draft-midnight.e2e.ts": ["sale"],
   "apps/web/e2e/sale-item-reflow.e2e.ts": ["sale", "inventory"],
+  "apps/web/e2e/sale-receipt-mono.e2e.ts": ["sale", "sale-detail", "inventory"],
   "apps/web/e2e/sale-screen.e2e.ts": ["sale"],
   "apps/web/e2e/session-ended-screens.e2e.ts": [
     "sale",

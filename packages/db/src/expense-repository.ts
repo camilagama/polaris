@@ -697,6 +697,7 @@ export function restoreExpense(
  * Expenses by competence, newest first, in pages. `total` is the sum of the
  * expenses that match the filter in full (not only this page), exact decimal
  * text; voided ones count only when the status asks for them.
+ * `totalsByCategory` splits that same sum per category (what adds up to `total`).
  */
 export async function listExpenses(
   transaction: TenantRequestTransaction,
@@ -731,14 +732,26 @@ export async function listExpenses(
     filters.push(eq(expenses.categoryId, options.categoryId));
   }
 
-  const [totals] = await transaction
+  // one statement: the rows per category and, from the ROLLUP, the total of the whole filter
+  const grouped = await transaction
     .select({
+      categoryId: expenses.categoryId,
       count: sql<number>`count(*)::int`,
+      isTotal: sql<boolean>`grouping(${expenses.categoryId}) = 1`,
       // no numeric(20,2) cast: a sum of many valid amounts may need 19+ digits
       total: sql<string>`coalesce(sum(${expenses.amount}), 0.00)::text`,
     })
     .from(expenses)
-    .where(and(...filters));
+    .where(and(...filters))
+    .groupBy(sql`rollup (${expenses.categoryId})`);
+  const totals = grouped.find((row) => row.isTotal);
+  const totalsByCategory = grouped
+    .filter((row) => !row.isTotal)
+    .map((row) => ({
+      categoryId: row.categoryId,
+      count: row.count,
+      total: row.total,
+    }));
 
   const pageFilters = [...filters];
   if (options.cursor) {
@@ -773,6 +786,7 @@ export async function listExpenses(
     nextCursor:
       rows.length > limit && last ? `${last.competenceOn}|${last.id}` : null,
     total: totals?.total ?? "0.00",
+    totalsByCategory,
   };
 }
 

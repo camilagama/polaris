@@ -50,7 +50,7 @@
 /* The sale screen (ADR 0103, PR 4): only its own files; the other sales screens are still old. */
 @source "../sales/{sale-page,sale-fields,sale-item-editor,sale-payment-section,sale-summary-panel,sale-confirmed-panel,sale-variant-picker,offline-sale-panels,sale-draft-bar,sale-count-label}.tsx";
 /* The expenses screen (v5.1, segmented since UI-H): the page, the forms in dialogs, the list, the recurring rules, the categories and the month picker. */
-@source "../expenses/{expenses-page,expenses-loading,expense-form,expense-list,expense-filters,expense-fields,expense-rules-panel,expense-rule-form,expense-categories-panel,expense-category-form,month-picker}.tsx";
+@source "../expenses/{expenses-page,expenses-loading,expense-by-category,expense-form,expense-list,expense-filters,expense-fields,expense-rules-panel,expense-rule-form,expense-categories-panel,expense-category-form,month-picker}.tsx";
 /* Aparelhos and Pendências (v5.1): the screens and their parts (the notice of the expired access and the loading of the
    attention page are in the list of the pieces above). */
 @source "../offline/attention-panel.tsx";
@@ -99,6 +99,24 @@
   size-adjust: 103.19%;
   ascent-override: 97.39%;
   descent-override: 28.59%;
+  line-gap-override: 0%;
+}
+
+/*
+ * Until Geist Mono arrives, the amounts of the receipt are drawn in a system monospace face scaled to Geist Mono's
+ * metrics, so the swap moves nothing: every glyph of Geist Mono advances 0.6 em (measured, 100 px: 60 px), the same
+ * as Menlo, Liberation Mono and Courier New (DejaVu Sans Mono 0.602), and its ascent 1005 and descent 295 per 1000
+ * are the overrides, with no size-adjust to divide by. Without any of them the face is skipped and the stack goes on;
+ * the generic `ui-monospace` is not a safe stand-in (the Chromium of the e2e on Linux measured it proportional).
+ */
+@font-face {
+  font-family: "Geist Mono Fallback";
+  src:
+    local("Menlo"), local("Liberation Mono"), local("DejaVu Sans Mono"),
+    local("Courier New"), local("CourierNewPSMT");
+  size-adjust: 100%;
+  ascent-override: 100.5%;
+  descent-override: 29.5%;
   line-gap-override: 0%;
 }
 

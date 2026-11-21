@@ -172,6 +172,29 @@ describe.each([
 });
 
 /**
+ * The bar of "Por categoria" (Despesas): `--chart-2`, the color of the expenses in the bar of parts of the Resultado,
+ * over the `--muted` track it grows on. The bar is a drawing beside the written name, share and amount, and still
+ * reaches the 3:1 of a graphic element (WCAG 1.4.11) in both themes.
+ */
+describe.each([
+  ["Tema claro", tokens(block(":root"))],
+  [
+    "Tema escuro",
+    new Map([...tokens(block(":root")), ...tokens(block(".dark"))]),
+  ],
+])("contraste da barra de Por categoria, %s", (section, palette) => {
+  it("`chart-2` / `muted` is in the map and reaches 3:1", () => {
+    const row = pairs(section).find(
+      (item) => item.foreground === "`chart-2`" && item.background === "`muted`"
+    );
+    expect(row, `chart-2 / muted is not in "${section}"`).toBeDefined();
+    expect(
+      ratio(color("`chart-2`", palette), color("`muted`", palette))
+    ).toBeGreaterThanOrEqual(3);
+  });
+});
+
+/**
  * The step of the hour of the "Primeiros passos" (Início): its number is `mark-foreground` over the tint of the circle
  * (`mark/10`, `mark/15` in the dark) and its border is `mark` over the card. Both pairs are rows of the tables above;
  * this one says they cannot leave the map, and holds the number to the 4.5:1 of text and the border to the 3:1 of a
@@ -192,6 +215,44 @@ describe.each([
     ["`mark`", "`card`", 3],
   ] as const)(
     "%s / %s is in the map and reaches %d:1",
+    (foreground, background, bar) => {
+      const row = rows.find(
+        (item) =>
+          item.foreground === foreground && item.background === background
+      );
+      expect(
+        row,
+        `${foreground} / ${background} is not in "${section}"`
+      ).toBeDefined();
+      expect(
+        ratio(color(foreground, palette), color(background, palette))
+      ).toBeGreaterThanOrEqual(bar);
+    }
+  );
+});
+
+/**
+ * The ring and the box of the "Primeiros passos" (menu and Início): the arc of the ring is ink over the sidebar and over
+ * the card, the check is ink over `primary/10`, and the words of a done step are `muted-foreground` over the soft row
+ * (`muted/50`). The drawings are graphic elements (3:1, WCAG 1.4.11) and the words are text (4.5:1). Each pair is a row of
+ * the tables above; this one says they cannot leave the map.
+ */
+describe.each([
+  ["Tema claro", tokens(block(":root"))],
+  [
+    "Tema escuro",
+    new Map([...tokens(block(":root")), ...tokens(block(".dark"))]),
+  ],
+])("contraste do anel e do passo feito, %s", (section, palette) => {
+  const rows = pairs(section);
+
+  it.each([
+    ["`primary`", "`sidebar`", 3],
+    ["`primary`", "`card`", 3],
+    ["`primary`", "`primary/10 sobre card`", 3],
+    ["`muted-foreground`", "`muted/50 sobre card`", 4.5],
+  ] as const)(
+    "%s / %s reaches %d:1 and is in the map",
     (foreground, background, bar) => {
       const row = rows.find(
         (item) =>
