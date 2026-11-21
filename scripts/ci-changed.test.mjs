@@ -1,10 +1,20 @@
 import { spawnSync } from "node:child_process";
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
   classifyChanges,
+  DATABASE_IRRELEVANT,
   fullSuiteRequested,
   OPERATIONS_FILES,
   reloadSentinelRuns,
@@ -240,6 +250,196 @@ function operationsDependents(targets) {
   return hits;
 }
 
+const GATE_SCRIPT_FILE = /\.[cm]?[jt]s$/;
+const TEST_FILE = /\.test\./;
+const GATE_IMPORT =
+  /(?:\bfrom\s*|\bimport\s*\(?\s*|\brequire\s*\(\s*)["']([^"']+)["']|new URL\(\s*["']([^"']+)["']\s*,\s*import\.meta\.url/g;
+const MODULE_SUFFIXES = [
+  "",
+  ".ts",
+  ".tsx",
+  ".mjs",
+  ".js",
+  "/index.ts",
+  "/index.tsx",
+];
+
+function resolveGateImport(from, specifier) {
+  let base = null;
+  if (specifier.startsWith("@/")) {
+    base = path.join(root, "apps/web/src", specifier.slice(2));
+  } else if (specifier.startsWith(".")) {
+    base = path.resolve(path.dirname(from), specifier);
+  }
+  if (base === null) {
+    return null;
+  }
+  return (
+    MODULE_SUFFIXES.map((suffix) => base + suffix).find(
+      (candidate) => existsSync(candidate) && statSync(candidate).isFile()
+    ) ?? null
+  );
+}
+
+const GATE_ENTRY_FOLDERS = [
+  "apps/web/scripts",
+  "packages/db/scripts",
+  "apps/web/worker",
+  "apps/web/src/server",
+  "apps/admin/src",
+  "apps/catalog/src",
+];
+
+function gateEntryFiles() {
+  return GATE_ENTRY_FOLDERS.flatMap((folder) =>
+    readdirSync(path.join(root, folder), { recursive: true })
+      .filter(
+        (file) =>
+          GATE_SCRIPT_FILE.test(file) &&
+          (folder.endsWith("/scripts") ? !TEST_FILE.test(file) : true)
+      )
+      .map((file) => path.join(root, folder, file))
+  );
+}
+
+/**
+ * Non-server files of apps/web/src that `entries` import, directly or not. The entries are what the PostgreSQL job
+ * runs: the gate scripts, and the Worker, server and `*.workerd-db.test.*` files its Worker gates load.
+ */
+function clientFilesReachedFrom(entries) {
+  const queue = [...entries];
+  const seen = new Set();
+  while (queue.length > 0) {
+    const file = queue.pop();
+    if (seen.has(file)) {
+      continue;
+    }
+    seen.add(file);
+    if (!SOURCE_FILE.test(file)) {
+      continue;
+    }
+    for (const match of readFileSync(file, "utf8").matchAll(GATE_IMPORT)) {
+      const target = resolveGateImport(file, match[1] ?? match[2]);
+      if (target !== null) {
+        queue.push(target);
+      }
+    }
+  }
+  return [...seen]
+    .map((file) => path.relative(root, file).split(path.sep).join("/"))
+    .filter(
+      (file) =>
+        file.startsWith("apps/web/src/") &&
+        !file.startsWith("apps/web/src/server/") &&
+        !TEST_FILE.test(file)
+    )
+    .sort();
+}
+
+function clientFilesReachedByGates() {
+  return clientFilesReachedFrom(gateEntryFiles());
+}
+
+describe("which pull requests reach the PostgreSQL gates", () => {
+  const RUNS = [
+    "packages/db/src/media-repository.ts",
+    "packages/db/drizzle/0051_x.sql",
+    "packages/domain/src/money.ts",
+    "apps/web/src/server/routes/media.ts",
+    "apps/admin/src/server/billing.ts",
+    "apps/catalog/src/server/routes.ts",
+    "apps/web/worker/index.ts",
+    "package.json",
+    "bun.lock",
+    ".github/workflows/ci.yml",
+    ".github/PULL_REQUEST_TEMPLATE.md",
+  ];
+  const UNKNOWN = [
+    "packages/observability/src/log.ts",
+    "apps/web/scripts/verify-offline-e2e-gate.ts",
+    "apps/web/src/offline/outbox/outbox.ts",
+    "apps/web/src/lib/format.ts",
+    "apps/web/src/home/home-inventory.ts",
+    "apps/web/src/catalog/thumbnail-cache.ts",
+    "apps/web/src/pwa/update-model.ts",
+    "apps/web/e2e/x.e2e.ts",
+    "apps/catalog/src/page.ts",
+    "scripts/ci-changed.mjs",
+    "wrangler.jsonc",
+    "novo-arquivo-qualquer.txt",
+  ];
+  const SKIPS = [
+    "docs/adr/0059-x.md",
+    "doc/status-implementacao.md",
+    "DESIGN.md",
+    "apps/web/src/ui/button.tsx",
+    "apps/web/src/screens/home/home-screen.tsx",
+    "apps/web/src/home/home-page.tsx",
+    "apps/web/src/styles/index.css",
+  ];
+
+  it.each(RUNS)("runs for %s", (file) => {
+    expect(classifyChanges([file]).database).toBe(true);
+    expect(classifyChanges(["docs/a.md", file]).database).toBe(true);
+  });
+
+  it.each(UNKNOWN)("runs for the unclassified path %s", (file) => {
+    expect(classifyChanges([file]).database).toBe(true);
+  });
+
+  it.each(SKIPS)("skips for %s", (file) => {
+    expect(classifyChanges([file]).database).toBe(false);
+  });
+
+  it("skips for a pull request of screen code only", () => {
+    expect(classifyChanges(SKIPS).database).toBe(false);
+  });
+
+  it("runs when one path in the list is outside the skippable ones", () => {
+    expect(
+      classifyChanges([...SKIPS, "apps/web/src/server/x.ts"]).database
+    ).toBe(true);
+    expect(classifyChanges([...SKIPS, "outro/arquivo.sql"]).database).toBe(
+      true
+    );
+  });
+
+  it("does not let server/ hide behind a client-looking name", () => {
+    expect(classifyChanges(["apps/web/src/serverless/x.ts"]).database).toBe(
+      false
+    );
+    expect(classifyChanges(["apps/web/src/server/x.tsx"]).database).toBe(true);
+    expect(classifyChanges(["apps/web/src/server.ts"]).database).toBe(false);
+  });
+
+  it("runs when the changed files are unknown", () => {
+    expect(classifyChanges(null).database).toBe(true);
+  });
+
+  it("keeps every client file a PostgreSQL gate imports out of the skippable paths", () => {
+    const reached = clientFilesReachedByGates();
+    expect(reached.length).toBeGreaterThan(10);
+    expect(
+      reached.filter((file) => DATABASE_IRRELEVANT.some((p) => p.test(file)))
+    ).toEqual([]);
+    expect(reached).toContain("apps/web/src/offline/outbox/outbox.ts");
+  });
+
+  it("flags a screen file that a gate entry would start importing", () => {
+    const folder = mkdtempSync(path.join(tmpdir(), "ci-changed-"));
+    const entry = path.join(folder, "entry.ts");
+    writeFileSync(
+      entry,
+      'import { Button } from "@/ui/button";\nexport const x = Button;\n'
+    );
+    const reached = clientFilesReachedFrom([entry]);
+    rmSync(folder, { recursive: true });
+    expect(
+      reached.filter((file) => DATABASE_IRRELEVANT.some((p) => p.test(file)))
+    ).toEqual(["apps/web/src/ui/button.tsx"]);
+  });
+});
+
 describe("which CI jobs a change affects", () => {
   it("treats bunfig.toml as a dependency change (the install policy lives there)", () => {
     expect(classifyChanges(["bunfig.toml"]).dependencies).toBe(true);
@@ -250,6 +450,7 @@ describe("which CI jobs a change affects", () => {
       browser: true,
       dependencies: true,
       e2e: true,
+      database: true,
     });
   });
 
@@ -261,7 +462,12 @@ describe("which CI jobs a change affects", () => {
         "DESIGN.md",
         "",
       ])
-    ).toEqual({ browser: false, dependencies: false, e2e: false });
+    ).toEqual({
+      browser: false,
+      dependencies: false,
+      e2e: false,
+      database: false,
+    });
   });
 
   it("skips the browser gate for the database package, whose code the web client never bundles", () => {
@@ -271,7 +477,12 @@ describe("which CI jobs a change affects", () => {
         "packages/db/scripts/verify-x-gate.ts",
         "packages/db/drizzle/0051_x.sql",
       ])
-    ).toEqual({ browser: false, dependencies: false, e2e: true });
+    ).toEqual({
+      browser: false,
+      dependencies: false,
+      e2e: true,
+      database: true,
+    });
   });
 
   it("skips the browser gate for the web app's server, Worker and gate scripts, which it never runs", () => {
@@ -282,7 +493,12 @@ describe("which CI jobs a change affects", () => {
         "apps/web/worker/index.ts",
         "apps/web/scripts/verify-offline-e2e-gate.ts",
       ])
-    ).toEqual({ browser: false, dependencies: false, e2e: true });
+    ).toEqual({
+      browser: false,
+      dependencies: false,
+      e2e: true,
+      database: true,
+    });
     // the client next to them is still covered
     expect(
       classifyChanges([
@@ -335,11 +551,17 @@ describe("which CI jobs a change affects", () => {
         "apps/admin/wrangler.jsonc",
         "apps/admin/package.json",
       ])
-    ).toEqual({ browser: false, dependencies: true, e2e: false });
+    ).toEqual({
+      browser: false,
+      dependencies: true,
+      e2e: false,
+      database: true,
+    });
     expect(classifyChanges(["apps/admin/src/app.ts"])).toEqual({
       browser: false,
       dependencies: false,
       e2e: false,
+      database: true,
     });
   });
 
@@ -413,6 +635,7 @@ describe("which CI jobs a change affects", () => {
         browser: false,
         dependencies: false,
         e2e: false,
+        database: true,
       });
     }
   });
@@ -747,6 +970,7 @@ describe("the full suite on demand", () => {
       "browser=true",
       "dependencies=true",
       "e2e=true",
+      "database=true",
       "reloads=true",
     ]);
   });

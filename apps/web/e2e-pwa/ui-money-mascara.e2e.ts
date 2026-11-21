@@ -80,8 +80,8 @@ for (const theme of THEMES) {
       await expect(toggle).toHaveAttribute("aria-pressed", "false");
 
       const shown = await measure(page);
-      // lg and xl, two amounts each, and the two hero values of the cards
-      expect(shown).toHaveLength(6);
+      // lg and xl, two amounts each, and the three KPI values of the cards (the hero among them)
+      expect(shown).toHaveLength(7);
       for (const amount of shown) {
         expect(Number.parseFloat(amount.currency.fontSize)).toBeLessThan(
           Number.parseFloat(amount.number.fontSize)

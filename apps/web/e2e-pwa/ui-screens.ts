@@ -743,6 +743,7 @@ const SUBSCRIPTION_SOURCES = [
   "src/subscription",
   "src/app-shell/grace-notice.tsx",
   "src/app-shell/menu-progress.tsx",
+  "src/ui/plan-card.tsx",
 ];
 
 const subscriptionScreen = (
