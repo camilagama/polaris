@@ -41,15 +41,16 @@ const fake = vi.hoisted(() => ({
   ranInBackground: [] as { database: string; requestId: string }[],
 }));
 
-vi.mock("@polaris/db/client", () => ({
-  createDatabase: () => {
+vi.mock("@polaris/db/client", () => {
+  const stand = () => {
     fake.databases += 1;
     return {
       db: { name: `database-${fake.databases}` },
       pool: { end: () => Promise.resolve() },
     };
-  },
-}));
+  };
+  return { createAuthDatabase: stand, createDatabase: stand };
+});
 
 const createBetterAuth = vi.hoisted(() =>
   vi.fn((options: CapturedOptions) => ({

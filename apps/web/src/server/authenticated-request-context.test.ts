@@ -1,4 +1,3 @@
-import { authRelationalSchema } from "@polaris/db/auth-schema";
 import type {
   createDatabase as createHyperdriveDatabase,
   DatabaseOptions,
@@ -37,14 +36,14 @@ function contextWithDatabaseSpy(
 ) {
   const db = {} as ReturnType<typeof createHyperdriveDatabase>["db"];
   const endPool = vi.fn(async () => undefined);
-  const createDatabase = vi.fn(
-    (_connectionString: string, _options?: DatabaseOptions) => ({
-      db,
-      pool: { end: endPool } as unknown as ReturnType<
-        typeof createHyperdriveDatabase
-      >["pool"],
-    })
-  );
+  const standIn = (_connectionString: string, _options?: DatabaseOptions) => ({
+    db,
+    pool: { end: endPool } as unknown as ReturnType<
+      typeof createHyperdriveDatabase
+    >["pool"],
+  });
+  const createDatabase = vi.fn(standIn);
+  const createAuthDatabase = vi.fn(standIn);
   const createAuth = vi.fn(() => ({
     api: {
       getSession: vi.fn(async () => session),
@@ -53,11 +52,13 @@ function contextWithDatabaseSpy(
   const run = createAuthenticatedRequestContext({
     createAuth:
       createAuth as unknown as AuthenticatedRequestContextDependencies["createAuth"],
+    createAuthDatabase:
+      createAuthDatabase as unknown as AuthenticatedRequestContextDependencies["createAuthDatabase"],
     createDatabase:
       createDatabase as unknown as AuthenticatedRequestContextDependencies["createDatabase"],
   });
 
-  return { createDatabase, endPool, run };
+  return { createAuthDatabase, createDatabase, endPool, run };
 }
 
 describe("Better Auth once per isolate", () => {
@@ -96,6 +97,8 @@ describe("Better Auth once per isolate", () => {
     const run = createAuthenticatedRequestContext({
       createAuth:
         createAuth as unknown as AuthenticatedRequestContextDependencies["createAuth"],
+      createAuthDatabase:
+        createDatabase as unknown as AuthenticatedRequestContextDependencies["createAuthDatabase"],
       createDatabase:
         createDatabase as unknown as AuthenticatedRequestContextDependencies["createDatabase"],
     });
@@ -193,6 +196,10 @@ describe("when the isolate drops the Better Auth instance", () => {
     const run = createAuthenticatedRequestContext({
       createAuth:
         createAuth as unknown as AuthenticatedRequestContextDependencies["createAuth"],
+      createAuthDatabase: (() => ({
+        db: {},
+        pool: { end: () => Promise.resolve() },
+      })) as unknown as AuthenticatedRequestContextDependencies["createAuthDatabase"],
       createDatabase: (() => ({
         db: {},
         pool: { end: () => Promise.resolve() },
@@ -250,6 +257,7 @@ describe("when the isolate drops the Better Auth instance", () => {
 describe("authenticated request database connection", () => {
   it("allows a longer local Hyperdrive-emulation timeout when configured", async () => {
     const {
+      createAuthDatabase: createAuthDatabaseSpy,
       createDatabase: createDatabaseSpy,
       endPool,
       run,
@@ -271,15 +279,11 @@ describe("authenticated request database connection", () => {
       baseBindings.HYPERDRIVE.connectionString,
       { connectionTimeoutMillis: 30_000, maxConnections: 1 }
     );
-    expect(createDatabaseSpy).toHaveBeenNthCalledWith(
-      1,
+    expect(createAuthDatabaseSpy).toHaveBeenCalledExactlyOnceWith(
       baseBindings.AUTH_HYPERDRIVE.connectionString,
-      {
-        connectionTimeoutMillis: 30_000,
-        maxConnections: 1,
-        schema: authRelationalSchema,
-      }
+      { connectionTimeoutMillis: 30_000, maxConnections: 1 }
     );
+    expect(createDatabaseSpy).toHaveBeenCalledOnce();
     expect(endPool).toHaveBeenCalledTimes(2);
   });
 
@@ -332,6 +336,8 @@ describe("the check of the legal acceptance at the gate", () => {
           })),
         },
       })) as unknown as AuthenticatedRequestContextDependencies["createAuth"],
+      createAuthDatabase:
+        createDatabase as unknown as AuthenticatedRequestContextDependencies["createAuthDatabase"],
       createDatabase:
         createDatabase as unknown as AuthenticatedRequestContextDependencies["createDatabase"],
       readAcceptedLegalVersions: readAccepted,

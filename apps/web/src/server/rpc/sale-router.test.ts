@@ -453,6 +453,7 @@ describe("sale.confirm RPC", () => {
             createAuth: (() => ({
               api: { getSession },
             })) as never,
+            createAuthDatabase: (() => database) as never,
             createDatabase: (() => database) as never,
             withAuthorizedTenantTransaction: runTransaction as never,
           }),

@@ -1,5 +1,7 @@
-import { authRelationalSchema } from "@polaris/db/auth-schema";
-import { createDatabase as createHyperdriveDatabase } from "@polaris/db/client";
+import {
+  createAuthDatabase as createHyperdriveAuthDatabase,
+  createDatabase as createHyperdriveDatabase,
+} from "@polaris/db/client";
 import { logger } from "@polaris/observability/logger";
 import { createBetterAuth } from "./auth";
 import {
@@ -74,6 +76,7 @@ export interface AuthenticatedRequestContextDependencies {
     requestState: () => AuthRequestState;
     secret: string;
   }) => SessionAuth;
+  createAuthDatabase: typeof createHyperdriveAuthDatabase;
   createDatabase: typeof createHyperdriveDatabase;
   readAcceptedLegalVersions?: typeof readAcceptedLegalVersions;
 }
@@ -133,6 +136,8 @@ export function createAuthenticatedRequestContext(
   overrides: Partial<AuthenticatedRequestContextDependencies> = {}
 ) {
   const databaseFactory = overrides.createDatabase ?? createHyperdriveDatabase;
+  const authDatabaseFactory =
+    overrides.createAuthDatabase ?? createHyperdriveAuthDatabase;
   const authFactory =
     overrides.createAuth ??
     ((options) => createBetterAuth(options) as SessionAuth);
@@ -219,10 +224,10 @@ export function createAuthenticatedRequestContext(
       throw error;
     }
     const databaseOptions = { maxConnections: 1, ...connectionOptions };
-    const authDatabase = databaseFactory(authConnectionString, {
-      ...databaseOptions,
-      schema: authRelationalSchema,
-    });
+    const authDatabase = authDatabaseFactory(
+      authConnectionString,
+      databaseOptions
+    );
     // Authentication and tenant data use different database roles. Only when
     // both resolve to the same connection (local development) is one pool shared.
     let tenantDatabase: typeof authDatabase | undefined;
