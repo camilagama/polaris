@@ -354,7 +354,7 @@ test.describe("o cartão do plano Free", () => {
     await expect(card(page)).toHaveCount(0);
     const tops = () =>
       page
-        .locator('nav[aria-label="Principal"] a, [data-app-header], main h1')
+        .locator('nav[aria-label="Principal"] a, [data-app-header], [data-menu-first-steps], main h1')
         .evaluateAll((all) =>
           all.map((element) => element.getBoundingClientRect().top)
         );
