@@ -8,6 +8,11 @@ import { pgWorkerdAliases } from "./scripts/workerd-harness.mjs";
 export default defineConfig({
   resolve: { alias: pgWorkerdAliases },
   test: {
+    // Random order exposes tests that lean on state another test left behind. The seed
+    // is the first line of the failure summary of the gate. The order of
+    // the tests is set in the project (apps/catalog/vitest.workers-db.config.ts), which
+    // the `sequence` of a root config does not reach; there is one test file today.
+    sequence: { shuffle: { files: true, tests: true } },
     projects: ["apps/catalog/vitest.workers-db.config.ts"],
   },
 });

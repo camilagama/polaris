@@ -47,6 +47,8 @@ export default defineProject({
     hookTimeout: 60_000,
     include: ["src/**/*.workerd-db.test.ts"],
     name: "catalog-workerd-db",
+    // a project loaded from a file does not inherit the root config's `sequence`, so the order of its tests is set here
+    sequence: { shuffle: { tests: true } },
     silent: "passed-only",
     testTimeout: 60_000,
   },
