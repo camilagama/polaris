@@ -79,9 +79,12 @@ const SPECS: Readonly<Record<string, SpecRule>> = {
   },
   "home/valores-e-ranking.e2e.ts": {
     bare: 1,
+    before: [
+      "R$ 1.234.567,89 em Vendas hoje a 320 px com a letra em 24 px: o corte medido é o da lista, nem mais nem menos",
+    ],
     coarse: 4,
     from: 'test.describe("Mais vendidos do mês a 320 px com a letra do navegador em 20 px"',
-    why: "the heights test opens its own browser contexts, which a finger case would not share; the windows of 1024 to 1361 px are not a phone",
+    why: "the heights test opens its own browser contexts, which a finger case would not share; the windows of 1024 to 1361 px are not a phone; the case of the nine-digit figure at 24 px is a measured report (a best effort, not a promise) of one cut, and the case that asserts that value is the one at 20 px",
   },
   "listas-quadro-selo.e2e.ts": {
     bare: 0,
