@@ -130,7 +130,7 @@ async function run() {
       );
     }
 
-    async function newSale(tenant: TenantFixture, label: string) {
+    async function newSale(tenant: TenantFixture, label: string, hoursAgo = 3) {
       const product = await withTenantAs(
         runtimeDatabase.db,
         tenant,
@@ -181,7 +181,7 @@ async function run() {
                 variantId,
               },
             ],
-            occurredAt: recentInstant(),
+            occurredAt: recentInstant(hoursAgo),
             payment: { anticipationRequested: false, method: "pix" },
             paymentProfile: null,
             requestId: randomUUID(),
@@ -1108,6 +1108,8 @@ async function run() {
     const cancelledSale = await newSale(tenantA, "P3");
     const moved = await newSale(tenantA, "P4");
     const received = await newSale(tenantA, "P5");
+    const older = await newSale(tenantA, "P7", 96);
+    const removed = await newSale(tenantA, "P8");
     const saleOfBuyerB = await newSale(tenantB, "P6");
     for (const [tenant, saleId, customerId] of [
       [tenantA, kept, buyer.id],
@@ -1115,6 +1117,8 @@ async function run() {
       [tenantA, cancelledSale, buyer.id],
       [tenantA, moved, buyer.id],
       [tenantA, received, other.id],
+      [tenantA, older, buyer.id],
+      [tenantA, removed, buyer.id],
       [tenantB, saleOfBuyerB, buyerOfB.id],
     ] as const) {
       // biome-ignore lint/performance/noAwaitInLoops: each assignment is its own version history
@@ -1136,6 +1140,11 @@ async function run() {
       customerId: buyer.id,
       expectedVersion: 1,
       saleId: received,
+    });
+    await change(tenantA, {
+      action: "unassign",
+      expectedVersion: 1,
+      saleId: removed,
     });
     await withTenantAs(
       runtimeDatabase.db,
@@ -1222,15 +1231,21 @@ async function run() {
 
     const countedDays = await admin.pool.query<{ last: string }>(
       "SELECT max(occurred_on)::text AS last FROM public.sales WHERE id = ANY($1::uuid[])",
-      [[kept, keptReturned, received]]
+      [[kept, keptReturned, received, older]]
     );
     const lastDay = countedDays.rows[0]?.last;
     assert.ok(lastDay);
-    // two items of 19.90 and a freight of 5.00: 44.80 due for each counted sale, the return not taken out
+    const olderDay = await admin.pool.query<{ day: string }>(
+      "SELECT occurred_on::text AS day FROM public.sales WHERE id = $1",
+      [older]
+    );
+    assert.ok((olderDay.rows[0]?.day ?? lastDay) < lastDay);
+    // two items of 19.90 and a freight of 5.00: 44.80 due for each counted sale, the return not taken out; the sale of
+    // the customer that was removed from it (a last version with no customer) counts for nobody
     assert.deepEqual(summarized.summary, {
       lastPurchaseOn: lastDay,
-      purchaseCount: 3,
-      totalSpent: "134.40",
+      purchaseCount: 4,
+      totalSpent: "179.20",
     });
     const rowOf = (id: string) => listed.find((row) => row.id === id);
     assert.equal(rowOf(buyer.id)?.lastPurchaseOn, lastDay);

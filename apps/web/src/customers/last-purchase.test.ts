@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { calendarDayInTimezone } from "../lib/dates";
 import { lastPurchaseRowText, lastPurchaseValueText } from "./last-purchase";
 
@@ -54,25 +54,25 @@ describe("the last purchase in the summary of the customer", () => {
 });
 
 describe("the store's day, not the device's", () => {
-  it("turns at the midnight of São Paulo: 23:30 there is still the day before for a purchase of that day", () => {
-    vi.useFakeTimers({
-      now: new Date("2026-11-22T02:30:00.000Z"),
-      toFake: ["Date"],
-    });
-    try {
-      const today = calendarDayInTimezone(new Date(), "America/Sao_Paulo");
-      expect(today).toBe("2026-11-21");
-      expect(lastPurchaseRowText("2026-11-21", today)).toBe(
-        "Última compra hoje"
-      );
-      vi.setSystemTime(new Date("2026-11-22T03:00:00.000Z"));
-      const nextDay = calendarDayInTimezone(new Date(), "America/Sao_Paulo");
-      expect(nextDay).toBe("2026-11-22");
-      expect(lastPurchaseRowText("2026-11-21", nextDay)).toBe(
-        "Última compra ontem"
-      );
-    } finally {
-      vi.useRealTimers();
-    }
+  const AT_2330_IN_SAO_PAULO = new Date("2026-11-22T02:30:00.000Z");
+  const AT_MIDNIGHT_IN_SAO_PAULO = new Date("2026-11-22T03:00:00.000Z");
+
+  it("turns at the midnight of São Paulo: 23:30 there is still the day of the purchase, midnight is the day after", () => {
+    const before = calendarDayInTimezone(
+      AT_2330_IN_SAO_PAULO,
+      "America/Sao_Paulo"
+    );
+    expect(before).toBe("2026-11-21");
+    expect(lastPurchaseRowText("2026-11-21", before)).toBe(
+      "Última compra hoje"
+    );
+    const after = calendarDayInTimezone(
+      AT_MIDNIGHT_IN_SAO_PAULO,
+      "America/Sao_Paulo"
+    );
+    expect(after).toBe("2026-11-22");
+    expect(lastPurchaseRowText("2026-11-21", after)).toBe(
+      "Última compra ontem"
+    );
   });
 });

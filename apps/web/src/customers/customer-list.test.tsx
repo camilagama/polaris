@@ -295,17 +295,19 @@ describe("the list of customers", () => {
     expect(line?.[0]).toContain("text-muted-foreground");
     expect(line?.[0]).toContain("text-support");
     expect(line?.[0]).toContain(`id="customer-purchase-${ana.id}"`);
+    expect(line?.[0]).toContain('aria-hidden="true"');
     expect(ROW_BUTTON_TAG.exec(html)?.[0]).toContain(
       `customer-purchase-${ana.id}`
     );
   });
 
-  it("goes under the contacts on a narrow screen and beside them from sm", () => {
+  it("goes under the contacts in a narrow card and beside them from 26 rem of card", () => {
     const html = render({
       customers: [customer(1, "Ana Lima", { lastPurchaseOn: "2026-11-18" })],
       total: 1,
     });
-    expect(html).toContain("sm:grid-cols-[minmax(0,1fr)_auto]");
+    expect(html).toContain("@min-[26rem]:grid-cols-[minmax(0,1fr)_auto]");
+    expect(html).toContain("@container");
   });
 
   it("says Sem compras for a customer with none, and nothing where the purchases are not known", () => {

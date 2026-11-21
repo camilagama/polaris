@@ -549,10 +549,15 @@ export const FILE_SCREENS = [
   {
     files: [
       "apps/web/src/sales/confirmed-sale-parts.tsx",
+      "apps/web/src/sales/customer-summary.tsx",
       "apps/web/src/sales/sale-customer-link-model.ts",
       "apps/web/src/sales/sale-customer-panel.tsx",
     ],
     screens: ["sale", "sale-detail"],
+  },
+  {
+    files: ["apps/web/src/customers/last-purchase.ts"],
+    screens: ["customers", "sale", "sale-detail"],
   },
   {
     files: [

@@ -98,14 +98,61 @@ const customerColumns = {
 
 /**
  * What a customer bought, in the same statement that reads the customer. A purchase is a confirmed sale that was not
- * cancelled and whose current attribution (the highest version of its links) is the customer; the total is what the
- * sale history shows for each one (items, plus surcharge, freight and payment surcharge, minus discount), with no
- * return taken out. The date is the commercial day of the sale in the store.
+ * cancelled and whose current attribution (the highest version of its links, so a removed customer counts nothing) is
+ * the customer. The date is the commercial day of the sale in the store.
  */
-function purchaseStats(
+function purchaseConditions(organizationId: string, customerId?: string) {
+  return and(
+    eq(saleCustomerLinks.organizationId, organizationId),
+    customerId === undefined
+      ? isNotNull(saleCustomerLinks.customerId)
+      : eq(saleCustomerLinks.customerId, customerId),
+    sql`${saleCustomerLinks.version} = (
+      SELECT max(latest.version) FROM ${saleCustomerLinks} AS latest
+      WHERE latest.organization_id = ${saleCustomerLinks.organizationId}
+        AND latest.sale_id = ${saleCustomerLinks.saleId}
+    )`,
+    sql`NOT EXISTS (
+      SELECT 1 FROM ${saleCancellations}
+      WHERE ${saleCancellations.organizationId} = ${sales.organizationId}
+        AND ${saleCancellations.saleId} = ${sales.id}
+    )`
+  );
+}
+
+/** The list asks only for the last day: no sum is computed for the customers of a whole store. */
+function lastPurchaseStats(
+  transaction: TenantRequestTransaction,
+  organizationId: string
+) {
+  return transaction
+    .select({
+      customerId: saleCustomerLinks.customerId,
+      lastPurchaseOn: sql<string | null>`max(${sales.occurredOn})::text`.as(
+        "last_purchase_on"
+      ),
+    })
+    .from(saleCustomerLinks)
+    .innerJoin(
+      sales,
+      and(
+        eq(sales.organizationId, saleCustomerLinks.organizationId),
+        eq(sales.id, saleCustomerLinks.saleId)
+      )
+    )
+    .where(purchaseConditions(organizationId))
+    .groupBy(saleCustomerLinks.customerId)
+    .as("purchase_stats");
+}
+
+/**
+ * The count, the last day and the total of one customer: the total due of each sale as the sale history shows it
+ * (items, plus surcharge, freight and payment surcharge, minus discount), with no return taken out.
+ */
+function purchaseSummaryStats(
   transaction: TenantRequestTransaction,
   organizationId: string,
-  customerId?: string
+  customerId: string
 ) {
   const itemsTotal = sql`(
     SELECT coalesce(sum(item.charged_unit_price * item.quantity), 0)
@@ -140,24 +187,7 @@ function purchaseStats(
         eq(sales.id, saleCustomerLinks.saleId)
       )
     )
-    .where(
-      and(
-        eq(saleCustomerLinks.organizationId, organizationId),
-        customerId === undefined
-          ? isNotNull(saleCustomerLinks.customerId)
-          : eq(saleCustomerLinks.customerId, customerId),
-        sql`${saleCustomerLinks.version} = (
-          SELECT max(latest.version) FROM ${saleCustomerLinks} AS latest
-          WHERE latest.organization_id = ${saleCustomerLinks.organizationId}
-            AND latest.sale_id = ${saleCustomerLinks.saleId}
-        )`,
-        sql`NOT EXISTS (
-          SELECT 1 FROM ${saleCancellations}
-          WHERE ${saleCancellations.organizationId} = ${sales.organizationId}
-            AND ${saleCancellations.saleId} = ${sales.id}
-        )`
-      )
-    )
+    .where(purchaseConditions(organizationId, customerId))
     .groupBy(saleCustomerLinks.customerId)
     .as("purchase_stats");
 }
@@ -181,7 +211,7 @@ export async function listCustomers(
       break;
   }
 
-  const stats = purchaseStats(transaction, identity.organizationId);
+  const stats = lastPurchaseStats(transaction, identity.organizationId);
   const rows = await transaction
     .select({ ...customerColumns, lastPurchaseOn: stats.lastPurchaseOn })
     .from(customers)
@@ -199,7 +229,11 @@ export async function getCustomer(
   identity: TenantRequestIdentity,
   customerId: string
 ) {
-  const stats = purchaseStats(transaction, identity.organizationId, customerId);
+  const stats = purchaseSummaryStats(
+    transaction,
+    identity.organizationId,
+    customerId
+  );
   const [row] = await transaction
     .select({
       ...customerColumns,
