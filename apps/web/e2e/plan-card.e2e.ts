@@ -350,6 +350,7 @@ test.describe("o cartão do plano Free", () => {
     });
     await page.goto("/products");
     await expect(page.locator("[data-menu-first-steps]")).toBeVisible();
+    await expect(page.locator("main h1")).toBeVisible();
     await expect(card(page)).toHaveCount(0);
     const tops = () =>
       page
