@@ -2,6 +2,11 @@
 import type { Page } from "@playwright/test";
 import { expect } from "@playwright/test";
 import {
+  expectBadgesAtRight,
+  expectBadgesBelow,
+  rowGeometries,
+} from "./lista-selo";
+import {
   assertNoEllipsis,
   assertNoPageScroll,
   assertNothingClipped,
@@ -257,5 +262,45 @@ for (const width of [360, WIDE_WINDOW]) {
       await assertNoPageScroll(page);
     },
     { coarse: width !== WIDE_WINDOW }
+  );
+}
+
+const ARCHIVED_ROW = "[data-customer-id]";
+
+async function openArchived(page: Page, width: number, fontPixels: number) {
+  await openCustomers(page, width, fontPixels);
+  await page.getByRole("tab", { name: "Arquivados" }).click();
+  await expect(page.locator(ARCHIVED_ROW)).toHaveCount(ARCHIVED.length);
+}
+
+reflowTest(
+  "a 1280 px o selo Arquivado e o Anonimizado terminam no mesmo x, e o círculo de iniciais segue círculo",
+  async ({ page }) => {
+    await openArchived(page, WIDE_WINDOW, 16);
+    const rows = await rowGeometries(page, ARCHIVED_ROW);
+    expect(rows.map(({ badgeText }) => badgeText)).toEqual([
+      "Arquivado",
+      "Anonimizado",
+    ]);
+    expectBadgesAtRight(rows);
+    await expect(page.locator("[data-row-tile]")).toHaveCount(0);
+  },
+  { coarse: false }
+);
+
+for (const [width, font] of [
+  [360, 16],
+  [320, 20],
+] as const) {
+  reflowTest(
+    `a ${width} px com letra de ${font} px o selo desce sob o nome, à esquerda do texto`,
+    async ({ page }) => {
+      await openArchived(page, width, font);
+      expectBadgesBelow(await rowGeometries(page, ARCHIVED_ROW), 2);
+      const list = page.getByRole("list", { name: "Clientes" });
+      await assertNothingClipped(list);
+      await assertNoEllipsis(list.locator(ARCHIVED_ROW));
+      await assertNoPageScroll(page);
+    }
   );
 }
