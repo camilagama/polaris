@@ -44,6 +44,66 @@ async function box(locator: ReturnType<Page["locator"]>) {
   return found;
 }
 
+async function holdRead(page: Page, plan: unknown) {
+  let release: () => void = () => undefined;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route("**/rpc/billing/readPlan", async (route) => {
+    await held;
+    await route.fulfill(json(plan));
+  });
+  return release;
+}
+
+/** Records, in the first frame where the line of the first steps exists, where it is and whether the card and the trial already are. */
+async function watchFoot(page: Page) {
+  await page.addInitScript(() => {
+    const seen = () => {
+      const steps = document.querySelector("[data-menu-first-steps]");
+      if (steps === null || Reflect.has(window, "polarisFirstSighting")) {
+        return;
+      }
+      Reflect.set(window, "polarisFirstSighting", {
+        card: document.querySelector("[data-plan-card]") !== null,
+        top: steps.getBoundingClientRect().top,
+        trial: document.querySelector("[data-menu-trial]") !== null,
+      });
+    };
+    new MutationObserver(seen).observe(document, {
+      childList: true,
+      subtree: true,
+    });
+  });
+}
+
+async function firstSighting(page: Page) {
+  return await page.evaluate(
+    () =>
+      Reflect.get(window, "polarisFirstSighting") as {
+        card: boolean;
+        top: number;
+        trial: boolean;
+      }
+  );
+}
+
+async function tops(page: Page) {
+  return await page.evaluate(() => {
+    const top = (element: Element) => element.getBoundingClientRect().top;
+    return {
+      others: [
+        ...document.querySelectorAll(
+          'nav[aria-label="Principal"] a, [data-app-header], main h1'
+        ),
+      ].map(top),
+      steps: top(
+        document.querySelector("[data-menu-first-steps]") ?? document.body
+      ),
+    };
+  });
+}
+
 test.describe("o cartão do plano Free", () => {
   test("1280 px: no pé da lateral, depois de Ajuda e contato, com o uso, o pitch e o botão de contorno", async ({
     page,
@@ -335,33 +395,160 @@ test.describe("o cartão do plano Free", () => {
     expect(reads.plan).toBe(1);
   });
 
-  test("o cartão entra sem mover o que está acima: destinos e conteúdo ficam onde estavam", async ({
+  test("o pé entra de uma vez: Primeiros passos espera a leitura do plano e nada acima se move", async ({
     page,
   }) => {
     await page.setViewportSize({ height: 800, width: 1280 });
     await serveFoot(page, { plan: FREE_PLAN });
-    let release: () => void = () => undefined;
-    const held = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    await page.route("**/rpc/billing/readPlan", async (route) => {
-      await held;
-      await route.fulfill(json(FREE_PLAN));
-    });
+    await watchFoot(page);
+    const release = await holdRead(page, FREE_PLAN);
     await page.goto("/products");
-    await expect(page.locator("[data-menu-first-steps]")).toBeVisible();
     await expect(page.locator("main h1")).toBeVisible();
+    await expect(page.locator("[data-menu-first-steps]")).toHaveCount(0);
     await expect(card(page)).toHaveCount(0);
-    const tops = () =>
-      page
-        .locator('nav[aria-label="Principal"] a, [data-app-header], [data-menu-first-steps], main h1')
-        .evaluateAll((all) =>
-          all.map((element) => element.getBoundingClientRect().top)
-        );
-    const before = await tops();
+    const before = await tops(page);
     release();
     await expect(card(page)).toBeVisible();
-    expect(await tops()).toEqual(before);
+    await expect(page.locator("[data-menu-first-steps]")).toBeVisible();
+    const first = await firstSighting(page);
+    expect(first.card).toBe(true);
+    const after = await tops(page);
+    expect(after.steps).toBeCloseTo(first.top, 0);
+    expect(after.others).toEqual(before.others);
+    console.log(
+      `t1565 1280: Primeiros passos no 1º quadro ${first.top} px, depois ${after.steps} px`
+    );
+  });
+
+  test("celular emulado: Primeiros passos e o cartão entram juntos na folha Mais, sem deslocamento", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 740, width: 360 });
+    await serveFoot(page, { plan: FREE_PLAN });
+    await watchFoot(page);
+    const release = await holdRead(page, FREE_PLAN);
+    await page.goto("/products");
+    await expect(page.locator("main h1")).toBeVisible();
+    await more(page).click();
+    const dialog = page.getByRole("dialog", { name: "Mais" });
+    await expect(dialog).toBeVisible();
+    await expect(dialog.locator("[data-menu-first-steps]")).toHaveCount(0);
+    release();
+    await expect(dialog.locator("[data-plan-card]")).toBeVisible();
+    await expect(dialog.locator("[data-menu-first-steps]")).toBeVisible();
+    const first = await firstSighting(page);
+    expect(first.card).toBe(true);
+    const after = await box(dialog.locator("[data-menu-first-steps]"));
+    expect(after.y).toBeCloseTo(first.top, 0);
+    console.log(
+      `t1565 360: Primeiros passos no 1º quadro ${first.top} px, depois ${after.y} px`
+    );
+  });
+
+  test("Primeiros passos e Teste grátis entram juntos, no mesmo quadro, e nada se move", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 800, width: 1280 });
+    await serveFoot(page, { plan: TRIAL_PLAN });
+    await watchFoot(page);
+    const release = await holdRead(page, TRIAL_PLAN);
+    await page.goto("/products");
+    await expect(page.locator("main h1")).toBeVisible();
+    await expect(page.locator("[data-menu-first-steps]")).toHaveCount(0);
+    await expect(page.locator("[data-menu-trial]")).toHaveCount(0);
+    release();
+    await expect(page.locator("[data-menu-trial]")).toBeVisible();
+    await expect(page.locator("[data-menu-first-steps]")).toBeVisible();
+    const first = await firstSighting(page);
+    expect(first.trial).toBe(true);
+    const after = await tops(page);
+    expect(after.steps).toBeCloseTo(first.top, 0);
+  });
+
+  for (const item of [
+    { name: "Pro", plan: { ...FREE_PLAN, state: "active" } },
+    {
+      name: "carência",
+      plan: {
+        ...FREE_PLAN,
+        accessEndsAt: TRIAL_PLAN.accessEndsAt,
+        state: "grace",
+      },
+    },
+  ]) {
+    test(`${item.name}: Primeiros passos aparece com a leitura e não se move depois`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ height: 800, width: 1280 });
+      await serveFoot(page, { plan: item.plan });
+      await watchFoot(page);
+      await page.goto("/products");
+      await expect(page.locator("[data-menu-first-steps]")).toBeVisible();
+      const first = await firstSighting(page);
+      await page.waitForLoadState("networkidle");
+      await expect(page.locator("[data-menu-first-steps]")).toBeVisible();
+      expect((await tops(page)).steps).toBeCloseTo(first.top, 0);
+    });
+  }
+
+  test("falha da leitura: Primeiros passos aparece e fica onde está", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 800, width: 1280 });
+    await serveFoot(page, { plan: FREE_PLAN });
+    await watchFoot(page);
+    await page.route("**/rpc/billing/readPlan", (route) =>
+      route.fulfill({ body: "{}", status: 500 })
+    );
+    await page.goto("/products");
+    await expect(page.locator("[data-menu-first-steps]")).toBeVisible();
+    const first = await firstSighting(page);
+    await page.waitForLoadState("networkidle");
+    await expect(card(page)).toHaveCount(0);
+    expect((await tops(page)).steps).toBeCloseTo(first.top, 0);
+  });
+
+  test("leitura sem resposta: no teto de 3 s Primeiros passos aparece", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 800, width: 1280 });
+    await serveFoot(page, { plan: FREE_PLAN });
+    await holdRead(page, FREE_PLAN);
+    await page.goto("/products");
+    await expect(page.locator("main h1")).toBeVisible();
+    await expect(page.locator("[data-menu-first-steps]")).toHaveCount(0);
+    await expect(page.locator("[data-menu-first-steps]")).toBeVisible({
+      timeout: 8000,
+    });
+  });
+
+  test("funcionário não espera a leitura: Primeiros passos aparece com ela pendente", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 800, width: 1280 });
+    await serveFoot(page, { plan: FREE_PLAN, role: "cashier" });
+    await holdRead(page, FREE_PLAN);
+    await page.goto("/products");
+    await expect(page.locator("[data-menu-first-steps]")).toBeVisible({
+      timeout: 1500,
+    });
+  });
+
+  test("com a leitura guardada na aba, Primeiros passos e o cartão aparecem sem espera", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 800, width: 1280 });
+    const reads = await serveFoot(page, { plan: FREE_PLAN });
+    await page.goto("/products");
+    await expect(card(page)).toBeVisible();
+    const release = await holdRead(page, FREE_PLAN);
+    await page.reload();
+    await expect(page.locator("[data-menu-first-steps]")).toBeVisible({
+      timeout: 1500,
+    });
+    await expect(card(page)).toBeVisible();
+    release();
+    expect(reads.plan).toBe(1);
   });
 
   test("aberto já sem conexão e sem leitura guardada: sem cartão e sem leitura; a conexão que chega lê uma vez e traz o cartão", async ({

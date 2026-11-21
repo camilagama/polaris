@@ -556,7 +556,7 @@ function useShellProgress(
   const organization = sessionOver ? null : current;
   const online = useConnectionOnline();
   const now = useNow(60_000);
-  const planFacts = usePlanNoticeFacts(
+  const { facts: planFacts, pending: planPending } = usePlanNoticeFacts(
     organization?.organizationId ?? "",
     organization !== null &&
       canManageBilling(
@@ -565,13 +565,14 @@ function useShellProgress(
       ),
     routeId !== "subscription"
   );
+  const firstStepsRead = useFirstSteps(organization?.organizationId ?? null);
   return {
     // the Assinatura shows nothing of the plan offline (AS-8): the foot of its menu neither
     chargeDay:
       planFacts === null || (routeId === "subscription" && !online)
         ? null
         : trialChargeDay(planFacts, saoPauloDateOf(now)),
-    firstSteps: useFirstSteps(organization?.organizationId ?? null),
+    firstSteps: planPending ? null : firstStepsRead,
     planCard:
       routeId === undefined || NO_PLAN_CARD.includes(routeId)
         ? null

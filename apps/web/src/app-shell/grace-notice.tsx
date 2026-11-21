@@ -1,5 +1,5 @@
 import TriangleAlertIcon from "lucide-react/dist/esm/icons/triangle-alert";
-import { useEffect, useRef, useSyncExternalStore } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
 import { buttonVariants } from "@/ui/button";
 import { useConnectionOnline } from "../lib/browser-connection";
@@ -30,6 +30,18 @@ import { tabHref } from "./navigation-model";
 
 const SUBSCRIPTION_HREF = tabHref("settings", "assinatura");
 
+/** A read of the plan with no deadline of its own stops holding the foot of the menu after this long. */
+export const PLAN_READ_WAIT_MS = 3000;
+
+export interface PlanNoticeState {
+  facts: PlanNoticeFacts | null;
+  /**
+   * The shell is reading the plan for whom manages the billing, with a connection and nothing kept in this tab, and the
+   * read has neither answered, failed nor waited out its ceiling: what depends on the plan enters once, with it.
+   */
+  pending: boolean;
+}
+
 /**
  * The plan's state for the shell (the notice of grace and the trial at the foot of the menu), read once for both: what this tab read (shown at once, also while it is read again), and a read of the
  * plan (through the memory of 10 s the screens share, `planRead`) when there is none or it is a few minutes old and the
@@ -41,7 +53,7 @@ export function usePlanNoticeFacts(
   enabled: boolean,
   /** The notice reads the plan by itself: not on the Assinatura, which reads it and tells the notice. */
   readsItself: boolean
-): PlanNoticeFacts | null {
+): PlanNoticeState {
   const online = useConnectionOnline();
   const now = useNow(60_000);
   const text = useSyncExternalStore(
@@ -51,6 +63,20 @@ export function usePlanNoticeFacts(
   );
   const remembered = JSON.parse(text) as RememberedNotice | null;
   const old = planNoticeIsOld(remembered, now.getTime());
+  // the store whose first read ended (an answer, a failure or the ceiling): the wait never comes back for it
+  const [ended, setEnded] = useState<string | null>(null);
+  const pending =
+    enabled &&
+    online &&
+    readsItself &&
+    remembered === null &&
+    ended !== organizationId;
+  useEffect(() => {
+    const ceiling = pending
+      ? window.setTimeout(() => setEnded(organizationId), PLAN_READ_WAIT_MS)
+      : undefined;
+    return () => window.clearTimeout(ceiling);
+  }, [organizationId, pending]);
   // the stores with a read on its way: the answer of one frees only that one
   const reading = useRef<PlanReadsInFlight>(noPlanReadsInFlight);
   // the wait after the reads that failed in a row, of the store it was counted for (never carried to another)
@@ -68,6 +94,7 @@ export function usePlanNoticeFacts(
     planRead
       .get(organizationId)
       .then((plan) => {
+        setEnded(organizationId);
         failed.current = planReadSucceeded(failed.current, organizationId);
         // an answer after the sign-out would write back what the sign-out dropped
         if (!(isSessionOver() || isSigningOut())) {
@@ -75,6 +102,7 @@ export function usePlanNoticeFacts(
         }
       })
       .catch(() => {
+        setEnded(organizationId);
         failed.current = planReadFailed(
           failed.current,
           organizationId,
@@ -86,7 +114,7 @@ export function usePlanNoticeFacts(
       });
     // `now` too: an old copy is read again on the next minute, and a failed read once its wait is over
   }, [enabled, now, old, online, organizationId, readsItself]);
-  return enabled ? remembered : null;
+  return { facts: enabled ? remembered : null, pending };
 }
 
 /**
