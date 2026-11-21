@@ -129,7 +129,11 @@ test.describe("o cartão do plano Free", () => {
         exact: true,
         name: "Ajuda e contato",
       });
-      if (size.fits) {
+      // with a coarse pointer the destinations are 44 px rows and never fit these windows: they scroll, the card stays pinned
+      const coarse = await page.evaluate(
+        () => matchMedia("(pointer: coarse)").matches
+      );
+      if (size.fits && !coarse) {
         await expect(help).toBeInViewport({ ratio: 1 });
         expect(
           await page
