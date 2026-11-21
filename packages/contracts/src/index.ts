@@ -292,7 +292,7 @@ const customer = z.object({
   organizationId: z.string().min(1),
   phone: z.string().nullable(),
   status: z.enum(["active", "archived"]),
-  // Only `customer.get` answers it: what the customer bought (confirmed sales not cancelled).
+  // Only `customer.get` answers it: what the customer bought (confirmed sales not cancelled and not returned in full).
   summary: z
     .object({
       lastPurchaseOn: z
@@ -300,7 +300,7 @@ const customer = z.object({
         .regex(/^\d{4}-\d{2}-\d{2}$/)
         .nullable(),
       purchaseCount: z.number().int().nonnegative(),
-      // Sum of the total due of those sales, as the sale history shows it: no return taken out.
+      // Net sales of those purchases as the report counts them: the total due of each minus what its returns gave back.
       totalSpent: z.string(),
     })
     .optional(),

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { randomBytes, randomUUID } from "node:crypto";
 import { CustomerNotFoundError } from "@polaris/domain/customers/customer";
+import { saleEconomics } from "@polaris/domain/economics/sale-economics";
 import {
   SaleCustomerArchivedError,
   SaleCustomerLinkStateError,
@@ -8,6 +9,7 @@ import {
 } from "@polaris/domain/sales/sale-customer-link";
 import { SaleNotFoundError } from "@polaris/domain/sales/sale-errors";
 import { createDatabase } from "../src/client";
+import { readPeriodFacts } from "../src/economics-repository";
 import { Client } from "pg";
 import {
   archiveCustomer,
@@ -26,7 +28,10 @@ import { cancelSale } from "../src/sale-cancellation-repository";
 import { confirmSale } from "../src/sale-repository";
 import { createSaleReturn } from "../src/sale-return-repository";
 import { TenantAuditEventError } from "../src/tenant-audit";
-import { TenantAuthorizationError } from "../src/tenant-transaction";
+import {
+  TenantAuthorizationError,
+  withAuthorizedTenantTransaction,
+} from "../src/tenant-transaction";
 import {
   eachRound,
   fulfilled,
@@ -130,57 +135,83 @@ async function run() {
       );
     }
 
-    async function newSale(tenant: TenantFixture, label: string, hoursAgo = 3) {
-      const product = await withTenantAs(
-        runtimeDatabase.db,
-        tenant,
-        "product:create",
-        (transaction, identity) =>
-          createProduct(transaction, identity, {
-            name: `Produto ${label}`,
-            requestId: randomUUID(),
-          })
-      );
-      const variant = await admin.pool.query<{ id: string }>(
-        "SELECT id FROM public.product_variants WHERE organization_id = $1 AND product_id = $2",
-        [tenant.organizationId, product.id]
-      );
-      const variantId = variant.rows[0]?.id;
-      assert.ok(variantId);
-      await withTenantAs(
-        runtimeDatabase.db,
-        tenant,
-        "inventory:adjust",
-        async (transaction, identity) => {
-          await receiveStock(transaction, identity, {
-            commandId: randomUUID(),
-            commandVersion: 1,
-            occurredOn: "2026-10-01",
-            quantity: 50,
-            unitCost: "5.00",
-            variantId,
-          });
-        }
-      );
+    interface SaleShape {
+      adjustments?: {
+        amount: string;
+        kind: "discount" | "freight" | "payment_surcharge" | "surcharge";
+      }[];
+      lines?: { price: string; quantity: number }[];
+    }
+
+    async function newSale(
+      tenant: TenantFixture,
+      label: string,
+      hoursAgo = 3,
+      shape: SaleShape = {}
+    ) {
+      const lines = shape.lines ?? [{ price: "19.90", quantity: 2 }];
+      const adjustments = shape.adjustments ?? [
+        { amount: "5", kind: "freight" },
+      ];
+      const items: {
+        chargedUnitPrice: string;
+        listedUnitPrice: string;
+        quantity: number;
+        variantId: string;
+      }[] = [];
+      for (const [index, line] of lines.entries()) {
+        // biome-ignore lint/performance/noAwaitInLoops: each line is its own product and stock receipt
+        const product = await withTenantAs(
+          runtimeDatabase.db,
+          tenant,
+          "product:create",
+          (transaction, identity) =>
+            createProduct(transaction, identity, {
+              name: `Produto ${label} ${index}`,
+              requestId: randomUUID(),
+            })
+        );
+        const variant = await admin.pool.query<{ id: string }>(
+          "SELECT id FROM public.product_variants WHERE organization_id = $1 AND product_id = $2",
+          [tenant.organizationId, product.id]
+        );
+        const variantId = variant.rows[0]?.id;
+        assert.ok(variantId);
+        await withTenantAs(
+          runtimeDatabase.db,
+          tenant,
+          "inventory:adjust",
+          async (transaction, identity) => {
+            await receiveStock(transaction, identity, {
+              commandId: randomUUID(),
+              commandVersion: 1,
+              occurredOn: "2026-10-01",
+              quantity: 50,
+              unitCost: "5.00",
+              variantId,
+            });
+          }
+        );
+        items.push({
+          chargedUnitPrice: line.price,
+          listedUnitPrice: line.price,
+          quantity: line.quantity,
+          variantId,
+        });
+      }
       const sale = await withTenantAs(
         runtimeDatabase.db,
         tenant,
         "sale:create",
         (transaction, identity) =>
           confirmSale(transaction, identity, {
-            adjustments: [
-              { kind: "freight", value: { amount: "5", type: "fixed" } },
-            ],
+            adjustments: adjustments.map((adjustment) => ({
+              kind: adjustment.kind,
+              value: { amount: adjustment.amount, type: "fixed" as const },
+            })),
             commandId: randomUUID(),
             commandVersion: 1,
-            items: [
-              {
-                chargedUnitPrice: "19.90",
-                listedUnitPrice: "20.00",
-                quantity: 2,
-                variantId,
-              },
-            ],
+            items,
             occurredAt: recentInstant(hoursAgo),
             payment: { anticipationRequested: false, method: "pix" },
             paymentProfile: null,
@@ -189,6 +220,24 @@ async function run() {
       );
       return sale.sale.id;
     }
+
+    const returnUnits = (
+      tenant: TenantFixture,
+      saleId: string,
+      items: { position: number; returnedQuantity: number }[]
+    ) =>
+      withTenantAs(
+        runtimeDatabase.db,
+        tenant,
+        "sale:return",
+        (transaction, identity) =>
+          createSaleReturn(transaction, identity, {
+            commandId: randomUUID(),
+            commandVersion: 1,
+            items: items.map((item) => ({ ...item, restockedQuantity: 0 })),
+            saleId,
+          })
+      );
 
     const change = (
       tenant: TenantFixture,
@@ -1102,6 +1151,7 @@ async function run() {
     const buyer = await newCustomer(tenantA, "Comprador");
     const other = await newCustomer(tenantA, "Outro");
     const idle = await newCustomer(tenantA, "Sem compra");
+    const onlyReturned = await newCustomer(tenantA, "Só devolveu");
     const buyerOfB = await newCustomer(tenantB, "Comprador de B");
     const kept = await newSale(tenantA, "P1");
     const keptReturned = await newSale(tenantA, "P2");
@@ -1110,7 +1160,39 @@ async function run() {
     const received = await newSale(tenantA, "P5");
     const older = await newSale(tenantA, "P7", 96);
     const removed = await newSale(tenantA, "P8");
+    const discounted = await newSale(tenantA, "P9", 3, {
+      adjustments: [
+        { amount: "5.00", kind: "discount" },
+        { amount: "3.00", kind: "freight" },
+      ],
+      lines: [
+        { price: "10.00", quantity: 3 },
+        { price: "7.33", quantity: 2 },
+      ],
+    });
+    const twoReturns = await newSale(tenantA, "P10", 3, {
+      adjustments: [
+        { amount: "4.01", kind: "discount" },
+        { amount: "1.25", kind: "surcharge" },
+        { amount: "0.40", kind: "payment_surcharge" },
+      ],
+      lines: [
+        { price: "10.00", quantity: 2 },
+        { price: "3.33", quantity: 3 },
+      ],
+    });
+    const fullyReturned = await newSale(tenantA, "P11", 3, {
+      adjustments: [
+        { amount: "2.00", kind: "discount" },
+        { amount: "1.50", kind: "freight" },
+      ],
+      lines: [
+        { price: "9.99", quantity: 1 },
+        { price: "4.50", quantity: 2 },
+      ],
+    });
     const saleOfBuyerB = await newSale(tenantB, "P6");
+    const returnedAlone = await newSale(tenantA, "P12");
     for (const [tenant, saleId, customerId] of [
       [tenantA, kept, buyer.id],
       [tenantA, keptReturned, buyer.id],
@@ -1119,6 +1201,10 @@ async function run() {
       [tenantA, received, other.id],
       [tenantA, older, buyer.id],
       [tenantA, removed, buyer.id],
+      [tenantA, discounted, buyer.id],
+      [tenantA, twoReturns, buyer.id],
+      [tenantA, fullyReturned, buyer.id],
+      [tenantA, returnedAlone, onlyReturned.id],
       [tenantB, saleOfBuyerB, buyerOfB.id],
     ] as const) {
       // biome-ignore lint/performance/noAwaitInLoops: each assignment is its own version history
@@ -1169,6 +1255,27 @@ async function run() {
           saleId: keptReturned,
         })
     );
+    await returnUnits(tenantA, discounted, [
+      { position: 0, returnedQuantity: 1 },
+      { position: 1, returnedQuantity: 1 },
+    ]);
+    await returnUnits(tenantA, twoReturns, [
+      { position: 0, returnedQuantity: 1 },
+    ]);
+    await returnUnits(tenantA, twoReturns, [
+      { position: 0, returnedQuantity: 1 },
+      { position: 1, returnedQuantity: 1 },
+    ]);
+    await returnUnits(tenantA, fullyReturned, [
+      { position: 0, returnedQuantity: 1 },
+      { position: 1, returnedQuantity: 1 },
+    ]);
+    await returnUnits(tenantA, fullyReturned, [
+      { position: 1, returnedQuantity: 1 },
+    ]);
+    await returnUnits(tenantA, returnedAlone, [
+      { position: 0, returnedQuantity: 2 },
+    ]);
 
     const sentStatements: string[] = [];
     const originalQuery = Client.prototype.query;
@@ -1240,17 +1347,106 @@ async function run() {
       [older]
     );
     assert.ok((olderDay.rows[0]?.day ?? lastDay) < lastDay);
-    // two items of 19.90 and a freight of 5.00: 44.80 due for each counted sale, the return not taken out; the sale of
-    // the customer that was removed from it (a last version with no customer) counts for nobody
+    // the report's own rule, worked out by the economics engine from the facts of every sale of the store: the net
+    // sales of a counted sale plus its commercial surcharges, which is the total due minus what its returns gave back
+    const toCents = (amount: string) => {
+      const [whole = "0", fraction = ""] = amount.split(".");
+      return BigInt(whole) * 100n + BigInt(fraction.padEnd(2, "0"));
+    };
+    const toReais = (cents: bigint) =>
+      `${cents / 100n}.${String(cents % 100n).padStart(2, "0")}`;
+    const storeSales = await admin.pool.query<{
+      id: string;
+      occurred_on: string;
+    }>(
+      "SELECT id, occurred_on::text AS occurred_on FROM public.sales WHERE organization_id = $1 ORDER BY occurred_on, id",
+      [tenantA.organizationId]
+    );
+    const firstDay = storeSales.rows[0]?.occurred_on;
+    const lastStoreDay = storeSales.rows.at(-1)?.occurred_on;
+    assert.ok(firstDay && lastStoreDay);
+    const reportFacts = await withAuthorizedTenantTransaction(
+      runtimeDatabase.db,
+      {
+        authenticatedUserId: tenantA.userId,
+        capability: "report:read",
+        isolationLevel: "repeatable read",
+        requestedOrganizationId: tenantA.organizationId,
+        requireLegalAcceptance: false,
+      },
+      (transaction, identity) =>
+        readPeriodFacts(transaction, identity, {
+          from: firstDay,
+          to: lastStoreDay,
+        })
+    );
+    assert.equal(reportFacts.sales.length, storeSales.rows.length);
+    const reportNet = new Map<string, { counted: boolean; net: bigint }>();
+    for (const [index, row] of storeSales.rows.entries()) {
+      const fact = reportFacts.sales[index];
+      assert.ok(fact);
+      assert.equal(fact.occurredOn, row.occurred_on);
+      const economics = saleEconomics(fact);
+      reportNet.set(row.id, {
+        counted: economics.counted && economics.unitsSold > 0,
+        net:
+          toCents(economics.netSales) + toCents(economics.commercialSurcharges),
+      });
+    }
+    const reportTotal = (saleIds: string[]) =>
+      toReais(
+        saleIds.reduce((total, id) => {
+          const entry = reportNet.get(id);
+          assert.ok(entry);
+          return entry.counted ? total + entry.net : total;
+        }, 0n)
+      );
+    const netOf = (saleId: string) => reportTotal([saleId]);
+    // two items of 19.90 and a freight of 5.00 are 44.80 due; one unit returned gives 19.90 back
+    assert.equal(netOf(kept), "44.80");
+    assert.equal(netOf(keptReturned), "24.90");
+    // 30.00 + 14.66 with a discount of 5.00 split by value (3.36 and 1.64) and a freight of 3.00: 42.66 due, and the
+    // returns give back 8.88 and 6.51
+    assert.equal(netOf(discounted), "27.27");
+    for (const id of [
+      kept,
+      keptReturned,
+      received,
+      older,
+      discounted,
+      twoReturns,
+    ]) {
+      assert.equal(reportNet.get(id)?.counted, true);
+    }
+    assert.equal(reportNet.get(cancelledSale)?.counted, false);
+    assert.equal(reportNet.get(fullyReturned)?.counted, false);
+    const buyerSales = [
+      kept,
+      keptReturned,
+      received,
+      older,
+      discounted,
+      twoReturns,
+    ];
     assert.deepEqual(summarized.summary, {
       lastPurchaseOn: lastDay,
-      purchaseCount: 4,
-      totalSpent: "179.20",
+      purchaseCount: 6,
+      totalSpent: reportTotal(buyerSales),
     });
+    assert.notEqual(
+      summarized.summary.totalSpent,
+      "0",
+      "the comparison with the report is not between two zeros"
+    );
     const rowOf = (id: string) => listed.find((row) => row.id === id);
     assert.equal(rowOf(buyer.id)?.lastPurchaseOn, lastDay);
     assert.equal(rowOf(other.id)?.lastPurchaseOn, lastDay);
     assert.equal(rowOf(idle.id)?.lastPurchaseOn, null);
+    assert.equal(
+      rowOf(onlyReturned.id)?.lastPurchaseOn,
+      null,
+      "a customer whose only sale was returned in full has no last purchase"
+    );
     assert.equal(
       listed.some((row) => row.id === buyerOfB.id),
       false
@@ -1266,6 +1462,14 @@ async function run() {
       purchaseCount: 0,
       totalSpent: "0",
     });
+    const ofReturned = await withTenantAs(
+      runtimeDatabase.db,
+      tenantA,
+      "customer:update",
+      (transaction, identity) =>
+        getCustomer(transaction, identity, onlyReturned.id)
+    );
+    assert.deepEqual(ofReturned.summary, alone.summary);
     const ofOther = await withTenantAs(
       runtimeDatabase.db,
       tenantA,
@@ -1294,7 +1498,7 @@ async function run() {
       CustomerNotFoundError
     );
     tests.push(
-      "customer.list and customer.get answer the last purchase and the summary in one statement each: only confirmed, not cancelled sales whose current attribution is the customer count, the total is the total due with the return not taken out, and another store neither sees nor adds to them"
+      "customer.list and customer.get answer the last purchase and the summary in one statement each: only confirmed sales that were not cancelled or returned in full and whose current attribution is the customer count, and the total is the net sale the report uses (discount, partial return with its share of the discount, a sale returned in two steps), and another store neither sees nor adds to them"
     );
 
     console.log(

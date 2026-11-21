@@ -17,6 +17,7 @@ import { customers } from "./schema/customer";
 import { saleAdjustments, saleItems, sales } from "./schema/sale";
 import { saleCancellations } from "./schema/sale-cancellation";
 import { saleCustomerLinks } from "./schema/sale-customer-link";
+import { saleReturnItems } from "./schema/sale-return";
 import { recordTenantAuditEvent } from "./tenant-audit";
 import {
   TenantAuthorizationError,
@@ -98,8 +99,9 @@ const customerColumns = {
 
 /**
  * What a customer bought, in the same statement that reads the customer. A purchase is a confirmed sale that was not
- * cancelled and whose current attribution (the highest version of its links, so a removed customer counts nothing) is
- * the customer. The date is the commercial day of the sale in the store.
+ * cancelled, that still has a unit that was not returned, and whose current attribution (the highest version of its
+ * links, so a removed customer counts nothing) is the customer. The date is the commercial day of the sale in the
+ * store.
  */
 function purchaseConditions(organizationId: string, customerId?: string) {
   return and(
@@ -116,8 +118,74 @@ function purchaseConditions(organizationId: string, customerId?: string) {
       SELECT 1 FROM ${saleCancellations}
       WHERE ${saleCancellations.organizationId} = ${sales.organizationId}
         AND ${saleCancellations.saleId} = ${sales.id}
+    )`,
+    sql`EXISTS (
+      SELECT 1 FROM ${saleItems} AS kept_item
+      WHERE kept_item.organization_id = ${sales.organizationId}
+        AND kept_item.sale_id = ${sales.id}
+        AND kept_item.quantity > coalesce((
+          SELECT sum(returned_item.returned_quantity)
+          FROM ${saleReturnItems} AS returned_item
+          WHERE returned_item.organization_id = kept_item.organization_id
+            AND returned_item.sale_id = kept_item.sale_id
+            AND returned_item.item_position = kept_item.position
+        ), 0)
     )`
   );
+}
+
+/**
+ * What the returns of one sale gave back, in reais: each returned item gives back its charged price times the units
+ * returned minus its share of the sale's discounts (largest remainder in whole cents, half up per item), as
+ * `periodSummaryQuery` does for the Resultado. Surcharges, freight and the payment surcharge are not given back.
+ */
+function returnsGivenBack() {
+  return sql`(
+    WITH line AS (
+      SELECT item.position, item.quantity,
+        item.charged_unit_price * 100 AS unit_cents,
+        item.charged_unit_price * item.quantity * 100 AS value_cents
+      FROM ${saleItems} AS item
+      WHERE item.organization_id = ${sales.organizationId}
+        AND item.sale_id = ${sales.id}
+    ),
+    discount AS (
+      SELECT sum(adjustment.amount * 100) AS cents
+      FROM ${saleAdjustments} AS adjustment
+      WHERE adjustment.organization_id = ${sales.organizationId}
+        AND adjustment.sale_id = ${sales.id}
+        AND adjustment.kind = 'discount'
+    ),
+    gross AS (SELECT sum(line.value_cents) AS cents FROM line),
+    allocation AS (
+      SELECT split.position,
+        split.floor_cents + CASE WHEN split.rank <= split.leftover THEN 1 ELSE 0 END AS cents
+      FROM (
+        SELECT line.position,
+          div(discount.cents * line.value_cents, gross.cents) AS floor_cents,
+          discount.cents - sum(div(discount.cents * line.value_cents, gross.cents)) OVER () AS leftover,
+          row_number() OVER (
+            ORDER BY mod(discount.cents * line.value_cents, gross.cents) DESC, line.position
+          ) AS rank
+        FROM line, discount, gross
+        WHERE gross.cents <> 0 AND discount.cents <> 0
+      ) AS split
+    ),
+    returned AS (
+      SELECT returned_item.item_position AS position, sum(returned_item.returned_quantity) AS quantity
+      FROM ${saleReturnItems} AS returned_item
+      WHERE returned_item.organization_id = ${sales.organizationId}
+        AND returned_item.sale_id = ${sales.id}
+      GROUP BY returned_item.item_position
+    )
+    SELECT coalesce(sum(
+      returned.quantity * line.unit_cents
+        - div(coalesce(allocation.cents, 0) * returned.quantity * 2 + line.quantity, line.quantity::numeric * 2)
+    ), 0) / 100
+    FROM returned
+    JOIN line ON line.position = returned.position
+    LEFT JOIN allocation ON allocation.position = returned.position
+  )`;
 }
 
 /** The list asks only for the last day: no sum is computed for the customers of a whole store. */
@@ -146,8 +214,8 @@ function lastPurchaseStats(
 }
 
 /**
- * The count, the last day and the total of one customer: the total due of each sale as the sale history shows it
- * (items, plus surcharge, freight and payment surcharge, minus discount), with no return taken out.
+ * The count, the last day and the net total of one customer: the total due of each sale as the sale history shows it
+ * (items, plus surcharge, freight and payment surcharge, minus discount) minus what its returns gave back.
  */
 function purchaseSummaryStats(
   transaction: TenantRequestTransaction,
@@ -175,7 +243,7 @@ function purchaseSummaryStats(
       ),
       purchaseCount: sql<number>`count(*)::int`.as("purchase_count"),
       totalSpent:
-        sql<string>`sum(${itemsTotal} + ${adjustmentsTotal})::text`.as(
+        sql<string>`round(sum(${itemsTotal} + ${adjustmentsTotal} - ${returnsGivenBack()}), 2)::text`.as(
           "total_spent"
         ),
     })
