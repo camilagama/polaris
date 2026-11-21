@@ -17,6 +17,8 @@ import { productInitials } from "../catalog/product-search-model";
 import {
   ListNotice,
   OPENABLE_ROW_CLASS,
+  ROW_BODY_CLASS,
+  ROW_TEXT_CLASS,
   RowOpenButton,
 } from "../catalog/screen-parts";
 import type { PendingCustomer } from "../offline/customer-create";
@@ -255,49 +257,52 @@ function CustomerMain({
       >
         {productInitials(customer.name)}
       </span>
-      <span className="grid min-w-0 flex-1 gap-0.5">
-        <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+      <span className={ROW_BODY_CLASS}>
+        <span className={ROW_TEXT_CLASS}>
           <span className="font-medium [overflow-wrap:anywhere]">
             {isAnonymized ? null : <span className="sr-only">Editar </span>}
             {customer.name}
           </span>
-          {hasStateBadge ? (
-            <Badge
-              aria-hidden={isAnonymized ? undefined : true}
-              id={stateId}
-              variant={
-                customer.status === "archived" && !isAnonymized
-                  ? "warning"
-                  : "outline"
-              }
-            >
-              {customerStatusLabel(customer)}
-            </Badge>
+          {hasContacts ? (
+            <ContactsLine
+              contacts={contacts}
+              hidden={!isAnonymized}
+              id={supportId}
+            />
           ) : null}
         </span>
-        {hasContacts ? (
-          <ContactsLine
-            contacts={contacts}
-            hidden={!isAnonymized}
-            id={supportId}
-          />
+        {hasStateBadge ? (
+          <Badge
+            aria-hidden={isAnonymized ? undefined : true}
+            id={stateId}
+            variant={
+              customer.status === "archived" && !isAnonymized
+                ? "warning"
+                : "outline"
+            }
+          >
+            {customerStatusLabel(customer)}
+          </Badge>
         ) : null}
       </span>
     </>
   );
   if (isAnonymized) {
     return (
-      <div className="flex min-w-0 flex-1 items-center gap-3 py-2.5">
-        {content}
-      </div>
+      <>
+        <div className="flex min-w-0 flex-1 items-center gap-3 py-2.5">
+          {content}
+        </div>
+        <span aria-hidden="true" className="size-ctl-md shrink-0" />
+      </>
     );
   }
   return (
     <RowOpenButton
       describedBy={
         [
-          hasStateBadge ? stateId : undefined,
           hasContacts ? supportId : undefined,
+          hasStateBadge ? stateId : undefined,
           lockedReasonId,
           pendingLabelId,
         ]
