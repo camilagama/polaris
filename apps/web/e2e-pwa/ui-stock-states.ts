@@ -11,6 +11,15 @@ import { serveLabWorker, WORKER_MARK } from "./worker-mark";
  * is measured is the screen alone. Same shape as `ui-sale-states.ts`.
  */
 const NOW = new Date("2026-10-15T15:00:00.000Z");
+
+/** 23:50 in São Paulo, already the next day in UTC: the day the form shows is the store's, not the clock's UTC day. */
+const NEAR_MIDNIGHT_SAO_PAULO = new Date("2026-10-16T02:50:00.000Z");
+
+/** The store's day at `NEAR_MIDNIGHT_SAO_PAULO`, as the form sends it and as the date button reads it. */
+export const NEAR_MIDNIGHT_STORE_DAY = {
+  button: "15/10/2026",
+  sent: "2026-10-15",
+} as const;
 const DAY = 86_400_000;
 const SHIRT_ROW = /Camiseta do teste/;
 const SUBMITTED =
@@ -168,8 +177,8 @@ export async function serveStockRows(page: Page) {
 }
 
 /** Starts the lab's runtime and waits for the screen; the network is the lab's checkbox. */
-async function openStockLab(page: Page, list: ServedList) {
-  await page.clock.setFixedTime(NOW);
+async function openStockLab(page: Page, list: ServedList, now = NOW) {
+  await page.clock.setFixedTime(now);
   await serveList(page, list);
   await serveLabWorker(page);
   await page.goto("/offline-screens-lab?screen=stock");
@@ -185,8 +194,8 @@ async function openStockLab(page: Page, list: ServedList) {
 const rowOf = (page: Page, name: RegExp): Locator =>
   page.getByRole("listitem").filter({ hasText: name });
 
-async function openList(page: Page) {
-  await openStockLab(page, served(ROWS, "cursor-2"));
+async function openList(page: Page, now = NOW) {
+  await openStockLab(page, served(ROWS, "cursor-2"), now);
   await rowOf(page, SHIRT_ROW).waitFor();
 }
 
@@ -398,6 +407,13 @@ export const stockStates = {
     await confirm(page).click();
     await page.getByText("Saldo: 15 unidades").waitFor();
     await showScreenAlone(page);
+  },
+
+  /** The receipt panel of the jeans opened with the clock at 23:50 of São Paulo (02:50 UTC of the next day). */
+  async receiveNearMidnight(page: Page) {
+    await openList(page, NEAR_MIDNIGHT_SAO_PAULO);
+    await openCommand(page, "Receber", "Calça jeans");
+    await fillReceipt(page);
   },
 
   async receiveErrors(page: Page) {
