@@ -43,12 +43,27 @@ const KIND_BY_SYSTEM: Readonly<Record<string, DeviceKind>> = {
   Windows: "computer",
 };
 
+const FAMILY_BROWSERS: ReadonlySet<string> = new Set([
+  "Chrome",
+  "Edge",
+  "Firefox",
+  "Navegador",
+  "Opera",
+  "Safari",
+  "Samsung Internet",
+]);
+
 /**
  * The server names a device it was not told the name of by browser and system ("Chrome no Android", from a closed
- * table); the system is the only thing it knows about the kind. A name the person typed, or none, says nothing.
+ * table in `server/device-family-label.ts`); the system is the only thing it knows about the kind, and an Android
+ * tablet is a phone for it. Only a name of exactly that shape says anything: one the person typed ("Loja no Mac"), or
+ * none, leaves the neutral icon.
  */
 export function deviceKind(label: string | null): DeviceKind {
-  const system = label?.trim().split(" no ").at(-1) ?? "";
+  const [browser, system, ...rest] = (label ?? "").trim().split(" no ");
+  if (rest.length > 0 || !(browser && system && FAMILY_BROWSERS.has(browser))) {
+    return "unknown";
+  }
   return KIND_BY_SYSTEM[system] ?? "unknown";
 }
 

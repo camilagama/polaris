@@ -53,8 +53,8 @@ const render = () =>
       onChangeLifecycle={none}
       onEdit={none}
       onIncludeArchivedChange={none}
-      online
       onRetry={none}
+      online
       pending={false}
       profiles={[PROFILE]}
     />

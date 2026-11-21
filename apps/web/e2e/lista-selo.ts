@@ -4,8 +4,9 @@ import { expect } from "@playwright/test";
 
 /**
  * The geometry of the rows of the configuration lists (Aparelhos, Formas de receber, Clientes): where each row puts
- * its state badge against its name. A row is found by `rowSelector`; its name is the first `.font-medium` of it, but not the initials circle, that
- * is not in the notes under the row, and the badge is its first `[data-slot="badge"]`.
+ * its state badge against its name. `rowSelector` finds the rows. The badge is the first `[data-slot="badge"]` of a
+ * row; the name is its first `.font-medium` that is not `aria-hidden`, which leaves out the initials circle of a
+ * customer. A row without a badge is skipped.
  */
 export interface RowGeometry {
   badge: { bottom: number; left: number; right: number; top: number };
