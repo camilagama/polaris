@@ -270,7 +270,9 @@ reflowTest(
     expect([...reads].sort()).toEqual(
       ["customer/list", "organization/listMine"].sort()
     );
-    expect(asked).not.toContain("customer/get");
+    expect(asked.filter((name) => name.startsWith("customer/"))).toEqual([
+      "customer/list",
+    ]);
     await expect(page.locator("[data-last-purchase]")).toHaveText([
       "Última compra em 18/12/2025",
       "Última compra há 2 dias",
