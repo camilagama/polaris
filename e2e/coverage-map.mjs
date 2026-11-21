@@ -843,6 +843,7 @@ export const SPEC_SCREENS = {
   ],
   "apps/web/e2e/legal-acceptance.e2e.ts": "all",
   "apps/web/e2e/leitor-de-tela-shell.e2e.ts": ["home", "products"],
+  "apps/web/e2e/listas-quadro-selo.e2e.ts": ["inventory", "settings"],
   "apps/web/e2e/lote-2-telas.e2e.ts": ["products", "customers", "settings"],
   "apps/web/e2e/money-nowrap-reflow.e2e.ts": [
     "sale",
