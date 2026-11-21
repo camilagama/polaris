@@ -1,7 +1,7 @@
 import type { CustomerReadModel } from "@polaris/contracts";
 import MoreHorizontalIcon from "lucide-react/dist/esm/icons/ellipsis";
 import UsersIcon from "lucide-react/dist/esm/icons/users";
-import { useCallback, useState } from "react";
+import { type ReactNode, useCallback, useState } from "react";
 import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
 import { Card } from "@/ui/card";
@@ -31,6 +31,7 @@ import {
   lockedReasonFor,
   syncStateLabel,
 } from "./customers-model";
+import { lastPurchaseRowText } from "./last-purchase";
 
 interface RowActions {
   onAnonymize: (customer: CustomerReadModel) => void;
@@ -200,6 +201,38 @@ interface ContactsLineProps {
   id: string;
 }
 
+interface RowTrailingProps {
+  badge: ReactNode;
+  /** The purchase text leaves the reading tree unless the row is only text (the customer was anonymized). */
+  hidden: boolean;
+  purchase: string | null;
+  purchaseId: string;
+}
+
+/** The state badge and the last purchase: under the contacts on a narrow window, at the right corner from 40 rem. */
+function RowTrailing({
+  badge,
+  hidden,
+  purchase,
+  purchaseId,
+}: RowTrailingProps) {
+  return (
+    <span className="flex min-w-0 flex-col items-start gap-1 min-[40rem]:items-end">
+      {badge}
+      {purchase ? (
+        <span
+          aria-hidden={hidden ? true : undefined}
+          className="text-muted-foreground text-support"
+          data-last-purchase=""
+          id={purchaseId}
+        >
+          {purchase}
+        </span>
+      ) : null}
+    </span>
+  );
+}
+
 function ContactsLine({ contacts, hidden, id }: ContactsLineProps) {
   return (
     <span
@@ -228,6 +261,8 @@ interface CustomerMainProps {
   lockedReasonId: string | undefined;
   onEdit: (customer: CustomerReadModel) => void;
   pendingLabelId: string | undefined;
+  /** The store's today: what "Última compra" counts from. */
+  today: string;
 }
 
 /**
@@ -241,11 +276,14 @@ function CustomerMain({
   lockedReasonId,
   onEdit,
   pendingLabelId,
+  today,
 }: CustomerMainProps) {
   const handleOpen = useCallback(() => onEdit(customer), [customer, onEdit]);
   const isAnonymized = customer.anonymizedAt !== null;
   const supportId = `customer-support-${customer.id}`;
   const stateId = `customer-state-${customer.id}`;
+  const purchaseId = `customer-purchase-${customer.id}`;
+  const purchaseText = lastPurchaseRowText(customer.lastPurchaseOn, today);
   // the active tab already says "Ativo": the badge is for the other states
   const hasStateBadge = customer.status !== "active" || isAnonymized;
   const hasContacts = Boolean(contacts.phone || contacts.email);
@@ -271,18 +309,27 @@ function CustomerMain({
             />
           ) : null}
         </span>
-        {hasStateBadge ? (
-          <Badge
-            aria-hidden={isAnonymized ? undefined : true}
-            id={stateId}
-            variant={
-              customer.status === "archived" && !isAnonymized
-                ? "warning"
-                : "outline"
+        {hasStateBadge || purchaseText ? (
+          <RowTrailing
+            badge={
+              hasStateBadge ? (
+                <Badge
+                  aria-hidden={isAnonymized ? undefined : true}
+                  id={stateId}
+                  variant={
+                    customer.status === "archived" && !isAnonymized
+                      ? "warning"
+                      : "outline"
+                  }
+                >
+                  {customerStatusLabel(customer)}
+                </Badge>
+              ) : null
             }
-          >
-            {customerStatusLabel(customer)}
-          </Badge>
+            hidden={!isAnonymized}
+            purchase={purchaseText}
+            purchaseId={purchaseId}
+          />
         ) : null}
       </span>
     </>
@@ -303,6 +350,7 @@ function CustomerMain({
         [
           hasContacts ? supportId : undefined,
           hasStateBadge ? stateId : undefined,
+          purchaseText ? purchaseId : undefined,
           lockedReasonId,
           pendingLabelId,
         ]
@@ -397,6 +445,8 @@ interface CustomerRowProps extends RowActions {
   pendingAction: string | null;
   /** The customer was created on this device and the server has not confirmed it yet. */
   syncState: PendingCustomer | undefined;
+  /** The store's today, in its own time zone. */
+  today: string;
   /** An edit made on this device that the server has not confirmed yet. */
   updateState: PendingCustomerUpdate | undefined;
 }
@@ -411,6 +461,7 @@ function CustomerRow({
   onRestore,
   pendingAction,
   syncState,
+  today,
   updateState,
 }: CustomerRowProps) {
   const [confirming, setConfirming] = useState(false);
@@ -445,6 +496,7 @@ function CustomerRow({
           lockedReasonId={lockedReason ? reasonId : undefined}
           onEdit={onEdit}
           pendingLabelId={pendingLabel ? pendingLabelId : undefined}
+          today={today}
         />
         {isAnonymized ? null : (
           <CustomerMenu
@@ -490,6 +542,8 @@ interface CustomerListProps extends RowActions {
   status: CustomerListStatus;
   /** Customers created on this device that the server has not confirmed yet. */
   syncStates: ReadonlyMap<string, PendingCustomer>;
+  /** The store's today, in its own time zone. */
+  today: string;
   /** How many customers the status has, before the search. */
   total: number;
   /** Edits made on this device that the server has not confirmed yet. */
@@ -504,6 +558,7 @@ export function CustomerList({
   query,
   status,
   syncStates,
+  today,
   total,
   updateStates,
   ...actions
@@ -552,6 +607,7 @@ export function CustomerList({
             key={customer.id}
             pendingAction={pendingAction}
             syncState={syncStates.get(customer.id)}
+            today={today}
             updateState={updateStates.get(customer.id)}
           />
         ))}
