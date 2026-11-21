@@ -3,6 +3,7 @@ import { randomBytes } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { Pool } from "pg";
+import { rollbackAndRelease } from "./gate-roles";
 
 const adminConnectionString = process.env.POLARIS_RLS_ADMIN_DATABASE_URL;
 const disposableMarker = process.env.POLARIS_RLS_CONFIRM_DISPOSABLE;
@@ -494,11 +495,10 @@ try {
       await assertSeed(orgASeed);
       await assertSeed(orgBSeed);
       await validationClient.query("COMMIT");
-    } catch (error) {
-      await validationClient.query("ROLLBACK");
-      throw error;
-    } finally {
       validationClient.release();
+    } catch (error) {
+      await rollbackAndRelease(validationClient);
+      throw error;
     }
     console.log(
       "Resuming the verified PR11 fixture after an interrupted Hyperdrive bootstrap; rotating the runtime role password."
@@ -569,11 +569,10 @@ try {
       await migrationClient.query("BEGIN");
       await migrationClient.query(migrationSql);
       await migrationClient.query("COMMIT");
-    } catch (error) {
-      await migrationClient.query("ROLLBACK");
-      throw error;
-    } finally {
       migrationClient.release();
+    } catch (error) {
+      await rollbackAndRelease(migrationClient);
+      throw error;
     }
   }
   await pool.query(`GRANT USAGE ON SCHEMA public TO ${runtimeRole}`);
@@ -605,11 +604,10 @@ try {
        ON CONFLICT (organization_id, token) DO NOTHING`
     );
     await client.query("COMMIT");
-  } catch (error) {
-    await client.query("ROLLBACK");
-    throw error;
-  } finally {
     client.release();
+  } catch (error) {
+    await rollbackAndRelease(client);
+    throw error;
   }
 
   const roleCheck = await pool.query<{
