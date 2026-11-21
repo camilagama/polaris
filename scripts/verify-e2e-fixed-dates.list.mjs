@@ -14,10 +14,6 @@ const THE_SHARED_SIGN_IN_FIXES_THE_CLOCK =
   "a data é da fixture do Resultado e o relógio é fixado por `signIn`, em `dashboard/shared.ts`, que a checagem não segue; o arquivo já tinha essas datas junto da fixação quando era um só";
 
 export const E2E_FIXED_DATES_LIST = {
-  "apps/web/e2e-pwa/sale-detail-fixture.ts": {
-    count: 7,
-    reason: BEFORE_THE_RULE,
-  },
   "apps/web/e2e-pwa/ui-account-states.ts": {
     count: 1,
     reason: BEFORE_THE_RULE,
