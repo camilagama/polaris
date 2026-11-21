@@ -10,6 +10,8 @@ import { serveLabWorker, WORKER_MARK } from "./worker-mark";
  * (`page.route`) and synthetic data only. The lab's own controls are hidden at the end of each state, so what
  * is measured is the screen alone. Same shape as `ui-sale-states.ts`.
  */
+const NOW = new Date("2026-10-15T15:00:00.000Z");
+const DAY = 86_400_000;
 const SHIRT_ROW = /Camiseta do teste/;
 const SUBMITTED =
   /Confirmar (?:recebimento|contagem|baixa|custo)|Tentar novamente \(seguro\)/;
@@ -37,7 +39,7 @@ const entry = (
   productStatus: "active",
   quantity,
   sku: `SKU-${n}`,
-  updatedAt: "2026-10-14T12:00:00.000Z",
+  updatedAt: new Date(NOW.getTime() - DAY).toISOString(),
   values: value === null ? [] : [{ optionName: "cor", optionValueName: value }],
   variantId: `0199c2d0-0000-7000-8000-0000000000b${n}`,
   version: 1,
@@ -72,10 +74,10 @@ const movement = {
   commandId: "00000000-0000-4000-8000-000000000001",
   commandIndex: 0,
   commandVersion: 1,
-  createdAt: "2026-10-15T15:00:01.000Z",
+  createdAt: new Date(NOW.getTime() + 1000).toISOString(),
   id: "00000000-0000-4000-8000-000000000002",
   movementType: "receipt",
-  occurredOn: "2026-10-15",
+  occurredOn: NOW.toISOString().slice(0, 10),
   organizationId: "0199c2d0-0000-7000-8000-00000000a001",
   productId: SHIRT.productId,
   quantityDelta: 10,
@@ -161,11 +163,13 @@ const serverFailure = () =>
 
 /** The list of the stock screen answered with the synthetic rows: for the screen opened in the real shell. */
 export async function serveStockRows(page: Page) {
+  await page.clock.setFixedTime(NOW);
   await serveList(page, served(ROWS, "cursor-2"));
 }
 
 /** Starts the lab's runtime and waits for the screen; the network is the lab's checkbox. */
 async function openStockLab(page: Page, list: ServedList) {
+  await page.clock.setFixedTime(NOW);
   await serveList(page, list);
   await serveLabWorker(page);
   await page.goto("/offline-screens-lab?screen=stock");
