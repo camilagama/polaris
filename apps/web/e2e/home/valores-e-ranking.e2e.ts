@@ -175,13 +175,26 @@ test.describe("o padrão único dos valores nos cartões do Início (AC-3.1, AC-
     "`Page.setFontSizes` is a Chrome DevTools command"
   );
 
-  for (const width of [360, 1280]) {
+  const SMALL: Scenario = {
+    ...SOLD,
+    days: Object.fromEntries(
+      Object.entries(SOLD.days).map(([day, [cents, count]]) => [
+        day,
+        [Math.round(cents / 10), count],
+      ])
+    ),
+  };
+
+  for (const [width, scenario, today] of [
+    [360, SOLD, "R$ 320,10"],
+    [1280, SMALL, "R$ 32,01"],
+  ] as const) {
     test(`os quatro cartões têm o valor e o R$ no mesmo tamanho, em peso 600, a ${width} px`, async ({
       page,
     }) => {
       await openReflowViewport(page, { fontPixels: 16, height: 800, width });
-      await openHome(page, new FakeServer(SOLD));
-      await expect(region(page, "Vendas hoje")).toContainText("R$ 320,10");
+      await openHome(page, new FakeServer(scenario));
+      await expect(region(page, "Vendas hoje")).toContainText(today);
       const reads = await readHeroes(page);
       expect(reads.map((read) => read.card)).toEqual(KPI_IDS);
       const coarse = await page.evaluate(
@@ -206,6 +219,45 @@ test.describe("o padrão único dos valores nos cartões do Início (AC-3.1, AC-
       ]);
     });
   }
+
+  test("a 1280 px a área do número de um cartão de quatro colunas tem 128 px: um valor de quatro dígitos de milhar desce até caber, na conta do ajuste, e não corta", async ({
+    page,
+  }, testInfo) => {
+    test.skip(
+      testInfo.project.name === "chromium-mobile-emulated",
+      "with a finger text-value-lg is 24 px and the amount may still fit the area: the step-down is the mouse case"
+    );
+    await openReflowViewport(page, {
+      fontPixels: 16,
+      height: 800,
+      width: 1280,
+    });
+    await openHome(page, new FakeServer(SOLD));
+    await expect(region(page, "Vendas hoje")).toContainText("R$ 320,10");
+    const reads = await page.locator("[data-kpi-value]").evaluateAll((nodes) =>
+      nodes.map((node) => {
+        const area = node.closest("[data-kpi-headline]");
+        const size = Number.parseFloat(getComputedStyle(node).fontSize);
+        const width =
+          node.firstElementChild?.getBoundingClientRect().width ?? 0;
+        return {
+          area: area?.getBoundingClientRect().width ?? 0,
+          atLarge: (width / size) * 26,
+          size,
+          text: node.textContent?.trim() ?? "",
+        };
+      })
+    );
+    const [today, month] = reads;
+    expect(today?.size, `${today?.text} cabe e mantém o lg`).toBe(26);
+    expect(month?.text).toBe("R$ 2.660,60");
+    expect(
+      month?.atLarge,
+      "o valor do mês não cabe na área em 26 px"
+    ).toBeGreaterThan(month?.area ?? 0);
+    expect(month?.size).toBeLessThan(26);
+    expect(month?.size).toBeGreaterThanOrEqual(0.875 * 16);
+  });
 
   for (const [width, fontPixels] of [
     [360, 16],

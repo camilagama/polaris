@@ -1,7 +1,5 @@
-import { type ChangeEvent, useEffect, useRef, useState } from "react";
 import ChartColumnIcon from "lucide-react/dist/esm/icons/chart-column";
 import CheckIcon from "lucide-react/dist/esm/icons/check";
-import { ChartStates } from "./chart-states";
 import CloudOffIcon from "lucide-react/dist/esm/icons/cloud-off";
 import InfoIcon from "lucide-react/dist/esm/icons/info";
 import MinusIcon from "lucide-react/dist/esm/icons/minus";
@@ -10,6 +8,7 @@ import ShoppingBagIcon from "lucide-react/dist/esm/icons/shopping-bag";
 import TriangleAlertIcon from "lucide-react/dist/esm/icons/triangle-alert";
 import UsersIcon from "lucide-react/dist/esm/icons/users";
 import WalletIcon from "lucide-react/dist/esm/icons/wallet";
+import { type ChangeEvent, useEffect, useRef, useState } from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
 import { AnimatedFigure } from "@/ui/animated-figure";
 import { Badge } from "@/ui/badge";
@@ -25,6 +24,11 @@ import {
 import { OnDemandCalendar } from "@/ui/calendar-on-demand";
 import { OnDemandRingChart, OnDemandSparkline } from "@/ui/charts/on-demand";
 import { Checkbox } from "@/ui/checkbox";
+import {
+  Collapsible,
+  CollapsiblePanel,
+  CollapsibleTrigger,
+} from "@/ui/collapsible";
 import {
   Combobox,
   ComboboxContent,
@@ -42,11 +46,6 @@ import {
   parseIsoDate,
   toIsoDate,
 } from "@/ui/date-values";
-import {
-  Collapsible,
-  CollapsiblePanel,
-  CollapsibleTrigger,
-} from "@/ui/collapsible";
 import {
   Dialog,
   DialogBody,
@@ -77,10 +76,6 @@ import {
   EmptyTitle,
 } from "@/ui/empty";
 import { EmptyState } from "@/ui/empty-state";
-import { HelpTip } from "@/ui/help-tip";
-import { HideValuesButton, MoneyText } from "@/ui/hidden-values";
-import { DeltaChip, HeroValue, KpiTile } from "@/ui/kpi-card";
-import { Money } from "@/ui/money";
 import {
   Field,
   FieldContent,
@@ -92,6 +87,8 @@ import {
   FieldTitle,
 } from "@/ui/field";
 import { FilterBar, type FilterField, type FilterRule } from "@/ui/filter-bar";
+import { HelpTip } from "@/ui/help-tip";
+import { HideValuesButton, MoneyText } from "@/ui/hidden-values";
 import { Input } from "@/ui/input";
 import {
   InputGroup,
@@ -99,8 +96,10 @@ import {
   InputGroupInput,
   InputGroupTextarea,
 } from "@/ui/input-group";
+import { DeltaChip, HeroPercent, HeroValue, KpiTile } from "@/ui/kpi-card";
 import { Label } from "@/ui/label";
 import { Logo } from "@/ui/logo";
+import { Money } from "@/ui/money";
 import {
   Popover,
   PopoverContent,
@@ -114,8 +113,8 @@ import { Progress, ProgressLabel, ProgressValue } from "@/ui/progress";
 import { ProgressRing } from "@/ui/progress-ring";
 import { RadioGroup, RadioGroupItem } from "@/ui/radio-group";
 import { RefreshButton } from "@/ui/refresh-button";
-import { SearchField } from "@/ui/search-field";
 import { ScrollArea } from "@/ui/scroll-area";
+import { SearchField } from "@/ui/search-field";
 import {
   Select,
   SelectContent,
@@ -135,6 +134,7 @@ import {
   SidebarMenuItem,
 } from "@/ui/sidebar";
 import { Skeleton } from "@/ui/skeleton";
+import { Switch } from "@/ui/switch";
 import {
   Table,
   TableBody,
@@ -145,12 +145,11 @@ import {
   TableHeader,
   TableRow,
 } from "@/ui/table";
-import { Thumbnail, type ThumbnailSize } from "@/ui/thumbnail";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/ui/tabs";
-import { Switch } from "@/ui/switch";
 import { Textarea } from "@/ui/textarea";
 import { ThemeSegmented } from "@/ui/theme-segmented";
 import { ThemeSwitch } from "@/ui/theme-switch";
+import { Thumbnail, type ThumbnailSize } from "@/ui/thumbnail";
 import { ToastProvider, toastManager } from "@/ui/toast";
 import {
   Tooltip,
@@ -158,6 +157,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/ui/tooltip";
+import { ChartStates } from "./chart-states";
 
 /**
  * Every interface primitive of src/ui/ on one page, for the browser checks (ADR 0103, condition 2): each one
@@ -1430,7 +1430,7 @@ export function UiGallery() {
               reduzido toda troca é sem animação. A variação, a meta e a margem
               nunca animam.
             </p>
-            <p className="font-semibold text-value-lg tabular-nums tracking-[-0.035em]">
+            <p className="font-mono font-semibold text-value-lg tabular-nums">
               <AnimatedFigure text="R$ 1.234,56">
                 <Money split text="R$ 1.234,56" />
               </AnimatedFigure>
@@ -1561,9 +1561,62 @@ export function UiGallery() {
                     {size}
                   </span>
                   <Money size={size} text="R$ 234,50" />
+                  <span aria-hidden="true" className="basis-full sm:hidden" />
                   <Money size={size} text="-R$ 6,35" />
                 </p>
               ))}
+            </div>
+          </Section>
+
+          <Section title="Visor em Geist Mono">
+            <p className="text-support">
+              O número dos cartões de KPI (os tamanhos lg e xl do dinheiro,
+              acima) e os percentuais leem como visor: o mesmo avanço em cada
+              dígito, então o número não muda de largura quando os dígitos
+              mudam. A lista, a tabela e o campo seguem em Geist com números
+              tabulares.
+            </p>
+            <div className="flex flex-wrap items-center gap-3">
+              <DeltaChip
+                delta={{
+                  money: false,
+                  spoken: "subiu 12 por cento",
+                  text: "+12%",
+                  trend: "up",
+                }}
+              />
+              <DeltaChip
+                delta={{
+                  against: "vs. setembro",
+                  money: false,
+                  spoken: "caiu 4,5 por cento",
+                  text: "-4,5%",
+                  trend: "down",
+                }}
+              />
+              <DeltaChip
+                delta={{
+                  money: true,
+                  spoken: "subiu R$ 436,86",
+                  text: "+R$ 436,86",
+                  trend: "up",
+                }}
+              />
+            </div>
+            <Progress value={53.4}>
+              <ProgressLabel>Meta de vendas</ProgressLabel>
+              <ProgressValue className="font-medium font-mono text-foreground">
+                {() => "53,4%"}
+              </ProgressValue>
+            </Progress>
+            <div className="grid gap-3 sm:max-w-xs">
+              <KpiTile
+                entity="result"
+                id="galeria-kpi-margem"
+                note="Margem"
+                title="Margem"
+                value={<HeroPercent text="41,2%" />}
+              />
             </div>
           </Section>
 

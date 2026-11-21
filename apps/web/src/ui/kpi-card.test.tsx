@@ -1,5 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
+import { formatBrlAmount } from "@/lib/format";
 import {
   DeltaChip,
   HeroPercent,
@@ -9,6 +10,7 @@ import {
   KpiTile,
   KpiTileSkeleton,
 } from "./kpi-card";
+import { splitAmountWidthEm } from "./money";
 
 /**
  * The geometry of a KPI tile does not depend on what it says now: the support line is always there, and the number, the dash and "R$ ••••" share
@@ -18,6 +20,7 @@ import {
 const CLASS_ATTRIBUTE = /class="([^"]*)"/;
 const CURRENCY_SPAN = /<span class="([^"]*)" data-money-currency/;
 const FIT_IN_CQW = /min\(var\(--text-value-lg\), ([\d.]+)cqw\)/;
+const CHIP_NUMBER_MONO = /class="font-mono" data-kpi-delta-text/;
 const TEXT_IN_REM = /text-\[[\d.]+rem\]/;
 
 const TILE_CHIP_THEN_NOTE =
@@ -128,6 +131,63 @@ describe("HeroValue of a tile", () => {
     expect(
       renderToStaticMarkup(<HeroValue amount={null} tile />)
     ).not.toContain("cqw");
+  });
+});
+
+describe("the display of a tile in Geist Mono", () => {
+  const AREA_PX = 150;
+  const FLOOR_PX = 17.5;
+  const LARGE_PX = 32.5;
+  const sizeAt = (amount: string) => {
+    const fit = Number(
+      FIT_IN_CQW.exec(
+        renderToStaticMarkup(<HeroValue amount={amount} tile />)
+      )?.[1]
+    );
+    return Math.max(FLOOR_PX, Math.min(LARGE_PX, (fit / 100) * AREA_PX));
+  };
+  const widthAt = (amount: string) =>
+    splitAmountWidthEm(formatBrlAmount(amount)) * sizeAt(amount);
+
+  it("fits the longest amounts in an area of 150 px with the letter at 20 px, above the floor of 14 px", () => {
+    for (const amount of ["1234567.89", "-99640.35"]) {
+      expect(widthAt(amount)).toBeLessThanOrEqual(AREA_PX);
+      expect(sizeAt(amount)).toBeLessThan(LARGE_PX);
+    }
+  });
+
+  it("keeps the token of the scale for a short amount", () => {
+    expect(sizeAt("129.90")).toBe(LARGE_PX);
+  });
+
+  it("is in the mono face with no tracking in the amount, the dash and the percent", () => {
+    for (const markup of [
+      renderToStaticMarkup(<HeroValue amount="129.90" />),
+      renderToStaticMarkup(<HeroValue amount={null} />),
+      renderToStaticMarkup(<HeroPercent text="41,2%" />),
+    ]) {
+      expect(markup).toContain("font-mono");
+      expect(markup).not.toContain("tracking-[");
+    }
+  });
+
+  it("writes the words of an empty figure in Geist, not in the mono face", () => {
+    const markup = renderToStaticMarkup(
+      <HeroValue amount={null} emptyText="sem custo neste dia" />
+    );
+    expect(markup).toContain("font-sans");
+  });
+
+  it("sets the number of a percent chip in the mono face and an amount chip in Geist", () => {
+    const base = { spoken: "subiu", trend: "up" } as const;
+    const percent = renderToStaticMarkup(
+      <DeltaChip delta={{ ...base, money: false, text: "+12%" }} />
+    );
+    const reais = renderToStaticMarkup(
+      <DeltaChip delta={{ ...base, money: true, text: "+R$ 12,00" }} />
+    );
+    expect(percent).toMatch(CHIP_NUMBER_MONO);
+    expect(reais).not.toMatch(CHIP_NUMBER_MONO);
   });
 });
 
