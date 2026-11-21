@@ -48,6 +48,7 @@ jobs:
       browser: ${{ steps.changed.outputs.browser }}
       dependencies: ${{ steps.changed.outputs.dependencies }}
       e2e: ${{ steps.changed.outputs.e2e }}
+      database: ${{ steps.changed.outputs.database }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -60,6 +61,21 @@ jobs:
           persist-credentials: false
       - id: changed
         run: node scripts/ci-changed.mjs
+      # A skipped job leaves no reason of its own; this is where a pull request that skips the PostgreSQL gates says why.
+      - name: Why the PostgreSQL gates were skipped
+        if: ${{ github.event_name == 'pull_request' && steps.changed.outputs.database == 'false' }}
+        run: |
+          {
+            echo "### PostgreSQL 18 gates skipped"
+            echo
+            echo "database=false: no changed path reaches packages/db, packages/domain, an apps/*/src/server, the Worker, a manifest, the lockfile or .github, and every path was classified (scripts/ci-changed.mjs, DATABASE_IRRELEVANT). Push to main, workflow_dispatch and full runs always run the gates."
+            echo
+            echo "Files read (git diff HEAD^1 HEAD):"
+            echo
+            echo '```'
+            git diff --name-only --no-renames HEAD^1 HEAD
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
   checks:
     name: Checks (lint, types, knip, build, tests)
@@ -145,6 +161,10 @@ jobs:
 
   database:
     name: PostgreSQL 18 gates
+    needs: changes
+    # Only a pull request whose files were all classified as unable to reach the database skips it; a push to main, a
+    # manual run, a run with `full` and the `suite-completa` label always run it, and so does a failed `changes`.
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.database != 'false') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     # A red job here is a red pull request: it has been green on every pull
