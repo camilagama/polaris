@@ -313,8 +313,8 @@ function isWrongUserLease(error: unknown): boolean {
 
 /**
  * The only failures of asking for the lease that say the remembered device is not this person's: the server's
- * definite refusal, or a readable lease that is not this user's, organization's and device's (an unreadable one says
- * nothing about whose the device is). Whatever
+ * definite refusal, or a readable lease that is not this user's, organization's and device's (an unreadable one, or
+ * this person's own that only reads as ended by the device clock, says nothing about whose the device is). Whatever
  * else went wrong (no answer, an unknown error) is no news about the device, and registering another one would not fix it.
  */
 function isDeviceForgettingFailure(error: unknown): boolean {
@@ -1715,13 +1715,26 @@ export class OfflineRuntime {
       throw error;
     }
     // a lease for somebody else is never kept, whatever the server said
-    if (!this.leaseIsUsable(issued.lease, userId, organizationId, deviceId)) {
+    const claims = readUnverifiedOfflineLease(issued.lease);
+    const standing = leaseStanding(
+      claims,
+      { deviceId, organizationId, userId },
+      this.now().getTime()
+    );
+    if (standing !== "usable") {
       if (usable) {
         return usable.lease;
       }
-      // an unreadable lease says nothing about whose the device is: it keeps the device
-      if (readUnverifiedOfflineLease(issued.lease) === null) {
+      // neither an unreadable lease nor this person's own that the device clock already reads as ended says whose the device is: both keep it
+      if (claims === null) {
         throw new Error("lease_unreadable");
+      }
+      if (standing === "expired") {
+        if (cached.expired) {
+          // the queue's expired state, as when there is no answer at all
+          throw new OfflineAccessExpiredError("offline_access_expired");
+        }
+        throw new Error("lease_expired_on_arrival");
       }
       throw new Error("lease_wrong_user");
     }

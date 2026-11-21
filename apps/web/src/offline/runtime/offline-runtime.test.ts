@@ -31,6 +31,7 @@ const key = { id: "k1", secret: "s".repeat(40) };
 const userId = "user-1";
 const organizationId = "org-1";
 const HOUR = 3_600_000;
+const WORLD_START = new Date("2026-10-14T12:00:00.000Z");
 const uuid = (n: number) =>
   `0199c2d0-0000-7000-8000-${n.toString(16).padStart(12, "0")}`;
 
@@ -55,7 +56,7 @@ function world(options: { leaseHours?: number } = {}) {
   const network = { online: true };
   /** Whether a queue database exists on the browser, apart from the namespaces the registry lists. */
   const disk = { failure: undefined as Error | undefined, outbox: false };
-  let clock = new Date("2026-10-14T12:00:00.000Z");
+  let clock = new Date(WORLD_START);
   const calls = {
     deviceIsMine: 0,
     issueLease: 0,
@@ -777,6 +778,76 @@ describe("starting", () => {
         reason: "lease_unreadable",
       });
       expect(runtime.context()).toBeNull();
+    });
+
+    it("this person's own lease that arrives ended by a device clock ahead of its exp keeps the device: nothing is forgotten, nothing is registered, no other lease is asked", async () => {
+      const { device, w } = await deviceWithoutLease();
+      const registered = w.calls.registerDevice;
+      const asked = w.calls.issueLease;
+      const remove = vi.spyOn(w.keyValues, "remove");
+      const ahead = new Date(WORLD_START.getTime() + 100 * HOUR);
+      const runtime = w.make(null, { now: () => ahead });
+      await runtime.start(organizationId);
+
+      expect(remove).not.toHaveBeenCalledWith("polaris.offline.device");
+      expect(w.calls.registerDevice).toBe(registered);
+      expect(w.calls.issueLease).toBe(asked + 1);
+      expect(w.keyValues.read("polaris.offline.device")).toBe(device);
+      expect(w.keyValues.read(leaseKeyName)).toBeNull();
+      expect(runtime.getSnapshot()).toMatchObject({
+        phase: "unavailable",
+        reason: "lease_expired_on_arrival",
+      });
+      expect(runtime.context()).toBeNull();
+    });
+
+    it("with this person's own cached lease already ended, a lease that also arrives ended opens the expired state: the device and the cached lease stay", async () => {
+      const w = world();
+      await w.make().start(organizationId);
+      const device = w.keyValues.read("polaris.offline.device");
+      const cached = w.keyValues.read(leaseKeyName);
+      const registered = w.calls.registerDevice;
+      const remove = vi.spyOn(w.keyValues, "remove");
+      const ahead = new Date(WORLD_START.getTime() + 100 * HOUR);
+      const runtime = w.make(null, { now: () => ahead });
+      await runtime.start(organizationId);
+
+      expect(remove).not.toHaveBeenCalledWith("polaris.offline.device");
+      expect(w.calls.registerDevice).toBe(registered);
+      expect(w.keyValues.read("polaris.offline.device")).toBe(device);
+      expect(w.keyValues.read(leaseKeyName)).toBe(cached);
+      expect(runtime.getSnapshot()).toMatchObject({
+        phase: "expired",
+        reason: "offline_access_expired",
+      });
+    });
+
+    it("a readable lease of another user still forgets the device, even when it also reads as ended", async () => {
+      const { device, w } = await deviceWithoutLease();
+      const registered = w.calls.registerDevice;
+      const remove = vi.spyOn(w.keyValues, "remove");
+      const ahead = new Date(WORLD_START.getTime() + 100 * HOUR);
+      let asked = 0;
+      const runtime = w.make(null, {
+        api: {
+          ...w.api,
+          issueLease: async (deviceId, org) => {
+            asked += 1;
+            w.session.user = asked === 1 ? "somebody-else" : userId;
+            try {
+              return await w.api.issueLease(deviceId, org);
+            } finally {
+              w.session.user = userId;
+            }
+          },
+        },
+        now: () => ahead,
+      });
+      await runtime.start(organizationId);
+
+      expect(remove).toHaveBeenCalledWith("polaris.offline.device");
+      expect(w.calls.registerDevice).toBe(registered + 1);
+      expect(w.keyValues.read("polaris.offline.device")).not.toBe(device);
     });
 
     it("a persistent 403 of the first read keeps the device: no opening registers another", async () => {
