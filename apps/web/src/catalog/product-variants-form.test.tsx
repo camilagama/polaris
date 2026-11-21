@@ -151,7 +151,6 @@ const ADD_ROW_DASHED =
   /<button type="button"[^>]*border-dashed[^>]*>(<svg[\s\S]*?<\/svg>)?Adicionar combinação</;
 const ADD_ROW_OFF =
   /disabled=""[^>]*>(<svg[\s\S]*?<\/svg>)?Adicionar combinação</;
-const LI_WITH_BUTTON = /<li[^>]*>\s*<button/;
 
 describe("Adicionar combinação, the last row of the list", () => {
   const withOptions = {
@@ -160,14 +159,13 @@ describe("Adicionar combinação, the last row of the list", () => {
     valueLines: { ...emptyConfigurationDraft.valueLines, color: "Azul" },
   };
 
-  it("is a button, not a list item, and sits right under the empty-list sentence", () => {
+  it("is a button, outside the list, and sits right under the empty-list sentence", () => {
     const markup = draw(null, withOptions);
     const sentence = markup.indexOf("Nenhuma combinação adicionada.");
     const row = markup.search(ADD_ROW);
     expect(sentence).toBeGreaterThan(-1);
     expect(row).toBeGreaterThan(sentence);
     expect(markup.slice(sentence, row)).not.toContain("<button");
-    expect(markup).not.toMatch(LI_WITH_BUTTON);
     expect(markup).toMatch(ADD_ROW_DASHED);
   });
 

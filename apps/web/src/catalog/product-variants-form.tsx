@@ -484,9 +484,7 @@ export function ProductVariantConfigurationForm({
     setVariants((current) => [...current, { values }]);
     setSaveError(null);
     clearGenerateNotice();
-    const firstField = optionNames.find(
-      (name) => optionValues[name].length > 0
-    );
+    const [firstField] = optionNames;
     if (firstField) {
       focusLater(() =>
         document
@@ -499,7 +497,6 @@ export function ProductVariantConfigurationForm({
   }, [
     clearGenerateNotice,
     optionNames,
-    optionValues,
     product.id,
     validation.canAdd,
     variants.length,

@@ -1923,7 +1923,9 @@ test("variantes: o aviso do SKU só com opção marcada, linhas vazias não são
     page.getByRole("combobox", { exact: true, name: "Cor" }).nth(1)
   ).toBeFocused();
   // the add row is the last row of the list: under the last combination, the whole width of it
-  const lastCombination = page.getByRole("listitem").last();
+  const lastCombination = page
+    .getByRole("listitem")
+    .filter({ hasText: "Combinação 2" });
   const [rowBox, listBox] = await Promise.all([
     addRow.boundingBox(),
     lastCombination.boundingBox(),
