@@ -594,6 +594,78 @@ test("o selo Não confirmada quebra em duas linhas a 320 px, sem ser cortado", a
   expect(fit).toEqual({ cut: false, lines: true, outside: false });
 });
 
+for (const viewport of [
+  { height: 740, width: 360 },
+  { height: 800, width: 1280 },
+]) {
+  test(`AC-F1 e AC-F2: a barra de segmentos acompanha o passo e não move o cabeçalho a ${viewport.width} px`, async ({
+    page,
+  }) => {
+    test.setTimeout(90_000);
+    await page.setViewportSize(viewport);
+    await openProducts(page);
+    await page.getByRole("button", { name: "Importar planilha" }).click();
+    const dialog = dialogOf(page);
+    const measure = () =>
+      dialog.evaluate((node) => {
+        const header = node.querySelector('[data-slot="dialog-header"]');
+        const bar = node.querySelector('[data-slot="import-step-bar"]');
+        const head = header?.getBoundingClientRect();
+        const box = bar?.getBoundingClientRect();
+        return {
+          barHeight: box?.height,
+          barTop: box && head ? box.top - head.top : null,
+          filled: node.querySelectorAll('[data-filled="true"]').length,
+          headerHeight: head?.height,
+          hidden: bar?.getAttribute("aria-hidden"),
+          segments: node.querySelectorAll("[data-filled]").length,
+        };
+      });
+    const settledScales = (filled: number) =>
+      expect
+        .poll(() =>
+          dialog.evaluate((node) =>
+            [...node.querySelectorAll("[data-filled]")].map(
+              (segment) => getComputedStyle(segment).scale
+            )
+          )
+        )
+        .toEqual(
+          Array.from({ length: 4 }, (_, i) => (i < filled ? "none" : "0 1"))
+        );
+    await expect(dialog.getByText("Passo 1 de 4 · Arquivo")).toBeVisible();
+    await settledScales(1);
+    const first = await measure();
+    const seen = [first];
+    await chooseFile(page, ["Nome", "Alfa"]);
+    await dialog.getByRole("button", { name: "Ver a prévia" }).click();
+    await expect(dialog.getByText("Passo 2 de 4 · Prévia")).toBeVisible();
+    await settledScales(2);
+    seen.push(await measure());
+    await dialog.getByRole("button", { name: "Importar 1 produto" }).click();
+    await expect(dialog.getByText("Passo 4 de 4 · Resultado")).toBeVisible({
+      timeout: 30_000,
+    });
+    await settledScales(4);
+    seen.push(await measure());
+
+    expect(seen.map((one) => one.filled)).toEqual([1, 2, 4]);
+    for (const one of seen) {
+      expect(one.segments).toBe(4);
+      expect(one.hidden).toBe("true");
+      expect(one.barHeight).toBe(4);
+    }
+    for (const one of seen) {
+      expect(
+        Math.abs((one.headerHeight ?? 0) - (first.headerHeight ?? 0))
+      ).toBeLessThanOrEqual(1);
+      expect(
+        Math.abs((one.barTop ?? 0) - (first.barTop ?? 0))
+      ).toBeLessThanOrEqual(1);
+    }
+  });
+}
+
 test("uma linha que o servidor nunca responde é pulada, e as seguintes entram (Léo, VC1)", async ({
   page,
 }) => {
