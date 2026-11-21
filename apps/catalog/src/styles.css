@@ -283,6 +283,9 @@ a {
 .card-price .price {
   font-size: 0.9375rem;
 }
+.variants .price {
+  font-size: 1rem;
+}
 
 .more {
   display: flex;

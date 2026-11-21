@@ -113,7 +113,7 @@ async function contrastAgainstCard(page: Page, selectors: string[]) {
 }
 
 /** The symbol and the cents are smaller than the whole, on its baseline, and the whole is in weight 600. */
-async function expectSmallerParts(price: Locator) {
+async function expectSmallerParts(price: Locator, wholePx: number) {
   const sizes = await price.evaluate((element) => {
     const px = (selector: string) =>
       Number.parseFloat(
@@ -126,6 +126,7 @@ async function expectSmallerParts(price: Locator) {
       weight: getComputedStyle(element).fontWeight,
     };
   });
+  expect(sizes.whole).toBe(wholePx);
   expect(sizes.cents).toBeLessThan(sizes.whole);
   expect(sizes.currency).toBeLessThan(sizes.whole);
   expect(sizes.weight).toBe("600");
@@ -273,11 +274,11 @@ for (const size of SIZES) {
       await expect(card).toHaveText("R$49,90");
       await expect(card.locator(".currency")).toHaveText("R$");
       await expect(card.locator(".cents")).toHaveText(",90");
-      await expectSmallerParts(card);
+      await expectSmallerParts(card, 15);
       await open(page, PRODUCT);
       const variant = page.locator(".variants .price").first();
       await expect(variant).toHaveText("R$49,90");
-      await expectSmallerParts(variant);
+      await expectSmallerParts(variant, 16);
       await expect(page.locator(".variants .unknown")).toHaveText(
         "Preço sob consulta"
       );
