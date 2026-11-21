@@ -9,7 +9,7 @@ const INGEST_HOST = /^o\d+\.ingest(?:\.[a-z0-9-]+)?\.sentry\.io$/;
 const PROJECT_PATH = /^\/\d+$/;
 
 export function sentryIngestOrigin(dsn: string | undefined): string | null {
-  if (!dsn) {
+  if (dsn === undefined || dsn === "") {
     return null;
   }
   let url: URL;
