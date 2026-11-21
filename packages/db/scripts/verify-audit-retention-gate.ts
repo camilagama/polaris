@@ -113,14 +113,14 @@ async function run() {
     options: { commit?: boolean } = {}
   ): Promise<T> {
     const client = await owner.pool.connect();
-    const run = () => withGateRole(client, role, () => work(client));
+    const asOwner = () => withGateRole(client, role, () => work(client));
     try {
       let result: T;
       if (options.commit === false) {
-        result = await inRolledBackTransaction(client, run);
+        result = await inRolledBackTransaction(client, asOwner);
       } else {
         await client.query("BEGIN");
-        result = await run();
+        result = await asOwner();
         await client.query("COMMIT");
       }
       client.release();

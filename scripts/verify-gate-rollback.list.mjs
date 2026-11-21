@@ -8,14 +8,6 @@ const BEFORE_THE_RULE =
   "anterior à checagem; ao mexer neste arquivo, troque o ROLLBACK solto por rollbackAndRelease ou rollbackQuietly";
 
 export const GATE_ROLLBACK_LIST = {
-  "apps/web/scripts/organization-purge-automatic-checks.ts": {
-    count: 2,
-    reason: BEFORE_THE_RULE,
-  },
-  "apps/web/scripts/verify-activation-sweep-gate.ts": {
-    count: 3,
-    reason: BEFORE_THE_RULE,
-  },
   "apps/web/scripts/verify-organization-purge-gate.ts": {
     count: 9,
     reason: BEFORE_THE_RULE,
