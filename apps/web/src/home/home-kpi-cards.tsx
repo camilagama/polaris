@@ -4,7 +4,7 @@ import { OnDemandSparkline } from "@/ui/charts/on-demand";
 import {
   DeltaChip,
   HeroValue,
-  KPI_GRID,
+  KPI_STRIP_THREE,
   type KpiRange,
   KpiTile,
   KpiTileSkeleton,
@@ -44,12 +44,13 @@ import { usePeriodControl } from "./period-control";
 import type { HomeFigures } from "./use-home";
 
 /**
- * The tiles of the Início: Vendas hoje, and the three of the month, Vendas, Resultado estimado and Ticket médio. Each is
- * about 92 px: the name with the (i), the number with the sparkline to its right, and one line of support. Passing the
+ * The tiles of the Início: Vendas hoje, the hero, alone on its line and as wide as the page, and the three of the month,
+ * Vendas, Resultado estimado and Ticket médio, under the line of the period. Each is about 92 px (the hero a little
+ * more, its number a step up): the name with the (i), the number with the sparkline to its right, and one line of support. Passing the
  * pointer or dragging the finger over a sparkline, or the arrows on its keyboard control, reads one day: the number and the
  * count follow it, and the date takes the place of the chip. The three tiles of the month read the same
- * day together; "Vendas hoje" reads alone (its series is another). Leaving, everything goes back to today. On a phone
- * the tiles are one column, up to 759 px, and the sparklines are drawn finished, with no entrance; the reading by the
+ * day together; "Vendas hoje" reads alone (its series is another). Leaving, everything goes back to today. The three of
+ * the month are one column up to 1023 px, three columns from there and one strip from 1280 px; on a phone the sparklines are drawn finished, with no entrance; the reading by the
  * finger stays.
  */
 
@@ -122,10 +123,10 @@ function TodayTile({
   return (
     <KpiTile
       chip={chipOf(reading)}
-      className={PLACE.today}
       date={index === null ? undefined : reading.date || undefined}
       entity="sales"
       help={{ about: "Vendas hoje", text: reading.help }}
+      hero
       id="home-today"
       note={reading.count}
       range={range}
@@ -141,7 +142,14 @@ function TodayTile({
         />
       }
       title="Vendas hoje"
-      value={<HeroValue amount={reading.value} reading={index !== null} tile />}
+      value={
+        <HeroValue
+          amount={reading.value}
+          reading={index !== null}
+          size="xl"
+          tile
+        />
+      }
     />
   );
 }
@@ -271,20 +279,6 @@ function periodModel(source: PeriodSource): MonthModel {
 }
 
 /**
- * Where each tile sits from 1280 px: Hoje alone at the left, the three of the month under the line of the period. In
- * one column the line keeps its place in the DOM, between Hoje and the month, so the order of the focus and of the
- * screen reader is the one the eye sees.
- */
-const PLACE = {
-  error: "md:col-span-2 xl:col-span-3 xl:col-start-2 xl:row-start-2",
-  line: "md:col-span-2 xl:col-span-3 xl:col-start-2 xl:row-start-1",
-  result: "xl:col-start-3 xl:row-start-2",
-  sales: "md:col-span-2 xl:col-span-1 xl:col-start-2 xl:row-start-2",
-  ticket: "xl:col-start-4 xl:row-start-2",
-  today: "md:col-span-2 xl:col-span-1 xl:col-start-1 xl:row-start-2",
-} as const;
-
-/**
  * The line that holds the period picker of the Início, at its end, above the three tiles of the month. It is there in
  * every state of the tiles (skeleton, figures, error, no connection), so the picker is never taken down and put up
  * again by a change of period: the focus it had stays on it.
@@ -296,7 +290,7 @@ function PeriodLine() {
   }
   return (
     <div
-      className={`flex min-h-9 items-center justify-end ${PLACE.line}`}
+      className="flex min-h-9 items-center justify-end"
       data-kpi-group-line=""
     >
       {control}
@@ -371,11 +365,11 @@ function MonthTiles({
           ) : null
         }
         chip={chipOf(read.sales)}
-        className={PLACE.sales}
         date={date}
         entity="sales"
         help={{ about: `Vendas ${model.of}`, text: read.sales.help }}
         id="home-month"
+        strip
         note={read.sales.count}
         {...(drawn
           ? {
@@ -390,7 +384,6 @@ function MonthTiles({
       />
       <KpiTile
         chip={noCost ? undefined : chipOf(read.result)}
-        className={PLACE.result}
         date={date}
         entity="result"
         help={{
@@ -398,6 +391,7 @@ function MonthTiles({
           text: read.result.help,
         }}
         id="home-result"
+        strip
         warning={incomplete ? <IncompleteSign /> : null}
         warningDetail={
           incomplete ? incompleteDetail({ missing, noCost }) : null
@@ -430,11 +424,11 @@ function MonthTiles({
       />
       <KpiTile
         chip={chipOf(read.ticket)}
-        className={PLACE.ticket}
         date={date}
         entity="ticket"
         help={{ about: "Ticket médio", text: read.ticket.help }}
         id="home-ticket"
+        strip
         note={read.ticket.count || null}
         {...(drawn
           ? {
@@ -455,9 +449,9 @@ function MonthTiles({
 function PeriodTilesSkeleton() {
   return (
     <>
-      <KpiTileSkeleton className={PLACE.sales} />
-      <KpiTileSkeleton className={PLACE.result} />
-      <KpiTileSkeleton className={PLACE.ticket} />
+      <KpiTileSkeleton strip />
+      <KpiTileSkeleton strip />
+      <KpiTileSkeleton strip />
     </>
   );
 }
@@ -532,21 +526,28 @@ function monthBody(
 ) {
   if (month.kind === "loading") {
     return (
-      <div className="contents" role="status">
+      <div className={KPI_STRIP_THREE} data-kpi-month="" role="status">
         <span className="sr-only">Carregando o período…</span>
         <PeriodTilesSkeleton />
       </div>
     );
   }
   if (month.kind === "error") {
-    return <div className={`self-start ${PLACE.error}`}>{month.error}</div>;
+    return <div className="self-start">{month.error}</div>;
   }
   if (model === null) {
     return null;
   }
   const { key, ...rest } = reading;
-  return <MonthTiles key={key} model={model} {...rest} />;
+  return (
+    <div className={KPI_STRIP_THREE} data-kpi-month="">
+      <MonthTiles key={key} model={model} {...rest} />
+    </div>
+  );
 }
+
+/** The hero, the line of the period and the tiles of the month, one under the other: each in its own row, whatever the width. */
+const KPI_COLUMN = "flex flex-col gap-3 xl:gap-4";
 
 export function KpiCards({
   figures,
@@ -564,16 +565,22 @@ export function KpiCards({
     [figures]
   );
   return (
-    <div className={KPI_GRID} data-kpi-row="">
+    <div className={KPI_COLUMN} data-kpi-row="">
       {todayShown ? (
         <TodayTile figures={figures} still={still} />
       ) : (
         <KpiTile
-          className={PLACE.today}
           entity="sales"
+          hero
           id="home-today"
           title="Vendas hoje"
-          value={<p className="text-muted-foreground">Sem números de hoje</p>}
+          value={
+            <HeroValue
+              amount={null}
+              emptyText="Sem números de hoje"
+              size="xl"
+            />
+          }
         />
       )}
       <MonthGroup month={month} own={own} still={still} />
@@ -591,40 +598,42 @@ export const NO_CONNECTION_NOTE = "Sem conexão";
 export function NoFiguresCards({ today }: { today: string }) {
   const name = monthTitle(today).toLowerCase();
   return (
-    <div className={KPI_GRID} data-kpi-row="">
+    <div className={KPI_COLUMN} data-kpi-row="">
       <KpiTile
-        className={PLACE.today}
         entity="sales"
+        hero
         id="home-today"
         note={NO_CONNECTION_NOTE}
         title="Vendas hoje"
-        value={<HeroValue amount={null} />}
+        value={<HeroValue amount={null} size="xl" />}
       />
       <PeriodLine />
-      <KpiTile
-        className={PLACE.sales}
-        entity="sales"
-        id="home-month"
-        note={NO_CONNECTION_NOTE}
-        title={`Vendas em ${name}`}
-        value={<HeroValue amount={null} />}
-      />
-      <KpiTile
-        className={PLACE.result}
-        entity="result"
-        id="home-result"
-        note={NO_CONNECTION_NOTE}
-        title="Resultado estimado"
-        value={<HeroValue amount={null} />}
-      />
-      <KpiTile
-        className={PLACE.ticket}
-        entity="ticket"
-        id="home-ticket"
-        note={NO_CONNECTION_NOTE}
-        title="Ticket médio"
-        value={<HeroValue amount={null} />}
-      />
+      <div className={KPI_STRIP_THREE} data-kpi-month="">
+        <KpiTile
+          entity="sales"
+          id="home-month"
+          note={NO_CONNECTION_NOTE}
+          strip
+          title={`Vendas em ${name}`}
+          value={<HeroValue amount={null} />}
+        />
+        <KpiTile
+          entity="result"
+          id="home-result"
+          note={NO_CONNECTION_NOTE}
+          strip
+          title="Resultado estimado"
+          value={<HeroValue amount={null} />}
+        />
+        <KpiTile
+          entity="ticket"
+          id="home-ticket"
+          note={NO_CONNECTION_NOTE}
+          strip
+          title="Ticket médio"
+          value={<HeroValue amount={null} />}
+        />
+      </div>
     </div>
   );
 }
@@ -635,10 +644,12 @@ export function NoFiguresCards({ today }: { today: string }) {
  */
 export function KpiCardsSkeleton() {
   return (
-    <div className={KPI_GRID} data-kpi-row="">
-      <KpiTileSkeleton className={PLACE.today} />
+    <div className={KPI_COLUMN} data-kpi-row="">
+      <KpiTileSkeleton hero />
       <PeriodLine />
-      <PeriodTilesSkeleton />
+      <div className={KPI_STRIP_THREE} data-kpi-month="">
+        <PeriodTilesSkeleton />
+      </div>
     </div>
   );
 }

@@ -20,15 +20,19 @@ import { Money } from "./money";
 import { Skeleton } from "./skeleton";
 
 /**
- * The grid of the tiles of the Início: one column up to 759 px (the `md` of Tailwind, where the side menu appears), two
- * from there, four from 1280 px, where each tile still has room for the number and the sparkline side by side.
+ * The three tiles of the month of the Início: one column up to 1023 px, three columns from there, and from 1280 px one
+ * card with three columns and a 1 px line between them. The cells give up their own ring, background and rounding
+ * (`KPI_STRIP_CELL`); the strip clips the sparklines to its corners. Three columns need a cell of about 230 px, where the
+ * number at `lg` and the sparkline still sit side by side: with the side menu open (from 760 px) that is 1024 px; at
+ * 760 px a cell would be 149 px and the number would step down to the floor.
  */
-export const KPI_GRID =
-  "grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4 xl:gap-4";
+export const KPI_STRIP_THREE =
+  "grid grid-cols-1 gap-3 lg:grid-cols-3 xl:gap-0 xl:divide-x xl:divide-border xl:overflow-hidden xl:rounded-xl xl:bg-card xl:shadow-xs xl:ring-1 xl:ring-foreground/[0.06] xl:dark:shadow-[inset_0_1px_0_var(--card-glow)]";
 
 /**
- * Up to 1279 px the tiles of `KPI_GRID`; from 1280 px one card with four columns and a 1 px line between them. The cells
- * give up their own ring, background and rounding (`KPI_STRIP_CELL`); the strip clips the sparklines to its corners.
+ * Up to 1279 px the tiles of two columns; from 1280 px one card with four columns and a 1 px line between them (the
+ * Resultado). The cells give up their own ring, background and rounding (`KPI_STRIP_CELL`); the strip clips the
+ * sparklines to its corners.
  */
 export const KPI_STRIP =
   "grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4 xl:gap-0 xl:divide-x xl:divide-border xl:overflow-hidden xl:rounded-xl xl:bg-card xl:shadow-xs xl:ring-1 xl:ring-foreground/[0.06] xl:dark:shadow-[inset_0_1px_0_var(--card-glow)]";
@@ -49,8 +53,16 @@ const SIGN = /^[+-]/;
  * tokens of the scale; `leading-*` sets the line whatever the size class says, and goes after the size classes of its
  * own variant, because the merge of the classes drops a `leading-*` that comes before one.
  */
-const HERO_BOX =
+const HERO_BOX_LG =
   "h-(--text-value-lg--line-height) whitespace-nowrap font-semibold text-value-lg tabular-nums tracking-[-0.035em]";
+
+/** The box of the number of the hero of the Início ("Vendas hoje"): the same, one step up the scale, `text-value-xl`. */
+const HERO_BOX_XL =
+  "h-(--text-value-xl--line-height) whitespace-nowrap font-semibold text-value-xl tabular-nums tracking-[-0.035em]";
+
+type HeroSize = "lg" | "xl";
+
+const HERO_BOX: Record<HeroSize, string> = { lg: HERO_BOX_LG, xl: HERO_BOX_XL };
 
 /** The width of a character of the figure, in em at `text-value-lg`: measured over the amounts a tile writes ("R$ 99.640,35"), with the "R$" and the cents a step smaller. */
 const FIGURE_CHARACTER_EM = 0.44;
@@ -62,12 +74,12 @@ const TILE_FIGURE_FLOOR = "0.875rem";
  * The size of the figure of a tile, from the width of its own area (a container, `cqw`) and the characters it writes, so
  * a long amount steps down to fit and a short one keeps `text-value-lg`: the area never grows with the number.
  */
-function tileFigureSize(characters: number): CSSProperties {
+function tileFigureSize(characters: number, size: HeroSize): CSSProperties {
   const fit = (100 / (Math.max(characters, 1) * FIGURE_CHARACTER_EM)).toFixed(
     2
   );
   return {
-    fontSize: `max(${TILE_FIGURE_FLOOR}, min(var(--text-value-lg), ${fit}cqw))`,
+    fontSize: `max(${TILE_FIGURE_FLOOR}, min(var(--text-value-${size}), ${fit}cqw))`,
   };
 }
 
@@ -80,6 +92,7 @@ export function HeroValue({
   amount,
   emptyText,
   reading = false,
+  size: scale = "lg",
   tile = false,
 }: {
   /** The amount as the server writes money ("1234.5"), or null when there is none. */
@@ -88,24 +101,27 @@ export function HeroValue({
   emptyText?: string | undefined;
   /** The amount is the day read on a sparkline: it swaps with no entrance (the return to rest is handled by `AnimatedFigure`). */
   reading?: boolean;
+  /** The step of the scale of the number: `lg` in every card, `xl` only in the hero of the Início. */
+  size?: HeroSize;
   /** The value of a `KpiTile`: its size follows the width of its own area, which a long amount does not change. */
   tile?: boolean;
 }) {
   const [hidden] = useHiddenValues();
   const size =
     tile && amount !== null
-      ? tileFigureSize(writtenLength(amount, hidden))
+      ? tileFigureSize(writtenLength(amount, hidden), scale)
       : undefined;
+  const box = HERO_BOX[scale];
   if (amount === null && emptyText) {
     return (
-      <p className={cn(HERO_BOX, "text-muted-foreground")}>
+      <p className={cn(box, "text-muted-foreground")}>
         <span className="font-medium text-sm tracking-normal">{emptyText}</span>
       </p>
     );
   }
   if (amount === null) {
     return (
-      <p className={cn(HERO_BOX, "text-muted-foreground")}>
+      <p className={cn(box, "text-muted-foreground")}>
         <Money text={null} />
       </p>
     );
@@ -119,14 +135,14 @@ export function HeroValue({
   );
   if (hidden) {
     return (
-      <p className={HERO_BOX} data-kpi-value="" style={size}>
+      <p className={box} data-kpi-value="" style={size}>
         {money}
       </p>
     );
   }
   return (
     <p
-      className={cn(HERO_BOX, negative && "text-destructive")}
+      className={cn(box, negative && "text-destructive")}
       data-kpi-value=""
       style={size}
     >
@@ -147,7 +163,7 @@ export function HeroPercent({
 }) {
   if (text === null) {
     return (
-      <p className={cn(HERO_BOX, "text-muted-foreground")}>
+      <p className={cn(HERO_BOX_LG, "text-muted-foreground")}>
         <span aria-hidden="true">—</span>
         <span className="sr-only">sem valor</span>
       </p>
@@ -156,7 +172,7 @@ export function HeroPercent({
   return (
     <p
       className={cn(
-        HERO_BOX,
+        HERO_BOX_LG,
         text.trim().startsWith("-") && "text-destructive"
       )}
       data-kpi-value=""
@@ -367,6 +383,10 @@ const TILE =
 const TILE_BODY =
   "grid grid-cols-[minmax(0,2fr)_minmax(0,1fr)] items-center gap-3 touch:mt-1.5 touch:min-h-7.5";
 const TILE_FIGURE = "@container min-w-0 overflow-hidden";
+/* the hero is as wide as the page, so the sparkline gets two fifths of it from 760 px, not a third: the number keeps its
+   three fifths, and the line of the number is the tallest thing in the body, so the box does not depend on the drawing */
+const HERO_BODY =
+  "grid grid-cols-[minmax(0,2fr)_minmax(0,1fr)] items-center gap-3 touch:mt-1.5 touch:min-h-7.5 md:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]";
 /* its 36 px (44 with touch) do not add to the 30 px line of the number */
 const TILE_SPARK =
   "z-10 -my-0.75 h-9 min-w-0 self-center touch:-my-1.75 touch:h-11 touch:py-1";
@@ -429,6 +449,7 @@ export function KpiTile({
   date,
   entity,
   help,
+  hero = false,
   id,
   note,
   notice,
@@ -448,6 +469,8 @@ export function KpiTile({
   date?: string | undefined;
   entity: KpiEntity;
   help?: { about: string; text: string };
+  /** The tile is the hero of the Início: alone on its line, its number a step up (`HeroValue size="xl"`). */
+  hero?: boolean;
   id: string;
   /** What goes beside the chip: the count. */
   note?: ReactNode;
@@ -469,12 +492,13 @@ export function KpiTile({
       aria-labelledby={id}
       className={cn(TILE, strip && KPI_STRIP_CELL, className)}
       data-kpi={entity}
+      data-kpi-hero={hero ? "" : undefined}
       role="region"
     >
       <div className={cn(TOP_ROW, TILE_TITLE_ROW)}>
         <CardTitle help={help} id={id} title={title} />
       </div>
-      <div className={TILE_BODY} data-kpi-body="">
+      <div className={hero ? HERO_BODY : TILE_BODY} data-kpi-body="">
         <div className={TILE_FIGURE} data-kpi-headline="">
           {value}
         </div>
@@ -518,21 +542,37 @@ export function KpiTile({
 }
 
 /** A tile while its figures are read: the same rows with their heights, in `Skeleton`, so the tile that comes takes the same place (a Result tile with a cost warning adds its line). */
-export function KpiTileSkeleton({ className }: { className?: string }) {
+export function KpiTileSkeleton({
+  className,
+  hero = false,
+  strip = false,
+}: {
+  className?: string;
+  /** The skeleton of the hero: the box of its number is the `xl` one. */
+  hero?: boolean;
+  /** The skeleton of a column of a strip: from 1280 px it gives up its own card, as the tile does. */
+  strip?: boolean;
+}) {
   return (
     <div
       aria-hidden="true"
       className={cn(
         "group/card flex flex-col overflow-hidden rounded-xl bg-card text-sm shadow-xs ring-1 ring-foreground/[0.06] [--card-spacing:--spacing(3)] dark:shadow-[inset_0_1px_0_var(--card-glow)] md:[--card-spacing:--spacing(4)]",
         TILE,
+        strip && KPI_STRIP_CELL,
         className
       )}
       data-kpi-skeleton=""
     >
-      <div className={cn(TOP_ROW, "h-5 touch:h-11")}>
+      <div className={cn(TOP_ROW, "h-4.5 touch:h-11")}>
         <Skeleton className="h-3 w-24" />
       </div>
-      <div className={cn(HERO_BOX, "touch:mt-1.5 flex min-h-7.5 items-center")}>
+      <div
+        className={cn(
+          hero ? HERO_BOX_XL : HERO_BOX_LG,
+          "touch:mt-1.5 flex min-h-7.5 items-center"
+        )}
+      >
         <Skeleton className="h-[0.8em] w-32" />
       </div>
       <div className={TILE_SUPPORT}>
