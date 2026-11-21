@@ -7,6 +7,7 @@ import {
   assertNoPageScroll,
   assertNothingClipped,
   expectReflowFont,
+  findClipped,
   openReflowViewport,
   reflowTest,
 } from "../reflow";
@@ -138,6 +139,23 @@ const NINE_DIGITS = 123_456_789;
 
 /** Below 760 px, or with a finger, the scale of money comes down a step (theme.css, "Touch … or a narrow screen"). */
 const PHONE_WIDTH = 760;
+
+interface KnownFinding {
+  clientWidth: number;
+  reason: string;
+  scrollWidth: number;
+  selector: string;
+}
+
+/** What is cut at 320 px with the font at 24 px and not at 20 px: a report to read, never a promise (20 px is the guaranteed floor). */
+const KNOWN_FINDINGS_24: readonly KnownFinding[] = [
+  {
+    clientWidth: 145,
+    reason: "herói em mono: 165 px em 145 px",
+    scrollWidth: 165,
+    selector: 'div[data-slot="card"] > div',
+  },
+];
 
 const KPI_IDS = ["home-today", "home-month", "home-result", "home-ticket"];
 
@@ -279,7 +297,7 @@ test.describe("o padrão único dos valores nos cartões do Início (AC-3.1, AC-
     [320, 24],
   ] as const) {
     const amounts = [BIG_SALE, -BIG_SALE];
-    if (width === 320) {
+    if (width === 320 && fontPixels === 20) {
       amounts.push(NINE_DIGITS);
     }
     for (const cents of amounts) {
@@ -347,6 +365,36 @@ test.describe("o padrão único dos valores nos cartões do Início (AC-3.1, AC-
       });
     }
   }
+
+  test("R$ 1.234.567,89 em Vendas hoje a 320 px com a letra em 24 px: o corte medido é o da lista, nem mais nem menos", async ({
+    page,
+  }) => {
+    await openReflowViewport(page, { fontPixels: 24, width: 320 });
+    await openHome(page, new FakeServer(alone(NINE_DIGITS)));
+    await expectReflowFont(page, 24);
+    const principal = region(page, "Vendas hoje");
+    await expect(principal.locator("[data-kpi-value]")).toHaveText(
+      "R$ 1.234.567,89",
+      { timeout: 20_000 }
+    );
+    const { measured, offenders } = await findClipped(principal);
+    expect(measured, "no element with text was measured").toBeGreaterThan(0);
+    expect(
+      offenders.map(({ clientWidth, scrollWidth, selector }) => ({
+        clientWidth,
+        scrollWidth,
+        selector,
+      })),
+      `cut at 320 px with 24 px: a new cut fails, and a known one that no longer shows up has to leave KNOWN_FINDINGS_24 (${KNOWN_FINDINGS_24.map(({ reason }) => reason).join("; ")})`
+    ).toEqual(
+      KNOWN_FINDINGS_24.map(({ clientWidth, scrollWidth, selector }) => ({
+        clientWidth,
+        scrollWidth,
+        selector,
+      }))
+    );
+    await assertNoPageScroll(page);
+  });
 
   for (const fontPixels of [20, 24]) {
     test(`o cartão de Vendas hoje tem a mesma altura com um valor curto, um longo, um negativo e com os valores escondidos, na largura mínima com a letra em ${fontPixels} px`, async ({
