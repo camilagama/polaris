@@ -1,12 +1,21 @@
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  buildPlan,
   filtersOf,
+  isSelected,
   median,
   parseArgs,
+  parseSelection,
   planShards,
+  readSelection,
   renderPlan,
+  scopeOf,
   testDirOf,
   testsOfReport,
+  unlistedSelection,
   weighFiles,
 } from "./ci-shard-plan.mjs";
 
@@ -279,5 +288,161 @@ describe("parseArgs", () => {
       parseArgs(["--shards", "4", "--list", "pwa=x.json", "--workers", "pwa=4"])
     ).toMatchObject({ lists: ["pwa=x.json"], shards: 4, workers: { pwa: 4 } });
     expect(() => parseArgs(["--nada"])).toThrow("unknown argument");
+  });
+});
+
+describe("seleção do PR", () => {
+  const lists = {
+    "offline-poc": listReport(
+      {
+        "a.e2e.ts": { [D]: 1 },
+        "b.e2e.ts": { [D]: 1 },
+        "c.e2e.ts": { [D]: 1 },
+      },
+      { testDir: "e2e" }
+    ),
+    pwa: listReport(
+      { "a.e2e.ts": { [D]: 1 }, "d.e2e.ts": { [D]: 1 } },
+      { testDir: "e2e-pwa" }
+    ),
+  };
+  const times = durations([
+    ["offline-poc", "a.e2e.ts", D, 4000],
+    ["offline-poc", "b.e2e.ts", D, 3000],
+    ["offline-poc", "c.e2e.ts", D, 2000],
+    ["pwa", "a.e2e.ts", D, 1000],
+    ["pwa", "d.e2e.ts", D, 1000],
+  ]);
+  const plan = (selection, shards = 10) =>
+    buildPlan({
+      durations: times,
+      lists,
+      repoRoot: "/repo",
+      selection,
+      shards,
+    });
+  const narrow = (...specs) => parseSelection({ full: false, specs });
+  const planned = (result) =>
+    result.shards.flatMap((shard) =>
+      Object.entries(shard.files).flatMap(([suite, files]) =>
+        files.map((file) => `${suite}:${file}`)
+      )
+    );
+
+  it("plans only the files the selection names, by repository path, one shard per file at most", () => {
+    const result = plan(
+      narrow("apps/web/e2e/b.e2e.ts", "apps/web/e2e-pwa/a.e2e.ts")
+    );
+    expect(planned(result).sort()).toEqual([
+      "offline-poc:b.e2e.ts",
+      "pwa:a.e2e.ts",
+    ]);
+    expect(result.shards).toHaveLength(2);
+    expect(result.listedFiles).toBe(5);
+    expect(result.repoDirs).toEqual({
+      "offline-poc": "apps/web/e2e",
+      pwa: "apps/web/e2e-pwa",
+    });
+  });
+
+  it("does not take the file of the other suite with the same name", () => {
+    const result = plan(narrow("apps/web/e2e-pwa/a.e2e.ts"));
+    expect(planned(result)).toEqual(["pwa:a.e2e.ts"]);
+  });
+
+  it("plans every file, in all the shards, when the selection is full", () => {
+    const result = plan(
+      parseSelection({ full: true, motivo: "x", specs: [] }),
+      3
+    );
+    expect(planned(result)).toHaveLength(5);
+    expect(result.shards).toHaveLength(3);
+    expect(result.selection.full).toBe(true);
+  });
+
+  it("plans nothing, in one empty shard, when the selection names no listed file", () => {
+    const result = plan(narrow("apps/web/e2e-real/x.e2e.ts"));
+    expect(planned(result)).toEqual([]);
+    expect(result.shards).toHaveLength(1);
+    expect(result.unlisted).toEqual([]);
+  });
+
+  it("names a selected spec of a suite folder that no list has", () => {
+    const result = plan(narrow("apps/web/e2e/sumiu.e2e.ts"));
+    expect(result.unlisted).toEqual(["apps/web/e2e/sumiu.e2e.ts"]);
+    expect(
+      unlistedSelection([], {
+        repoDirs: { pwa: "apps/web/e2e-pwa" },
+        selection: narrow("apps/web/e2e/x.e2e.ts"),
+      })
+    ).toEqual([]);
+  });
+
+  it("falls back to the whole suite when the suite folder is outside the repository", () => {
+    const scope = scopeOf(narrow("apps/web/e2e/a.e2e.ts"), lists, "/outro");
+    expect(scope.selection.full).toBe(true);
+    expect(scope.selection.motivo).toContain("não está no repositório");
+  });
+
+  it("takes anything but a well-formed narrow selection as the whole suite", () => {
+    for (const value of [
+      undefined,
+      null,
+      {},
+      { full: false },
+      { full: false, specs: "a.e2e.ts" },
+      { full: false, specs: [1] },
+      { full: "false", specs: [] },
+    ]) {
+      expect(parseSelection(value).full).toBe(true);
+    }
+    expect(parseSelection({ full: true, motivo: "m", specs: ["x"] })).toEqual({
+      full: true,
+      motivo: "m",
+      specs: [],
+    });
+  });
+
+  it("reads the selection file and falls back to full when it is missing or broken", () => {
+    const dir = mkdtempSync(join(tmpdir(), "t1517-sel-"));
+    try {
+      const good = join(dir, "good.json");
+      writeFileSync(good, JSON.stringify({ full: false, specs: ["a"] }));
+      const broken = join(dir, "broken.json");
+      writeFileSync(broken, "{");
+      expect(readSelection(good).full).toBe(false);
+      expect(readSelection(broken).full).toBe(true);
+      expect(readSelection(join(dir, "none.json")).full).toBe(true);
+      expect(readSelection(undefined).full).toBe(true);
+    } finally {
+      rmSync(dir, { force: true, recursive: true });
+    }
+  });
+
+  it("isSelected takes everything a plan cannot place", () => {
+    const selection = narrow("apps/web/e2e/a.e2e.ts");
+    expect(isSelected({}, "pwa", "a.e2e.ts")).toBe(true);
+    expect(isSelected({ selection }, "pwa", "a.e2e.ts")).toBe(true);
+    expect(
+      isSelected(
+        { repoDirs: { pwa: "apps/web/e2e-pwa" }, selection },
+        "pwa",
+        "a.e2e.ts"
+      )
+    ).toBe(false);
+  });
+
+  it("says in the rendered plan how many files were selected", () => {
+    const text = renderPlan(
+      plan(narrow("apps/web/e2e/b.e2e.ts", "apps/web/e2e/c.e2e.ts"))
+    );
+    expect(text).toContain("Seleção: 2 de 5 arquivos");
+    expect(
+      renderPlan(plan(parseSelection({ full: true, motivo: "m" })))
+    ).toContain("Seleção: a suíte toda (m).");
+  });
+
+  it("reads --selection", () => {
+    expect(parseArgs(["--selection", "s.json"]).selection).toBe("s.json");
   });
 });
