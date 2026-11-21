@@ -1,11 +1,15 @@
 import { type ChangeEvent, useEffect, useRef, useState } from "react";
+import ChartColumnIcon from "lucide-react/dist/esm/icons/chart-column";
 import CheckIcon from "lucide-react/dist/esm/icons/check";
 import { ChartStates } from "./chart-states";
 import CloudOffIcon from "lucide-react/dist/esm/icons/cloud-off";
 import InfoIcon from "lucide-react/dist/esm/icons/info";
 import MinusIcon from "lucide-react/dist/esm/icons/minus";
 import PlusIcon from "lucide-react/dist/esm/icons/plus";
+import ShoppingBagIcon from "lucide-react/dist/esm/icons/shopping-bag";
 import TriangleAlertIcon from "lucide-react/dist/esm/icons/triangle-alert";
+import UsersIcon from "lucide-react/dist/esm/icons/users";
+import WalletIcon from "lucide-react/dist/esm/icons/wallet";
 import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
 import { AnimatedFigure } from "@/ui/animated-figure";
 import { Badge } from "@/ui/badge";
@@ -65,6 +69,13 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/ui/dropdown-menu";
+import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@/ui/empty";
 import { EmptyState } from "@/ui/empty-state";
 import { HelpTip } from "@/ui/help-tip";
 import { HideValuesButton, MoneyText } from "@/ui/hidden-values";
@@ -1382,7 +1393,11 @@ export function UiGallery() {
           </Section>
 
           <Section title="Estado vazio">
-            <EmptyState afterRead title="Nenhum cliente ainda.">
+            <EmptyState
+              afterRead
+              icon={UsersIcon}
+              title="Nenhum cliente ainda."
+            >
               <Button type="button">
                 <PlusIcon aria-hidden="true" data-icon="inline-start" />
                 Novo cliente
@@ -1390,6 +1405,13 @@ export function UiGallery() {
             </EmptyState>
             <EmptyState
               afterRead
+              icon={CheckIcon}
+              support="Tudo o que foi feito sem internet foi aceito."
+              title="Nenhuma pendência de envio."
+            />
+            <EmptyState
+              afterRead
+              icon={[ShoppingBagIcon, WalletIcon, ChartColumnIcon]}
               support="Escolha outro período ou registre vendas e despesas."
               title="Sem vendas nem despesas em 1 a 31 de outubro"
             >
@@ -1398,6 +1420,28 @@ export function UiGallery() {
                 Nova despesa
               </Button>
             </EmptyState>
+            <EmptyState
+              afterRead
+              support="Escolha outro período ou registre vendas e despesas."
+              title="Sem vendas nem despesas em 1 a 31 de outubro"
+            >
+              <Button type="button">Nova venda</Button>
+            </EmptyState>
+            <Card>
+              <CardContent>
+                <Empty>
+                  <EmptyMedia variant="icon">
+                    <CloudOffIcon aria-hidden="true" />
+                  </EmptyMedia>
+                  <EmptyHeader>
+                    <EmptyTitle>As peças, montadas à mão</EmptyTitle>
+                    <EmptyDescription>
+                      Quadro, frase e apoio, sem o cartão do EmptyState.
+                    </EmptyDescription>
+                  </EmptyHeader>
+                </Empty>
+              </CardContent>
+            </Card>
           </Section>
 
           <Section title="Dinheiro">

@@ -1,5 +1,6 @@
 import type { GoalReadModel } from "@polaris/contracts";
 import PlusIcon from "lucide-react/dist/esm/icons/plus";
+import TargetIcon from "lucide-react/dist/esm/icons/target";
 import {
   useCallback,
   useEffect,
@@ -101,6 +102,7 @@ function GoalList({
       {!state.isLoading && goals.length === 0 && state.error === null ? (
         <EmptyState
           afterRead
+          icon={TargetIcon}
           support="Acompanhe as vendas líquidas, o resultado estimado ou o número de vendas de um período."
           title="Nenhuma meta ainda"
         />

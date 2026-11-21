@@ -16,6 +16,7 @@ import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/ui/card";
 import { Checkbox } from "@/ui/checkbox";
+import { EmptyState } from "@/ui/empty-state";
 import { Field, FieldLabel } from "@/ui/field";
 import { MoneyText } from "@/ui/hidden-values";
 import { connectionControlProps } from "../app-shell/connection-required-notice";
@@ -244,15 +245,20 @@ function ListBody({
   }
   if (profiles.length === 0) {
     return (
-      <CardContent className="grid gap-0.5">
-        <p className="font-medium">
-          {hasAnyProfile ? "Nenhum perfil ativo" : "Nenhum perfil cadastrado"}
-        </p>
-        <p className="text-muted-foreground text-support">
-          {hasAnyProfile
-            ? "Os perfis arquivados aparecem com “Incluir arquivados”."
-            : "Adicione um perfil para registrar métodos e taxas de pagamento."}
-        </p>
+      <CardContent>
+        <EmptyState
+          afterRead
+          bare
+          icon={CreditCardIcon}
+          support={
+            hasAnyProfile
+              ? "Os perfis arquivados aparecem com “Incluir arquivados”."
+              : "Adicione um perfil para registrar métodos e taxas de pagamento."
+          }
+          title={
+            hasAnyProfile ? "Nenhum perfil ativo" : "Nenhum perfil cadastrado"
+          }
+        />
       </CardContent>
     );
   }
