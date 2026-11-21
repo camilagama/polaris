@@ -1,6 +1,6 @@
 import { readdirSync, readFileSync } from "node:fs";
-import { PgDialect } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
+import { PgDialect } from "drizzle-orm/pg-core";
 import { describe, expect, it } from "vitest";
 import {
   discountShareCents,
@@ -17,8 +17,8 @@ const SRC = new URL("./", import.meta.url);
 const RULE_MODULE = "return-given-back-sql.ts";
 const RULE_USERS = ["customer-repository.ts", "economics-repository.ts"];
 
-const SOURCE_FILE = /\.tsx?$/;
-const TEST_FILE = /\.test\.tsx?$/;
+const SOURCE_FILE = /\.(?:tsx?|mjs|js)$/;
+const THIS_TEST = "return-given-back-sql.test.ts";
 const PARTITIONED_WINDOW = /OVER \( ?PARTITION BY line\.sale_id/g;
 
 const RULE_MARKERS = [
@@ -37,7 +37,7 @@ function sourceFiles(directory: URL): string[] {
     if (entry.isDirectory()) {
       return sourceFiles(child);
     }
-    return SOURCE_FILE.test(entry.name) && !TEST_FILE.test(entry.name)
+    return SOURCE_FILE.test(entry.name)
       ? [child.pathname.slice(SRC.pathname.length)]
       : [];
   });
@@ -58,26 +58,35 @@ describe("the rule of what a return gives back", () => {
         readFileSync(new URL(name, SRC), "utf8"),
       ])
     );
+    delete files[THIS_TEST];
     expect(filesWithTheRule(files)).toEqual([RULE_MODULE]);
     for (const user of RULE_USERS) {
       expect(files[user]).toContain('from "./return-given-back-sql"');
     }
   });
 
-  it("catches a copy of any piece of the rule in another file", () => {
+  it("catches a copy of any piece of the rule in any other file, tests, scripts and subfolders included", () => {
     for (const piece of [
       "item.charged_unit_price * 100 AS unit_cents",
       "split.floor_cents + CASE WHEN split.rank <= split.leftover THEN 1 ELSE 0 END",
       "div(x + line.quantity, line.quantity::numeric * 2)",
       "ORDER BY mod(d.cents * line.value_cents, gross.cents) DESC",
     ]) {
+      const copies = [
+        "other-repository.ts",
+        "schema/nested.ts",
+        "other-repository.test.ts",
+        "scripts-copy.mjs",
+      ];
       expect(
         filesWithTheRule({
           [RULE_MODULE]: piece,
-          "other-repository.ts": `sql\`SELECT ${piece}\``,
+          ...Object.fromEntries(
+            copies.map((name) => [name, `sql\`SELECT ${piece}\``])
+          ),
           "clean.ts": "export const x = 1;",
         })
-      ).toEqual(["other-repository.ts", RULE_MODULE].sort());
+      ).toEqual([...copies, RULE_MODULE].sort());
     }
   });
 
@@ -93,6 +102,7 @@ describe("the rule of what a return gives back", () => {
       discountSplitColumns(sql`adjustment.discount_cents`, sql`line.sale_id`)
     );
     expect(many.match(PARTITIONED_WINDOW)).toHaveLength(2);
+    expect(many).toContain("OVER ( PARTITION BY line.sale_id ORDER BY mod(");
   });
 
   it("gives back price times units minus the share, rounded half up per item", () => {
