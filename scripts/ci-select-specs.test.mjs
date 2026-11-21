@@ -26,6 +26,8 @@ const SCRIPT = path.join(root, "scripts/ci-select-specs.mjs");
 const SPEC_FOLDERS = ["e2e", "e2e-pwa", "e2e-real"];
 const TYPESCRIPT_FILE = /\.tsx?$/;
 const UNIT_TEST_IMPORT = /from\s+["'][^"']*\.test["']/;
+const OFFLINE_OR_SERVER = /src\/(?:offline-poc|server)\//;
+const ADMIN_REFERENCE = /apps\/admin|\.\.\/admin\/|admin\/ui/;
 const PROSE_REFERENCE =
   /(?:\.\.\/)+(?:docs?|DESIGN|PRODUCT|CONTEXT|AGENTS)\b|["'`/]docs?\/|\.md["'`]/;
 const CONFIGS = [
@@ -528,6 +530,77 @@ describe("guarda do mapa de cobertura", () => {
       }
     }
     expect(offenders).toEqual([]);
+  });
+
+  it("só o spec do Admin lê arquivos do Admin", () => {
+    const readers = [];
+    const visit = (folder) => {
+      for (const entry of readdirSync(folder, { withFileTypes: true })) {
+        const full = path.join(folder, entry.name);
+        if (entry.isDirectory()) {
+          if (entry.name !== "node_modules") {
+            visit(full);
+          }
+        } else if (
+          TYPESCRIPT_FILE.test(entry.name) &&
+          ADMIN_REFERENCE.test(readFileSync(full, "utf8"))
+        ) {
+          readers.push(repoPath(full));
+        }
+      }
+    };
+    for (const folder of SPEC_FOLDERS) {
+      visit(path.join(web, folder));
+    }
+    expect(readers).toEqual([
+      "apps/web/e2e-pwa/admin-waiting-alignment.e2e.ts",
+    ]);
+  });
+
+  it("toda página que o app e o laboratório de telas importam está no fecho de alguma tela do mapa", () => {
+    const reached = closure(Object.values(SCREEN_ENTRY_POINTS).flat());
+    const mapped = new Set(Object.keys(DIRECTORY_SCREENS));
+    const orphans = [];
+    for (const host of [
+      "apps/web/src/app-shell/app.tsx",
+      "apps/web/src/offline-poc/screens-lab.tsx",
+    ]) {
+      for (const file of closure([host], {
+        stop: (candidate) => candidate !== path.join(root, host),
+      })) {
+        const relative = path.relative(path.join(web, "src"), file);
+        if (mapped.has(relative.split(path.sep)[0]) && !reached.has(file)) {
+          orphans.push(`${repoPath(file)} (importado por ${host})`);
+        }
+      }
+    }
+    expect(
+      orphans,
+      "página sem tela em SCREEN_ENTRY_POINTS: acrescente a entrada dela em e2e/coverage-map.mjs"
+    ).toEqual([]);
+  });
+
+  it("a peça do shell que a galeria serve só importa de diretórios que forçam a suíte toda", () => {
+    const piece = "apps/web/src/offline-poc/screens-lab-shell-pieces.tsx";
+    const inside = [
+      ...closure([piece], {
+        stop: (candidate) => candidate !== path.join(root, piece),
+      }),
+    ]
+      .map(repoPath)
+      .filter(
+        (file) => file !== piece && file.startsWith("apps/web/src/offline-poc/")
+      );
+    expect(inside).toEqual([]);
+  });
+
+  it("nenhuma entrada de FILE_SCREENS cobre o que os pares de offline-poc e do servidor decidem", () => {
+    const narrow = COVERAGE_MAP.filter((pair) => pair.screens);
+    for (const pair of narrow) {
+      for (const pattern of pair.code) {
+        expect(pattern).not.toMatch(OFFLINE_OR_SERVER);
+      }
+    }
   });
 
   it("nenhum arquivo das pastas de e2e lê texto de docs", () => {

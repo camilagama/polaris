@@ -22,7 +22,10 @@ export const SCREEN_ENTRY_POINTS = {
   "closed-store": ["apps/web/src/organization/closed-store-page.tsx"],
   customers: ["apps/web/src/customers/customers-page.tsx"],
   dashboard: ["apps/web/src/dashboard/dashboard-page.tsx"],
-  expenses: ["apps/web/src/expenses/expenses-page.tsx"],
+  expenses: [
+    "apps/web/src/expenses/expenses-loading.tsx",
+    "apps/web/src/expenses/expenses-page.tsx",
+  ],
   help: ["apps/web/src/help/help-page.tsx"],
   home: ["apps/web/src/home/home-page.tsx"],
   inventory: ["apps/web/src/inventory/inventory-page.tsx"],
@@ -951,7 +954,7 @@ export const COVERAGE_MAP = [
   },
   {
     // no file of the e2e folders reads prose
-    code: ["docs/**", "doc/**", "*.md", ".claude/skills/**/*.md"],
+    code: ["docs/**/*.md", "doc/**/*.md", "*.md", ".claude/skills/**/*.md"],
     specs: [],
   },
   ...FILE_SCREENS.map(({ files, screens }) => ({

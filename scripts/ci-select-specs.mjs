@@ -171,7 +171,7 @@ export function selectSpecs(
   const specs = [...selected].sort();
   const motivo =
     specs.length === 0
-      ? "só texto que nenhum e2e lê: nenhum spec precisa rodar"
+      ? "só texto, teste unitário ou spec apagado: nenhum spec precisa rodar"
       : `${specs.length} de ${specFiles.length} specs, pelo mapa de cobertura`;
   return { full: false, motivo, specs };
 }
