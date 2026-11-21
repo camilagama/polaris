@@ -543,11 +543,9 @@ export function KpiTile({
 
 /** A tile while its figures are read: the same rows with their heights, in `Skeleton`, so the tile that comes takes the same place (a Result tile with a cost warning adds its line). */
 export function KpiTileSkeleton({
-  className,
   hero = false,
   strip = false,
 }: {
-  className?: string;
   /** The skeleton of the hero: the box of its number is the `xl` one. */
   hero?: boolean;
   /** The skeleton of a column of a strip: from 1280 px it gives up its own card, as the tile does. */
@@ -559,8 +557,7 @@ export function KpiTileSkeleton({
       className={cn(
         "group/card flex flex-col overflow-hidden rounded-xl bg-card text-sm shadow-xs ring-1 ring-foreground/[0.06] [--card-spacing:--spacing(3)] dark:shadow-[inset_0_1px_0_var(--card-glow)] md:[--card-spacing:--spacing(4)]",
         TILE,
-        strip && KPI_STRIP_CELL,
-        className
+        strip && KPI_STRIP_CELL
       )}
       data-kpi-skeleton=""
     >

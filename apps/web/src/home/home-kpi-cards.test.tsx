@@ -151,13 +151,30 @@ describe("o herói e os três cartões do mês", () => {
     expect(order.every((at) => at > -1)).toBe(true);
   });
 
-  it("só Vendas hoje é o herói: a marca vem uma vez, no cartão de hoje", () => {
+  it("só Vendas hoje é o herói: a marca vem uma vez, antes do cartão de hoje", () => {
     const markup = render(figures());
     expect(markup.match(/data-kpi-hero=""/g)).toHaveLength(1);
-    const today = markup.indexOf('id="home-today"');
-    expect(markup.lastIndexOf("data-kpi-hero")).toBeLessThan(today);
-    expect(markup.lastIndexOf("data-kpi-hero")).toBeGreaterThan(
-      markup.lastIndexOf('data-kpi="sales"', today) - 40
+    expect(markup.indexOf("data-kpi-hero")).toBeLessThan(
+      markup.indexOf('id="home-today"')
+    );
+  });
+
+  it("sem os números de hoje, sem conexão e carregando, o herói tem a caixa do xl e os do mês a do lg", () => {
+    const stale = render(figures(), false);
+    const offline = renderToStaticMarkup(<NoFiguresCards today={TODAY} />);
+    const loading = renderToStaticMarkup(<KpiCardsSkeleton />);
+    for (const markup of [stale, offline]) {
+      expect(markup.match(/data-kpi-hero=""/g)).toHaveLength(1);
+      expect(card(markup, "home-today")).toContain(
+        "h-(--text-value-xl--line-height)"
+      );
+    }
+    expect(card(offline, "home-month")).toContain(
+      "h-(--text-value-lg--line-height)"
+    );
+    expect(loading).toContain("h-(--text-value-xl--line-height)");
+    expect(loading.match(/h-\(--text-value-lg--line-height\)/g)).toHaveLength(
+      3
     );
   });
 

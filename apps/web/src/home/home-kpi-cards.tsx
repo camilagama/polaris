@@ -533,7 +533,7 @@ function monthBody(
     );
   }
   if (month.kind === "error") {
-    return <div className="self-start">{month.error}</div>;
+    return <div>{month.error}</div>;
   }
   if (model === null) {
     return null;
