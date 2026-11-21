@@ -827,6 +827,110 @@ async function run() {
       listExpenses(tx, identity, { from: "2001-01-01", to: "2001-01-02" })
     );
     assert.equal(empty.total, "0.00");
+    const splitCategory = await as(tenantA, (tx, identity) =>
+      createExpenseCategory(tx, identity, { group: "other", name: "Divisão" })
+    );
+    const splitCategories = [probe.id, limitCategory.id, splitCategory.id];
+    const splitAmounts = [
+      "10.10",
+      "20.20",
+      "30.30",
+      "0.07",
+      "0.07",
+      "0.07",
+      "999999999999999999.99",
+    ];
+    const splitIds: string[] = [];
+    for (const [index, amount] of splitAmounts.entries()) {
+      // biome-ignore lint/performance/noAwaitInLoops: created in order
+      const created = await as(tenantA, (tx, identity) =>
+        createExpense(tx, identity, {
+          amount,
+          categoryId: splitCategories[index % 3] as string,
+          competenceOn: `2003-05-${String(index + 1).padStart(2, "0")}`,
+          description: `divisão ${index}`,
+        })
+      );
+      splitIds.push(created.id);
+    }
+    const splitCents = (lines: { total: string }[]) =>
+      lines.reduce(
+        (sum, line) => sum + BigInt(line.total.replace(".", "")),
+        0n
+      );
+    const splitFilter = { from: "2003-05-01", to: "2003-05-31" } as const;
+    let splitCursor: string | null = null;
+    let splitPages = 0;
+    do {
+      // biome-ignore lint/performance/noAwaitInLoops: pages are read in order
+      const page = await as(tenantA, (tx, identity) =>
+        listExpenses(tx, identity, {
+          ...splitFilter,
+          cursor: splitCursor,
+          limit: 3,
+        })
+      );
+      assert.equal(page.count, 7);
+      assert.equal(page.total, "1000000000000000060.80");
+      assert.equal(
+        splitCents(page.totalsByCategory),
+        BigInt(page.total.replace(".", "")),
+        "the lines add up to the total of the whole filter on every page, to the centavo"
+      );
+      assert.equal(
+        page.totalsByCategory.reduce((sum, line) => sum + line.count, 0),
+        page.count
+      );
+      assert.deepEqual(
+        Object.fromEntries(
+          page.totalsByCategory.map((line) => [line.categoryId, line.total])
+        ),
+        {
+          [probe.id]: "1000000000000000010.16",
+          [limitCategory.id]: "20.27",
+          [splitCategory.id]: "30.37",
+        },
+        "each category has the sum of its own expenses in the filter, whatever the page"
+      );
+      splitCursor = page.nextCursor;
+      splitPages += 1;
+    } while (splitCursor !== null && splitPages < 10);
+    assert.equal(splitPages, 3);
+    const noSplitOutside = await as(tenantA, (tx, identity) =>
+      listExpenses(tx, identity, { from: "2001-01-01", to: "2001-01-02" })
+    );
+    assert.deepEqual(
+      noSplitOutside.totalsByCategory,
+      [],
+      "a period with no expense has no line and the total 0.00"
+    );
+    await as(tenantA, (tx, identity) =>
+      voidExpense(tx, identity, {
+        expectedVersion: 1,
+        id: splitIds[6] as string,
+      })
+    );
+    const afterSplitVoid = await as(tenantA, (tx, identity) =>
+      listExpenses(tx, identity, splitFilter)
+    );
+    assert.equal(afterSplitVoid.total, "60.81");
+    assert.equal(
+      splitCents(afterSplitVoid.totalsByCategory),
+      6081n,
+      "a voided expense leaves the lines as it leaves the total"
+    );
+    const onlyOneCategory = await as(tenantA, (tx, identity) =>
+      listExpenses(tx, identity, {
+        ...splitFilter,
+        categoryId: splitCategory.id,
+      })
+    );
+    assert.deepEqual(onlyOneCategory.totalsByCategory, [
+      { categoryId: splitCategory.id, count: 2, total: "30.37" },
+    ]);
+    tests.push(
+      "the total per category adds up to the total of the whole filter to the centavo on every page (3 pages), leaves out the voided, is empty for an empty period and narrows to the category chosen"
+    );
     tests.push(
       "an impossible date or cursor is refused as invalid input (not a database error), the total of two maximum amounts does not overflow, and an empty period totals 0.00"
     );
