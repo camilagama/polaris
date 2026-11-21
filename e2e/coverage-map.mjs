@@ -410,7 +410,6 @@ export const FILE_SCREENS = [
       "apps/web/src/home/period-control.ts",
       "apps/web/src/home/use-first-steps-memory.ts",
       "apps/web/src/home/use-home-period.ts",
-      "apps/web/src/home/use-home-plan-limit.ts",
       "apps/web/src/home/use-home.ts",
     ],
     screens: ["home"],
@@ -851,6 +850,7 @@ export const SPEC_SCREENS = {
     "inventory",
   ],
   "apps/web/e2e/near-limit-notice.e2e.ts": ["products", "settings"],
+  "apps/web/e2e/plan-card.e2e.ts": "all",
   "apps/web/e2e/offline-attention.e2e.ts": ["settings", "attention"],
   "apps/web/e2e/offline-csp.e2e.ts": "lab",
   "apps/web/e2e/offline-devices.e2e.ts": [

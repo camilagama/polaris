@@ -6,6 +6,7 @@ import CloudOffIcon from "lucide-react/dist/esm/icons/cloud-off";
 import InfoIcon from "lucide-react/dist/esm/icons/info";
 import MinusIcon from "lucide-react/dist/esm/icons/minus";
 import PlusIcon from "lucide-react/dist/esm/icons/plus";
+import SparklesIcon from "lucide-react/dist/esm/icons/sparkles";
 import ShoppingBagIcon from "lucide-react/dist/esm/icons/shopping-bag";
 import TriangleAlertIcon from "lucide-react/dist/esm/icons/triangle-alert";
 import UsersIcon from "lucide-react/dist/esm/icons/users";
@@ -101,6 +102,7 @@ import {
 } from "@/ui/input-group";
 import { Label } from "@/ui/label";
 import { Logo } from "@/ui/logo";
+import { PlanCard } from "@/ui/plan-card";
 import {
   Popover,
   PopoverContent,
@@ -1311,6 +1313,53 @@ export function UiGallery() {
                   </SidebarMenu>
                 </SidebarGroupContent>
               </SidebarGroup>
+            </div>
+            <div className="flex flex-wrap items-start gap-6">
+              {(
+                [
+                  { art: true, label: "Aberto", used: 12 },
+                  { art: false, label: "Compacto (celular)", used: 12 },
+                  { art: true, label: "No limite", used: 50 },
+                ] as const
+              ).map(({ art, label, used }) => (
+                <figure className="m-0 grid w-60 gap-2" key={label}>
+                  <figcaption className="text-muted-foreground text-xs">
+                    {label}
+                  </figcaption>
+                  <div className="rounded-lg bg-sidebar p-2 text-sidebar-foreground">
+                    <PlanCard
+                      art={art}
+                      buttonLabel="Conhecer o Pro"
+                      href="#assinatura"
+                      pitch="Catálogo público no ar, vendas sem internet e mais variantes, imagens e metas."
+                      usage={{
+                        share: used / 50,
+                        text: `Você usa ${used} de 50 variantes no plano Free.`,
+                      }}
+                    />
+                  </div>
+                </figure>
+              ))}
+              <figure className="m-0 grid w-12 gap-2">
+                <figcaption className="text-muted-foreground text-xs">
+                  Recolhido
+                </figcaption>
+                <div
+                  className="group rounded-lg bg-sidebar p-1 text-sidebar-foreground"
+                  data-collapsible="icon"
+                >
+                  <SidebarMenu>
+                    <SidebarMenuItem>
+                      <SidebarMenuButton
+                        aria-label="Plano Free, 12 de 50 variantes, conhecer o Pro"
+                        href="#assinatura"
+                      >
+                        <SparklesIcon aria-hidden />
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  </SidebarMenu>
+                </div>
+              </figure>
             </div>
           </Section>
 
