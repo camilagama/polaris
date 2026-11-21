@@ -2345,6 +2345,12 @@ interface ConfirmedSaleItemView {
   label: string;
 }
 
+/** The figure beside the total at the top of the receipt, from what the sale already carries. */
+interface ConfirmedSaleSummary {
+  /** Number of lines of the sale, the same figure the history list shows. */
+  itemCount: number;
+}
+
 export interface ConfirmedSaleView {
   headline: string;
   items: ConfirmedSaleItemView[];
@@ -2353,7 +2359,14 @@ export interface ConfirmedSaleView {
   replayed: boolean;
   saleDetails: ConfirmedSaleDetail[];
   saleId: string;
+  summary: ConfirmedSaleSummary;
   totals: SummaryRow[];
+}
+
+function confirmedSummary(sale: ConfirmedSaleReadModel): ConfirmedSaleSummary {
+  return {
+    itemCount: sale.items.length,
+  };
 }
 
 function confirmedItems(sale: ConfirmedSaleReadModel): ConfirmedSaleItemView[] {
@@ -2527,6 +2540,7 @@ export function confirmedSaleView(
       ...saleDateDetails(sale.sale),
     ],
     saleId: sale.sale.id,
+    summary: confirmedSummary(sale),
     totals: confirmedTotals(sale),
   };
 }

@@ -31,6 +31,7 @@ const JOB_SETUP_STEP = "Set up job";
 const IMAGE_PULL_STEP = "Initialize containers";
 const REQUEST_BATCH = 5;
 const BROWSER_GATE = "Offline browser gate";
+const DATABASE_GATES = "PostgreSQL 18 gates";
 const SHARD_SUFFIX = /^(.*?)\s*\(shard (\d+\/\d+)\)\s*$/;
 const RUN_ID = /^\d+$/;
 const TIMINGS_ARTIFACT = /^playwright-timings-/;
@@ -111,6 +112,32 @@ export function wallOf(run, jobs) {
   return Math.max(...ends) - seconds(run.run_started_at ?? run.created_at);
 }
 
+/**
+ * The wall of the PostgreSQL gates of a run: from the start of the first job to the end of the last. The gates run in
+ * jobs named `PostgreSQL 18 gates (<part>)`, and a job named `PostgreSQL 18 gates` beside them only collects their
+ * results, so when parts exist the wall is theirs alone; a run from before the split has the one job. Only
+ * jobs that ended in success or failure count; null when none did.
+ */
+export function databaseWallOf(jobs) {
+  const ran = jobs.filter(
+    (job) =>
+      (job.conclusion === "success" || job.conclusion === "failure") &&
+      job.started_at &&
+      job.completed_at &&
+      (job.name === DATABASE_GATES ||
+        job.name.startsWith(`${DATABASE_GATES} (`))
+  );
+  const parts = ran.filter((job) => job.name !== DATABASE_GATES);
+  const gates = parts.length > 0 ? parts : ran;
+  if (gates.length === 0) {
+    return null;
+  }
+  return (
+    Math.max(...gates.map((job) => seconds(job.completed_at))) -
+    Math.min(...gates.map((job) => seconds(job.started_at)))
+  );
+}
+
 const stats = (values) => ({
   n: values.length,
   p50: percentile(values, 50),
@@ -122,8 +149,13 @@ export function summarize(entries) {
   const groups = new Map();
   const walls = [];
   const gatedWalls = [];
+  const databaseWalls = [];
   const minutes = [];
   for (const { run, jobs } of entries) {
+    const databaseWall = databaseWallOf(jobs);
+    if (databaseWall !== null) {
+      databaseWalls.push(databaseWall);
+    }
     const wall = wallOf(run, jobs);
     if (wall !== null) {
       walls.push(wall);
@@ -180,6 +212,7 @@ export function summarize(entries) {
     }))
     .sort((a, b) => a.name.localeCompare(b.name, "en"));
   return {
+    databaseWall: stats(databaseWalls),
     jobs,
     minutesPerRun: stats(minutes),
     runIds: entries.map((entry) => entry.run.id),
@@ -204,6 +237,11 @@ export function renderMarkdown(byEvent) {
     lines.push(
       `Parede (início → fim do último job): p50 **${minutesText(data.wall.p50)} min**, p95 ${minutesText(data.wall.p95)} min.`,
       `Só as execuções em que o gate de navegador rodou (${gated.n} de ${data.runs}): p50 **${minutesText(gated.p50)} min**, p95 ${minutesText(gated.p95)} min.`,
+      ...(data.databaseWall.n > 0
+        ? [
+            `Parede dos gates de PostgreSQL (início do primeiro job → fim do último, sem a espera por runner; ${data.databaseWall.n} de ${data.runs}): p50 **${minutesText(data.databaseWall.p50)} min**, p95 ${minutesText(data.databaseWall.p95)} min.`,
+          ]
+        : []),
       `Minutos faturados por execução: p50 ${minutesText(data.minutesPerRun.p50 * 60)}, p95 ${minutesText(data.minutesPerRun.p95 * 60)}.`,
       "",
       "| Job | n | Espera p50 (s) | Espera p95 (s) | Preparação p50 (min) | Preparação p95 (min) | Execução p50 (min) | Execução p95 (min) | Total p50 (min) | Minutos somados |",

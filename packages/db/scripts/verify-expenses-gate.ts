@@ -892,6 +892,13 @@ async function run() {
         },
         "each category has the sum of its own expenses in the filter, whatever the page"
       );
+      assert.equal(
+        page.totalsByCategory.find(
+          (line) => line.categoryId === splitCategory.id
+        )?.categoryName,
+        "Divisão",
+        "the line carries the name of its category, from the same statement"
+      );
       splitCursor = page.nextCursor;
       splitPages += 1;
     } while (splitCursor !== null && splitPages < 10);
@@ -926,10 +933,34 @@ async function run() {
       })
     );
     assert.deepEqual(onlyOneCategory.totalsByCategory, [
-      { categoryId: splitCategory.id, count: 2, total: "30.37" },
+      {
+        categoryArchived: false,
+        categoryId: splitCategory.id,
+        categoryName: splitCategory.name,
+        count: 2,
+        total: "30.37",
+      },
     ]);
+    await as(tenantA, (tx, identity) =>
+      archiveExpenseCategory(tx, identity, {
+        expectedVersion: 1,
+        id: splitCategory.id,
+        requestId: randomUUID(),
+      })
+    );
+    const archivedSplit = await as(tenantA, (tx, identity) =>
+      listExpenses(tx, identity, {
+        ...splitFilter,
+        categoryId: splitCategory.id,
+      })
+    );
+    assert.equal(
+      archivedSplit.totalsByCategory[0]?.categoryArchived,
+      true,
+      "an archived category is flagged on its line, and still has the name"
+    );
     tests.push(
-      "the total per category adds up to the total of the whole filter to the centavo on every page (3 pages), leaves out the voided, is empty for an empty period and narrows to the category chosen"
+      "the total per category adds up to the total of the whole filter to the centavo on every page (3 pages), each line carries the name of its category from the same statement and flags an archived category as such, leaves out the voided, is empty for an empty period and narrows to the category chosen"
     );
     tests.push(
       "an impossible date or cursor is refused as invalid input (not a database error), the total of two maximum amounts does not overflow, and an empty period totals 0.00"

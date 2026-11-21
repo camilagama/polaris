@@ -146,7 +146,7 @@ function GoalProgress({
             de <MoneyText text={targetText} />
           </span>
         </span>
-        <ProgressValue className="font-medium text-foreground">
+        <ProgressValue className="font-medium font-mono text-foreground">
           {() => percentText}
         </ProgressValue>
       </Progress>

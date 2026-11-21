@@ -60,6 +60,7 @@ import {
   submissionView,
   VALUES_UNCHANGED_NOTE,
 } from "./sale-customer-link-model";
+import { CurrentCustomerSummary } from "./customer-summary";
 import { SelectField } from "./sale-fields";
 
 function sendCommand(command: LinkCommand): Promise<SaleCustomerLinkChange> {
@@ -666,6 +667,10 @@ export function SaleCustomerPanel({
             ) : null}
           </dl>
         )}
+        <CurrentCustomerSummary
+          customerId={linkedCustomerId}
+          load={state.currentCustomer}
+        />
         {ready ? (
           <CustomerActions
             actions={actions}

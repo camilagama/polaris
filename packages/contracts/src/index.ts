@@ -280,11 +280,30 @@ const customer = z.object({
   createdAt: z.string().datetime(),
   email: z.string().nullable(),
   id: z.string().uuid(),
+  // The commercial day (store calendar) of the customer's latest purchase, or null with none. Only `customer.list` and
+  // `customer.get` answer it, and the device's copy has none: absent is "not known", never "no purchases".
+  lastPurchaseOn: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .nullable()
+    .optional(),
   name: z.string().min(1),
   notes: z.string().nullable(),
   organizationId: z.string().min(1),
   phone: z.string().nullable(),
   status: z.enum(["active", "archived"]),
+  // Only `customer.get` answers it: what the customer bought (confirmed sales not cancelled and not returned in full).
+  summary: z
+    .object({
+      lastPurchaseOn: z
+        .string()
+        .regex(/^\d{4}-\d{2}-\d{2}$/)
+        .nullable(),
+      purchaseCount: z.number().int().nonnegative(),
+      // Net sales of those purchases as the report counts them: the total due of each minus what its returns gave back.
+      totalSpent: z.string(),
+    })
+    .optional(),
   updatedAt: z.string().datetime(),
   version: z.number().int().positive(),
 });
@@ -353,7 +372,11 @@ const expense = z.object({
 export type ExpenseReadModel = z.infer<typeof expense>;
 
 const expenseCategoryTotal = z.object({
+  /** Whether the category is archived; sent with the name, absent from an older server. */
+  categoryArchived: z.boolean().optional(),
   categoryId: z.string().uuid(),
+  /** The name of the category, so a category this screen has not read yet is not written as unknown. */
+  categoryName: z.string().min(1).optional(),
   count: z.number().int().positive(),
   /** Exact BRL decimal with two places, as text. */
   total: z.string(),

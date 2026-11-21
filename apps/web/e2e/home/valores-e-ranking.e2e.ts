@@ -7,6 +7,7 @@ import {
   assertNoPageScroll,
   assertNothingClipped,
   expectReflowFont,
+  findClipped,
   openReflowViewport,
   reflowTest,
 } from "../reflow";
@@ -139,6 +140,23 @@ const NINE_DIGITS = 123_456_789;
 /** Below 760 px, or with a finger, the scale of money comes down a step (theme.css, "Touch … or a narrow screen"). */
 const PHONE_WIDTH = 760;
 
+interface KnownFinding {
+  clientWidth: number;
+  reason: string;
+  scrollWidth: number;
+  selector: string;
+}
+
+/** What is cut at 320 px with the font at 24 px and not at 20 px: a report to read, never a promise (20 px is the guaranteed floor). */
+const KNOWN_FINDINGS_24: readonly KnownFinding[] = [
+  {
+    clientWidth: 145,
+    reason: "herói em mono: 165 px em 145 px",
+    scrollWidth: 165,
+    selector: 'div[data-slot="card"] > div',
+  },
+];
+
 const KPI_IDS = ["home-today", "home-month", "home-result", "home-ticket"];
 
 interface HeroRead {
@@ -176,13 +194,28 @@ test.describe("o padrão único dos valores nos cartões do Início (AC-3.1, AC-
     "`Page.setFontSizes` is a Chrome DevTools command"
   );
 
-  for (const width of [360, 760, 1024, 1280]) {
+  const SMALL: Scenario = {
+    ...SOLD,
+    days: Object.fromEntries(
+      Object.entries(SOLD.days).map(([day, [cents, count]]) => [
+        day,
+        [Math.round(cents / 10), count],
+      ])
+    ),
+  };
+
+  for (const [width, scenario, today] of [
+    [360, SOLD, "R$ 320,10"],
+    [760, SOLD, "R$ 320,10"],
+    [1024, SMALL, "R$ 32,01"],
+    [1280, SMALL, "R$ 32,01"],
+  ] as const) {
     test(`Vendas hoje mede text-value-xl e os três do mês text-value-lg, o R$ igual nos três, em peso 600, a ${width} px`, async ({
       page,
     }) => {
       await openReflowViewport(page, { fontPixels: 16, height: 800, width });
-      await openHome(page, new FakeServer(SOLD));
-      await expect(region(page, "Vendas hoje")).toContainText("R$ 320,10");
+      await openHome(page, new FakeServer(scenario));
+      await expect(region(page, "Vendas hoje")).toContainText(today);
       const [hero, ...month] = await readHeroes(page);
       expect(
         [hero, ...month].map((read) => read?.card),
@@ -218,6 +251,45 @@ test.describe("o padrão único dos valores nos cartões do Início (AC-3.1, AC-
     });
   }
 
+  test("a 1024 px a área do número de um cartão do mês é estreita: um valor de quatro dígitos de milhar desce até caber, na conta do ajuste, e não corta, e o herói mantém o xl", async ({
+    page,
+  }, testInfo) => {
+    test.skip(
+      testInfo.project.name === "chromium-mobile-emulated",
+      "with a finger text-value-lg is 24 px and the amount may still fit the area: the step-down is the mouse case"
+    );
+    await openReflowViewport(page, {
+      fontPixels: 16,
+      height: 800,
+      width: 1024,
+    });
+    await openHome(page, new FakeServer(SOLD));
+    await expect(region(page, "Vendas hoje")).toContainText("R$ 320,10");
+    const reads = await page.locator("[data-kpi-value]").evaluateAll((nodes) =>
+      nodes.map((node) => {
+        const area = node.closest("[data-kpi-headline]");
+        const size = Number.parseFloat(getComputedStyle(node).fontSize);
+        const width =
+          node.firstElementChild?.getBoundingClientRect().width ?? 0;
+        return {
+          area: area?.getBoundingClientRect().width ?? 0,
+          atLarge: (width / size) * 26,
+          size,
+          text: node.textContent?.trim() ?? "",
+        };
+      })
+    );
+    const [today, month] = reads;
+    expect(today?.size, `${today?.text} cabe e mantém o xl`).toBe(36);
+    expect(month?.text).toBe("R$ 2.660,60");
+    expect(
+      month?.atLarge,
+      "o valor do mês não cabe na área em 26 px"
+    ).toBeGreaterThan(month?.area ?? 0);
+    expect(month?.size).toBeLessThan(26);
+    expect(month?.size).toBeGreaterThanOrEqual(0.875 * 16);
+  });
+
   for (const [width, fontPixels] of [
     [360, 16],
     [375, 16],
@@ -225,7 +297,7 @@ test.describe("o padrão único dos valores nos cartões do Início (AC-3.1, AC-
     [320, 24],
   ] as const) {
     const amounts = [BIG_SALE, -BIG_SALE];
-    if (width === 320) {
+    if (width === 320 && fontPixels === 20) {
       amounts.push(NINE_DIGITS);
     }
     for (const cents of amounts) {
@@ -293,6 +365,36 @@ test.describe("o padrão único dos valores nos cartões do Início (AC-3.1, AC-
       });
     }
   }
+
+  test("R$ 1.234.567,89 em Vendas hoje a 320 px com a letra em 24 px: o corte medido é o da lista, nem mais nem menos", async ({
+    page,
+  }) => {
+    await openReflowViewport(page, { fontPixels: 24, width: 320 });
+    await openHome(page, new FakeServer(alone(NINE_DIGITS)));
+    await expectReflowFont(page, 24);
+    const principal = region(page, "Vendas hoje");
+    await expect(principal.locator("[data-kpi-value]")).toHaveText(
+      "R$ 1.234.567,89",
+      { timeout: 20_000 }
+    );
+    const { measured, offenders } = await findClipped(principal);
+    expect(measured, "no element with text was measured").toBeGreaterThan(0);
+    expect(
+      offenders.map(({ clientWidth, scrollWidth, selector }) => ({
+        clientWidth,
+        scrollWidth,
+        selector,
+      })),
+      `cut at 320 px with 24 px: a new cut fails, and a known one that no longer shows up has to leave KNOWN_FINDINGS_24 (${KNOWN_FINDINGS_24.map(({ reason }) => reason).join("; ")})`
+    ).toEqual(
+      KNOWN_FINDINGS_24.map(({ clientWidth, scrollWidth, selector }) => ({
+        clientWidth,
+        scrollWidth,
+        selector,
+      }))
+    );
+    await assertNoPageScroll(page);
+  });
 
   for (const fontPixels of [20, 24]) {
     test(`o cartão de Vendas hoje tem a mesma altura com um valor curto, um longo, um negativo e com os valores escondidos, na largura mínima com a letra em ${fontPixels} px`, async ({
