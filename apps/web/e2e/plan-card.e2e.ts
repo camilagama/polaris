@@ -70,6 +70,21 @@ async function watchFoot(page: Page) {
         trial: document.querySelector("[data-menu-trial]") !== null,
       });
     };
+    Reflect.set(window, "polarisCls", 0);
+    new PerformanceObserver((list) => {
+      for (const entry of list.getEntries() as unknown as {
+        hadRecentInput: boolean;
+        value: number;
+      }[]) {
+        if (!entry.hadRecentInput) {
+          Reflect.set(
+            window,
+            "polarisCls",
+            (Reflect.get(window, "polarisCls") as number) + entry.value
+          );
+        }
+      }
+    }).observe({ buffered: true, type: "layout-shift" });
     new MutationObserver(seen).observe(document, {
       childList: true,
       subtree: true,
@@ -415,8 +430,11 @@ test.describe("o cartão do plano Free", () => {
     const after = await tops(page);
     expect(after.steps).toBeCloseTo(first.top, 0);
     expect(after.others).toEqual(before.others);
+    await page.waitForLoadState("networkidle");
+    const cls = await page.evaluate(() => Reflect.get(window, "polarisCls"));
+    expect(cls).toBeLessThanOrEqual(0.01);
     console.log(
-      `t1565 1280: Primeiros passos no 1º quadro ${first.top} px, depois ${after.steps} px`
+      `t1565 1280: CLS ${cls}; Primeiros passos no 1º quadro ${first.top} px, depois ${after.steps} px`
     );
   });
 

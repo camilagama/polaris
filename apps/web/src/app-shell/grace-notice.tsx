@@ -1,5 +1,11 @@
 import TriangleAlertIcon from "lucide-react/dist/esm/icons/triangle-alert";
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
 import { buttonVariants } from "@/ui/button";
 import { useConnectionOnline } from "../lib/browser-connection";
@@ -63,20 +69,31 @@ export function usePlanNoticeFacts(
   );
   const remembered = JSON.parse(text) as RememberedNotice | null;
   const old = planNoticeIsOld(remembered, now.getTime());
-  // the store whose first read ended (an answer, a failure or the ceiling): the wait never comes back for it
-  const [ended, setEnded] = useState<string | null>(null);
+  // the stores whose wait ended (an answer, a failure, the ceiling or a dropped connection): it never comes back for them
+  const [ended, setEnded] = useState<ReadonlySet<string>>(new Set());
+  const endWait = useCallback(
+    (id: string) =>
+      setEnded((all) => (all.has(id) ? all : new Set(all).add(id))),
+    []
+  );
   const pending =
     enabled &&
     online &&
     readsItself &&
     remembered === null &&
-    ended !== organizationId;
+    !ended.has(organizationId);
   useEffect(() => {
     const ceiling = pending
-      ? window.setTimeout(() => setEnded(organizationId), PLAN_READ_WAIT_MS)
+      ? window.setTimeout(() => endWait(organizationId), PLAN_READ_WAIT_MS)
       : undefined;
     return () => window.clearTimeout(ceiling);
-  }, [organizationId, pending]);
+  }, [endWait, organizationId, pending]);
+  // a connection that drops ends the wait for good: it does not come back with the connection
+  useEffect(() => {
+    if (!online && organizationId !== "") {
+      endWait(organizationId);
+    }
+  }, [endWait, online, organizationId]);
   // the stores with a read on its way: the answer of one frees only that one
   const reading = useRef<PlanReadsInFlight>(noPlanReadsInFlight);
   // the wait after the reads that failed in a row, of the store it was counted for (never carried to another)
@@ -94,7 +111,7 @@ export function usePlanNoticeFacts(
     planRead
       .get(organizationId)
       .then((plan) => {
-        setEnded(organizationId);
+        endWait(organizationId);
         failed.current = planReadSucceeded(failed.current, organizationId);
         // an answer after the sign-out would write back what the sign-out dropped
         if (!(isSessionOver() || isSigningOut())) {
@@ -102,7 +119,7 @@ export function usePlanNoticeFacts(
         }
       })
       .catch(() => {
-        setEnded(organizationId);
+        endWait(organizationId);
         failed.current = planReadFailed(
           failed.current,
           organizationId,
@@ -113,7 +130,7 @@ export function usePlanNoticeFacts(
         reading.current = planReadEnded(reading.current, organizationId);
       });
     // `now` too: an old copy is read again on the next minute, and a failed read once its wait is over
-  }, [enabled, now, old, online, organizationId, readsItself]);
+  }, [enabled, endWait, now, old, online, organizationId, readsItself]);
   return { facts: enabled ? remembered : null, pending };
 }
 

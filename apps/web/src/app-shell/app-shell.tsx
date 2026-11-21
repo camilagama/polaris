@@ -242,6 +242,9 @@ function AppSidebar({
   const items = menuItemsOf({ attention: rejected > 0, expenses }).filter(
     (item) => !(isMobile && inBottomBar(item.id))
   );
+  // an empty foot is not drawn: its padding would grow with the lines that enter, and the box itself shifts then
+  const hasFoot =
+    isMobile || firstSteps !== null || chargeDay !== null || planCard !== null;
   return (
     <Sidebar mobileTitle="Mais" side={isMobile ? "right" : "left"}>
       {isMobile ? (
@@ -281,7 +284,7 @@ function AppSidebar({
           ))}
         </nav>
       </SidebarContent>
-      <SidebarFooter>
+      <SidebarFooter className={hasFoot ? undefined : "hidden"}>
         {/* 12 px around and between, as in the design: the footer itself has 8 */}
         <div className="grid gap-3 p-1 group-data-[collapsible=icon]:p-0">
           <MenuProgress chargeDay={chargeDay} firstSteps={firstSteps} />

@@ -223,6 +223,31 @@ describe("o pé do menu espera só a leitura do plano que está pendente", () =>
     expect(view.result.current.pending).toBe(false);
   });
 
+  it("queda de conexão encerra a espera de vez: a volta da conexão não a religa", async () => {
+    readPlan.mockImplementation(() => new Promise(() => undefined));
+    const view = pending();
+    await flush();
+    store.online = false;
+    view.rerender();
+    await flush();
+    store.online = true;
+    view.rerender();
+    expect(view.result.current.pending).toBe(false);
+  });
+
+  it("A → B → A: a espera que terminou numa loja não volta ao voltar para ela", async () => {
+    readPlan.mockRejectedValue(new Error("rede"));
+    const view = renderHook(() => usePlanNoticeFacts(store.id, true, true));
+    await flush();
+    expect(view.result.current.pending).toBe(false);
+    store.id = "org-b";
+    view.rerender();
+    await flush();
+    store.id = "org-a";
+    view.rerender();
+    expect(view.result.current.pending).toBe(false);
+  });
+
   it("sem conexão, sem cobrança, na Assinatura ou com leitura guardada na aba não há espera", () => {
     store.online = false;
     expect(pending().result.current.pending).toBe(false);
