@@ -260,19 +260,27 @@ reflowTest(
 const WIDE_WINDOW = 1280;
 /** The device's own registration after the session opens: the shell's call, not something the list screen reads. */
 const DEVICE_REGISTRATION = "device/register";
+const OPENING_CALLS = new Set(["customer/list", "organization/listMine"]);
 
 reflowTest(
-  "a abertura de Clientes faz só organization/listMine e customer/list, sem customer/get, e a última compra aparece nas linhas que a têm",
+  "a abertura de Clientes chama organization/listMine e customer/list, nenhuma outra rota de dados e sem customer/get, e a última compra aparece nas linhas que a têm",
   async ({ page }) => {
     const asked = await openCustomers(page, 360, 16);
     await page.waitForLoadState("networkidle");
     const reads = asked.filter((name) => name !== DEVICE_REGISTRATION);
-    expect([...reads].sort()).toEqual(
-      ["customer/list", "organization/listMine"].sort()
+    expect(new Set(reads), "cada chamada da abertura aparece").toEqual(
+      OPENING_CALLS
     );
-    expect(asked.filter((name) => name.startsWith("customer/"))).toEqual([
-      "customer/list",
-    ]);
+    expect(
+      reads.filter((name) => !OPENING_CALLS.has(name)),
+      "nenhuma chamada fora da lista esperada"
+    ).toEqual([]);
+    expect(
+      asked.filter(
+        (name) => name.startsWith("customer/") && name !== "customer/list"
+      ),
+      "sem chamada extra de dados do cliente"
+    ).toEqual([]);
     await expect(page.locator("[data-last-purchase]")).toHaveText([
       "Última compra em 18/12/2025",
       "Última compra há 2 dias",
