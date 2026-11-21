@@ -73,6 +73,69 @@ async function hasTouchArea(page: Page, selector: string) {
   }, selector);
 }
 
+/** The contrast ratio of a text against the card under it, from the colors the browser really painted (a canvas turns any CSS color into sRGB). */
+async function contrastAgainstCard(page: Page, selectors: string[]) {
+  return await page.evaluate((queries) => {
+    const ratioOf = (query: string) => {
+      const element = document.querySelector(query);
+      const card = element?.closest(".card, .variants");
+      if (!(element && card)) {
+        return 0;
+      }
+      const context = document.createElement("canvas").getContext("2d", {
+        willReadFrequently: true,
+      });
+      if (!context) {
+        return 0;
+      }
+      const channels = (color: string) => {
+        context.clearRect(0, 0, 1, 1);
+        context.fillStyle = "#000";
+        context.fillStyle = color;
+        context.fillRect(0, 0, 1, 1);
+        return Array.from(context.getImageData(0, 0, 1, 1).data);
+      };
+      const luminance = (rgb: number[]) => {
+        const [red = 0, green = 0, blue = 0] = rgb.map((value) => {
+          const unit = value / 255;
+          return unit <= 0.039_28
+            ? unit / 12.92
+            : ((unit + 0.055) / 1.055) ** 2.4;
+        });
+        return 0.2126 * red + 0.7152 * green + 0.0722 * blue;
+      };
+      const text = luminance(channels(getComputedStyle(element).color));
+      const back = luminance(channels(getComputedStyle(card).backgroundColor));
+      return (Math.max(text, back) + 0.05) / (Math.min(text, back) + 0.05);
+    };
+    return queries.map(ratioOf);
+  }, selectors);
+}
+
+/** The symbol and the cents are smaller than the whole, on its baseline, and the whole is in weight 600. */
+async function expectSmallerParts(price: Locator) {
+  const sizes = await price.evaluate((element) => {
+    const px = (selector: string) =>
+      Number.parseFloat(
+        getComputedStyle(element.querySelector(selector) as Element).fontSize
+      );
+    return {
+      cents: px(".cents"),
+      currency: px(".currency"),
+      whole: Number.parseFloat(getComputedStyle(element).fontSize),
+      weight: getComputedStyle(element).fontWeight,
+    };
+  });
+  expect(sizes.cents).toBeLessThan(sizes.whole);
+  expect(sizes.currency).toBeLessThan(sizes.whole);
+  expect(sizes.weight).toBe("600");
+  await expect(price.locator(".cents")).toHaveCSS("vertical-align", "baseline");
+  await expect(price.locator(".currency")).toHaveCSS(
+    "vertical-align",
+    "baseline"
+  );
+}
+
 for (const size of SIZES) {
   test.describe(`a ${size.width} px`, () => {
     test.use({ viewport: size });
@@ -202,6 +265,51 @@ for (const size of SIZES) {
       await expect(name).toHaveCSS("white-space", "nowrap");
     });
 
+    test("o preço da vitrine lê inteiro, com o R$ e os centavos em peças menores na mesma linha de base (S-51)", async ({
+      page,
+    }) => {
+      await open(page, STORE);
+      const card = page.locator(".card-price .price").first();
+      await expect(card).toHaveText("R$49,90");
+      await expect(card.locator(".currency")).toHaveText("R$");
+      await expect(card.locator(".cents")).toHaveText(",90");
+      await expectSmallerParts(card);
+      await open(page, PRODUCT);
+      const variant = page.locator(".variants .price").first();
+      await expect(variant).toHaveText("R$49,90");
+      await expectSmallerParts(variant);
+      await expect(page.locator(".variants .unknown")).toHaveText(
+        "Preço sob consulta"
+      );
+    });
+
+    for (const scheme of ["light", "dark"] as const) {
+      test(`o R$ e os centavos têm contraste de 4,5:1 sobre o cartão, no tema ${scheme} (S-51)`, async ({
+        page,
+      }) => {
+        await page.emulateMedia({ colorScheme: scheme });
+        await open(page, STORE);
+        const ratios = await contrastAgainstCard(page, [
+          ".card-price .price",
+          ".card-price .currency",
+          ".card-price .cents",
+        ]);
+        expect(Math.min(...ratios), ratios.join(" ")).toBeGreaterThanOrEqual(
+          4.5
+        );
+        await open(page, PRODUCT);
+        const variantRatios = await contrastAgainstCard(page, [
+          ".variants .price",
+          ".variants .currency",
+          ".variants .cents",
+        ]);
+        expect(
+          Math.min(...variantRatios),
+          variantRatios.join(" ")
+        ).toBeGreaterThanOrEqual(4.5);
+      });
+    }
+
     test("o rodapé tem área de toque de 44 px", async ({ page }) => {
       await open(page, `${FIXTURE}/`);
       expect(await hasTouchArea(page, "footer.foot a")).toBe(true);
@@ -288,5 +396,37 @@ test("o catálogo nunca define cookie, em nenhuma rota pública", async ({
       .headersArray()
       .filter(({ name }) => name.toLowerCase() === "set-cookie");
     expect(cookies, path).toEqual([]);
+  }
+});
+
+test.describe("a 320 px", () => {
+  test.use({ viewport: { height: 640, width: 320 } });
+
+  for (const [name, url] of [
+    ["da lista", STORE],
+    ["da variante", PRODUCT],
+  ] as const) {
+    test(`o preço ${name} não quebra nem rola de lado (S-51)`, async ({
+      page,
+    }) => {
+      await open(page, url);
+      const prices = page.locator(".price");
+      const count = await prices.count();
+      expect(count).toBeGreaterThan(0);
+      for (let index = 0; index < count; index += 1) {
+        // biome-ignore lint/performance/noAwaitInLoops: one price at a time, for a readable failure
+        const heights = await prices.nth(index).evaluate((element) => {
+          const rects = element.getClientRects();
+          return rects.length;
+        });
+        expect(heights).toBe(1);
+      }
+      const overflow = await page.evaluate(
+        () =>
+          document.documentElement.scrollWidth -
+          document.documentElement.clientWidth
+      );
+      expect(overflow).toBeLessThanOrEqual(0);
+    });
   }
 });

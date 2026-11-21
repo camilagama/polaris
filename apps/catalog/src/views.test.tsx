@@ -282,7 +282,9 @@ describe("the price of a variant without one (A2)", () => {
       null
     );
     expect(html).toContain('<span class="unknown">Preço sob consulta</span>');
-    expect(html).toContain("<small>R$</small>49,90");
+    expect(html).toContain(
+      '<strong class="price"><small class="currency">R$</small>49<small class="cents">,90</small></strong>'
+    );
     expect(html).not.toContain("0,00");
     expect(html).not.toContain("Preço não informado");
   });
@@ -336,7 +338,9 @@ describe("the price of a variant without one (A2)", () => {
       ),
       null
     );
-    expect(html).toContain("a partir de <strong>R$ 49,90</strong>");
+    expect(html).toContain(
+      'a partir de <strong class="price"><small class="currency">R$</small>49<small class="cents">,90</small></strong>'
+    );
     expect(html.match(/a partir de/g)).toHaveLength(1);
     expect(html).toContain("Preço sob consulta");
     expect(html).not.toContain("0,00");
