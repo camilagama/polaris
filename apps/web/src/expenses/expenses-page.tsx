@@ -1,4 +1,7 @@
-import type { ExpenseReadModel } from "@polaris/contracts";
+import type {
+  ExpenseCategoryReadModel,
+  ExpenseReadModel,
+} from "@polaris/contracts";
 import PlusIcon from "lucide-react/dist/esm/icons/plus";
 import { type MouseEvent, useCallback, useMemo, useRef, useState } from "react";
 import { Button } from "@/ui/button";
@@ -328,6 +331,16 @@ export function ExpensesPage() {
     markPeriodSummaryStale();
   }, [refresh, reloadCategories]);
 
+  const upsertCategories = categories.upsert;
+  // the split by category keeps the name the server sent with it, so a rename or an archive here has to be read again
+  const handleCategoryUpsert = useCallback(
+    (category: ExpenseCategoryReadModel) => {
+      upsertCategories(category);
+      refresh();
+    },
+    [refresh, upsertCategories]
+  );
+
   const handleRetry = useCallback(() => {
     refresh();
   }, [refresh]);
@@ -452,7 +465,7 @@ export function ExpensesPage() {
         <TabsContent keepMounted value="categorias">
           <ExpenseCategoriesPanel
             onReload={reloadCategories}
-            onUpsert={categories.upsert}
+            onUpsert={handleCategoryUpsert}
             organizationId={organizationId}
             state={categories.state}
           />
