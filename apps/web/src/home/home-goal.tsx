@@ -54,9 +54,27 @@ const STRIP_CLASS =
   "@min-[60rem]/home:flex-row @min-[60rem]/home:flex-wrap @min-[60rem]/home:items-center @min-[60rem]/home:gap-x-6 @min-[60rem]/home:gap-y-1 @min-[60rem]/home:py-3";
 const STRIP_END = "@min-[60rem]/home:order-last @min-[60rem]/home:ml-auto";
 
-/** The side of the ring of the goal, and the width of its arc (v7 § 3 item 9). */
+/**
+ * The side of the ring of the goal and the width of its arc (v7 § 3 item 9), in pixels at the default 16 px letter:
+ * the ring is 7 rem, the arc 0.625 rem and the margin 0.5 rem, so it grows with the letter of the person.
+ */
 const RING_SIZE = 112;
 const RING_WIDTH = 10;
+
+/** The hole of the ring in rem (7 rem, less an arc and a margin on each side), and the room kept from the arc, in pixels. */
+const HOLE_REM = 4.75;
+const HOLE_ROOM = 4;
+/** What a character of Geist Mono takes, in em. */
+const MONO_ADVANCE = 0.6;
+
+/**
+ * The size of the percent: `text-xl` at most, and less when the text written would not fit the hole (the hole minus
+ * the room, over the advance of its characters); never under 0.875 rem. It follows the letter because the hole does.
+ */
+function percentFontSize(percent: string): string {
+  const fit = `calc((${HOLE_REM}rem - ${HOLE_ROOM}px) / ${Number((MONO_ADVANCE * percent.length).toFixed(2))})`;
+  return `max(0.875rem, min(1.25rem, ${fit}))`;
+}
 
 /**
  * The color of the ring: the color of the entity the goal measures (v7 § 5), green for the sales (net sales and number
@@ -96,13 +114,13 @@ function GoalRing({
   return (
     <div
       aria-label={hidden ? maskMoney(spoken, MASKED_SPOKEN) : spoken}
-      className="relative grid shrink-0 place-items-center"
+      className="relative grid size-28 shrink-0 place-items-center"
       data-goal-ring=""
       role="img"
-      style={{ height: RING_SIZE, width: RING_SIZE }}
     >
       <OnDemandRingChart
         className="col-start-1 row-start-1"
+        fluid
         progress={width / 100}
         size={RING_SIZE}
         {...(pace ? { marker: pace.position / 100 } : {})}
@@ -114,11 +132,8 @@ function GoalRing({
         className="col-start-1 row-start-1 grid justify-items-center gap-0.5 text-center"
       >
         <span
-          className={cn(
-            "font-mono font-semibold tabular-nums leading-6",
-            // "100,0%" in Geist Mono (6 characters of 0.6 em, 72 px at 20 px) fits the hole of 76 px; a goal far past its target is written smaller
-            percent.length > 6 ? "text-base" : "text-xl"
-          )}
+          className="font-mono font-semibold tabular-nums leading-6"
+          style={{ fontSize: percentFontSize(percent) }}
         >
           {percent}
         </span>
@@ -225,7 +240,7 @@ function ActiveGoal({
         </p>
       </div>
       {progress && !goal.paused ? (
-        <div className="flex min-w-0 items-center gap-4 group-data-[pair]/row:@min-[60rem]/home:flex-1 group-data-[pair]/row:@min-[60rem]/home:flex-col group-data-[pair]/row:@min-[60rem]/home:justify-center group-data-[pair]/row:@min-[60rem]/home:text-center">
+        <div className="flex min-w-0 flex-wrap items-center justify-center gap-4 group-data-[pair]/row:@min-[60rem]/home:flex-1 group-data-[pair]/row:@min-[60rem]/home:flex-col group-data-[pair]/row:@min-[60rem]/home:justify-center group-data-[pair]/row:@min-[60rem]/home:text-center">
           <GoalRing
             goal={goal}
             percent={formatGoalPercent(progress.percent)}
@@ -233,7 +248,7 @@ function ActiveGoal({
             spoken={`${formatGoalPercent(progress.percent)} da meta: ${formatGoalValue(goal.kind, progress.value)} de ${formatGoalValue(goal.kind, goal.target)}${pace ? `. ${goalPaceSpoken(pace)}` : ""}`}
             width={goalProgressWidth(progress.percent)}
           />
-          <div className="grid min-w-0 gap-0.5 group-data-[pair]/row:@min-[60rem]/home:justify-items-center">
+          <div className="grid min-w-30 grow basis-30 gap-0.5 group-data-[pair]/row:@min-[60rem]/home:basis-auto group-data-[pair]/row:@min-[60rem]/home:justify-items-center">
             <p className="font-semibold text-lg tabular-nums leading-7 tracking-tight">
               <MoneyText text={formatGoalValue(goal.kind, progress.value)} />
             </p>
