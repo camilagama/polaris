@@ -175,7 +175,6 @@ test.describe("o padrão único dos valores nos cartões do Início (AC-3.1, AC-
     "`Page.setFontSizes` is a Chrome DevTools command"
   );
 
-  /** The amounts of `SOLD` a tenth as big: in Geist Mono the longest of them fits the area of a card of four columns. */
   const SMALL: Scenario = {
     ...SOLD,
     days: Object.fromEntries(

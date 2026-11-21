@@ -20,11 +20,6 @@ import {
   placeOf,
 } from "./shared";
 
-/**
- * The display of the Resultado in Geist Mono (UX-refs corte 06, S-01 e S-02): the number of the four cards, the percent
- * of the chips and the Margem are in the mono face; the chain of the result under them stays in Geist; and the late
- * arrival of the font moves nothing.
- */
 const REAIS = /R\$/;
 const SIZES = [
   { height: 740, width: 360 },

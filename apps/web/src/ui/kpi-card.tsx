@@ -42,14 +42,9 @@ export type KpiEntity = "result" | "sales" | "ticket";
 const SIGN = /^[+-]/;
 
 /**
- * The box of the number: one line of a fixed height, so "R$ 129,90" (with the "R$" and the cents smaller), "R$ ••••"
- * (whose dots may come from another font) and "—" take the same height, and nothing under them moves when the values
- * are hidden or a day is read. Every card has the one size, `text-value-lg` (30 px line; 28 on a phone), with no card
- * above the others: the "R$" and the number are the same size, weight and line in all of them. The figure is the display
- * of the card, in Geist Mono (every digit the same width, so it does not dance when it updates) and with no tracking:
- * negative spacing squeezes the fixed cells. The size is one of the tokens of the scale; `leading-*` sets the line
- * whatever the size class says, and goes after the size classes of its own variant, because the merge of the classes
- * drops a `leading-*` that comes before one.
+ * One line of a fixed height, so "R$ 129,90", "R$ ••••" (whose dots may come from another font) and "—" take the same
+ * height and nothing under them moves. No tracking: negative spacing squeezes the fixed cells of a monospaced figure.
+ * `leading-*` goes after the size classes of its variant because the class merge drops a `leading-*` that comes before one.
  */
 const HERO_BOX =
   "h-(--text-value-lg--line-height) whitespace-nowrap font-mono font-semibold text-value-lg tabular-nums";
@@ -60,11 +55,7 @@ const FIGURE_FIT_MARGIN = 1.02;
 /** The floor of the figure of a tile: low enough for the longest amount a store writes (17 characters) in the narrowest area. */
 const TILE_FIGURE_FLOOR = "0.875rem";
 
-/**
- * The size of the figure of a tile, from the width of its own area (a container, `cqw`) and the width the amount takes
- * in em (Geist Mono has one advance for every glyph, so the width is known, not measured per amount), so a long amount
- * steps down to fit and a short one keeps `text-value-lg`: the area never grows with the number.
- */
+/** Geist Mono has one advance for every glyph, so the width in em is known without measuring each amount. */
 function tileFigureSize(widthEm: number): CSSProperties {
   const fit = (100 / (widthEm * FIGURE_FIT_MARGIN)).toFixed(2);
   return {
@@ -72,7 +63,6 @@ function tileFigureSize(widthEm: number): CSSProperties {
   };
 }
 
-/** What the amount is written as, for the width it takes: hidden values are always the same "R$ ••••". */
 function writtenWidthEm(amount: string, hidden: boolean): number {
   return hidden
     ? maskedAmountWidthEm()

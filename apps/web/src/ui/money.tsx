@@ -71,7 +71,6 @@ export function Money({
   text,
 }: MoneyProps) {
   const [hidden] = useHiddenValues();
-  // the display has no tracking: negative spacing squeezes the fixed cells of a monospaced figure
   const displayed = size === "lg" || size === "xl";
   const sized = cn(
     "whitespace-nowrap",

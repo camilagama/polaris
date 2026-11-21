@@ -2,7 +2,6 @@
 import type { Locator, Page } from "@playwright/test";
 import { expect } from "@playwright/test";
 
-/** The first family of the stack a box is drawn with: what `font-sans` and `font-mono` say first. */
 function firstFamily(target: Locator): Promise<string> {
   return target.first().evaluate((element) => {
     const stack = getComputedStyle(element).fontFamily;
@@ -10,7 +9,6 @@ function firstFamily(target: Locator): Promise<string> {
   });
 }
 
-/** The first family of every box the locator matches, in order. */
 export function familiesOf(target: Locator): Promise<string[]> {
   return target.evaluateAll((elements) =>
     elements.map((element) =>
@@ -34,7 +32,6 @@ export async function expectGeist(target: Locator, what: string) {
   expect(await firstFamily(target), `${what} em Geist`).toBe(SANS);
 }
 
-/** Every face the page asked for has loaded: the swap from the reserve face to the real one is done. */
 export function fontsLoaded(page: Page) {
   return page.evaluate(async () => {
     await document.fonts.ready;
@@ -44,7 +41,7 @@ export function fontsLoaded(page: Page) {
   });
 }
 
-/** Starts to add up the layout shifts of the page from now on (the observer is `buffered: false`, so only what comes after). */
+/** Not `buffered`: only shifts after the call are counted. */
 export function watchShifts(page: Page) {
   return page.evaluate(() => {
     const shifts = { total: 0 };
@@ -66,10 +63,7 @@ export function shiftsSoFar(page: Page): Promise<number> {
   );
 }
 
-/**
- * Holds the request for Geist Mono until `release` is called, the first visit with the font late: the page draws with
- * the reserve face meanwhile. The file is the hashed asset of the build (`assets/geist-mono-…woff2`).
- */
+/** The file is the hashed asset of the build, hence the glob. */
 export async function holdMonoFont(page: Page) {
   let release: () => void = () => undefined;
   const gate = new Promise<void>((resolve) => {

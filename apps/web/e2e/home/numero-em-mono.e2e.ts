@@ -28,11 +28,6 @@ import {
   settled,
 } from "./shared";
 
-/**
- * The display of the Início in Geist Mono (UX-refs corte 06, S-01 e S-02): the number of the KPI cards, the percent of
- * the chip and the percent of the goal are in the mono face, and a list stays in Geist; the long amounts fit; the late
- * arrival of the font moves nothing.
- */
 const PHONE_WIDTH = 760;
 const LONG = 123_456_789;
 const NEGATIVE = -9_964_035;

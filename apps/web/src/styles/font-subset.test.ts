@@ -414,7 +414,6 @@ const MONO_FILE = fileURLToPath(
   )
 );
 
-/** The characters of the display: "R$", the digits, the separators, the percent, the signs, the mask dots and the dash. */
 const DISPLAY_CHARACTERS = "R$0123456789.,%+\u2212-\u2022\u2014 ";
 
 const WOFF2_TAGS = [
@@ -450,7 +449,6 @@ function base128(view: DataView, at: number): [number, number] {
   throw new Error("woff2: UIntBase128 longo demais");
 }
 
-/** The `cmap` table of a woff2 file, as the bytes of the font. */
 function woff2Cmap(file: Buffer): Buffer {
   const view = new DataView(file.buffer, file.byteOffset, file.byteLength);
   if (view.getUint32(0) !== 0x77_4f_46_32) {
@@ -490,7 +488,7 @@ function woff2Cmap(file: Buffer): Buffer {
   throw new Error("woff2 sem cmap");
 }
 
-/** The code points a `cmap` maps to a glyph other than .notdef (the subtables of format 4 and 12 of the Windows or Unicode platforms). */
+/** Reads the subtables of format 4 and 12 of the Windows and Unicode platforms; .notdef does not count. */
 function cmapCovers(cmap: Buffer): (codePoint: number) => boolean {
   const view = new DataView(cmap.buffer, cmap.byteOffset, cmap.byteLength);
   const records = view.getUint16(2);
