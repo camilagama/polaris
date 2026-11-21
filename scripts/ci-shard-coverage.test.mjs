@@ -234,7 +234,165 @@ describe("checkCoverage", () => {
   });
 });
 
+describe("checkCoverage com seleção do PR", () => {
+  const selection = (...specs) => ({ full: false, motivo: "m", specs });
+  const repoDirs = { "offline-poc": "apps/web/e2e", pwa: "apps/web/e2e-pwa" };
+  const narrowPlan = {
+    shards: [
+      { files: { "offline-poc": ["a.e2e.ts"] }, estimatedMs: 1, shard: 1 },
+      { files: { pwa: ["d.e2e.ts"] }, estimatedMs: 1, shard: 2 },
+    ],
+    testDirs: PLAN.testDirs,
+    repoDirs,
+    selection: selection("apps/web/e2e/a.e2e.ts", "apps/web/e2e-pwa/d.e2e.ts"),
+    unlisted: [],
+  };
+  const narrowReports = () => [
+    {
+      report: report({ "a.e2e.ts": { [D]: 3, [M]: 3 } }, { ran: true }),
+      shard: 1,
+      suite: "offline-poc",
+    },
+    {
+      report: report({ "d.e2e.ts": { [D]: 1, [M]: 1 } }, { ran: true }),
+      shard: 2,
+      suite: "pwa",
+    },
+  ];
+
+  it("compares with the selected files only: the others need neither plan nor run", () => {
+    const result = checkCoverage({
+      lists: LISTS,
+      plan: narrowPlan,
+      reports: narrowReports(),
+    });
+    expect(result.problems).toEqual([]);
+    expect(result.totals).toEqual({
+      "offline-poc": { listed: 6, ran: 6, skipped: 0 },
+      pwa: { listed: 2, ran: 2, skipped: 0 },
+    });
+  });
+
+  it("fails a selected file left out of the plan, naming it", () => {
+    const plan = without(narrowPlan, "pwa", "d.e2e.ts");
+    const { problems } = checkCoverage({
+      lists: LISTS,
+      plan,
+      reports: narrowReports().filter((r) => r.suite !== "pwa"),
+    });
+    expect(problems).toContain(
+      "fora do plano: pwa d.e2e.ts está no --list e em nenhum shard"
+    );
+  });
+
+  it("fails a file planned that the selection does not ask for", () => {
+    const plan = structuredClone(narrowPlan);
+    plan.shards[0].files.pwa = ["c.e2e.ts"];
+    const { problems } = checkCoverage({
+      lists: LISTS,
+      plan,
+      reports: narrowReports(),
+    });
+    expect(problems).toContain(
+      "fora da seleção: pwa c.e2e.ts está no plano e a seleção do PR não o pede"
+    );
+  });
+
+  it("fails a selected file that a shard did not run", () => {
+    const reports = narrowReports();
+    reports[0] = {
+      report: report({ "a.e2e.ts": { [D]: 3, [M]: 0 } }, { ran: true }),
+      shard: 1,
+      suite: "offline-poc",
+    };
+    const { problems } = checkCoverage({
+      lists: LISTS,
+      plan: narrowPlan,
+      reports,
+    });
+    expect(problems).toContain(
+      "offline-poc a.e2e.ts [chromium-mobile-emulated]: 3 no --list, 0 executados"
+    );
+  });
+
+  it("fails a shard that ran a file the selection left out", () => {
+    const reports = [
+      ...narrowReports(),
+      {
+        report: report({ "c.e2e.ts": { [D]: 4 } }, { ran: true }),
+        shard: 2,
+        suite: "pwa",
+      },
+    ];
+    const { problems } = checkCoverage({
+      lists: LISTS,
+      plan: narrowPlan,
+      reports,
+    });
+    expect(problems).toContain(
+      "shard 2 rodou pwa c.e2e.ts, que o plano não pôs nele"
+    );
+    expect(problems).toContain(
+      "pwa c.e2e.ts [chromium-desktop]: 0 no --list, 4 executados"
+    );
+  });
+
+  it("fails a selected spec of a suite folder that no list has", () => {
+    const { problems } = checkCoverage({
+      lists: LISTS,
+      plan: { ...narrowPlan, unlisted: ["apps/web/e2e/sumiu.e2e.ts"] },
+      reports: narrowReports(),
+    });
+    expect(problems).toContain(
+      "selecionado e fora do --list: apps/web/e2e/sumiu.e2e.ts está na seleção e em nenhuma lista"
+    );
+  });
+
+  it("passes an empty selection with no shard report, and still fails an empty --list", () => {
+    const empty = {
+      ...narrowPlan,
+      shards: [{ files: {}, estimatedMs: 0, shard: 1 }],
+      selection: selection(),
+    };
+    expect(
+      checkCoverage({ lists: LISTS, plan: empty, reports: [] }).problems
+    ).toEqual([]);
+    expect(
+      checkCoverage({
+        lists: { ...LISTS, pwa: report({}) },
+        plan: empty,
+        reports: [],
+      }).problems
+    ).toContain("pwa: o --list não tem nenhum teste");
+  });
+
+  it("takes a full selection as the whole list", () => {
+    const plan = {
+      ...PLAN,
+      selection: { full: true, motivo: "m", specs: [] },
+      repoDirs,
+    };
+    expect(
+      checkCoverage({ lists: LISTS, plan, reports: greenReports() }).problems
+    ).toEqual([]);
+    const { problems } = checkCoverage({
+      lists: LISTS,
+      plan: without(plan, "pwa", "c.e2e.ts"),
+      reports: greenReports().filter(
+        (r) => !(r.suite === "pwa" && r.shard === 2)
+      ),
+    });
+    expect(problems).toContain(
+      "fora do plano: pwa c.e2e.ts está no --list e em nenhum shard"
+    );
+  });
+});
+
 describe("reportsFromFolder", () => {
+  it("is empty for a folder that does not exist (a run with no shard)", () => {
+    expect(reportsFromFolder(join(tmpdir(), "t1517-nao-existe"))).toEqual([]);
+  });
+
   let folder;
   afterEach(() => {
     if (folder) {

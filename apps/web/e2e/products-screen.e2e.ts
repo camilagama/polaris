@@ -6,6 +6,7 @@ import {
   serveUnderProductionCsp,
   watchCspViolations,
 } from "./csp-fixture";
+import { emptyIconFaults } from "../e2e-pwa/ui-guardrails/measures";
 import { activateByKeyboard, expectFocusRing } from "./focus-ring";
 import { solidPng } from "./media-fixtures";
 import { outboxCommands } from "./outbox-commands";
@@ -765,6 +766,7 @@ test("sem produto, a tela convida a cadastrar o primeiro, e o botão abre o form
 }) => {
   await openServerScreen(page, { lists: [answer([])] });
   await expect(page.getByText("Nenhum produto ainda")).toBeVisible();
+  expect(await emptyIconFaults(page, 1)).toEqual([]);
   await page.getByRole("button", { name: "Novo produto" }).last().click();
   await expect(page.getByLabel("Nome do produto")).toBeFocused();
 });
@@ -1912,9 +1914,28 @@ test("variantes: o aviso do SKU só com opção marcada, linhas vazias não são
   // P-5: two rows that still have no color are not a repeated combination
   const repeated = page.getByText("Cada combinação precisa ser única.");
   await page.getByLabel("Valores de Cor").fill("Azul\nPreta");
-  await page.getByRole("button", { name: "Adicionar combinação" }).click();
-  await page.getByRole("button", { name: "Adicionar combinação" }).click();
+  const addRow = page.getByRole("button", { name: "Adicionar combinação" });
+  await addRow.click();
+  await expect(
+    page.getByRole("combobox", { exact: true, name: "Cor" }).nth(0)
+  ).toBeFocused();
+  await addRow.click();
   await expect(page.getByText("Combinação 2")).toBeVisible();
+  await expect(
+    page.getByRole("combobox", { exact: true, name: "Cor" }).nth(1)
+  ).toBeFocused();
+  // the add row is the last row of the list: under the last combination, the whole width of it
+  const lastCombination = page
+    .getByRole("listitem")
+    .filter({ hasText: "Combinação 2" });
+  const [rowBox, listBox] = await Promise.all([
+    addRow.boundingBox(),
+    lastCombination.boundingBox(),
+  ]);
+  expect(rowBox?.y ?? 0).toBeGreaterThanOrEqual(
+    (listBox?.y ?? 0) + (listBox?.height ?? 0)
+  );
+  expect(rowBox?.width ?? 0).toBeGreaterThanOrEqual((listBox?.width ?? 0) - 1);
   await expect(repeated).toHaveCount(0);
   // the same color in both is
   const colors = page.getByRole("combobox", { exact: true, name: "Cor" });

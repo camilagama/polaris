@@ -1,7 +1,10 @@
-import { readdirSync, readFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { COVERAGE_MAP, SPEC_FOLDERS } from "../e2e/coverage-map.mjs";
+import { fullSuiteRequested } from "./ci-changed.mjs";
+import { gitEnvironment } from "./exact-count-list.mjs";
 
 /**
  * Which e2e specs a diff can break, from `e2e/coverage-map.mjs`.
@@ -13,6 +16,12 @@ import { COVERAGE_MAP, SPEC_FOLDERS } from "../e2e/coverage-map.mjs";
  * `specs` is empty. The selector fails safe: an empty diff, a path that forces the whole suite and a path no pair of
  * the map names all answer `full`. The first pair of the map whose glob matches a path decides its specs; a changed
  * spec always selects itself.
+ *
+ *   node scripts/ci-select-specs.mjs --diff <base> <head> [--out selection.json]
+ *
+ * The form of the pull request job: reads the diff from git and answers `full` for a run that asked for everything
+ * (`CI_FULL`, a manual dispatch, a push) and for any failure, of git or of the selector. It always exits 0 with a
+ * selection, so that a failure here runs the whole suite and never fails the job.
  */
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -176,8 +185,68 @@ export function selectSpecs(
   return { full: false, motivo, specs };
 }
 
+/** The paths changed between two commits, or throws: the same flags as the change detection of the workflow. */
+function changedBetween(base, head) {
+  const result = spawnSync(
+    "git",
+    ["diff", "--name-only", "--no-renames", base, head],
+    { encoding: "utf8", env: gitEnvironment() }
+  );
+  if (result.status !== 0) {
+    throw new Error(
+      `git diff ${base} ${head} saiu com ${result.status ?? result.error?.message}`
+    );
+  }
+  return result.stdout.split("\n");
+}
+
+/**
+ * What a pull request job runs: the selection of its diff, or the whole suite when the run asked for it or anything
+ * failed. `changed` and `select` are injected by the tests.
+ */
+export function selectionForRun({
+  base,
+  head,
+  env = process.env,
+  changed = changedBetween,
+  select = selectSpecs,
+}) {
+  if (fullSuiteRequested(env)) {
+    return full(
+      "execução completa pedida (dispatch, full ou etiqueta suite-completa)"
+    );
+  }
+  if (env.GITHUB_EVENT_NAME === "push") {
+    return full("push na main: a suíte toda roda");
+  }
+  try {
+    return select(changed(base, head));
+  } catch (error) {
+    return full(`falha ao selecionar (${error.message}): a suíte toda roda`);
+  }
+}
+
+function optionOf(args, name) {
+  const at = args.indexOf(name);
+  return at === -1 ? undefined : args[at + 1];
+}
+
 function main() {
   const args = process.argv.slice(2);
+  if (args.includes("--diff")) {
+    const at = args.indexOf("--diff");
+    const text = `${JSON.stringify(
+      selectionForRun({ base: args[at + 1], head: args[at + 2] }),
+      null,
+      2
+    )}\n`;
+    const out = optionOf(args, "--out");
+    if (out) {
+      writeFileSync(out, text);
+    }
+    process.stdout.write(text);
+    return;
+  }
   const files = args.length > 0 ? args : readFileSync(0, "utf8").split("\n");
   console.log(JSON.stringify(selectSpecs(files), null, 2));
 }

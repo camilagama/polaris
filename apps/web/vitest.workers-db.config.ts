@@ -67,6 +67,10 @@ export default defineProject({
     hookTimeout: 60_000,
     include: ["worker/**/*.workerd-db.test.ts"],
     name: "web-workerd-db",
+    // Random file and test order exposes tests that lean on state another test left behind. A project of a root
+    // config does not inherit the root's `sequence`, so it is set here; the seed is printed on every run, and
+    // `--sequence.seed=<seed>` on the vitest command of the gate replays a failure.
+    sequence: { shuffle: { files: true, tests: true } },
     // the Worker logs through its own logger and the pools it closes report an error each: only a failing test shows them
     silent: "passed-only",
     testTimeout: 60_000,
