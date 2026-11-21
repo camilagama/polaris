@@ -10,7 +10,7 @@ import {
 import { TRIAL_DAYS } from "@polaris/domain/billing/subscription-state";
 import { classifyOrganization } from "../src/admin-support-repository";
 import { createDatabase } from "../src/client";
-import { withGateRole } from "./gate-roles";
+import { rollbackAndRelease, withGateRole } from "./gate-roles";
 import {
   disposableHostPattern,
   expectSqlState,
@@ -1072,11 +1072,10 @@ async function run() {
             );
           }
           await client.query("COMMIT");
-        } catch (error) {
-          await client.query("ROLLBACK");
-          throw error;
-        } finally {
           client.release();
+        } catch (error) {
+          await rollbackAndRelease(client);
+          throw error;
         }
       }
       if (spec.internal) {
@@ -1936,8 +1935,7 @@ async function run() {
           `5 active stores and ${idle} that existed without selling`
         );
       } finally {
-        await client.query("ROLLBACK");
-        client.release();
+        await rollbackAndRelease(client);
       }
     }
     tests.push(
@@ -2472,8 +2470,7 @@ async function run() {
           `with 1,000 stores more and 50,000 sales (rolled back), the first call of the measure (plans discarded), through the audited wrapper as the Admin runtime with jit off and auto_explain logging nothing, is not cancelled under the route's ${ACTIVATION_FUNNEL_STATEMENT_TIMEOUT_MS} ms statement_timeout (${routeMs.toFixed(1)} ms) and its audit event is rolled back; the aggregate call then takes ${median.toFixed(1)} ms with jit off (median of 3), and auto_explain gives the plan of the query inside (gate notes)`
         );
       } finally {
-        await client.query("ROLLBACK");
-        client.release();
+        await rollbackAndRelease(client);
       }
     }
     assert.equal(

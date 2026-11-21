@@ -24,7 +24,11 @@ import { createDatabase } from "../src/client";
 import { createCustomer } from "../src/customer-repository";
 import { requestOrganizationClosure } from "../src/organization-closure-repository";
 import { createPrivacyMaintenanceClient } from "../src/privacy-maintenance";
-import { withGateRole } from "./gate-roles";
+import {
+  inRolledBackTransaction,
+  rollbackAndRelease,
+  withGateRole,
+} from "./gate-roles";
 import { assertSuperuserCasesProved } from "./gate-runs";
 import {
   createTenantFixture,
@@ -109,16 +113,21 @@ async function run() {
     options: { commit?: boolean } = {}
   ): Promise<T> {
     const client = await owner.pool.connect();
+    const run = () => withGateRole(client, role, () => work(client));
     try {
-      await client.query("BEGIN");
-      const result = await withGateRole(client, role, () => work(client));
-      await client.query(options.commit === false ? "ROLLBACK" : "COMMIT");
+      let result: T;
+      if (options.commit === false) {
+        result = await inRolledBackTransaction(client, run);
+      } else {
+        await client.query("BEGIN");
+        result = await run();
+        await client.query("COMMIT");
+      }
+      client.release();
       return result;
     } catch (error) {
-      await client.query("ROLLBACK").catch(() => undefined);
+      await rollbackAndRelease(client);
       throw error;
-    } finally {
-      client.release();
     }
   }
 
@@ -131,8 +140,7 @@ async function run() {
       await client.query("BEGIN");
       return await work(client);
     } finally {
-      await client.query("ROLLBACK").catch(() => undefined);
-      client.release();
+      await rollbackAndRelease(client);
     }
   }
 

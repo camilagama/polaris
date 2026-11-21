@@ -56,20 +56,8 @@ export const GATE_ROLLBACK_LIST = {
     count: 1,
     reason: BEFORE_THE_RULE,
   },
-  "packages/db/scripts/verify-activation-funnel-gate.ts": {
-    count: 3,
-    reason: BEFORE_THE_RULE,
-  },
-  "packages/db/scripts/verify-audit-retention-gate.ts": {
-    count: 3,
-    reason: BEFORE_THE_RULE,
-  },
   "packages/db/scripts/verify-auth-tables-row-security-gate.ts": {
     count: 5,
-    reason: BEFORE_THE_RULE,
-  },
-  "packages/db/scripts/verify-billing-notices-gate.ts": {
-    count: 3,
     reason: BEFORE_THE_RULE,
   },
   "packages/db/scripts/verify-closed-organization-readonly-gate.ts": {
