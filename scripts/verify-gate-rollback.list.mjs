@@ -60,14 +60,6 @@ export const GATE_ROLLBACK_LIST = {
     count: 5,
     reason: BEFORE_THE_RULE,
   },
-  "packages/db/scripts/verify-closed-organization-readonly-gate.ts": {
-    count: 3,
-    reason: BEFORE_THE_RULE,
-  },
-  "packages/db/scripts/verify-dead-letter-gate.ts": {
-    count: 3,
-    reason: BEFORE_THE_RULE,
-  },
   "packages/db/scripts/verify-definer-hardening-gate.ts": {
     count: 1,
     reason: BEFORE_THE_RULE,
@@ -86,10 +78,6 @@ export const GATE_ROLLBACK_LIST = {
   },
   "packages/db/scripts/verify-migrations-without-superuser-gate.ts": {
     count: 6,
-    reason: BEFORE_THE_RULE,
-  },
-  "packages/db/scripts/verify-tenant-context-gate.ts": {
-    count: 3,
     reason: BEFORE_THE_RULE,
   },
 };
