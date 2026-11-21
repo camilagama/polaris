@@ -292,9 +292,10 @@ describe("the /api/auth/* routes share one Better Auth per isolate", () => {
   });
 
   it("gives the instance the e-mails and Google only when the environment has them", async () => {
+    // the shared instance outlives a test: a secret no other test uses forces this one to build its own
     await getSession("plain", vi.fn(), {
       ...bindings,
-      BETTER_AUTH_SECRET: "p".repeat(32),
+      BETTER_AUTH_SECRET: "q".repeat(32),
     });
     expect(lastOptions().emailDelivery).toBeUndefined();
     expect(lastOptions().googleProvider).toBeUndefined();
@@ -303,7 +304,7 @@ describe("the /api/auth/* routes share one Better Auth per isolate", () => {
       ...bindings,
       AUTH_EMAIL_FROM: "Polaris <no-reply@example.invalid>",
       AUTH_PASSWORD_PEPPER: testPasswordPepper,
-      BETTER_AUTH_SECRET: "p".repeat(32),
+      BETTER_AUTH_SECRET: "q".repeat(32),
       EMAIL_PASSWORD_AUTH_ENABLED: "true",
       GOOGLE_CLIENT_ID: "client",
       GOOGLE_CLIENT_SECRET: "secret",
