@@ -301,8 +301,8 @@ function CustomerMain({
     <RowOpenButton
       describedBy={
         [
-          hasStateBadge ? stateId : undefined,
           hasContacts ? supportId : undefined,
+          hasStateBadge ? stateId : undefined,
           lockedReasonId,
           pendingLabelId,
         ]

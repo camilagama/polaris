@@ -140,7 +140,7 @@ describe("the list of customers", () => {
     expect(gone).not.toContain("data-row-open");
   });
 
-  it("describes the row button by its state badge and its contacts, both drawn with those ids", () => {
+  it("describes the row button by its contacts and then its state badge, both drawn with those ids", () => {
     const bia = customer(2, "Bia Souza", {
       archivedAt: "2026-10-14T12:00:00.000Z",
       email: "bia@exemplo.com",
@@ -149,8 +149,13 @@ describe("the list of customers", () => {
     const html = render({ customers: [bia], status: "archived" });
     const tag = ROW_BUTTON_TAG.exec(html)?.[0] ?? "missing";
     expect(tag).toContain(
-      `aria-describedby="customer-state-${bia.id} customer-support-${bia.id}"`
+      `aria-describedby="customer-support-${bia.id} customer-state-${bia.id}"`
     );
+    expect(DESCRIBED_BY.exec(tag)?.[1]?.split(" ")).toEqual([
+      `customer-support-${bia.id}`,
+      `customer-state-${bia.id}`,
+    ]);
+    expect(describedByText(html, tag).at(-1)).toBe("Arquivado");
     expect(html).toContain(`id="customer-state-${bia.id}"`);
     expect(html).toContain(`id="customer-support-${bia.id}"`);
   });
