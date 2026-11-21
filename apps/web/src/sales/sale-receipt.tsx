@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { formatQuantity } from "@/lib/format";
 import { Card, CardContent } from "@/ui/card";
 import { MoneyText } from "@/ui/hidden-values";
 import { Money } from "@/ui/money";
@@ -15,8 +16,9 @@ interface SaleReceiptProps {
 }
 
 /**
- * The confirmed sale exactly as stored, as a receipt (DESIGN.md v5.1): the total right under the title, because
- * the eye looks for it first; the perforation; then the items, the adjustments and the three dates; then the payment,
+ * The confirmed sale exactly as stored, as a receipt (DESIGN.md v5.1): right under the title, a strip of three, the
+ * total (the biggest, because the eye looks for it first), what was received and the count of items, and the total is
+ * written only there; the perforation; then the items, the adjustments and the three dates; then the payment,
  * and the identifier at the end, in mono and without emphasis. The amounts of the lines are in Geist Mono and end at
  * the right edge, the names and the labels in Geist. The order is the order of the DOM, so a screen reader
  * reads what the eye sees.
@@ -38,17 +40,33 @@ export function SaleReceipt({ before, sale, status }: SaleReceiptProps) {
           </div>
           {before}
           {total ? (
-            <dl>
-              <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+            <dl className="@container flex flex-wrap gap-x-4 gap-y-3">
+              <div className="grid min-w-0 @min-[20rem]:flex-[1.4] @min-[20rem]:basis-0 basis-full gap-1">
                 <dt className="font-medium text-muted-foreground">
                   {total.label}
                 </dt>
-                <dd className="ml-auto">
+                <dd>
                   <Money
                     className="font-mono font-semibold tracking-[-0.035em]"
                     size="lg"
                     text={total.value}
                   />
+                </dd>
+              </div>
+              <div className="grid min-w-0 flex-1 gap-1 @min-[20rem]:border-border @min-[20rem]:border-l @min-[20rem]:pl-4">
+                <dt className="font-medium text-muted-foreground">Recebido</dt>
+                <dd>
+                  <Money
+                    className="font-mono"
+                    size="md"
+                    text={sale.summary.received}
+                  />
+                </dd>
+              </div>
+              <div className="grid min-w-0 flex-1 gap-1 @min-[20rem]:border-border @min-[20rem]:border-l @min-[20rem]:pl-4">
+                <dt className="font-medium text-muted-foreground">Itens</dt>
+                <dd className="font-mono text-value-md tabular-nums">
+                  {formatQuantity(sale.summary.itemCount)}
                 </dd>
               </div>
             </dl>

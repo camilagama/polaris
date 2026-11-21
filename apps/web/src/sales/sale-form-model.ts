@@ -2345,6 +2345,14 @@ interface ConfirmedSaleItemView {
   label: string;
 }
 
+/** The two figures beside the total at the top of the receipt, both from what the sale already carries. */
+interface ConfirmedSaleSummary {
+  /** Sum of the quantities of the items. */
+  itemCount: number;
+  /** Sum of the payments stored with the sale, as `formatBrlAmount` writes it. */
+  received: string;
+}
+
 export interface ConfirmedSaleView {
   headline: string;
   items: ConfirmedSaleItemView[];
@@ -2353,7 +2361,20 @@ export interface ConfirmedSaleView {
   replayed: boolean;
   saleDetails: ConfirmedSaleDetail[];
   saleId: string;
+  summary: ConfirmedSaleSummary;
   totals: SummaryRow[];
+}
+
+function confirmedSummary(sale: ConfirmedSaleReadModel): ConfirmedSaleSummary {
+  const payments = [sale.payment];
+  const received = payments.reduce(
+    (sum, payment) => sum + Money.from(payment.amount).minorUnits,
+    0n
+  );
+  return {
+    itemCount: sale.items.reduce((sum, item) => sum + item.quantity, 0),
+    received: formatBrlAmount(Money.fromMinorUnits(received).toString()),
+  };
 }
 
 function confirmedItems(sale: ConfirmedSaleReadModel): ConfirmedSaleItemView[] {
@@ -2527,6 +2548,7 @@ export function confirmedSaleView(
       ...saleDateDetails(sale.sale),
     ],
     saleId: sale.sale.id,
+    summary: confirmedSummary(sale),
     totals: confirmedTotals(sale),
   };
 }

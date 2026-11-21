@@ -14,6 +14,7 @@ const confirmed = (replayed: boolean): SubmissionState => {
     replayed,
     saleDetails: [],
     saleId: SALE_ID,
+    summary: { itemCount: 0, received: "R$ 0,00" },
     totals: [],
   };
   return { phase: "confirmed", sale };

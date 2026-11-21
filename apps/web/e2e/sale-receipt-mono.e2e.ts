@@ -43,6 +43,7 @@ const AMOUNT_OR_MASK_SOURCE = String.raw`[-+−]?R\$ (?:[\d.]+,\d{2}|•••�
 const AMOUNT_SOURCE = String.raw`R\$ [\d.]+,\d{2}`;
 const SLACK_PIXELS = 1;
 const SHIFT_BUDGET = 0.01;
+const MASKED_MONEY_CELL = /^R\$ ••••/;
 
 const saleOf = ({
   discount,
@@ -208,7 +209,7 @@ async function openDetail(page: Page, options: OpenOptions) {
 interface Measured {
   edge: number;
   family: string;
-  group: "card" | "payment";
+  group: "card" | "payment" | "strip";
   text: string;
 }
 
@@ -245,13 +246,19 @@ const measureAmounts = (page: Page): Promise<Measured[]> =>
     const cells = [
       ...receipt.querySelectorAll("dd, li > span:nth-child(2)"),
     ].filter((cell) => AMOUNT.test(cell.textContent ?? ""));
+    const groupOf = (cell: Element): Measured["group"] => {
+      if (cell.closest("dl.bg-muted")) {
+        return "payment";
+      }
+      return cell.closest("dl.flex-wrap") ? "strip" : "card";
+    };
     const found: Measured[] = cells.map((cell) => {
       const nodes = shownTexts(cell);
       const last = nodes.at(-1)?.parentElement ?? cell;
       return {
         edge: Math.max(...nodes.map(rightOf)),
         family: getComputedStyle(last).fontFamily,
-        group: cell.closest("dl.bg-muted") ? "payment" : "card",
+        group: groupOf(cell),
         text: (cell.textContent ?? "").trim(),
       };
     });
@@ -272,8 +279,10 @@ for (const size of [
     const amounts = await measureAmounts(page);
     const card = amounts.filter((item) => item.group === "card");
     const payment = amounts.filter((item) => item.group === "payment");
-    // item prices, subtotal, discount and total at the card; the amount and the fee at the payment block
-    expect(card).toHaveLength(4);
+    const strip = amounts.filter((item) => item.group === "strip");
+    // item prices, subtotal and discount at the card; the total and what was received in the strip; the amount and the fee at the payment block
+    expect(card).toHaveLength(3);
+    expect(strip).toHaveLength(2);
     expect(payment).toHaveLength(2);
     for (const item of amounts) {
       expect(item.family.startsWith(`"${MONO_FAMILY}"`), item.text).toBe(true);
@@ -314,7 +323,7 @@ for (const size of [
   }) => {
     await openDetail(page, { hidden: true, sale: ORDINARY, size });
     const amounts = await measureAmounts(page);
-    expect(amounts).toHaveLength(6);
+    expect(amounts).toHaveLength(7);
     for (const item of amounts) {
       expect(item.text).toContain("••••");
       expect(item.family.startsWith(`"${MONO_FAMILY}"`), item.text).toBe(true);
@@ -324,8 +333,133 @@ for (const size of [
     expect(Math.max(...edges) - Math.min(...edges)).toBeLessThanOrEqual(
       SLACK_PIXELS
     );
+    const strip = receiptOf(page).locator("dl.flex-wrap");
+    await expect(strip.locator("dd")).toHaveText([
+      MASKED_MONEY_CELL,
+      MASKED_MONEY_CELL,
+      "1",
+    ]);
   });
 }
+
+interface StripBox {
+  left: number;
+  top: number;
+  width: number;
+}
+
+const stripBoxes = (page: Page): Promise<StripBox[]> =>
+  receiptOf(page)
+    .locator("dl.flex-wrap")
+    .evaluate((strip) =>
+      [...strip.querySelectorAll("dt")].map((term) => {
+        const box = term.getBoundingClientRect();
+        return { left: box.left, top: Math.round(box.top), width: box.width };
+      })
+    );
+
+test("faixa do recibo a 360 px: Total sozinho na primeira linha, Recebido e Itens lado a lado na seguinte", async ({
+  page,
+}) => {
+  await openDetail(page, { sale: ORDINARY, size: { height: 740, width: 360 } });
+  const strip = receiptOf(page).locator("dl.flex-wrap");
+  await expect(strip.locator("dt")).toHaveText([
+    "Total devido",
+    "Recebido",
+    "Itens",
+  ]);
+  await expect(strip.locator("dd").nth(0)).toContainText("209,90");
+  await expect(strip.locator("dd").nth(1)).toContainText("209,90");
+  await expect(strip.locator("dd").nth(2)).toHaveText("1");
+  const [total, received, items] = await stripBoxes(page);
+  expect(received?.top).toBeGreaterThan(total?.top ?? 0);
+  expect(items?.top).toBe(received?.top);
+  expect(items?.left).toBeGreaterThan(received?.left ?? 0);
+  expect(
+    await receiptOf(page).getByText("Total devido", { exact: true }).count()
+  ).toBe(1);
+});
+
+test("faixa do recibo a 1280 px: os três lado a lado, o Total o mais largo e o maior", async ({
+  page,
+}) => {
+  await openDetail(page, {
+    sale: ORDINARY,
+    size: { height: 800, width: 1280 },
+  });
+  const [total, received, items] = await stripBoxes(page);
+  expect(received?.top).toBe(total?.top);
+  expect(items?.top).toBe(total?.top);
+  expect(total?.left).toBeLessThan(received?.left ?? 0);
+  expect(received?.left).toBeLessThan(items?.left ?? 0);
+  expect(total?.width).toBeGreaterThan(
+    received?.width ?? Number.POSITIVE_INFINITY
+  );
+  const sizes = await receiptOf(page)
+    .locator("dl.flex-wrap dd")
+    .evaluateAll((cells) =>
+      cells.map((cell) =>
+        Number.parseFloat(
+          getComputedStyle(cell.querySelector("[data-money]") ?? cell).fontSize
+        )
+      )
+    );
+  expect(sizes[0]).toBeGreaterThan(sizes[1] ?? Number.POSITIVE_INFINITY);
+});
+
+test("faixa do recibo: nenhuma leitura a mais e, sem conexão depois de aberta, a venda segue na tela", async ({
+  page,
+}) => {
+  const procedures: string[] = [];
+  page.on("request", (request) => {
+    const { pathname } = new URL(request.url());
+    if (pathname.startsWith("/rpc/")) {
+      procedures.push(pathname.replace(RPC_PREFIX, ""));
+    }
+  });
+  await openDetail(page, { sale: ORDINARY, size: { height: 740, width: 360 } });
+  const strip = receiptOf(page).locator("dl.flex-wrap");
+  await expect(strip.locator("dd").nth(1)).toContainText("209,90");
+  expect(procedures.filter((name) => name === "sale/get")).toHaveLength(1);
+  expect([...new Set(procedures)].sort()).toEqual([
+    "__screens-lab",
+    "sale/get",
+    "sale/getCustomerLink",
+  ]);
+  await page.context().setOffline(true);
+  await expect(strip.locator("dd").nth(0)).toContainText("209,90");
+  await expect(strip.locator("dd").nth(2)).toHaveText("1");
+});
+
+reflowTest(
+  "faixa do recibo a 320 px com a letra a 20 px: Total, Recebido e Itens sem rolagem e sem corte, e os valores escondidos mascaram Total e Recebido",
+  async ({ page }) => {
+    await openDetail(page, { fontPixels: 20, sale: HUGE });
+    await expectReflowFont(page, 20);
+    const receipt = receiptOf(page);
+    const strip = receipt.locator("dl.flex-wrap");
+    await expect(strip.locator("dd").nth(0)).toContainText("1.200.000,00");
+    await expect(strip.locator("dd").nth(1)).toContainText("1.200.000,00");
+    expect(await assertAmountsOnOneLine(strip)).toBeGreaterThanOrEqual(1);
+    await assertNothingClipped(strip);
+    await assertNoPageScroll(page);
+  }
+);
+
+reflowTest(
+  "faixa do recibo escondida a 320 px com a letra a 20 px: Total e Recebido em máscara, Itens à vista, sem rolagem",
+  async ({ page }) => {
+    await openDetail(page, { fontPixels: 20, hidden: true, sale: HUGE });
+    const strip = receiptOf(page).locator("dl.flex-wrap");
+    await expect(strip.locator("dd")).toHaveText([
+      MASKED_MONEY_CELL,
+      MASKED_MONEY_CELL,
+      "1",
+    ]);
+    await assertNothingClipped(strip);
+    await assertNoPageScroll(page);
+  }
+);
 
 reflowTest(
   "recibo a 320 px com a letra a 20 px: o valor de nove dígitos não quebra nem sai do cartão; o nome é que quebra",

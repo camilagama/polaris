@@ -71,6 +71,7 @@ const sale: ConfirmedSaleView = {
     },
   ],
   saleId: SALE_ID,
+  summary: { itemCount: 2, received: "R$ 219,90" },
   totals: [
     { key: "subtotal", label: "Subtotal", tone: "normal", value: "R$ 229,90" },
     {
@@ -148,10 +149,11 @@ describe("the sale as a receipt", () => {
   it("writes every amount of the lines in Geist Mono, at the right: items, subtotal, discount, total and the payment amounts", () => {
     const markup = render();
     const mono = markup.match(MONO_CELL) ?? [];
-    // the item prices, the subtotal, the discount, the payment amount and the processing fee, the total, the identifier
-    expect(mono).toHaveLength(7);
+    // the total, what was received and the count of the strip, the item prices, the subtotal, the discount, the payment amount and the processing fee, the identifier
+    expect(mono).toHaveLength(9);
     expect(markup).toMatch(ITEM_PRICES);
-    const cells = [...markup.matchAll(DD)].map((match) => match[1] ?? "");
+    const lines = markup.slice(markup.indexOf("border-dashed"));
+    const cells = [...lines.matchAll(DD)].map((match) => match[1] ?? "");
     const monoCells = cells.filter((cell) => cell.includes("font-mono"));
     expect(monoCells).toHaveLength(4);
     for (const cell of monoCells) {
@@ -192,6 +194,52 @@ describe("the sale as a receipt", () => {
     expect(dateBlock).toContain("Confirmada no servidor");
     expect(markup.indexOf("Desconto")).toBeLessThan(start);
     expect(start).toBeLessThan(markup.indexOf("Pagamento"));
+  });
+
+  it("writes the total once, in a strip of three terms: Total devido, Recebido, Itens", () => {
+    const markup = render();
+    expect(markup.split("Total devido")).toHaveLength(2);
+    expect(markup.match(TOTAL_PARTS)).toHaveLength(1);
+    const strip = markup.slice(
+      markup.indexOf('<dl class="@container'),
+      markup.indexOf("border-dashed")
+    );
+    const terms = [...strip.matchAll(/<dt[^>]*>([^<]*)<\/dt>/g)].map(
+      (match) => match[1]
+    );
+    expect(terms).toEqual(["Total devido", "Recebido", "Itens"]);
+    expect(strip.match(/<dd/g)).toHaveLength(3);
+    expect(strip).toContain("basis-full");
+    expect(strip).toContain("@min-[20rem]:basis-0");
+  });
+
+  it("writes what was received and the count of items from the sale, and masks the money of the strip with the values hidden", () => {
+    const strip = (markup: string) =>
+      markup.slice(
+        markup.indexOf('<dl class="@container'),
+        markup.indexOf("border-dashed")
+      );
+    expect(strip(render())).toContain("219");
+    expect(strip(render())).toContain(">2</dd>");
+    state.hidden = true;
+    const masked = strip(render());
+    expect(masked).not.toContain("219");
+    expect(masked.match(/data-masked-money/g)).toHaveLength(2);
+    expect(masked).toContain(">2</dd>");
+  });
+
+  it("keeps the strip with the cancellation notice above it", () => {
+    const markup = renderToStaticMarkup(
+      <SaleReceipt
+        before={<p>Venda cancelada</p>}
+        sale={sale}
+        status={<span>Cancelada</span>}
+      />
+    );
+    expect(markup.indexOf("Venda cancelada")).toBeLessThan(
+      markup.indexOf("Recebido")
+    );
+    expect(markup).toContain("Total devido");
   });
 
   it("has no ink button: the receipt only reads", () => {
