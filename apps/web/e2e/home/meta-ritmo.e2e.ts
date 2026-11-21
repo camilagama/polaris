@@ -11,8 +11,10 @@ import {
   reflowTest,
 } from "../reflow";
 import {
+  addDays,
   FakeServer,
   goal,
+  NOON,
   openHome,
   placeOf,
   readsEnded,
@@ -25,6 +27,10 @@ import {
  * hoje é 22 ÷ 31 do alvo.
  */
 const EXPECTED_SHARE = 22 / 31;
+
+/** The goal that begins on the store's today: nothing of the period is over yet. */
+const TODAY = new Date(NOON).toISOString().slice(0, 10);
+const FIRST_DAY = { endsOn: addDays(TODAY, 8), startsOn: TODAY };
 
 const progress = (percent: string, value = "2670.60") => ({
   percent,
@@ -92,7 +98,7 @@ test.describe("o ritmo da Meta no anel do Início", () => {
 
     server.scenario = {
       ...SOLD,
-      goals: [goal({ endsOn: "2026-10-31", startsOn: "2026-10-23" })],
+      goals: [goal(FIRST_DAY)],
     };
     await page.reload();
     await expect(meta.getByRole("img")).toBeVisible();
@@ -119,7 +125,7 @@ test.describe("o ritmo da Meta no anel do Início", () => {
       const withWord = (await placeOf(meta)).height;
       server.scenario = {
         ...SOLD,
-        goals: [goal({ endsOn: "2026-10-31", startsOn: "2026-10-23" })],
+        goals: [goal(FIRST_DAY)],
       };
       await page.reload();
       await expect(meta.locator("[data-pace]")).toHaveText("");
