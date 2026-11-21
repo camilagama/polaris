@@ -84,6 +84,7 @@ export default defineProject({
     hookTimeout: 60_000,
     include: ["src/**/*.workerd-db.test.ts"],
     name: "admin-workerd-db",
+    sequence: { shuffle: { tests: true } },
     testTimeout: 60_000,
   },
 });
