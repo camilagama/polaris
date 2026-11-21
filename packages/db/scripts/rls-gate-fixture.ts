@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { Pool } from "pg";
+import { rollbackAndRelease } from "./gate-roles";
 
 /**
  * `rls_poc_operations` lives only while the gate that proves RLS on it runs: the app's database does not have it.
@@ -33,11 +34,10 @@ export async function recreateRlsGateFixture(pool: Pool): Promise<void> {
     await client.query("DROP TABLE IF EXISTS public.rls_poc_operations");
     await client.query(statements);
     await client.query("COMMIT");
-  } catch (error) {
-    await client.query("ROLLBACK");
-    throw error;
-  } finally {
     client.release();
+  } catch (error) {
+    await rollbackAndRelease(client);
+    throw error;
   }
 }
 
@@ -56,11 +56,10 @@ export async function seedRlsGateFixture(pool: Pool): Promise<void> {
       );
     }
     await client.query("COMMIT");
-  } catch (error) {
-    await client.query("ROLLBACK");
-    throw error;
-  } finally {
     client.release();
+  } catch (error) {
+    await rollbackAndRelease(client);
+    throw error;
   }
 }
 
@@ -72,11 +71,10 @@ export async function dropRlsGateFixture(pool: Pool): Promise<void> {
     await client.query("SET LOCAL lock_timeout = '10s'");
     await client.query("DROP TABLE IF EXISTS public.rls_poc_operations");
     await client.query("COMMIT");
-  } catch (error) {
-    await client.query("ROLLBACK");
-    throw error;
-  } finally {
     client.release();
+  } catch (error) {
+    await rollbackAndRelease(client);
+    throw error;
   }
 }
 
