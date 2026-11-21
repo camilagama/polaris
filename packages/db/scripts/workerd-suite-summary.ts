@@ -44,3 +44,23 @@ export function suiteSummaryProblems(
   }
   return problems;
 }
+
+const seedLine = /Running tests with seed/;
+const failureLine =
+  /FAIL|Error|expected|Expected|Received|✗|×|Tests |Test Files/;
+const DIGEST_FAILURE_LINES = 30;
+
+/**
+ * The lines that say what failed, with the line of the shuffle seed first: the failure of a suite that runs in random
+ * order is reproduced only with the seed of that run, and the seed line is not a failure line.
+ */
+export function runDigest(lines: string[], problems: string[]): string[] {
+  const seed = lines.find((line) => seedLine.test(line));
+  return [
+    ...(seed === undefined ? [] : [seed]),
+    ...lines
+      .filter((line) => failureLine.test(line))
+      .slice(-DIGEST_FAILURE_LINES),
+    ...problems,
+  ];
+}
