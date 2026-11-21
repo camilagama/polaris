@@ -16,8 +16,8 @@ const VISUAL = ["**/ui-visual.e2e.ts"];
 /**
  * The reloads with the worker in control: the worker is the same on a phone, and 300 reloads cost too much twice. The
  * `ui-*` files below set their own viewport and touch and skip the Pixel 5 project in `beforeEach`; a skipped test still
- * counts as a test when `--shard` splits the run by count, so listing them here keeps the phone shards from looking
- * full when they are not.
+ * counts as listed and as run for the shard guard (`scripts/ci-shard-coverage.mjs`), so listing them here keeps the
+ * phone count to the tests that check something.
  */
 const DESKTOP_ONLY = [
   "**/recarga-com-worker.e2e.ts",
