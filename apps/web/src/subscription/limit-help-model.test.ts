@@ -8,7 +8,6 @@ import {
   limitUsageText,
   type NearLimitSubject,
   nearLimitFor,
-  nearLimitForHome,
   nearLimitProText,
   nearLimitText,
 } from "./limit-help-model";
@@ -343,75 +342,5 @@ describe("o aviso de que o limite está perto", () => {
         })
       ).toBeNull();
     }
-  });
-});
-
-describe("a linha do Início: uma só, de uma leitura do plano", () => {
-  const plan = (
-    state: (typeof STATES)[number],
-    use: { images: number; variants: number }
-  ) => ({
-    limits: { goals: 1, images: 50, variants: 50 },
-    state,
-    usage: { goals: 0, ...use },
-  });
-  const home = (
-    state: (typeof STATES)[number],
-    use: { images: number; variants: number },
-    who: { billingSelfService?: boolean; canManageBilling?: boolean } = {}
-  ) =>
-    nearLimitForHome({
-      billingSelfService: who.billingSelfService ?? true,
-      canManageBilling: who.canManageBilling ?? true,
-      plan: plan(state, use),
-    });
-
-  it("abaixo de 90% em variantes e em imagens, nada", () => {
-    expect(home("free", { images: 44, variants: 44 })).toBeNull();
-  });
-
-  it("uma contagem perto basta, e diz qual", () => {
-    const variants = home("free", { images: 0, variants: 45 });
-    expect(variants?.usage.subject).toBe("variants");
-    const images = home("free", { images: 47, variants: 10 });
-    expect(images?.usage.subject).toBe("images");
-    expect(images && nearLimitText(images)).toBe(
-      "Você usa 47 de 50 imagens no plano Free."
-    );
-  });
-
-  it("com as duas perto, a de maior parte; empatadas, as variantes", () => {
-    expect(home("free", { images: 49, variants: 46 })?.usage.subject).toBe(
-      "images"
-    );
-    expect(home("free", { images: 47, variants: 47 })?.usage.subject).toBe(
-      "variants"
-    );
-  });
-
-  it("a que chegou ao limite vem antes da que só está perto", () => {
-    const view = home("free", { images: 50, variants: 49 });
-    expect(view?.kind).toBe("reached");
-    expect(view?.usage.subject).toBe("images");
-    expect(home("free_over_limit", { images: 10, variants: 51 })?.kind).toBe(
-      "reached"
-    );
-  });
-
-  it("a mesma tabela de quem vê: só o dono, Free ou Free acima do limite, assinatura ligada e plano lido", () => {
-    for (const state of STATES) {
-      const shown = state === "free" || state === "free_over_limit";
-      expect(home(state, { images: 50, variants: 50 }) !== null).toBe(shown);
-    }
-    const full = { images: 50, variants: 50 };
-    expect(home("free", full, { billingSelfService: false })).toBeNull();
-    expect(home("free", full, { canManageBilling: false })).toBeNull();
-    expect(
-      nearLimitForHome({
-        billingSelfService: true,
-        canManageBilling: true,
-        plan: null,
-      })
-    ).toBeNull();
   });
 });

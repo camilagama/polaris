@@ -1053,11 +1053,13 @@ describe("the memory of the notice of grace (sessionStorage, by store)", () => {
   };
   const GRACE_FACTS = {
     accessEndsAt: "2026-10-31T03:00:00.000Z",
+    limits: { goals: 1, images: 50, variants: 50 },
     nextCharge: null,
     state: "grace",
+    usage: { goals: 0, images: 3, variants: 12 },
   } as const;
 
-  it("keeps only the state, the end of the access, the day of the next charge, the store and when it was read", () => {
+  it("keeps only the state, the end of the access, the day of the next charge, the variants and their limit, the store and when it was read", () => {
     const store = fakeStore();
     rememberPlanNotice("loja-a", GRACE_FACTS, 1000, store);
     expect(JSON.parse(store.values.get(PLAN_NOTICE_KEY) ?? "null")).toEqual({
@@ -1066,6 +1068,7 @@ describe("the memory of the notice of grace (sessionStorage, by store)", () => {
       organizationId: "loja-a",
       readAt: 1000,
       state: "grace",
+      variants: { max: 50, used: 12 },
     });
     expect(rememberedPlanNotice("loja-a", store)).toMatchObject({
       accessEndsAt: GRACE_FACTS.accessEndsAt,
@@ -1079,8 +1082,10 @@ describe("the memory of the notice of grace (sessionStorage, by store)", () => {
       "loja-a",
       {
         accessEndsAt: "2026-11-10T03:00:00.000Z",
+        limits: GRACE_FACTS.limits,
         nextCharge: { amount: "24.90", cycleMonths: 1, on: "2026-11-10" },
         state: "trialing",
+        usage: GRACE_FACTS.usage,
       },
       1000,
       store
@@ -1090,6 +1095,51 @@ describe("the memory of the notice of grace (sessionStorage, by store)", () => {
       nextChargeOn: "2026-11-10",
       state: "trialing",
     });
+  });
+
+  it("keeps no variants for a plan with no limit of them, and reads a copy kept before the field as having none", () => {
+    const store = fakeStore();
+    rememberPlanNotice(
+      "loja-a",
+      { ...GRACE_FACTS, limits: { goals: null, images: null, variants: null } },
+      1000,
+      store
+    );
+    expect(rememberedPlanNotice("loja-a", store)?.variants).toBeNull();
+    store.values.set(
+      PLAN_NOTICE_KEY,
+      JSON.stringify({
+        accessEndsAt: null,
+        nextChargeOn: null,
+        organizationId: "loja-a",
+        readAt: 1,
+        state: "free",
+      })
+    );
+    expect(rememberedPlanNotice("loja-a", store)).toMatchObject({
+      state: "free",
+      variants: null,
+    });
+    for (const variants of [
+      { max: 0, used: 0 },
+      { max: 50, used: -1 },
+      { max: 50.5, used: 1 },
+      { max: "50", used: 1 },
+      "12 de 50",
+    ]) {
+      store.values.set(
+        PLAN_NOTICE_KEY,
+        JSON.stringify({
+          accessEndsAt: null,
+          nextChargeOn: null,
+          organizationId: "loja-a",
+          readAt: 1,
+          state: "free",
+          variants,
+        })
+      );
+      expect(rememberedPlanNotice("loja-a", store)?.variants).toBeNull();
+    }
   });
 
   it("never gives one store's plan to another", () => {
