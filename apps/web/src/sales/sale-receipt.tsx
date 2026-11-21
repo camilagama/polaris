@@ -40,8 +40,8 @@ export function SaleReceipt({ before, sale, status }: SaleReceiptProps) {
           </div>
           {before}
           {total ? (
-            <dl className="@container flex flex-wrap gap-x-4 gap-y-3">
-              <div className="grid min-w-0 @min-[20rem]:flex-[1.4] @min-[20rem]:basis-0 basis-full gap-1">
+            <dl className="@container flex flex-wrap gap-x-6 gap-y-3">
+              <div className="grid @min-[20rem]:grow-[1.4] @min-[20rem]:basis-auto basis-full gap-1">
                 <dt className="font-medium text-muted-foreground">
                   {total.label}
                 </dt>
@@ -53,7 +53,7 @@ export function SaleReceipt({ before, sale, status }: SaleReceiptProps) {
                   />
                 </dd>
               </div>
-              <div className="grid min-w-0 flex-1 gap-1 @min-[20rem]:border-border @min-[20rem]:border-l @min-[20rem]:pl-4">
+              <div className="grid flex-auto gap-1">
                 <dt className="font-medium text-muted-foreground">Recebido</dt>
                 <dd>
                   <Money
@@ -63,7 +63,7 @@ export function SaleReceipt({ before, sale, status }: SaleReceiptProps) {
                   />
                 </dd>
               </div>
-              <div className="grid min-w-0 flex-1 gap-1 @min-[20rem]:border-border @min-[20rem]:border-l @min-[20rem]:pl-4">
+              <div className="grid flex-auto gap-1">
                 <dt className="font-medium text-muted-foreground">Itens</dt>
                 <dd className="font-mono text-value-md tabular-nums">
                   {formatQuantity(sale.summary.itemCount)}

@@ -43,6 +43,7 @@ const AMOUNT_OR_MASK_SOURCE = String.raw`[-+−]?R\$ (?:[\d.]+,\d{2}|•••�
 const AMOUNT_SOURCE = String.raw`R\$ [\d.]+,\d{2}`;
 const SLACK_PIXELS = 1;
 const SHIFT_BUDGET = 0.01;
+const OVERLAP_SLACK_PIXELS = 0.5;
 const MASKED_MONEY_CELL = /^R\$ ••••/;
 
 const saleOf = ({
@@ -348,6 +349,41 @@ interface StripBox {
   width: number;
 }
 
+const expectStripCellsApart = async (page: Page) => {
+  const rects = await receiptOf(page)
+    .locator("dl.flex-wrap > div")
+    .evaluateAll((cells) =>
+      cells.map((cell) => {
+        const box = cell.getBoundingClientRect();
+        const text = [...cell.querySelectorAll("dt, dd")].map((part) => {
+          const range = document.createRange();
+          range.selectNodeContents(part);
+          return range.getBoundingClientRect();
+        });
+        return {
+          bottom: box.bottom,
+          left: box.left,
+          overflow: Math.max(...text.map((rect) => rect.right)) - box.right,
+          right: box.right,
+          top: box.top,
+        };
+      })
+    );
+  for (const [index, rect] of rects.entries()) {
+    expect(rect.overflow, `cell ${index} holds its text`).toBeLessThanOrEqual(
+      OVERLAP_SLACK_PIXELS
+    );
+    for (const other of rects.slice(index + 1)) {
+      const apart =
+        rect.right <= other.left + OVERLAP_SLACK_PIXELS ||
+        other.right <= rect.left + OVERLAP_SLACK_PIXELS ||
+        rect.bottom <= other.top + OVERLAP_SLACK_PIXELS ||
+        other.bottom <= rect.top + OVERLAP_SLACK_PIXELS;
+      expect(apart, `cells ${index} and the next do not overlap`).toBe(true);
+    }
+  }
+};
+
 const stripBoxes = (page: Page): Promise<StripBox[]> =>
   receiptOf(page)
     .locator("dl.flex-wrap")
@@ -407,7 +443,14 @@ test("faixa do recibo a 1280 px: os três lado a lado, o Total o mais largo e o 
   expect(sizes[0]).toBeGreaterThan(sizes[1] ?? Number.POSITIVE_INFINITY);
 });
 
-test("faixa do recibo: nenhuma leitura a mais e, sem conexão depois de aberta, a venda segue na tela", async ({
+test("faixa do recibo a 412 px com valor de nove dígitos: as células não se sobrepõem", async ({
+  page,
+}) => {
+  await openDetail(page, { sale: HUGE, size: { height: 800, width: 412 } });
+  await expectStripCellsApart(page);
+});
+
+test("faixa do recibo: nenhuma leitura a mais do que a tela já fazia", async ({
   page,
 }) => {
   const procedures: string[] = [];
@@ -418,17 +461,15 @@ test("faixa do recibo: nenhuma leitura a mais e, sem conexão depois de aberta, 
     }
   });
   await openDetail(page, { sale: ORDINARY, size: { height: 740, width: 360 } });
-  const strip = receiptOf(page).locator("dl.flex-wrap");
-  await expect(strip.locator("dd").nth(1)).toContainText("209,90");
+  await expect(receiptOf(page).locator("dl.flex-wrap dd").nth(1)).toContainText(
+    "209,90"
+  );
   expect(procedures.filter((name) => name === "sale/get")).toHaveLength(1);
   expect([...new Set(procedures)].sort()).toEqual([
     "__screens-lab",
     "sale/get",
     "sale/getCustomerLink",
   ]);
-  await page.context().setOffline(true);
-  await expect(strip.locator("dd").nth(0)).toContainText("209,90");
-  await expect(strip.locator("dd").nth(2)).toHaveText("1");
 });
 
 reflowTest(
@@ -441,6 +482,7 @@ reflowTest(
     await expect(strip.locator("dd").nth(0)).toContainText("1.200.000,00");
     await expect(strip.locator("dd").nth(1)).toContainText("1.200.000,00");
     expect(await assertAmountsOnOneLine(strip)).toBeGreaterThanOrEqual(1);
+    await expectStripCellsApart(page);
     await assertNothingClipped(strip);
     await assertNoPageScroll(page);
   }

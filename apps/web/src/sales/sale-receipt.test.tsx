@@ -209,8 +209,6 @@ describe("the sale as a receipt", () => {
     );
     expect(terms).toEqual(["Total devido", "Recebido", "Itens"]);
     expect(strip.match(/<dd/g)).toHaveLength(3);
-    expect(strip).toContain("basis-full");
-    expect(strip).toContain("@min-[20rem]:basis-0");
   });
 
   it("writes what was received and the count of items from the sale, and masks the money of the strip with the values hidden", () => {
@@ -219,7 +217,8 @@ describe("the sale as a receipt", () => {
         markup.indexOf('<dl class="@container'),
         markup.indexOf("border-dashed")
       );
-    expect(strip(render())).toContain("219");
+    expect(strip(render())).toMatch(TOTAL_PARTS);
+    expect(strip(render())).toContain(">R$ 219,90</span>");
     expect(strip(render())).toContain(">2</dd>");
     state.hidden = true;
     const masked = strip(render());

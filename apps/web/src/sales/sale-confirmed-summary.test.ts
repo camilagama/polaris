@@ -24,7 +24,11 @@ const fee = {
 
 const sale = (
   quantities: number[],
-  amount: string
+  amount: string,
+  totals: { subtotal: string; totalDue: string } = {
+    subtotal: amount,
+    totalDue: amount,
+  }
 ): ConfirmedSaleReadModel => ({
   adjustments: [],
   items: quantities.map((quantity, position) => item(position, quantity)),
@@ -56,9 +60,9 @@ const sale = (
     discountTotal: "0.00",
     freightTotal: "0.00",
     paymentSurchargeTotal: "0.00",
-    subtotal: amount,
+    subtotal: totals.subtotal,
     surchargeTotal: "0.00",
-    totalDue: amount,
+    totalDue: totals.totalDue,
   },
 });
 
@@ -74,14 +78,23 @@ describe("the figures beside the total of the receipt", () => {
     expect(view.summary.received).toBe("R$ 12.000,50");
   });
 
-  it("agrees with the lines the receipt shows", () => {
+  it("reads the received amount from the stored payment, not from the total or the subtotal", () => {
+    const view = confirmedSaleView(
+      sale([4, 5], "88.82", { subtotal: "99.80", totalDue: "90.00" })
+    );
+    expect(view.summary.received).toBe("R$ 88,82");
+    expect(view.totals.find((row) => row.tone === "total")?.value).toBe(
+      "R$ 90,00"
+    );
+  });
+
+  it("agrees with the lines the receipt shows: the payment line and the count of the items", () => {
     const view = confirmedSaleView(sale([4, 5], "90.00"));
     expect(view.items).toHaveLength(2);
     const paid = view.paymentDetails.find(
       (detail) => detail.label === "Valor do pagamento"
     );
     expect(view.summary.received).toBe(paid?.value);
-    const total = view.totals.find((row) => row.tone === "total");
-    expect(view.summary.received).toBe(total?.value);
+    expect(view.summary.itemCount).toBe(9);
   });
 });

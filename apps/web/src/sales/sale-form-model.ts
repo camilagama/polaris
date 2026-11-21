@@ -2349,7 +2349,7 @@ interface ConfirmedSaleItemView {
 interface ConfirmedSaleSummary {
   /** Sum of the quantities of the items. */
   itemCount: number;
-  /** Sum of the payments stored with the sale, as `formatBrlAmount` writes it. */
+  /** The payment stored with the sale (the read model carries one), as `formatBrlAmount` writes it. */
   received: string;
 }
 
@@ -2366,14 +2366,9 @@ export interface ConfirmedSaleView {
 }
 
 function confirmedSummary(sale: ConfirmedSaleReadModel): ConfirmedSaleSummary {
-  const payments = [sale.payment];
-  const received = payments.reduce(
-    (sum, payment) => sum + Money.from(payment.amount).minorUnits,
-    0n
-  );
   return {
     itemCount: sale.items.reduce((sum, item) => sum + item.quantity, 0),
-    received: formatBrlAmount(Money.fromMinorUnits(received).toString()),
+    received: formatBrlAmount(sale.payment.amount),
   };
 }
 
