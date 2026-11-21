@@ -34,8 +34,6 @@ export const E2E_FIXED_DATES_LIST = {
     count: 38,
     reason: BEFORE_THE_RULE,
   },
-  "apps/web/e2e-pwa/ui-device-states.ts": { count: 5, reason: BEFORE_THE_RULE },
-  "apps/web/e2e-pwa/ui-sale-states.ts": { count: 6, reason: BEFORE_THE_RULE },
   "apps/web/e2e-pwa/ui-shell-isolation.e2e.ts": {
     count: 17,
     reason: BEFORE_THE_RULE,
