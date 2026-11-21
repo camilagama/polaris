@@ -39,7 +39,7 @@ export function SaleReceipt({ before, sale, status }: SaleReceiptProps) {
           {before}
           {total ? (
             <dl>
-              <div className="flex flex-wrap items-baseline justify-between gap-x-3">
+              <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
                 <dt className="font-medium text-muted-foreground">
                   {total.label}
                 </dt>
