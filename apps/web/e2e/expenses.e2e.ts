@@ -140,6 +140,9 @@ class FakeExpenseServer {
   readonly expenses: FakeExpense[] = [];
   readonly rules: FakeRule[] = [];
   calls: string[] = [];
+  /** Answers the split of the total per category, as the current server does; off, as an old server that has no such field. */
+  splitByCategory = false as boolean;
+  listGate: Promise<void> | null = null;
   private next = 100;
 
   /** Like the real server: reading generates the occurrences that fell due, each an ordinary expense. */
@@ -335,11 +338,29 @@ class FakeExpenseServer {
           0
         );
         const limit = Number(input.limit ?? 100);
+        const perCategory = new Map<string, { count: number; cents: number }>();
+        for (const e of rows) {
+          const line = perCategory.get(e.categoryId) ?? { cents: 0, count: 0 };
+          line.cents += Math.round(Number(e.amount) * 100);
+          line.count += 1;
+          perCategory.set(e.categoryId, line);
+        }
         return this.ok({
           count: rows.length,
           expenses: rows.slice(0, limit),
           nextCursor: rows.length > limit ? "more" : null,
           total: (cents / 100).toFixed(2),
+          ...(this.splitByCategory
+            ? {
+                totalsByCategory: [...perCategory].map(
+                  ([categoryId, line]) => ({
+                    categoryId,
+                    count: line.count,
+                    total: (line.cents / 100).toFixed(2),
+                  })
+                ),
+              }
+            : {}),
         });
       }
       case "expense/create": {
@@ -416,6 +437,9 @@ async function installServer(page: Page, server: FakeExpenseServer) {
     const body = route.request().postDataJSON() as {
       json?: Record<string, unknown>;
     } | null;
+    if (procedure === "expense/list") {
+      await server.listGate;
+    }
     const answer = server.handle(procedure, body?.json ?? {});
     await route.fulfill({
       body: JSON.stringify(answer.body),
@@ -2238,6 +2262,197 @@ for (const width of [480, 1280]) {
     await expectColumn();
   });
 }
+
+const BY_CATEGORY = "Por categoria";
+const REMOVE_FILTER = /^Tirar o filtro/;
+const byCategory = (page: Page) =>
+  page.getByRole("region", { exact: true, name: BY_CATEGORY });
+const categoryButton = (page: Page, name: string) =>
+  byCategory(page).getByRole("button", {
+    name: new RegExp(`^Filtrar por ${name}( |$)`),
+  });
+
+function seedSplit(server: FakeExpenseServer) {
+  server.splitByCategory = true;
+  seedExpense(server, 1, "300.00", 0);
+  seedExpense(server, 2, "300.00", 0);
+  seedExpense(server, 3, "200.00", 1);
+  seedExpense(server, 4, "100.00", 1);
+  seedExpense(server, 5, "100.00", 2);
+}
+
+test("por categoria: cada linha escreve o nome, o percentual e o valor, a soma é o total do período e a tela não faz leitura a mais", async ({
+  page,
+}) => {
+  await page.clock.setFixedTime(new Date(NOW));
+  const server = new FakeExpenseServer();
+  seedSplit(server);
+  await openExpenses(page, server);
+
+  const block = byCategory(page);
+  await expect(block).toBeVisible();
+  const lines = block.locator("[data-share-line]");
+  await expect(lines).toHaveCount(3);
+  await expect(lines.nth(0)).toContainText("Marketing");
+  await expect(lines.nth(0)).toContainText("60%");
+  await expect(lines.nth(0)).toContainText("R$ 600,00");
+  await expect(lines.nth(1)).toContainText("Aluguel");
+  await expect(lines.nth(1)).toContainText("30%");
+  await expect(lines.nth(1)).toContainText("R$ 300,00");
+  await expect(lines.nth(2)).toContainText("Impostos");
+  await expect(lines.nth(2)).toContainText("10%");
+  await expect(lines.nth(2)).toContainText("R$ 100,00");
+  await expect(page.getByText("Total do período").locator("..")).toContainText(
+    "R$ 1.000,00"
+  );
+
+  const widths = () =>
+    block.locator("[data-share-track]").evaluateAll((tracks) =>
+      tracks.map((track) => {
+        const fill = track.firstElementChild as HTMLElement;
+        return (
+          fill.getBoundingClientRect().width /
+          track.getBoundingClientRect().width
+        );
+      })
+    );
+  await expect
+    .poll(async () => (await widths()).map((width) => Math.round(width * 100)))
+    .toEqual([100, 50, 17]);
+  await expect(block.locator("[data-share-track]")).toHaveCount(3);
+  await expect(
+    block.locator('[data-share-track]:not([aria-hidden="true"])')
+  ).toHaveCount(0);
+
+  expect(
+    await axeFaults(page, '[aria-labelledby="expense-by-category-title"]')
+  ).toEqual([]);
+  expect(callsOf(server, "expense/list")).toBe(1);
+  expect(callsOf(server, "expense/listCategories")).toBe(1);
+});
+
+test("por categoria: tocar numa linha aplica o filtro de Categoria da barra, o bloco sai e tirar a pílula o traz de volta, com 44 px de área e foco visível", async ({
+  page,
+}) => {
+  await page.clock.setFixedTime(new Date(NOW));
+  const server = new FakeExpenseServer();
+  seedSplit(server);
+  await openExpenses(page, server);
+
+  const target = categoryButton(page, "Aluguel");
+  await expect(target).toBeVisible();
+  const box = await target.boundingBox();
+  expect(box?.height ?? 0).toBeGreaterThanOrEqual(44);
+  const first = categoryButton(page, "Marketing");
+  await filterButton(page).focus();
+  await page.keyboard.press("Tab");
+  await expect(first).toBeFocused();
+  await expect(first).toHaveCSS("outline-style", "solid");
+  await expect(first).toHaveCSS("outline-width", "3px");
+
+  const before = callsOf(server, "expense/list");
+  await target.click();
+  await expect(filterPill(page, "Categoria")).toContainText("Aluguel");
+  await expect(byCategory(page)).toHaveCount(0);
+  await expect(page.locator("[data-expense-id]")).toHaveCount(2);
+  await expect(filterButton(page)).toBeFocused();
+  await expect.poll(() => callsOf(server, "expense/list")).toBe(before + 1);
+
+  await filterBar(page).getByRole("button", { name: REMOVE_FILTER }).click();
+  await expect(filterPill(page, "Categoria")).toHaveCount(0);
+  await expect(byCategory(page)).toBeVisible();
+  await expect(page.locator("[data-expense-id]")).toHaveCount(5);
+});
+
+test("por categoria: com Anuladas, com menos de duas categorias no mês e com um servidor sem o campo o bloco não aparece", async ({
+  page,
+}) => {
+  await page.clock.setFixedTime(new Date(NOW));
+  const server = new FakeExpenseServer();
+  seedSplit(server);
+  await openExpenses(page, server);
+  await expect(byCategory(page)).toBeVisible();
+
+  await showStatus(page, "Anuladas");
+  await expect(page.getByText(EMPTY_VOIDED)).toBeVisible();
+  await expect(byCategory(page)).toHaveCount(0);
+  await showStatus(page, "Ativas");
+  await expect(byCategory(page)).toBeVisible();
+
+  await chooseMonth(page, "setembro de 2026");
+  await expect(page.getByText("Nenhuma despesa neste período.")).toBeVisible();
+  await expect(byCategory(page)).toHaveCount(0);
+});
+
+test("por categoria: um servidor sem totalsByCategory deixa a tela como era, sem o bloco nem texto de 'Sem categoria'", async ({
+  page,
+}) => {
+  await page.clock.setFixedTime(new Date(NOW));
+  const server = new FakeExpenseServer();
+  seedSplit(server);
+  server.splitByCategory = false;
+  await openExpenses(page, server);
+  await expect(page.locator("[data-expense-id]")).toHaveCount(5);
+  await expect(byCategory(page)).toHaveCount(0);
+  await expect(page.getByText("Sem categoria")).toHaveCount(0);
+});
+
+test("por categoria: ao trocar de mês o bloco guarda o lugar em esqueleto com a forma das linhas e a lista não anda (CLS até 0,01)", async ({
+  page,
+}) => {
+  await page.clock.setFixedTime(new Date(NOW));
+  await page.addInitScript(() => {
+    const holder = window as unknown as { __shift: number };
+    holder.__shift = 0;
+    new PerformanceObserver((list) => {
+      for (const entry of list.getEntries()) {
+        const shift = entry as PerformanceEntry & {
+          hadRecentInput: boolean;
+          value: number;
+        };
+        if (!shift.hadRecentInput) {
+          holder.__shift += shift.value;
+        }
+      }
+    }).observe({ buffered: true, type: "layout-shift" });
+  });
+  const server = new FakeExpenseServer();
+  seedSplit(server);
+  for (const expense of [...server.expenses]) {
+    server.expenses.push({
+      ...expense,
+      competenceOn: "2026-09-14",
+      id: uuid(900 + server.expenses.length),
+    });
+  }
+  await openExpenses(page, server);
+  await expect(byCategory(page).locator("[data-share-line]")).toHaveCount(3);
+
+  let release: () => void = () => undefined;
+  server.listGate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await chooseMonth(page, "setembro de 2026");
+  await expect(byCategory(page).locator("[data-share-skeleton]")).toBeVisible();
+  const card = page.getByRole("region", { name: "Despesas do período" });
+  const reserved = await placesOf({ list: card });
+  await page.evaluate(() => {
+    (window as unknown as { __shift: number }).__shift = 0;
+  });
+  release();
+  await expect(byCategory(page).locator("[data-share-line]")).toHaveCount(3);
+  await expect(page.locator("[data-expense-id]")).toHaveCount(5);
+  expectSamePlaces(
+    "com as linhas no lugar do esqueleto",
+    reserved,
+    await placesOf({ list: card })
+  );
+  expect(
+    await page.evaluate(
+      () => (window as unknown as { __shift: number }).__shift
+    )
+  ).toBeLessThanOrEqual(0.01);
+});
 
 test.describe("a 320 px com letra de 20 px", () => {
   skipOutsideChromium();

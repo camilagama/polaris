@@ -94,6 +94,7 @@ interface ExpenseClient {
       expenses: ExpenseReadModel[];
       nextCursor: string | null;
       total: string;
+      totalsByCategory?: { categoryId: string; count: number; total: string }[];
     }>;
     listCategories: (
       input: unknown
@@ -222,6 +223,13 @@ describe("expense RPCs", () => {
       expenses: [expenseRow],
       nextCursor: "2026-10-01|0199c2d0-0000-7000-8000-0000000000e1",
       total: "2000.50",
+      totalsByCategory: [
+        {
+          categoryId: "0199c2d0-0000-7000-8000-0000000000c1",
+          count: 2,
+          total: "2000.50",
+        },
+      ],
     }));
     const client = createRpcClient(
       createRpcRouter({
@@ -237,7 +245,17 @@ describe("expense RPCs", () => {
         organizationId,
         to: "2026-10-31",
       })
-    ).resolves.toMatchObject({ count: 2, total: "2000.50" });
+    ).resolves.toMatchObject({
+      count: 2,
+      total: "2000.50",
+      totalsByCategory: [
+        {
+          categoryId: "0199c2d0-0000-7000-8000-0000000000c1",
+          count: 2,
+          total: "2000.50",
+        },
+      ],
+    });
     expect(listExpenses).toHaveBeenCalledWith({}, identity, {
       categoryId: null,
       cursor: null,
@@ -468,6 +486,7 @@ describe("expense read RPCs open one tenant context", () => {
             expenses: [],
             nextCursor: null,
             total: "0.00",
+            totalsByCategory: [],
           })),
         },
       },
