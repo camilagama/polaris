@@ -32,7 +32,7 @@ interface SpecRule {
 const SPECS: Readonly<Record<string, SpecRule>> = {
   "clientes-reflow.e2e.ts": {
     bare: 0,
-    coarse: 1,
+    coarse: 2,
     why: "the window of 1280 px is not a phone",
   },
   "dashboard/reflow-320.e2e.ts": {
@@ -82,6 +82,11 @@ const SPECS: Readonly<Record<string, SpecRule>> = {
     coarse: 4,
     from: 'test.describe("Mais vendidos do mês a 320 px com a letra do navegador em 20 px"',
     why: "the heights test opens its own browser contexts, which a finger case would not share; the windows of 1024 to 1361 px are not a phone",
+  },
+  "listas-quadro-selo.e2e.ts": {
+    bare: 0,
+    coarse: 2,
+    why: "the window of 1280 px is not a phone",
   },
   "money-nowrap-reflow.e2e.ts": { bare: 0, coarse: 0, why: "" },
   "parar-dicas-reflow.e2e.ts": { bare: 0, coarse: 0, why: "" },

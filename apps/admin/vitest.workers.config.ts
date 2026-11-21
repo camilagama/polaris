@@ -72,5 +72,9 @@ export default defineProject({
   test: {
     include: ["src/**/*.workerd.test.ts"],
     name: "admin-workerd",
+    // Random test order exposes tests that lean on state another test left
+    // behind. This project has no `extends`, so it does not inherit the shuffle
+    // of the root config and sets it itself; the seed comes from the root run.
+    sequence: { shuffle: { tests: true } },
   },
 });
