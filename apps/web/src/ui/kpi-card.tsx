@@ -19,6 +19,10 @@ import { MoneyText } from "./hidden-values";
 import { Money } from "./money";
 import { Skeleton } from "./skeleton";
 
+/** From 1280 px the strip is one card: no gap, a 1 px line between the cells, the corners clipping the sparklines. */
+const STRIP_CARD =
+  "xl:gap-0 xl:divide-x xl:divide-border xl:overflow-hidden xl:rounded-xl xl:bg-card xl:shadow-xs xl:ring-1 xl:ring-foreground/[0.06] xl:dark:shadow-[inset_0_1px_0_var(--card-glow)]";
+
 /**
  * The three tiles of the month of the Início: one column up to 1023 px, three columns from there, and from 1280 px one
  * card with three columns and a 1 px line between them. The cells give up their own ring, background and rounding
@@ -26,16 +30,14 @@ import { Skeleton } from "./skeleton";
  * number at `lg` and the sparkline still sit side by side: with the side menu open (from 760 px) that is 1024 px; at
  * 760 px a cell would be 149 px and the number would step down to the floor.
  */
-export const KPI_STRIP_THREE =
-  "grid grid-cols-1 gap-3 lg:grid-cols-3 xl:gap-0 xl:divide-x xl:divide-border xl:overflow-hidden xl:rounded-xl xl:bg-card xl:shadow-xs xl:ring-1 xl:ring-foreground/[0.06] xl:dark:shadow-[inset_0_1px_0_var(--card-glow)]";
+export const KPI_STRIP_THREE = `grid grid-cols-1 gap-3 lg:grid-cols-3 ${STRIP_CARD}`;
 
 /**
  * Up to 1279 px the tiles of two columns; from 1280 px one card with four columns and a 1 px line between them (the
  * Resultado). The cells give up their own ring, background and rounding (`KPI_STRIP_CELL`); the strip clips the
  * sparklines to its corners.
  */
-export const KPI_STRIP =
-  "grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4 xl:gap-0 xl:divide-x xl:divide-border xl:overflow-hidden xl:rounded-xl xl:bg-card xl:shadow-xs xl:ring-1 xl:ring-foreground/[0.06] xl:dark:shadow-[inset_0_1px_0_var(--card-glow)]";
+export const KPI_STRIP = `grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4 ${STRIP_CARD}`;
 
 const KPI_STRIP_CELL =
   "xl:rounded-none xl:bg-transparent xl:shadow-none! xl:ring-0";
@@ -48,8 +50,8 @@ const SIGN = /^[+-]/;
 /**
  * The box of the number: one line of a fixed height, so "R$ 129,90" (with the "R$" and the cents smaller), "R$ ••••"
  * (whose dots may come from another font) and "—" take the same height, and nothing under them moves when the values
- * are hidden or a day is read. Every card has the one size, `text-value-lg` (30 px line; 28 on a phone), with no card
- * above the others: the "R$" and the number are the same size, weight and line in all of them. The size is one of the
+ * are hidden or a day is read. Every card of a grid has the one size, `text-value-lg` (30 px line; 28 on a phone), with no card
+ * above the others (the hero of the Início, alone on its line, has `HERO_BOX_XL`): the "R$" and the number are the same size, weight and line in all of them. The size is one of the
  * tokens of the scale; `leading-*` sets the line whatever the size class says, and goes after the size classes of its
  * own variant, because the merge of the classes drops a `leading-*` that comes before one.
  */
