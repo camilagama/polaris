@@ -1,5 +1,6 @@
 import type { CustomerReadModel } from "@polaris/contracts";
 import MoreHorizontalIcon from "lucide-react/dist/esm/icons/ellipsis";
+import UsersIcon from "lucide-react/dist/esm/icons/users";
 import { useCallback, useState } from "react";
 import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
@@ -513,9 +514,17 @@ export function CustomerList({
   }
   if (total === 0) {
     if (status !== "active") {
-      return <EmptyState afterRead title="Nenhum cliente arquivado." />;
+      return (
+        <EmptyState
+          afterRead
+          icon={UsersIcon}
+          title="Nenhum cliente arquivado."
+        />
+      );
     }
-    return <EmptyState afterRead title="Nenhum cliente ainda." />;
+    return (
+      <EmptyState afterRead icon={UsersIcon} title="Nenhum cliente ainda." />
+    );
   }
   if (customers.length === 0) {
     return (
