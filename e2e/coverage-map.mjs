@@ -548,10 +548,15 @@ export const FILE_SCREENS = [
   {
     files: [
       "apps/web/src/sales/confirmed-sale-parts.tsx",
+      "apps/web/src/sales/customer-summary.tsx",
       "apps/web/src/sales/sale-customer-link-model.ts",
       "apps/web/src/sales/sale-customer-panel.tsx",
     ],
     screens: ["sale", "sale-detail"],
+  },
+  {
+    files: ["apps/web/src/customers/last-purchase.ts"],
+    screens: ["customers", "sale", "sale-detail"],
   },
   {
     files: [
@@ -787,6 +792,11 @@ export const SPEC_SCREENS = {
   "apps/web/e2e/app-shell.e2e.ts": "all",
   "apps/web/e2e/breakpoints-rem.e2e.ts": ["home", "sale", "products"],
   "apps/web/e2e/carregando-so-leitor.e2e.ts": ["home", "customers", "expenses"],
+  "apps/web/e2e/cliente-da-venda-reflow.e2e.ts": [
+    "home",
+    "inventory",
+    "sale-detail",
+  ],
   "apps/web/e2e/clientes-erros.e2e.ts": ["customers"],
   "apps/web/e2e/clientes-reflow.e2e.ts": ["inventory", "customers"],
   "apps/web/e2e/close-store.e2e.ts": ["settings", "closed-store"],

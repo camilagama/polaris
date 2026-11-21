@@ -159,15 +159,17 @@ jobs:
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: bun run test
 
-  database:
-    name: PostgreSQL 18 gates
+  database-main:
+    name: PostgreSQL 18 gates (main)
     needs: changes
     # Only a pull request whose files were all classified as unable to reach the database skips it; a push to main, a
     # manual run, a run with `full` and the `suite-completa` label always run it, and so does a failed `changes`.
     if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.database != 'false') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 60
-    # A red job here is a red pull request: it has been green on every pull
+    # The gates of the ci suite are split in two jobs, each with its own Postgres 18: this one runs all of them but the
+    # ones of CI_SEPARATE_JOBS (packages/db/scripts/gate-runs.ts), which run in database-definer-hardening; the job named
+    # `PostgreSQL 18 gates` below collects both. A red job here is a red pull request: it has been green on every pull
     # request since the billing chain began and every failure it showed was a
     # real defect (ADR 0025, amended). The same gates also run on a disposable
     # Neon branch before a release.
@@ -243,13 +245,118 @@ jobs:
         run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "CREATE ROLE polaris_pr11_runtime NOLOGIN NOSUPERUSER NOBYPASSRLS"
       - name: Replay every migration from scratch
         run: bun run --filter @polaris/db db:migrate
-      - name: Run the sales and hardening gates in sequence
+      - name: Run the gates of the main job, the parallel phase and then the serial ones
         # The superuser URL lives only in this step: install and setup steps
         # never see it, and the gate executor strips it from the gates that
         # do not need one.
         env:
           POLARIS_GATE_SUPERUSER_URL: postgresql://postgres:polaris-ci@localhost:5432/polaris_gate
-        run: bun run --filter @polaris/db gates:ci
+        run: bun run --filter @polaris/db gates:ci-database
+
+  database-definer-hardening:
+    name: PostgreSQL 18 gates (definer-hardening)
+    needs: changes
+    # Only a pull request whose files were all classified as unable to reach the database skips it; a push to main, a
+    # manual run, a run with `full` and the `suite-completa` label always run it, and so does a failed `changes`.
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.database != 'false') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    # The fuzz of 240 role graphs of definer-hardening runs here beside the main job, on a Postgres 18 of its own, so it
+    # no longer waits for the other serial gates. The owner is not a superuser, as in the main job.
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: polaris-ci
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      CI: "true"
+      DATABASE_URL: postgresql://neondb_owner:polaris-ci@localhost:5432/polaris_gate
+      POLARIS_GATE_DATABASE_URL: postgresql://neondb_owner:polaris-ci@localhost:5432/polaris_gate
+      POLARIS_GATE_BRANCH: pr0-ci-gate
+      POLARIS_GATE_DATABASE: polaris_gate
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: .bun-version
+      - id: node-modules
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: |
+            node_modules
+            apps/*/node_modules
+            packages/*/node_modules
+          key: node-modules-${{ runner.os }}-${{ runner.arch }}-bun${{ hashFiles('.bun-version') }}-${{ hashFiles('bun.lock', 'bunfig.toml', 'package.json', 'apps/*/package.json', 'packages/*/package.json') }}
+      - if: ${{ steps.node-modules.outputs.cache-hit != 'true' }}
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+          restore-keys: bun-${{ runner.os }}-
+      - env:
+          NODE_MODULES_HIT: ${{ steps.node-modules.outputs.cache-hit }}
+        run: |
+          if [ "$NODE_MODULES_HIT" != "true" ]; then
+            bun install --frozen-lockfile
+          fi
+      - if: ${{ steps.node-modules.outputs.cache-hit != 'true' && github.event_name == 'push' }}
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: |
+            node_modules
+            apps/*/node_modules
+            packages/*/node_modules
+          key: ${{ steps.node-modules.outputs.cache-primary-key }}
+      - name: Create the gate owner and its database, as on Neon (not a superuser)
+        run: |
+          psql "postgresql://postgres:polaris-ci@localhost:5432/postgres" -v ON_ERROR_STOP=1 \
+            -c "CREATE ROLE neondb_owner LOGIN NOSUPERUSER CREATEDB CREATEROLE BYPASSRLS REPLICATION PASSWORD 'polaris-ci'" \
+            -c "GRANT pg_monitor, pg_signal_backend TO neondb_owner"
+          psql "postgresql://neondb_owner:polaris-ci@localhost:5432/postgres" -v ON_ERROR_STOP=1 -c "CREATE DATABASE polaris_gate"
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -Atc "SELECT rolsuper FROM pg_roles WHERE rolname = current_user" | grep -qx f
+      - name: Create the runtime role that lives outside the migrations
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "CREATE ROLE polaris_pr11_runtime NOLOGIN NOSUPERUSER NOBYPASSRLS"
+      - name: Replay every migration from scratch
+        run: bun run --filter @polaris/db db:migrate
+      - name: Run the definer-hardening gate in its own database
+        # The superuser URL lives only in this step: install and setup steps
+        # never see it, and the gate executor strips it from the gates that
+        # do not need one.
+        env:
+          POLARIS_GATE_SUPERUSER_URL: postgresql://postgres:polaris-ci@localhost:5432/polaris_gate
+        run: bun run --filter @polaris/db gates:ci-definer-hardening
+
+  # What the deploy workflows and a required check read as `PostgreSQL 18 gates`: green only when both jobs of the gates
+  # passed. Skipped on the same rule as them (a pull request that cannot reach the database), so a skip stays a decision of
+  # `changes`; a failed or cancelled part fails it.
+  database:
+    name: PostgreSQL 18 gates
+    needs: [changes, database-main, database-definer-hardening]
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.database != 'false') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - env:
+          MAIN: ${{ needs.database-main.result }}
+          DEFINER_HARDENING: ${{ needs.database-definer-hardening.result }}
+        run: |
+          echo "main=$MAIN definer-hardening=$DEFINER_HARDENING"
+          [ "$MAIN" = success ] && [ "$DEFINER_HARDENING" = success ]
 
   # Only when a dependency can have changed; a new advisory should be visible,
   # not block unrelated PRs.

@@ -19,6 +19,7 @@ import { countLineShown, shownListCount } from "../catalog/list-page-model";
 import { ListCountLine, StatusNav } from "../catalog/screen-parts";
 import { focusLater } from "../lib/focus";
 import { useCurrentOrganization } from "../lib/current-organization";
+import { useStoreToday } from "../lib/use-store-today";
 import { orpcClient } from "../lib/orpc";
 import { readWithRetry } from "../lib/read-with-retry";
 import { useHoldSwap } from "../lib/unsent-work";
@@ -83,7 +84,8 @@ async function keepLocalRow(
 }
 
 export function CustomersPage() {
-  const { organizationId } = useCurrentOrganization();
+  const { organization, organizationId } = useCurrentOrganization();
+  const today = useStoreToday(organization.timezone);
   const workspace = useLocalWorkspace(organizationId);
   const [syncStates, setSyncStates] = useState<
     ReadonlyMap<string, PendingCustomer>
@@ -678,6 +680,7 @@ export function CustomersPage() {
           query={query}
           status={status}
           syncStates={syncStates}
+          today={today}
           total={customers.length}
           updateStates={updateStates}
         />

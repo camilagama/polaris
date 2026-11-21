@@ -4,7 +4,9 @@ import { fileURLToPath } from "node:url";
 import type { Client } from "pg";
 import { isLocalGateHost } from "./gate-hosts";
 import {
+  CI_SUITE,
   checkCiOwnerSetup,
+  ciJobSuites,
   copyDatabaseName,
   type DatabaseAclEntry,
   databaseAclStatements,
@@ -615,6 +617,10 @@ const suites: Record<string, string[]> = {
   ],
 };
 
+// The jobs of the CI: `ci-database` is `ci` without the gates that run in a job of their own (CI_SEPARATE_JOBS), and each
+// of those has its own suite; `ci` itself stays the whole list, for one job or for a run by hand
+Object.assign(suites, ciJobSuites(suites[CI_SUITE] as string[]));
+
 function withVerifyFull(url: string): string {
   const parsed = new URL(url);
   parsed.searchParams.set("sslmode", "verify-full");
@@ -963,6 +969,10 @@ async function main() {
       "A gate named here runs only against the CI Postgres; against Neon use its own command (poc:rls:verify)."
     );
   }
+
+  console.log(
+    `--- ${selected.length} gates selected (${process.argv.slice(2).join(" ") || "all"}): ${selected.map((gate) => gate.name).join(" ")}`
+  );
 
   const workers = gateWorkers(process.env, isLocalCi);
 

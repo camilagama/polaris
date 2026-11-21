@@ -171,7 +171,9 @@ describe("customer RPCs", () => {
 
   it("lists active or archived rows only through customer:update", async () => {
     let observedCapability = "";
-    const listCustomers = vi.fn(async () => [customerRow]);
+    const listCustomers = vi.fn(async () => [
+      { ...customerRow, lastPurchaseOn: "2026-11-18" },
+    ]);
     const router = createRpcRouter({
       listCustomers,
       withTenantRequestContext: createTenantRequestStub((capability) => {
@@ -182,7 +184,9 @@ describe("customer RPCs", () => {
 
     await expect(
       client.customer.list({ organizationId, status: "active" })
-    ).resolves.toMatchObject({ customers: [{ id: customerRow.id }] });
+    ).resolves.toMatchObject({
+      customers: [{ id: customerRow.id, lastPurchaseOn: "2026-11-18" }],
+    });
     expect(observedCapability).toBe("customer:update");
     expect(listCustomers).toHaveBeenCalledWith({}, identity, {
       status: "active",
@@ -191,7 +195,12 @@ describe("customer RPCs", () => {
 
   it("reads one customer by ID inside the authorized organization, through customer:update", async () => {
     let observedCapability = "";
-    const getCustomer = vi.fn(async () => customerRow);
+    const summary = {
+      lastPurchaseOn: "2026-11-18",
+      purchaseCount: 3,
+      totalSpent: "245.50",
+    };
+    const getCustomer = vi.fn(async () => ({ ...customerRow, summary }));
     const client = createRpcClient(
       createRpcRouter({
         getCustomer,
@@ -203,9 +212,46 @@ describe("customer RPCs", () => {
 
     await expect(
       client.customer.get({ id: customerRow.id, organizationId })
-    ).resolves.toMatchObject({ id: customerRow.id, name: "Ana Silva" });
+    ).resolves.toMatchObject({
+      id: customerRow.id,
+      name: "Ana Silva",
+      summary,
+    });
     expect(observedCapability).toBe("customer:update");
     expect(getCustomer).toHaveBeenCalledWith({}, identity, customerRow.id);
+  });
+
+  it("answers a customer with no purchase as null, and one that never carried the fields without them", async () => {
+    const client = createRpcClient(
+      createRpcRouter({
+        getCustomer: async () => ({
+          ...customerRow,
+          summary: { lastPurchaseOn: null, purchaseCount: 0, totalSpent: "0" },
+        }),
+        listCustomers: async () => [{ ...customerRow, lastPurchaseOn: null }],
+        updateCustomer: async () => ({ changed: false, customer: customerRow }),
+        withTenantRequestContext: createTenantRequestStub(),
+      })
+    );
+
+    await expect(
+      client.customer.get({ id: customerRow.id, organizationId })
+    ).resolves.toMatchObject({
+      summary: { lastPurchaseOn: null, purchaseCount: 0, totalSpent: "0" },
+    });
+    const listed = await client.customer.list({ organizationId });
+    expect(listed.customers[0]?.lastPurchaseOn).toBeNull();
+    const updated = await client.customer.update({
+      email: "ana@example.com",
+      expectedVersion: 1,
+      id: customerRow.id,
+      name: "Ana Silva",
+      notes: null,
+      organizationId,
+      phone: "+5511999990000",
+    });
+    expect(updated.customer).not.toHaveProperty("lastPurchaseOn");
+    expect(updated.customer).not.toHaveProperty("summary");
   });
 
   it("answers NOT_FOUND for a customer that is not in the store", async () => {

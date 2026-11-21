@@ -14,8 +14,14 @@ import {
   AS_SUPERUSER,
   assertCiOwnerSetup,
   assertSuperuserCasesProved,
+  CI_MAIN_JOB,
+  CI_SEPARATE_JOBS,
+  CI_SUITE,
   checkCiOwnerSetup,
+  ciJobSuites,
   copyDatabaseName,
+  collectorProblems,
+  coverageProblems,
   databaseAclStatements,
   drainQueue,
   GATE_WORKERS,
@@ -29,6 +35,8 @@ import {
   SERIAL_GATES,
   SUPERUSER_RUN_FOLLOWS,
   urlForDatabase,
+  workflowGateRuns,
+  workflowJobs,
 } from "./gate-runs";
 
 const OWNER_IS_SUPERUSER = /and the owner is a superuser/;
@@ -1443,5 +1451,368 @@ describe("CREATE ROLE with a fixed name outside SERIAL_GATES", () => {
     }
     expect(scanned).toBeGreaterThan(50);
     expect(fixed).toEqual({});
+  });
+});
+
+const CI_WORKFLOW = readFileSync(
+  join(SCRIPTS_DIR, "../../../.github/workflows/ci.yml"),
+  "utf8"
+);
+const PACKAGE_SCRIPTS = (
+  JSON.parse(readFileSync(join(SCRIPTS_DIR, "../package.json"), "utf8")) as {
+    scripts: Record<string, string>;
+  }
+).scripts;
+const CI_GATES = [
+  ...(SUITE_CI.exec(RUNNER)?.[1] ?? "").matchAll(QUOTED_NAME),
+].map(([, name]) => name as string);
+
+const NOT_IN_CI = /ci-x lists missing, which is not a gate of the ci suite/;
+const LISTED_TWICE = /third is listed by ci-a and by ci-b/;
+const SCRIPT_LACKED = /gates:ci-typo, which package.json lacks/;
+const SUITE_LACKED = /the suite ci-nothing, which does not exist/;
+const NOT_THE_RUNNER = /is not a run-gates.ts command/;
+const PLANTED_CI = ["first", "second", "third", "fourth"];
+const PLANTED_SEPARATE = { "ci-third": ["third"] };
+const PLANTED_SUITES = {
+  [CI_SUITE]: PLANTED_CI,
+  ...ciJobSuites(PLANTED_CI, PLANTED_SEPARATE),
+};
+const PLANTED_SCRIPTS = {
+  "gates:ci": "bun scripts/run-gates.ts ci",
+  "gates:ci-database": "bun scripts/run-gates.ts ci-database",
+  "gates:ci-third": "bun scripts/run-gates.ts ci-third",
+};
+const workflowRunning = (...scripts: string[]) =>
+  scripts
+    .map((script) => `      - run: bun run --filter @polaris/db ${script}\n`)
+    .join("");
+
+describe("ciJobSuites", () => {
+  it("keeps the rest of ci, in its order, in the main job and gives each separate job its gates", () => {
+    expect(ciJobSuites(PLANTED_CI, PLANTED_SEPARATE)).toEqual({
+      [CI_MAIN_JOB]: ["first", "second", "fourth"],
+      "ci-third": ["third"],
+    });
+  });
+
+  it("puts a gate added to ci in the main job", () => {
+    expect(
+      ciJobSuites([...PLANTED_CI, "fifth"], PLANTED_SEPARATE)[CI_MAIN_JOB]
+    ).toEqual(["first", "second", "fourth", "fifth"]);
+  });
+
+  it("refuses a separate gate that ci does not have, and one that two jobs list", () => {
+    expect(() => ciJobSuites(PLANTED_CI, { "ci-x": ["missing"] })).toThrow(
+      NOT_IN_CI
+    );
+    expect(() =>
+      ciJobSuites(PLANTED_CI, { "ci-a": ["third"], "ci-b": ["third"] })
+    ).toThrow(LISTED_TWICE);
+  });
+});
+
+describe("coverageProblems", () => {
+  it("accepts the union that runs each gate of the suite once", () => {
+    expect(
+      coverageProblems(PLANTED_CI, ["second", "first", "fourth", "third"])
+    ).toEqual([]);
+  });
+
+  it("finds a new gate that no job runs", () => {
+    expect(coverageProblems([...PLANTED_CI, "novo-gate"], PLANTED_CI)).toEqual([
+      "novo-gate is in ci and no job runs it",
+    ]);
+  });
+
+  it("finds a gate that two jobs run, and one a job runs that the suite lacks", () => {
+    expect(
+      coverageProblems(PLANTED_CI, [...PLANTED_CI, "third", "stray"])
+    ).toEqual(["third runs 2 times", "stray runs in a job and is not in ci"]);
+  });
+});
+
+describe("the gates the CI workflow runs", () => {
+  it("reads the gates:ci commands of a planted workflow and skips comments", () => {
+    expect(
+      workflowGateRuns(
+        `${workflowRunning("gates:ci-database", "gates:ci-third")}      # - run: bun run --filter @polaris/db gates:ci\n      - run: bun run --filter @polaris/db test\n`,
+        PLANTED_SCRIPTS,
+        PLANTED_SUITES
+      )
+    ).toEqual(["first", "second", "fourth", "third"]);
+  });
+
+  it("covers the suite when the jobs split it and when one job runs it all", () => {
+    for (const scripts of [
+      ["gates:ci-database", "gates:ci-third"],
+      ["gates:ci"],
+    ]) {
+      expect(
+        coverageProblems(
+          PLANTED_CI,
+          workflowGateRuns(
+            workflowRunning(...scripts),
+            PLANTED_SCRIPTS,
+            PLANTED_SUITES
+          )
+        )
+      ).toEqual([]);
+    }
+  });
+
+  it("fails a planted workflow whose separate job was never added", () => {
+    expect(
+      coverageProblems(
+        PLANTED_CI,
+        workflowGateRuns(
+          workflowRunning("gates:ci-database"),
+          PLANTED_SCRIPTS,
+          PLANTED_SUITES
+        )
+      )
+    ).toEqual(["third is in ci and no job runs it"]);
+  });
+
+  it("fails a planted workflow that runs a gate twice", () => {
+    expect(
+      coverageProblems(
+        PLANTED_CI,
+        workflowGateRuns(
+          workflowRunning("gates:ci", "gates:ci-third"),
+          PLANTED_SCRIPTS,
+          PLANTED_SUITES
+        )
+      )
+    ).toEqual(["third runs 2 times"]);
+  });
+
+  it("fails a planted gate that a job list forgot", () => {
+    const suites = {
+      ...PLANTED_SUITES,
+      [CI_SUITE]: [...PLANTED_CI, "novo-gate"],
+    };
+    expect(
+      coverageProblems(
+        suites[CI_SUITE],
+        workflowGateRuns(
+          workflowRunning("gates:ci-database", "gates:ci-third"),
+          PLANTED_SCRIPTS,
+          suites
+        )
+      )
+    ).toEqual(["novo-gate is in ci and no job runs it"]);
+  });
+
+  it("refuses a script or a suite that does not exist, and a command that is not the runner", () => {
+    expect(() =>
+      workflowGateRuns(
+        workflowRunning("gates:ci-typo"),
+        PLANTED_SCRIPTS,
+        PLANTED_SUITES
+      )
+    ).toThrow(SCRIPT_LACKED);
+    expect(() =>
+      workflowGateRuns(
+        workflowRunning("gates:ci-database"),
+        { "gates:ci-database": "bun scripts/run-gates.ts ci-nothing" },
+        PLANTED_SUITES
+      )
+    ).toThrow(SUITE_LACKED);
+    expect(() =>
+      workflowGateRuns(
+        workflowRunning("gates:ci-database"),
+        { "gates:ci-database": "echo ci" },
+        PLANTED_SUITES
+      )
+    ).toThrow(NOT_THE_RUNNER);
+  });
+
+  it("wires the suites into the runner and the scripts into package.json", () => {
+    expect(RUNNER).toContain("Object.assign(suites, ciJobSuites(");
+    expect(CI_GATES.length).toBeGreaterThan(80);
+    for (const job of [CI_MAIN_JOB, ...Object.keys(CI_SEPARATE_JOBS)]) {
+      expect(PACKAGE_SCRIPTS[`gates:${job}`]).toBe(
+        `bun scripts/run-gates.ts ${job}`
+      );
+    }
+    expect(PACKAGE_SCRIPTS["gates:ci"]).toBe("bun scripts/run-gates.ts ci");
+  });
+
+  it("runs every gate of the ci suite exactly once in the jobs of ci.yml", () => {
+    const suites = {
+      [CI_SUITE]: CI_GATES,
+      ...ciJobSuites(CI_GATES),
+    };
+    const runs = workflowGateRuns(CI_WORKFLOW, PACKAGE_SCRIPTS, suites);
+    expect(coverageProblems(CI_GATES, runs)).toEqual([]);
+  });
+
+  it("keeps the separate gates real gates of ci, out of the main job", () => {
+    const jobs = ciJobSuites(CI_GATES);
+    for (const names of Object.values(CI_SEPARATE_JOBS)) {
+      expect(names.length).toBeGreaterThan(0);
+      for (const name of names) {
+        expect(CI_GATES).toContain(name);
+        expect(jobs[CI_MAIN_JOB]).not.toContain(name);
+      }
+    }
+    expect(jobs[CI_MAIN_JOB]).toHaveLength(
+      CI_GATES.length - Object.values(CI_SEPARATE_JOBS).flat().length
+    );
+  });
+});
+
+const COLLECTOR = "PostgreSQL 18 gates";
+const jobText = (id: string, name: string, needs: string, body: string) =>
+  `  ${id}:\n    name: ${name}\n${needs}${body}`;
+const PLANTED_WORKFLOW = (collectorNeeds: string) =>
+  [
+    "jobs:",
+    jobText("changes", "Changed areas", "", "    runs-on: x\n"),
+    jobText(
+      "database-main",
+      "PostgreSQL 18 gates (main)",
+      "    needs: changes\n",
+      "    steps:\n      - run: bun run --filter @polaris/db gates:ci-database\n"
+    ),
+    jobText(
+      "database-definer-hardening",
+      "PostgreSQL 18 gates (definer-hardening)",
+      "    needs: changes\n",
+      "    steps:\n      - run: bun run --filter @polaris/db gates:ci-definer-hardening\n"
+    ),
+    jobText(
+      "database",
+      COLLECTOR,
+      `    needs: ${collectorNeeds}\n`,
+      "    steps:\n      - run: echo collected\n"
+    ),
+    "",
+  ].join("\n");
+
+describe("the collector job of the gates", () => {
+  it("reads the id, name and needs of each job, with a name or an inline list", () => {
+    expect(
+      workflowJobs(
+        PLANTED_WORKFLOW("[changes, database-main, database-definer-hardening]")
+      ).map(({ id, name, needs }) => ({ id, name, needs }))
+    ).toEqual([
+      { id: "changes", name: "Changed areas", needs: [] },
+      {
+        id: "database-main",
+        name: "PostgreSQL 18 gates (main)",
+        needs: ["changes"],
+      },
+      {
+        id: "database-definer-hardening",
+        name: "PostgreSQL 18 gates (definer-hardening)",
+        needs: ["changes"],
+      },
+      {
+        id: "database",
+        name: COLLECTOR,
+        needs: ["changes", "database-main", "database-definer-hardening"],
+      },
+    ]);
+  });
+
+  it("accepts a collector that needs every job that runs gates", () => {
+    expect(
+      collectorProblems(
+        PLANTED_WORKFLOW(
+          "[changes, database-main, database-definer-hardening]"
+        ),
+        COLLECTOR
+      )
+    ).toEqual([]);
+  });
+
+  it("fails a planted job that runs gates and is outside the collector's needs", () => {
+    expect(
+      collectorProblems(PLANTED_WORKFLOW("[changes, database-main]"), COLLECTOR)
+    ).toEqual([
+      "database-definer-hardening runs gates and is not in the needs of PostgreSQL 18 gates",
+    ]);
+  });
+
+  it("fails a workflow with no collector, and ignores a gates command that is only a comment", () => {
+    expect(
+      collectorProblems(
+        PLANTED_WORKFLOW("changes").replaceAll(COLLECTOR, "Other"),
+        COLLECTOR
+      )
+    ).toEqual(["no job is named PostgreSQL 18 gates"]);
+    expect(
+      collectorProblems(
+        PLANTED_WORKFLOW("[changes, database-main]").replace(
+          "      - run: bun run --filter @polaris/db gates:ci-definer-hardening\n",
+          "      # - run: bun run --filter @polaris/db gates:ci-definer-hardening\n      - run: echo ok # bun run --filter @polaris/db gates:ci\n"
+        ),
+        COLLECTOR
+      )
+    ).toEqual([]);
+  });
+
+  it("holds in ci.yml, before the split (the job runs the gates itself) and after it (the jobs run them, the job collects)", () => {
+    expect(collectorProblems(CI_WORKFLOW, COLLECTOR)).toEqual([]);
+    expect(
+      workflowJobs(CI_WORKFLOW).some((job) => job.name === COLLECTOR)
+    ).toBe(true);
+  });
+});
+
+function setupOf(workflow: string, id: string): string {
+  const job = workflowJobs(workflow).find((entry) => entry.id === id);
+  const text = (job?.text ?? "").split("\n");
+  const runs = text
+    .map((line, index) => (line.startsWith("      - name: Run ") ? index : -1))
+    .filter((index) => index >= 0);
+  return text.slice(text.indexOf("    services:"), runs.at(-1)).join("\n");
+}
+
+describe("the two jobs of the gates prove the same environment", () => {
+  const twin = (image: string) =>
+    [
+      "jobs:",
+      "  database-main:",
+      "    name: PostgreSQL 18 gates (main)",
+      "    services:",
+      `      postgres:\n        image: ${image}`,
+      "    steps:",
+      "      - name: Create the gate owner",
+      "      - name: Run the gates of the main job",
+      "        run: x",
+      "  database-definer-hardening:",
+      "    name: PostgreSQL 18 gates (definer-hardening)",
+      "    services:",
+      "      postgres:\n        image: postgres:18",
+      "    steps:",
+      "      - name: Create the gate owner",
+      "      - name: Run the definer-hardening gate",
+      "        run: y",
+      "",
+    ].join("\n");
+
+  it("sees a service, an environment or a setup step that only one job changed", () => {
+    expect(setupOf(twin("postgres:18"), "database-main")).toBe(
+      setupOf(twin("postgres:18"), "database-definer-hardening")
+    );
+    expect(setupOf(twin("postgres:17"), "database-main")).not.toBe(
+      setupOf(twin("postgres:17"), "database-definer-hardening")
+    );
+  });
+
+  it("holds in ci.yml once both jobs exist", () => {
+    const ids = workflowJobs(CI_WORKFLOW).map((job) => job.id);
+    if (
+      ids.includes("database-main") &&
+      ids.includes("database-definer-hardening")
+    ) {
+      expect(setupOf(CI_WORKFLOW, "database-main").length).toBeGreaterThan(0);
+      expect(setupOf(CI_WORKFLOW, "database-definer-hardening")).toBe(
+        setupOf(CI_WORKFLOW, "database-main")
+      );
+    }
   });
 });
