@@ -2554,7 +2554,7 @@ test("variantes: 'Adicionar todas as combinações' põe 12 linhas no rascunho e
   });
 });
 
-test("Novo produto a 360 x 740: o formulário em seções cresce só o que valem as legendas e os fios, e 'Cadastrar produto' se vê sem rolar", async ({
+test("Novo produto a 360 x 740: o formulário em seções cresce só o que valem as legendas e os fios, e 'Cadastrar produto' segue à vista", async ({
   page,
 }) => {
   await page.setViewportSize({ height: 740, width: 360 });
@@ -2584,7 +2584,7 @@ test("Novo produto a 360 x 740: o formulário em seções cresce só o que valem
     ).length;
     const fields = [
       ...element.querySelectorAll("fieldset > [data-slot=field]"),
-    ];
+    ].filter((node) => height(node) > 0);
     const collapsible = element.querySelector("[data-slot=collapsible]");
     const hint = element.querySelector(":scope > p");
     const rowsBefore = fields.length + 2;

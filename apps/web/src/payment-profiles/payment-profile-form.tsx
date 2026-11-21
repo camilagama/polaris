@@ -255,8 +255,6 @@ function RuleEditor({
 }
 
 interface PaymentProfileFormProps {
-  /** The profile asked for is already on the list: the main button says "Criar mesmo assim". */
-  confirmDuplicate: boolean;
   draft: ProfileDraft;
   editingName: string | null;
   /** The problems of the fields, by the id of the field. */
@@ -267,6 +265,8 @@ interface PaymentProfileFormProps {
   finalFocus: () => HTMLElement | boolean;
   onAddRule: () => void;
   onCancel: () => void;
+  /** The profile asked for is already on the list: the main button says "Criar mesmo assim". */
+  confirmDuplicate: boolean;
   /** The form has finished closing: the draft can be emptied without the form changing under the fade. */
   onClosed: () => void;
   /** Esc and "Fechar": the form closes and what was typed is kept, in memory, for the next opening. */
