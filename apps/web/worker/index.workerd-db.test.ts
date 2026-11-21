@@ -86,7 +86,8 @@ const UUID = /^[0-9a-f-]{36}$/;
  * transaction (the platform counts every one against the daily quota of the Hyperdrive). They are the numbers the
  * routes send today, not a goal: a route that sends one more fails here, and the one that sends fewer lowers its number
  * in the same change. The rows with a plain name are the fixed cost of a call on a store with no products, sales or
- * goals (what a row adds is not counted); the two that say so are the same route with a sale and with an active goal.
+ * goals (what a row adds is not counted); the ones that say so are the same route with a sale, with an active goal
+ * and with a customer who bought.
  * `billing/readPlan` is measured with BILLING_SELF_SERVICE_ENABLED on (off, it answers 404 before any statement);
  * `offline/issueLease` with a lease secret; the other routes run with the bindings as the wrangler file has them.
  */
@@ -94,6 +95,10 @@ const STATEMENT_COUNTS: Record<string, number> = {
   "auth get-session": 1,
   "billing/readPlan": 17,
   "category/list": 5,
+  "customer/get": 5,
+  "customer/get with one purchase": 5,
+  "customer/list": 5,
+  "customer/list with one purchase": 5,
   "device/check": 8,
   "expense/list": 7,
   "expense/listCategories": 6,
@@ -120,6 +125,10 @@ const FIRST_CALL_STATEMENT_COUNTS: Record<string, number> = {
   "auth get-session": 1,
   "billing/readPlan": 17,
   "category/list": 5,
+  "customer/get": 5,
+  "customer/get with one purchase": 5,
+  "customer/list": 5,
+  "customer/list with one purchase": 5,
   "device/check": 8,
   "expense/list": 7,
   "expense/listCategories": 7,
@@ -1052,6 +1061,13 @@ describe("the e-mail and password flows of the web worker", () => {
       name: string;
       path: string;
     }
+    const customer = await post<{ id: string }>("/rpc/customer/create", {
+      email: null,
+      name: "Cliente dos statements",
+      notes: null,
+      organizationId,
+      phone: "+5511999990000",
+    });
     const emptyStoreRoutes: Route[] = [
       {
         method: "GET",
@@ -1113,6 +1129,16 @@ describe("the e-mail and password flows of the web worker", () => {
         body: { json: { organizationId } },
         name: "sale/list",
         path: "/rpc/sale/list",
+      },
+      {
+        body: { json: { organizationId } },
+        name: "customer/list",
+        path: "/rpc/customer/list",
+      },
+      {
+        body: { json: { id: customer.id, organizationId } },
+        name: "customer/get",
+        path: "/rpc/customer/get",
       },
       {
         body: { json: { organizationId } },
@@ -1222,28 +1248,31 @@ describe("the e-mail and password flows of the web worker", () => {
       productId,
       variantId,
     });
-    await post("/rpc/sale/confirm", {
-      adjustments: [],
-      commandId: crypto.randomUUID(),
-      commandVersion: 1,
-      items: [
-        {
-          chargedUnitPrice: "10.00",
-          listedUnitPrice: "10.00",
-          quantity: 1,
-          variantId,
+    const confirmedSale = await post<{ sale: { id: string } }>(
+      "/rpc/sale/confirm",
+      {
+        adjustments: [],
+        commandId: crypto.randomUUID(),
+        commandVersion: 1,
+        items: [
+          {
+            chargedUnitPrice: "10.00",
+            listedUnitPrice: "10.00",
+            quantity: 1,
+            variantId,
+          },
+        ],
+        occurredAt: rows[0]?.now as string,
+        organizationId,
+        payment: {
+          anticipationRequested: false,
+          installmentPlan: null,
+          installments: null,
+          method: "cash",
         },
-      ],
-      occurredAt: rows[0]?.now as string,
-      organizationId,
-      payment: {
-        anticipationRequested: false,
-        installmentPlan: null,
-        installments: null,
-        method: "cash",
-      },
-      paymentProfile: null,
-    });
+        paymentProfile: null,
+      }
+    );
     await post("/rpc/goal/create", {
       endsOn,
       kind: "net_sales",
@@ -1261,6 +1290,26 @@ describe("the e-mail and password flows of the web worker", () => {
         body: { json: { organizationId } },
         name: "sale/list with one sale",
         path: "/rpc/sale/list",
+      },
+    ]);
+
+    // the sale gets its customer only now: with one, `sale/list` reads the names too and sends one more statement
+    await post("/rpc/sale/assignCustomer", {
+      customerId: customer.id,
+      expectedVersion: 0,
+      organizationId,
+      saleId: confirmedSale.sale.id,
+    });
+    await measureAll([
+      {
+        body: { json: { organizationId } },
+        name: "customer/list with one purchase",
+        path: "/rpc/customer/list",
+      },
+      {
+        body: { json: { id: customer.id, organizationId } },
+        name: "customer/get with one purchase",
+        path: "/rpc/customer/get",
       },
     ]);
 
