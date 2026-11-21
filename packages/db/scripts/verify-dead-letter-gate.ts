@@ -9,6 +9,7 @@ import {
 } from "../src/admin-incident-repository";
 import { createDatabase } from "../src/client";
 import { createOutboxClient, type ProcessingKey } from "../src/outbox-dispatch";
+import { inRolledBackTransaction, rollbackAndRelease } from "./gate-roles";
 import {
   createTenantFixture,
   disposableHostPattern,
@@ -1892,27 +1893,26 @@ async function run() {
     // ------------------------------------------------- 6. the audit CHECK
     const auditClient = await owner.pool.connect();
     try {
-      await auditClient.query("BEGIN");
-      await auditClient.query(
-        "INSERT INTO public.platform_audit_events (principal_id, event_type) VALUES ($1, 'operational_incident.retry')",
-        [operator]
+      await inRolledBackTransaction(auditClient, () =>
+        auditClient.query(
+          "INSERT INTO public.platform_audit_events (principal_id, event_type) VALUES ($1, 'operational_incident.retry')",
+          [operator]
+        )
       );
-      await auditClient.query("ROLLBACK");
-      await auditClient.query("BEGIN");
-      await expectSqlState(
-        () =>
-          auditClient.query(
-            "INSERT INTO public.platform_audit_events (principal_id, event_type) VALUES ($1, 'operational_incident.anything')",
-            [operator]
-          ),
-        "23514",
-        "a made-up audit event type is refused",
-        "platform_audit_events_type_allowed"
+      await inRolledBackTransaction(auditClient, () =>
+        expectSqlState(
+          () =>
+            auditClient.query(
+              "INSERT INTO public.platform_audit_events (principal_id, event_type) VALUES ($1, 'operational_incident.anything')",
+              [operator]
+            ),
+          "23514",
+          "a made-up audit event type is refused",
+          "platform_audit_events_type_allowed"
+        )
       );
-      await auditClient.query("ROLLBACK");
     } finally {
-      await auditClient.query("ROLLBACK").catch(() => undefined);
-      auditClient.release();
+      await rollbackAndRelease(auditClient);
     }
     const auditDefinition = await owner.pool.query<{ definition: string }>(
       "SELECT pg_get_constraintdef(oid) AS definition FROM pg_constraint WHERE conname = 'platform_audit_events_type_allowed' AND conrelid = 'public.platform_audit_events'::regclass"
