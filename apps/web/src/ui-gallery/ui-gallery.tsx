@@ -109,6 +109,7 @@ import {
   PopoverTrigger,
 } from "@/ui/popover";
 import { Progress, ProgressLabel, ProgressValue } from "@/ui/progress";
+import { ProgressRing } from "@/ui/progress-ring";
 import { RadioGroup, RadioGroupItem } from "@/ui/radio-group";
 import { RefreshButton } from "@/ui/refresh-button";
 import { ScrollArea } from "@/ui/scroll-area";
@@ -1279,6 +1280,14 @@ export function UiGallery() {
               <ProgressLabel>Meta de vendas</ProgressLabel>
               <ProgressValue />
             </Progress>
+            <ul className="flex flex-wrap gap-x-6 gap-y-2 text-muted-foreground tabular-nums">
+              {[1, 2].map((done) => (
+                <li className="flex items-center gap-1.5" key={done}>
+                  <ProgressRing done={done} total={3} />
+                  {done} de 3
+                </li>
+              ))}
+            </ul>
             <div aria-hidden="true" className="grid gap-2">
               <Skeleton className="h-4 w-2/3" />
               <Skeleton className="h-4 w-1/3" />
