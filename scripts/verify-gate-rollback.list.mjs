@@ -36,16 +36,8 @@ export const GATE_ROLLBACK_LIST = {
     count: 1,
     reason: BEFORE_THE_RULE,
   },
-  "packages/db/scripts/verify-auth-tables-row-security-gate.ts": {
-    count: 5,
-    reason: BEFORE_THE_RULE,
-  },
   "packages/db/scripts/verify-gate2-runtime.ts": {
     count: 16,
-    reason: BEFORE_THE_RULE,
-  },
-  "packages/db/scripts/verify-media-gate.ts": {
-    count: 4,
     reason: BEFORE_THE_RULE,
   },
   "packages/db/scripts/verify-migrations-without-superuser-gate.ts": {
