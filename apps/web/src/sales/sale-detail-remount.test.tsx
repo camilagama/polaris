@@ -248,9 +248,7 @@ describe("the dialogs of the sale detail after a change to the returnable quanti
     renderPage();
     await screen.findByText(BEFORE_TOTAL);
     expect(
-      document
-        .querySelector("[data-sale-customer-name]")
-        ?.getAttribute("role")
+      document.querySelector("[data-sale-customer-name]")?.getAttribute("role")
     ).toBe("status");
     await openAndConfirmReturn();
     await waitFor(() =>
@@ -279,137 +277,153 @@ describe("the dialogs of the sale detail after a change to the returnable quanti
     expect(screen.getByRole("dialog", RETURN_HEADING)).toBeTruthy();
   });
 
-  it("closes the dialog after a return the server accepted, reads the customer again, and the reopened one keeps nothing of the old draft", async () => {
-    getSale.mockResolvedValueOnce(detail(0)).mockResolvedValueOnce(detail(1));
-    returnSale.mockResolvedValue(RETURN_RESULT);
-    getCustomerLink.mockResolvedValue(LINKED_CUSTOMER_LINK);
-    getCustomer
-      .mockResolvedValueOnce(customerWithSummary("310.9", 4))
-      .mockResolvedValueOnce(customerWithSummary("250", 3));
-    renderPage();
-    await screen.findByText(BEFORE_TOTAL);
-    await openReturnFromMenu();
-    fireEvent.change(await screen.findByRole("textbox", RETURNED_FIELD), {
-      target: { value: "1" },
-    });
-    const user = userEvent.setup();
-    await user.click(screen.getByRole("combobox", REASON_FIELD));
-    await user.click(
-      await screen.findByRole("option", { name: "Item com defeito" })
-    );
-    fireEvent.change(await screen.findByRole("textbox", NOTE_FIELD), {
-      target: { value: DRAFT_NOTE },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Revisar devolução" }));
-    fireEvent.click(
-      await screen.findByRole("button", { name: "Confirmar devolução" })
-    );
-
-    await waitFor(() =>
-      expect(screen.queryByRole("dialog", RETURN_HEADING)).toBeNull()
-    );
-    expect(returnSale).toHaveBeenCalledTimes(1);
-    expect(returnSale).toHaveBeenCalledWith(
-      expect.objectContaining({
-        items: [expect.objectContaining({ position: 0, returnedQuantity: 1 })],
-        reasonCode: "defective",
-        reasonNote: DRAFT_NOTE,
-      })
-    );
-    expect(getSale).toHaveBeenCalledTimes(2);
-    await screen.findByText(AFTER_TOTAL);
-    expect(screen.queryByText(BEFORE_TOTAL)).toBeNull();
-    expect(getCustomerLink).toHaveBeenCalledTimes(2);
-    expect(getCustomer).toHaveBeenCalledTimes(2);
-
-    await openReturnFromMenu();
-    const returned = await screen.findByRole("textbox", RETURNED_FIELD_AFTER);
-    expect((returned as HTMLInputElement).value).toBe("");
-    expect(screen.queryByDisplayValue(DRAFT_NOTE)).toBeNull();
-    expect(screen.getByRole("combobox", REASON_FIELD).textContent).toContain(
-      "Sem motivo informado"
-    );
-  }, LONG_JOURNEY);
-
-  it("keeps what was typed in the return when it is closed by Esc, and drops it only with Não devolver", async () => {
-    getSale.mockResolvedValue(detail(0));
-    renderPage();
-    await openReturnFromMenu();
-    fireEvent.change(await screen.findByRole("textbox", RETURNED_FIELD), {
-      target: { value: "1" },
-    });
-    const user = userEvent.setup();
-    await user.click(screen.getByRole("combobox", REASON_FIELD));
-    await user.click(
-      await screen.findByRole("option", { name: "Item com defeito" })
-    );
-    fireEvent.change(await screen.findByRole("textbox", NOTE_FIELD), {
-      target: { value: DRAFT_NOTE },
-    });
-    await user.keyboard("{Escape}");
-    await waitFor(() =>
-      expect(screen.queryByRole("dialog", RETURN_HEADING)).toBeNull()
-    );
-
-    await openReturnFromMenu();
-    expect(
-      (
-        (await screen.findByRole(
-          "textbox",
-          RETURNED_FIELD
-        )) as HTMLInputElement
-      ).value
-    ).toBe("1");
-    expect(screen.getByDisplayValue(DRAFT_NOTE)).toBeTruthy();
-
-    await user.click(screen.getByRole("button", { name: "Não devolver" }));
-    await waitFor(() =>
-      expect(screen.queryByRole("dialog", RETURN_HEADING)).toBeNull()
-    );
-
-    await openReturnFromMenu();
-    expect(
-      (
-        (await screen.findByRole(
-          "textbox",
-          RETURNED_FIELD
-        )) as HTMLInputElement
-      ).value
-    ).toBe("");
-    expect(screen.queryByDisplayValue(DRAFT_NOTE)).toBeNull();
-  }, LONG_JOURNEY);
-
-  it("keeps what was typed in the cancellation when it is closed by Esc, and drops it only with Não cancelar", async () => {
-    getSale.mockResolvedValue(detail(0));
-    renderPage();
-    const user = userEvent.setup();
-    const openCancel = async () => {
-      await user.click(await screen.findByRole("button", ACTIONS_MENU));
+  it(
+    "closes the dialog after a return the server accepted, reads the customer again, and the reopened one keeps nothing of the old draft",
+    async () => {
+      getSale.mockResolvedValueOnce(detail(0)).mockResolvedValueOnce(detail(1));
+      returnSale.mockResolvedValue(RETURN_RESULT);
+      getCustomerLink.mockResolvedValue(LINKED_CUSTOMER_LINK);
+      getCustomer
+        .mockResolvedValueOnce(customerWithSummary("310.9", 4))
+        .mockResolvedValueOnce(customerWithSummary("250", 3));
+      renderPage();
+      await screen.findByText(BEFORE_TOTAL);
+      await openReturnFromMenu();
+      fireEvent.change(await screen.findByRole("textbox", RETURNED_FIELD), {
+        target: { value: "1" },
+      });
+      const user = userEvent.setup();
+      await user.click(screen.getByRole("combobox", REASON_FIELD));
       await user.click(
-        await screen.findByRole("menuitem", { name: "Cancelar venda" })
+        await screen.findByRole("option", { name: "Item com defeito" })
       );
-    };
-    await openCancel();
-    await user.click(await screen.findByRole("combobox", REASON_FIELD));
-    await user.click(await screen.findByRole("option", { name: "Outro" }));
-    fireEvent.change(await screen.findByRole("textbox", NOTE_FIELD), {
-      target: { value: DRAFT_NOTE },
-    });
-    await user.keyboard("{Escape}");
-    await waitFor(() =>
-      expect(screen.queryByRole("dialog", CANCEL_HEADING)).toBeNull()
-    );
+      fireEvent.change(await screen.findByRole("textbox", NOTE_FIELD), {
+        target: { value: DRAFT_NOTE },
+      });
+      fireEvent.click(
+        screen.getByRole("button", { name: "Revisar devolução" })
+      );
+      fireEvent.click(
+        await screen.findByRole("button", { name: "Confirmar devolução" })
+      );
 
-    await openCancel();
-    expect(await screen.findByDisplayValue(DRAFT_NOTE)).toBeTruthy();
+      await waitFor(() =>
+        expect(screen.queryByRole("dialog", RETURN_HEADING)).toBeNull()
+      );
+      expect(returnSale).toHaveBeenCalledTimes(1);
+      expect(returnSale).toHaveBeenCalledWith(
+        expect.objectContaining({
+          items: [
+            expect.objectContaining({ position: 0, returnedQuantity: 1 }),
+          ],
+          reasonCode: "defective",
+          reasonNote: DRAFT_NOTE,
+        })
+      );
+      expect(getSale).toHaveBeenCalledTimes(2);
+      await screen.findByText(AFTER_TOTAL);
+      expect(screen.queryByText(BEFORE_TOTAL)).toBeNull();
+      expect(getCustomerLink).toHaveBeenCalledTimes(2);
+      expect(getCustomer).toHaveBeenCalledTimes(2);
 
-    await user.click(screen.getByRole("button", { name: "Não cancelar" }));
-    await waitFor(() =>
-      expect(screen.queryByRole("dialog", CANCEL_HEADING)).toBeNull()
-    );
+      await openReturnFromMenu();
+      const returned = await screen.findByRole("textbox", RETURNED_FIELD_AFTER);
+      expect((returned as HTMLInputElement).value).toBe("");
+      expect(screen.queryByDisplayValue(DRAFT_NOTE)).toBeNull();
+      expect(screen.getByRole("combobox", REASON_FIELD).textContent).toContain(
+        "Sem motivo informado"
+      );
+    },
+    LONG_JOURNEY
+  );
 
-    await openCancel();
-    await screen.findByRole("combobox", REASON_FIELD);
-    expect(screen.queryByDisplayValue(DRAFT_NOTE)).toBeNull();
-  }, LONG_JOURNEY);
+  it(
+    "keeps what was typed in the return when it is closed by Esc, and drops it only with Não devolver",
+    async () => {
+      getSale.mockResolvedValue(detail(0));
+      renderPage();
+      await openReturnFromMenu();
+      fireEvent.change(await screen.findByRole("textbox", RETURNED_FIELD), {
+        target: { value: "1" },
+      });
+      const user = userEvent.setup();
+      await user.click(screen.getByRole("combobox", REASON_FIELD));
+      await user.click(
+        await screen.findByRole("option", { name: "Item com defeito" })
+      );
+      fireEvent.change(await screen.findByRole("textbox", NOTE_FIELD), {
+        target: { value: DRAFT_NOTE },
+      });
+      await user.keyboard("{Escape}");
+      await waitFor(() =>
+        expect(screen.queryByRole("dialog", RETURN_HEADING)).toBeNull()
+      );
+
+      await openReturnFromMenu();
+      expect(
+        (
+          (await screen.findByRole(
+            "textbox",
+            RETURNED_FIELD
+          )) as HTMLInputElement
+        ).value
+      ).toBe("1");
+      expect(screen.getByDisplayValue(DRAFT_NOTE)).toBeTruthy();
+
+      await user.click(screen.getByRole("button", { name: "Não devolver" }));
+      await waitFor(() =>
+        expect(screen.queryByRole("dialog", RETURN_HEADING)).toBeNull()
+      );
+
+      await openReturnFromMenu();
+      expect(
+        (
+          (await screen.findByRole(
+            "textbox",
+            RETURNED_FIELD
+          )) as HTMLInputElement
+        ).value
+      ).toBe("");
+      expect(screen.queryByDisplayValue(DRAFT_NOTE)).toBeNull();
+    },
+    LONG_JOURNEY
+  );
+
+  it(
+    "keeps what was typed in the cancellation when it is closed by Esc, and drops it only with Não cancelar",
+    async () => {
+      getSale.mockResolvedValue(detail(0));
+      renderPage();
+      const user = userEvent.setup();
+      const openCancel = async () => {
+        await user.click(await screen.findByRole("button", ACTIONS_MENU));
+        await user.click(
+          await screen.findByRole("menuitem", { name: "Cancelar venda" })
+        );
+      };
+      await openCancel();
+      await user.click(await screen.findByRole("combobox", REASON_FIELD));
+      await user.click(await screen.findByRole("option", { name: "Outro" }));
+      fireEvent.change(await screen.findByRole("textbox", NOTE_FIELD), {
+        target: { value: DRAFT_NOTE },
+      });
+      await user.keyboard("{Escape}");
+      await waitFor(() =>
+        expect(screen.queryByRole("dialog", CANCEL_HEADING)).toBeNull()
+      );
+
+      await openCancel();
+      expect(await screen.findByDisplayValue(DRAFT_NOTE)).toBeTruthy();
+
+      await user.click(screen.getByRole("button", { name: "Não cancelar" }));
+      await waitFor(() =>
+        expect(screen.queryByRole("dialog", CANCEL_HEADING)).toBeNull()
+      );
+
+      await openCancel();
+      await screen.findByRole("combobox", REASON_FIELD);
+      expect(screen.queryByDisplayValue(DRAFT_NOTE)).toBeNull();
+    },
+    LONG_JOURNEY
+  );
 });
