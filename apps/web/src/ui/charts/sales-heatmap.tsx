@@ -38,14 +38,12 @@ export interface HeatmapTip {
 }
 
 export interface SalesHeatmapProps {
-  /** The index of the best day: a contour in ink. */
-  best: number | null;
   /** The side of a cell and the gap between two, in pixels (12 and 3). */
   cell: number;
   className?: string;
   /** `weeks` × 7 days from a Sunday, week after week (a column per week, Sunday on top). */
   days: readonly HeatmapDay[];
-  /** The day read now (the pointer, the finger or the keyboard): a contour in the color of the focus and the tooltip. */
+  /** The day read now (the pointer, the finger or the keyboard): a ring in the color of the focus and the tooltip. */
   focus: number | null;
   gap: number;
   /**
@@ -57,7 +55,7 @@ export interface SalesHeatmapProps {
   still?: boolean;
   /** What the tooltip says of the `focus` day (already masked when the values are hidden), or null: no tooltip. */
   tip: HeatmapTip | null;
-  /** The index of today: a dashed contour. */
+  /** The index of today: a ring in ink. */
   today: number;
 }
 
@@ -129,32 +127,79 @@ function useCellBox() {
   });
 }
 
+/** How far the ring's centerline sits from the cell: half the gap, so the stroke never reaches the next cell. */
+export const RING_OFFSET = 1.5;
+export const TODAY_RING_WIDTH = 1;
+export const READ_RING_WIDTH = 1.5;
+
+export type RingKind = "read" | "today";
+
+export interface Ring {
+  index: number;
+  kind: RingKind;
+  strokeWidth: number;
+}
+
 /**
- * The marks that are ours, over the cells: the outline of a known day with no sale (a shape, not only a color), the
- * best day in ink, today dashed and the day read. Inside the drawing, which is `aria-hidden`: the same is in words in
- * the reading and in the table.
+ * The rings of the map: today in ink, and the day read in the color of the focus. A cell has at most one ring, so a
+ * day read that is today shows only the read one. The best day has none: it is already the darkest cell and the
+ * tooltip and the table say it in words.
+ */
+export function ringsOf({
+  focus,
+  today,
+}: Pick<SalesHeatmapProps, "focus" | "today">): Ring[] {
+  const read: Ring[] =
+    focus === null
+      ? []
+      : [{ index: focus, kind: "read", strokeWidth: READ_RING_WIDTH }];
+  return focus === today
+    ? read
+    : [{ index: today, kind: "today", strokeWidth: TODAY_RING_WIDTH }, ...read];
+}
+
+/**
+ * The rectangle of a ring around a cell, and the box the stroke covers: one geometry for every ring, centered
+ * `RING_OFFSET` from the cell, so the stroke (at most 2.25 px out) stays inside the gap between two cells.
+ */
+export function ringGeometry(
+  cell: { height: number; width: number; x: number; y: number },
+  strokeWidth: number
+) {
+  const reach = RING_OFFSET + strokeWidth / 2;
+  return {
+    outer: {
+      bottom: cell.y + cell.height + reach,
+      left: cell.x - reach,
+      right: cell.x + cell.width + reach,
+      top: cell.y - reach,
+    },
+    rect: {
+      height: cell.height + 2 * RING_OFFSET,
+      rx: 4,
+      width: cell.width + 2 * RING_OFFSET,
+      x: cell.x - RING_OFFSET,
+      y: cell.y - RING_OFFSET,
+    },
+  };
+}
+
+const RING_CLASS: Record<RingKind, string> = {
+  read: "stroke-ring",
+  today: "stroke-foreground",
+};
+
+/**
+ * The marks that are ours, over the cells: the outline of a known day with no sale (a shape, not only a color), today
+ * in ink and the day read. Inside the drawing, which is `aria-hidden`: the same is in words in the reading and in the
+ * table.
  */
 function Marks({
-  best,
   days,
   focus,
   today,
-}: Pick<SalesHeatmapProps, "best" | "days" | "focus" | "today">) {
+}: Pick<SalesHeatmapProps, "days" | "focus" | "today">) {
   const box = useCellBox();
-  const ring = (index: number, className: string, key: string) => {
-    const cell = box(index);
-    return (
-      <rect
-        className={cn("fill-none", className)}
-        height={cell.height + 4}
-        key={key}
-        rx={4}
-        width={cell.width + 4}
-        x={cell.x - 2}
-        y={cell.y - 2}
-      />
-    );
-  };
   return (
     <g data-heatmap-marks="" pointerEvents="none">
       {days.map((day, index) => {
@@ -176,15 +221,18 @@ function Marks({
           />
         );
       })}
-      {ring(
-        today,
-        "stroke-foreground [stroke-dasharray:2_2] stroke-[1.5]",
-        "today"
-      )}
-      {best === null ? null : ring(best, "stroke-foreground stroke-2", "best")}
-      {focus === null || focus === best
-        ? null
-        : ring(focus, "stroke-ring stroke-2", "focus")}
+      {ringsOf({ focus, today }).map((ring) => {
+        const { rect } = ringGeometry(box(ring.index), ring.strokeWidth);
+        return (
+          <rect
+            className={cn("fill-none", RING_CLASS[ring.kind])}
+            data-heatmap-ring={ring.kind}
+            key={ring.kind}
+            strokeWidth={ring.strokeWidth}
+            {...rect}
+          />
+        );
+      })}
     </g>
   );
 }
@@ -361,7 +409,6 @@ function DayTooltip({
  * keyboard and the table are the screen's.
  */
 export function SalesHeatmap({
-  best,
   cell,
   className,
   days,
@@ -433,7 +480,7 @@ export function SalesHeatmap({
             hideGhostCells={false}
             inactiveOpacity={1}
           />
-          <Marks best={best} days={days} focus={focus} today={today} />
+          <Marks days={days} focus={focus} today={today} />
           <Labels days={days} />
           <ReadBridge days={days} onRead={onRead} />
           <DayTooltip focus={focus} instant={still} tip={tip} />
