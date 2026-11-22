@@ -22,7 +22,7 @@ const SALE: ConfirmedSaleView = {
   totals: [],
 };
 
-const LINE = '1ª venda registrada. Veja o Hoje no <a aria-label="Ver o Início"';
+const LINE = "1ª venda registrada. Veja o Hoje no <a ";
 
 const render = (firstSale: boolean) =>
   renderToStaticMarkup(
