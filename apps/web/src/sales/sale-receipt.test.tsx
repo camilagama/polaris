@@ -16,6 +16,7 @@ const { SaleReceipt } = await import("./sale-receipt");
 const FRAME = /\bborder|\bring|\bshadow/;
 const MUTED_BLOCK = /<dl class="[^"]*bg-muted[^"]*"/g;
 const MONO_CELL = /<(?:dd|span|p)\b[^>]*class="[^"]*font-mono[^"]*"[^>]*>/g;
+const TOTALS_STRIP = /<dl\b[^>]*\bdata-receipt-totals\b/;
 const DD = /<dd class="([^"]*)"/g;
 const ITEM_PRICES =
   /<span class="[^"]*text-right font-mono[^"]*">2 × <span[^>]*>R\$ /;
@@ -201,7 +202,7 @@ describe("the sale as a receipt", () => {
     expect(markup.split("Total devido")).toHaveLength(2);
     expect(markup.match(TOTAL_PARTS)).toHaveLength(1);
     const strip = markup.slice(
-      markup.indexOf('<dl class="flex flex-wrap'),
+      markup.search(TOTALS_STRIP),
       markup.indexOf("border-dashed")
     );
     const terms = [...strip.matchAll(/<dt[^>]*>([^<]*)<\/dt>/g)].map(
@@ -229,7 +230,7 @@ describe("the sale as a receipt", () => {
   it("writes the count of items from the sale, and masks the total of the strip with the values hidden", () => {
     const strip = (markup: string) =>
       markup.slice(
-        markup.indexOf('<dl class="flex flex-wrap'),
+        markup.search(TOTALS_STRIP),
         markup.indexOf("border-dashed")
       );
     expect(strip(render())).toMatch(TOTAL_PARTS);
