@@ -36,7 +36,7 @@ test.describe("Ritmo de vendas (revisão de UI v7, § 3 item 10)", () => {
   // the map and in the tooltip of its day
   const READING = "Sexta, 23/10 · R$ 320,10 · 2 vendas · hoje";
   const AT_REST =
-    "Poucas semanas de vendas ainda: o mapa enche conforme você vende. 6 dias com venda nas últimas 13 semanas.";
+    "Poucas semanas de vendas ainda: o mapa enche conforme você vende.";
   const rhythm = (page: Page) => region(page, "Ritmo de vendas");
   const tooltip = (page: Page) =>
     rhythm(page).locator("[data-heatmap-tooltip]");
@@ -144,7 +144,7 @@ test.describe("Ritmo de vendas (revisão de UI v7, § 3 item 10)", () => {
     );
     await expect(map.getByRole("img")).toHaveAttribute(
       "aria-label",
-      `Vendas por dia nas últimas 26 semanas: 6 dias com venda. Melhor dia 18/10, R$ 1.840,00. ${AT_REST} Meses anteriores atualizados até ontem. A tabela dia a dia está no fim deste bloco.`
+      `Vendas por dia nas últimas 26 semanas: 6 dias com venda, sendo 6 nas últimas 13 semanas. Melhor dia 18/10, R$ 1.840,00. ${AT_REST} Meses anteriores atualizados até ontem. A tabela dia a dia está no fim deste bloco.`
     );
     // a cell per day of the 26 weeks; 175 known days with no sale are outlined (181 days read, 6 sold); Saturday
     // `24/10`, to come, has no outline and no fill
@@ -314,7 +314,7 @@ test.describe("Ritmo de vendas (revisão de UI v7, § 3 item 10)", () => {
     );
     await expect(map.getByRole("img")).toHaveAttribute(
       "aria-label",
-      `Vendas por dia nas últimas 26 semanas: 6 dias com venda. Melhor dia 18/10, valor escondido. ${AT_REST} Meses anteriores atualizados até ontem. A tabela dia a dia está no fim deste bloco.`
+      `Vendas por dia nas últimas 26 semanas: 6 dias com venda, sendo 6 nas últimas 13 semanas. Melhor dia 18/10, valor escondido. ${AT_REST} Meses anteriores atualizados até ontem. A tabela dia a dia está no fim deste bloco.`
     );
     await page.mouse.move(5, 5);
     await expect(
