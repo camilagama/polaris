@@ -147,19 +147,34 @@ const nineDigitRanking = () =>
 
 const NINE_DIGIT_VALUES = ["R$ 1.234.567,89", "R$ 98.765,43", "R$ 120,00"];
 
-/** The right edge of the value and of the units of each line, and whether each one is wider than its box. */
+/**
+ * The right edge of the value and of the units of each line, and whether each one is wider than its box: the whole text
+ * of the cell (the quantity in Geist Mono and the " un." in Geist) is measured by a range, on one line.
+ */
 async function figureEdges(block: Locator) {
   return await block.locator("ol > li").evaluateAll((rows) =>
     rows.map((row) => {
       const edge = (selector: string) => {
         const cell = row.querySelector(selector) as HTMLElement;
         const inner = cell.firstElementChild as HTMLElement;
+        const range = document.createRange();
+        range.selectNodeContents(cell);
+        const text = range.getBoundingClientRect();
+        const box = cell.getBoundingClientRect();
         return {
           family: getComputedStyle(inner).fontFamily,
+          lines:
+            range.getClientRects().length > 0
+              ? Math.round(
+                  text.height /
+                    Number.parseFloat(getComputedStyle(cell).lineHeight)
+                )
+              : 0,
           overflows:
-            inner.getBoundingClientRect().right >
-            cell.getBoundingClientRect().right + 0.5,
-          right: Math.round(cell.getBoundingClientRect().right),
+            text.right > box.right + 0.5 ||
+            text.left < box.left - 0.5 ||
+            cell.scrollWidth > cell.clientWidth + 1,
+          right: Math.round(box.right),
         };
       };
       return {
@@ -583,6 +598,7 @@ test.describe("Mais vendidos do mês a 320 px com a letra do navegador em 20 px"
         expect(line.units.overflows, "unidades dentro da sua caixa").toBe(
           false
         );
+        expect(line.units.lines, "unidades numa linha só").toBe(1);
         expect(line.value.family).toContain("Geist Mono");
         expect(line.units.family).toContain("Geist Mono");
       }
@@ -883,6 +899,8 @@ test.describe("Mais vendidos do mês: a linha por largura da coluna (uma linha s
     for (const line of lines) {
       expect(line.value.overflows, "valor dentro da coluna").toBe(false);
       expect(line.units.overflows, "unidades dentro da coluna").toBe(false);
+      expect(line.units.lines, "unidades numa linha só").toBe(1);
+      expect(line.value.lines, "valor numa linha só").toBe(1);
     }
     expect(new Set(lines.map((line) => line.value.right)).size).toBe(1);
     expect(new Set(lines.map((line) => line.units.right)).size).toBe(1);

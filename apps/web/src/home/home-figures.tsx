@@ -58,11 +58,11 @@ const RANKING_FOOTER = {
 
 /**
  * The units of a line: the quantity is a figure, in Geist Mono, and the " un." after it is a word, in the Geist of the
- * line. The column keeps 1.5 em for the word, more than Geist takes to write it; `valores-e-ranking.e2e.ts` holds the
- * units inside the column with nine digits of value.
+ * line. The column keeps 2 em for the word, above what Geist takes to write it (under 1.7 em); `valores-e-ranking.e2e.ts`
+ * holds the whole units, word included, inside the column with a quantity of six characters.
  */
 const UNIT_WORD = " un.";
-const UNIT_WORD_EM = 1.5;
+const UNIT_WORD_EM = 2;
 
 const ALL_RETURNED_TEXT = "As vendas do período foram devolvidas.";
 
@@ -75,8 +75,12 @@ const SPREAD_FROM = 3;
  * width is the count of characters times that advance. A `ch` would be the zero of the Geist of the line, not the
  * advance of the mono.
  */
-function widestEm(texts: readonly string[]): number {
-  return texts.reduce((widest, text) => Math.max(widest, monoWidthEm(text)), 0);
+function widestEm(texts: readonly string[], extraEm = 0): number {
+  const widest = texts.reduce(
+    (most, text) => Math.max(most, monoWidthEm(text)),
+    0
+  );
+  return Number((widest + extraEm).toFixed(3));
 }
 
 /**
@@ -121,7 +125,10 @@ export function TopProductsBlock({
   }
   const spread = products.length >= SPREAD_FROM;
   const columns = {
-    "--top-units": `${widestEm(products.map((product) => formatQuantity(product.quantity))) + UNIT_WORD_EM}em`,
+    "--top-units": `${widestEm(
+      products.map((product) => formatQuantity(product.quantity)),
+      UNIT_WORD_EM
+    )}em`,
     "--top-value": `${widestEm(products.map((product) => formatBrlAmount(product.netSales)))}em`,
   } as CSSProperties;
   return (
@@ -233,9 +240,9 @@ function StepsCount({ done }: { done: number }) {
   return (
     <span className="flex items-center gap-1.5 text-muted-foreground">
       <ProgressRing done={done} total={FIRST_STEPS_TOTAL} />
-      <Figure>
-        {done} de {FIRST_STEPS_TOTAL}
-      </Figure>
+      <span>
+        <Figure>{done}</Figure> de <Figure>{FIRST_STEPS_TOTAL}</Figure>
+      </span>
     </span>
   );
 }

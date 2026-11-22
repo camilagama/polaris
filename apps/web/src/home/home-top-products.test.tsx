@@ -109,7 +109,7 @@ describe("Mais vendidos do mês: a marcação de cada linha", () => {
       <TopProductsBlock products={PRODUCTS} salesCount={9} />
     );
     expect(html).toContain("--top-value:5.4em");
-    expect(html).toContain("--top-units:2.7em");
+    expect(html).toContain("--top-units:3.2em");
     expect(html).not.toContain("ml-[calc");
     expect(html).toContain("@min-[20.75rem]:col-end-6");
   });
