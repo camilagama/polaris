@@ -233,14 +233,14 @@ function Totals({
     <dl className="flex flex-wrap gap-x-6 gap-y-2">
       <div className="grid gap-0.5">
         <dt className="text-muted-foreground text-support">Vendas líquidas</dt>
-        <dd className="font-semibold text-lg tabular-nums">
+        <dd className="font-semibold text-lg">
           <MoneyText text={formatBrlAmount(salesTotal)} />
         </dd>
       </div>
       {costsTotal ? (
         <div className="grid gap-0.5">
           <dt className="text-muted-foreground text-support">Custos</dt>
-          <dd className="font-semibold text-lg tabular-nums">
+          <dd className="font-semibold text-lg">
             <MoneyText text={formatBrlAmount(costsTotal)} />
           </dd>
         </div>

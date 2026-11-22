@@ -1,5 +1,5 @@
 /// <reference lib="dom" />
-import type { Page } from "@playwright/test";
+import type { Page, Request } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 import {
   axeFaults,
@@ -361,6 +361,27 @@ test("uma resposta atrasada nunca troca a de um mês mais novo", async ({
 }) => {
   const server = new FakeReportServer();
   const releaseOctober = server.hold("2026-10");
+  const isOctoberRead = (request: Request) => {
+    if (!request.url().includes("report/periodSummary")) {
+      return false;
+    }
+    const body = request.postDataJSON() as {
+      json?: { from?: string; topProducts?: unknown };
+    } | null;
+    return (
+      body?.json?.from?.slice(0, 7) === "2026-10" &&
+      body.json.topProducts !== undefined
+    );
+  };
+  // the read of October ends in the browser one way or the other: the screen cancels it once September is asked
+  // for (requestfailed), or its answer arrives whole (the body read to the end); both are listened to from before the read exists
+  const octoberEnded = Promise.race([
+    page
+      .waitForResponse((response) => isOctoberRead(response.request()))
+      .then((response) => response.finished()),
+    page.waitForEvent("requestfailed", isOctoberRead),
+  ]);
+  octoberEnded.catch(() => undefined);
   await openDashboard(page, server);
 
   // October is still pending when September is asked for and answered
@@ -369,11 +390,17 @@ test("uma resposta atrasada nunca troca a de um mês mais novo", async ({
   await expect(card(page, CARD.netSales)).toContainText("R$ 100,00");
 
   releaseOctober();
+  await octoberEnded;
   await expect
     .poll(() => server.answered.filter((m) => m === "2026-10").length)
     .toBe(1);
-  // give the late answer time to reach the screen, where it must be ignored
-  await page.waitForTimeout(300);
+  // two frames after the browser is done with the read: a late answer has been handed to the screen, where it must be ignored
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+      )
+  );
 
   await expectPreset(page, "Mês passado");
   await expect(card(page, CARD.netSales)).toContainText("R$ 100,00");

@@ -24,6 +24,7 @@ import {
 const testSecret = "test-only-better-auth-secret-32-bytes";
 const testBaseURL = "http://localhost";
 const dayMilliseconds = 24 * 60 * 60 * 1000;
+const START = new Date("2026-03-01T12:00:00.000Z");
 const testBindings = {
   BETTER_AUTH_BASE_URL: testBaseURL,
   BETTER_AUTH_SECRET: testSecret,
@@ -438,7 +439,7 @@ describe("the access log in the server of authentication", () => {
 
     it("records a refresh once a day, with the IP of that request, and not on every request", async () => {
       vi.useFakeTimers({ toFake: ["Date"] });
-      vi.setSystemTime(new Date("2026-03-01T12:00:00.000Z"));
+      vi.setSystemTime(START);
       const test = createAccessLogTestApp();
       const cookie = await loggedIn(test, "203.0.113.20");
 
@@ -446,7 +447,7 @@ describe("the access log in the server of authentication", () => {
       await getSession(test, cookie, "203.0.113.20");
       expect(test.entries).toEqual([]);
 
-      vi.setSystemTime(new Date(Date.now() + dayMilliseconds + 1000));
+      vi.setSystemTime(new Date(START.getTime() + dayMilliseconds + 1000));
       await getSession(test, cookie, "203.0.113.20");
       await getSession(test, cookie, "203.0.113.20");
 
@@ -483,7 +484,7 @@ describe("the access log in the server of authentication", () => {
 
     it("keeps what one request recorded from silencing the next request of the same instance", async () => {
       vi.useFakeTimers({ toFake: ["Date"] });
-      vi.setSystemTime(new Date("2026-03-01T12:00:00.000Z"));
+      vi.setSystemTime(START);
       let requests = 0;
       const test = createAccessLogTestApp({
         sharedRequestId: () =>
@@ -510,11 +511,11 @@ describe("the access log in the server of authentication", () => {
 
     it("records a change of IP on the day of a refresh only once", async () => {
       vi.useFakeTimers({ toFake: ["Date"] });
-      vi.setSystemTime(new Date("2026-03-01T12:00:00.000Z"));
+      vi.setSystemTime(START);
       const test = createAccessLogTestApp();
       const cookie = await loggedIn(test, "203.0.113.20");
 
-      vi.setSystemTime(new Date(Date.now() + dayMilliseconds + 1000));
+      vi.setSystemTime(new Date(START.getTime() + dayMilliseconds + 1000));
       await getSession(test, cookie, "198.51.100.77");
       await getSession(test, cookie, "198.51.100.77");
 
@@ -539,14 +540,14 @@ describe("the access log in the server of authentication", () => {
 
     it("tries again on the next request when the record of the daily refresh failed", async () => {
       vi.useFakeTimers({ toFake: ["Date"] });
-      vi.setSystemTime(new Date("2026-03-01T12:00:00.000Z"));
+      vi.setSystemTime(START);
       const test = createAccessLogTestApp();
       const cookie = await loggedIn(test, "203.0.113.20");
       const flaky = createAccessLogTestApp();
       const flakyCookie = await loggedIn(flaky, "203.0.113.20");
       flaky.failNext(1);
 
-      vi.setSystemTime(new Date(Date.now() + dayMilliseconds + 1000));
+      vi.setSystemTime(new Date(START.getTime() + dayMilliseconds + 1000));
       // the refresh writes (and fails once); the same request finds the row still on the old IP and tries again
       await getSession(flaky, flakyCookie, "198.51.100.77");
       const attempts = flaky.entries.filter(
