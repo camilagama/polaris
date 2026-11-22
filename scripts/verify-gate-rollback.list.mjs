@@ -32,8 +32,4 @@ export const GATE_ROLLBACK_LIST = {
     count: 1,
     reason: BEFORE_THE_RULE,
   },
-  "packages/db/scripts/verify-gate2-runtime.ts": {
-    count: 5,
-    reason: BEFORE_THE_RULE,
-  },
 };

@@ -1651,21 +1651,21 @@ async function main() {
       ),
       ProductVariantsAlreadyConfiguredError
     );
-    await runtimeClient.query("BEGIN");
-    await runtimeClient.query(
-      "SELECT set_config('app.user_id', $1, true), " +
-        "set_config('app.organization_id', $2, true)",
-      [userA, organizationA.organization.id]
-    );
-    await expectSqlState(
-      runtimeClient.query(
-        "UPDATE public.products SET variants_configured_at = NULL WHERE id = $1",
-        [configurableProduct.id]
-      ),
-      "23514",
-      "the database prevents resetting the one-time variant configuration marker"
-    );
-    await runtimeClient.query("ROLLBACK");
+    await inRolledBackTransaction(runtimeClient, async () => {
+      await runtimeClient.query(
+        "SELECT set_config('app.user_id', $1, true), " +
+          "set_config('app.organization_id', $2, true)",
+        [userA, organizationA.organization.id]
+      );
+      await expectSqlState(
+        runtimeClient.query(
+          "UPDATE public.products SET variants_configured_at = NULL WHERE id = $1",
+          [configurableProduct.id]
+        ),
+        "23514",
+        "the database prevents resetting the one-time variant configuration marker"
+      );
+    });
     await expectProductVariantDeleteDenied(
       runtimeClient,
       userA,
@@ -2122,51 +2122,51 @@ async function main() {
       "the database refuses an invalid list price"
     );
 
-    await runtimeClient.query("BEGIN");
-    await runtimeClient.query(
-      "SELECT set_config('app.user_id', $1, true), " +
-        "set_config('app.organization_id', $2, true)",
-      [userA, organizationA.organization.id]
-    );
-    await expectSqlState(
-      runtimeClient.query(
-        "UPDATE public.product_variants SET position = position " +
-          "WHERE id = $1",
-        [skuVariantB.id]
-      ),
-      "42501",
-      "runtime may update SKU but not other product variant columns"
-    );
-    await runtimeClient.query("ROLLBACK");
+    await inRolledBackTransaction(runtimeClient, async () => {
+      await runtimeClient.query(
+        "SELECT set_config('app.user_id', $1, true), " +
+          "set_config('app.organization_id', $2, true)",
+        [userA, organizationA.organization.id]
+      );
+      await expectSqlState(
+        runtimeClient.query(
+          "UPDATE public.product_variants SET position = position " +
+            "WHERE id = $1",
+          [skuVariantB.id]
+        ),
+        "42501",
+        "runtime may update SKU but not other product variant columns"
+      );
+    });
 
-    await runtimeClient.query("BEGIN");
-    await runtimeClient.query(
-      "SELECT set_config('app.user_id', $1, true), " +
-        "set_config('app.organization_id', $2, true)",
-      [userA, organizationA.organization.id]
-    );
-    await expectSqlState(
-      runtimeClient.query(
-        "UPDATE public.product_variants SET sku = '  ' WHERE id = $1",
-        [skuVariantB.id]
-      ),
-      "23514",
-      "the database rejects noncanonical blank SKUs"
-    );
-    await runtimeClient.query("ROLLBACK");
+    await inRolledBackTransaction(runtimeClient, async () => {
+      await runtimeClient.query(
+        "SELECT set_config('app.user_id', $1, true), " +
+          "set_config('app.organization_id', $2, true)",
+        [userA, organizationA.organization.id]
+      );
+      await expectSqlState(
+        runtimeClient.query(
+          "UPDATE public.product_variants SET sku = '  ' WHERE id = $1",
+          [skuVariantB.id]
+        ),
+        "23514",
+        "the database rejects noncanonical blank SKUs"
+      );
+    });
 
-    await runtimeClient.query("BEGIN");
-    await runtimeClient.query(
-      "SELECT set_config('app.user_id', $1, true), " +
-        "set_config('app.organization_id', $2, true)",
-      [userB, organizationB.organization.id]
-    );
-    const crossTenantSkuUpdate = await runtimeClient.query(
-      "UPDATE public.product_variants SET sku = $1 WHERE id = $2 RETURNING id",
-      ["cross-tenant-attempt", skuVariantB.id]
-    );
-    assert.equal(crossTenantSkuUpdate.rowCount, 0);
-    await runtimeClient.query("ROLLBACK");
+    await inRolledBackTransaction(runtimeClient, async () => {
+      await runtimeClient.query(
+        "SELECT set_config('app.user_id', $1, true), " +
+          "set_config('app.organization_id', $2, true)",
+        [userB, organizationB.organization.id]
+      );
+      const crossTenantSkuUpdate = await runtimeClient.query(
+        "UPDATE public.product_variants SET sku = $1 WHERE id = $2 RETURNING id",
+        ["cross-tenant-attempt", skuVariantB.id]
+      );
+      assert.equal(crossTenantSkuUpdate.rowCount, 0);
+    });
 
     const skuAudit = await adminPool.query<{
       entity_id: string;
@@ -2187,33 +2187,33 @@ async function main() {
       1
     );
 
-    await runtimeClient.query("BEGIN");
-    await runtimeClient.query(
-      "SELECT set_config('app.user_id', $1, true), " +
-        "set_config('app.organization_id', $2, true)",
-      [userB, organizationB.organization.id]
-    );
-    assert.deepEqual(
-      (
-        await runtimeClient.query(
-          "SELECT id FROM public.product_options WHERE product_id = $1",
-          [configurableProduct.id]
-        )
-      ).rows,
-      [],
-      "cross-tenant runtime reads cannot see product options"
-    );
-    assert.deepEqual(
-      (
-        await runtimeClient.query(
-          "SELECT variant_id FROM public.variant_option_values WHERE product_id = $1",
-          [configurableProduct.id]
-        )
-      ).rows,
-      [],
-      "cross-tenant runtime reads cannot see variant assignments"
-    );
-    await runtimeClient.query("ROLLBACK");
+    await inRolledBackTransaction(runtimeClient, async () => {
+      await runtimeClient.query(
+        "SELECT set_config('app.user_id', $1, true), " +
+          "set_config('app.organization_id', $2, true)",
+        [userB, organizationB.organization.id]
+      );
+      assert.deepEqual(
+        (
+          await runtimeClient.query(
+            "SELECT id FROM public.product_options WHERE product_id = $1",
+            [configurableProduct.id]
+          )
+        ).rows,
+        [],
+        "cross-tenant runtime reads cannot see product options"
+      );
+      assert.deepEqual(
+        (
+          await runtimeClient.query(
+            "SELECT variant_id FROM public.variant_option_values WHERE product_id = $1",
+            [configurableProduct.id]
+          )
+        ).rows,
+        [],
+        "cross-tenant runtime reads cannot see variant assignments"
+      );
+    });
 
     const limitedProduct = await withAuthorizedTenantTransaction(
       runtimeDb,
