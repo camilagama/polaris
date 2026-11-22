@@ -187,7 +187,11 @@ test("Alterar data e ajustes: com a altura do painel ainda abrindo, levar um con
   await cdp.send("Animation.enable");
   await cdp.send("Animation.setPlaybackRate", { playbackRate: 0 });
   await extras.click();
-  const panel = page.locator("[data-slot=collapsible-content]");
+  const close = page.getByRole("button", { name: "Fechar data e ajustes" });
+  await expect(close).toHaveAttribute("aria-controls", ANY_ID);
+  const panel = page.locator(
+    `[id="${await close.getAttribute("aria-controls")}"]`
+  );
   await expect
     .poll(() =>
       panel.evaluate((node) =>
@@ -200,9 +204,13 @@ test("Alterar data e ajustes: com a altura do painel ainda abrindo, levar um con
       (button) => button.textContent?.trim() === "Adicionar ajuste"
     );
     add?.scrollIntoView({ block: "center" });
-    return { found: add !== undefined, scrollTop: node.scrollTop };
+    return {
+      found: add !== undefined,
+      height: node.getBoundingClientRect().height,
+      scrollTop: node.scrollTop,
+    };
   });
-  expect(scrolled).toEqual({ found: true, scrollTop: 0 });
+  expect(scrolled).toEqual({ found: true, height: 0, scrollTop: 0 });
   await cdp.send("Animation.setPlaybackRate", { playbackRate: 1 });
   await page.getByRole("button", { name: "Adicionar ajuste" }).click();
   await expect(
