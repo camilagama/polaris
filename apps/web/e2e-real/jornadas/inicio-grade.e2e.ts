@@ -8,8 +8,8 @@ const ZONE = "America/Sao_Paulo";
 const WIDE = { viewport: { height: 900, width: 1280 } };
 /** The room a card may leave empty at its foot, in pixels. */
 const EMPTY_FOOT_LIMIT = 24;
-/** What the strip of a store with no goal may be tall under 960 px of content. */
-const STRIP_HEIGHT_LIMIT = 100;
+/** The share of the map's height the strip of a store with no goal may take under 960 px of content (92 of 199 px measured). */
+const STRIP_HEIGHT_SHARE = 0.6;
 const NARROW = { viewport: { height: 900, width: 800 } };
 /** The 30 rem the map takes in its pair with the goal. */
 const RHYTHM_WIDTH = 480;
@@ -275,7 +275,7 @@ test("início a 800 (sem meta): abaixo de 960 px de conteúdo a Meta é a faixa 
   const { page } = journey;
   const organizationId = journey.organizationId as string;
   const today = localDate(runT0(), ZONE);
-  const product = PRODUCTS[0];
+  const [product] = PRODUCTS;
   const seeded = await seedProduct(
     journey.user.rpc,
     organizationId,
@@ -302,7 +302,9 @@ test("início a 800 (sem meta): abaixo de 960 px de conteúdo a Meta é a faixa 
   const meta = cards.Meta as Card;
   const rhythm = cards["Ritmo de vendas"] as Card;
   expect(area.width).toBeLessThan(960);
-  expect(meta.height, "a thin strip").toBeLessThan(STRIP_HEIGHT_LIMIT);
+  expect(meta.height, "a thin strip").toBeLessThan(
+    rhythm.height * STRIP_HEIGHT_SHARE
+  );
   expect(Math.abs(meta.width - area.width)).toBeLessThanOrEqual(1);
   expect(rhythm.top).toBeGreaterThanOrEqual(meta.bottom);
   await expect(

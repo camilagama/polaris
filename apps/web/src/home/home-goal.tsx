@@ -55,7 +55,7 @@ const STRIP_END = "@min-[60rem]/home:order-last";
 /** The body of the card with no goal: from 960 px it takes the room the map's height leaves and centers what it says in it. */
 function StripBody({ children }: { children: React.ReactNode }) {
   return (
-    <div className="@min-[60rem]/home:grow @min-[60rem]/home:content-center grid gap-(--card-spacing)">
+    <div className="grid @min-[60rem]/home:grow @min-[60rem]/home:content-center gap-(--card-spacing)">
       {children}
     </div>
   );
@@ -341,21 +341,21 @@ function PastMonthGoal({
     <>
       <p className="font-medium">Sem meta ainda</p>
       <StripBody>
-      {online ? (
-        <a
-          className={cn(
-            buttonVariants({ variant: "outline" }),
-            "w-fit",
-            STRIP_END
-          )}
-          href="/dashboard?meta=nova"
-        >
-          Definir meta
-        </a>
-      ) : null}
-      <p className="text-muted-foreground text-support tabular-nums">
-        <MoneyText text={pastGoalSummary(goal)} />
-      </p>
+        {online ? (
+          <a
+            className={cn(
+              buttonVariants({ variant: "outline" }),
+              "w-fit",
+              STRIP_END
+            )}
+            href="/dashboard?meta=nova"
+          >
+            Definir meta
+          </a>
+        ) : null}
+        <p className="text-muted-foreground text-support tabular-nums">
+          <MoneyText text={pastGoalSummary(goal)} />
+        </p>
       </StripBody>
     </>
   );
