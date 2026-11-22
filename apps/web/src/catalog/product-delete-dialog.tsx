@@ -24,7 +24,7 @@ import { Input } from "@/ui/input";
 import { navigateInApp } from "../app-shell/address";
 import { orpcClient } from "../lib/orpc";
 import { INLINE_LINK } from "../sign-in/entry-ui";
-import { isPlainClick } from "../subscription/limit-help";
+import { isPlainClick } from "../lib/plain-click";
 import type { ProductDeleteRefusal } from "./product-errors";
 import { typedNameMatches } from "./product-search-model";
 
