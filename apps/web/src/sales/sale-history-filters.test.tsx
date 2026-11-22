@@ -6,7 +6,7 @@ import {
   screen,
 } from "@testing-library/react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   type FilterRule,
   removeRule,
@@ -230,9 +230,20 @@ describe("o período da linha do título", () => {
 });
 
 describe("os atalhos do período do Histórico chegam como as duas datas da consulta", () => {
+  const originalZone = process.env.TZ;
+
+  beforeEach(() => {
+    process.env.TZ = "America/Sao_Paulo";
+  });
+
   afterEach(() => {
     cleanup();
     vi.useRealTimers();
+    if (originalZone === undefined) {
+      Reflect.deleteProperty(process.env, "TZ");
+    } else {
+      process.env.TZ = originalZone;
+    }
   });
 
   const pickShortcut = (now: Date, label: string) => {
