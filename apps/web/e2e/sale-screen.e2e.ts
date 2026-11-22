@@ -218,6 +218,68 @@ test("Alterar data e ajustes: com a altura do painel ainda abrindo, levar um con
   ).toBeVisible();
 });
 
+test("Alterar data e ajustes: com a altura do painel ainda fechando, o conteúdo dentro do painel não rola", async ({
+  page,
+}, testInfo) => {
+  test.skip(
+    testInfo.project.name !== "chromium-desktop",
+    "no celular o painel fecha sem animação de altura"
+  );
+  await openSaleLab(page, "claro");
+  await page.getByRole("button", { name: "Alterar data e ajustes" }).click();
+  const close = page.getByRole("button", { name: "Fechar data e ajustes" });
+  await expect(close).toHaveAttribute("aria-controls", ANY_ID);
+  const panel = page.locator(
+    `[id="${await close.getAttribute("aria-controls")}"]`
+  );
+  await expect
+    .poll(() => panel.evaluate((node) => node.getAnimations().length))
+    .toBe(0);
+  const openHeight = await panel.evaluate(
+    (node) => node.getBoundingClientRect().height
+  );
+  expect(openHeight).toBeGreaterThan(0);
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send("Animation.enable");
+  await cdp.send("Animation.setPlaybackRate", { playbackRate: 0 });
+  await close.click();
+  await expect
+    .poll(() =>
+      panel.evaluate((node) =>
+        node.getAnimations().map((animation) => animation.playState)
+      )
+    )
+    .toEqual(["running"]);
+  // the first frame has the full height, where nothing needs to scroll, so the check stands in the middle of the
+  // closing: the animation is paused 100 ms in, with the panel shorter than its content
+  const measured = await panel.evaluate((node) => {
+    const [animation] = node.getAnimations();
+    animation?.pause();
+    if (animation) {
+      animation.currentTime = 100;
+    }
+    const add = [...node.querySelectorAll("button")].find(
+      (button) => button.textContent?.trim() === "Adicionar ajuste"
+    );
+    add?.scrollIntoView({ block: "center" });
+    return {
+      contentScrollTop: node.firstElementChild?.scrollTop ?? -1,
+      found: add !== undefined,
+      height: node.getBoundingClientRect().height,
+      scrollHeight: node.scrollHeight,
+      scrollTop: node.scrollTop,
+    };
+  });
+  expect(measured.found).toBe(true);
+  expect(measured.height).toBeGreaterThan(0);
+  expect(measured.height).toBeLessThan(openHeight);
+  expect(measured.height).toBeLessThan(measured.scrollHeight);
+  expect({
+    contentScrollTop: measured.contentScrollTop,
+    scrollTop: measured.scrollTop,
+  }).toEqual({ contentScrollTop: 0, scrollTop: 0 });
+});
+
 /**
  * The touch area of a button: the `::before` of `touch-hit` when it is on (it is positioned from the padding box,
  * inside the border), or the box itself.
