@@ -40,6 +40,8 @@ import { ExpensesPage } from "./expenses-page";
 
 const FIRST_ROW = /Despesa 1/;
 const THIRD_ROW = /Despesa 3/;
+const FOURTH_ROW = /Despesa 4/;
+const OTHER_ROW = /^Outro · /;
 const RENAMED_ROW = /^Transporte · /;
 const MONTH_BUTTON = /^Mês de competência/;
 const NOW = new Date("2026-11-15T15:00:00.000Z");
@@ -467,5 +469,93 @@ describe("a failed re-read of the list", () => {
 
     await screen.findByText(THIRD_ROW);
     expect(cursorsRead().slice(before)).toEqual([PAGE_TWO]);
+  });
+});
+
+describe("a failed re-read after Carregar mais", () => {
+  const PAGE_THREE = "page-three";
+
+  function threePages({ cursor }: ListInput) {
+    const base = answer({ cursor: null });
+    if (cursor === null) {
+      return base;
+    }
+    if (cursor === PAGE_TWO) {
+      return {
+        ...base,
+        expenses: [expense(3, ALUGUEL, "30.00")],
+        nextCursor: PAGE_THREE,
+      };
+    }
+    return {
+      ...base,
+      expenses: [expense(4, ALUGUEL, "40.00")],
+      nextCursor: null,
+    };
+  }
+
+  async function failTwice(user: User) {
+    renameCommand("Transporte");
+    list.mockImplementation((input: ListInput) =>
+      Promise.resolve(threePages(input))
+    );
+    renderPage();
+    await screen.findByText(FIRST_ROW);
+    await openSecondPage(user);
+    list.mockImplementation(() => Promise.reject(new Error("offline")));
+
+    await renameFrete(user, "Transporte");
+    await user.click(screen.getByRole("tab", { name: "Lançamentos" }));
+    const retry = await screen.findByRole("button", {
+      name: "Tentar novamente",
+    });
+    const beforeRetry = list.mock.calls.length;
+    await user.click(retry);
+    await waitFor(() =>
+      expect(list.mock.calls.length).toBeGreaterThan(beforeRetry)
+    );
+    await screen.findByText(
+      "Não foi possível carregar as despesas. Tente novamente."
+    );
+    list.mockImplementation((input: ListInput) =>
+      Promise.resolve(threePages(input))
+    );
+  }
+
+  it("reads the third page, not the second again, and shows no row twice", async () => {
+    const user = userEvent.setup();
+    await failTwice(user);
+    const before = list.mock.calls.length;
+
+    await user.click(screen.getByRole("button", { name: "Carregar mais" }));
+
+    await screen.findByText(FOURTH_ROW);
+    expect(cursorsRead().slice(before)).toEqual([PAGE_THREE]);
+    expect(screen.getAllByText(THIRD_ROW)).toHaveLength(1);
+    expect(screen.getAllByText(FIRST_ROW)).toHaveLength(1);
+  });
+
+  it("keeps both pages on the next successful re-read", async () => {
+    const user = userEvent.setup();
+    await failTwice(user);
+    const before = list.mock.calls.length;
+
+    await openCategories(user);
+    await user.click(
+      screen.getByRole("button", { name: "Renomear categoria Transporte" })
+    );
+    const field = await screen.findByLabelText("Nome da categoria");
+    await user.clear(field);
+    await user.type(field, "Outro");
+    renameCommand("Outro");
+    await user.click(screen.getByRole("button", { name: "Salvar alterações" }));
+
+    await waitFor(() =>
+      expect(cursorsRead().slice(before)).toEqual([null, PAGE_TWO])
+    );
+    await waitFor(() => expect(screen.getAllByText(OTHER_ROW)).toHaveLength(2));
+    expect(screen.getByText(THIRD_ROW)).toBeTruthy();
+    await user.click(screen.getByRole("tab", { name: "Lançamentos" }));
+    expect(screen.getByRole("button", { name: "Carregar mais" })).toBeTruthy();
   });
 });

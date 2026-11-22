@@ -177,8 +177,7 @@ export function useExpenseList(
         if (requestSequence !== sequence.current) {
           return;
         }
-        pagesLoaded.current += 1;
-        nextCursorRef.current = result.nextCursor;
+        commit(pagesLoaded.current + 1, result.nextCursor);
         setState((current) => ({
           ...current,
           count: result.count,
@@ -233,8 +232,7 @@ export function useExpenseList(
         if (read === null) {
           return;
         }
-        pagesLoaded.current = read.pages;
-        nextCursorRef.current = read.page.nextCursor;
+        commit(read.pages, read.page.nextCursor);
         setState((current) => ({
           ...current,
           count: read.page.count,
