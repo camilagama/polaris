@@ -143,6 +143,7 @@ function CustomerLine({ link }: { link: SaleCustomerLink }) {
           }
           data-sale-customer-name=""
           ref={link.nameLine}
+          role="status"
           tabIndex={-1}
         >
           {currentView.label}
@@ -245,7 +246,25 @@ function SaleDetailContent({
     }
   }, [notice]);
 
-  const refreshLink = link.handleRetry;
+  // the summary of the customer counts the sale as it was read: when the sale changes under the page (cancelled or
+  // returned here, or from another device), it is read again, which the customer link alone would not do
+  const refreshLink = useRef(link.handleRefresh);
+  refreshLink.current = link.handleRefresh;
+  const saleView = detail === null ? null : saleDetailView(detail);
+  const saleState =
+    saleView === null
+      ? null
+      : `${saleView.cancellation === null ? "confirmed" : "cancelled"}:${saleView.returnPanelKey}`;
+  const readSaleState = useRef<string | null>(null);
+  useEffect(() => {
+    if (saleState === null) {
+      return;
+    }
+    if (readSaleState.current !== null && readSaleState.current !== saleState) {
+      refreshLink.current();
+    }
+    readSaleState.current = saleState;
+  }, [saleState]);
 
   const loadDetail = useCallback(async () => {
     const token = nextRequestToken(sequence.current);
@@ -285,17 +304,13 @@ function SaleDetailContent({
         occurredOn.current
       );
       announce(next);
-      if (next.ok) {
-        // the summary of the customer must not count the sale that was just cancelled or what was just returned
-        refreshLink().catch(() => undefined);
-      }
       // only after a success, whose dialog is done: a failure keeps the dialog open, with its locked attempt
       setRefreshing(next.ok);
       loadDetail()
         .catch(() => undefined)
         .then(() => setRefreshing(false));
     },
-    [announce, loadDetail, organizationId, refreshLink]
+    [announce, loadDetail, organizationId]
   );
   const handleAction = useCallback(
     (action: SaleAction) => {

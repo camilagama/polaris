@@ -466,8 +466,16 @@ function useLinkData({ onSaved, organizationId, saleId }: LinkDataInput) {
     }
   }, [linkedCustomerId, loadCurrentCustomer]);
 
+  const handleRefresh = useCallback(() => {
+    loadLink().catch(() => undefined);
+    if (linkedCustomerId !== null) {
+      loadCurrentCustomer(linkedCustomerId).catch(() => undefined);
+    }
+  }, [linkedCustomerId, loadCurrentCustomer, loadLink]);
+
   return {
     handleAction,
+    handleRefresh,
     handleRetry: loadLink,
     handleRetryName,
     handleSelect,
@@ -496,6 +504,7 @@ export function useSaleCustomerLink(input: {
   });
   const {
     handleAction,
+    handleRefresh,
     handleRetry,
     handleRetryName,
     handleSelect,
@@ -568,6 +577,7 @@ export function useSaleCustomerLink(input: {
     confirmRemove,
     currentView: currentCustomerView(state),
     dismissChoice,
+    handleRefresh,
     handleRetry,
     handleSelect,
     hintId,

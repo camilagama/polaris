@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 import type {
+  CustomerReadModel,
   SaleCustomerLinkReadModel,
   SaleDetailReadModel,
 } from "@polaris/contracts";
@@ -16,10 +17,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const getSale = vi.fn();
 const getCustomerLink = vi.fn();
 const returnSale = vi.fn();
+const getCustomer = vi.fn();
 
 vi.mock("../lib/orpc", () => ({
   orpcClient: {
-    customer: { get: vi.fn(), list: vi.fn() },
+    customer: { get: (input: unknown) => getCustomer(input), list: vi.fn() },
     sale: {
       get: (input: unknown) => getSale(input),
       getCustomerLink: (input: unknown) => getCustomerLink(input),
@@ -41,6 +43,8 @@ const ORGANIZATION = {
 const SALE_ID = "00000000-0000-4000-8000-000000000070";
 const ITEM_LABEL = "Camiseta — Azul / M";
 const ACTIONS_MENU = { name: /^Ações/ };
+const LONG_JOURNEY = 20_000;
+const CANCEL_HEADING = { name: "Cancelar venda" };
 const REGISTER_RETURN = { name: "Registrar devolução" };
 const RETURN_HEADING = { name: "Registrar devolução" };
 const RETURNED_FIELD = { name: `Devolvido: ${ITEM_LABEL} (até 2)` };
@@ -56,6 +60,34 @@ const NO_CUSTOMER_LINK: SaleCustomerLinkReadModel = {
   history: [],
   saleId: SALE_ID,
 };
+
+const CUSTOMER_ID = "00000000-0000-4000-8000-000000000080";
+const LINKED_CUSTOMER_LINK: SaleCustomerLinkReadModel = {
+  current: { customerId: CUSTOMER_ID, version: 1 },
+  history: [],
+  saleId: SALE_ID,
+};
+const BEFORE_TOTAL = /R\$\s?310,90/;
+const AFTER_TOTAL = /R\$\s?250,00/;
+
+const customerWithSummary = (
+  totalSpent: string,
+  purchaseCount: number
+): CustomerReadModel => ({
+  anonymizedAt: null,
+  archivedAt: null,
+  createdAt: "2026-01-01T00:00:00.000Z",
+  email: null,
+  id: CUSTOMER_ID,
+  name: "Ana Atual",
+  notes: null,
+  organizationId: ORGANIZATION.id,
+  phone: "+55 11 99999-0000",
+  status: "active",
+  summary: { lastPurchaseOn: "2026-06-10", purchaseCount, totalSpent },
+  updatedAt: "2026-01-01T00:00:00.000Z",
+  version: 1,
+});
 
 const RETURN_RESULT: ReturnSaleResult = {
   lines: [{ position: 0, restockedQuantity: 1, returnedQuantity: 1 }],
@@ -199,6 +231,7 @@ beforeEach(() => {
   getSale.mockReset();
   getCustomerLink.mockReset();
   returnSale.mockReset();
+  getCustomer.mockReset();
   getCustomerLink.mockResolvedValue(NO_CUSTOMER_LINK);
   returnSale.mockRejectedValue(saleChanged());
 });
@@ -206,14 +239,27 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("the dialogs of the sale detail after a change to the returnable quantities", () => {
-  it("closes the return dialog, back to its start, when the available quantities change, and does not read the customer again", async () => {
+  it("closes the return dialog, back to its start, when the available quantities change under it, and reads the customer again", async () => {
     getSale.mockResolvedValueOnce(detail(0)).mockResolvedValueOnce(detail(1));
+    getCustomerLink.mockResolvedValue(LINKED_CUSTOMER_LINK);
+    getCustomer
+      .mockResolvedValueOnce(customerWithSummary("310.9", 4))
+      .mockResolvedValueOnce(customerWithSummary("250", 3));
     renderPage();
+    await screen.findByText(BEFORE_TOTAL);
+    expect(
+      document
+        .querySelector("[data-sale-customer-name]")
+        ?.getAttribute("role")
+    ).toBe("status");
     await openAndConfirmReturn();
     await waitFor(() =>
       expect(screen.queryByRole("dialog", RETURN_HEADING)).toBeNull()
     );
-    expect(getCustomerLink).toHaveBeenCalledTimes(1);
+    await screen.findByText(AFTER_TOTAL);
+    expect(screen.queryByText(BEFORE_TOTAL)).toBeNull();
+    expect(getCustomerLink).toHaveBeenCalledTimes(2);
+    expect(getCustomer).toHaveBeenCalledTimes(2);
     expect(screen.getByRole("button", ACTIONS_MENU)).toBeTruthy();
     expect(getSale).toHaveBeenCalledTimes(2);
     await waitFor(() =>
@@ -236,7 +282,12 @@ describe("the dialogs of the sale detail after a change to the returnable quanti
   it("closes the dialog after a return the server accepted, reads the customer again, and the reopened one keeps nothing of the old draft", async () => {
     getSale.mockResolvedValueOnce(detail(0)).mockResolvedValueOnce(detail(1));
     returnSale.mockResolvedValue(RETURN_RESULT);
+    getCustomerLink.mockResolvedValue(LINKED_CUSTOMER_LINK);
+    getCustomer
+      .mockResolvedValueOnce(customerWithSummary("310.9", 4))
+      .mockResolvedValueOnce(customerWithSummary("250", 3));
     renderPage();
+    await screen.findByText(BEFORE_TOTAL);
     await openReturnFromMenu();
     fireEvent.change(await screen.findByRole("textbox", RETURNED_FIELD), {
       target: { value: "1" },
@@ -266,7 +317,10 @@ describe("the dialogs of the sale detail after a change to the returnable quanti
       })
     );
     expect(getSale).toHaveBeenCalledTimes(2);
-    await waitFor(() => expect(getCustomerLink).toHaveBeenCalledTimes(2));
+    await screen.findByText(AFTER_TOTAL);
+    expect(screen.queryByText(BEFORE_TOTAL)).toBeNull();
+    expect(getCustomerLink).toHaveBeenCalledTimes(2);
+    expect(getCustomer).toHaveBeenCalledTimes(2);
 
     await openReturnFromMenu();
     const returned = await screen.findByRole("textbox", RETURNED_FIELD_AFTER);
@@ -275,5 +329,87 @@ describe("the dialogs of the sale detail after a change to the returnable quanti
     expect(screen.getByRole("combobox", REASON_FIELD).textContent).toContain(
       "Sem motivo informado"
     );
-  });
+  }, LONG_JOURNEY);
+
+  it("keeps what was typed in the return when it is closed by Esc, and drops it only with Não devolver", async () => {
+    getSale.mockResolvedValue(detail(0));
+    renderPage();
+    await openReturnFromMenu();
+    fireEvent.change(await screen.findByRole("textbox", RETURNED_FIELD), {
+      target: { value: "1" },
+    });
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("combobox", REASON_FIELD));
+    await user.click(
+      await screen.findByRole("option", { name: "Item com defeito" })
+    );
+    fireEvent.change(await screen.findByRole("textbox", NOTE_FIELD), {
+      target: { value: DRAFT_NOTE },
+    });
+    await user.keyboard("{Escape}");
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog", RETURN_HEADING)).toBeNull()
+    );
+
+    await openReturnFromMenu();
+    expect(
+      (
+        (await screen.findByRole(
+          "textbox",
+          RETURNED_FIELD
+        )) as HTMLInputElement
+      ).value
+    ).toBe("1");
+    expect(screen.getByDisplayValue(DRAFT_NOTE)).toBeTruthy();
+
+    await user.click(screen.getByRole("button", { name: "Não devolver" }));
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog", RETURN_HEADING)).toBeNull()
+    );
+
+    await openReturnFromMenu();
+    expect(
+      (
+        (await screen.findByRole(
+          "textbox",
+          RETURNED_FIELD
+        )) as HTMLInputElement
+      ).value
+    ).toBe("");
+    expect(screen.queryByDisplayValue(DRAFT_NOTE)).toBeNull();
+  }, LONG_JOURNEY);
+
+  it("keeps what was typed in the cancellation when it is closed by Esc, and drops it only with Não cancelar", async () => {
+    getSale.mockResolvedValue(detail(0));
+    renderPage();
+    const user = userEvent.setup();
+    const openCancel = async () => {
+      await user.click(await screen.findByRole("button", ACTIONS_MENU));
+      await user.click(
+        await screen.findByRole("menuitem", { name: "Cancelar venda" })
+      );
+    };
+    await openCancel();
+    await user.click(await screen.findByRole("combobox", REASON_FIELD));
+    await user.click(await screen.findByRole("option", { name: "Outro" }));
+    fireEvent.change(await screen.findByRole("textbox", NOTE_FIELD), {
+      target: { value: DRAFT_NOTE },
+    });
+    await user.keyboard("{Escape}");
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog", CANCEL_HEADING)).toBeNull()
+    );
+
+    await openCancel();
+    expect(await screen.findByDisplayValue(DRAFT_NOTE)).toBeTruthy();
+
+    await user.click(screen.getByRole("button", { name: "Não cancelar" }));
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog", CANCEL_HEADING)).toBeNull()
+    );
+
+    await openCancel();
+    await screen.findByRole("combobox", REASON_FIELD);
+    expect(screen.queryByDisplayValue(DRAFT_NOTE)).toBeNull();
+  }, LONG_JOURNEY);
 });

@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
@@ -117,6 +117,21 @@ describe("the Ações menu of the sale", () => {
     }
     await user.click(items[2] as HTMLElement);
     expect(onAction).not.toHaveBeenCalled();
+  });
+
+  it("dims only the name of an item that is off, never the reason beside it", async () => {
+    renderMenu(EVERYTHING, false);
+    await openMenu();
+    for (const item of screen.getAllByRole("menuitem")) {
+      expect(item.className).toContain("data-disabled:opacity-100");
+      const reason = within(item).getByText("Precisa de conexão");
+      expect(reason.className).not.toContain("opacity");
+      expect(reason.className).toContain("text-muted-foreground");
+      const name = reason.previousElementSibling as HTMLElement;
+      expect(name.className).toContain(
+        "group-data-disabled/dropdown-menu-item:opacity-50"
+      );
+    }
   });
 
   it("holds the customer items while the link is being saved, and not the others", async () => {

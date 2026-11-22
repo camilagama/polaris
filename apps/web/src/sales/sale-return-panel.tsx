@@ -26,7 +26,6 @@ import { ReasonFields } from "./sale-reason-fields";
 import {
   backToReturnEditing,
   cancelDiscardReturn,
-  closeReturn,
   discardLockedReturn,
   editRestocked,
   editReturned,
@@ -109,7 +108,7 @@ function openedReturn(rows: readonly ReturnTableRow[]) {
 /**
  * Partial return in two steps, in a form dialog (the whole screen on a phone) that the screen opens from the menu of
  * the title. The sale is preserved; stock returns only for the quantities marked "Volta ao estoque", and Polaris
- * processes no refund. The draft is kept while the dialog fades and dropped once it has closed.
+ * processes no refund. Esc, "Fechar" and the back gesture keep the draft in memory; "Não devolver" and a finished attempt drop it.
  */
 export function SaleReturnPanel({
   finalFocus,
@@ -141,21 +140,26 @@ export function SaleReturnPanel({
     },
     [handleClose]
   );
-  // an attempt that ended (accepted, or discarded) is dropped once the dialog has faded, not while it does
+  // only "Não devolver", and an attempt that ended (accepted, or discarded), throw the draft away, once the dialog has
+  // faded; Esc, "Fechar" and the back gesture of a phone keep it
   const ended = useRef<boolean>(false);
+  const discard = useRef<boolean>(false);
+  const handleGiveUp = useCallback(() => {
+    if (!isReturnLocked(state)) {
+      discard.current = true;
+      onClose();
+    }
+  }, [onClose, state]);
   const handleClosed = useCallback(
     (next: boolean) => {
       if (next) {
         return;
       }
-      if (ended.current) {
+      if (ended.current || discard.current) {
         ended.current = false;
+        discard.current = false;
         setState(openedReturn(rows));
-        return;
       }
-      setState((current) =>
-        closeReturn(current) === current ? current : openedReturn(rows)
-      );
     },
     [rows]
   );
@@ -310,7 +314,7 @@ export function SaleReturnPanel({
               destructive={false}
               locked={locked}
               onBack={handleBack}
-              onClose={handleClose}
+              onClose={handleGiveUp}
               onConfirm={handleConfirmEvent}
               onReview={handleReview}
               retrying={state.submission.phase === "locked"}

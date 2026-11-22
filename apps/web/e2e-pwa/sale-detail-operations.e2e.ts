@@ -119,6 +119,24 @@ test.describe("the focus when the step changes", () => {
     await expect(first).toBeFocused();
   });
 
+  test("a return keeps what was typed when Esc closes it, and Não devolver drops it", async ({
+    page,
+  }) => {
+    await openDetail(page);
+    await openSaleAction(page, "Registrar devolução");
+    const dialog = page.getByRole("dialog", { name: "Registrar devolução" });
+    const first = page.getByLabel("Devolvido: Calça jeans — 42 (até 2)");
+    await first.fill("1");
+    await page.keyboard.press("Escape");
+    await expect(dialog).toBeHidden();
+    await openSaleAction(page, "Registrar devolução");
+    await expect(first).toHaveValue("1");
+    await dialog.getByRole("button", { name: "Não devolver" }).click();
+    await expect(dialog).toBeHidden();
+    await openSaleAction(page, "Registrar devolução");
+    await expect(first).toHaveValue("");
+  });
+
   test("a cancellation: review puts it on the confirmation, back puts it on the reason", async ({
     page,
   }) => {
@@ -604,6 +622,20 @@ test.describe("the Ações menu of the title", () => {
       // biome-ignore lint/performance/noAwaitInLoops: one item at a time reads clearer than a pile of assertions
       await expect(item).toHaveAttribute("aria-disabled", "true");
       await expect(item).toContainText("Precisa de conexão");
+      const reasonOpacity = await item
+        .getByText("Precisa de conexão")
+        .evaluate((element) => {
+          let product = 1;
+          for (
+            let node: Element | null = element;
+            node !== null;
+            node = node.parentElement
+          ) {
+            product *= Number(getComputedStyle(node).opacity);
+          }
+          return product;
+        });
+      expect(reasonOpacity).toBe(1);
     }
     await page
       .getByRole("menuitem", { name: "Registrar devolução" })

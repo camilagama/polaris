@@ -53,12 +53,15 @@ function ActionItem({
   const handleClick = useCallback(() => onAction(action), [action, onAction]);
   return (
     <DropdownMenuItem
+      className="data-disabled:opacity-100"
       disabled={disabled || !online}
       onClick={handleClick}
       variant={variant ?? "default"}
     >
       <span className="grid min-w-0 gap-0.5">
-        <span>{children}</span>
+        <span className="group-data-disabled/dropdown-menu-item:opacity-50">
+          {children}
+        </span>
         {online ? null : (
           <span className="text-muted-foreground text-xs">
             {OFFLINE_REASON}

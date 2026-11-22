@@ -29,7 +29,6 @@ import {
   cancellationReasonLabel,
   cancelSubmitLabel,
   cancelSuccessMessage,
-  closeCancel,
   discardLockedCancel,
   editCancelNote,
   editCancelReason,
@@ -99,8 +98,8 @@ function openedCancel() {
 
 /**
  * Whole-sale cancellation in two steps, in a form dialog (the whole screen on a phone) that the screen opens from the
- * menu of the title. The sale is preserved; stock comes back item by item and the cancellation cannot be undone. The
- * draft is kept while the dialog fades and dropped once it has closed.
+ * menu of the title. The sale is preserved; stock comes back item by item and the cancellation cannot be undone. Esc,
+ * "Fechar" and the back gesture keep the draft in memory; "Não cancelar" and a finished attempt drop it.
  */
 export function SaleCancelPanel({
   finalFocus,
@@ -132,20 +131,25 @@ export function SaleCancelPanel({
     },
     [handleClose]
   );
-  // an attempt that ended (accepted, or discarded) is dropped once the dialog has faded, not while it does
+  // only "Não cancelar", and an attempt that ended (accepted, or discarded), throw the draft away, once the dialog has
+  // faded; Esc, "Fechar" and the back gesture of a phone keep it
   const ended = useRef<boolean>(false);
+  const discard = useRef<boolean>(false);
+  const handleGiveUp = useCallback(() => {
+    if (!isCancelLocked(state)) {
+      discard.current = true;
+      onClose();
+    }
+  }, [onClose, state]);
   const handleClosed = useCallback((next: boolean) => {
     if (next) {
       return;
     }
-    if (ended.current) {
+    if (ended.current || discard.current) {
       ended.current = false;
+      discard.current = false;
       setState(openedCancel());
-      return;
     }
-    setState((current) =>
-      closeCancel(current) === current ? current : openedCancel()
-    );
   }, []);
   const handleSubmit = useCallback((event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -287,7 +291,7 @@ export function SaleCancelPanel({
               destructive
               locked={locked}
               onBack={handleBack}
-              onClose={handleClose}
+              onClose={handleGiveUp}
               onConfirm={handleConfirmEvent}
               onReview={handleReview}
               retrying={state.submission.phase === "locked"}
