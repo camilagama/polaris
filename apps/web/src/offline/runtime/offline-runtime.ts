@@ -1199,12 +1199,19 @@ export class OfflineRuntime {
     if (!stores) {
       return;
     }
-    const counts = await countsOf(stores);
+    const queue = await stores.outbox.snapshot();
     if (generation !== this.generation) {
       // the organization changed while the queue was being read
       return;
     }
-    this.set({ ...this.snapshot, counts });
+    this.set({
+      ...this.snapshot,
+      counts: {
+        pending: queue.pending,
+        rejected: queue.rejected,
+        sending: queue.sending,
+      },
+    });
   }
 
   // ------------------------------------------------------------- internals
