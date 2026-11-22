@@ -269,7 +269,7 @@ export function ScreenTabTrigger({
     <TabsTrigger
       aria-busy={reserved || undefined}
       aria-describedby={groupNameId}
-      className="flex-none"
+      className="flex-none max-[22.5rem]:px-1.5"
       data-value={value}
       disabled={reserved}
       value={value}
