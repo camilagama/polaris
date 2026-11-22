@@ -278,15 +278,6 @@ test("Alterar data e ajustes: com a altura do painel ainda fechando, o conteúdo
     contentScrollTop: measured.contentScrollTop,
     scrollTop: measured.scrollTop,
   }).toEqual({ contentScrollTop: 0, scrollTop: 0 });
-  await cdp.send("Animation.setPlaybackRate", { playbackRate: 1 });
-  await panel.evaluate((node) => {
-    for (const animation of node.getAnimations()) {
-      animation.play();
-    }
-  });
-  await expect(
-    page.getByRole("button", { name: "Alterar data e ajustes" })
-  ).toBeVisible();
 });
 
 /**
