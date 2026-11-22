@@ -236,7 +236,7 @@ for (const { goal, items } of SCENARIOS) {
 
     expect(Math.abs(chart.top - top.top)).toBeLessThanOrEqual(1);
     expect(Math.abs(chart.height - top.height)).toBeLessThanOrEqual(1);
-    expect(chart.width).toBeGreaterThan(top.width * 1.9);
+    expect(chart.width).toBeGreaterThan(top.width * 1.4);
     if (goal) {
       expect(Math.abs(meta.top - rhythm.top)).toBeLessThanOrEqual(1);
       expect(Math.abs(meta.height - rhythm.height)).toBeLessThanOrEqual(1);

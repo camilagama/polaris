@@ -108,7 +108,7 @@ function textBetweenTags(markup: string) {
 /** The name the screen reader gives the map (the summary). */
 function ariaLabelOfSummary(html: string) {
   const label = html.match(SUMMARY_LABEL)?.[1] ?? "";
-  return label.replaceAll("&amp;", "&").replaceAll("&quot;", '"');
+  return label.replaceAll("&quot;", '"').replaceAll("&amp;", "&");
 }
 
 beforeEach(() => {

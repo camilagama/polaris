@@ -3533,7 +3533,7 @@ Origem: achado B do Diego no Pixel 6 (28/10): a venda montada em Vender sumia ao
 
 | Item | Status | Observação |
 | --- | --- | --- |
-| Pares por linha | Em revisão | `home/home-lower-blocks.tsx`: duas linhas (Vendas por dia + Mais vendidos, Meta + Ritmo; a ordem de 21/11, t1595) numa consulta de contêiner `@container/home`: de 60 rem de conteúdo, 2/3 + 1/3 e o resto + 30 rem, cartões da mesma altura; abaixo, uma linha por bloco. A ordem do DOM é a da tela em toda largura. |
+| Pares por linha | Em revisão | `home/home-lower-blocks.tsx`: duas linhas (Vendas por dia + Mais vendidos, Meta + Ritmo; a ordem de 21/11, t1595) numa consulta de contêiner `@container/home`: de 60 rem de conteúdo, 3/5 + 2/5 e o resto + 30 rem, cartões da mesma altura; abaixo, uma linha por bloco. A ordem do DOM é a da tela em toda largura. |
 | Quem absorve a sobra | Em revisão | Vendas por dia: a altura do desenho cresce até a caixa (`home-chart.tsx`); Meta deitada, o anel e os números lado a lado (`home-goal.tsx`); Mais vendidos divide a altura por igual a partir de três linhas (`home-figures.tsx`); Ritmo com o mapa centrado no cartão, só com o título, a legenda e a grade (`home-rhythm.tsx`). |
 | Sem meta | Em revisão | Faixa fina com "Defina quanto quer vender no mês e acompanhe aqui." (só de 60 rem) e "Definir meta"; o Ritmo ocupa a linha inteira embaixo dela. Os blocos sob os cartões esperam a primeira resposta das metas (`useFirstGoalRead`), para a forma da linha do gráfico não mudar depois de desenhada. |
 | Mesma caixa | Em revisão | Mais vendidos de um período sem venda fica na caixa e diz "Sem vendas no período." (antes o bloco sumia). |

@@ -34,11 +34,11 @@ describe("os blocos sob os cartões do Início", () => {
     expect(html({})).not.toMatch(ORDER_UTILITY);
   });
 
-  it("são duas linhas de par: gráfico (2/3) e ranking (1/3), Meta e mapa", () => {
+  it("são duas linhas de par: gráfico (3/5) e ranking (2/5), Meta e mapa", () => {
     const [upper, lower] = rows(html({}));
     expect(upper).toContain("data-pair");
     expect(upper).toContain(
-      "@min-[60rem]/home:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]"
+      "@min-[60rem]/home:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]"
     );
     expect(lower).toContain("data-pair");
     expect(lower).toContain(

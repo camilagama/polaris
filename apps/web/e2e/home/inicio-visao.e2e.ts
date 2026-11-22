@@ -325,10 +325,10 @@ test.describe("loja com venda", () => {
       "Vendas em outubro",
       "Resultado estimado",
       "Ticket médio",
-      "Meta",
       "Vendas por dia",
-      "Ritmo de vendas",
       "Mais vendidos do mês",
+      "Meta",
+      "Ritmo de vendas",
     ]);
     expect(
       await page.evaluate(
