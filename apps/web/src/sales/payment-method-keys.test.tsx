@@ -61,6 +61,7 @@ afterEach(() => {
 
 describe("methodForKey", () => {
   const methods = ["a", "b", "c"];
+  const nine = Array.from({ length: MAX_KEYED_METHODS }, (_, index) => index);
 
   it("a tecla do número escolhe a opção daquela posição", () => {
     expect(methodForKey({ ...bare, key: "1" }, methods)).toBe("a");
@@ -99,6 +100,31 @@ describe("methodForKey", () => {
       expect(
         methodForKey({ ...bare, key, shiftKey: true }, methods),
         key
+      ).toBeNull();
+    }
+  });
+
+  it("no ABNT2 Shift mais 6 chega como tecla morta (Dead) e não escolhe nada", () => {
+    const dead = {
+      ...bare,
+      code: "Digit6",
+      key: "Dead",
+      shiftKey: true,
+    };
+    expect(methodForKey(dead, nine)).toBeNull();
+  });
+
+  it("depois da tecla morta, o keydown da composição também não escolhe nada", () => {
+    const composition = [
+      { code: "Digit6", key: "Dead", shiftKey: true },
+      { code: "KeyU", key: "Process", shiftKey: false },
+      { code: "KeyU", key: "\u00fc", shiftKey: false },
+      { code: "Space", key: "\u00a8", shiftKey: false },
+    ];
+    for (const step of composition) {
+      expect(
+        methodForKey({ ...bare, ...step }, nine),
+        `${step.code} ${step.key}`
       ).toBeNull();
     }
   });
