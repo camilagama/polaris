@@ -65,7 +65,7 @@ export function Reading({
       {secondary && point.rawSecondary !== undefined ? (
         <>
           <span>{`· ${name}`}</span>{" "}
-          <span className="font-medium text-foreground tabular-nums">
+          <span className="font-medium font-mono text-foreground tabular-nums">
             {formatValue(point.raw)}
           </span>{" "}
           <SecondaryReading
@@ -81,7 +81,7 @@ export function Reading({
           ) : null}
         </>
       ) : (
-        <span className="font-medium text-foreground tabular-nums">
+        <span className="font-medium font-mono text-foreground tabular-nums">
           {formatValue(point.raw)}
         </span>
       )}
@@ -106,7 +106,7 @@ function SecondaryReading({
         className={
           reading.unknown
             ? "font-medium text-warning italic"
-            : "font-medium text-foreground tabular-nums"
+            : "font-medium font-mono text-foreground tabular-nums"
         }
         data-chart-unknown={reading.unknown ? "" : undefined}
       >
@@ -255,7 +255,7 @@ function Line({
         />
       ) : null}
       <span className="text-chart-tooltip-muted">{name}</span>
-      <span className="ml-auto pl-2 font-medium text-chart-tooltip-foreground tabular-nums">
+      <span className="ml-auto pl-2 font-medium font-mono text-chart-tooltip-foreground tabular-nums">
         {value}
       </span>
     </div>
