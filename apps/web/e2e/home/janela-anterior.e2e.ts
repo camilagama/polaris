@@ -2,6 +2,7 @@
 
 import type { Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
+import { openSaleAction } from "../../e2e-pwa/sale-detail-fixture";
 import { pickDate } from "../date-pickers";
 import {
   copyKeys,
@@ -192,9 +193,7 @@ test.describe("janela anterior do Início: uma leitura por dia da loja (relógio
 test.describe("janela anterior do Início: o que muda neste aparelho", () => {
   const cancelSale = async (page: Page) => {
     await page.goto(`/sales/detail?saleId=${SALE_ID}`);
-    await page
-      .getByRole("button", { exact: true, name: "Cancelar venda" })
-      .click();
+    await openSaleAction(page, "Cancelar venda");
     await page.getByRole("button", { name: "Revisar cancelamento" }).click();
     await page.getByRole("button", { name: "Confirmar cancelamento" }).click();
     await expect(page.getByText(CANCELLED_NOTICE)).toBeVisible();
