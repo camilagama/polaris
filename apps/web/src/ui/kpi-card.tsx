@@ -24,17 +24,8 @@ const STRIP_CARD =
   "xl:gap-0 xl:divide-x xl:divide-border xl:overflow-hidden xl:rounded-xl xl:bg-card xl:shadow-xs xl:ring-1 xl:ring-foreground/[0.06] xl:dark:shadow-[inset_0_1px_0_var(--card-glow)]";
 
 /**
- * The three tiles of the month of the Início: one column up to 1023 px, three columns from there, and from 1280 px one
- * card with three columns and a 1 px line between them. The cells give up their own ring, background and rounding
- * (`KPI_STRIP_CELL`); the strip clips the sparklines to its corners. Three columns need a cell of about 230 px, where the
- * number at `lg` and the sparkline still sit side by side: with the side menu open (from 760 px) that is 1024 px; at
- * 760 px a cell would be 149 px and the number would step down to the floor.
- */
-export const KPI_STRIP_THREE = `grid grid-cols-1 gap-3 lg:grid-cols-3 ${STRIP_CARD}`;
-
-/**
- * Up to 1279 px the tiles of two columns; from 1280 px one card with four columns and a 1 px line between them (the
- * Resultado). The cells give up their own ring, background and rounding (`KPI_STRIP_CELL`); the strip clips the
+ * One column up to 759 px, two columns from 760 and, from 1280 px, one card with four columns and a 1 px line between
+ * them (the Início and the Resultado). The cells give up their own ring, background and rounding (`KPI_STRIP_CELL`); the strip clips the
  * sparklines to its corners.
  */
 export const KPI_STRIP = `grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4 ${STRIP_CARD}`;
@@ -52,7 +43,7 @@ const SIGN = /^[+-]/;
  * The box of the number: one line of a fixed height, so "R$ 129,90" (with the "R$" and the cents smaller), "R$ ••••"
  * (whose dots may come from another font) and "—" take the same height, and nothing under them moves when the values
  * are hidden or a day is read. Every card of a grid has the one size, `text-value-lg` (30 px line; 28 on a phone), with no card
- * above the others (the hero of the Início, alone on its line, has `HERO_BOX_XL`): the "R$" and the number are the same size, weight and line in all of them. No tracking: negative spacing
+ * above the others (the large card of the gallery has `HERO_BOX_XL`): the "R$" and the number are the same size, weight and line in all of them. No tracking: negative spacing
  * squeezes the fixed cells of a monospaced figure. The size is one of the tokens of the scale; `leading-*` sets the line
  * whatever the size class says, and goes after the size classes of its own variant, because the merge of the classes
  * drops a `leading-*` that comes before one.
@@ -60,7 +51,7 @@ const SIGN = /^[+-]/;
 const HERO_BOX_LG =
   "h-(--text-value-lg--line-height) whitespace-nowrap font-mono font-semibold text-value-lg tabular-nums";
 
-/** The box of the number of the hero of the Início ("Vendas hoje"): the same, one step up the scale, `text-value-xl`. */
+/** The box of the number of the large card (the gallery): the same, one step up the scale, `text-value-xl`. */
 const HERO_BOX_XL =
   "h-(--text-value-xl--line-height) whitespace-nowrap font-mono font-semibold text-value-xl tabular-nums";
 
@@ -104,7 +95,7 @@ export function HeroValue({
   emptyText?: string | undefined;
   /** The amount is the day read on a sparkline: it swaps with no entrance (the return to rest is handled by `AnimatedFigure`). */
   reading?: boolean;
-  /** The step of the scale of the number: `lg` in every card, `xl` only in the hero of the Início. */
+  /** The step of the scale of the number: `lg` in every card of a screen, `xl` only in the large card of the gallery. */
   size?: HeroSize;
   /** The value of a `KpiTile`: its size follows the width of its own area, which a long amount does not change. */
   tile?: boolean;
@@ -392,7 +383,7 @@ const TILE =
 const TILE_BODY =
   "grid grid-cols-[minmax(0,2fr)_minmax(0,1fr)] items-center gap-3 touch:mt-1.5 touch:min-h-7.5";
 const TILE_FIGURE = "@container min-w-0 overflow-hidden";
-/* the hero is as wide as the page, so the sparkline gets two fifths of it from 760 px, not a third: the number keeps its
+/* the large card is as wide as the page, so the sparkline gets two fifths of it from 760 px, not a third: the number keeps its
    three fifths, and the line of the number is the tallest thing in the body, so the box does not depend on the drawing */
 const HERO_BODY =
   "grid grid-cols-[minmax(0,2fr)_minmax(0,1fr)] items-center gap-3 touch:mt-1.5 touch:min-h-7.5 md:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]";
@@ -478,7 +469,7 @@ export function KpiTile({
   date?: string | undefined;
   entity: KpiEntity;
   help?: { about: string; text: string };
-  /** The tile is the hero of the Início: alone on its line, its number a step up (`HeroValue size="xl"`). */
+  /** The large card of the gallery: alone on its line, its number a step up (`HeroValue size="xl"`). */
   hero?: boolean;
   id: string;
   /** What goes beside the chip: the count. */

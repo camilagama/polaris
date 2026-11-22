@@ -970,10 +970,11 @@ export const alone = (cents: number): Scenario => ({
 });
 
 /**
- * What the Início lays out in its first block: the hero (the real tile or its skeleton, the first child of the row) and
- * the three cells of the month, with the rounding each draws, so a strip (cells with no corners) tells from three cards.
+ * What the Início lays out in its first block: the four cells of the grid (the real tiles or their skeletons, the
+ * children of the row), with the rounding each draws, so a strip (cells with no corners) tells from four cards, and the
+ * box of the row.
  */
-export async function heroAndMonth(page: Page) {
+export async function kpiGrid(page: Page) {
   await settled(page);
   return page.locator("[data-kpi-row]").evaluate((row) => {
     const box = (element: Element) => {
@@ -985,8 +986,7 @@ export async function heroAndMonth(page: Page) {
         width: rect.width,
       };
     };
-    const month = row.querySelector("[data-kpi-month]");
-    const cells = [...(month?.children ?? [])].filter(
+    const cells = [...row.children].filter(
       (cell) =>
         cell.hasAttribute("data-kpi") || cell.hasAttribute("data-kpi-skeleton")
     );
@@ -995,8 +995,7 @@ export async function heroAndMonth(page: Page) {
         ...box(cell),
         radius: getComputedStyle(cell).borderTopLeftRadius,
       })),
-      hero: row.firstElementChild ? box(row.firstElementChild) : null,
-      strip: month ? box(month) : null,
+      strip: box(row),
     };
   });
 }

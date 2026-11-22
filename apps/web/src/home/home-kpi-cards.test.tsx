@@ -126,20 +126,18 @@ function words(markup: string): string {
   return out.replace(/\s+/g, " ").trim();
 }
 
-describe("o herói e os três cartões do mês", () => {
-  it("Vendas hoje é uma linha própria; os três do mês são uma coluna até 1023 px, três a partir de 1024 e uma faixa a partir de 1280", () => {
+describe("a grade dos quatro cartões", () => {
+  it("são quatro cartões iguais numa grade só: uma coluna até 759 px, duas a partir de 760 e uma faixa de quatro a partir de 1280", () => {
     const markup = render(figures());
-    expect(markup).toContain('class="flex flex-col gap-3 xl:gap-4"');
-    const month = markup.slice(markup.indexOf("data-kpi-month"));
-    const open = markup.lastIndexOf("<div", markup.indexOf("data-kpi-month"));
+    const open = markup.lastIndexOf("<div", markup.indexOf("data-kpi-row"));
     const classes = CLASS_ATTRIBUTE.exec(markup.slice(open))?.[1] ?? "";
     expect(classes).toContain("grid-cols-1");
-    expect(classes).toContain("lg:grid-cols-3");
+    expect(classes).toContain("md:grid-cols-2");
+    expect(classes).toContain("xl:grid-cols-4");
     expect(classes).toContain("xl:divide-x");
-    expect(classes).not.toContain("grid-cols-4");
-    expect(classes).not.toContain("md:grid-cols-");
-    expect(month).not.toContain('id="home-today"');
-    expect(month.match(/data-kpi=/g)).toHaveLength(3);
+    expect(markup.match(/data-kpi=/g)).toHaveLength(4);
+    expect(markup).not.toContain("data-kpi-month");
+    expect(markup).not.toContain("flex-col gap-3 xl:gap-4");
   });
 
   it("a ordem do DOM é Hoje, Vendas, Resultado e Ticket", () => {
@@ -149,31 +147,37 @@ describe("o herói e os três cartões do mês", () => {
     expect(order.every((at) => at > -1)).toBe(true);
   });
 
-  it("só Vendas hoje é o herói: a marca vem uma vez, antes do cartão de hoje", () => {
-    const markup = render(figures());
-    expect(markup.match(/data-kpi-hero=""/g)).toHaveLength(1);
-    expect(markup.indexOf("data-kpi-hero")).toBeLessThan(
-      markup.indexOf('id="home-today"')
-    );
-  });
-
-  it("sem os números de hoje, sem conexão e carregando, o herói tem a caixa do xl e os do mês a do lg", () => {
+  it("nenhum cartão é herói: todos entram na faixa e têm a caixa do número em lg, com valor, sem os números de hoje, sem conexão e carregando", () => {
     const stale = render(figures(), false);
     const offline = renderToStaticMarkup(<NoFiguresCards today={TODAY} />);
     const loading = renderToStaticMarkup(<KpiCardsSkeleton />);
+    for (const markup of [render(figures()), stale, offline, loading]) {
+      expect(markup).not.toContain("data-kpi-hero");
+      expect(markup).not.toContain("text-value-xl");
+      expect(markup).not.toContain("text-value-xl--line-height");
+    }
     for (const markup of [stale, offline]) {
-      expect(markup.match(/data-kpi-hero=""/g)).toHaveLength(1);
+      expect(markup.match(/xl:ring-0/g)).toHaveLength(4);
+      for (const id of FOUR) {
+        expect(card(markup, id)).toContain("h-(--text-value-lg--line-height)");
+      }
+    }
+    expect(loading.match(/h-\(--text-value-lg--line-height\)/g)).toHaveLength(
+      4
+    );
+    expect(loading.match(/data-kpi-skeleton/g)).toHaveLength(4);
+  });
+
+  it("Vendas hoje tem a ajuda (i) com valor, sem os números de hoje e sem conexão: o texto dela é provado no e2e", () => {
+    for (const markup of [
+      render(figures()),
+      render(figures(), false),
+      renderToStaticMarkup(<NoFiguresCards today={TODAY} />),
+    ]) {
       expect(card(markup, "home-today")).toContain(
-        "h-(--text-value-xl--line-height)"
+        'aria-label="Sobre Vendas hoje"'
       );
     }
-    expect(card(offline, "home-month")).toContain(
-      "h-(--text-value-lg--line-height)"
-    );
-    expect(loading).toContain("h-(--text-value-xl--line-height)");
-    expect(loading.match(/h-\(--text-value-lg--line-height\)/g)).toHaveLength(
-      3
-    );
   });
 
   it("não tem linha de grupo nem data própria em repouso: o mês está no nome e o período no (i)", () => {
@@ -214,21 +218,18 @@ function classesWith(markup: string, attribute: string): string {
 
 const FOUR = ["home-today", "home-month", "home-result", "home-ticket"];
 
-describe("o R$ e o valor: um herói em xl e três cartões em lg", () => {
-  it("o valor de Vendas hoje é xl e o dos três do mês é lg, com as mesmas classes entre si", () => {
+describe("o R$ e o valor: os quatro cartões em lg", () => {
+  it("o valor dos quatro cartões é lg, com as mesmas classes entre si", () => {
     const rendered = render(figures());
     const sizes = FOUR.map((id) =>
       classesWith(card(rendered, id), "data-kpi-value")
     );
-    const [hero, ...month] = sizes;
-    expect(hero).toContain("text-value-xl");
-    expect(hero).not.toContain("text-value-lg");
-    for (const classes of month) {
+    for (const classes of sizes) {
       expect(classes).toContain("text-value-lg");
       expect(classes).not.toContain("text-value-xl");
       expect(classes).not.toContain("@max-");
     }
-    const sorted = month.map((classes) => classes.split(" ").sort().join(" "));
+    const sorted = sizes.map((classes) => classes.split(" ").sort().join(" "));
     expect(new Set(sorted).size).toBe(1);
   });
 

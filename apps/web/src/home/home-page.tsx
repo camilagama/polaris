@@ -243,10 +243,10 @@ function chosenView(
 }
 
 /**
- * Whether the period chosen has figures to apply to: "yes" where the cards of the month are drawn (from the server or
- * from the copy), "loading" while they are read, "no" for the error, the checklist of a store that never sold and a
- * device with no copy (the picker stays in its place, off, so the page does not move when that changes), and "hidden"
- * for whoever cannot read the results.
+ * Whether the period chosen has figures to apply to: "yes" where the cards are drawn (from the server or from the
+ * copy), "loading" while they are read, "no" for a device with no copy (the picker stays in its place, off, so the page
+ * does not move when that changes), and "hidden" where there are no cards to apply it to: the error of the numbers, the
+ * checklist of a store that never sold, and whoever cannot read the results.
  */
 type Applies = "hidden" | "loading" | "no" | "yes";
 
@@ -275,7 +275,7 @@ function periodApplies({
     return "loading";
   }
   const stores = checklist.status === "ready" && checklist.data;
-  return figures.status === "ready" && !stores ? "yes" : "no";
+  return figures.status === "ready" && !stores ? "yes" : "hidden";
 }
 
 /** The selection of the period, its read, and what the blocks draw from it. */

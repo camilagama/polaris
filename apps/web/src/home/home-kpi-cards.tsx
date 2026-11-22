@@ -4,7 +4,7 @@ import { OnDemandSparkline } from "@/ui/charts/on-demand";
 import {
   DeltaChip,
   HeroValue,
-  KPI_STRIP_THREE,
+  KPI_STRIP,
   type KpiRange,
   KpiTile,
   KpiTileSkeleton,
@@ -43,20 +43,24 @@ import { chartValue, monthTitle } from "./home-model";
 import type { HomeFigures } from "./use-home";
 
 /**
- * The tiles of the Início: Vendas hoje, the hero, alone on its line and as wide as the page, and the three of the month,
- * Vendas, Resultado estimado and Ticket médio, under the line of the period. Each is about 92 px (the hero a little
- * more, its number a step up): the name with the (i), the number with the sparkline to its right, and one line of support. Passing the
- * pointer or dragging the finger over a sparkline, or the arrows on its keyboard control, reads one day: the number and the
- * count follow it, and the date takes the place of the chip. The three tiles of the month read the same
- * day together; "Vendas hoje" reads alone (its series is another). Leaving, everything goes back to today. The three of
- * the month are one column up to 1023 px, three columns from there and one strip from 1280 px; on a phone the sparklines are drawn finished, with no entrance; the reading by the
- * finger stays.
+ * The tiles of the Início, four equal ones in one grid: Vendas hoje, Vendas do período, Resultado estimado and Ticket
+ * médio. Each is about 92 px: the name with the (i), the number with the sparkline to its right, and one line of
+ * support. Passing the pointer or dragging the finger over a sparkline, or the arrows on its keyboard control, reads one
+ * day: the number and the count follow it, and the date takes the place of the chip. The three of the period read the
+ * same day together; "Vendas hoje" reads alone (its series is another) and does not follow the period. Leaving,
+ * everything goes back to rest. The grid is one column up to 759 px, two columns from there and one strip of four from
+ * 1280 px; on a phone the sparklines are drawn finished, with no entrance; the reading by the finger stays.
  */
 
 /** No day: the same array on every render, so a copy without the series does not redo the memoized series. */
 const NO_DAYS: readonly never[] = [];
 
 const SPARK_HEIGHT = 36;
+
+const TODAY_NOTE =
+  "Sempre o dia de hoje; os outros cartões seguem o período escolhido.";
+
+const TODAY_HELP = { about: "Vendas hoje", text: TODAY_NOTE };
 
 const START_SALE_LINK =
   "touch-hit focus-ring w-fit rounded-sm text-xs underline decoration-input underline-offset-4 hover:decoration-foreground";
@@ -124,10 +128,10 @@ function TodayTile({
       chip={chipOf(reading)}
       date={index === null ? undefined : reading.date || undefined}
       entity="sales"
-      help={{ about: "Vendas hoje", text: reading.help }}
-      hero
+      help={{ about: "Vendas hoje", text: `${reading.help} ${TODAY_NOTE}` }}
       id="home-today"
       note={reading.count}
+      strip
       range={range}
       spark={
         <OnDemandSparkline
@@ -141,14 +145,7 @@ function TodayTile({
         />
       }
       title="Vendas hoje"
-      value={
-        <HeroValue
-          amount={reading.value}
-          reading={index !== null}
-          size="xl"
-          tile
-        />
-      }
+      value={<HeroValue amount={reading.value} reading={index !== null} tile />}
     />
   );
 }
@@ -424,7 +421,7 @@ function MonthTiles({
   );
 }
 
-/** The three tiles of the month while the period the person chose is read. */
+/** The three tiles that follow the period while it is read. */
 function PeriodTilesSkeleton() {
   return (
     <>
@@ -500,28 +497,27 @@ function monthBody(
 ) {
   if (month.kind === "loading") {
     return (
-      <div className={KPI_STRIP_THREE} data-kpi-month="" role="status">
-        <span className="sr-only">Carregando o período…</span>
+      <>
+        <span className="sr-only" role="status">
+          Carregando o período…
+        </span>
         <PeriodTilesSkeleton />
-      </div>
+      </>
     );
   }
   if (month.kind === "error") {
-    return <div>{month.error}</div>;
+    return (
+      <div className="md:col-span-1 xl:col-span-3" data-kpi-error="">
+        {month.error}
+      </div>
+    );
   }
   if (model === null) {
     return null;
   }
   const { key, ...rest } = reading;
-  return (
-    <div className={KPI_STRIP_THREE} data-kpi-month="">
-      <MonthTiles key={key} model={model} {...rest} />
-    </div>
-  );
+  return <MonthTiles key={key} model={model} {...rest} />;
 }
-
-/** The hero and the tiles of the month, one under the other: each in its own row, whatever the width. */
-const KPI_COLUMN = "flex flex-col gap-3 xl:gap-4";
 
 export function KpiCards({
   figures,
@@ -539,21 +535,18 @@ export function KpiCards({
     [figures]
   );
   return (
-    <div className={KPI_COLUMN} data-kpi-row="">
+    <div className={KPI_STRIP} data-kpi-row="">
       {todayShown ? (
         <TodayTile figures={figures} still={still} />
       ) : (
         <KpiTile
           entity="sales"
-          hero
+          help={TODAY_HELP}
           id="home-today"
+          strip
           title="Vendas hoje"
           value={
-            <HeroValue
-              amount={null}
-              emptyText="Sem números de hoje"
-              size="xl"
-            />
+            <HeroValue amount={null} emptyText="Sem números de hoje" tile />
           }
         />
       )}
@@ -572,41 +565,40 @@ export const NO_CONNECTION_NOTE = "Sem conexão";
 export function NoFiguresCards({ today }: { today: string }) {
   const name = monthTitle(today).toLowerCase();
   return (
-    <div className={KPI_COLUMN} data-kpi-row="">
+    <div className={KPI_STRIP} data-kpi-row="">
       <KpiTile
         entity="sales"
-        hero
+        help={TODAY_HELP}
         id="home-today"
         note={NO_CONNECTION_NOTE}
+        strip
         title="Vendas hoje"
-        value={<HeroValue amount={null} size="xl" />}
+        value={<HeroValue amount={null} />}
       />
-      <div className={KPI_STRIP_THREE} data-kpi-month="">
-        <KpiTile
-          entity="sales"
-          id="home-month"
-          note={NO_CONNECTION_NOTE}
-          strip
-          title={`Vendas em ${name}`}
-          value={<HeroValue amount={null} />}
-        />
-        <KpiTile
-          entity="result"
-          id="home-result"
-          note={NO_CONNECTION_NOTE}
-          strip
-          title="Resultado estimado"
-          value={<HeroValue amount={null} />}
-        />
-        <KpiTile
-          entity="ticket"
-          id="home-ticket"
-          note={NO_CONNECTION_NOTE}
-          strip
-          title="Ticket médio"
-          value={<HeroValue amount={null} />}
-        />
-      </div>
+      <KpiTile
+        entity="sales"
+        id="home-month"
+        note={NO_CONNECTION_NOTE}
+        strip
+        title={`Vendas em ${name}`}
+        value={<HeroValue amount={null} />}
+      />
+      <KpiTile
+        entity="result"
+        id="home-result"
+        note={NO_CONNECTION_NOTE}
+        strip
+        title="Resultado estimado"
+        value={<HeroValue amount={null} />}
+      />
+      <KpiTile
+        entity="ticket"
+        id="home-ticket"
+        note={NO_CONNECTION_NOTE}
+        strip
+        title="Ticket médio"
+        value={<HeroValue amount={null} />}
+      />
     </div>
   );
 }
@@ -617,11 +609,9 @@ export function NoFiguresCards({ today }: { today: string }) {
  */
 export function KpiCardsSkeleton() {
   return (
-    <div className={KPI_COLUMN} data-kpi-row="">
-      <KpiTileSkeleton hero />
-      <div className={KPI_STRIP_THREE} data-kpi-month="">
-        <PeriodTilesSkeleton />
-      </div>
+    <div className={KPI_STRIP} data-kpi-row="">
+      <KpiTileSkeleton strip />
+      <PeriodTilesSkeleton />
     </div>
   );
 }
