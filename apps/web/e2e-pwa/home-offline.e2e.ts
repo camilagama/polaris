@@ -18,6 +18,7 @@ import {
  */
 
 const CHARTS_CHUNK = /\/assets\/charts-[\w-]+\.js$/;
+const LAST_13_WEEKS = /nas últimas 13 semanas/;
 
 /** Installs the app's service worker and waits until it controls the lab's page: the precache, with the charts chunk, is in place. */
 async function controlled(page: Page, user: string) {
@@ -54,8 +55,10 @@ test("o pedaço do gráfico está no precache: aberto sem rede, o gráfico da c�
   await expect(map.locator("[data-heatmap] svg")).toBeVisible({
     timeout: 20_000,
   });
-  await expect(map.locator("[data-rhythm-insight]")).toContainText(
-    "nas últimas 13 semanas"
+  await expect(map.locator("[data-rhythm-legend]")).toBeVisible();
+  await expect(map.getByRole("img")).toHaveAttribute(
+    "aria-label",
+    LAST_13_WEEKS
   );
   await expect(map.locator("[data-heatmap-tooltip]")).toHaveCount(0);
   await expect(map.getByRole("img")).toHaveAttribute(
