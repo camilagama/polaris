@@ -17,6 +17,7 @@ import { EmptyState } from "@/ui/empty-state";
 import { MoneyText } from "@/ui/hidden-values";
 import { ActionStrip } from "../app-shell/action-strip";
 import { tabHref } from "../app-shell/navigation-model";
+import { type TitleBack, TitleLine } from "../app-shell/screen-title";
 import {
   type AttentionAction,
   type AttentionItem,
@@ -51,11 +52,11 @@ export interface AttentionPanelProps {
   busyCommandId?: string | null;
   /** What the last attempt to resolve an item said, drawn inside the card of that item. */
   error?: AttentionError | null;
+  /** What the sign-out has to say (its failure, the work it would lose), under the list. */
+  notices?: ReactNode;
   onDiscard: (item: AttentionItem) => void;
   onRedo?: (item: AttentionItem) => void;
   onResubmit: (item: AttentionItem) => void;
-  /** What the sign-out has to say (its failure, the work it would lose), under the list. */
-  notices?: ReactNode;
   onSignInAgain: (item: AttentionItem) => void;
   /** Why "Refazer esta venda" did not open Vender, shown in the card of that sale. */
   redoProblem?: RedoProblem | null;
@@ -71,11 +72,11 @@ export interface AttentionError {
 
 const ACTION_LABEL: Record<AttentionAction, string> = {
   discard: "Descartar…",
+  open_subscription: "Ver Assinatura",
   redo_sale: "Refazer esta venda",
   resubmit: "Reenviar venda",
   resubmit_without_profile: "Reenviar sem perfil de pagamento",
   retry: "Tentar novamente",
-  open_subscription: "Ver Assinatura",
   sign_in_again: "Sair e entrar de novo",
 };
 
@@ -121,18 +122,23 @@ const ATTENTION_SUBTITLE = "O que o servidor recusou e precisa da sua decisão."
 
 /** The frame of the page of attention: the title, then what the page has to say. */
 export function AttentionFrame({
+  back,
   children,
   withSubtitle = true,
 }: {
+  back?: TitleBack;
   children: ReactNode;
   withSubtitle?: boolean;
 }) {
+  const title = (
+    <h1 className="text-title" id="attention-title">
+      Pendências
+    </h1>
+  );
   return (
     <div className="grid gap-4 font-sans text-foreground text-sm antialiased">
       <header className="grid gap-1">
-        <h1 className="text-title" id="attention-title">
-          Pendências
-        </h1>
+        {back ? <TitleLine back={back}>{title}</TitleLine> : title}
         {withSubtitle ? (
           <p className="text-muted-foreground" id="attention-subtitle">
             {ATTENTION_SUBTITLE}
@@ -178,22 +184,20 @@ function unavailableSentence(reason: string | null): string {
 }
 
 /**
- * Pendências on a device where the offline mode is not available: the title, why, and the way back to the app. The
+ * Pendências on a device where the offline mode is not available: the title with the arrow back to the app, and why. The
  * subtitle promises a list of refused records, which this device cannot read, so it is left out.
  */
 export function AttentionUnavailable({ reason }: { reason: string | null }) {
   return (
-    <AttentionFrame withSubtitle={false}>
+    <AttentionFrame
+      back={{ href: HOME_HREF, label: "Voltar para o Início" }}
+      withSubtitle={false}
+    >
       <Alert variant="warning">
         <TriangleAlertIcon aria-hidden="true" />
         <AlertTitle>{OFFLINE_UNAVAILABLE_TITLE}</AlertTitle>
         <AlertDescription>{unavailableSentence(reason)}</AlertDescription>
       </Alert>
-      <div>
-        <a className={buttonVariants()} href={HOME_HREF}>
-          Voltar ao Início
-        </a>
-      </div>
     </AttentionFrame>
   );
 }

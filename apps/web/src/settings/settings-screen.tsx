@@ -1,5 +1,4 @@
 import { hasCapabilityForRole } from "@polaris/domain/authorization/capabilities";
-import ChevronLeftIcon from "lucide-react/dist/esm/icons/chevron-left";
 import ChevronRightIcon from "lucide-react/dist/esm/icons/chevron-right";
 import {
   type MouseEvent,
@@ -30,6 +29,7 @@ import {
   ScreenTabs,
   type TabPanel,
 } from "../app-shell/screen-tabs";
+import type { TitleBack } from "../app-shell/screen-title";
 import { canManageBilling } from "../lib/billing-access";
 import { useCurrentOrganization } from "../lib/current-organization";
 import { useIsMobile } from "../lib/use-mobile";
@@ -140,17 +140,24 @@ function opensInPlace(event: MouseEvent<HTMLAnchorElement>): boolean {
   return true;
 }
 
-function SettingsBack({ focus }: { focus: RefObject<PhoneFocus> }) {
+/** The arrow before the title of Configurações on a phone, back to the list of rows; it takes the focus when a row opened its screen. */
+function useSettingsBack(
+  focus: RefObject<PhoneFocus>,
+  active: boolean
+): TitleBack {
   const back = useRef<HTMLAnchorElement>(null);
   const { search } = useAddress();
   const open = requestedTab("settings", search).value;
   useEffect(() => {
+    if (!active) {
+      return;
+    }
     focus.current.row = open;
     if (focus.current.entering) {
       focus.current.entering = false;
       back.current?.focus();
     }
-  }, [focus, open]);
+  }, [active, focus, open]);
   const leave = useCallback(
     (event: MouseEvent<HTMLAnchorElement>) => {
       if (opensInPlace(event)) {
@@ -164,18 +171,12 @@ function SettingsBack({ focus }: { focus: RefObject<PhoneFocus> }) {
     },
     [focus, open]
   );
-  return (
-    <a
-      className="touch-hit focus-ring inline-flex w-fit items-center gap-1 rounded-md font-medium text-muted-foreground text-sm hover:text-foreground"
-      href={SETTINGS_ADDRESS}
-      onClick={leave}
-      ref={back}
-    >
-      <ChevronLeftIcon aria-hidden="true" className="size-4" />
-      Voltar
-      <span className="sr-only"> para Configurações</span>
-    </a>
-  );
+  return {
+    href: SETTINGS_ADDRESS,
+    label: "Voltar para Configurações",
+    onClick: leave,
+    ref: back,
+  };
 }
 
 function SettingsRow({
@@ -304,6 +305,10 @@ export function SettingsScreen() {
   const phone = useIsMobile();
   const focus = useRef<PhoneFocus>({ entering: false, row: null });
   const { search } = useAddress();
+  const settingsBack = useSettingsBack(
+    focus,
+    phone && namesTab("settings", search)
+  );
   const asked = requestedTab("settings", search).value;
   const shows = settingsTabsShown({
     billing: canManageBilling(billingSelfService, organization.role),
@@ -322,7 +327,7 @@ export function SettingsScreen() {
   const reserved = passwordOn === null ? ["senha"] : [];
   const phoneTabs = phone
     ? {
-        back: <SettingsBack focus={focus} />,
+        back: settingsBack,
         menu: (
           <SettingsMenu focus={focus} panels={panels} reserved={reserved} />
         ),
