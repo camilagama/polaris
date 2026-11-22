@@ -14,7 +14,8 @@ const { SaleHistoryList } = await import("./sale-history-list");
 const { SaleReceipt } = await import("./sale-receipt");
 
 const FRAME = /\bborder|\bring|\bshadow/;
-const MUTED_BLOCK = /<dl class="[^"]*bg-muted[^"]*"/g;
+const DETAILS_BLOCK = /<dl\b[^>]*\bdata-receipt-block="[^"]*"[^>]*>/g;
+const PERFORATION = "data-receipt-perforation";
 const MONO_CELL = /<(?:dd|span|p)\b[^>]*class="[^"]*font-mono[^"]*"[^>]*>/g;
 const TOTALS_STRIP = /<dl\b[^>]*\bdata-receipt-totals\b/;
 const DD = /<dd class="([^"]*)"/g;
@@ -109,7 +110,7 @@ describe("the sale as a receipt", () => {
 
   it("shows the total right under the title and the perforation after it, above the items and the adjustments", () => {
     const markup = render();
-    const perforation = markup.indexOf("border-dashed");
+    const perforation = markup.indexOf(PERFORATION);
     expect(markup.indexOf("Total devido")).toBeLessThan(perforation);
     expect(markup.indexOf("Subtotal")).toBeGreaterThan(perforation);
     expect(markup.indexOf("Desconto")).toBeGreaterThan(perforation);
@@ -133,7 +134,7 @@ describe("the sale as a receipt", () => {
 
   it("sets the dates and the payment back as muted blocks with no border; the dates in two columns from 760 px, the payment as lines", () => {
     const markup = render();
-    const blocks = markup.match(MUTED_BLOCK) ?? [];
+    const blocks = markup.match(DETAILS_BLOCK) ?? [];
     expect(blocks).toHaveLength(2);
     for (const block of blocks) {
       expect(block).toContain("rounded-lg");
@@ -153,7 +154,7 @@ describe("the sale as a receipt", () => {
     // the total and the count of the strip, the item prices, the subtotal, the discount, the payment amount and the processing fee, the identifier
     expect(mono).toHaveLength(8);
     expect(markup).toMatch(ITEM_PRICES);
-    const lines = markup.slice(markup.indexOf("border-dashed"));
+    const lines = markup.slice(markup.indexOf(PERFORATION));
     const cells = [...lines.matchAll(DD)].map((match) => match[1] ?? "");
     const monoCells = cells.filter((cell) => cell.includes("font-mono"));
     expect(monoCells).toHaveLength(4);
@@ -188,7 +189,7 @@ describe("the sale as a receipt", () => {
 
   it("keeps the three dates in one block, after the items and the adjustments", () => {
     const markup = render();
-    const start = markup.indexOf('<dl class="grid gap-3 rounded-lg bg-muted');
+    const start = markup.indexOf('data-receipt-block="dates"');
     const dateBlock = markup.slice(start, markup.indexOf("</dl>", start));
     expect(dateBlock).toContain("Data da venda");
     expect(dateBlock).toContain("Registrada no dispositivo");
@@ -203,7 +204,7 @@ describe("the sale as a receipt", () => {
     expect(markup.match(TOTAL_PARTS)).toHaveLength(1);
     const strip = markup.slice(
       markup.search(TOTALS_STRIP),
-      markup.indexOf("border-dashed")
+      markup.indexOf(PERFORATION)
     );
     const terms = [...strip.matchAll(/<dt[^>]*>([^<]*)<\/dt>/g)].map(
       (match) => match[1]
@@ -229,10 +230,7 @@ describe("the sale as a receipt", () => {
 
   it("writes the count of items from the sale, and masks the total of the strip with the values hidden", () => {
     const strip = (markup: string) =>
-      markup.slice(
-        markup.search(TOTALS_STRIP),
-        markup.indexOf("border-dashed")
-      );
+      markup.slice(markup.search(TOTALS_STRIP), markup.indexOf(PERFORATION));
     expect(strip(render())).toMatch(TOTAL_PARTS);
     expect(strip(render())).toContain(">2</dd>");
     state.hidden = true;

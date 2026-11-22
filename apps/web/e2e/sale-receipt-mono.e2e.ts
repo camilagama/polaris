@@ -248,7 +248,7 @@ const measureAmounts = (page: Page): Promise<Measured[]> =>
       ...receipt.querySelectorAll("dd, li > span:nth-child(2)"),
     ].filter((cell) => AMOUNT.test(cell.textContent ?? ""));
     const groupOf = (cell: Element): Measured["group"] => {
-      if (cell.closest("dl.bg-muted")) {
+      if (cell.closest('[data-receipt-block="payment"]')) {
         return "payment";
       }
       return cell.closest("[data-receipt-totals]") ? "strip" : "card";
@@ -305,8 +305,7 @@ for (const size of [
       .evaluate((element) => getComputedStyle(element).fontFamily);
     expect(labels.startsWith('"Geist Variable"')).toBe(true);
     const paymentBlock = await receipt
-      .locator("dl.bg-muted")
-      .last()
+      .locator('[data-receipt-block="payment"]')
       .evaluate((element) => {
         const box = element.getBoundingClientRect();
         const padding = Number.parseFloat(
