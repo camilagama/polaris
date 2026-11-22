@@ -478,32 +478,45 @@ function categoryLabel(name: string, archived: boolean): string {
   return archived ? `${name} (arquivada)` : name;
 }
 
-/** The id stays only for a category this screen has read: the filter bar can show it as a chip. */
+interface LocalCategory {
+  archived: boolean;
+  name: string;
+}
+
+/**
+ * The name the server sent with the total is the current one, so it wins over the local list, which can be older
+ * after a rename elsewhere. The local name serves only an answer that sent none. The id stays only for a category
+ * this screen has read: the filter bar can show it as a chip.
+ */
 function nameOf(
   entry: ExpenseCategoryTotalReadModel,
-  names: ReadonlyMap<string, string>
+  locals: ReadonlyMap<string, LocalCategory>
 ): { id: string | null; name: string } | null {
-  const known = names.get(entry.categoryId);
-  if (known !== undefined) {
-    return { id: entry.categoryId, name: known };
+  const local = locals.get(entry.categoryId);
+  const id = local === undefined ? null : entry.categoryId;
+  if (entry.categoryName !== undefined) {
+    return {
+      id,
+      name: categoryLabel(
+        entry.categoryName,
+        entry.categoryArchived ?? local?.archived ?? false
+      ),
+    };
   }
-  if (entry.categoryName === undefined) {
+  if (local === undefined) {
     return null;
   }
-  return {
-    id: null,
-    name: categoryLabel(entry.categoryName, entry.categoryArchived === true),
-  };
+  return { id, name: categoryLabel(local.name, local.archived) };
 }
 
 function groupKnownCategories(
   totals: readonly ExpenseCategoryTotalReadModel[],
   categories: readonly ExpenseCategoryReadModel[]
 ): CategoryCents[] | null {
-  const names = new Map(
+  const names = new Map<string, LocalCategory>(
     categories.map((item) => [
       item.id,
-      categoryLabel(item.name, item.status === "archived"),
+      { archived: item.status === "archived", name: item.name },
     ])
   );
   const grouped: CategoryCents[] = [];
