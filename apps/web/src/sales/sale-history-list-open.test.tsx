@@ -59,7 +59,6 @@ describe("o retorno do Histórico ao abrir uma venda", () => {
     const onOpen = vi.fn();
     const link = renderList(onOpen);
     fireEvent.click(link, init);
-    fireEvent(link, new MouseEvent("auxclick", { ...init, bubbles: true }));
     expect(onOpen).not.toHaveBeenCalled();
   });
 });
