@@ -7,6 +7,7 @@ import {
   fixSaleDetailClock,
   saleDetailAnswers,
 } from "./sale-detail-fixture";
+import { openSaleAction } from "./sale-detail-fixture";
 import { acceptanceStates, firstAccessStates } from "./ui-account-states";
 import { serveEntry } from "./ui-entry-states";
 import { serveHome } from "./ui-home-states";
@@ -557,12 +558,16 @@ const SALE_DETAIL_SCREENS = [
       ),
   },
   {
-    // the return and the cancellation open: the table with its fields, the choice lists and the notes
+    // the return and then the cancellation open, each in its dialog: the table with its fields, the choice lists and the notes
     name: "Detalhe da venda no shell: devolução e cancelamento abertos",
     open: (page: Page) =>
       openSaleDetail(page, false, async () => {
-        await page.getByRole("button", { name: "Registrar devolução" }).click();
-        await page.getByRole("button", { name: "Cancelar venda" }).click();
+        await openSaleAction(page, "Registrar devolução");
+        await expect(
+          page.getByRole("button", { name: "Revisar devolução" })
+        ).toBeVisible();
+        await page.keyboard.press("Escape");
+        await openSaleAction(page, "Cancelar venda");
         await expect(
           page.getByRole("button", { name: "Revisar cancelamento" })
         ).toBeVisible();

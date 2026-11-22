@@ -3667,3 +3667,13 @@ Origem: achado B do Diego no Pixel 6 (28/10): a venda montada em Vender sumia ao
 | Guarda | Em revisão | `scripts/ui-source-rules.test.ts` reprova `underline` fora de `ui/text-link.tsx`, dos e-mails e de uma lista exata com a razão de cada arquivo. |
 | Provas | Em revisão | `e2e-pwa/voltar-e-links.e2e.ts` (posição da seta a 1280 e 360 px, claro e escuro; primeiro Tab, foco e alvo de 44 px; período, situação e rolagem repostos; telas do menu sem "Voltar"; 320 px com letra de 20 px). |
 | Fora | Pendente | O cabeçalho de bloco que recebe a ação à direita (B3, `BlockHeader`); baselines do `ui-visual` das telas com link, refeitas pelo CI. |
+
+### Detalhe da venda: as ações vão para o menu "Ações" no título (t1604, C1 dos ajustes de interface de 21/11; sem migration)
+
+| Parte | Estado | O que há |
+| --- | --- | --- |
+| Menu | Em revisão | `sales/sale-actions-menu.tsx`: botão "Ações" (contorno, com seta) na linha do título (`TitleLine`; sob o título no celular) que abre o `DropdownMenu` com Associar ou Trocar cliente, Remover cliente, Registrar devolução, um separador e Cancelar venda (por último, na cor destrutiva). Item que não vale não aparece; sem nenhum, o botão não existe. Sem conexão os itens ficam desligados com "Precisa de conexão" no próprio item. |
+| Diálogos | Em revisão | Devolução e cancelamento são diálogos de formulário (`SaleReturnPanel`, `SaleCancelPanel`, a tela inteira no celular) com os mesmos dois passos e as mesmas confirmações; o cliente tem o diálogo de escolha e o de remoção (`useSaleCustomerLink` em `sale-customer-panel.tsx`, usado também pelo cartão da venda confirmada). Esc e "Fechar" não gravam nada; durante a tentativa em voo ou travada o diálogo não fecha. O foco volta ao botão "Ações" ao fechar e vai ao aviso do resultado ao terminar a ação (`SaleNoticeRegion`). |
+| Informação | Em revisão | O cliente virou a linha "Cliente: …" no comprovante, com o resumo de compras logo abaixo; o histórico de atribuição fica em cartão próprio quando há versões; as devoluções feitas e os motivos de não poder devolver ou cancelar seguem à vista. |
+| Provas | Em revisão | `e2e-pwa/sale-detail-operations.e2e.ts` (AC-C1.1 a C1.7: posição a 1280 e 360 px, ordem e separador, confirmações que contam as chamadas, teclado, alvo de 44 px no toque, venda cancelada, devolvida por inteiro e fora do servidor, sem conexão); `e2e/cliente-da-venda-reflow.e2e.ts` (C1.8: 320 px com letra de 20 px); `sales/sale-actions-menu.test.tsx`. |
+| Fora | Pendente | Baselines `detalhe-da-venda*` do `ui-visual`, refeitas pelo CI. |

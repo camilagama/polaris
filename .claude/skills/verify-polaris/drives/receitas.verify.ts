@@ -114,11 +114,11 @@ test("venda-devolver", async ({ evidence, page }) => {
   await expect(
     page.getByRole("region", { name: "Itens" }).getByText(MUG)
   ).toBeVisible();
+  await page.getByRole("button", { exact: true, name: "Ações" }).click();
   await page
-    .getByRole("region", { name: "Devolução" })
-    .getByRole("button", { name: "Registrar devolução" })
+    .getByRole("menuitem", { exact: true, name: "Registrar devolução" })
     .click();
-  const panel = page.getByRole("region", { name: "Registrar devolução" });
+  const panel = page.getByRole("dialog", { name: "Registrar devolução" });
   await panel.getByLabel(RETURNED).first().fill("1");
   await panel.getByLabel(RESTOCKED).first().fill("1");
   await panel.getByRole("button", { name: "Revisar devolução" }).click();
@@ -276,8 +276,11 @@ test("venda-cancelar", async ({ evidence, page }) => {
   await expect(
     page.getByRole("region", { name: "Itens" }).getByText(CANDLE)
   ).toBeVisible();
-  const cancel = page.getByRole("region", { name: "Cancelar venda" });
-  await cancel.getByRole("button", { name: "Cancelar venda" }).click();
+  await page.getByRole("button", { exact: true, name: "Ações" }).click();
+  await page
+    .getByRole("menuitem", { exact: true, name: "Cancelar venda" })
+    .click();
+  const cancel = page.getByRole("dialog", { name: "Cancelar venda" });
   await cancel.getByRole("button", { name: "Revisar cancelamento" }).click();
   await evidence.shot("venda-cancelar-revisar", "cancelamento em revisão");
   await cancel.getByRole("button", { name: "Confirmar cancelamento" }).click();

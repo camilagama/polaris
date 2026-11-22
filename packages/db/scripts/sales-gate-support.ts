@@ -15,6 +15,7 @@ import {
   withAuthorizedTenantTransaction,
 } from "../src/tenant-transaction";
 import { disposableHostPattern as gateHostPattern } from "./gate-hosts";
+import { rollbackQuietly } from "./gate-roles";
 
 export const runtimeRole = "polaris_pr11_runtime";
 
@@ -205,7 +206,7 @@ export async function withRuntimeSqlContext<T>(
     await client.query("COMMIT");
     return result;
   } catch (error) {
-    await client.query("ROLLBACK");
+    await rollbackQuietly(client);
     throw error;
   } finally {
     await client.end();
