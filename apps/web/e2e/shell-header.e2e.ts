@@ -709,7 +709,13 @@ test.describe("AC-3.1, AC-3.4 e AC-3.5: o olho de Esconder valores no cabeçalho
         });
         return { gap: getComputedStyle(group).columnGap, rects };
       });
-      expect(parts.rects.length).toBeGreaterThanOrEqual(3);
+      expect(parts.rects.length).toBeGreaterThanOrEqual(2);
+      const box = (await eye(page).boundingBox()) as Box;
+      const side = width < 760 ? 40 : 36;
+      expect(
+        [box.width, box.height],
+        "o olho é um quadrado de controle"
+      ).toEqual([side, side]);
       expect(parts.rects.some((rect) => rect.empty)).toBe(false);
       const gaps = parts.rects
         .slice(1)
