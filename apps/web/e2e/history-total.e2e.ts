@@ -2,7 +2,7 @@
 import type { Locator, Page, Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 import { FORM_VIEWPORTS } from "./date-pickers";
-import { expectMono } from "./mono-face";
+import { expectGeist } from "./mono-face";
 import { serveLabWorker, WORKER_MARK } from "./worker-mark";
 
 /**
@@ -100,7 +100,7 @@ for (const viewport of VIEWPORTS) {
       await expect(footer).toContainText("1 cancelada fica fora da soma.");
       const filled = await heightOf(footer);
 
-      const total = footer.locator("div.tabular-nums");
+      const total = footer.locator(".tabular-nums");
       await expect(total).toHaveCSS("font-variant-numeric", TABULAR_NUMS);
       const rowValue = page
         .getByRole("list", { name: "Vendas" })
@@ -129,13 +129,13 @@ for (const viewport of VIEWPORTS) {
   });
 }
 
-test("o valor de cada linha e o total da lista estão em Geist Mono", async ({
+test("controle do visor: o valor de cada linha e o total da lista seguem em Geist, não em Geist Mono", async ({
   page,
 }) => {
   await page.setViewportSize({ height: 800, width: 1280 });
   const footer = await openHistory(page, SALES);
   await expect(footer).toContainText("R$ 12.565,57");
-  await expectMono(
+  await expectGeist(
     page
       .getByRole("list", { name: "Vendas" })
       .locator("li")
@@ -143,5 +143,5 @@ test("o valor de cada linha e o total da lista estão em Geist Mono", async ({
       .locator("[data-money]"),
     "o valor da linha do histórico"
   );
-  await expectMono(footer.locator("span.font-mono"), "o total da lista");
+  await expectGeist(footer.locator(".tabular-nums"), "o total da lista");
 });

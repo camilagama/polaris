@@ -221,7 +221,7 @@ reflowTest(
       { hasMore: true }
     );
     await expect(footer).toContainText("2 vendas · há mais");
-    const value = footer.locator(".tabular-nums").first();
+    const value = footer.locator(".tabular-nums");
     const text = (await value.textContent())?.trim() ?? "";
     expect(text).toMatch(FOOT_VALUE);
     expect(text).toBe("R$ 7.857,60");
@@ -292,7 +292,7 @@ for (const width of [360, WIDE_WINDOW]) {
         )
       ).toBeLessThanOrEqual(2);
       const [value, count] = await Promise.all([
-        footer.locator(".tabular-nums").first().boundingBox(),
+        footer.locator(".tabular-nums").boundingBox(),
         footer.getByText(COUNT_TEXT).boundingBox(),
       ]);
       expect(
