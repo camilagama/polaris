@@ -83,6 +83,22 @@ describe("what turns the random order on", () => {
     ["sequence: { shuffle: false }", []],
     ["sequence: { seed: 7 }", []],
     ["sequence: { shuffle: someOptions }", []],
+    ["sequence: { shuffle: true ? false : true }", []],
+    ["sequence: { shuffle: true && off }", []],
+    ["sequence: { shuffle: true || off }", []],
+    ["sequence: { shuffle: { files: x, tests: true } }", []],
+    ["sequence: { shuffle: { files: true, tests: true && off } }", []],
+    ["sequence: { shuffle: { files: true && off, tests: true } }", []],
+    ["sequence: { shuffle: { files: true, tests: true ? false : true } }", []],
+    ["sequence: { shuffle: { tests: true, tests: false } }", []],
+    ["sequence: { shuffle: { files: true, tests: true } && off }", []],
+    ["sequence: { shuffle: { files: true, tests: true } ? a : b }", []],
+    ["sequence: { shuffle: true\n ? false : true }", []],
+    ["sequence: { shuffle: true // on\n}", ["files", "tests"]],
+    ["sequence: { shuffle: true /* on */ ? false : true }", []],
+    ["sequence: { shuffle: { tests: true }, seed: 1 }", ["tests"]],
+    ["sequence: { shuffle: true , seed: 1 }", ["files", "tests"]],
+    ["sequence: { shuffle: true\n}", ["files", "tests"]],
     ["", []],
   ])("%s → %j", (sequence, keys) => {
     expect([...shuffledKeys(config(sequence))].sort()).toEqual(keys);
@@ -122,6 +138,27 @@ describe("the check", () => {
     expect(
       problemsFor(
         config("sequence: { shuffle: { files: false, tests: true } }")
+      )
+    ).toHaveLength(1);
+  });
+
+  it("refuses a root whose `files` or `tests` is not the literal alone", () => {
+    for (const sequence of [
+      "sequence: { shuffle: { files: x, tests: true } }",
+      "sequence: { shuffle: { files: true && off, tests: true } }",
+      "sequence: { shuffle: { files: true, tests: true && off } }",
+      "sequence: { shuffle: true ? false : true }",
+      "sequence: { shuffle: true && off }",
+    ]) {
+      expect(problemsFor(config(sequence)), sequence).toHaveLength(1);
+    }
+  });
+
+  it("refuses a `files` variable even where the list asks only for the tests", () => {
+    expect(
+      problemsFor(
+        config("sequence: { shuffle: { files: x, tests: true } }"),
+        TESTS_ONLY
       )
     ).toHaveLength(1);
   });
@@ -289,6 +326,19 @@ describe("each project has its own order", () => {
       "{ shuffle: { ...off } }",
       "{ shuffle: off }",
       "{ shuffle: cond ? false : true }",
+      "{ shuffle: true ? false : true }",
+      "{ shuffle: true && off }",
+      "{ shuffle: true || off }",
+      "{ shuffle: true ?? off }",
+      "{ shuffle: { tests: true && off } }",
+      "{ shuffle: { tests: true } && off }",
+      "{ shuffle: { tests: true } ? a : b }",
+      "{ shuffle: true\n ? false : true }",
+      "{ shuffle: true /* on */ ? false : true }",
+      "{ shuffle: { tests: true ? false : true } }",
+      "{ shuffle: { files: x, tests: true } }",
+      "{ shuffle: { files: true && off, tests: true } }",
+      "{ shuffle: { tests: false, tests: true } }",
       "{ shuffle }",
       '{ "shuffle": false }',
       '{ shuffle: { "tests": false } }',
@@ -321,6 +371,10 @@ describe("each project has its own order", () => {
       "{ shuffle: { tests: true } }",
       "{ shuffle: { files: true, tests: true } }",
       "{ shuffle: { files: false, tests: true } }",
+      "{ shuffle: true, seed: 1 }",
+      "{ seed: 1, shuffle: true }",
+      "{ shuffle: { files: false, tests: true, } }",
+      "{ shuffle: {\n files: false,\n tests: true,\n } }",
     ]) {
       expect(
         problemsFor(
