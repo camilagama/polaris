@@ -75,7 +75,6 @@ export function ScreenTitle({
 /** The width of the main action of a screen: the whole line under the title on a phone, its own size beside it from 760 px. */
 export const TITLE_ACTION_CLASS = "w-full min-[47.5rem]:w-auto";
 
-/** Where "Voltar" of a detail screen goes: the list it was opened from, named in the accessible name. */
 export interface TitleBack {
   href: string;
   /** "Voltar para o histórico": the icon is all there is to see, so the name carries the destination. */

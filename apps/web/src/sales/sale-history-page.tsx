@@ -208,7 +208,6 @@ function useOpeningHistory(organizationId: string): {
   return opening;
 }
 
-/** Keeps the list as it stands when a sale is opened, with the scroll, to give it back on "Voltar" of the detail. */
 function useRememberHistoryOnOpen(
   organizationId: string,
   filters: HistoryFilters
@@ -225,7 +224,6 @@ function useRememberHistoryOnOpen(
   );
 }
 
-/** Scrolls to where the list was left, once, when its rows are on screen. */
 function useScrollBackOnce(listReady: boolean, scrollY: number): void {
   const pending = useRef(scrollY);
   useEffect(() => {

@@ -140,7 +140,6 @@ function opensInPlace(event: MouseEvent<HTMLAnchorElement>): boolean {
   return true;
 }
 
-/** The arrow before the title of Configurações on a phone, back to the list of rows; it takes the focus when a row opened its screen. */
 function useSettingsBack(
   focus: RefObject<PhoneFocus>,
   active: boolean

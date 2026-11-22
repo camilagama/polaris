@@ -61,7 +61,6 @@ const STACKED_ROW = "@max-[18rem]:grid";
 const STACKED_VALUE =
   "@max-[18rem]:pt-0 @max-[18rem]:pl-4 @max-[18rem]:text-left";
 
-/** On a line of its own, so the row is as wide as the others: a text button with an arrow, at the right. */
 const EXPENSES_LINK = cn(
   buttonVariants({ size: "xs", variant: "ghost" }),
   "ml-auto text-muted-foreground hover:text-foreground"

@@ -151,7 +151,6 @@ export function SaleHistoryList({
 }: {
   footer?: ReactNode;
   offline: boolean;
-  /** A sale is opened: the page keeps the list as it stands, to give it back on "Voltar" of the detail. */
   onOpen?: () => void;
   rows: readonly HistoryRow[];
 }) {

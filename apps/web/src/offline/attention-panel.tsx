@@ -52,7 +52,6 @@ export interface AttentionPanelProps {
   busyCommandId?: string | null;
   /** What the last attempt to resolve an item said, drawn inside the card of that item. */
   error?: AttentionError | null;
-  /** What the sign-out has to say (its failure, the work it would lose), under the list. */
   notices?: ReactNode;
   onDiscard: (item: AttentionItem) => void;
   onRedo?: (item: AttentionItem) => void;

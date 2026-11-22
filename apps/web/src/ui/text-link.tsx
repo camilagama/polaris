@@ -9,7 +9,6 @@ import { cn } from "@/lib/utils";
 export const INLINE_TEXT_LINK_CLASS =
   "focus-ring rounded-sm underline decoration-input underline-offset-4 hover:decoration-foreground";
 
-/** The same on a line of its own (or in a row of controls), with the 44 px touch area. */
 export const TEXT_LINK_CLASS = `touch-hit ${INLINE_TEXT_LINK_CLASS}`;
 
 /**

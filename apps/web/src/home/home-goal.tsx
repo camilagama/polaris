@@ -43,7 +43,6 @@ import type { Block } from "./use-home";
  * way to set one. Goals are set and changed on the Resultado: the links take the person there.
  */
 
-/** The action of the block, under its content and on the right: a text button with an arrow, not an underlined link. */
 const BLOCK_ACTION = cn(
   buttonVariants({ size: "sm", variant: "ghost" }),
   "w-fit self-end justify-self-end"

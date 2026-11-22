@@ -42,6 +42,7 @@ function parse(raw: string | null): Stored | null {
   try {
     value = JSON.parse(raw);
   } catch {
+    // storage blocked or full
     return null;
   }
   if (typeof value !== "object" || value === null) {
@@ -78,11 +79,11 @@ function read(store: Store | null): Stored | null {
   try {
     return parse(store?.getItem(HISTORY_RETURN_KEY) ?? null);
   } catch {
+    // storage blocked or full
     return null;
   }
 }
 
-/** A row of the Histórico was opened: the list as it stands, not yet to be given back. */
 export function rememberHistoryReturn(
   store: Store | null,
   organizationId: string,
@@ -92,11 +93,10 @@ export function rememberHistoryReturn(
   try {
     store?.setItem(HISTORY_RETURN_KEY, JSON.stringify(stored));
   } catch {
-    // a blocked or full storage: the Histórico opens as the menu opens it
+    // storage blocked or full
   }
 }
 
-/** The person pressed "Voltar" on the detail: what was remembered is to be given back to the Histórico. */
 export function armHistoryReturn(store: Store | null): void {
   const stored = read(store);
   if (stored === null) {
@@ -108,11 +108,10 @@ export function armHistoryReturn(store: Store | null): void {
       JSON.stringify({ ...stored, armed: true })
     );
   } catch {
-    // see rememberHistoryReturn
+    // storage blocked or full
   }
 }
 
-/** What the Histórico of this store is given back on opening, or null: nothing remembered, not armed, or another store's. */
 export function readHistoryReturn(
   store: Store | null,
   organizationId: string
@@ -128,11 +127,10 @@ export function readHistoryReturn(
   return { filters: stored.filters, scrollY: stored.scrollY };
 }
 
-/** Drops what was remembered: the Histórico took it (or did not need it), or the session ended. */
 export function clearHistoryReturn(store: Store | null): void {
   try {
     store?.removeItem(HISTORY_RETURN_KEY);
   } catch {
-    // nothing kept in a blocked storage
+    // storage blocked or full
   }
 }
