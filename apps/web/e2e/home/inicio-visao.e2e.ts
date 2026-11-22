@@ -1617,6 +1617,34 @@ test.describe("erro por bloco (§ 5.2): Nova venda sempre visível e levando à 
     expect(inside).toBe(true);
   });
 
+  for (const width of [760, 1024]) {
+    test(`meta quebrada a ${width} px: a Meta em erro tem a altura da Meta com dados, antes e depois de Tentar novamente`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ height: 800, width });
+      const server = new FakeServer({ ...SOLD, goals: [goal({})] });
+      await openHome(page, server);
+      const block = region(page, "Meta");
+      await expect(block.locator("[data-goal-ring]")).toBeVisible();
+      const withData = (await block.boundingBox())?.height ?? 0;
+      expect(withData).toBeGreaterThan(0);
+
+      server.broken.set("goal/list", "500");
+      await page.reload();
+      await expect(block).toContainText("Não foi possível carregar a meta.", {
+        timeout: 15_000,
+      });
+      const broken = (await block.boundingBox())?.height ?? 0;
+      expect(Math.abs(broken - withData)).toBeLessThanOrEqual(1);
+
+      server.broken.delete("goal/list");
+      await block.getByRole("button", { name: "Tentar novamente" }).click();
+      await expect(block.locator("[data-goal-ring]")).toBeVisible();
+      const after = (await block.boundingBox())?.height ?? 0;
+      expect(Math.abs(after - broken)).toBeLessThanOrEqual(1);
+    });
+  }
+
   test("401: o aviso de sessão do shell, nenhum erro nos blocos", async ({
     page,
   }) => {
