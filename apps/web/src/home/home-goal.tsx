@@ -47,7 +47,7 @@ const LINK =
 
 /**
  * With no goal the card is a thin strip from 960 px of content: the title, a sentence and the way to set one on one
- * row, and the chart takes the row under it (`data-goal-strip` is what the grid of the page reads).
+ * row, and the map takes the row under it (`data-goal-strip` is what the grid of the page reads).
  */
 const STRIP_ATTRIBUTES = { "data-goal-strip": "" } as const;
 const STRIP_CLASS =

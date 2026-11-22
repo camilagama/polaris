@@ -223,6 +223,21 @@ const ATTRIBUTES = /(?:aria-label|aria-valuetext|title)="[^"]*"/g;
 const HEAD = /<thead[^>]*>[\s\S]*<\/thead>/;
 const NEWEST_ROW = /<tbody[^>]*><tr[^>]*>([\s\S]*?)<\/tr>/;
 
+describe("the skeleton of the Ritmo", () => {
+  it("keeps the height of the block read: 199 px on a phone and 203 px from 768 px, in rem", () => {
+    const html = renderToStaticMarkup(
+      <RhythmBlock
+        figures={{} as unknown as HomeFigures}
+        onRetry={NO_RETRY}
+        source={{ status: "loading" }}
+      />
+    );
+    expect(html).toContain("min-h-[12.4375rem]");
+    expect(html).toContain("md:min-h-[12.6875rem]");
+    expect(html).not.toContain("max-[21.25rem]:min-h");
+  });
+});
+
 describe("the legend of the Ritmo", () => {
   it("is there with the map", () => {
     expect(render()).toContain("data-rhythm-legend");
