@@ -12,7 +12,7 @@ type Store = Pick<Storage, "getItem" | "removeItem" | "setItem">;
  * The filters as the Histórico keeps them, `status` still a string: this module is imported by the sign-out, which must
  * not pull the model of the list into every screen; the page reads the situation through `statusFromState`.
  */
-export interface StoredFilters {
+interface StoredFilters {
   customer: string;
   from: string;
   query: string;

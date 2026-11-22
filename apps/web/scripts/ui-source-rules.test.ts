@@ -1525,7 +1525,7 @@ describe("o sublinhado de link mora no TextLink (item 12, AC-B2.5)", () => {
       true
     );
     expect(UNDERLINE_ELSEWHERE.map((entry) => entry.file)).toEqual(
-      UNDERLINE_ELSEWHERE.map((entry) => entry.file).toSorted()
+      UNDERLINE_ELSEWHERE.map((entry) => entry.file).sort()
     );
     for (const entry of UNDERLINE_ELSEWHERE) {
       expect(entry.why.length, entry.file).toBeGreaterThan(20);

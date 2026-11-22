@@ -89,7 +89,7 @@ export interface TitleBack {
  * list; the 44 px touch area comes from the button it is drawn as. The negative margin puts the arrow itself, not its
  * padding, on the left edge of the page column.
  */
-export function BackButton({ href, label, onClick, ref }: TitleBack) {
+function BackButton({ href, label, onClick, ref }: TitleBack) {
   return (
     <a
       aria-label={label}
