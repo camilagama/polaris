@@ -2,9 +2,10 @@ import type { Page } from "@playwright/test";
 import { expect } from "@playwright/test";
 
 /**
- * What the Tabs of a list screen promise to the keyboard and to the screen reader: a `tablist` with a name,
+ * What the state filter of a list screen promises to the keyboard and to the screen reader: a `tablist` with a name,
  * `tab`s with the chosen one `aria-selected`, Tab stops only on the chosen one, the arrows move to the neighbour
- * and choose it, and Tab leaves the group. `first` is the tab the screen opens on, `second` the one next to it.
+ * and choose it, and Tab leaves the group. This is the `SegmentedFilter` (a state filter has no panel to load); the
+ * tabs of a screen are `expectScreenTabsKeyboard`. `first` is the tab the screen opens on, `second` the one next to it.
  */
 export async function expectTabsKeyboard(
   page: Page,

@@ -182,7 +182,7 @@ test.describe("o mesmo desenho a 1280 px com mouse", () => {
     expect(filter.tab.fontFamily).toBe(tab.tab.fontFamily);
   });
 
-  for (const item of [TABS[0], TABS[2]] as const) {
+  for (const item of [...TABS, SETTINGS]) {
     test(`teclado em ${item.name}: setas movem o foco, Home e End vão às pontas, Enter e Espaço abrem`, async ({
       page,
     }) => {
@@ -190,6 +190,7 @@ test.describe("o mesmo desenho a 1280 px com mouse", () => {
       const tablist = page.getByRole("tablist", { name: item.list });
       await expect(tablist).toBeVisible();
       const names = await tablist.getByRole("tab").allInnerTexts();
+      await tablist.getByRole("tab").first().click();
       await expectScreenTabsKeyboard(
         page,
         item.list,

@@ -1879,17 +1879,17 @@ export const TABS_ELSEWHERE: readonly { file: string; why: string }[] = [
   },
 ];
 
-const TABS_MODULE =
-  "@/ui/tabs|@base-ui/react/tabs|(?:\\.{1,2}/)+(?:[\\w-]+/)*ui/tabs|\\./tabs";
-const TABS_CLAUSE = new RegExp(
-  `\\b(?:import|export)\\s+([^;]*?)\\s*from\\s*(["'])(${TABS_MODULE})\\2`,
-  "g"
-);
-const TABS_DYNAMIC = new RegExp(
-  `\\bimport\\s*\\(\\s*(["'])(?:${TABS_MODULE})\\1`
-);
-const TABS_PART = /\bTabs(?:List|Trigger)\b|\*\s*as\b/;
-const TABS_PRIMITIVE = "@base-ui/react/tabs";
+const TABS_STATEMENT =
+  /\b(?:import|export)\s+([^;'"`]*?)\s*from\s*(["'`])([^"'`]+)\2/g;
+const TABS_DYNAMIC = /\bimport\s*\(\s*(["'`])([^"'`]+)\1/g;
+const TABS_UI_MODULE =
+  /^(?:@\/ui|(?:\.{1,2}\/)+(?:[\w-]+\/)*ui)\/tabs(?:\.tsx?)?$|^\.\/tabs(?:\.tsx?)?$/;
+const TABS_BASE_MODULE = /^@base-ui\/react\/tabs(?:\/|$)/;
+const TABS_BASE_BARREL = "@base-ui/react";
+const TABS_NAME = /\bTabs\b/;
+const TABS_PART = /\bTabs(?:List|Trigger)\b|\*/;
+const TABS_BASE_JSX = /<Tabs\.(?:List|Tab)\b/;
+const TABS_ROLE = /(?<!\[)\brole=(?:"tab"|'tab'|\{["'`]tab["'`]\})/;
 const TABS_SCOPE = sourcesUnder("src").filter(
   (path) => !path.startsWith(UNDERLINE_EMAILS)
 );
@@ -1908,12 +1908,20 @@ export function rawTabsFaults(
         return false;
       }
       const code = withoutComments(source(path));
-      const clauses = [...code.matchAll(TABS_CLAUSE)];
+      const statements = [...code.matchAll(TABS_STATEMENT)].map(
+        ([, clause = "", , specifier = ""]) => ({ clause, specifier })
+      );
+      const dynamic = [...code.matchAll(TABS_DYNAMIC)].map(
+        ([, , specifier = ""]) => ({ clause: "*", specifier })
+      );
       return (
-        TABS_DYNAMIC.test(code) ||
-        clauses.some(
-          ([, names = "", , module]) =>
-            module === TABS_PRIMITIVE || TABS_PART.test(names)
+        TABS_BASE_JSX.test(code) ||
+        TABS_ROLE.test(code) ||
+        [...statements, ...dynamic].some(
+          ({ clause, specifier }) =>
+            TABS_BASE_MODULE.test(specifier) ||
+            (specifier === TABS_BASE_BARREL && TABS_NAME.test(clause)) ||
+            (TABS_UI_MODULE.test(specifier) && TABS_PART.test(clause))
         )
       );
     })
@@ -1972,6 +1980,15 @@ describe("a aba de tela mora no ScreenTabs (item 16, AC-B3.1)", () => {
     'import { Tabs as TabsPrimitive } from "@base-ui/react/tabs";',
     'export { TabsList } from "@/ui/tabs";',
     'const tabs = await import("@/ui/tabs");',
+    "const tabs = await import(`@/ui/tabs`);",
+    'import { TabsTrigger } from "@/ui/tabs.tsx";',
+    'export * from "@/ui/tabs";',
+    'import { Tabs } from "@base-ui/react";\nconst x = <Tabs.List />;',
+    'import { Tabs } from "@base-ui/react";',
+    'import { List } from "@base-ui/react/tabs/list";',
+    'const x = <Tabs.Tab value="a" />;',
+    'const x = <button role="tab" />;',
+    "const x = <button role={'tab'} />;",
   ])("%s reprova numa tela (controle plantado)", (text) => {
     expect(
       rawTabsFaults(["src/expenses/expenses-page.tsx"], () => text)
@@ -2005,6 +2022,9 @@ describe("a aba de tela mora no ScreenTabs (item 16, AC-B3.1)", () => {
     "/* TabsList from @/ui/tabs */",
     'import { TabsTrigger } from "./tabs-trigger";',
     'const name = "TabsTrigger";',
+    'const x = document.querySelector(\'[role="tab"][aria-selected="true"]\');',
+    'import { Button } from "@base-ui/react/button";',
+    '// <Tabs.List /> e role="tab" na documentação',
   ])("%s passa (controle plantado)", (text) => {
     expect(
       rawTabsFaults(["src/expenses/expenses-page.tsx"], () => text)
