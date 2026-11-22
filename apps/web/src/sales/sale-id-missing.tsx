@@ -1,13 +1,10 @@
 import { Card } from "@/ui/card";
+import { TextLink } from "@/ui/text-link";
 import {
   INVALID_SALE_ID_MESSAGE,
   SALE_ID_MISSING_MESSAGE,
   type SaleIdParam,
 } from "./sale-customer-link-model";
-
-/** A link on a line of its own: it gets the 44 px touch area. */
-const LINK =
-  "touch-hit focus-ring rounded-sm underline decoration-input underline-offset-4 hover:decoration-foreground";
 
 /** The sale of the page is chosen in the history: without a valid `?saleId=` the page says so and links there. */
 export function SaleIdMissing({
@@ -22,9 +19,7 @@ export function SaleIdMissing({
           ? INVALID_SALE_ID_MESSAGE
           : SALE_ID_MISSING_MESSAGE}
       </p>
-      <a className={LINK} href="/sales/history">
-        Abrir o histórico de vendas
-      </a>
+      <TextLink href="/sales/history">Abrir o histórico de vendas</TextLink>
     </Card>
   );
 }

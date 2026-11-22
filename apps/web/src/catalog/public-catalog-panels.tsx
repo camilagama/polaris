@@ -12,6 +12,7 @@ import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/ui/card";
 import { FieldLegend, FieldSeparator, FieldSet } from "@/ui/field";
+import { TextLink } from "@/ui/text-link";
 import { connectionControlProps } from "../app-shell/connection-required-notice";
 import { formatQuantity } from "../lib/format";
 import { listCountText } from "./list-page-model";
@@ -351,14 +352,9 @@ export function SwitchCard(props: SwitchCardProps) {
         ) : null}
         {address && props.visibility === "live" ? (
           <p className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1">
-            <a
-              className="focus-ring touch-hit rounded-sm underline decoration-input underline-offset-4 hover:decoration-foreground"
-              href={address}
-              rel="noopener"
-              target="_blank"
-            >
+            <TextLink href={address} rel="noopener" target="_blank">
               Abrir o catálogo
-            </a>
+            </TextLink>
             <span className="text-muted-foreground text-support [overflow-wrap:anywhere]">
               {address}
             </span>

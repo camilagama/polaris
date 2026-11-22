@@ -12,6 +12,7 @@ import { notifyPlanUsageChanged } from "../../lib/plan-usage-changes";
 import { writeSessionMarker } from "../../lib/session-marker";
 import { clearClosedStores } from "../../organization/closed-stores-memory";
 import { markSigningOut } from "../../lib/sign-out";
+import { clearHistoryReturn } from "../../sales/history-return";
 import {
   clearSaleAttempts,
   sessionStorageOrNull,
@@ -49,6 +50,7 @@ export function clearSessionCaches(): void {
   forgetLargeCatalog();
   clearSaleDrafts(sessionStorageOrNull());
   clearSaleAttempts(sessionStorageOrNull());
+  clearHistoryReturn(sessionStorageOrNull());
 }
 
 /** Leaves the page, forgetting what the session left in this browser. */

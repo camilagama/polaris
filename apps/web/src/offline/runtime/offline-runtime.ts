@@ -438,9 +438,16 @@ const DEVICE_CHECK_REUSE_MS = RENEW_BEFORE_MS;
 export const SESSION_RECHECK_MS = 360_000;
 const EMPTY_COUNTS: PendingWork = { pending: 0, rejected: 0, sending: 0 };
 
+export function pendingWorkOf(queue: PendingWork): PendingWork {
+  return {
+    pending: queue.pending,
+    rejected: queue.rejected,
+    sending: queue.sending,
+  };
+}
+
 async function countsOf(stores: OpenedStores): Promise<PendingWork> {
-  const { pending, rejected, sending } = await stores.outbox.snapshot();
-  return { pending, rejected, sending };
+  return pendingWorkOf(await stores.outbox.snapshot());
 }
 
 /** What one sync run was started for, so a late answer never acts on whoever opened after it. */
@@ -1206,11 +1213,7 @@ export class OfflineRuntime {
     }
     this.set({
       ...this.snapshot,
-      counts: {
-        pending: queue.pending,
-        rejected: queue.rejected,
-        sending: queue.sending,
-      },
+      counts: pendingWorkOf(queue),
     });
   }
 
