@@ -1,6 +1,8 @@
+import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import { checkCoverage, reportsFromFolder } from "./ci-shard-coverage.mjs";
 
@@ -443,5 +445,68 @@ describe("reportsFromFolder", () => {
       JSON.stringify(report({}))
     );
     expect(reportsFromFolder(folder)).toEqual([]);
+  });
+});
+
+describe("a linha de comando com um relatório solto na pasta", () => {
+  const SCRIPT = fileURLToPath(
+    new URL("./ci-shard-coverage.mjs", import.meta.url)
+  );
+  let folder;
+  afterEach(() => {
+    if (folder) {
+      rmSync(folder, { force: true, recursive: true });
+    }
+  });
+
+  function run(plan) {
+    folder = mkdtempSync(join(tmpdir(), "shard-coverage-cli-"));
+    const write = (name, content) => {
+      const path = join(folder, name);
+      writeFileSync(path, JSON.stringify(content));
+      return path;
+    };
+    const reports = join(folder, "relatorios");
+    mkdirSync(reports);
+    writeFileSync(
+      join(reports, "timings-offline-poc.json"),
+      JSON.stringify(report({ "a.e2e.ts": { [D]: 3 } }, { ran: true }))
+    );
+    const result = spawnSync(
+      process.execPath,
+      [
+        SCRIPT,
+        "--plan",
+        write("plan.json", plan),
+        "--list",
+        `offline-poc=${write("list.json", report({ "a.e2e.ts": { [D]: 3 } }))}`,
+        "--reports",
+        reports,
+      ],
+      { encoding: "utf8" }
+    );
+    return { ...result, output: `${result.stdout}${result.stderr}` };
+  }
+
+  const shard = (n, files) => ({
+    files: { "offline-poc": files },
+    estimatedMs: 1,
+    shard: n,
+  });
+
+  it("um shard só: o relatório solto vale como o dele e a guarda passa (o CI de 10 shards não passa por aqui)", () => {
+    const result = run({ shards: [shard(7, ["a.e2e.ts"])] });
+    expect(result.output).toContain(
+      "shard-coverage: todo arquivo planejado uma vez, todo teste executado"
+    );
+    expect(result.status).toBe(0);
+  });
+
+  it("dois shards: o relatório solto não vale para nenhum e o que falta é acusado", () => {
+    const result = run({ shards: [shard(1, ["a.e2e.ts"]), shard(2, [])] });
+    expect(result.output).toContain(
+      "shard 1: sem timings-offline-poc.json (1 arquivos planejados sem relatório)"
+    );
+    expect(result.status).toBe(1);
   });
 });
