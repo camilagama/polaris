@@ -95,7 +95,7 @@ async function settled(page: Page) {
   );
 }
 
-/** The boxes of the four blocks, how much room each leaves empty at its foot and the shifts counted inside them. */
+/** The boxes of the four blocks, how much room each leaves empty at the foot of its panel (the frame's foot line is not room) and the shifts counted inside them. */
 function measure(page: Page): Promise<Measure> {
   return page.evaluate(() => {
     const cards: Record<string, Card | undefined> = {};
@@ -108,23 +108,26 @@ function measure(page: Page): Promise<Measure> {
         continue;
       }
       const box = region.getBoundingClientRect();
-      let lowest = box.top;
-      for (const element of region.querySelectorAll("*")) {
+      const panel =
+        region.querySelector("[data-slot=card-frame-panel]") ?? region;
+      const room = panel.getBoundingClientRect();
+      let lowest = room.top;
+      for (const element of panel.querySelectorAll("*")) {
         const inner = element.getBoundingClientRect();
         if (
           inner.width > 0 &&
           inner.height > 0 &&
-          inner.top >= box.top &&
-          inner.bottom <= box.bottom + 1 &&
+          inner.top >= room.top &&
+          inner.bottom <= room.bottom + 1 &&
           !element.closest(".sr-only")
         ) {
           lowest = Math.max(lowest, inner.bottom);
         }
       }
-      const padding = Number.parseFloat(getComputedStyle(region).paddingBottom);
+      const padding = Number.parseFloat(getComputedStyle(panel).paddingBottom);
       cards[name] = {
         bottom: box.bottom,
-        emptyFoot: box.bottom - padding - lowest,
+        emptyFoot: room.bottom - padding - lowest,
         height: box.height,
         left: box.left,
         top: box.top,
