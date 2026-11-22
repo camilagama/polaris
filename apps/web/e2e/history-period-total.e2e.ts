@@ -1,7 +1,7 @@
 /// <reference lib="dom" />
 import type { Locator, Page, Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
-import { FORM_VIEWPORTS } from "./date-pickers";
+import { FORM_VIEWPORTS, touchDay } from "./date-pickers";
 import { serveLabWorker, WORKER_MARK } from "./worker-mark";
 
 const NOW = "2026-10-14T12:00:00.000Z";
@@ -85,13 +85,11 @@ async function openHistory(page: Page, summary: Summary) {
   await expect(page.locator("[data-list-total]")).toContainText(SUM_OF_ROWS);
 }
 
-async function chooseTypedPeriod(page: Page, from: string, to: string) {
+async function chooseDaysPeriod(page: Page, from: string, to: string) {
   await page.locator('header button[aria-label^="Período"]').click();
   const popup = page.getByRole("dialog", { name: "Período" });
-  await popup.getByRole("button", { name: "Digitar as datas" }).click();
-  await popup.getByRole("textbox", { name: "Início" }).pressSequentially(from);
-  await popup.getByRole("textbox", { name: "Fim" }).pressSequentially(to);
-  await popup.getByRole("button", { exact: true, name: "Aplicar" }).click();
+  await touchDay(popup, from);
+  await touchDay(popup, to);
   await expect(popup).toBeHidden();
 }
 
@@ -204,7 +202,7 @@ for (const viewport of FORM_VIEWPORTS) {
     }) => {
       const summary: Summary = { asked: [], fail: false };
       await openHistory(page, summary);
-      await chooseTypedPeriod(page, "13102025", "14102026");
+      await chooseDaysPeriod(page, "2025-10-13", "2026-10-14");
       const footer = footerOf(page);
       await expect(footer).toContainText(SCREEN_LABEL);
       await expect(footer).toContainText(SUM_OF_ROWS);

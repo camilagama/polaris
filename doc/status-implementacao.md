@@ -3648,3 +3648,10 @@ Origem: achado B do Diego no Pixel 6 (28/10): a venda montada em Vender sumia ao
 | Provas | Em revisão | `e2e-pwa/ui-acoes-na-linha-do-titulo.e2e.ts` (mesmo `top` a 1280, sob o título e sem rolagem a 320 e 360, 320 com letra de 20 px, ordem do foco, um `h1`, 16 px do título ao conteúdo, aba Metas sem controle morto), `history-period*.e2e.ts` e `ui-history-states.ts` no período do título, baselines de Estoque, Resultado e Histórico refeitas. |
 | Fora | Pendente | Categorias, Aparelhos, Seus dados, Assinatura e Ajuda em `TitleLine` (segundo PR, por causa do limite de arquivos de código); Início (A1) e Detalhe da venda (corte c). |
 
+### Seletor de período sem "Digitar as datas" (t1597, A4 dos ajustes de interface de 21/11)
+
+| Parte | Estado | O que há |
+| --- | --- | --- |
+| Painel | Em revisão | O botão "Digitar as datas" e os campos Início e Fim saem do `DateRangePanel` (`ui/date-range-picker.tsx`; o `DatePicker` de uma data nunca teve o botão). A linha sob o mês existe sempre, com a altura da frase "Início … Escolha o último dia." ao lado do "Limpar", que guarda o lugar invisível; o painel mede o mesmo ao abrir, ao marcar o primeiro dia e ao marcar o último. |
+| Código morto | Em revisão | Saem `TypedDateField`, o estado dos campos, `draftLabel`, `maskTypedDate`, `parseTypedDate`, `typedProblems`, `typedRange` e `typedTextsOf` (`ui/date-values.ts`), os testes deles e a spec `ui-date-pickers-digitar.e2e.ts`. |
+| Provas | Em revisão | `e2e-pwa/ui-date-pickers.e2e.ts` (ausência do botão e do campo, altura e largura iguais com e sem período, intervalo de dois meses atrás só pelo teclado com PageUp e Enter, atalhos por Shift+Tab), `e2e/history-period.e2e.ts` (o período do título, a altura nos três momentos), `e2e/goals.e2e.ts`, `e2e/dashboard/*` e `e2e/home/valores-e-ranking.e2e.ts` escolhem o período pelos toques. |

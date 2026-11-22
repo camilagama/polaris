@@ -1520,20 +1520,6 @@
       "tests": 7
     },
     {
-      "file": "ui-date-pickers-digitar.e2e.ts",
-      "ms": 89619,
-      "project": "chromium-desktop",
-      "suite": "pwa",
-      "tests": 21
-    },
-    {
-      "file": "ui-date-pickers-digitar.e2e.ts",
-      "ms": 69810,
-      "project": "chromium-mobile-emulated",
-      "suite": "pwa",
-      "tests": 21
-    },
-    {
       "file": "ui-date-pickers-leitor-de-tela.e2e.ts",
       "ms": 40028,
       "project": "chromium-desktop",
