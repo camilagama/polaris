@@ -40,7 +40,10 @@ export function SaleReceipt({ before, sale, status }: SaleReceiptProps) {
           </div>
           {before}
           {total ? (
-            <dl className="flex flex-wrap gap-x-6 gap-y-3">
+            <dl
+              className="flex flex-wrap gap-x-6 gap-y-3"
+              data-receipt-totals=""
+            >
               <div className="grid grow-[1.4] gap-1">
                 <dt className="font-medium text-muted-foreground">
                   {total.label}

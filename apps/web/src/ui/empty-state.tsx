@@ -27,7 +27,7 @@ interface EmptyStateProps {
   bare?: boolean;
   /** The action, a button or a link drawn as one; more than one sit side by side and wrap. */
   children?: ReactNode;
-  /** Decoration, out of the accessible name; the empty inside a chart's box (`bare`) has none, so its box keeps its height. */
+  /** Decoration, out of the accessible name; optional, and `bare` does not decide it (the empty of a chart's plot passes none, so its box keeps its height). */
   icon?: EmptyIcon | readonly EmptyIcon[];
   /** One line for when the sentence alone does not say what to do (the period, the next step): at most `EMPTY_SUPPORT_MAX` characters. */
   support?: string;
@@ -61,8 +61,9 @@ export function EmptyState({
       {art ? <SkeletonArt className="hidden w-44 md:block" kind={art} /> : null}
       {icons.length > 0 ? (
         <div className={cn("flex gap-2", art && "md:hidden")}>
-          {icons.map((Icon) => (
-            <EmptyMedia key={Icon.displayName ?? Icon.name} variant="icon">
+          {icons.map((Icon, position) => (
+            // the same icon may repeat, and the list is fixed per render: the position is the stable key
+            <EmptyMedia key={position} variant="icon">
               <Icon aria-hidden="true" />
             </EmptyMedia>
           ))}
