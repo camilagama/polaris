@@ -391,7 +391,14 @@ export const FILE_SCREENS = [
       "apps/web/src/home/previous-window-copy.ts",
       "apps/web/src/home/rhythm-copy.ts",
     ],
-    screens: ["expenses", "home", "sale-detail"],
+    screens: ["dashboard", "expenses", "home", "sale-detail"],
+  },
+  {
+    files: [
+      "apps/web/src/home/home-kpi-cards.tsx",
+      "apps/web/src/home/use-home.ts",
+    ],
+    screens: ["dashboard", "home"],
   },
   {
     files: [
@@ -400,7 +407,6 @@ export const FILE_SCREENS = [
       "apps/web/src/home/home-chart.tsx",
       "apps/web/src/home/home-figures.tsx",
       "apps/web/src/home/home-goal.tsx",
-      "apps/web/src/home/home-kpi-cards.tsx",
       "apps/web/src/home/home-lower-blocks.tsx",
       "apps/web/src/home/home-page.tsx",
       "apps/web/src/home/home-parts.tsx",
@@ -409,7 +415,6 @@ export const FILE_SCREENS = [
       "apps/web/src/home/home-rhythm.tsx",
       "apps/web/src/home/use-first-steps-memory.ts",
       "apps/web/src/home/use-home-period.ts",
-      "apps/web/src/home/use-home.ts",
     ],
     screens: ["home"],
   },
@@ -792,6 +797,7 @@ export const SPEC_SCREENS = {
   "apps/web/e2e-real/pilha/isolamento.e2e.ts": ["home"],
   "apps/web/e2e-real/pilha/limite-de-taxa.e2e.ts": ["home"],
   "apps/web/e2e/app-shell.e2e.ts": "all",
+  "apps/web/e2e/bloco-cabecalho-e-kpis.e2e.ts": ["home", "dashboard"],
   "apps/web/e2e/breakpoints-rem.e2e.ts": ["home", "sale", "products"],
   "apps/web/e2e/carregando-so-leitor.e2e.ts": ["home", "customers", "expenses"],
   "apps/web/e2e/cliente-da-venda-reflow.e2e.ts": [
