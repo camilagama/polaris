@@ -16,9 +16,11 @@ function isAmount(detail: ConfirmedDetail): boolean {
  * `receipt` writes it as the lines of a receipt instead: label at the left, value at the right edge, amounts in mono.
  */
 export function ConfirmedDetails({
+  block,
   details,
   receipt = false,
 }: {
+  block?: "dates" | "payment";
   details: ConfirmedSaleView["saleDetails"];
   receipt?: boolean;
 }) {
@@ -27,7 +29,10 @@ export function ConfirmedDetails({
   }
   if (receipt) {
     return (
-      <dl className="grid gap-2 rounded-lg bg-muted p-4">
+      <dl
+        className="grid gap-2 rounded-lg bg-muted p-4"
+        data-receipt-block={block}
+      >
         {details.map((detail) => (
           <div
             className="flex items-baseline justify-between gap-3"
@@ -54,7 +59,10 @@ export function ConfirmedDetails({
     );
   }
   return (
-    <dl className="grid gap-3 rounded-lg bg-muted p-4 md:grid-cols-2">
+    <dl
+      className="grid gap-3 rounded-lg bg-muted p-4 md:grid-cols-2"
+      data-receipt-block={block}
+    >
       {details.map((detail) => (
         <div className="grid gap-0.5" key={detail.label}>
           <dt className="text-muted-foreground text-xs">{detail.label}</dt>

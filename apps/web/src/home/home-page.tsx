@@ -53,9 +53,8 @@ import {
   THIS_MONTH,
   topProductsTitle,
 } from "./home-period";
-import { HomePeriodRow } from "./home-period-row";
+import { HomePeriodNotes, HomePeriodPicker } from "./home-period-row";
 import { RhythmBlock, type RhythmSource } from "./home-rhythm";
-import { PeriodControlProvider } from "./period-control";
 import {
   type FirstStepsMemory,
   useFirstStepsMemory,
@@ -115,7 +114,10 @@ function NewSale({ describedBy }: { describedBy: string | undefined }) {
   return (
     <a
       aria-describedby={describedBy}
-      className={cn(buttonVariants({ size: "xl" }), "w-full sm:w-auto")}
+      className={cn(
+        buttonVariants({ size: "xl" }),
+        "grow min-[47.5rem]:w-auto min-[47.5rem]:grow-0"
+      )}
       href="/sales"
     >
       <PlusIcon aria-hidden="true" data-icon="inline-start" />
@@ -241,10 +243,10 @@ function chosenView(
 }
 
 /**
- * Whether the period chosen has figures to apply to: "yes" where the cards of the month are drawn (from the server or
- * from the copy), "loading" while they are read, "no" for the error, the checklist of a store that never sold and a
- * device with no copy (the picker stays in its place, off, so the page does not move when that changes), and "hidden"
- * for whoever cannot read the results.
+ * Whether the period chosen has figures to apply to: "yes" where the cards are drawn (from the server or from the
+ * copy), "loading" while they are read, "no" for a device with no copy (the picker stays in its place, off, so the page
+ * does not move when that changes), and "hidden" where there are no cards to apply it to: the error of the numbers, the
+ * checklist of a store that never sold, and whoever cannot read the results.
  */
 type Applies = "hidden" | "loading" | "no" | "yes";
 
@@ -273,7 +275,7 @@ function periodApplies({
     return "loading";
   }
   const stores = checklist.status === "ready" && checklist.data;
-  return figures.status === "ready" && !stores ? "yes" : "no";
+  return figures.status === "ready" && !stores ? "yes" : "hidden";
 }
 
 /** The selection of the period, its read, and what the blocks draw from it. */
@@ -318,20 +320,30 @@ function useChosenPeriod({
       refresh();
     }
   }, [reading, refresh, reload]);
-  const periodRow =
-    applies === "hidden" ? null : (
-      <HomePeriodRow
-        disabled={applies !== "yes"}
-        note={chosen?.note ?? null}
-        offline={!online}
-        onCustom={handleCustom}
-        onPreset={handlePreset}
-        period={picked.period}
-        selection={selection}
-        today={today}
-      />
-    );
-  return { chosen, periodRow, reloadAll };
+  const period =
+    applies === "hidden"
+      ? null
+      : {
+          notes: (
+            <HomePeriodNotes
+              disabled={applies !== "yes"}
+              note={chosen?.note ?? null}
+              offline={!online}
+            />
+          ),
+          picker: (
+            <HomePeriodPicker
+              disabled={applies !== "yes"}
+              offline={!online}
+              onCustom={handleCustom}
+              onPreset={handlePreset}
+              period={picked.period}
+              selection={selection}
+              today={today}
+            />
+          ),
+        };
+  return { chosen, period, reloadAll };
 }
 
 /** Mais vendidos of the period shown: a skeleton while the period is read, and the same box with a sentence when no product is left (none sold, or all returned). */
@@ -633,19 +645,22 @@ function figuresLine(
 }
 
 /**
- * The title, "Atualizar" and "Nova venda" with the line that says what the sale can do without a connection: the part
- * of the page that depends on no read (and on no connection). On a phone "Atualizar" is an icon in the corner of the
- * title and "Nova venda" takes the whole width (v7 § 3).
+ * The title with the period, "Atualizar" and "Nova venda" (in that order, which is also the order of the focus) and the
+ * line that says what the sale can do without a connection: the part of the page that depends on no read (and on no
+ * connection). From 760 px the actions are at the end of the line of the title; below it they are one row under it, as
+ * wide as the page, and "Atualizar" is an icon in the corner of the title (v7 § 3).
  */
 function HomeHeader({
   explained,
   offlineText,
+  period,
   refresh,
   updated,
 }: {
   /** The line under the title says why there are no figures (and no sales, when the device cannot keep one): "Nova venda" points to it. */
   explained: boolean;
   offlineText: string | null;
+  period: { notes: React.ReactNode; picker: React.ReactNode } | null;
   /** The gesture "Atualizar", or null when the session is refused; `offline` keeps it in place, switched off. */
   refresh: { busy: boolean; offline: boolean; onClick: () => void } | null;
   updated: React.ReactNode;
@@ -657,20 +672,22 @@ function HomeHeader({
     offlineReasonId = "home-new-sale-offline";
   }
   return (
-    <header className="flex flex-wrap items-end justify-between gap-x-6 gap-y-4">
-      <div className="flex min-w-0 flex-1 items-start justify-between gap-3">
-        <div className="grid min-w-0 gap-1">
-          <h1 className="text-title">Início</h1>
+    <header className="flex flex-wrap items-end justify-between gap-x-6 gap-y-4 min-[47.5rem]:grid min-[47.5rem]:grid-cols-[minmax(0,1fr)_auto] min-[47.5rem]:items-center min-[47.5rem]:gap-x-3 min-[47.5rem]:gap-y-1">
+      <div className="flex min-w-0 flex-1 items-start justify-between gap-3 min-[47.5rem]:contents">
+        <div className="grid min-w-0 gap-1 min-[47.5rem]:contents">
+          <h1 className="text-title min-[47.5rem]:col-start-1 min-[47.5rem]:row-start-1">
+            Início
+          </h1>
           {/* two lines kept on a phone: the long day and hour, or "Carregando…", take the same box */}
           <p
-            className="min-h-10 text-muted-foreground text-support md:min-h-5"
+            className="min-h-10 text-muted-foreground text-support md:min-h-5 min-[47.5rem]:col-span-2 min-[47.5rem]:row-start-2"
             id="home-updated"
             role="status"
           >
             {updated}
           </p>
         </div>
-        <div className="flex items-start gap-2 md:hidden">
+        <div className="flex items-start gap-2 min-[47.5rem]:hidden">
           {refresh ? (
             <HomeRefresh
               busy={refresh.busy}
@@ -681,11 +698,12 @@ function HomeHeader({
           ) : null}
         </div>
       </div>
-      <div className="flex w-full items-start gap-2 sm:w-auto">
+      <div className="flex w-full flex-wrap items-start gap-2 min-[47.5rem]:col-start-2 min-[47.5rem]:row-start-1 min-[47.5rem]:w-auto min-[47.5rem]:flex-nowrap">
+        {period?.picker}
         {refresh ? (
           <HomeRefresh
             busy={refresh.busy}
-            className="max-md:hidden"
+            className="hidden min-[47.5rem]:inline-flex"
             offline={refresh.offline}
             offlineReasonId={offlineReasonId}
             onClick={refresh.onClick}
@@ -705,12 +723,13 @@ function HomeHeader({
       {offlineText ? (
         <p
           // sibling of the row of actions in a flex-wrap header with `gap-y-4`: the negative margin leaves 6 px between them
-          className="-mt-2.5 w-full text-muted-foreground text-support sm:text-right"
+          className="-mt-2.5 w-full text-muted-foreground text-support sm:text-right min-[47.5rem]:col-span-2 min-[47.5rem]:mt-0.5"
           id="home-new-sale-offline"
         >
           {offlineText}
         </p>
       ) : null}
+      {period?.notes}
     </header>
   );
 }
@@ -1032,7 +1051,7 @@ export function HomePage() {
     [goals, today, timezone]
   );
   const firstSteps = useFirstStepsMemory(organizationId);
-  const { chosen, periodRow, reloadAll } = useChosenPeriod({
+  const { chosen, period, reloadAll } = useChosenPeriod({
     applies: periodApplies({
       failed,
       readsReport: reads.report,
@@ -1113,6 +1132,7 @@ export function HomePage() {
         <HomeHeader
           explained={explained}
           offlineText={offlineText}
+          period={period}
           refresh={refresh}
           updated={refreshing ? REFRESHING_TEXT : updated}
         />
@@ -1124,17 +1144,15 @@ export function HomePage() {
           }
           className="grid gap-4"
         >
-          <PeriodControlProvider value={periodRow}>
-            <FigureArea
-              attention={attention}
-              attentionNotes={attentionNotes}
-              blocks={blocks}
-              goal={picked.node}
-              goalPending={goalPending}
-              keep={explained}
-              measure={offline === null && figures !== null && !blocks.pending}
-            />
-          </PeriodControlProvider>
+          <FigureArea
+            attention={attention}
+            attentionNotes={attentionNotes}
+            blocks={blocks}
+            goal={picked.node}
+            goalPending={goalPending}
+            keep={explained}
+            measure={offline === null && figures !== null && !blocks.pending}
+          />
         </div>
       </div>
     </HomeRoleProvider>
