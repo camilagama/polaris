@@ -204,6 +204,48 @@ function readPayments(
     );
 }
 
+interface PaymentFeeRow {
+  anticipationFee: string | null;
+  processingFee: string | null;
+  saleId: string;
+}
+
+export interface SaleFees {
+  anticipationFee: string | null;
+  processingFee: string | null;
+}
+
+function sumFees(fees: readonly (string | null)[]): string | null {
+  let total = Money.fromMinorUnits(0n);
+  for (const fee of fees) {
+    if (fee === null) {
+      return null;
+    }
+    total = total.add(Money.from(fee));
+  }
+  return total.toString();
+}
+
+/**
+ * The fees of each sale: the sum of its payments' fees, in cents. A fee that
+ * one payment does not know makes that fee of the sale unknown, never zero;
+ * processing and anticipation are decided apart.
+ */
+export function foldPayments(
+  rows: readonly PaymentFeeRow[]
+): Map<string, SaleFees> {
+  const bySale = group(rows, (row) => row.saleId);
+  return new Map(
+    [...bySale].map(([saleId, parts]) => [
+      saleId,
+      {
+        anticipationFee: sumFees(parts.map((part) => part.anticipationFee)),
+        processingFee: sumFees(parts.map((part) => part.processingFee)),
+      },
+    ])
+  );
+}
+
 function readReturnLines(
   transaction: Reader,
   organization: string,
@@ -397,7 +439,7 @@ export async function readPeriodFacts(
 
   const itemsBySale = group(items, (row) => row.saleId);
   const adjustmentsBySale = group(adjustments, (row) => row.saleId);
-  const paymentBySale = new Map(payments.map((row) => [row.saleId, row]));
+  const paymentBySale = foldPayments(payments);
   const returnsBySale = group(returnLines, (row) => row.saleId);
   const cancelledSales = new Set(cancelled.map((row) => row.saleId));
   const linkedBySale = group(linked, (row) => row.saleId as string);
@@ -709,6 +751,17 @@ export function periodSummaryQuery(
         AND expense.voided_at IS NULL
       GROUP BY expense.sale_id
     ),
+    payment_by_sale AS (
+      SELECT payment.sale_id,
+        CASE WHEN bool_or(payment.processing_fee_amount_snapshot IS NULL) THEN NULL
+          ELSE sum(payment.processing_fee_amount_snapshot) END AS processing_fee,
+        CASE WHEN bool_or(payment.anticipation_fee_amount_snapshot IS NULL) THEN NULL
+          ELSE sum(payment.anticipation_fee_amount_snapshot) END AS anticipation_fee
+      FROM public.sale_payments AS payment
+      WHERE payment.organization_id = ${organization}
+        AND payment.sale_id IN (SELECT counted.id FROM counted)
+      GROUP BY payment.sale_id
+    ),
     per_sale AS (
       SELECT counted.occurred_on,
         coalesce(gross.cents, 0) AS gross,
@@ -716,24 +769,22 @@ export function periodSummaryQuery(
         coalesce(given_back_by_sale.cents, 0) AS returns,
         round(coalesce(gross.cost, 0) - coalesce(given_back_by_sale.restocked_cost, 0), 2) * 100 AS cogs,
         coalesce(adjustment.addition_cents, 0) AS surcharges,
-        coalesce(payment.processing_fee_amount_snapshot * 100, 0) AS processing,
-        coalesce(payment.anticipation_fee_amount_snapshot * 100, 0) AS anticipation,
+        coalesce(payment.processing_fee * 100, 0) AS processing,
+        coalesce(payment.anticipation_fee * 100, 0) AS anticipation,
         coalesce(linked.cents, 0) AS linked,
         coalesce(linked.count, 0) AS linked_count,
         coalesce(gross.lines, 0) AS lines,
         coalesce(gross.units, 0) - coalesce(given_back_by_sale.units, 0) AS units,
         coalesce(gross.unknown_cost, 0) AS unknown_cost,
-        payment.processing_fee_amount_snapshot IS NULL AS unknown_processing,
-        payment.anticipation_fee_amount_snapshot IS NULL AS unknown_anticipation,
+        payment.processing_fee IS NULL AS unknown_processing,
+        payment.anticipation_fee IS NULL AS unknown_anticipation,
         coalesce(adjustment.unknown_kinds, 0) + coalesce(given_back_by_sale.invalid, 0) AS invalid
       FROM counted
       LEFT JOIN gross ON gross.sale_id = counted.id
       LEFT JOIN adjustment ON adjustment.sale_id = counted.id
       LEFT JOIN given_back_by_sale ON given_back_by_sale.sale_id = counted.id
       LEFT JOIN linked ON linked.sale_id = counted.id
-      LEFT JOIN public.sale_payments AS payment
-        ON payment.organization_id = ${organization}
-        AND payment.sale_id = counted.id
+      LEFT JOIN payment_by_sale AS payment ON payment.sale_id = counted.id
     ),
     per_day AS (
       SELECT per_sale.occurred_on, count(*) AS sales,

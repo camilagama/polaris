@@ -1419,6 +1419,19 @@ async function assertVolume(
   console.log(
     `gate-note: period-summary-sql EXPLAIN (ANALYZE, BUFFERS) under RLS of a month of ${VOLUME_SALES} sales: with the ranking ${ranked}; without ${plain}`
   );
+  const lastDays = {
+    from: shiftDay(VOLUME_FROM, 25),
+    to: shiftDay(VOLUME_FROM, 30),
+  };
+  const withHistory = await explainVolume(
+    scenarios,
+    store.tenant,
+    lastDays,
+    undefined
+  );
+  console.log(
+    `gate-note: period-summary-sql EXPLAIN (ANALYZE, BUFFERS) under RLS of the last 6 days of that month, the 25 days before it being the store's earlier history: ${withHistory}`
+  );
   return read.result.salesCount;
 }
 
@@ -2065,6 +2078,311 @@ async function assertProperty(
   return slot;
 }
 
+/* ------------------------------------------------- sales paid in two or more parts */
+
+const PLANTED_FAILURE = /planted failure inside the case/;
+const SPLIT_INDEX = "sale_payments_organization_sale_unique";
+
+/** Thrown on purpose to end the transaction of a split-payment case in a ROLLBACK. */
+class SplitCaseEnded extends Error {
+  constructor() {
+    super("split_case_ended");
+    this.name = "SplitCaseEnded";
+  }
+}
+
+type AdminDb = ReturnType<typeof createDatabase>["db"];
+type SplitTransaction = Parameters<Parameters<AdminDb["transaction"]>[0]>[0];
+
+interface PartFees {
+  anticipation: number | null;
+  processing: number | null;
+}
+
+/**
+ * One transaction of the owner that always ends in a ROLLBACK: the unique index of one payment per sale is dropped
+ * inside it, the case is written and read in it, and nothing stays, even if the connection falls (the index goes with
+ * the transaction, so the staging database is never left without it). The work reads through savepoints of the same
+ * transaction, since only that connection sees what it wrote.
+ */
+async function inRolledBackSplitCase<T>(
+  db: AdminDb,
+  work: (tx: SplitTransaction) => Promise<T>
+): Promise<T> {
+  let outcome: { value: T } | undefined;
+  try {
+    await db.transaction(
+      async (tx) => {
+        await tx.execute(sql`SET LOCAL lock_timeout = '10s'`);
+        await tx.execute(sql.raw(`DROP INDEX public.${SPLIT_INDEX}`));
+        outcome = { value: await work(tx) };
+        throw new SplitCaseEnded();
+      },
+      { isolationLevel: "repeatable read" }
+    );
+  } catch (error) {
+    if (!(error instanceof SplitCaseEnded)) {
+      throw error;
+    }
+  }
+  assert.ok(outcome, "the split case ended without an outcome");
+  return outcome.value;
+}
+
+async function assertSplitIndexBack(admin: AdminPool) {
+  const index = await admin.query(
+    "SELECT 1 FROM pg_indexes WHERE schemaname = 'public' AND tablename = 'sale_payments' AND indexname = $1 AND indexdef LIKE 'CREATE UNIQUE INDEX%'",
+    [SPLIT_INDEX]
+  );
+  assert.equal(index.rowCount, 1, `${SPLIT_INDEX} is missing after the case`);
+}
+
+/** One part of a sale paid by card in two installments, with each fee known or not. */
+function partRow(
+  store: PropertyStore,
+  saleId: string,
+  amountCents: number,
+  fees: PartFees
+): Row {
+  const fee = (cents: number | null) => ({
+    amount: cents === null ? null : centsText(cents),
+    mode: cents === null ? "unknown" : "fixed",
+  });
+  const processing = fee(fees.processing);
+  const anticipation = fee(fees.anticipation);
+  return {
+    amount: centsText(amountCents),
+    anticipation_fee_amount_snapshot: anticipation.amount,
+    anticipation_fee_fixed_amount_snapshot: anticipation.amount,
+    anticipation_fee_mode_snapshot: anticipation.mode,
+    anticipation_requested: true,
+    installment_plan: "merchant",
+    installments: 2,
+    method: "credit_card",
+    organization_id: store.tenant.organizationId,
+    payment_profile_id: store.profileId,
+    payment_profile_name_snapshot: "Maquininha sorteada",
+    payment_profile_rule_id_snapshot: store.ruleId,
+    payment_profile_version_snapshot: 1,
+    processing_fee_amount_snapshot: processing.amount,
+    processing_fee_fixed_amount_snapshot: processing.amount,
+    processing_fee_mode_snapshot: processing.mode,
+    sale_id: saleId,
+  };
+}
+
+/** The same sale every time: a discount, a surcharge and a partial return, so every part of the chain is read. */
+function splitSale(day: number): DrawnSale {
+  return {
+    additions: [{ cents: 700, kind: "freight" }],
+    day,
+    discounts: [10],
+    fate: "returns",
+    items: [
+      { cents: 5000, cost: 1_500_000, product: 0, quantity: 2 },
+      { cents: 3000, cost: 2_250_000, product: 1, quantity: 1 },
+    ],
+    linked: [],
+    payment: { kind: "missing" },
+    returns: [{ position: 0, restockedPart: 3, units: 1 }],
+  };
+}
+
+const SPLIT_SALES: { day: number; parts: PartFees[] }[] = [
+  {
+    day: 1,
+    parts: [
+      { anticipation: 0, processing: 150 },
+      { anticipation: 80, processing: 250 },
+    ],
+  },
+  {
+    day: 2,
+    parts: [
+      { anticipation: 0, processing: 10 },
+      { anticipation: 0, processing: 20 },
+      { anticipation: 5, processing: 30 },
+    ],
+  },
+  {
+    day: 3,
+    parts: [
+      { anticipation: 10, processing: null },
+      { anticipation: 10, processing: 250 },
+    ],
+  },
+  {
+    day: 4,
+    parts: [
+      { anticipation: null, processing: 100 },
+      { anticipation: 80, processing: 200 },
+    ],
+  },
+];
+
+/** What a sale of one payment holds when it has the fees the parts of the sale add up to. */
+function wholeFees(parts: PartFees[]): PartFees {
+  const total = (pick: (part: PartFees) => number | null) =>
+    parts.reduce<number | null>((sum, part) => {
+      const value = pick(part);
+      return sum === null || value === null ? null : sum + value;
+    }, 0);
+  return {
+    anticipation: total((part) => part.anticipation),
+    processing: total((part) => part.processing),
+  };
+}
+
+function splitRows(
+  store: PropertyStore,
+  slotStart: string,
+  whole: boolean
+): Rows {
+  const rows: Rows = {
+    adjustments: [],
+    cancellations: [],
+    expenses: [],
+    items: [],
+    payments: [],
+    returnItems: [],
+    returns: [],
+    sales: [],
+  };
+  for (const { day, parts } of SPLIT_SALES) {
+    const sale = splitSale(day);
+    saleRows(store, sale, slotStart, rows);
+    const saleId = rows.sales.at(-1)?.id as string;
+    const subtotal = sale.items.reduce(
+      (total, item) => total + item.cents * item.quantity,
+      0
+    );
+    if (whole) {
+      rows.payments.push(partRow(store, saleId, subtotal, wholeFees(parts)));
+    } else {
+      const first = Math.floor(subtotal / parts.length);
+      for (const [position, fees] of parts.entries()) {
+        rows.payments.push(
+          partRow(
+            store,
+            saleId,
+            position === 0 ? subtotal - first * (parts.length - 1) : first,
+            fees
+          )
+        );
+      }
+    }
+  }
+  return rows;
+}
+
+async function insertRows(tx: SplitTransaction, rows: Rows) {
+  for (const [table, statement] of INSERTS) {
+    if (rows[table].length > 0) {
+      const [head, tail, ...more] = statement.split("$1");
+      assert.ok(tail !== undefined && more.length === 0, `${table}: one $1`);
+      // biome-ignore lint/performance/noAwaitInLoops: the tables go in after the ones they reference
+      await tx.execute(
+        sql`${sql.raw(head as string)}${JSON.stringify(rows[table])}${sql.raw(tail)}`
+      );
+    }
+  }
+}
+
+/**
+ * Sales paid in several parts count once and add up the fees of the parts. The database accepts one payment per sale
+ * (the unique index, and the trigger that demands it when the transaction commits), so the case is written in a
+ * transaction that drops the index and ends in a ROLLBACK, and both readers (the SQL summary and the engine over the
+ * facts) run in it. The same sales paid whole, in one payment with the summed fees, are read apart and must give the
+ * same result, and the sums are also asserted as absolute numbers.
+ */
+async function assertSplitPayments(
+  admin: { db: AdminDb; pool: AdminPool },
+  scenarios: Scenarios,
+  tally: Tally
+) {
+  const store = await propertyStore(scenarios, "split");
+  const splitStart = SLOT_ORIGIN;
+  const wholeStart = shiftDay(SLOT_ORIGIN, SLOT_DAYS);
+  const windowOf = (start: string) => ({ from: start, to: shiftDay(start, 9) });
+  const splitCase = splitRows(store, splitStart, false);
+  const wholeCase = splitRows(store, wholeStart, true);
+
+  const countsOf = async () => {
+    const counted = await admin.pool.query<{ payments: number; sales: number }>(
+      `SELECT (SELECT count(*)::int FROM public.sales WHERE organization_id = $1) AS sales,
+              (SELECT count(*)::int FROM public.sale_payments WHERE organization_id = $1) AS payments`,
+      [store.tenant.organizationId]
+    );
+    return counted.rows[0] as { payments: number; sales: number };
+  };
+  const before = await countsOf();
+  assert.ok(
+    before.sales > 0 && before.payments > 0,
+    "the store has a committed sale to count"
+  );
+
+  await assert.rejects(
+    inRolledBackSplitCase(admin.db, () =>
+      Promise.reject(new Error("planted failure inside the case"))
+    ),
+    PLANTED_FAILURE
+  );
+  await assertSplitIndexBack(admin.pool);
+
+  const reads = await inRolledBackSplitCase(admin.db, async (tx) => {
+    const dropped = await tx.execute(
+      sql`SELECT 1 FROM pg_indexes WHERE schemaname = 'public' AND indexname = ${SPLIT_INDEX}`
+    );
+    assert.equal(dropped.rows.length, 0, "the index is still there");
+    await insertRows(tx, splitCase);
+    await insertRows(tx, wholeCase);
+    const inside = await tx.execute(
+      sql`SELECT count(*)::int AS count FROM public.sale_payments WHERE organization_id = ${store.tenant.organizationId}`
+    );
+    assert.equal(
+      (inside.rows[0] as { count: number }).count,
+      before.payments + splitCase.payments.length + wholeCase.payments.length,
+      "the parts of the case are in the table"
+    );
+    const asRuntime = tx as unknown as RuntimeDb;
+    const summaryStore = { tenant: store.tenant, today: store.today };
+    return {
+      split: await assertSame(
+        asRuntime,
+        summaryStore,
+        windowOf(splitStart),
+        undefined,
+        "split payments",
+        tally
+      ),
+      whole: await assertSame(
+        asRuntime,
+        summaryStore,
+        windowOf(wholeStart),
+        undefined,
+        "whole payments",
+        tally
+      ),
+    };
+  });
+
+  await assertSplitIndexBack(admin.pool);
+  assert.deepEqual(await countsOf(), before, "the case left rows behind");
+
+  const { result } = reads.split;
+  assert.equal(result.salesCount, SPLIT_SALES.length, "a sale counts once");
+  assert.deepEqual(result, reads.whole.result, "the same sales paid whole");
+  assert.equal(result.processingFees, "7.60");
+  assert.equal(result.anticipationFees, "1.05");
+  assert.equal(result.unknown.processingFees, 1);
+  assert.equal(result.unknown.anticipationFees, 1);
+  assert.equal(result.itemLines, 2 * SPLIT_SALES.length);
+  assert.notEqual(result.discounts, "0.00");
+  assert.notEqual(result.returns, "0.00");
+  assert.notEqual(result.cogs, "0.00");
+  assert.equal(reads.split.daily.length, 10);
+}
+
 async function run() {
   const branch = requiredEnvironment("POLARIS_SALES_GATE_BRANCH");
   assert.match(branch, gateBranchPattern);
@@ -2146,6 +2464,10 @@ async function run() {
     await assertEmptyAndIsolated(admin.pool, scenarios, db, zones, tally);
     tests.push(
       "a store without sales and one with only expenses equal the engine for 1, 31 and 366 days; the statement for one store run in another's context finds nothing (RLS), and the monthly one returns no row"
+    );
+    await assertSplitPayments(admin, scenarios, tally);
+    tests.push(
+      "sales paid in two and three parts count once and add up the fees of the parts, with a fee one part does not know making only that fee of the sale unknown: the SQL summary equals the engine in every field and equals the same sales paid whole, in a transaction that drops the one-payment index and ends in a ROLLBACK, the index back after it, also after a failure planted inside the case"
     );
     await assertRefusals(scenarios, zones[0] as Store);
     tests.push(
