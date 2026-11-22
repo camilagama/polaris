@@ -29,7 +29,7 @@ function refreshClass(timed: boolean, fill: boolean): string {
   }
   return fill
     ? "max-md:h-ctl-lg max-md:w-full"
-    : "max-md:size-ctl-lg max-md:px-0";
+    : "max-md:size-ctl-lg max-md:px-0 max-md:has-data-[icon=inline-start]:pl-0";
 }
 
 /**
