@@ -143,7 +143,14 @@ describe("the command of the flaky report", () => {
     const out = run(path, "--report-only", "--label", "Catálogo (CSP)");
     expect(out.status).toBe(0);
     expect(out.stdout).toContain("### Catálogo (CSP): testes que só passaram");
-    expect(out.stdout).toContain("**Reprovado:**");
+    expect(out.stdout).toContain("**Só relato (não reprova):** 2 tests");
+    expect(out.stdout).not.toContain("Reprovado");
+  });
+
+  it("without --report-only keeps the failing verdict line", () => {
+    const { stdout } = run(path);
+    expect(stdout).toContain("**Reprovado:** 2 tests");
+    expect(stdout).not.toContain("Só relato");
   });
 
   describe("with a report that is missing or unreadable", () => {
@@ -191,6 +198,10 @@ describe("the command of the flaky report", () => {
       expect(out.status).toBe(0);
       expect(out.stderr).toContain("ausente (e2e na pilha real)");
       expect(written).toContain("**Relatório não existe:**");
+      expect(written).toContain(
+        "**Só relato (não reprova):** sem relatório para conferir."
+      );
+      expect(written).not.toContain("Reprovado");
     });
 
     it.each([
@@ -209,6 +220,8 @@ describe("the command of the flaky report", () => {
       const lenient = runWithSummary(file, "--report-only");
       expect(lenient.out.status).toBe(0);
       expect(lenient.written).toContain("**Relatório ilegível:**");
+      expect(lenient.written).toContain("**Só relato (não reprova):**");
+      expect(lenient.written).not.toContain("Reprovado");
     });
   });
 

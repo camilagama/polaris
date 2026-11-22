@@ -1658,6 +1658,7 @@ test.describe("Ajuda e contato", () => {
     page,
   }) => {
     await page.setViewportSize({ height: 740, width: 360 });
+    await page.clock.install();
     await serve(page);
     await page.goto("/ajuda");
     await expectHelpPage(page);
@@ -1675,7 +1676,15 @@ test.describe("Ajuda e contato", () => {
     await expect(
       page.locator("main form, main input, main textarea")
     ).toHaveCount(0);
-    await page.waitForTimeout(300);
+    // two frames, then 300 ms of the page's clock (a read scheduled by a timer fires), then the network idle
+    await page.evaluate(
+      () =>
+        new Promise<void>((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+        )
+    );
+    await page.clock.runFor(300);
+    await page.waitForLoadState("networkidle");
     expect(
       requests.filter(
         (path) => path.startsWith("/rpc/") && !path.startsWith("/rpc/sync/")

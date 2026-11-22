@@ -1,7 +1,22 @@
-import { type Ref, useCallback, useRef, useState } from "react";
+import {
+  type ComponentProps,
+  type FormEvent,
+  type Ref,
+  useCallback,
+  useRef,
+  useState,
+} from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
-import { Button } from "@/ui/button";
-import { Card, CardContent } from "@/ui/card";
+import {
+  Dialog,
+  DialogBody,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogForm,
+  DialogHeader,
+  DialogTitle,
+} from "@/ui/dialog";
 import { orpcClient } from "../lib/orpc";
 import { useHoldSwap } from "../lib/unsent-work";
 import { OperationFailureNotice } from "./operation-failure-notice";
@@ -14,7 +29,6 @@ import {
   cancellationReasonLabel,
   cancelSubmitLabel,
   cancelSuccessMessage,
-  closeCancel,
   discardLockedCancel,
   editCancelNote,
   editCancelReason,
@@ -37,8 +51,12 @@ import { useStepFocus } from "./use-step-focus";
 const newId = () => crypto.randomUUID();
 
 interface CancelPanelProps {
+  finalFocus: ComponentProps<typeof DialogContent>["finalFocus"];
+  /** Asks the screen to close the dialog (it never closes by itself, and not while an attempt is in flight). */
+  onClose: () => void;
   /** Called when the sale changed on the server: reload it and show the notice. */
   onSaleChanged: (notice: SaleNotice) => void;
+  open: boolean;
   organizationId: string;
   saleId: string;
   saleItemCount: number;
@@ -73,32 +91,69 @@ export function CancelReviewNotice({
   );
 }
 
+/** The form as it opens, on the reason. */
+function openedCancel() {
+  return openCancel(initialCancelState());
+}
+
 /**
- * Whole-sale cancellation in two steps. The sale is preserved; stock comes
- * back item by item and the cancellation cannot be undone.
+ * Whole-sale cancellation in two steps, in a form dialog (the whole screen on a phone) that the screen opens from the
+ * menu of the title. The sale is preserved; stock comes back item by item and the cancellation cannot be undone. Esc,
+ * "Fechar" and the back gesture keep the draft in memory; "Não cancelar" and a finished attempt drop it.
  */
 export function SaleCancelPanel({
+  finalFocus,
+  onClose,
   onSaleChanged,
+  open,
   organizationId,
   saleId,
   saleItemCount,
 }: CancelPanelProps) {
-  const [state, setState] = useState(initialCancelState);
+  const [state, setState] = useState(openedCancel);
   useHoldSwap(isCancelDraftChanged(state));
   const inFlight = useRef<boolean>(false);
-  const sectionRef = useRef<HTMLElement>(null);
+  const sectionRef = useRef<HTMLDivElement>(null);
   const noticeRef = useRef<HTMLDivElement>(null);
   const confirming = state.step === "confirming" || isCancelLocked(state);
   const focusFirstField = useStepFocus(confirming, noticeRef, sectionRef);
 
-  const handleOpen = useCallback(
-    () => setState((current) => openCancel(current)),
-    []
+  const handleClose = useCallback(() => {
+    if (!isCancelLocked(state)) {
+      onClose();
+    }
+  }, [onClose, state]);
+  const handleOpenChange = useCallback(
+    (next: boolean) => {
+      if (!next) {
+        handleClose();
+      }
+    },
+    [handleClose]
   );
-  const handleClose = useCallback(
-    () => setState((current) => closeCancel(current)),
-    []
-  );
+  // only "Não cancelar", and an attempt that ended (accepted, or discarded), throw the draft away, once the dialog has
+  // faded; Esc, "Fechar" and the back gesture of a phone keep it
+  const ended = useRef<boolean>(false);
+  const discard = useRef<boolean>(false);
+  const handleGiveUp = useCallback(() => {
+    if (!isCancelLocked(state)) {
+      discard.current = true;
+      onClose();
+    }
+  }, [onClose, state]);
+  const handleClosed = useCallback((next: boolean) => {
+    if (next) {
+      return;
+    }
+    if (ended.current || discard.current) {
+      ended.current = false;
+      discard.current = false;
+      setState(openedCancel());
+    }
+  }, []);
+  const handleSubmit = useCallback((event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+  }, []);
   const handleReasonChange = useCallback(
     (value: string) =>
       setState((current) =>
@@ -134,12 +189,13 @@ export function SaleCancelPanel({
     if (discarded === null) {
       return;
     }
-    setState(discarded);
+    ended.current = true;
+    onClose();
     onSaleChanged({
       message: "Tentativa descartada. Conferimos o estado atual da venda.",
       ok: false,
     });
-  }, [onSaleChanged, state]);
+  }, [onClose, onSaleChanged, state]);
 
   const handleConfirm = useCallback(async () => {
     if (inFlight.current) {
@@ -158,7 +214,8 @@ export function SaleCancelPanel({
     inFlight.current = true;
     try {
       const result = await orpcClient.sale.cancel(prepared.request);
-      setState(initialCancelState());
+      ended.current = true;
+      onClose();
       onSaleChanged({
         message: cancelSuccessMessage(result, saleItemCount),
         ok: true,
@@ -172,86 +229,78 @@ export function SaleCancelPanel({
     } finally {
       inFlight.current = false;
     }
-  }, [onSaleChanged, organizationId, saleId, saleItemCount, state]);
+  }, [onClose, onSaleChanged, organizationId, saleId, saleItemCount, state]);
   const handleConfirmEvent = useCallback(() => {
     handleConfirm().catch(() => undefined);
   }, [handleConfirm]);
-
-  if (state.step === "closed" && state.submission.phase === "idle") {
-    return (
-      <section aria-label="Cancelar venda">
-        <Card className="gap-0 py-0">
-          <CardContent className="grid justify-items-start gap-3 py-(--card-spacing)">
-            <p className="text-muted-foreground text-support">
-              {CANCELLATION_EXPLANATION}
-            </p>
-            <Button onClick={handleOpen} type="button" variant="outline">
-              Cancelar venda
-            </Button>
-          </CardContent>
-        </Card>
-      </section>
-    );
-  }
 
   const locked = isCancelLocked(state);
   const errors = visibleCancelErrors(state);
   const { draft } = state;
   const submitting = state.submission.phase === "submitting";
   return (
-    <section aria-labelledby="sale-cancel-title" ref={sectionRef}>
-      <Card className="gap-0 py-0">
-        <CardContent className="grid gap-4 py-(--card-spacing)">
-          <div className="grid gap-1">
-            <h2 className="text-section" id="sale-cancel-title">
-              Cancelar venda
-            </h2>
-            <p className="text-muted-foreground text-support">
-              {CANCELLATION_EXPLANATION}
-            </p>
-          </div>
-          <ReasonFields
-            disabled={confirming}
-            errors={errors}
-            legend="Motivo do cancelamento (opcional)"
-            noteCounter={noteCounterText(draft)}
-            onNoteChange={handleNoteChange}
-            onReasonChange={handleReasonChange}
-            prefix="sale-cancel"
-            reasonCode={draft.reasonCode}
-            reasonNote={draft.reasonNote}
-            reasons={CANCELLATION_REASONS}
-          />
-          {confirming ? (
-            // the effect, in a neutral notice (auditoria v5.1, rule 2)
-            <CancelReviewNotice
-              noticeRef={noticeRef}
+    <Dialog
+      disablePointerDismissal
+      onOpenChange={handleOpenChange}
+      onOpenChangeComplete={handleClosed}
+      open={open}
+    >
+      <DialogContent
+        finalFocus={finalFocus}
+        layout="form"
+        showCloseButton={!locked}
+      >
+        <DialogForm onSubmit={handleSubmit}>
+          <DialogHeader>
+            <DialogTitle>Cancelar venda</DialogTitle>
+            <DialogDescription>{CANCELLATION_EXPLANATION}</DialogDescription>
+          </DialogHeader>
+          <DialogBody ref={sectionRef}>
+            <ReasonFields
+              disabled={confirming}
+              errors={errors}
+              legend="Motivo do cancelamento (opcional)"
+              noteCounter={noteCounterText(draft)}
+              onNoteChange={handleNoteChange}
+              onReasonChange={handleReasonChange}
+              prefix="sale-cancel"
               reasonCode={draft.reasonCode}
+              reasonNote={draft.reasonNote}
+              reasons={CANCELLATION_REASONS}
             />
-          ) : null}
-          <OperationFailureNotice
-            onDiscardCancel={handleDiscardCancel}
-            onDiscardConfirm={handleDiscardConfirm}
-            onDiscardRequest={handleDiscardRequest}
-            submission={state.submission}
-            warning="O cancelamento pode já ter sido registrado."
-          />
-          <OperationActions
-            closeLabel="Não cancelar"
-            confirming={confirming}
-            confirmLabel={cancelSubmitLabel(state)}
-            destructive
-            locked={locked}
-            onBack={handleBack}
-            onClose={handleClose}
-            onConfirm={handleConfirmEvent}
-            onReview={handleReview}
-            retrying={state.submission.phase === "locked"}
-            reviewLabel="Revisar cancelamento"
-            submitting={submitting}
-          />
-        </CardContent>
-      </Card>
-    </section>
+            {confirming ? (
+              // the effect, in a neutral notice (auditoria v5.1, rule 2)
+              <CancelReviewNotice
+                noticeRef={noticeRef}
+                reasonCode={draft.reasonCode}
+              />
+            ) : null}
+            <OperationFailureNotice
+              onDiscardCancel={handleDiscardCancel}
+              onDiscardConfirm={handleDiscardConfirm}
+              onDiscardRequest={handleDiscardRequest}
+              submission={state.submission}
+              warning="O cancelamento pode já ter sido registrado."
+            />
+          </DialogBody>
+          <DialogFooter>
+            <OperationActions
+              closeLabel="Não cancelar"
+              confirming={confirming}
+              confirmLabel={cancelSubmitLabel(state)}
+              destructive
+              locked={locked}
+              onBack={handleBack}
+              onClose={handleGiveUp}
+              onConfirm={handleConfirmEvent}
+              onReview={handleReview}
+              retrying={state.submission.phase === "locked"}
+              reviewLabel="Revisar cancelamento"
+              submitting={submitting}
+            />
+          </DialogFooter>
+        </DialogForm>
+      </DialogContent>
+    </Dialog>
   );
 }

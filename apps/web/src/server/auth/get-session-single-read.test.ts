@@ -1,7 +1,7 @@
 import type { BetterAuthPlugin } from "better-auth";
 import { memoryAdapter } from "better-auth/adapters/memory";
 import { testUtils } from "better-auth/plugins";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { createBetterAuth as CreateBetterAuth } from "../auth";
 import type { WorkerBindings } from "../environment";
 import type { AccessLogEntry } from "./access-log";
@@ -12,6 +12,7 @@ import {
 } from "./request-database";
 
 const dayMilliseconds = 24 * 60 * 60 * 1000;
+const NOW = new Date("2026-03-01T12:00:00.000Z");
 const baseURL = "http://localhost";
 const CLEARED_COOKIE = /max-age=0/i;
 const SQL_TABLE = /from "(session|user)"/;
@@ -231,7 +232,7 @@ describe("what a get-session costs the database", () => {
         "@polaris/db/client"
       );
     const { db, pool } = createAuthDatabase("postgresql://sql.invalid/neondb");
-    const now = new Date();
+    const now = new Date(NOW);
     const records: Record<string, Record<string, unknown>> & {
       session: Record<string, unknown>;
       user: Record<string, unknown>;
@@ -304,8 +305,14 @@ describe("what a get-session costs the database", () => {
     return { headers: signed.headers, token: signed.token };
   }
 
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(NOW);
+  });
+
   afterEach(() => {
     shared.statements.length = 0;
+    vi.useRealTimers();
   });
 
   it("is 1 statement, the session with its user", async () => {

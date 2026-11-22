@@ -156,14 +156,6 @@ const KNOWN_FINDINGS_24: readonly KnownFinding[] = [
     selector: 'main > section > div[data-slot="card"]',
   },
   {
-    clientWidth: 320,
-    reason:
-      "no Detalhe da venda com o cancelamento revisado, a página rola 25 px para o lado (345 px de conteúdo em 320 px, 4 px a mais com a seta de voltar antes do título); a causa dentro da coluna não foi isolada",
-    screens: ["detalhe da venda cancelamento revisado"],
-    scrollWidth: 345,
-    selector: "html",
-  },
-  {
     clientWidth: 272,
     reason:
       'na Assinatura, o cartão "Plano Pro" tem 272 px e o conteúdo da oferta mede 310 px: passa 38 px da borda direita do cartão',

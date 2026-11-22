@@ -225,7 +225,7 @@ function Period({
   return (
     <div className="flex flex-1 flex-col gap-3">
       <p className="grid gap-0.5">
-        <span className="font-semibold text-lg tabular-nums">
+        <span className="font-semibold text-lg">
           <MoneyText text={formatBrlAmount(total)} />
         </span>
         <span className="text-muted-foreground text-support">{where}</span>

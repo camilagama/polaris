@@ -106,7 +106,7 @@ test.describe("a tela em um celular e o dia da loja (revisão do PR)", () => {
   }) => {
     const server = new FakeReportServer();
     // the device is on November 2nd, the server says October 14th (NOW)
-    await page.clock.setFixedTime(new Date("2026-11-02T12:00:00.000Z"));
+    await page.clock.install({ time: new Date("2026-11-02T12:00:00.000Z") });
     await installServer(page, server);
     await signIn(page, `user-${crypto.randomUUID()}`);
 
@@ -119,7 +119,15 @@ test.describe("a tela em um celular e o dia da loja (revisão do PR)", () => {
       { from: "2026-11-01", to: "2026-11-30" },
       { from: "2026-10-01", to: "2026-10-31" },
     ]);
-    await page.waitForTimeout(500);
+    // two frames, then 500 ms of the page's clock (a third read scheduled by a timer fires), then the network idle
+    await page.evaluate(
+      () =>
+        new Promise<void>((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+        )
+    );
+    await page.clock.runFor(500);
+    await page.waitForLoadState("networkidle");
     expect(server.periods).toHaveLength(2);
   });
 });
