@@ -36,7 +36,7 @@ export function solidPng(width: number, height: number, rgb = [90, 120, 200]) {
 const assetId = (n: number) => `0199c2d0-0000-7000-8000-0000000000${50 + n}`;
 
 /** The instant the media fixtures are made at: 14 October 2026, 12:00 in São Paulo. Nothing on screen reads it. */
-export const MEDIA_NOW = new Date(Date.UTC(2026, 9, 14, 15, 0, 0));
+const MEDIA_NOW = new Date(Date.UTC(2026, 9, 14, 15, 0, 0));
 
 /** The asset of the list, as the server reads it. */
 export const mediaAsset = (n: number, variantIds: string[] = []) => ({
