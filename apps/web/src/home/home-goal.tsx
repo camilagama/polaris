@@ -50,7 +50,6 @@ const LINK =
  * from 960 px it is a card of the pair of the map, as tall as it (`data-goal-strip` marks it for the tests).
  */
 const STRIP_ATTRIBUTES = { "data-goal-strip": "" } as const;
-const STRIP_END = "@min-[60rem]/home:order-last";
 
 /** The body of the card with no goal: from 960 px it takes the room the map's height leaves and centers what it says in it. */
 function StripBody({ children }: { children: React.ReactNode }) {
@@ -338,26 +337,20 @@ function PastMonthGoal({
   online?: boolean;
 }) {
   return (
-    <>
+    <StripBody>
       <p className="font-medium">Sem meta ainda</p>
-      <StripBody>
-        {online ? (
-          <a
-            className={cn(
-              buttonVariants({ variant: "outline" }),
-              "w-fit",
-              STRIP_END
-            )}
-            href="/dashboard?meta=nova"
-          >
-            Definir meta
-          </a>
-        ) : null}
-        <p className="text-muted-foreground text-support tabular-nums">
-          <MoneyText text={pastGoalSummary(goal)} />
-        </p>
-      </StripBody>
-    </>
+      <p className="text-muted-foreground text-support tabular-nums">
+        <MoneyText text={pastGoalSummary(goal)} />
+      </p>
+      {online ? (
+        <a
+          className={cn(buttonVariants({ variant: "outline" }), "w-fit")}
+          href="/dashboard?meta=nova"
+        >
+          Definir meta
+        </a>
+      ) : null}
+    </StripBody>
   );
 }
 

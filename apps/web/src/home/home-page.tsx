@@ -946,7 +946,7 @@ function FigureArea({
   attentionNotes: React.ReactNode;
   blocks: Blocks;
   goal: React.ReactNode;
-  /** The goal has not been read yet: its card is a thin strip or a tall one, and the chart's row depends on which. */
+  /** The goal has not been read yet: its card is a thin strip or a tall one, and the blocks under it move with which. */
   goalPending: boolean;
   /** The cards keep the height they had with figures (no connection and no copy). */
   keep: boolean;
@@ -990,8 +990,8 @@ function FigureArea({
 }
 
 /**
- * The blocks under the cards wait for the first answer of the goals of the store: the shape of the row of the chart is
- * that answer's (a card beside it, or a thin strip over it). A read again of the same store keeps what is on the screen.
+ * The blocks under the cards wait for the first answer of the goals of the store: the height of the goal's card, and
+ * so where the blocks under it sit, is that answer's (a tall card, or a thin strip under 960 px of content). A read again of the same store keeps what is on the screen.
  */
 function useFirstGoalRead(
   organizationId: string,

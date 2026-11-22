@@ -32,6 +32,7 @@ const PACE_WORD = /Adiantada|No ritmo|Atrasada/;
 const HELP_ONLY_PACE = /^O traço marca/;
 const HELP_ONLY_PROJECTION = /^Estimativa/;
 
+const ORDER_UTILITY = /(?:^|[\s:"])order-/;
 const SENTENCE_CLASS = /<p class="([^"]*)">Defina quanto/;
 
 const FONT_SIZE = /data-goal-ring[\s\S]*?style="font-size:([^"]*)"/;
@@ -62,7 +63,7 @@ describe("the goal block on the 2nd of the month after the goal's", () => {
   it("titles the month now, invites to set its goal, and keeps the past one in a line", () => {
     const html = render("2026-11-02");
     expect(text(html)).toBe(
-      "Meta de novembro Sem meta ainda Definir meta Outubro: R$ 166.619,00 de R$ 200.000,00 (não atingida)"
+      "Meta de novembro Sem meta ainda Outubro: R$ 166.619,00 de R$ 200.000,00 (não atingida) Definir meta"
     );
     expect(html).toContain('href="/dashboard?meta=nova"');
     expect(html).not.toContain("Não atingida");
@@ -136,7 +137,7 @@ describe("o cartão da Meta sem meta para o mês (faixa fina só abaixo de 960 p
     );
   });
 
-  it("a 960 px de conteúdo ou mais o cartão é cartão de par: sem a linha única da faixa, e o corpo toma a altura que o mapa deixa", () => {
+  it("a 960 px de conteúdo ou mais o cartão é de par: sem as classes da linha única da faixa e sem order-*, com o corpo tomando a altura que o mapa deixa", () => {
     const offline = (goal: Parameters<typeof OfflineGoalBlock>[0]["goal"]) =>
       renderToStaticMarkup(<OfflineGoalBlock goal={goal} />);
     for (const html of [
@@ -148,6 +149,7 @@ describe("o cartão da Meta sem meta para o mês (faixa fina só abaixo de 960 p
       expect(html).not.toContain("@min-[60rem]/home:flex-row");
       expect(html).not.toContain("@min-[60rem]/home:py-3");
       expect(html).not.toContain("@min-[60rem]/home:ml-auto");
+      expect(html).not.toMatch(ORDER_UTILITY);
       expect(html).toContain("@min-[60rem]/home:grow");
       expect(html).toContain("@min-[60rem]/home:content-center");
     }
