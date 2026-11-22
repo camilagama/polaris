@@ -43,7 +43,11 @@ import {
 import { categories } from "../src/schema/category";
 import { products } from "../src/schema/product";
 import { withAuthorizedTenantTransaction } from "../src/tenant-transaction";
-import { becomeGateRole } from "./gate-roles";
+import {
+  becomeGateRole,
+  inRolledBackTransaction,
+  rollbackAndRelease,
+} from "./gate-roles";
 import {
   RUNNER_LOGIN_GRANTS_SQL,
   type RunnerLoginGrantRow,
@@ -123,8 +127,7 @@ async function expectForgedCategoryInsertDenied(
   userId: string,
   organizationId: string
 ): Promise<void> {
-  await client.query("BEGIN");
-  try {
+  await inRolledBackTransaction(client, async () => {
     await client.query(
       "SELECT set_config('app.user_id', $1, true), " +
         "set_config('app.organization_id', $2, true)",
@@ -138,9 +141,7 @@ async function expectForgedCategoryInsertDenied(
       "42501",
       "category insert with forged context"
     );
-  } finally {
-    await client.query("ROLLBACK");
-  }
+  });
 }
 
 async function expectForgedCategoryUpdateHidden(
@@ -149,8 +150,7 @@ async function expectForgedCategoryUpdateHidden(
   organizationId: string,
   categoryId: string
 ): Promise<void> {
-  await client.query("BEGIN");
-  try {
+  await inRolledBackTransaction(client, async () => {
     await client.query(
       "SELECT set_config('app.user_id', $1, true), " +
         "set_config('app.organization_id', $2, true)",
@@ -165,9 +165,7 @@ async function expectForgedCategoryUpdateHidden(
       0,
       "forged tenant context must not update rows"
     );
-  } finally {
-    await client.query("ROLLBACK");
-  }
+  });
 }
 
 async function expectCategoryHardDeleteDenied(
@@ -176,8 +174,7 @@ async function expectCategoryHardDeleteDenied(
   organizationId: string,
   categoryId: string
 ): Promise<void> {
-  await client.query("BEGIN");
-  try {
+  await inRolledBackTransaction(client, async () => {
     await client.query(
       "SELECT set_config('app.user_id', $1, true), " +
         "set_config('app.organization_id', $2, true)",
@@ -188,9 +185,7 @@ async function expectCategoryHardDeleteDenied(
       "42501",
       "tenant role cannot physically delete categories"
     );
-  } finally {
-    await client.query("ROLLBACK");
-  }
+  });
 }
 
 async function expectCategoryTombstoneTriggerDenied(
@@ -199,8 +194,7 @@ async function expectCategoryTombstoneTriggerDenied(
   organizationId: string,
   categoryId: string
 ): Promise<void> {
-  await client.query("BEGIN");
-  try {
+  await inRolledBackTransaction(client, async () => {
     await client.query(
       "SELECT set_config('app.user_id', $1, true), " +
         "set_config('app.organization_id', $2, true)",
@@ -214,9 +208,7 @@ async function expectCategoryTombstoneTriggerDenied(
       "23503",
       "database trigger blocks tombstoning a category referenced by products"
     );
-  } finally {
-    await client.query("ROLLBACK");
-  }
+  });
 }
 
 async function expectInactiveCategoryAssignmentDenied(
@@ -225,8 +217,7 @@ async function expectInactiveCategoryAssignmentDenied(
   organizationId: string,
   categoryId: string
 ): Promise<void> {
-  await client.query("BEGIN");
-  try {
+  await inRolledBackTransaction(client, async () => {
     await client.query(
       "SELECT set_config('app.user_id', $1, true), " +
         "set_config('app.organization_id', $2, true)",
@@ -241,9 +232,7 @@ async function expectInactiveCategoryAssignmentDenied(
       "23503",
       "database trigger rejects assigning a new product to an archived category"
     );
-  } finally {
-    await client.query("ROLLBACK");
-  }
+  });
 }
 
 async function expectProductVariantDeleteDenied(
@@ -252,8 +241,7 @@ async function expectProductVariantDeleteDenied(
   organizationId: string,
   productId: string
 ): Promise<void> {
-  await client.query("BEGIN");
-  try {
+  await inRolledBackTransaction(client, async () => {
     await client.query(
       "SELECT set_config('app.user_id', $1, true), " +
         "set_config('app.organization_id', $2, true)",
@@ -264,9 +252,7 @@ async function expectProductVariantDeleteDenied(
       [productId]
     );
     assert.equal(result.rowCount, 0);
-  } finally {
-    await client.query("ROLLBACK");
-  }
+  });
 }
 
 async function expectDefaultVariantRemovalRequiresReplacement(
@@ -275,8 +261,7 @@ async function expectDefaultVariantRemovalRequiresReplacement(
   organizationId: string,
   productId: string
 ): Promise<void> {
-  await client.query("BEGIN");
-  try {
+  await inRolledBackTransaction(client, async () => {
     await client.query(
       "SELECT set_config('app.user_id', $1, true), " +
         "set_config('app.organization_id', $2, true)",
@@ -297,9 +282,7 @@ async function expectDefaultVariantRemovalRequiresReplacement(
       "23514",
       "a default variant cannot be removed without configured replacements"
     );
-  } finally {
-    await client.query("ROLLBACK").catch(() => undefined);
-  }
+  });
 }
 
 async function expectProductVariantLimitDenied(
@@ -362,8 +345,7 @@ async function expectProductVariantLimitDenied(
       "deferred PostgreSQL guard rejects a persisted 51st variant"
     );
   } finally {
-    await client.query("ROLLBACK").catch(() => undefined);
-    client.release();
+    await rollbackAndRelease(client);
   }
 }
 
@@ -400,8 +382,7 @@ async function expectDuplicateOptionValueDenied(
       "database value uniqueness ignores case and surrounding whitespace"
     );
   } finally {
-    await client.query("ROLLBACK").catch(() => undefined);
-    client.release();
+    await rollbackAndRelease(client);
   }
 }
 
@@ -422,8 +403,7 @@ async function expectProductWithoutVariantDenied(
       "deferred database invariant requires every product to have a variant"
     );
   } finally {
-    await client.query("ROLLBACK");
-    client.release();
+    await rollbackAndRelease(client);
   }
 }
 
@@ -1891,8 +1871,7 @@ async function main() {
         "the database prevents losing an SKU on the default variant"
       );
     } finally {
-      await defaultSkuDeleteClient.query("ROLLBACK").catch(() => undefined);
-      defaultSkuDeleteClient.release();
+      await rollbackAndRelease(defaultSkuDeleteClient);
     }
 
     await assert.rejects(
