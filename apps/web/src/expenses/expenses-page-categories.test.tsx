@@ -41,6 +41,7 @@ import { ExpensesPage } from "./expenses-page";
 const FIRST_ROW = /Despesa 1/;
 const THIRD_ROW = /Despesa 3/;
 const RENAMED_ROW = /^Transporte · /;
+const MONTH_BUTTON = /^Mês de competência/;
 const NOW = new Date("2026-11-15T15:00:00.000Z");
 const organizationId = "org_1";
 const FRETE = "f0000000-0000-4000-8000-000000000001";
@@ -338,5 +339,133 @@ describe("creating a category on the Categorias part", () => {
     expect(createCategory).toHaveBeenCalledTimes(1);
     expect(list).toHaveBeenCalledTimes(before);
     expect(screen.getByText(THIRD_ROW)).toBeTruthy();
+  });
+});
+
+describe("the month changes while a read of the pages is waiting", () => {
+  async function pickOctober(user: User) {
+    await user.click(screen.getByRole("button", { name: MONTH_BUTTON }));
+    await user.click(
+      await screen.findByRole("button", { name: "Out, outubro de 2026" })
+    );
+    await screen.findByText("Despesa de outubro 1");
+  }
+
+  function octoberAnswer(input: ListInput) {
+    const first = input.cursor === null;
+    return {
+      ...answer(input),
+      expenses: [
+        {
+          ...expense(7, FRETE, "5.00"),
+          description: first ? "Despesa de outubro 1" : "Despesa de outubro 2",
+        },
+      ],
+      nextCursor: first ? PAGE_TWO : null,
+    };
+  }
+
+  async function expectNothingOfTheOldMonth(
+    user: User,
+    oldFrom: string | undefined,
+    callsAtChange: number
+  ) {
+    await user.click(screen.getByRole("button", { name: "Carregar mais" }));
+    await screen.findByText("Despesa de outubro 2");
+    expect(
+      list.mock.calls
+        .slice(callsAtChange)
+        .filter(([input]) => input.from === oldFrom)
+    ).toEqual([]);
+    expect(screen.queryByText(THIRD_ROW)).toBeNull();
+    expect(screen.queryByText(FIRST_ROW)).toBeNull();
+  }
+
+  it("drops the page being added: no read of the old month after the change", async () => {
+    const user = userEvent.setup();
+    renameCommand("Transporte");
+    renderPage();
+    await screen.findByText(FIRST_ROW);
+    const oldFrom = list.mock.calls[0]?.[0].from;
+    let release: () => void = () => undefined;
+    list.mockImplementation((input: ListInput & { from?: string }) => {
+      if (input.from === oldFrom && input.cursor === null) {
+        return new Promise((resolve) => {
+          release = () => resolve(answer(input));
+        });
+      }
+      return Promise.resolve(octoberAnswer(input));
+    });
+
+    await renameFrete(user, "Transporte");
+    await waitFor(() => expect(list).toHaveBeenCalledTimes(2));
+    await user.click(screen.getByRole("tab", { name: "Lançamentos" }));
+    await user.click(screen.getByRole("button", { name: "Carregar mais" }));
+    await pickOctober(user);
+    const callsAtChange = list.mock.calls.length;
+    release();
+
+    await expectNothingOfTheOldMonth(user, oldFrom, callsAtChange);
+  });
+
+  it("drops the re-read queued behind the page being added", async () => {
+    const user = userEvent.setup();
+    renameCommand("Transporte");
+    renderPage();
+    await screen.findByText(FIRST_ROW);
+    const oldFrom = list.mock.calls[0]?.[0].from;
+    let release: () => void = () => undefined;
+    list.mockImplementation((input: ListInput & { from?: string }) => {
+      if (input.from === oldFrom && input.cursor === PAGE_TWO) {
+        return new Promise((resolve) => {
+          release = () => resolve(answer(input));
+        });
+      }
+      if (input.from === oldFrom) {
+        return Promise.resolve(answer(input));
+      }
+      return Promise.resolve(octoberAnswer(input));
+    });
+    await user.click(screen.getByRole("button", { name: "Carregar mais" }));
+    await waitFor(() => expect(list).toHaveBeenCalledTimes(2));
+
+    await renameFrete(user, "Transporte");
+    await waitFor(() => expect(renameCategory).toHaveBeenCalledTimes(1));
+    await user.click(screen.getByRole("tab", { name: "Lançamentos" }));
+    await pickOctober(user);
+    const callsAtChange = list.mock.calls.length;
+    release();
+
+    await expectNothingOfTheOldMonth(user, oldFrom, callsAtChange);
+  });
+});
+
+describe("a failed re-read of the list", () => {
+  it("keeps the cursor: Carregar mais still reads the second page", async () => {
+    const user = userEvent.setup();
+    renameCommand("Transporte");
+    renderPage();
+    await screen.findByText(FIRST_ROW);
+    list.mockImplementation(() => Promise.reject(new Error("offline")));
+
+    await renameFrete(user, "Transporte");
+    await user.click(screen.getByRole("tab", { name: "Lançamentos" }));
+    await screen.findByText(
+      "Não foi possível carregar as despesas. Tente novamente."
+    );
+    await user.click(screen.getByRole("button", { name: "Tentar novamente" }));
+    await waitFor(() => expect(cursorsRead().length).toBeGreaterThan(2));
+    await screen.findByText(
+      "Não foi possível carregar as despesas. Tente novamente."
+    );
+    list.mockImplementation((input: ListInput) =>
+      Promise.resolve(answer(input))
+    );
+    const before = list.mock.calls.length;
+
+    await user.click(screen.getByRole("button", { name: "Carregar mais" }));
+
+    await screen.findByText(THIRD_ROW);
+    expect(cursorsRead().slice(before)).toEqual([PAGE_TWO]);
   });
 });

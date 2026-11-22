@@ -66,6 +66,17 @@ export function useExpenseList(
   const pagesLoaded = useRef(1);
   const nextCursorRef = useRef<string | null>(null);
   const queue = useRef<Promise<void>>(Promise.resolve());
+  const committed = useRef<{ cursor: string | null; pages: number }>({
+    cursor: null,
+    pages: 1,
+  });
+
+  /** What the screen shows is the page count and the cursor that go with it; a failed read goes back to this pair. */
+  const commit = useCallback((pages: number, cursor: string | null) => {
+    pagesLoaded.current = pages;
+    nextCursorRef.current = cursor;
+    committed.current = { cursor, pages };
+  }, []);
 
   const fetchPage = useCallback(
     (cursor: string | null) => {
@@ -89,9 +100,12 @@ export function useExpenseList(
   const load = useCallback(
     async (keepRows: boolean) => {
       sequence.current += 1;
+      const requestSequence = sequence.current;
       pagesLoaded.current = 1;
       nextCursorRef.current = null;
-      const requestSequence = sequence.current;
+      if (!keepRows) {
+        committed.current = { cursor: null, pages: 1 };
+      }
       setState((current) => ({
         ...(keepRows ? current : initialState),
         error: null,
@@ -103,7 +117,7 @@ export function useExpenseList(
         if (requestSequence !== sequence.current) {
           return;
         }
-        nextCursorRef.current = result.nextCursor;
+        commit(1, result.nextCursor);
         setState({
           count: result.count,
           error: null,
@@ -116,6 +130,8 @@ export function useExpenseList(
         });
       } catch (caughtError) {
         if (requestSequence === sequence.current) {
+          pagesLoaded.current = committed.current.pages;
+          nextCursorRef.current = committed.current.cursor;
           setState((current) => ({
             ...current,
             error: expenseErrorMessage(caughtError, "load"),
@@ -124,7 +140,7 @@ export function useExpenseList(
         }
       }
     },
-    [fetchPage]
+    [commit, fetchPage]
   );
 
   useEffect(() => {
@@ -134,54 +150,55 @@ export function useExpenseList(
     };
   }, [load]);
 
-  /** One read of pages at a time: the pages swapped by a re-read and the page "Carregar mais" adds never cross. */
+  /**
+   * One read of pages at a time: the pages swapped by a re-read and the page "Carregar mais" adds never cross. The
+   * tail takes the next piece of work even if the one before rejected, so a queue never stays stuck.
+   */
   const inOrder = useCallback((work: () => Promise<void>) => {
-    const next = queue.current.then(work);
+    const next = queue.current.then(work, work);
     queue.current = next;
     return next;
   }, []);
 
-  const loadMore = useCallback(
-    () =>
-      inOrder(async () => {
-        const from = nextCursorRef.current;
-        if (from === null) {
+  const loadMore = useCallback(() => {
+    const requestSequence = sequence.current;
+    return inOrder(async () => {
+      const from = nextCursorRef.current;
+      if (requestSequence !== sequence.current || from === null) {
+        return;
+      }
+      setState((current) => ({
+        ...current,
+        error: null,
+        isLoadingMore: true,
+      }));
+      try {
+        const result = await fetchPage(from);
+        if (requestSequence !== sequence.current) {
           return;
         }
-        const requestSequence = sequence.current;
+        pagesLoaded.current += 1;
+        nextCursorRef.current = result.nextCursor;
         setState((current) => ({
           ...current,
-          error: null,
-          isLoadingMore: true,
+          count: result.count,
+          expenses: [...current.expenses, ...result.expenses],
+          isLoadingMore: false,
+          nextCursor: result.nextCursor,
+          total: result.total,
+          totalsByCategory: result.totalsByCategory,
         }));
-        try {
-          const result = await fetchPage(from);
-          if (requestSequence !== sequence.current) {
-            return;
-          }
-          pagesLoaded.current += 1;
-          nextCursorRef.current = result.nextCursor;
+      } catch (caughtError) {
+        if (requestSequence === sequence.current) {
           setState((current) => ({
             ...current,
-            count: result.count,
-            expenses: [...current.expenses, ...result.expenses],
+            error: expenseErrorMessage(caughtError, "load"),
             isLoadingMore: false,
-            nextCursor: result.nextCursor,
-            total: result.total,
-            totalsByCategory: result.totalsByCategory,
           }));
-        } catch (caughtError) {
-          if (requestSequence === sequence.current) {
-            setState((current) => ({
-              ...current,
-              error: expenseErrorMessage(caughtError, "load"),
-              isLoadingMore: false,
-            }));
-          }
         }
-      }),
-    [fetchPage, inOrder]
-  );
+      }
+    });
+  }, [commit, fetchPage, inOrder]);
 
   const refresh = useCallback(() => load(true), [load]);
 
@@ -190,52 +207,53 @@ export function useExpenseList(
    * carry are the server's, and the page the person is on, its cursor and the place in the list stay. A read that a
    * newer load overtook is dropped; one that fails says so as any read of the list does, and keeps the rows.
    */
-  const refreshKeepingPages = useCallback(
-    () =>
-      inOrder(async () => {
-        const requestSequence = sequence.current;
-        const readFrom = async (
-          from: string | null,
-          pages: number,
-          rows: ExpenseReadModel[]
-        ): Promise<{ page: ExpenseListPage; pages: number } | null> => {
-          const result = await fetchPage(from);
-          if (requestSequence !== sequence.current) {
-            return null;
-          }
-          const joined = [...rows, ...result.expenses];
-          if (pages >= pagesLoaded.current || result.nextCursor === null) {
-            return { page: { ...result, expenses: joined }, pages };
-          }
-          return readFrom(result.nextCursor, pages + 1, joined);
-        };
-        try {
-          const read = await readFrom(null, 1, []);
-          if (read === null) {
-            return;
-          }
-          pagesLoaded.current = read.pages;
-          nextCursorRef.current = read.page.nextCursor;
+  const refreshKeepingPages = useCallback(() => {
+    const requestSequence = sequence.current;
+    return inOrder(async () => {
+      if (requestSequence !== sequence.current) {
+        return;
+      }
+      const readFrom = async (
+        from: string | null,
+        pages: number,
+        rows: ExpenseReadModel[]
+      ): Promise<{ page: ExpenseListPage; pages: number } | null> => {
+        const result = await fetchPage(from);
+        if (requestSequence !== sequence.current) {
+          return null;
+        }
+        const joined = [...rows, ...result.expenses];
+        if (pages >= pagesLoaded.current || result.nextCursor === null) {
+          return { page: { ...result, expenses: joined }, pages };
+        }
+        return readFrom(result.nextCursor, pages + 1, joined);
+      };
+      try {
+        const read = await readFrom(null, 1, []);
+        if (read === null) {
+          return;
+        }
+        pagesLoaded.current = read.pages;
+        nextCursorRef.current = read.page.nextCursor;
+        setState((current) => ({
+          ...current,
+          count: read.page.count,
+          error: null,
+          expenses: read.page.expenses,
+          nextCursor: read.page.nextCursor,
+          total: read.page.total,
+          totalsByCategory: read.page.totalsByCategory,
+        }));
+      } catch (caughtError) {
+        if (requestSequence === sequence.current) {
           setState((current) => ({
             ...current,
-            count: read.page.count,
-            error: null,
-            expenses: read.page.expenses,
-            nextCursor: read.page.nextCursor,
-            total: read.page.total,
-            totalsByCategory: read.page.totalsByCategory,
+            error: expenseErrorMessage(caughtError, "load"),
           }));
-        } catch (caughtError) {
-          if (requestSequence === sequence.current) {
-            setState((current) => ({
-              ...current,
-              error: expenseErrorMessage(caughtError, "load"),
-            }));
-          }
         }
-      }),
-    [fetchPage, inOrder]
-  );
+      }
+    });
+  }, [commit, fetchPage, inOrder]);
 
   return { loadMore, refresh, refreshKeepingPages, state };
 }
