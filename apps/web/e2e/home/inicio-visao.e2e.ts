@@ -57,14 +57,23 @@ async function openMenuFoot(page: Page) {
 }
 
 /**
+ * Every chart of the block comes from the chunk downloaded on demand: the network idle says the chunk arrived, and the
+ * box that holds each place leaving says the chart took it. Only then does a check on the drawing start its own budget,
+ * so a starved CPU delays the drawing without eating the 5 s of the check.
+ */
+async function chartsLoaded(page: Page, block: Locator) {
+  await page.waitForLoadState("networkidle");
+  await expect(block.locator("[data-chart-loading]")).toHaveCount(0);
+}
+
+/**
  * The area chart arrives after the heading: its chunk is downloaded on demand, then the chart measures its box and
  * draws. Each step waits for its own state, so a starved CPU delays the drawing without eating the budget of the next
  * check: the network idle says the chunk was downloaded, the box that holds the place leaves when the chart takes it, the
  * chart's box says it was mounted, the svg says it was measured and drawn.
  */
 async function drawnAreaChart(page: Page, chart: Locator) {
-  await page.waitForLoadState("networkidle");
-  await expect(chart.locator("[data-chart-loading]")).toHaveCount(0);
+  await chartsLoaded(page, chart);
   const area = chart.locator("[data-chart-area]");
   await expect(area).toBeAttached();
   await expect(area.locator("svg").first()).toBeVisible();
@@ -192,6 +201,7 @@ test.describe("loja com venda", () => {
       "subiu para 16,0 vezes o valor anterior em relação à média das sextas"
     );
     // the sparkline is a reinforcement: hidden from the screen reader, with no axis; the range is its keyboard
+    await chartsLoaded(page, today);
     await expect(
       today.locator("[data-kpi-spark] [aria-hidden=true] svg")
     ).toHaveCount(1);
@@ -238,6 +248,7 @@ test.describe("loja com venda", () => {
     await expect(meta).toContainText("1 a 31/10 · faltam 8 dias");
     // the ring (v7 § 3 item 9): an image that says it in words, the drawing of Bklit UI hidden inside it
     const ring = meta.getByRole("img");
+    await chartsLoaded(page, meta);
     await expect(ring).toHaveAttribute(
       "aria-label",
       "53,4% da meta: R$ 2.670,60 de R$ 5.000,00. Atrasada: o esperado até hoje era 71%."
@@ -849,9 +860,9 @@ test.describe("o Início enxuto: a dobra a 360 px e a ajuda de cada bloco", () =
       3,
       { timeout: 20_000 }
     );
-    await expect(
-      region(page, "Vendas por dia").locator("svg").first()
-    ).toBeVisible();
+    const chart = region(page, "Vendas por dia");
+    await chartsLoaded(page, chart);
+    await expect(chart.locator("svg").first()).toBeVisible();
     const height = await page.evaluate(
       () => document.documentElement.scrollHeight
     );
@@ -1465,6 +1476,7 @@ test.describe("meta (AC-10, AC-11)", () => {
     await openHome(page, server);
     const meta = region(page, "Meta");
     const ring = meta.getByRole("img");
+    await chartsLoaded(page, meta);
     await expect(
       ring.locator("[data-ring-chart] svg path").first()
     ).toBeAttached();
