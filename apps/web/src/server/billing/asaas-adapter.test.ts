@@ -2,7 +2,7 @@ import type { FetchLike } from "@polaris/billing/http";
 import type { BillingStore } from "@polaris/db/billing-store";
 import { logger } from "@polaris/observability/logger";
 import { Hono } from "hono";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ServerEnv, WorkerBindings } from "../environment";
 import { requestIdMiddleware } from "../middleware/request-id";
 import { createBillingWebhookRoutes } from "../routes/billing-webhooks";
@@ -15,6 +15,8 @@ import { createAsaasAdapter } from "./asaas-adapter";
  * every value is made up.
  */
 
+/** 23:30 in São Paulo on the day of the fixtures (`2026-10-26`), already the next day in UTC. */
+const NOW = new Date("2026-10-27T02:30:00.000Z");
 const TOKEN = "fake-webhook-token-0123456789abcdef";
 /** The ID of the checkout: the `providerRef`, and the `checkoutSession` of the subscription (S1.3). */
 const REF = "3f2b8c1e-9a4d-4e6f-8b7a-1c2d3e4f5a6b";
@@ -207,7 +209,7 @@ function setup(
 
 /** The current time as Asaas writes `dateCreated` (Brasília, UTC−3). */
 function nowInBrasilia(): string {
-  return new Date(Date.now() - 3 * 3_600_000)
+  return new Date(NOW.getTime() - 3 * 3_600_000)
     .toISOString()
     .slice(0, 19)
     .replace("T", " ");
@@ -222,8 +224,14 @@ function expectNoLeak(...texts: string[]) {
   }
 }
 
+beforeEach(() => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(NOW);
+});
+
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.useRealTimers();
 });
 
 describe("the provider adapters are registered (AC-11)", () => {
@@ -503,7 +511,9 @@ describe("a body dated in the future is never a reason for a 503", () => {
     const [call] = t.store.recordEvent.mock.calls as unknown as [
       [{ fact: { occurredAt: Date } }],
     ];
-    expect(call[0].fact.occurredAt.getTime()).toBeLessThanOrEqual(Date.now());
+    expect(call[0].fact.occurredAt.getTime()).toBeLessThanOrEqual(
+      NOW.getTime()
+    );
     // cut down to the present: never a day or a year ahead
     expect(call[0].fact.occurredAt.getFullYear()).toBeLessThan(2099);
     expect(t.logs.warn).toHaveBeenCalledWith("billing_webhook_date_clamped", {
