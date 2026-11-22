@@ -25,7 +25,7 @@ const ORGANIZATION = {
   role: "owner",
   timezone: "America/Sao_Paulo",
 };
-const NOW = "2026-10-27T12:00:00.000Z";
+const NOW = new Date("2026-10-27T12:00:00.000Z");
 const IMPORT_DIALOG = "Importar planilha";
 const STOCK_TEXT = "Estoque de abertura lançado com a data de hoje.";
 const UUID =
@@ -94,14 +94,14 @@ interface BatchCall {
 const productOf = (name: string, id: string) => ({
   archivedAt: null,
   categoryId: null,
-  createdAt: NOW,
+  createdAt: NOW.toISOString(),
   deletedAt: null,
   description: null,
   id,
   name,
   organizationId: ORGANIZATION.id,
   status: "active",
-  updatedAt: NOW,
+  updatedAt: NOW.toISOString(),
   version: 1,
 });
 
@@ -113,6 +113,8 @@ interface ServerOptions {
   /** A row the server never answers: the call gets no answer each time, nothing created. */
   faultyRow?: string;
   existing?: readonly string[];
+  /** The test installs its own clock (`page.clock.install({ time: NOW })`) before opening the store. */
+  ownClock?: boolean;
   /** The variants of the store the plan holds; another tab may take some in the middle (`takeRoom`). */
   room?: number;
   used?: number;
@@ -126,10 +128,14 @@ async function openProducts(
     cutCalls,
     existing = [],
     faultyRow,
+    ownClock = false,
     room = 49,
     used = 1,
   }: ServerOptions = {}
 ) {
+  if (!ownClock) {
+    await page.clock.setFixedTime(NOW);
+  }
   const store = {
     batches: [] as BatchCall[],
     namesAsked: 0,
@@ -720,8 +726,11 @@ test("o corte da plataforma pausa a importação, diz a hora em que ela continua
   page,
 }) => {
   test.setTimeout(120_000);
-  await page.clock.install();
-  const store = await openProducts(page, { cutCalls: new Set([2]) });
+  await page.clock.install({ time: NOW });
+  const store = await openProducts(page, {
+    cutCalls: new Set([2]),
+    ownClock: true,
+  });
   await page.getByRole("button", { name: "Importar planilha" }).click();
   const dialog = dialogOf(page);
   await chooseFile(page, ["Nome", "Alfa", "Beta", "Gama"]);
