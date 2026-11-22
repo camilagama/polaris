@@ -4,13 +4,8 @@ import { buttonVariants } from "@/ui/button";
 import { Figure } from "@/ui/figure";
 import { MoneyText } from "@/ui/hidden-values";
 import { cn } from "@/lib/utils";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/ui/card";
+import { BlockHeader } from "@/ui/block-header";
+import { Card, CardContent, CardHeader } from "@/ui/card";
 import {
   Table,
   TableBody,
@@ -94,12 +89,14 @@ export function ResultChain({
       role="region"
     >
       <CardHeader className="border-b py-(--card-spacing)">
-        <CardTitle aria-level={2} id={CHAIN_TITLE_ID} role="heading">
-          Como chegamos a este resultado
-        </CardTitle>
-        <CardDescription>
-          Das vendas brutas ao resultado estimado, linha a linha.
-        </CardDescription>
+        <BlockHeader
+          help={{
+            about: "Como chegamos a este resultado",
+            text: "Das vendas brutas ao resultado estimado, linha a linha.",
+          }}
+          id={CHAIN_TITLE_ID}
+          title="Como chegamos a este resultado"
+        />
       </CardHeader>
       <Table className={STACKED_TABLE}>
         <caption className="sr-only">
