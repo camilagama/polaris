@@ -19,8 +19,13 @@ import { stripComments } from "./verify-no-history-comments.mjs";
  * does not: when the root's is the boolean `true`, the merge replaces it by the project's object, and Vitest reads a
  * missing `tests` as off. Only the forms known to keep the tests order are accepted: no `shuffle` in the project's
  * `sequence` blocks, `shuffle: true`, or `shuffle: { ... }` whose only keys are `files` (a literal) and `tests: true`,
- * the latter always written out. Anything else (`shuffle: false`, `tests: false`, a variable, a spread, a quoted key, a nested object) is refused.
- * Not caught: a `shuffle` built in a variable or a spread outside an `extends: true` project, `projects` that is not an
+ * the latter always written out. A `true` counts only when it stands alone up to the next comma or the end of the
+ * object: `true ? ...`, `true && ...` and `true || ...` are refused, and so is an object followed by
+ * an operator (`{ tests: true } && off`). In the object form every value is the literal
+ * `true` or `false` and no key repeats. Anything else (`shuffle: false`, `tests: false`, a variable, also in `files`, an
+ * expression, a spread, a quoted key, a nested object) is refused.
+ * Not caught: a `shuffle` built in a variable or a spread outside an `extends: true` project, a `shuffle` repeated in
+ * one root `sequence` (only the first is read), `projects` that is not an
  * array literal (a variable, a spread) or is nested in another project, a regular expression literal with a quote in it,
  * an order switched off from the command line.
  * Quoted keys (`"sequence":`) are not recognised: in the root they fail loudly (the key is missing), in an `extends: true`
@@ -39,17 +44,15 @@ const PROJECTS_OPENER = /\bprojects\s*:\s*\[/g;
 const EXTENDS_TRUE = /\bextends\s*:\s*true\b/;
 const QUOTES = "\"'`";
 const SEQUENCE_OPENER = /\bsequence\s*:\s*\{/g;
-const SHUFFLE_VALUE = /\bshuffle\s*:\s*(true\b|\{([^{}]*)\})/;
+const SHUFFLE_VALUE =
+  /\bshuffle\s*:\s*(true(?=\s*(?:,|$))|\{([^{}]*)\}(?=\s*(?:,|$)))/;
 const SHUFFLE_WORD = /\bshuffle\b/g;
 const SHUFFLE_KEY_START = /^\s*:\s*/;
 const QUOTED_KEY = /(""|''|``)\s*:/;
 const SPREAD = /\.\.\./;
-const TRUE_VALUE = /^true\b/;
-const FILES_OR_TESTS_LITERAL = /\b(files|tests)\s*:\s*(true|false)\b/g;
-const UNKNOWN_SYNTAX = /[{}[\]()]|=>|\?/;
-const UNKNOWN_KEY = /\b(?!files\b|tests\b)[A-Za-z_$][\w$]*\s*:/;
-const TESTS_FALSE = /\btests\s*:\s*false\b/;
-const SHUFFLE_KEY = (key) => new RegExp(String.raw`\b${key}\s*:\s*true\b`);
+const VALUE_END = /^\s*(?:,|$)/;
+const TRUE_VALUE = /^true\s*(?:,|$)/;
+const SHUFFLE_ENTRY = /^(files|tests)\s*:\s*(true|false)$/;
 
 function objectBody(code, openIndex) {
   let depth = 0;
@@ -149,6 +152,22 @@ function inlineProjectRanges(code) {
   return ranges.sort((a, b) => a[0] - b[0]);
 }
 
+function shuffleFlags(inner) {
+  const flags = new Map();
+  for (const entry of inner.split(",")) {
+    const text = entry.trim();
+    if (text === "") {
+      continue;
+    }
+    const match = SHUFFLE_ENTRY.exec(text);
+    if (match === null || flags.has(match[1])) {
+      return null;
+    }
+    flags.set(match[1], match[2] === "true");
+  }
+  return flags;
+}
+
 function keysOfBlocks(code) {
   const keys = new Set();
   for (const opener of code.matchAll(SEQUENCE_OPENER)) {
@@ -162,8 +181,9 @@ function keysOfBlocks(code) {
       keys.add("tests");
       continue;
     }
+    const flags = shuffleFlags(shuffle[2] ?? "");
     for (const key of ["files", "tests"]) {
-      if (SHUFFLE_KEY(key).test(shuffle[2] ?? "")) {
+      if (flags?.get(key) === true) {
         keys.add(key);
       }
     }
@@ -178,12 +198,11 @@ function shuffleValueKeepsTests(value) {
   if (!value.startsWith("{")) {
     return false;
   }
-  const inner = objectBody(value, 0);
-  const rest = inner.replace(FILES_OR_TESTS_LITERAL, "");
-  if (UNKNOWN_SYNTAX.test(rest) || UNKNOWN_KEY.test(rest)) {
-    return false;
-  }
-  return SHUFFLE_KEY("tests").test(inner) && !TESTS_FALSE.test(inner);
+  const end = closeIndex(value, 0, "{", "}");
+  return (
+    VALUE_END.test(value.slice(end + 1)) &&
+    shuffleFlags(value.slice(1, end))?.get("tests") === true
+  );
 }
 
 function sequenceBodyKeepsTests(body) {

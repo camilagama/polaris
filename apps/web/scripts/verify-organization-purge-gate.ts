@@ -43,7 +43,11 @@ import {
   ORGANIZATION_PURGE_REQUIRED_SCOPE,
   OrganizationPurgeRefusedError,
 } from "@polaris/domain/privacy/organization-purge";
-import { withGateRole } from "../../../packages/db/scripts/gate-roles";
+import {
+  rollbackAndRelease,
+  rollbackQuietly,
+  withGateRole,
+} from "../../../packages/db/scripts/gate-roles";
 import {
   confirmPlainSale,
   createProductFixture,
@@ -235,8 +239,7 @@ async function expectGrantWrittenDuringPurgeLosesText(
       "a grant written during the purge ends up with the fixed text"
     );
   } finally {
-    await purging.query("ROLLBACK").catch(() => undefined);
-    purging.release();
+    await rollbackAndRelease(purging);
   }
 }
 
@@ -362,7 +365,7 @@ async function queryAs(
         statement: string,
         values?: unknown[]
       ) => Promise<{ rows: { reason?: string }[] }>;
-      release: () => void;
+      release: (destroy?: boolean) => void;
     }>;
   },
   role: string,
@@ -376,8 +379,7 @@ async function queryAs(
       client.query(statement, values)
     );
   } finally {
-    await client.query("ROLLBACK").catch(() => undefined);
-    client.release();
+    await rollbackAndRelease(client);
   }
 }
 
@@ -411,7 +413,7 @@ async function makeHoldOverdue(
 async function expectCancellationsAppendOnly(pool: {
   connect: () => Promise<{
     query: (statement: string) => Promise<unknown>;
-    release: () => void;
+    release: (destroy?: boolean) => void;
   }>;
   query: (statement: string) => Promise<unknown>;
 }) {
@@ -443,8 +445,7 @@ async function expectCancellationsAppendOnly(pool: {
         )
       );
     } finally {
-      await client.query("ROLLBACK").catch(() => undefined);
-      client.release();
+      await rollbackAndRelease(client);
     }
   }
 }
@@ -495,7 +496,7 @@ async function raceCancellationAgainstMark(
     );
     await marker.query("COMMIT");
   } catch (error) {
-    await marker.query("ROLLBACK").catch(() => undefined);
+    await rollbackQuietly(marker);
     throw error;
   } finally {
     marker.release();
@@ -563,7 +564,7 @@ async function raceMarkAgainstCancellation(
     );
     await canceller.query("COMMIT");
   } catch (error) {
-    await canceller.query("ROLLBACK").catch(() => undefined);
+    await rollbackQuietly(canceller);
     throw error;
   } finally {
     canceller.release();
@@ -1010,7 +1011,7 @@ async function run() {
         );
         await client.query("COMMIT");
       } catch (error) {
-        await client.query("ROLLBACK");
+        await rollbackQuietly(client);
         throw error;
       } finally {
         client.release();
@@ -2294,8 +2295,7 @@ async function run() {
           client.query(statement, values)
         );
       } finally {
-        await client.query("ROLLBACK").catch(() => undefined);
-        client.release();
+        await rollbackAndRelease(client);
       }
     };
     const insertAudit = (eventType: string, organizationId: string) =>
@@ -2344,8 +2344,7 @@ async function run() {
           client.query(statement, values)
         );
       } finally {
-        await client.query("ROLLBACK").catch(() => undefined);
-        client.release();
+        await rollbackAndRelease(client);
       }
     };
     await expectSqlState(
@@ -2905,7 +2904,7 @@ async function run() {
       );
       await restoreClient.query("COMMIT");
     } catch (error) {
-      await restoreClient.query("ROLLBACK");
+      await rollbackQuietly(restoreClient);
       throw error;
     } finally {
       restoreClient.release();

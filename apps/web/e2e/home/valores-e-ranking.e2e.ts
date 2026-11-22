@@ -151,7 +151,7 @@ interface KnownFinding {
 const KNOWN_FINDINGS_24: readonly KnownFinding[] = [
   {
     clientWidth: 145,
-    reason: "herói em mono: 165 px em 145 px",
+    reason: "valor em mono: 165 px em 145 px",
     scrollWidth: 165,
     selector: 'div[data-slot="card"] > div',
   },
@@ -206,43 +206,37 @@ test.describe("o padrão único dos valores nos cartões do Início (AC-3.1, AC-
 
   for (const [width, scenario, today] of [
     [360, SOLD, "R$ 320,10"],
-    [760, SOLD, "R$ 320,10"],
+    [760, SMALL, "R$ 32,01"],
     [1024, SMALL, "R$ 32,01"],
     [1280, SMALL, "R$ 32,01"],
   ] as const) {
-    test(`Vendas hoje mede text-value-xl e os três do mês text-value-lg, o R$ igual nos três, em peso 600, a ${width} px`, async ({
+    test(`os quatro cartões medem text-value-lg, o R$ igual nos quatro, em peso 600, a ${width} px`, async ({
       page,
     }) => {
       await openReflowViewport(page, { fontPixels: 16, height: 800, width });
       await openHome(page, new FakeServer(scenario));
       await expect(region(page, "Vendas hoje")).toContainText(today);
-      const [hero, ...month] = await readHeroes(page);
+      const reads = await readHeroes(page);
       expect(
-        [hero, ...month].map((read) => read?.card),
-        "um herói e três cartões, nesta ordem"
+        reads.map((read) => read.card),
+        "quatro cartões, nesta ordem"
       ).toEqual(KPI_IDS);
       const coarse = await page.evaluate(
         () => matchMedia("(pointer: coarse)").matches
       );
       const touch = width < PHONE_WIDTH || coarse;
       const lg = touch ? 24 : 26;
-      const xl = touch ? 32 : 36;
-      expect(hero?.size, "o valor de Hoje: text-value-xl").toBe(xl);
       expect(
-        month.map((read) => read.size),
-        "o valor dos três do mês: text-value-lg, todos iguais"
-      ).toEqual([lg, lg, lg]);
+        reads.map((read) => read.size),
+        "o valor dos quatro: text-value-lg, todos iguais"
+      ).toEqual([lg, lg, lg, lg]);
       expect(
-        new Set(month.map((read) => read.currency)).size,
-        "o R$ tem um tamanho só nos três do mês"
+        new Set(reads.map((read) => read.currency)).size,
+        "o R$ tem um tamanho só nos quatro"
       ).toBe(1);
-      expect(month[0]?.currency).toBeLessThan(lg);
-      expect(hero?.currency).toBeGreaterThan(month[0]?.currency ?? 0);
-      expect(hero?.currency).toBeLessThan(xl);
-      expect(
-        new Set([hero, ...month].map((read) => read?.currencyWeight)).size
-      ).toBe(1);
-      expect([hero, ...month].map((read) => read?.weight)).toEqual([
+      expect(reads[0]?.currency).toBeLessThan(lg);
+      expect(new Set(reads.map((read) => read.currencyWeight)).size).toBe(1);
+      expect(reads.map((read) => read.weight)).toEqual([
         "600",
         "600",
         "600",
@@ -251,7 +245,37 @@ test.describe("o padrão único dos valores nos cartões do Início (AC-3.1, AC-
     });
   }
 
-  test("a 1024 px a área do número de um cartão do mês é estreita: um valor de quatro dígitos de milhar desce até caber, na conta do ajuste, e não corta, e o herói mantém o xl", async ({
+  reflowTest(
+    "a 320 px com a letra do navegador em 20 px os quatro cartões estão em uma coluna, nenhum número é cortado e a página não rola de lado",
+    async ({ page }) => {
+      await openReflowViewport(page, { fontPixels: 20, width: 320 });
+      await openHome(page, new FakeServer(SOLD));
+      await expectReflowFont(page, 20);
+      await expect(region(page, "Resultado estimado")).toContainText("R$");
+      const areas = await page
+        .locator("[data-kpi-row] [data-kpi-headline]")
+        .evaluateAll((nodes) =>
+          nodes.map((node) => node.scrollWidth - node.clientWidth)
+        );
+      expect(areas).toHaveLength(4);
+      for (const extra of areas) {
+        expect(extra).toBeLessThanOrEqual(1);
+      }
+      const lefts = await page
+        .locator("[data-kpi-row] [data-kpi]")
+        .evaluateAll((cards) =>
+          cards.map((card) => Math.round(card.getBoundingClientRect().left))
+        );
+      expect(new Set(lefts).size).toBe(1);
+      expect(
+        await page.evaluate(
+          () => document.documentElement.scrollWidth <= window.innerWidth
+        )
+      ).toBe(true);
+    }
+  );
+
+  test("a 1280 px a área do número de um cartão é estreita: um valor de quatro dígitos de milhar desce até caber, na conta do ajuste, e não corta, e Vendas hoje mantém o lg", async ({
     page,
   }, testInfo) => {
     test.skip(
@@ -261,7 +285,7 @@ test.describe("o padrão único dos valores nos cartões do Início (AC-3.1, AC-
     await openReflowViewport(page, {
       fontPixels: 16,
       height: 800,
-      width: 1024,
+      width: 1280,
     });
     await openHome(page, new FakeServer(SOLD));
     await expect(region(page, "Vendas hoje")).toContainText("R$ 320,10");
@@ -280,7 +304,7 @@ test.describe("o padrão único dos valores nos cartões do Início (AC-3.1, AC-
       })
     );
     const [today, month] = reads;
-    expect(today?.size, `${today?.text} cabe e mantém o xl`).toBe(36);
+    expect(today?.size, `${today?.text} cabe e mantém o lg`).toBe(26);
     expect(month?.text).toBe("R$ 2.660,60");
     expect(
       month?.atLarge,
@@ -318,13 +342,12 @@ test.describe("o padrão único dos valores nos cartões do Início (AC-3.1, AC-
         await assertNothingClipped(principal);
         const [today, ...rest] = await readHeroes(page);
         const lg = 1.5 * fontPixels;
-        const xl = 2 * fontPixels;
         const floor = 0.875 * fontPixels;
-        for (const [index, read] of [today, ...rest].entries()) {
+        for (const read of [today, ...rest]) {
           expect(
             read?.size,
             "o valor desce só até caber na área dele, nunca abaixo do piso"
-          ).toBeLessThanOrEqual((index === 0 ? xl : lg) + 0.01);
+          ).toBeLessThanOrEqual(lg + 0.01);
           expect(read?.size).toBeGreaterThanOrEqual(floor - 0.01);
         }
         const [figure, spark] = await principal.evaluate((card) => {

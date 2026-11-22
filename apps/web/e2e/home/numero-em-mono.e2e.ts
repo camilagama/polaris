@@ -165,12 +165,8 @@ test.describe("o visor cabe em todas as larguras (AC-2, AC-5)", () => {
             Number.parseFloat(getComputedStyle(node).fontSize)
           )
         );
-      const [hero, ...month] = sizes;
-      expect(
-        hero,
-        "o herói desce só até caber, nunca acima do xl"
-      ).toBeLessThanOrEqual(2 * 20 + 0.05);
-      for (const size of month) {
+      expect(sizes).toHaveLength(4);
+      for (const size of sizes) {
         expect(size).toBeCloseTo(1.5 * 20, 1);
       }
     }
