@@ -4,14 +4,12 @@ import { Button } from "@/ui/button";
 import { Card, CardContent, CardHeader } from "@/ui/card";
 import { MoneyText } from "@/ui/hidden-values";
 import { Separator } from "@/ui/separator";
+import { TextLink } from "@/ui/text-link";
 import { ConfirmedDetails, ConfirmedItems } from "./confirmed-sale-parts";
 import { SaleCustomerPanel } from "./sale-customer-panel";
 import type { ConfirmedSaleView } from "./sale-form-model";
 import { saleDetailHref } from "./sale-history-model";
 import { LeaderRow, Perforation } from "./sale-summary-panel";
-
-const TEXT_LINK =
-  "touch-hit focus-ring rounded-sm underline decoration-input underline-offset-4 hover:decoration-foreground";
 
 /** The confirmed sale exactly as stored: items, totals, payment and fees (the detail page has its own, in `Receipt`). */
 function ConfirmedReceipt({ sale }: { sale: ConfirmedSaleView }) {
@@ -107,13 +105,13 @@ function FirstSaleLine() {
     <CardContent>
       <p className="text-muted-foreground text-support" id={FIRST_SALE_LINE_ID}>
         1ª venda registrada. Veja o Hoje no{" "}
-        <a aria-label="Ver o Início" className={TEXT_LINK} href="/">
+        <TextLink aria-label="Ver o Início" href="/">
           Início
-        </a>{" "}
+        </TextLink>{" "}
         e o resultado estimado em{" "}
-        <a aria-label="Ver o Resultado" className={TEXT_LINK} href="/dashboard">
+        <TextLink aria-label="Ver o Resultado" href="/dashboard">
           Resultado
-        </a>
+        </TextLink>
         .
       </p>
     </CardContent>
@@ -156,9 +154,9 @@ export function ConfirmedSalePanel({
         <ConfirmedReceipt sale={sale} />
         <Separator />
         <CardContent className="grid justify-items-start gap-3">
-          <a className={TEXT_LINK} href={saleDetailHref(sale.saleId)}>
+          <TextLink href={saleDetailHref(sale.saleId)}>
             Ver detalhes e histórico da venda
-          </a>
+          </TextLink>
           <p className="text-muted-foreground text-support">
             O formulário abaixo foi reiniciado para uma nova venda.
           </p>

@@ -43,7 +43,7 @@ jobs:
   changes:
     name: Changed areas
     runs-on: ubuntu-24.04
-    timeout-minutes: 5
+    timeout-minutes: 1
     outputs:
       browser: ${{ steps.changed.outputs.browser }}
       dependencies: ${{ steps.changed.outputs.dependencies }}
@@ -80,7 +80,7 @@ jobs:
   checks:
     name: Checks (lint, types, knip, build, tests)
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 6
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -166,7 +166,7 @@ jobs:
     # manual run, a run with `full` and the `suite-completa` label always run it, and so does a failed `changes`.
     if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.database != 'false') }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    timeout-minutes: 6
     # The gates of the ci suite are split in two jobs, each with its own Postgres 18: this one runs all of them but the
     # ones of CI_SEPARATE_JOBS (packages/db/scripts/gate-runs.ts), which run in database-definer-hardening; the job named
     # `PostgreSQL 18 gates` below collects both. A red job here is a red pull request: it has been green on every pull
@@ -260,7 +260,7 @@ jobs:
     # manual run, a run with `full` and the `suite-completa` label always run it, and so does a failed `changes`.
     if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.database != 'false') }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 4
     # The fuzz of 240 role graphs of definer-hardening runs here beside the main job, on a Postgres 18 of its own, so it
     # no longer waits for the other serial gates. The owner is not a superuser, as in the main job.
     services:
@@ -348,7 +348,7 @@ jobs:
     needs: [changes, database-main, database-definer-hardening]
     if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.database != 'false') }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 5
+    timeout-minutes: 1
     permissions: {}
     steps:
       - env:
@@ -419,7 +419,7 @@ jobs:
     # the same condition as the browser gate, so a failed detection runs it anyway
     if: ${{ !cancelled() && github.event_name != 'push' && (needs.changes.result != 'success' || needs.changes.outputs.browser == 'true') }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 5
     continue-on-error: true
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -483,7 +483,7 @@ jobs:
     needs: changes
     if: ${{ !cancelled() && github.event_name != 'push' && (needs.changes.result != 'success' || needs.changes.outputs.browser == 'true') }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 1
     outputs:
       plan: ${{ steps.plan.outputs.plan }}
       shards: ${{ steps.plan.outputs.shards }}
@@ -568,7 +568,7 @@ jobs:
     # (a pull request whose diff reaches no spec of the gate); the aggregate below accepts that only in a pull request.
     if: ${{ !cancelled() && github.event_name != 'push' && needs.shard-plan.result == 'success' && needs.shard-plan.outputs.selected != '0' && (needs.changes.result != 'success' || needs.changes.outputs.browser == 'true') }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 21
     strategy:
       fail-fast: false
       matrix:
@@ -672,7 +672,7 @@ jobs:
     needs: changes
     if: ${{ !cancelled() && github.event_name != 'push' && (needs.changes.result != 'success' || needs.changes.outputs.browser == 'true') }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 3
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -730,7 +730,7 @@ jobs:
     needs: [changes, shard-plan, offline-poc-browser-part]
     if: ${{ !cancelled() && github.event_name != 'push' && needs.shard-plan.result == 'success' }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 5
+    timeout-minutes: 1
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -752,7 +752,7 @@ jobs:
     needs: [changes, shard-plan, offline-poc-browser-part, shard-coverage, offline-catalog-csp-browser]
     if: ${{ !cancelled() && github.event_name != 'push' }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 5
+    timeout-minutes: 1
     permissions: {}
     steps:
       # green when the plan, every shard, the shard coverage and the catalog CSP test passed,
@@ -782,7 +782,7 @@ jobs:
     needs: changes
     if: ${{ !cancelled() && github.event_name != 'push' && (needs.changes.result != 'success' || needs.changes.outputs.e2e == 'true') }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 13
     services:
       postgres:
         image: postgres:18

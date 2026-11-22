@@ -12,11 +12,14 @@ import { Button } from "@/ui/button";
 import { Card, CardContent } from "@/ui/card";
 import { HelpTip } from "@/ui/help-tip";
 import { Skeleton } from "@/ui/skeleton";
+import { type TitleBack, TitleLine } from "../app-shell/screen-title";
 import { invalidatePreviousWindow } from "../home/previous-window-copy";
 import { useCurrentOrganization } from "../lib/current-organization";
 import { browserStorage } from "../lib/current-organization-model";
 import { orpcClient } from "../lib/orpc";
 import { readWithRetry } from "../lib/read-with-retry";
+import { armHistoryReturn } from "./history-return";
+import { sessionStorageOrNull } from "./sale-attempt-storage";
 import { SaleCancelPanel } from "./sale-cancel-panel";
 import type { SaleNotice } from "./sale-cancellation-model";
 import {
@@ -43,9 +46,21 @@ import { SaleTimeline } from "./sale-timeline";
 
 /** The root of a piece of the screen, as the other screens write it. */
 const UI_ROOT = "grid gap-4 font-sans text-foreground text-sm antialiased";
-/** A link on a line of its own: it gets the 44 px touch area. */
-const LINK =
-  "touch-hit focus-ring rounded-sm underline decoration-input underline-offset-4 hover:decoration-foreground";
+
+function historyBack(saleId: string | null): TitleBack {
+  return {
+    href: "/sales/history",
+    label: "Voltar para o histórico",
+    onClick: (event) => {
+      const plain =
+        !(event.metaKey || event.ctrlKey || event.shiftKey) &&
+        event.button === 0;
+      if (plain && saleId !== null) {
+        armHistoryReturn(sessionStorageOrNull(), saleId);
+      }
+    },
+  };
+}
 
 function StateCard({ children }: { children: ReactNode }) {
   return (
@@ -332,18 +347,19 @@ export function SaleDetailPage() {
   return (
     <div className="grid gap-4">
       <div className={UI_ROOT}>
-        <header className="flex items-center gap-1">
-          <h1 className="text-title">Detalhe da venda</h1>
-          <HelpTip about="Detalhe da venda">
-            A venda confirmada é um registro que não muda. Cancelamento e
-            cliente são registros à parte.
-          </HelpTip>
+        <header>
+          <TitleLine
+            back={historyBack(param.kind === "valid" ? param.saleId : null)}
+          >
+            <div className="flex items-center gap-1">
+              <h1 className="text-title">Detalhe da venda</h1>
+              <HelpTip about="Detalhe da venda">
+                A venda confirmada é um registro que não muda. Cancelamento e
+                cliente são registros à parte.
+              </HelpTip>
+            </div>
+          </TitleLine>
         </header>
-        <p>
-          <a className={LINK} href="/sales/history">
-            Voltar ao histórico
-          </a>
-        </p>
         {param.kind === "valid" ? null : <SaleIdMissing param={param} />}
       </div>
       {param.kind === "valid" ? (

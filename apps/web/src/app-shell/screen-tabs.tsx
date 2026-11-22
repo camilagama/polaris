@@ -19,7 +19,7 @@ import {
   type TabScreenId,
 } from "./navigation-model";
 import { PageLoading } from "./page-loading";
-import { TabPanelScope } from "./screen-title";
+import { TabPanelScope, type TitleBack, TitleLine } from "./screen-title";
 
 /** The links into a tab: the goals of the Início, a new product or one of them, the return of a checkout, the part of Despesas. */
 const TAB_LINK_PARAMETERS = ["meta", "novo", "produto", "retorno", "ver"];
@@ -82,11 +82,11 @@ export interface TabGroup {
 
 /**
  * A phone's way into the tabs of a screen: no strip, but a `menu` of rows that opens each tab, and, with a tab open,
- * `back` above its screen to return to the menu. `showMenu` says the menu is what is on screen; the screens kept for
+ * `back`, the arrow before the title, to return to the menu. `showMenu` says the menu is what is on screen; the screens kept for
  * work typed and not sent stay drawn, hidden, while it is.
  */
 export interface TabPhone {
-  back: ReactNode;
+  back: TitleBack;
   menu: ReactNode;
   showMenu: boolean;
 }
@@ -397,7 +397,8 @@ export function ScreenTabs({
   const [kept, hold] = useKeptPanels();
   const tabs = listedTabs(screen, available, reserved);
   const namesId = useId();
-  const phoneHead = phone?.showMenu ? phone.menu : phone?.back;
+  const phoneMenu = phone?.showMenu ? phone.menu : null;
+  const phoneBack = phone && !phone.showMenu ? phone.back : undefined;
   const trigger = (groupNameId?: string) => (tab: (typeof tabs)[number]) => (
     <ScreenTabTrigger
       groupNameId={groupNameId}
@@ -410,14 +411,20 @@ export function ScreenTabs({
   );
   return (
     <div className="grid gap-5 font-sans text-foreground text-sm antialiased">
-      <h1 className="text-title">{title}</h1>
+      {phoneBack ? (
+        <TitleLine back={phoneBack}>
+          <h1 className="text-title">{title}</h1>
+        </TitleLine>
+      ) : (
+        <h1 className="text-title">{title}</h1>
+      )}
       <Tabs
         className="min-w-0 gap-5"
         onValueChange={select}
         value={phone?.showMenu ? "" : value}
       >
         {phone ? (
-          phoneHead
+          phoneMenu
         ) : (
           <ScreenTabList
             grouped={groups !== undefined}

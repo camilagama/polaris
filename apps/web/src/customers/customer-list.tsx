@@ -13,6 +13,7 @@ import {
   DropdownMenuTrigger,
 } from "@/ui/dropdown-menu";
 import { EmptyState } from "@/ui/empty-state";
+import { TextLink } from "@/ui/text-link";
 import { productInitials } from "../catalog/product-search-model";
 import {
   ListNotice,
@@ -403,12 +404,9 @@ function CustomerRowNotes({
             {syncStateLabel(shownState, !unconfirmedCreation)}
           </Badge>
           {shownState.state === "rejected" ? (
-            <a
-              className="focus-ring touch-hit w-fit rounded-sm text-support underline decoration-input underline-offset-4 hover:decoration-foreground"
-              href="/attention"
-            >
+            <TextLink className="w-fit text-support" href="/attention">
               Resolver em Pendências
-            </a>
+            </TextLink>
           ) : null}
         </div>
       ) : null}

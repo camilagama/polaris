@@ -11,14 +11,19 @@ import { deflateRawSync } from "node:zlib";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   billedMinutes,
+  budgetExitCode,
   databaseWallOf,
   groupOf,
+  overBudget,
   percentile,
+  readBudgets,
+  renderBudget,
   renderMarkdown,
   reportsFromFolder,
   splitJob,
   sumDurations,
   summarize,
+  unmeasured,
   unzip,
   wallOf,
 } from "./ci-timing.mjs";
@@ -635,5 +640,286 @@ describe("reportsFromFolder", () => {
     const folder = mkdtempSync(join(tmpdir(), "ci-timing-test-"));
     folders.push(folder);
     expect(() => reportsFromFolder(folder)).toThrow("no timings-");
+  });
+});
+
+const WORKFLOW_FIXTURE = `name: CI
+env:
+  NAME: x
+jobs:
+  # a comment between jobs
+  checks:
+    name: Checks (lint, types)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 6
+    steps:
+      - name: Lint
+        timeout-minutes: 99
+  database:
+    name: "PostgreSQL 18 gates (main)"
+    timeout-minutes: 4 # 3 min at the 95th percentile
+  nameless:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+  shards:
+    name: Browser gate (shard \${{ matrix.shard }}/\${{ needs.plan.outputs.count }})
+    timeout-minutes: 21
+    strategy:
+      matrix:
+        shard: [1, 2]
+  unbudgeted:
+    name: No timeout here
+    runs-on: ubuntu-24.04
+  dynamic:
+    name: \${{ matrix.name }}
+    timeout-minutes: 9
+other:
+  late:
+    name: Not a job
+    timeout-minutes: 1
+`;
+
+describe("readBudgets", () => {
+  it("reads the timeout of each job under the group name the report uses", () => {
+    expect([...readBudgets(WORKFLOW_FIXTURE)]).toEqual([
+      ["Checks (lint, types)", 6],
+      ["PostgreSQL 18 gates (main)", 4],
+      ["nameless", 3],
+      ["Browser gate", 21],
+    ]);
+  });
+
+  it("takes the shard suffix off only when it is a shard number or an expression", () => {
+    const text = [
+      "jobs:",
+      "  a:",
+      "    name: Gate (shard coverage)",
+      "    timeout-minutes: 5",
+      "  b:",
+      "    name: Gate (shard 2/4)",
+      "    timeout-minutes: 9",
+    ].join("\n");
+    expect([...readBudgets(text)]).toEqual([
+      ["Gate (shard coverage)", 5],
+      ["Gate", 9],
+    ]);
+  });
+
+  it("keeps the largest when two jobs share a group", () => {
+    const text = [
+      "jobs:",
+      "  a:",
+      "    name: Gate (shard 1/2)",
+      "    timeout-minutes: 7",
+      "  b:",
+      "    name: Gate",
+      "    timeout-minutes: 12",
+    ].join("\n");
+    expect(readBudgets(text).get("Gate")).toBe(12);
+  });
+
+  it("finds a budget for exactly the jobs of the real ci.yml that have a timeout", () => {
+    const text = readFileSync(
+      new URL("../.github/workflows/ci.yml", import.meta.url),
+      "utf8"
+    );
+    const budgets = readBudgets(text);
+    expect([...budgets.keys()].sort()).toEqual([
+      "Catalog CSP browser test",
+      "Changed areas",
+      "Checks (lint, types, knip, build, tests)",
+      "Dependency audit",
+      "Lighthouse (mobile, simulated)",
+      "Offline browser gate",
+      "Offline browser gate (plan)",
+      "Offline browser gate (shard coverage)",
+      "Offline persistence browser gate",
+      "PostgreSQL 18 gates",
+      "PostgreSQL 18 gates (definer-hardening)",
+      "PostgreSQL 18 gates (main)",
+      "e2e journeys on the real local stack",
+    ]);
+    for (const minutes of budgets.values()) {
+      expect(minutes).toBeGreaterThan(0);
+    }
+  });
+
+  it("keeps reading the jobs after a comment in the first column", () => {
+    const text = [
+      "jobs:",
+      "# a comment at the margin",
+      "  a:",
+      "    name: A # a note",
+      "    timeout-minutes: 3",
+      "# another",
+      "  b:",
+      "    timeout-minutes: 4",
+    ].join("\n");
+    expect([...readBudgets(text)]).toEqual([
+      ["A", 3],
+      ["b", 4],
+    ]);
+  });
+});
+
+describe("overBudget", () => {
+  const budgets = new Map([
+    ["Checks", 10],
+    ["Browser gate", 20],
+  ]);
+  const limitOfChecks = (10 * 60) / 1.3;
+  const run = (id, ...jobs) => ({ jobs, run: { id } });
+  const checks = (seconds) =>
+    job("Checks", { end: seconds, installEnd: 60, started: 0 });
+  const shard = (n, seconds) =>
+    job(`Browser gate (shard ${n}/2)`, {
+      end: seconds,
+      installEnd: 60,
+      started: 0,
+    });
+
+  it("flags a job whose p95 passed 1/1.3 of the budget in two runs or more", () => {
+    const slow = Math.ceil(limitOfChecks) + 30;
+    const entries = [
+      run(1, checks(slow)),
+      run(2, checks(slow)),
+      run(3, checks(200)),
+    ];
+    const rows = overBudget(entries, budgets);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      n: 3,
+      name: "Checks",
+      slowRuns: 2,
+      timeout: 10,
+    });
+    expect(rows[0].p95).toBeGreaterThan(limitOfChecks);
+    expect(rows[0].limit).toBeCloseTo(limitOfChecks, 5);
+  });
+
+  it("does not flag a single slow run, however slow", () => {
+    const entries = [
+      run(1, checks(590)),
+      run(2, checks(200)),
+      run(3, checks(200)),
+    ];
+    expect(overBudget(entries, budgets)).toEqual([]);
+  });
+
+  it("does not flag a job at the limit", () => {
+    const entries = [1, 2, 3].map((id) =>
+      run(id, checks(Math.floor(limitOfChecks)))
+    );
+    expect(overBudget(entries, budgets)).toEqual([]);
+  });
+
+  it("counts a run once even when two shards of it are slow, and groups the shards", () => {
+    const slow = 20 * 60;
+    const one = overBudget(
+      [
+        run(1, shard(1, slow), shard(2, slow)),
+        run(2, shard(1, 300), shard(2, 300)),
+      ],
+      budgets
+    );
+    expect(one).toEqual([]);
+    const two = overBudget(
+      [
+        run(1, shard(1, slow), shard(2, slow)),
+        run(2, shard(1, 300), shard(2, slow)),
+      ],
+      budgets
+    );
+    expect(two).toHaveLength(1);
+    expect(two[0]).toMatchObject({ n: 4, name: "Browser gate", slowRuns: 2 });
+  });
+
+  it("ignores skipped jobs and jobs with no budget", () => {
+    const skipped = { ...checks(590), conclusion: "skipped" };
+    const unknown = job("Not in the workflow", {
+      end: 3000,
+      installEnd: 60,
+      started: 0,
+    });
+    const entries = [1, 2, 3].map((id) => run(id, skipped, unknown));
+    expect(overBudget(entries, budgets)).toEqual([]);
+  });
+});
+
+describe("unmeasured", () => {
+  it("lists the budgeted groups that never ran in the sample", () => {
+    const budgets = new Map([
+      ["Checks", 10],
+      ["Browser gate", 20],
+      ["Audit", 10],
+    ]);
+    const skipped = {
+      ...job("Audit", { end: 30, installEnd: 20, started: 0 }),
+      conclusion: "skipped",
+    };
+    const entries = [
+      {
+        jobs: [
+          job("Checks", { end: 100, installEnd: 60, started: 0 }),
+          job("Browser gate (shard 1/2)", {
+            end: 100,
+            installEnd: 60,
+            started: 0,
+          }),
+          skipped,
+        ],
+        run: { id: 1 },
+      },
+    ];
+    expect(unmeasured(entries, budgets)).toEqual(["Audit"]);
+    expect(unmeasured([], budgets)).toEqual([
+      "Audit",
+      "Browser gate",
+      "Checks",
+    ]);
+  });
+});
+
+describe("budget report", () => {
+  const row = {
+    limit: 461.5,
+    n: 25,
+    name: "Checks",
+    p95: 540,
+    slowRuns: 3,
+    timeout: 10,
+  };
+  const clean = { over: [], unmeasured: [] };
+
+  it("exits 1 when any event has a job over budget and 0 when none", () => {
+    expect(
+      budgetExitCode({ pull_request: clean, workflow_dispatch: clean })
+    ).toBe(0);
+    expect(
+      budgetExitCode({
+        pull_request: clean,
+        workflow_dispatch: { over: [row], unmeasured: [] },
+      })
+    ).toBe(1);
+  });
+
+  it("does not turn a group with no execution into a failure, but says it", () => {
+    const byEvent = {
+      pull_request: { over: [], unmeasured: ["Dependency audit"] },
+    };
+    expect(budgetExitCode(byEvent)).toBe(0);
+    expect(renderBudget(byEvent)).toContain(
+      "Sem execução na amostra, portanto sem vigia neste evento: Dependency audit."
+    );
+  });
+
+  it("tables the jobs over budget by event", () => {
+    const text = renderBudget({
+      pull_request: { over: [row], unmeasured: [] },
+      workflow_dispatch: clean,
+    });
+    expect(text).toContain("### pull_request");
+    expect(text).toContain("| Checks | 25 | 9,0 | 7,7 | 10 | 3 |");
+    expect(text).toContain("Nenhum job passou de 1/1,3");
   });
 });

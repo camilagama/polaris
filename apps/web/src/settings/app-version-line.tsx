@@ -2,6 +2,7 @@ import { useEffect, useSyncExternalStore } from "react";
 import { calendarDayInTimezone, clockPartsInTimezone } from "../lib/dates";
 import { getUpdateStore } from "../pwa/runtime";
 import type { UpdateSnapshot, UpdateStore } from "../pwa/update-store";
+import { TextLink } from "@/ui/text-link";
 
 /**
  * The only place that speaks of the version (ADR 0041): the build swaps by itself and says
@@ -9,9 +10,6 @@ import type { UpdateSnapshot, UpdateStore } from "../pwa/update-store";
  * Configurações, with the new build that waits and what it waits for. No button and no colour of a notice.
  */
 const PUBLISHED_ZONE = "America/Sao_Paulo";
-const LINK =
-  "focus-ring rounded-sm underline decoration-input underline-offset-4 hover:decoration-foreground";
-
 /**
  * "Versão 2026.10.28 14:30 (a1b2c3) · atualizado em 28/10": the day and the time of the publication in São Paulo, the
  * start of the id (to tell, in the triage of a fix, whether this device has it) and when it went in on this device;
@@ -53,9 +51,9 @@ export function AppVersionLineView({ snapshot }: { snapshot: UpdateSnapshot }) {
       {waiting && snapshot.work.rejected > 0 ? (
         <p className="m-0">
           Nova versão pronta. Entra depois que as pendências forem resolvidas.{" "}
-          <a className={LINK} href="/attention">
+          <TextLink inline href="/attention">
             Ver pendências
-          </a>
+          </TextLink>
         </p>
       ) : null}
       {waiting && snapshot.work.rejected === 0 ? (
