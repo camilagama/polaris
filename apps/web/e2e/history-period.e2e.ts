@@ -252,7 +252,7 @@ for (const viewport of FORM_VIEWPORTS) {
         .toBe(true);
     });
 
-    test("o painel do período não tem campo de data digitada e mantém a altura ao abrir, marcar o início e marcar o fim", async ({
+    test("o painel do período não tem campo de data digitada e mantém a altura ao abrir e ao marcar o início, e o toque do fim fecha o painel", async ({
       page,
     }) => {
       const asked = await openHistory(page);
