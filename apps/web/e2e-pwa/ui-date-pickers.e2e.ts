@@ -2,7 +2,7 @@
 import type { Locator, Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 import { watchCspViolations } from "../e2e/csp-fixture";
-import { expectNoTypedDates, panelHeight } from "../e2e/date-pickers";
+import { expectNoTypedDates, panelHeight, touchDay } from "../e2e/date-pickers";
 import { expectMotionLevel } from "./motion-expect";
 import { axeFaults } from "./ui-guardrails/measures";
 
@@ -596,6 +596,10 @@ for (const viewport of VIEWPORTS) {
         await expectStill(popup.getByRole("grid").first());
         const before = await popup.boundingBox();
         const heightBefore = await panelHeight(popup);
+        const clear = popup.locator("button", { hasText: "Limpar" });
+        if (state === "sem período") {
+          await expect(clear).toBeHidden();
+        }
 
         await day(popup, "2026-10-10").click();
         await expect(
@@ -606,6 +610,7 @@ for (const viewport of VIEWPORTS) {
         expect(after?.height).toBeCloseTo(before?.height ?? 0, 0);
         expect(after?.width).toBeCloseTo(before?.width ?? 0, 0);
         expect(await panelHeight(popup)).toBeCloseTo(heightBefore, 1);
+        await expect(clear).toBeVisible();
       });
     }
 
@@ -1085,6 +1090,37 @@ test.describe("Hoje desligado, com o motivo à vista", () => {
     ).not.toHaveAttribute("aria-disabled");
     await expect(popup.locator("[data-date-footer] p")).toHaveCount(0);
   });
+});
+
+test.describe("o painel do período com a frase do 1º dia quebrando", () => {
+  for (const size of [
+    { fontPixels: 20, height: 740, width: 320 },
+    { fontPixels: 16, height: 740, width: 360 },
+  ]) {
+    test(`período a ${size.width} px com a letra em ${size.fontPixels} px: a frase do 1º dia, com o ano de outro ano, quebra sem mudar a altura do painel`, async ({
+      page,
+    }) => {
+      await page.setViewportSize(size);
+      await openGallery(page);
+      await page.evaluate((pixels) => {
+        document.documentElement.style.fontSize = `${pixels}px`;
+      }, size.fontPixels);
+      const popup = await openPicker(
+        page,
+        "Período das vendas,",
+        "Período das vendas"
+      );
+      await expectStill(popup.getByRole("grid").first());
+      const before = await panelHeight(popup);
+
+      await touchDay(popup, "2025-10-10");
+      await expect(
+        popup.getByText("Início 10/10/2025. Escolha o último dia.")
+      ).toBeVisible();
+      await expectStill(popup.getByRole("grid").first());
+      expect(await panelHeight(popup)).toBeCloseTo(before, 1);
+    });
+  }
 });
 
 test.describe("Hoje desligado, a 360 x 600 e a 320 px com fonte de 20 px", () => {

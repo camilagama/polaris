@@ -173,6 +173,14 @@ for (const viewport of FORM_VIEWPORTS) {
       // "Limpar" empties the period: the pill goes and the list is asked for with no period
       const clearing = await openPeriod(page);
       await clearing.getByRole("button", { name: "Limpar" }).click();
+      if (onPhone(page)) {
+        await expect(
+          clearing
+            .getByRole("group", { name: "Atalhos do período" })
+            .getByRole("button")
+            .first()
+        ).toBeFocused();
+      }
       await applyEditor(page, clearing);
       await expect(clearing).toBeHidden();
       await expect(pill(page, "Período")).toHaveCount(0);

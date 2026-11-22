@@ -90,9 +90,8 @@ export async function panelHeight(popup: Locator) {
     const shortcuts = root.querySelector<HTMLElement>(
       'fieldset[aria-label="Atalhos do período"]'
     );
-    const footer = root.querySelector('p[aria-live="polite"]')?.parentElement
-      ?.parentElement?.parentElement;
-    if (!(shortcuts && footer instanceof HTMLElement)) {
+    const footer = root.querySelector<HTMLElement>("[data-range-footer]");
+    if (!(shortcuts && footer)) {
       throw new Error("o painel do período não tem atalhos ou rodapé");
     }
     if (shortcuts.offsetParent !== footer.offsetParent) {

@@ -98,9 +98,10 @@ const LONGEST_STATUS = "Início 31/12/2099. Escolha o último dia.";
 
 /**
  * The line under the panel: "Limpar" and, once the first day is marked, the sentence that asks for the last one. The row
- * is always there, with the height of the longest sentence beside "Limpar" in its place (an invisible copy shares the
- * cell, so the wrapping is the same at any letter size), so the panel keeps one height from opening to the last day. The sentence stays in the tree
- * when there is nothing to say, so the screen reader hears it when it fills.
+ * is always there, with the height of the longest sentence beside "Limpar" in its place, so the panel keeps one height
+ * from opening to the last day. The longest sentence is an invisible copy in the same grid cell, drawn by
+ * `content: attr()` so no text query finds it twice: it wraps as the real one does at any letter size. The sentence
+ * stays in the tree when there is nothing to say, so the screen reader hears it when it fills.
  */
 export function DateRangeFooter({
   canClear,
@@ -121,7 +122,10 @@ export function DateRangeFooter({
   const status =
     half && `Início ${startDayText(half, today)}. Escolha o último dia.`;
   return (
-    <div className={cn("shrink-0 border-border border-t pt-2", HOLD_WIDTH)}>
+    <div
+      className={cn("shrink-0 border-border border-t pt-2", HOLD_WIDTH)}
+      data-range-footer
+    >
       <div className="flex min-h-ctl-sm items-center justify-between gap-2">
         <div className="grid min-w-0 text-muted-foreground text-support">
           <p
@@ -133,10 +137,9 @@ export function DateRangeFooter({
           </p>
           <span
             aria-hidden="true"
-            className="invisible col-start-1 row-start-1"
-          >
-            {LONGEST_STATUS}
-          </span>
+            className="invisible col-start-1 row-start-1 after:content-[attr(data-text)]"
+            data-text={LONGEST_STATUS}
+          />
         </div>
         {clearable ? (
           <Button
@@ -291,7 +294,12 @@ export function DateRangePanel({
   );
   const onlyReasonId = useId();
 
-  const clear = useCallback(() => commit(null), [commit]);
+  // "Limpar" goes out of sight with nothing left to clear: the focus moves to the shortcuts first, or the Dialog would
+  // lose it to the page
+  const clear = useCallback(() => {
+    shortcutRow.current?.querySelector("button")?.focus();
+    commit(null);
+  }, [commit]);
 
   const selected = {
     from: parseIsoDate(draft?.from),

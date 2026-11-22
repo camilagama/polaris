@@ -241,7 +241,7 @@ const HIDDEN_CLEAR = /<button[^>]*invisible[^>]*>Limpar<\/button>/;
 const INPUT_TAG = /<input[\s>]/;
 const EXPANDED_BUTTON = /<button[^>]*aria-expanded=/;
 const INVISIBLE_COPY =
-  /<span[^>]*aria-hidden="true"[^>]*invisible[^>]*>Início 31\/12\/2099\. Escolha o último dia\.<\/span>/;
+  /<span[^>]*aria-hidden="true"[^>]*invisible[^>]*data-text="Início 31\/12\/2099\. Escolha o último dia\."[^>]*>/;
 const SHORTCUT_GROUP = /<fieldset[^>]*aria-label="Atalhos do período"[^>]*>/;
 const PRESSED_SHORTCUT = /<button[^>]*aria-pressed="true"[^>]*>/;
 const STATUS_LINE = /<p[^>]*aria-live="polite"[^>]*sr-only/;
@@ -339,6 +339,7 @@ describe("DateRangeFooter, a frase do 1º dia escolhido", () => {
   const footer = (half: string) =>
     html(
       <DateRangeFooter
+        canClear={false}
         clearable={false}
         half={half}
         onClear={noop}
