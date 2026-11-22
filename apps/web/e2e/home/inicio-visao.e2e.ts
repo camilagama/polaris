@@ -27,6 +27,12 @@ import {
   TYPE_DATES,
 } from "./shared";
 
+/** `--breakpoint-md` in `packages/ui/src/theme.css`: 47.5 rem. */
+const MD_MIN_WIDTH = 760;
+
+/** `md:min-h-50` of `ERROR_PANEL_CLASS` in `home-goal.tsx`: 12.5 rem. */
+const ERROR_PANEL_MIN_HEIGHT = 200;
+
 /** The link opens the Metas tab and the address keeps it: `aba=metas`, and no `meta=nova` (corte resultado-v2, AC-13). */
 const DASHBOARD_GOALS_PATH = /\/dashboard\?aba=metas$/;
 
@@ -1767,7 +1773,7 @@ test.describe("erro por bloco (§ 5.2): Nova venda sempre visível e levando à 
     });
   }
 
-  for (const width of [760, 1024]) {
+  for (const width of [MD_MIN_WIDTH, 1024]) {
     test(`meta quebrada a ${width} px com nome longo: a Meta em erro não passa da altura com dados e a diferença é a do painel, antes e depois de Tentar novamente`, async ({
       page,
     }) => {
@@ -1811,9 +1817,7 @@ test.describe("erro por bloco (§ 5.2): Nova venda sempre visível e levando à 
         .toBeLessThan(withData.panel);
       const failed = await heights();
       expect(failed.card).toBeLessThan(withData.card);
-      if (width >= 768) {
-        expect(failed.panel).toBeGreaterThanOrEqual(200);
-      }
+      expect(failed.panel).toBeGreaterThanOrEqual(ERROR_PANEL_MIN_HEIGHT);
       expect(withData.card - failed.card).toBeCloseTo(
         withData.panel - failed.panel,
         2
