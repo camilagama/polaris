@@ -218,6 +218,61 @@ test("Alterar data e ajustes: com a altura do painel ainda abrindo, levar um con
   ).toBeVisible();
 });
 
+test("Alterar data e ajustes: com a altura do painel ainda fechando, o conteúdo dentro do painel não rola e a página não pula", async ({
+  page,
+}, testInfo) => {
+  test.skip(
+    testInfo.project.name !== "chromium-desktop",
+    "no celular o painel fecha sem animação de altura"
+  );
+  await openSaleLab(page, "claro");
+  await page.getByRole("button", { name: "Alterar data e ajustes" }).click();
+  const close = page.getByRole("button", { name: "Fechar data e ajustes" });
+  await expect(close).toHaveAttribute("aria-controls", ANY_ID);
+  const panel = page.locator(
+    `[id="${await close.getAttribute("aria-controls")}"]`
+  );
+  await expect
+    .poll(() => panel.evaluate((node) => node.getAnimations().length))
+    .toBe(0);
+  const add = page.getByRole("button", { name: "Adicionar ajuste" });
+  await add.focus();
+  const before = await panel.evaluate((node) => ({
+    height: node.getBoundingClientRect().height,
+    pageY: window.scrollY,
+  }));
+  expect(before.height).toBeGreaterThan(0);
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send("Animation.enable");
+  await cdp.send("Animation.setPlaybackRate", { playbackRate: 0 });
+  await close.click();
+  await expect
+    .poll(() =>
+      panel.evaluate((node) =>
+        node.getAnimations().map((animation) => animation.playState)
+      )
+    )
+    .toEqual(["running"]);
+  const { height, ...closing } = await panel.evaluate((node) => ({
+    contentScrollTop: node.firstElementChild?.scrollTop ?? -1,
+    height: node.getBoundingClientRect().height,
+    overflow: getComputedStyle(node).overflowY,
+    pageY: window.scrollY,
+    scrollTop: node.scrollTop,
+  }));
+  expect(height).toBeGreaterThan(0);
+  expect(closing).toEqual({
+    contentScrollTop: 0,
+    overflow: "clip",
+    pageY: before.pageY,
+    scrollTop: 0,
+  });
+  await cdp.send("Animation.setPlaybackRate", { playbackRate: 1 });
+  await expect(
+    page.getByRole("button", { name: "Alterar data e ajustes" })
+  ).toBeVisible();
+});
+
 /**
  * The touch area of a button: the `::before` of `touch-hit` when it is on (it is positioned from the padding box,
  * inside the border), or the box itself.
