@@ -104,6 +104,57 @@ for (const context of CONTEXTS) {
   });
 }
 
+/**
+ * Under 760 px the button with neither the time nor `fill` (Estoque takes the line with its word) is the icon alone: its
+ * drawn center must be the center of the square.
+ */
+const ICON_ONLY = [
+  { name: "Atualizar", screen: "início com vendas" },
+  { name: "Atualizar metas", screen: "resultado metas" },
+  { name: "Atualizar estoque e perfis", screen: "venda com itens" },
+] as const;
+
+const iconOffset = (button: Locator) =>
+  button.evaluate((element) => {
+    const icon = element.querySelector("svg");
+    if (!icon) {
+      throw new Error("o botão não tem ícone");
+    }
+    const center = (target: Element) => {
+      const rect = target.getBoundingClientRect();
+      return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
+    };
+    const middle = center(element);
+    const drawn = center(icon);
+    return { x: drawn.x - middle.x, y: drawn.y - middle.y };
+  });
+
+for (const context of CONTEXTS.filter(({ width }) => width !== "1280")) {
+  for (const colorScheme of ["light", "dark"] as const) {
+    test.describe(`ícone no centro · ${context.name} · ${colorScheme}`, () => {
+      test.use({
+        colorScheme,
+        hasTouch: context.touch,
+        isMobile: context.touch,
+        viewport: VIEWPORTS[context.width],
+      });
+
+      for (const { name, screen } of ICON_ONLY) {
+        test(`${screen}: o centro do ícone de "${String(name)}" é o do botão (±1 px)`, async ({
+          page,
+        }) => {
+          await openScreen(page, screen);
+          const button = page.getByRole("button", { exact: true, name });
+          await expect(button).toBeVisible();
+          const offset = await iconOffset(button);
+          expect(Math.abs(offset.x), "eixo x").toBeLessThanOrEqual(1);
+          expect(Math.abs(offset.y), "eixo y").toBeLessThanOrEqual(1);
+        });
+      }
+    });
+  }
+}
+
 const spinOf = (read: { button: Locator }) =>
   read.button
     .locator("svg")

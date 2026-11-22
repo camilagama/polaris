@@ -94,7 +94,10 @@ function startDayText(from: IsoDate, today: IsoDate): string {
   return from.slice(0, 4) === today.slice(0, 4) ? text.slice(0, 5) : text;
 }
 
-const LONGEST_STATUS = "Início 31/12/2099. Escolha o último dia.";
+const statusText = (dayText: string) =>
+  `Início ${dayText}. Escolha o último dia.`;
+
+const LONGEST_STATUS = statusText("31/12/2099");
 
 /**
  * The line under the panel: "Limpar" and, once the first day is marked, the sentence that asks for the last one. The row
@@ -119,8 +122,7 @@ export function DateRangeFooter({
   statusId: string | undefined;
   today: IsoDate;
 }) {
-  const status =
-    half && `Início ${startDayText(half, today)}. Escolha o último dia.`;
+  const status = half && statusText(startDayText(half, today));
   return (
     <div
       className={cn("shrink-0 border-border border-t pt-2", HOLD_WIDTH)}
