@@ -156,6 +156,7 @@ import {
 } from "@/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/ui/tabs";
 import { Textarea } from "@/ui/textarea";
+import { TextLink } from "@/ui/text-link";
 import { ThemeSegmented } from "@/ui/theme-segmented";
 import { ThemeSwitch } from "@/ui/theme-switch";
 import { Thumbnail, type ThumbnailSize } from "@/ui/thumbnail";
@@ -863,6 +864,16 @@ export function UiGallery() {
               <Button variant="link">Ver detalhes</Button>
               <Button disabled>Indisponível</Button>
             </div>
+          </Section>
+
+          <Section title="Link no texto">
+            <p className="max-w-prose text-muted-foreground">
+              Para ir a outro lugar a partir de uma frase, como em{" "}
+              <TextLink href="/ajuda" inline>
+                Ajuda e contato
+              </TextLink>
+              . A ação de um bloco é botão, não este link.
+            </p>
           </Section>
 
           <Section title="Tamanho por papel">
