@@ -10,6 +10,7 @@ import {
   screen,
   waitFor,
 } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const getSale = vi.fn();
@@ -29,6 +30,7 @@ vi.mock("../lib/orpc", () => ({
 
 import { StaticOrganizationProvider } from "../lib/current-organization";
 import { SaleDetailPage } from "./sale-detail-page";
+import type { ReturnSaleResult } from "./sale-return-model";
 
 const ORGANIZATION = {
   id: "0199c2d0-0000-7000-8000-00000000a001",
@@ -43,11 +45,44 @@ const RETURN_HEADING = { level: 2, name: "Registrar devolução" };
 const RETURNED_FIELD = { name: `Devolvido: ${ITEM_LABEL} (até 2)` };
 const REREAD_MARKER = "Conferida no balcão";
 const REREAD_MARKER_LINE = `Observação: ${REREAD_MARKER}`;
+const DRAFT_NOTE = "Zíper quebrado";
+const HISTORY_ROW = /v1 · Cliente removido/;
+const REASON_FIELD = { name: /Motivo/ };
+const NOTE_FIELD = { name: /Observação/ };
+const RETURNED_FIELD_AFTER = { name: `Devolvido: ${ITEM_LABEL} (até 1)` };
 
 const NO_CUSTOMER_LINK: SaleCustomerLinkReadModel = {
   current: { customerId: null, version: 0 },
   history: [],
   saleId: SALE_ID,
+};
+
+/** What the customer card reads after the return: a link that is not the one it showed before. */
+const UNASSIGNED_LINK: SaleCustomerLinkReadModel = {
+  current: { customerId: null, version: 1 },
+  history: [
+    {
+      action: "unassign",
+      createdAt: "2026-06-11T13:00:00.000Z",
+      customerId: null,
+      version: 1,
+    },
+  ],
+  saleId: SALE_ID,
+};
+
+const RETURN_RESULT: ReturnSaleResult = {
+  lines: [{ position: 0, restockedQuantity: 1, returnedQuantity: 1 }],
+  replayed: false,
+  saleReturn: {
+    commandId: "00000000-0000-4000-8000-000000000110",
+    id: "00000000-0000-4000-8000-000000000111",
+    reasonCode: "defective",
+    reasonNote: DRAFT_NOTE,
+    returnedAt: "2026-06-11T12:00:00.000Z",
+    returnedBy: "user_1",
+    saleId: SALE_ID,
+  },
 };
 
 /** `note` adds a return to the history without moving the available quantities, to tell when a new read is on screen. */
@@ -202,5 +237,54 @@ describe("the panels of the sale detail after a change to the returnable quantit
     expect(getCustomerLink).toHaveBeenCalledTimes(1);
     expect(screen.getByRole("heading", RETURN_HEADING)).toBeTruthy();
     expect(screen.queryByRole("button", REGISTER_RETURN)).toBeNull();
+  });
+
+  it("remounts the customer panel after a return the server accepted, and the reopened return panel keeps nothing of the old draft", async () => {
+    getSale.mockResolvedValueOnce(detail(0)).mockResolvedValueOnce(detail(1));
+    getCustomerLink
+      .mockResolvedValueOnce(NO_CUSTOMER_LINK)
+      .mockResolvedValueOnce(UNASSIGNED_LINK);
+    returnSale.mockResolvedValue(RETURN_RESULT);
+    renderPage();
+    await screen.findByText("Esta venda nunca teve cliente associado.");
+
+    fireEvent.click(await screen.findByRole("button", REGISTER_RETURN));
+    fireEvent.change(await screen.findByRole("textbox", RETURNED_FIELD), {
+      target: { value: "1" },
+    });
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("combobox", REASON_FIELD));
+    await user.click(
+      await screen.findByRole("option", { name: "Item com defeito" })
+    );
+    fireEvent.change(await screen.findByRole("textbox", NOTE_FIELD), {
+      target: { value: DRAFT_NOTE },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Revisar devolução" }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Confirmar devolução" })
+    );
+
+    await screen.findByText("O cliente foi removido desta venda.");
+    expect(screen.getByText(HISTORY_ROW)).toBeTruthy();
+    expect(returnSale).toHaveBeenCalledTimes(1);
+    expect(returnSale).toHaveBeenCalledWith(
+      expect.objectContaining({
+        items: [expect.objectContaining({ position: 0, returnedQuantity: 1 })],
+        reasonCode: "defective",
+        reasonNote: DRAFT_NOTE,
+      })
+    );
+    expect(getCustomerLink).toHaveBeenCalledTimes(2);
+    expect(getSale).toHaveBeenCalledTimes(2);
+    expect(screen.queryByRole("heading", RETURN_HEADING)).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", REGISTER_RETURN));
+    const returned = await screen.findByRole("textbox", RETURNED_FIELD_AFTER);
+    expect((returned as HTMLInputElement).value).toBe("");
+    expect(screen.queryByDisplayValue(DRAFT_NOTE)).toBeNull();
+    expect(screen.getByRole("combobox", REASON_FIELD).textContent).toContain(
+      "Sem motivo informado"
+    );
   });
 });
