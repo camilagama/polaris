@@ -15,7 +15,7 @@ import {
   FORM_WIDTHS,
   sizeFor,
 } from "./form-dialog-checks";
-import { expectGeist, expectMono } from "./mono-face";
+import { expectMono } from "./mono-face";
 import {
   assertNoEllipsis,
   assertNoPageScroll,
@@ -587,7 +587,7 @@ test("registra uma despesa com valor em formato brasileiro e a soma do período 
   );
 });
 
-test("o total do período é Geist Mono e o valor de cada despesa da lista segue em Geist", async ({
+test("o total do período e o valor de cada despesa da lista são Geist Mono", async ({
   page,
 }) => {
   const server = new FakeExpenseServer();
@@ -602,7 +602,7 @@ test("o total do período é Geist Mono e o valor de cada despesa da lista segue
   const total = page.getByText("Total do período").locator("..");
   await expect(total).toContainText("1.500,50");
   await expectMono(total.locator("[data-money]"), "o total do período");
-  await expectGeist(
+  await expectMono(
     row(page, "Aluguel de outubro").locator("[data-money]"),
     "o valor da despesa na lista"
   );
@@ -2185,7 +2185,7 @@ for (const viewport of FORM_VIEWPORTS) {
     await expect(footer).toContainText("Total na tela");
     await expect(footer).toContainText("R$ 1.500,80");
     await expect(footer).toContainText("3 despesas");
-    const value = footer.locator(".tabular-nums");
+    const value = footer.locator(".tabular-nums").first();
     await expect(value).toHaveCSS("text-align", "right");
     await expect(value).toHaveCSS("font-variant-numeric", TABULAR_NUMS);
     const filled = await footer.boundingBox();
@@ -2222,7 +2222,10 @@ for (const viewport of [
     await expect(footer).toContainText("50 despesas · há mais");
     const count = footer.getByText("50 despesas · há mais");
     const countBox = await count.boundingBox();
-    const valueBox = await footer.locator(".tabular-nums").boundingBox();
+    const valueBox = await footer
+      .locator(".tabular-nums")
+      .first()
+      .boundingBox();
     expect(countBox?.height ?? 99).toBeLessThanOrEqual(24);
     expect(valueBox).not.toBeNull();
     if (viewport.width === 320) {
@@ -2268,7 +2271,7 @@ for (const width of [480, 1280]) {
       expect(box).not.toBeNull();
       return (box?.x ?? 0) + (box?.width ?? 0);
     };
-    const footerValue = page.locator("[data-list-total] .tabular-nums");
+    const footerValue = page.locator("[data-list-total] .tabular-nums").first();
     const rowValues = page.locator("[data-expense-id] p.tabular-nums");
     const expectColumn = async () => {
       await expect(rowValues).toHaveCount(2);
@@ -2493,7 +2496,7 @@ test.describe("a 320 px com letra de 20 px", () => {
 
       const footer = page.locator("[data-list-total]");
       await expect(footer).toContainText("50 despesas · há mais");
-      const value = footer.locator(".tabular-nums");
+      const value = footer.locator(".tabular-nums").first();
       await expect(value).toHaveText("R$ 75.025,00");
       const [footerBox, valueBox, countBox] = await Promise.all([
         footer.boundingBox(),

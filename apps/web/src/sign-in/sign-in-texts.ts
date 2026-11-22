@@ -9,6 +9,10 @@ export const SIGN_IN_PAGE_TITLE = "Entrar";
 /** The one line of help on `/entrar` (v5.2), under the Google button: what a first-timer needs before choosing. */
 export const SIGN_IN_FIRST_TIME = "Primeira vez? O botão também cria a conta.";
 
+/** The line under the drawing of the right half (from 1024 px); decoration, out of the accessibility tree. */
+export const ENTRY_ART_PHRASE =
+  "Vendas, estoque e resultado da sua loja, no celular e sem internet.";
+
 export const GOOGLE_BUTTON = "Continuar com o Google";
 export const GOOGLE_BUTTON_PENDING = "Abrindo o Google…";
 export const GOOGLE_RETRY = "Tentar novamente";

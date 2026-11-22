@@ -11,7 +11,7 @@ import {
   useSidebar,
 } from "@/ui/sidebar";
 import { leaveForReturn } from "../lib/kept-for-return";
-import { isPlainClick } from "../subscription/limit-help";
+import { isPlainClick } from "../lib/plain-click";
 import { limitUsageText } from "../subscription/limit-help-model";
 import type { PlanCardView } from "../subscription/plan-notice";
 import { PRO_PITCH } from "../subscription/subscription-model";

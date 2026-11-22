@@ -30,7 +30,7 @@ import { navigateInApp } from "../app-shell/address";
 import { tryConnectionNow } from "../lib/browser-connection";
 import { focusLater } from "../lib/focus";
 import { leaveForReturn } from "../lib/kept-for-return";
-import { isPlainClick } from "../subscription/limit-help";
+import { isPlainClick } from "../lib/plain-click";
 import { UnsentWorkScope, useUnsentWorkScope } from "../lib/unsent-work";
 import {
   PRODUCT_FORM_ID,

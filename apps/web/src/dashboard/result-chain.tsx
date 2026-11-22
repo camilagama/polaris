@@ -1,6 +1,7 @@
 import ArrowRightIcon from "lucide-react/dist/esm/icons/arrow-right";
 import { Fragment } from "react";
 import { buttonVariants } from "@/ui/button";
+import { Figure } from "@/ui/figure";
 import { MoneyText } from "@/ui/hidden-values";
 import { cn } from "@/lib/utils";
 import {
@@ -44,22 +45,32 @@ function rowClass(row: ChainRow): string {
  * The dotted line from the end of the name to the value: it fills what is left of the cell and says nothing. Its 1 rem
  * floor holds the line apart from the name, but in a window of 22 rem or less (320 px with the font at 14.6 px or more)
  * the floor plus the longest word of a name is wider than the card, so there the line may shrink to nothing; below
- * 18 rem of card it is hidden, with the name above the value. The limit is in rem because a media query follows the
+ * 19 rem of card it is hidden, with the name above the value. The limit is in rem because a media query follows the
  * browser font, what makes a window of 320 px with 17 px letters narrow in rem; in px it would not catch that case.
  */
 const LEADER =
-  "min-w-4 max-[22rem]:min-w-0 flex-1 translate-y-[-0.3em] border-input border-b border-dotted @max-[18rem]:hidden";
+  "min-w-4 max-[22rem]:min-w-0 flex-1 translate-y-[-0.3em] border-input border-b border-dotted @max-[19rem]:hidden";
 
 /**
- * The card measures its own box (`@container`): narrower than 18 rem (320 px with the font at 17 px or more, 360 px
- * with 19 px or more) the name of the line and its value no longer fit side by side, so each row stacks them, the name
+ * The card measures its own box (`@container`): narrower than 19 rem (320 px at the default font of 16 px, 360 px
+ * with 18 px or more; the value is in Geist Mono, wider than the Geist of the name) the name of the line and its value
+ * no longer fit side by side, so each row stacks them, the name
  * above the value, and the value keeps the whole width of the card instead of rolling the table sideways. The dotted
  * line has nothing to lead to.
  */
-const STACKED_TABLE = "@max-[18rem]:block @max-[18rem]:[&_tbody]:block";
-const STACKED_ROW = "@max-[18rem]:grid";
+const STACKED_TABLE = "@max-[19rem]:block @max-[19rem]:[&_tbody]:block";
+const STACKED_ROW = "@max-[19rem]:grid";
 const STACKED_VALUE =
-  "@max-[18rem]:pt-0 @max-[18rem]:pl-4 @max-[18rem]:text-left";
+  "@max-[19rem]:pt-0 @max-[19rem]:pl-4 @max-[19rem]:text-left";
+
+/**
+ * Side by side, the value is at least as wide as "R$ 9.999,99" in the Geist Mono of a line (11 characters of 0.6 em at
+ * `text-sm`, 0.875 rem: 5.775 rem, in rem so the larger result line has the same floor): the name, which takes the rest of
+ * the row (`w-full`), then has the same width in every period whose values fit there, so a name does not wrap in one
+ * period and not in the other and the card keeps its height. A wider value widens the column, as before. The floor is on
+ * the value and not on the cell because the name's `w-full` shrinks the cell to its content.
+ */
+const VALUE_FLOOR = "inline-block min-w-[5.775rem] @max-[19rem]:min-w-0";
 
 const EXPENSES_LINK = cn(
   buttonVariants({ size: "xs", variant: "ghost" }),
@@ -111,7 +122,7 @@ export function ResultChain({
                   className={cn(
                     "h-auto w-full whitespace-normal pr-0 align-top font-[weight:inherit] text-[length:inherit] text-foreground",
                     row.kind === "result" ? "pt-4 pb-2.5" : "py-2",
-                    "@max-[18rem]:pr-4 @max-[18rem]:pb-0"
+                    "@max-[19rem]:pr-4 @max-[19rem]:pb-0"
                   )}
                   scope="row"
                 >
@@ -128,26 +139,28 @@ export function ResultChain({
                 </TableHead>
                 <TableCell
                   className={cn(
-                    "pl-2 text-right align-top tabular-nums",
+                    "pl-2 text-right align-top",
                     STACKED_VALUE,
                     row.kind === "result" ? "pt-4 pb-2.5" : "py-2",
                     row.negative && row.kind !== "line" && "text-destructive"
                   )}
                 >
-                  {row.value === EMPTY_VALUE ? (
-                    <>
-                      <span aria-hidden="true">{EMPTY_VALUE}</span>
-                      <span className="sr-only">sem valor</span>
-                    </>
-                  ) : (
-                    <MoneyText text={row.value} />
-                  )}
+                  <Figure className={VALUE_FLOOR}>
+                    {row.value === EMPTY_VALUE ? (
+                      <>
+                        <span aria-hidden="true">{EMPTY_VALUE}</span>
+                        <span className="sr-only">sem valor</span>
+                      </>
+                    ) : (
+                      <MoneyText text={row.value} />
+                    )}
+                  </Figure>
                 </TableCell>
               </TableRow>
               {row.id === "operatingExpenses" && canCreateExpense ? (
                 <TableRow className="border-b-0 hover:bg-transparent">
                   <TableCell
-                    className="pt-0 pb-2 @max-[18rem]:pl-4"
+                    className="pt-0 pb-2 @max-[19rem]:pl-4"
                     colSpan={2}
                   >
                     <div className="flex">

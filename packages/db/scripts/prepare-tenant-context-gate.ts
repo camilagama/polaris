@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { Pool } from "pg";
+import { rollbackAndRelease } from "./gate-roles";
 
 const gateDatabase =
   process.env.POLARIS_GATE_DATABASE ??
@@ -240,12 +241,14 @@ async function main() {
       assert.match(retryRow?.token ?? "", retryTokenPattern);
     }
 
-    await pool.query("BEGIN");
+    const client = await pool.connect();
     try {
-      await pool.query("DROP TABLE public.rls_poc_operations");
-      await pool.query("COMMIT");
+      await client.query("BEGIN");
+      await client.query("DROP TABLE public.rls_poc_operations");
+      await client.query("COMMIT");
+      client.release();
     } catch (error) {
-      await pool.query("ROLLBACK");
+      await rollbackAndRelease(client);
       throw error;
     }
 

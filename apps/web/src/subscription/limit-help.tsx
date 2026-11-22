@@ -20,6 +20,7 @@ import { useConnectionOnline } from "../lib/browser-connection";
 import { leaveForReturn } from "../lib/kept-for-return";
 import { useCurrentOrganization } from "../lib/current-organization";
 import { orpcClient } from "../lib/orpc";
+import { isPlainClick } from "../lib/plain-click";
 import { planRead } from "../lib/plan-read";
 import {
   LIMIT_ASK_OWNER,
@@ -138,18 +139,6 @@ export function useLimitFocus(
     }
   }, [asked, target]);
   return useCallback(() => setAsked((count) => count + 1), []);
-}
-
-/** A plain click: a new tab or window asked by a key or the middle button keeps the browser's own way. */
-export function isPlainClick(event: MouseEvent<HTMLAnchorElement>): boolean {
-  return !(
-    event.defaultPrevented ||
-    event.button !== 0 ||
-    event.metaKey ||
-    event.ctrlKey ||
-    event.shiftKey ||
-    event.altKey
-  );
 }
 
 /**

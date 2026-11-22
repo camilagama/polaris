@@ -89,7 +89,9 @@ describe("Mais vendidos do mês: a marcação de cada linha", () => {
 
   it("a posição é uma coluna da linha, e nada fica pendurado em posição absoluta fora da miniatura", () => {
     for (const [index, row] of rows.entries()) {
-      expect(row).toContain(`data-top-rank="">${index + 1}<`);
+      expect(row).toMatch(
+        new RegExp(`data-top-rank=""><span[^>]*data-figure="">${index + 1}<`)
+      );
       expect(row.replace(IMAGE_TAG, "")).not.toMatch(ABSOLUTE_CLASS);
     }
   });
@@ -106,8 +108,8 @@ describe("Mais vendidos do mês: a marcação de cada linha", () => {
     const html = renderToStaticMarkup(
       <TopProductsBlock products={PRODUCTS} salesCount={9} />
     );
-    expect(html).toContain("--top-value:9ch");
-    expect(html).toContain("--top-units:6ch");
+    expect(html).toContain("--top-value:5.4em");
+    expect(html).toContain("--top-units:3.2em");
     expect(html).not.toContain("ml-[calc");
     expect(html).toContain("@min-[20.75rem]:col-end-6");
   });

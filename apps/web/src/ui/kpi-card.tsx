@@ -290,6 +290,8 @@ export interface KpiRange {
   max: number;
   onBlur: () => void;
   onChange: (index: number) => void;
+  /** The control says the day by its own `valueText`: the tile keeps the title out of the live region while the control has the focus. */
+  onFocus?: () => void;
   value: number;
   valueText: string;
 }
@@ -326,6 +328,7 @@ function SparkSlot({
           min={0}
           onBlur={range.onBlur}
           onChange={change}
+          onFocus={range.onFocus}
           step={1}
           type="range"
           value={range.value}

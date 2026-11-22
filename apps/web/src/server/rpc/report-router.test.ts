@@ -11,7 +11,7 @@ import type {
 } from "@polaris/db/tenant-transaction";
 import { periodResult } from "@polaris/domain/economics/sale-economics";
 import { logger } from "@polaris/observability/logger";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createServerApp } from "../app";
 import type { WorkerBindings } from "../environment";
 import type { TenantRequestContextInput } from "../tenant-request-context";
@@ -108,8 +108,16 @@ const daily = [
 const PRODUCT = "0192a000-0000-7000-8000-0000000000aa";
 const COVER = "0192a000-0000-7000-8000-0000000000cc";
 
+const NOW = new Date("2026-03-01T12:00:00.000Z");
+
+beforeEach(() => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(NOW);
+});
+
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.useRealTimers();
 });
 
 describe("report.periodSummary", () => {
@@ -164,9 +172,7 @@ describe("report.periodSummary", () => {
     });
     expect(summary.period).toEqual({ from: "2026-10-01", to: "2026-10-31" });
     // the server clock says how recent the confirmed records read are
-    expect(Math.abs(Date.parse(summary.generatedAt) - Date.now())).toBeLessThan(
-      60_000
-    );
+    expect(summary.generatedAt).toBe(NOW.toISOString());
     expect(summary.quality).toMatchObject({
       // an unknown fee alone: the cost of the goods is fully known
       cogsCoverage: "full",

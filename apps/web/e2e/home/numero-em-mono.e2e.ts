@@ -1,7 +1,13 @@
 /// <reference lib="dom" />
 
 import { expect, test } from "@playwright/test";
-import { expectGeist, expectMono, familiesOf, MONO } from "../mono-face";
+import {
+  expectAllMono,
+  expectGeist,
+  expectMono,
+  familiesOf,
+  MONO,
+} from "../mono-face";
 import {
   assertNoPageScroll,
   assertNothingClipped,
@@ -34,7 +40,7 @@ test.describe("o visor em Geist Mono no Início (AC-1)", () => {
     { height: 740, width: 360 },
     { height: 800, width: 1280 },
   ]) {
-    test(`o número dos cartões, o percentual do chip e o da meta ficam em Geist Mono, e o resto em Geist, a ${width} px`, async ({
+    test(`o número dos cartões, o percentual do chip e o da meta, e o valor de uma lista ficam em Geist Mono, e o resto em Geist, a ${width} px`, async ({
       page,
     }) => {
       await page.setViewportSize({ height, width });
@@ -52,19 +58,18 @@ test.describe("o visor em Geist Mono no Início (AC-1)", () => {
         "o percentual do chip"
       );
       await expectMono(
-        page
-          .locator("[data-goal-ring] > span[aria-hidden=true] > span")
-          .first(),
+        page.locator("[data-goal-ring] [data-figure]").first(),
         "o percentual da meta"
       );
       await expectGeist(
         region(page, "Vendas hoje").locator("h2"),
         "o nome do cartão"
       );
-      await expectGeist(
+      await expectMono(
         region(page, "Mais vendidos do mês")
           .locator("li")
-          .filter({ hasText: "R$" }),
+          .filter({ hasText: "R$" })
+          .locator("[data-top-value] > span"),
         "um valor de lista"
       );
       await expectGeist(
@@ -73,6 +78,40 @@ test.describe("o visor em Geist Mono no Início (AC-1)", () => {
       );
     });
   }
+
+  test("todo valor e toda quantidade do Início ficam em Geist Mono, e o período do gráfico em Geist (AC-B1.1, AC-B1.6)", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 800, width: 1280 });
+    await openHome(page, new FakeServer({ ...SOLD, goals: [goal({})] }));
+    const chart = region(page, "Vendas por dia");
+    await expectMono(
+      chart.locator("p.grid > span").first().locator("span"),
+      "o total de Vendas por dia"
+    );
+    await expectGeist(
+      chart.locator("p.grid > span").nth(1),
+      "o período do gráfico"
+    );
+    const top = region(page, "Mais vendidos do mês");
+    await expectAllMono(
+      top.locator("[data-top-rank] [data-figure]"),
+      "a posição"
+    );
+    await expectAllMono(
+      top.locator("[data-top-value] > span"),
+      "o valor de cada linha"
+    );
+    await expectAllMono(
+      top.locator("[data-top-units] [data-figure]"),
+      "as unidades de cada linha"
+    );
+    await expectAllMono(
+      region(page, "Meta").locator("[data-figure]"),
+      "o percentual, o valor e o alvo da Meta"
+    );
+    await expect(region(page, "Meta").locator("[data-figure]")).toHaveCount(3);
+  });
 
   test("com os valores escondidos o número segue em Geist Mono", async ({
     page,
