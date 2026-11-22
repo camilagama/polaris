@@ -828,7 +828,7 @@ test.describe("paliativo dos 1102: leituras tentadas de novo, em fila e com frei
       .waitForRequest((request) =>
         request.url().includes("/rpc/report/periodSummary")
       )
-      .then(() => Date.now());
+      .then(() => performance.now());
     await openHome(page, server);
     await expect(
       page.getByRole("status").filter({ hasText: "Carregando os números…" })
@@ -836,7 +836,7 @@ test.describe("paliativo dos 1102: leituras tentadas de novo, em fila e com frei
     await expect(region(page, "Vendas hoje")).toContainText("R$ 320,10", {
       timeout: 8000,
     });
-    expect(Date.now() - (await firstRead)).toBeLessThan(8000);
+    expect(performance.now() - (await firstRead)).toBeLessThan(8000);
     expect(await errorSeen()).toBe(false);
     await expect(
       page.getByRole("button", { name: "Tentar novamente" })
