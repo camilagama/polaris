@@ -1,4 +1,6 @@
+import ArrowRightIcon from "lucide-react/dist/esm/icons/arrow-right";
 import { Fragment } from "react";
+import { buttonVariants } from "@/ui/button";
 import { MoneyText } from "@/ui/hidden-values";
 import { cn } from "@/lib/utils";
 import {
@@ -59,9 +61,11 @@ const STACKED_ROW = "@max-[18rem]:grid";
 const STACKED_VALUE =
   "@max-[18rem]:pt-0 @max-[18rem]:pl-4 @max-[18rem]:text-left";
 
-/** On a line of its own, so the row is as wide as the others. */
-const EXPENSES_LINK =
-  "touch-hit focus-ring whitespace-nowrap rounded-sm font-normal text-muted-foreground text-xs underline decoration-input underline-offset-4 hover:text-foreground hover:decoration-foreground";
+/** On a line of its own, so the row is as wide as the others: a text button with an arrow, at the right. */
+const EXPENSES_LINK = cn(
+  buttonVariants({ size: "xs", variant: "ghost" }),
+  "ml-auto text-muted-foreground hover:text-foreground"
+);
 
 /** "Como chegamos a este resultado": from gross sales to the estimated result, line by line. */
 export function ResultChain({
@@ -147,9 +151,15 @@ export function ResultChain({
                     className="pt-0 pb-2 @max-[18rem]:pl-4"
                     colSpan={2}
                   >
-                    <a className={EXPENSES_LINK} href="/expenses">
-                      Ver despesas
-                    </a>
+                    <div className="flex">
+                      <a className={EXPENSES_LINK} href="/expenses">
+                        Ver despesas
+                        <ArrowRightIcon
+                          aria-hidden="true"
+                          data-icon="inline-end"
+                        />
+                      </a>
+                    </div>
                   </TableCell>
                 </TableRow>
               ) : null}

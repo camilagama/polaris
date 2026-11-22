@@ -4,8 +4,9 @@ import ArrowRightIcon from "lucide-react/dist/esm/icons/arrow-right";
 import CloudOffIcon from "lucide-react/dist/esm/icons/cloud-off";
 import RefreshCwIcon from "lucide-react/dist/esm/icons/refresh-cw";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { cn } from "@/lib/utils";
 import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
-import { Button } from "@/ui/button";
+import { Button, buttonVariants } from "@/ui/button";
 import { Card } from "@/ui/card";
 import { Skeleton } from "@/ui/skeleton";
 import {
@@ -72,6 +73,11 @@ function OfflineHistoryNotice() {
   );
 }
 
+const RESULT_LINK_CLASS = cn(
+  buttonVariants({ size: "sm", variant: "ghost" }),
+  "w-fit"
+);
+
 /** "Ver o resultado deste período": a line of its own under the pills, since everything in the row of the pills filters. */
 function ResultLink({ period }: { period: Period }) {
   const handleClick = useCallback(
@@ -81,7 +87,7 @@ function ResultLink({ period }: { period: Period }) {
   return (
     <button
       aria-label={`Ver o resultado deste período, de ${periodRangeLabel(period, todayOr(undefined))}`}
-      className="touch-hit focus-ring inline-flex h-ctl-sm w-fit items-center gap-1 whitespace-nowrap rounded-sm font-medium text-foreground text-sm hover:underline"
+      className={RESULT_LINK_CLASS}
       data-history-result-link=""
       onClick={handleClick}
       type="button"

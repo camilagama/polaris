@@ -2,6 +2,7 @@ import ArrowRightIcon from "lucide-react/dist/esm/icons/arrow-right";
 import { useCallback, useMemo, useState } from "react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/ui/badge";
+import { buttonVariants } from "@/ui/button";
 import { OnDemandSparkline } from "@/ui/charts/on-demand";
 import {
   DeltaChip,
@@ -137,13 +138,15 @@ type SparkColor =
   | "var(--chart-ticket)"
   | "var(--destructive)";
 
-const LINK_CLASS =
-  "touch-hit focus-ring -my-1 inline-flex h-6 shrink-0 items-center gap-1 whitespace-nowrap rounded-sm font-medium text-foreground hover:underline";
+const LINK_CLASS = cn(
+  buttonVariants({ size: "xs", variant: "ghost" }),
+  "-my-1 -ml-2 h-6 shrink-0 text-sm"
+);
 const LINK_ARROW = "@min-[11.5rem]:block hidden size-4";
 
 /**
  * "Ver as 8 vendas" on the support line of the sales card, in the place of the count: a text button with an arrow, no
- * underline and no outline, whose name says the dates and where it goes. With the comparison chip it takes a line of
+ * outline, whose name says the dates and where it goes. With the comparison chip it takes a line of
  * its own under the chip, on the left, and the tile grows by that line; without the chip it stays on the support line.
  * The box is 24 px tall in a 20 px line (negative margin), the least a target may have; the arrow goes first when the
  * tile is narrower than the words need (320 px with the letter at 20 px).
