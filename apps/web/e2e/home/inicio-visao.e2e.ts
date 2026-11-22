@@ -1708,6 +1708,65 @@ test.describe("erro por bloco (§ 5.2): Nova venda sempre visível e levando à 
     ).toBeVisible();
   });
 
+  test("meta quebrada a 760 px: a moldura tem o pé sem link nem alvo de toque, dentro da moldura", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 800, width: 760 });
+    const server = new FakeServer({ ...SOLD, goals: [goal({})] });
+    server.broken.set("goal/list", "500");
+    await openHome(page, server);
+    const block = region(page, "Meta");
+    await expect(block).toContainText("Não foi possível carregar a meta.", {
+      timeout: 15_000,
+    });
+    const footer = block.locator("[data-slot=card-frame-footer]");
+    await expect(footer).toBeVisible();
+    await expect(footer.locator("a, button, [tabindex]")).toHaveCount(0);
+    const inside = await footer.evaluate((element) => {
+      const frame = element.closest("[data-slot=card-frame]");
+      const foot = element.getBoundingClientRect();
+      const box = frame?.getBoundingClientRect();
+      return box ? foot.bottom <= box.bottom && foot.height > 0 : false;
+    });
+    expect(inside).toBe(true);
+  });
+
+  for (const width of [760, 1024]) {
+    test(`meta quebrada a ${width} px: a Meta em erro tem a altura da Meta com dados, antes e depois de Tentar novamente`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ height: 800, width });
+      const server = new FakeServer({ ...SOLD, goals: [goal({})] });
+      await openHome(page, server);
+      const block = region(page, "Meta");
+      const heightOf = async () => (await block.boundingBox())?.height ?? 0;
+      const ready = async () => {
+        await expect(block.locator("[data-goal-ring]")).toBeVisible();
+        await expect(block.locator("[data-goal-projection]")).toBeVisible();
+        await expect(block).toContainText("faltam");
+      };
+      await ready();
+      const withData = await heightOf();
+      expect(withData).toBeGreaterThan(0);
+
+      server.broken.set("goal/list", "500");
+      await page.reload();
+      await expect(block).toContainText("Não foi possível carregar a meta.", {
+        timeout: 15_000,
+      });
+      await expect
+        .poll(async () => Math.abs((await heightOf()) - withData))
+        .toBeLessThanOrEqual(1);
+
+      server.broken.delete("goal/list");
+      await block.getByRole("button", { name: "Tentar novamente" }).click();
+      await ready();
+      await expect
+        .poll(async () => Math.abs((await heightOf()) - withData))
+        .toBeLessThanOrEqual(1);
+    });
+  }
+
   test("401: o aviso de sessão do shell, nenhum erro nos blocos", async ({
     page,
   }) => {

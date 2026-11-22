@@ -255,7 +255,7 @@ function Line({
         />
       ) : null}
       <span className="text-chart-tooltip-muted">{name}</span>
-      <span className="ml-auto pl-2 font-medium text-chart-tooltip-foreground tabular-nums">
+      <span className="ml-auto pl-2 font-medium font-mono text-chart-tooltip-foreground tabular-nums">
         {value}
       </span>
     </div>

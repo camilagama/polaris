@@ -90,6 +90,11 @@ describe("yAxisMargin", () => {
     expect(yAxisMargin("R$ 12,5 mil")).toBeGreaterThan(yAxisMargin("500"));
     expect(yAxisMargin("")).toBe(16);
   });
+
+  it("counts 7.2 px a character, the 12 px Geist Mono advance", () => {
+    expect(yAxisMargin("R$ 1.234.567")).toBe(Math.ceil(12 * 7.2) + 16);
+    expect(yAxisMargin("0123456789")).toBe(88);
+  });
 });
 
 describe("drawn", () => {
