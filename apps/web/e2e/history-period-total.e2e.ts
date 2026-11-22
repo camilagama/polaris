@@ -11,7 +11,6 @@ const SCREEN_LABEL = "Total na tela";
 const PERIOD_LABEL = "Vendas líquidas do período";
 const MASKED = "R$ ••••";
 
-const PERIOD_ITEM = /^Período/;
 const id = (n: number) =>
   `0199c2d0-0000-7000-8000-000000004${String(n).padStart(3, "0")}`;
 const entry = (n: number, overrides: Record<string, unknown> = {}) => ({
@@ -87,12 +86,7 @@ async function openHistory(page: Page, summary: Summary) {
 }
 
 async function chooseTypedPeriod(page: Page, from: string, to: string) {
-  const bar = page.getByRole("search", { exact: true, name: "Filtrar vendas" });
-  await bar.getByRole("button", { exact: true, name: "Filtrar" }).click();
-  await page
-    .getByRole("menu", { name: "Filtrar por" })
-    .getByRole("menuitem", { name: PERIOD_ITEM })
-    .click();
+  await page.locator('header button[aria-label^="Período"]').click();
   const popup = page.getByRole("dialog", { name: "Período" });
   await popup.getByRole("button", { name: "Digitar as datas" }).click();
   await popup.getByRole("textbox", { name: "Início" }).pressSequentially(from);
@@ -102,12 +96,7 @@ async function chooseTypedPeriod(page: Page, from: string, to: string) {
 }
 
 async function chooseSevenDays(page: Page) {
-  const bar = page.getByRole("search", { exact: true, name: "Filtrar vendas" });
-  await bar.getByRole("button", { exact: true, name: "Filtrar" }).click();
-  await page
-    .getByRole("menu", { name: "Filtrar por" })
-    .getByRole("menuitem", { name: PERIOD_ITEM })
-    .click();
+  await page.locator('header button[aria-label^="Período"]').click();
   const popup = page.getByRole("dialog", { name: "Período" });
   await popup
     .getByRole("group", { name: "Atalhos do período" })
@@ -166,8 +155,10 @@ for (const viewport of FORM_VIEWPORTS) {
         },
       ]);
 
+      await page.locator('header button[aria-label^="Período"]').click();
       await page
-        .getByRole("button", { exact: true, name: "Tirar o filtro Período" })
+        .getByRole("dialog", { name: "Período" })
+        .getByRole("button", { name: "Limpar" })
         .click();
       await expect(footer).toContainText(SCREEN_LABEL);
       await expect(footer).toContainText(SUM_OF_ROWS);

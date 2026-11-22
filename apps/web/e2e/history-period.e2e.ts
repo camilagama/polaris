@@ -10,10 +10,10 @@ import { applyEditor, onPhone } from "./filter-bar-editor";
 import { serveLabWorker, WORKER_MARK } from "./worker-mark";
 
 /**
- * The filters of the sales history on the filter bar of src/ui (over the DateRangePicker), in the lab of
- * the screens over the real offline runtime, the list answered by the test: the period is a pill whose editor takes
- * two days (in order, whichever is touched first) or a shortcut, "Limpar" and the X take a pill out, "Limpar tudo"
- * takes them all, and what the server is asked for is what the bar shows.
+ * The filters of the sales history, in the lab of the screens over the real offline runtime, the list answered by the
+ * test: the period is the button of the title line, whose picker takes two days (in order, whichever is touched
+ * first) or a shortcut and "Limpar" empties it; the other filters are pills of the filter bar of src/ui, the X takes a
+ * pill out, "Limpar tudo" takes them all, and what the server is asked for is what the screen shows.
  */
 const NOW = "2026-10-14T12:00:00.000Z";
 
@@ -57,9 +57,13 @@ async function addFilter(page: Page, field: string) {
   return popup;
 }
 
-/** The editor of the period: the calendar comes on demand. */
+/** The period of the title line: its name says the range, or that there is none. */
+const periodButton = (page: Page) =>
+  page.locator('header button[aria-label^="Período"]');
+
+/** The picker of the period: the calendar comes on demand. */
 async function openPeriod(page: Page) {
-  await pill(page, "Período").click();
+  await periodButton(page).click();
   const popup = editor(page, "Período");
   await expect(popup.getByRole("grid").first()).toBeVisible();
   return popup;
@@ -102,21 +106,24 @@ for (const viewport of FORM_VIEWPORTS) {
       page,
     }) => {
       const asked = await openHistory(page);
-      // no filter yet: the bar is only "Filtrar", with no pill and no "Limpar tudo"
-      await expect(pill(page, "Período")).toHaveCount(0);
+      // no filter yet: the bar is only "Filtrar", with no pill and no "Limpar tudo"; the period says it has no range
+      await expect(periodButton(page)).toHaveAccessibleName(
+        "Período, Escolher período"
+      );
+      await expect(bar(page).locator('[data-slot="filter-pill"]')).toHaveCount(
+        0
+      );
       await expect(
         bar(page).getByRole("button", { name: "Limpar tudo" })
       ).toHaveCount(0);
 
       // the later day first: the period is made in order, so there is no "data inicial posterior à final" to show
-      const popup = await addFilter(page, "Período");
-      await expect(popup.getByRole("grid").first()).toBeVisible();
+      const popup = await openPeriod(page);
       await touchDay(popup, "2026-10-12");
       await expect(popup).toBeVisible();
       await touchDay(popup, "2026-10-05");
-      await applyEditor(page, popup);
       await expect(popup).toBeHidden();
-      await expect(pill(page, "Período")).toHaveAccessibleName(
+      await expect(periodButton(page)).toHaveAccessibleName(
         "Período: 05/10 a 12/10, editar"
       );
       await expect(page.getByText("posterior à data final")).toHaveCount(0);
@@ -134,7 +141,7 @@ for (const viewport of FORM_VIEWPORTS) {
         .getByRole("button", { exact: true, name: "7 dias" })
         .click();
       await expect(shortcuts).toBeHidden();
-      await expect(pill(page, "Período")).toHaveAccessibleName(
+      await expect(periodButton(page)).toHaveAccessibleName(
         "Período: 08/10 a 14/10, editar"
       );
       await expect
@@ -151,7 +158,7 @@ for (const viewport of FORM_VIEWPORTS) {
         .getByRole("button", { exact: true, name: "Este mês" })
         .click();
       await expect(month).toBeHidden();
-      await expect(pill(page, "Período")).toHaveAccessibleName(
+      await expect(periodButton(page)).toHaveAccessibleName(
         "Período: 01/10 a 14/10, editar"
       );
       await expect
@@ -169,12 +176,13 @@ for (const viewport of FORM_VIEWPORTS) {
       await page.keyboard.press("Escape");
       await expect(pressed).toBeHidden();
 
-      // "Limpar" empties the period: the pill goes and the list is asked for with no period
+      // "Limpar" empties the period: the button goes back to "Escolher período" and the list is asked for with no period
       const clearing = await openPeriod(page);
       await clearing.getByRole("button", { name: "Limpar" }).click();
-      await applyEditor(page, clearing);
       await expect(clearing).toBeHidden();
-      await expect(pill(page, "Período")).toHaveCount(0);
+      await expect(periodButton(page)).toHaveAccessibleName(
+        "Período, Escolher período"
+      );
       await expect.poll(() => askedWithout(asked, "occurredFrom")).toBe(true);
     });
 
@@ -247,8 +255,7 @@ for (const viewport of FORM_VIEWPORTS) {
       page,
     }) => {
       const asked = await openHistory(page);
-      const popup = await addFilter(page, "Período");
-      await expect(popup.getByRole("grid").first()).toBeVisible();
+      const popup = await openPeriod(page);
       // a first day touched is written in the field when the typing opens, and kept where the caller applies
       await touchDay(popup, "2026-10-12");
       await popup.getByRole("button", { name: "Digitar as datas" }).click();
@@ -282,7 +289,7 @@ for (const viewport of FORM_VIEWPORTS) {
       await expect(apply).not.toHaveAttribute("aria-disabled", "true");
       await apply.click();
       await expect(popup).toBeHidden();
-      await expect(pill(page, "Período")).toHaveAccessibleName(
+      await expect(periodButton(page)).toHaveAccessibleName(
         "Período: 01/10 a 14/10, editar"
       );
       await expect

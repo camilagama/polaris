@@ -3639,3 +3639,12 @@ Origem: achado B do Diego no Pixel 6 (28/10): a venda montada em Vender sumia ao
 | Medida | Em revisão | Com `LEGAL_ACCEPTANCE_ENFORCED` ligada, toda rota de tenant manda o mesmo que com ela desligada (`sync/pull` 6, era 7); só `device/check` (10) e `organization/listMine` (6) somam 1 (`ENFORCED_STATEMENT_COUNTS`, gate `web-worker`, PostgreSQL 18 local). Sem a mudança, toda rota de tenant soma 1. |
 | Provas | Em revisão | `index.workerd-db.test.ts` (contagem com a flag ligada; mesmo corpo em `sync/pull`, `offline/issueLease`, `sync/push` e `device/check`; `device/list` e `dataExport/list` isentos passam), gate `tenant-context` (ordem, argumentos sem padrão, `DETAIL`, porta sem `EXECUTE` fecha, cinco mutantes, dois deles novos), gate `legal-acceptance` (catálogo e respostas da porta estreita, um mutante), `definer-hardening` (a porta pelo nome), testes unitários de `tenant-transaction`, `tenant-request-context`, `authenticated-request-context` e `account-router`; e2e "a venda com itens recebe o 403 do aceite" verde sem mudança. ADR 0100 (emenda de 20/11/2026), 0002 e 0093. |
 | Fora | Pendente | C1, C4 e C5 do plano de cortes (o C3 é a 0137); a prova remota Worker → Hyperdrive → Neon com o aceite pendente, antes da liberação. |
+
+### Ações na linha do título: Estoque, Resultado e Histórico (t1599, A6 do corte de 21/11; sem migration)
+
+| Parte | Estado | O que há |
+| --- | --- | --- |
+| Telas | Em revisão | `TitleLine` (`data-title-line`, `data-title-actions`, altura mínima de controle) leva o "Atualizar" do Estoque, o período e o "Atualizar" do Resultado (só na aba Resultado) e o período do Histórico (`HistoryPeriodPicker`, que saiu da barra de filtros); no celular as ações ficam sob o título, na largura toda (`RefreshButton fill`). |
+| Provas | Em revisão | `e2e-pwa/ui-acoes-na-linha-do-titulo.e2e.ts` (mesmo `top` a 1280, sob o título e sem rolagem a 320 e 360, 320 com letra de 20 px, ordem do foco, um `h1`, 16 px do título ao conteúdo, aba Metas sem controle morto), `history-period*.e2e.ts` e `ui-history-states.ts` no período do título, baselines de Estoque, Resultado e Histórico refeitas. |
+| Fora | Pendente | Categorias, Aparelhos, Seus dados, Assinatura e Ajuda em `TitleLine` (segundo PR, por causa do limite de arquivos de código); Início (A1) e Detalhe da venda (corte c). |
+

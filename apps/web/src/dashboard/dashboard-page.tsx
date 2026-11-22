@@ -169,8 +169,8 @@ function ResultActions({
 }: Omit<ToolbarProps, "thisYear">) {
   const updated = updatedText(state, timezone);
   return (
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-3 min-[47.5rem]:flex-nowrap">
-      <div className="min-w-0 max-md:flex-1 max-md:basis-48">
+    <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-3 min-[47.5rem]:flex-nowrap">
+      <div className="min-w-0">
         <PeriodPicker
           onCustom={onCustom}
           onPreset={onPreset}
@@ -181,7 +181,7 @@ function ResultActions({
       </div>
       <RefreshButton
         busy={state.isLoading}
-        className="max-md:flex-1 min-[47.5rem]:shrink-0"
+        className="min-[47.5rem]:shrink-0"
         disabled={state.isLoading}
         onClick={onRefresh}
         updated={updated ?? undefined}
@@ -453,7 +453,7 @@ export function DashboardPage() {
       : groupGoals(goals.state.goals).active.length;
 
   return (
-    <div className="grid gap-5 font-sans text-foreground text-sm antialiased">
+    <div className="grid gap-4 font-sans text-foreground text-sm antialiased">
       <Heading
         action={
           tab === "resultado" ? (
