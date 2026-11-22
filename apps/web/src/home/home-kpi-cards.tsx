@@ -106,6 +106,7 @@ function TodayTile({
     [before, month, figures.today]
   );
   const [index, setIndex, clear] = useReading();
+  const [keyboard, setKeyboard] = useState(false);
   const last = series.length - 1;
   const day = series[index ?? last]?.date ?? figures.today;
   const reading = dayReading(before, month, day, figures.today);
@@ -116,8 +117,12 @@ function TodayTile({
   const range: KpiRange = {
     label: "Vendas por dia, últimos 30 dias",
     max: last,
-    onBlur: clear,
+    onBlur: () => {
+      setKeyboard(false);
+      clear();
+    },
     onChange: setIndex,
+    onFocus: () => setKeyboard(true),
     value: index ?? last,
     valueText: spoken(reading.date || "Hoje", reading, hidden),
   };
@@ -145,7 +150,7 @@ function TodayTile({
       title={
         day === figures.today ? "Vendas hoje" : `Vendas em ${shortDate(day)}`
       }
-      titleLive
+      titleLive={!keyboard}
       value={<HeroValue amount={reading.value} reading={index !== null} tile />}
     />
   );
