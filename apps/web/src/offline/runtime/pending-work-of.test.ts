@@ -12,7 +12,7 @@ const RUNTIME_FILE = join(
 
 const COMMENTS = /\/\*[\s\S]*?\*\/|(^|[^:\\])\/\/[^\n]*/g;
 const FIELD_FROM_QUEUE =
-  /\b(?:pending|rejected|sending)\s*:\s*[\w.]+\.(?:pending|rejected|sending)\b/g;
+  /\b(?:pending|rejected|sending)\s*:\s*[\w.?]+\??\.(?:pending|rejected|sending)\b/g;
 const DESTRUCTURED_QUEUE =
   /\{\s*(?:pending|rejected|sending)\s*,[^}]*\}\s*=\s*(?:await\s+)?[\w.]*snapshot\(\)/g;
 
@@ -71,11 +71,13 @@ describe("a conversão da fila em PendingWork fica só em pendingWorkOf", () => 
   });
 
   const inlineObject = `${real}\nconst x = { pending: queue.pending, rejected: queue.rejected, sending: queue.sending };\n`;
+  const inlineOptional = `${real}\nconst z = { pending: queue?.pending };\n`;
   const inlineDestructure = `${real}\nasync function y(s) { const { pending, rejected, sending } = await s.outbox.snapshot(); return { pending, rejected, sending }; }\n`;
   const commented = `${real}\n// pending: queue.pending\n/* rejected: q.rejected */\n`;
 
   it.each([
     ["objeto inline", inlineObject],
+    ["objeto inline com ?.", inlineOptional],
     ["desestruturação do snapshot", inlineDestructure],
   ])("controle plantado reprova: %s", (_name, source) => {
     expect(conversionProblems(source)).not.toEqual([]);
