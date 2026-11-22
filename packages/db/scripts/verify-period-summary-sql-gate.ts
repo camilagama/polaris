@@ -2113,6 +2113,7 @@ async function inRolledBackSplitCase<T>(
   try {
     await db.transaction(
       async (tx) => {
+        await tx.execute(sql`SET LOCAL lock_timeout = '10s'`);
         await tx.execute(sql.raw(`DROP INDEX public.${SPLIT_INDEX}`));
         outcome = { value: await work(tx) };
         throw new SplitCaseEnded();
@@ -2236,7 +2237,7 @@ function splitRows(
   store: PropertyStore,
   slotStart: string,
   whole: boolean
-): { rows: Rows; saleIds: string[] } {
+): Rows {
   const rows: Rows = {
     adjustments: [],
     cancellations: [],
@@ -2247,12 +2248,10 @@ function splitRows(
     returns: [],
     sales: [],
   };
-  const saleIds: string[] = [];
   for (const { day, parts } of SPLIT_SALES) {
     const sale = splitSale(day);
     saleRows(store, sale, slotStart, rows);
     const saleId = rows.sales.at(-1)?.id as string;
-    saleIds.push(saleId);
     const subtotal = sale.items.reduce(
       (total, item) => total + item.cents * item.quantity,
       0
@@ -2273,7 +2272,7 @@ function splitRows(
       }
     }
   }
-  return { rows, saleIds };
+  return rows;
 }
 
 async function insertRows(tx: SplitTransaction, rows: Rows) {
@@ -2305,8 +2304,22 @@ async function assertSplitPayments(
   const splitStart = SLOT_ORIGIN;
   const wholeStart = shiftDay(SLOT_ORIGIN, SLOT_DAYS);
   const windowOf = (start: string) => ({ from: start, to: shiftDay(start, 9) });
-  const split = splitRows(store, splitStart, false);
-  const whole = splitRows(store, wholeStart, true);
+  const splitCase = splitRows(store, splitStart, false);
+  const wholeCase = splitRows(store, wholeStart, true);
+
+  const countsOf = async () => {
+    const counted = await admin.pool.query<{ payments: number; sales: number }>(
+      `SELECT (SELECT count(*)::int FROM public.sales WHERE organization_id = $1) AS sales,
+              (SELECT count(*)::int FROM public.sale_payments WHERE organization_id = $1) AS payments`,
+      [store.tenant.organizationId]
+    );
+    return counted.rows[0] as { payments: number; sales: number };
+  };
+  const before = await countsOf();
+  assert.ok(
+    before.sales > 0 && before.payments > 0,
+    "the store has a committed sale to count"
+  );
 
   await assert.rejects(
     inRolledBackSplitCase(admin.db, () =>
@@ -2321,18 +2334,14 @@ async function assertSplitPayments(
       sql`SELECT 1 FROM pg_indexes WHERE schemaname = 'public' AND indexname = ${SPLIT_INDEX}`
     );
     assert.equal(dropped.rows.length, 0, "the index is still there");
-    await insertRows(tx, split.rows);
-    await insertRows(tx, whole.rows);
-    const parts = await tx.execute(
+    await insertRows(tx, splitCase);
+    await insertRows(tx, wholeCase);
+    const inside = await tx.execute(
       sql`SELECT count(*)::int AS count FROM public.sale_payments WHERE organization_id = ${store.tenant.organizationId}`
     );
-    const partCount = SPLIT_SALES.reduce(
-      (total, sale) => total + sale.parts.length + 1,
-      1
-    );
     assert.equal(
-      (parts.rows[0] as { count: number }).count,
-      partCount,
+      (inside.rows[0] as { count: number }).count,
+      before.payments + splitCase.payments.length + wholeCase.payments.length,
       "the parts of the case are in the table"
     );
     const asRuntime = tx as unknown as RuntimeDb;
@@ -2358,11 +2367,7 @@ async function assertSplitPayments(
   });
 
   await assertSplitIndexBack(admin.pool);
-  const left = await admin.pool.query(
-    "SELECT count(*)::int AS count FROM public.sales WHERE id = ANY($1)",
-    [[...split.saleIds, ...whole.saleIds]]
-  );
-  assert.equal(left.rows[0]?.count, 0, "a sale of the case was committed");
+  assert.deepEqual(await countsOf(), before, "the case left rows behind");
 
   const { result } = reads.split;
   assert.equal(result.salesCount, SPLIT_SALES.length, "a sale counts once");
