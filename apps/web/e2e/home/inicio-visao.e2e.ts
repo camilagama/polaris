@@ -57,14 +57,23 @@ async function openMenuFoot(page: Page) {
 }
 
 /**
+ * Every chart of the block comes from the chunk downloaded on demand: the network idle says the chunk arrived, and the
+ * box that holds each place leaving says the chart took it. Only then does a check on the drawing start its own budget,
+ * so a starved CPU delays the drawing without eating the 5 s of the check.
+ */
+async function chartsLoaded(page: Page, block: Locator) {
+  await page.waitForLoadState("networkidle");
+  await expect(block.locator("[data-chart-loading]")).toHaveCount(0);
+}
+
+/**
  * The area chart arrives after the heading: its chunk is downloaded on demand, then the chart measures its box and
  * draws. Each step waits for its own state, so a starved CPU delays the drawing without eating the budget of the next
  * check: the network idle says the chunk was downloaded, the box that holds the place leaves when the chart takes it, the
  * chart's box says it was mounted, the svg says it was measured and drawn.
  */
 async function drawnAreaChart(page: Page, chart: Locator) {
-  await page.waitForLoadState("networkidle");
-  await expect(chart.locator("[data-chart-loading]")).toHaveCount(0);
+  await chartsLoaded(page, chart);
   const area = chart.locator("[data-chart-area]");
   await expect(area).toBeAttached();
   await expect(area.locator("svg").first()).toBeVisible();
@@ -192,6 +201,7 @@ test.describe("loja com venda", () => {
       "subiu para 16,0 vezes o valor anterior em relação à média das sextas"
     );
     // the sparkline is a reinforcement: hidden from the screen reader, with no axis; the range is its keyboard
+    await chartsLoaded(page, today);
     await expect(
       today.locator("[data-kpi-spark] [aria-hidden=true] svg")
     ).toHaveCount(1);
@@ -238,6 +248,7 @@ test.describe("loja com venda", () => {
     await expect(meta).toContainText("1 a 31/10 · faltam 8 dias");
     // the ring (v7 § 3 item 9): an image that says it in words, the drawing of Bklit UI hidden inside it
     const ring = meta.getByRole("img");
+    await chartsLoaded(page, meta);
     await expect(ring).toHaveAttribute(
       "aria-label",
       "53,4% da meta: R$ 2.670,60 de R$ 5.000,00. Atrasada: o esperado até hoje era 71%."
@@ -326,48 +337,150 @@ test.describe("loja com venda", () => {
     ).toBe(true);
   });
 
-  test("a 1280 px Nova venda, Hoje e o mês ficam acima da dobra: Hoje numa linha própria e os três do mês numa faixa de três colunas", async ({
+  test("a 1280 px Nova venda e os quatro cartões ficam acima da dobra: uma faixa de quatro colunas, na mesma linha", async ({
     page,
   }) => {
     await page.setViewportSize({ height: 800, width: 1280 });
     await openHome(page, new FakeServer(SOLD));
     await expect(region(page, "Vendas hoje")).toContainText("R$ 320,10");
+    const names = [
+      "Vendas hoje",
+      "Vendas em outubro",
+      "Resultado estimado",
+      "Ticket médio",
+    ];
+    const boxes: ({
+      height: number;
+      width: number;
+      x: number;
+      y: number;
+    } | null)[] = [];
     for (const target of [
       newSale(page),
-      region(page, "Vendas hoje"),
-      region(page, "Vendas em outubro"),
+      ...names.map((name) => region(page, name)),
     ]) {
       // biome-ignore lint/performance/noAwaitInLoops: one box at a time
       const box = await target.boundingBox();
       expect((box?.y ?? 900) + (box?.height ?? 0)).toBeLessThanOrEqual(800);
+      boxes.push(box);
     }
-    const today = await region(page, "Vendas hoje").boundingBox();
-    const month = await region(page, "Vendas em outubro").boundingBox();
-    const result = await region(page, "Resultado estimado").boundingBox();
-    const ticket = await region(page, "Ticket médio").boundingBox();
-    expect((month?.y ?? 0) >= (today?.y ?? 0) + (today?.height ?? 0)).toBe(
-      true
-    );
-    expect(today?.x).toBe(month?.x);
-    expect(
-      Math.abs(
-        (today?.width ?? 0) -
-          ((ticket?.x ?? 0) + (ticket?.width ?? 0) - (month?.x ?? 0))
-      )
-    ).toBeLessThanOrEqual(1);
-    expect(result?.x ?? 0).toBeGreaterThan(
-      (month?.x ?? 0) + (month?.width ?? 0) - 1
-    );
-    expect(ticket?.x ?? 0).toBeGreaterThan(
-      (result?.x ?? 0) + (result?.width ?? 0) - 1
-    );
-    expect(result?.y).toBe(month?.y);
-    expect(ticket?.y).toBe(month?.y);
+    const cards = boxes.slice(1);
+    for (const [index, card] of cards.entries()) {
+      expect(card?.y).toBe(cards[0]?.y);
+      expect(card?.height).toBe(cards[0]?.height);
+      if (index > 0) {
+        expect(card?.x ?? 0).toBeGreaterThan(
+          (cards[index - 1]?.x ?? 0) + (cards[index - 1]?.width ?? 0) - 1
+        );
+      }
+    }
     expect(
       await page.evaluate(
         () => document.documentElement.scrollWidth <= window.innerWidth
       )
     ).toBe(true);
+  });
+
+  for (const width of [760, 1024, 1280]) {
+    test(`a ${width} px o período está na linha do título, ao lado de Atualizar e Nova venda, e não há linha só dele`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ height: 800, width });
+      await openHome(page, new FakeServer(SOLD));
+      await expect(region(page, "Vendas hoje")).toContainText("R$ 320,10");
+      const title = await page
+        .getByRole("heading", { level: 1, name: "Início" })
+        .boundingBox();
+      const period = await periodButton(page).boundingBox();
+      const refresh = await page
+        .getByRole("button", { name: "Atualizar" })
+        .first()
+        .boundingBox();
+      const sale = await newSale(page).boundingBox();
+      const cards = await region(page, "Vendas hoje").boundingBox();
+      for (const box of [period, refresh, sale]) {
+        const middle = (box?.y ?? 0) + (box?.height ?? 0) / 2;
+        expect(middle).toBeGreaterThan(title?.y ?? Number.NaN);
+        expect(middle).toBeLessThan((sale?.y ?? 0) + (sale?.height ?? 0));
+        expect(middle).toBeGreaterThan(sale?.y ?? Number.NaN);
+      }
+      expect(period?.x ?? 0).toBeGreaterThan(
+        (title?.x ?? 0) + (title?.width ?? 0)
+      );
+      expect((period?.x ?? 0) + (period?.width ?? 0)).toBeLessThanOrEqual(
+        refresh?.x ?? 0
+      );
+      expect((refresh?.x ?? 0) + (refresh?.width ?? 0)).toBeLessThanOrEqual(
+        sale?.x ?? 0
+      );
+      expect(period?.y ?? 0).toBeLessThan(cards?.y ?? 0);
+      await expect(page.locator("[data-kpi-group-line]")).toHaveCount(0);
+      const updated = await page.locator("#home-updated").boundingBox();
+      expect(
+        updated?.height,
+        "a linha do atualizado fica numa linha, sob o título"
+      ).toBeLessThan(30);
+      expect(
+        await page
+          .getByRole("heading", { level: 1, name: "Início" })
+          .evaluate((h1) => h1.scrollWidth <= h1.clientWidth)
+      ).toBe(true);
+    });
+  }
+
+  for (const width of [320, 360, 759]) {
+    test(`a ${width} px o período fica na linha de ações sob o título, na largura toda, sem rolagem lateral`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ height: 740, width });
+      await openHome(page, new FakeServer(SOLD));
+      await expect(region(page, "Vendas hoje")).toContainText("R$ 320,10");
+      const title = await page
+        .getByRole("heading", { level: 1, name: "Início" })
+        .boundingBox();
+      const period = await periodButton(page).boundingBox();
+      const sale = await newSale(page).boundingBox();
+      expect(period?.y ?? 0).toBeGreaterThan(
+        (title?.y ?? 0) + (title?.height ?? 0) - 1
+      );
+      expect(sale?.y ?? 0).toBeGreaterThan(
+        (title?.y ?? 0) + (title?.height ?? 0) - 1
+      );
+      expect(
+        Math.max(
+          (period?.x ?? 0) + (period?.width ?? 0),
+          (sale?.x ?? 0) + (sale?.width ?? 0)
+        ),
+        "a linha de ações vai até o fim da página"
+      ).toBeGreaterThan(width - 40);
+      expect((period?.x ?? 0) + (period?.width ?? 0)).toBeLessThanOrEqual(
+        width
+      );
+      expect(
+        await page.evaluate(
+          () => document.documentElement.scrollWidth <= window.innerWidth
+        )
+      ).toBe(true);
+    });
+  }
+
+  test("a ordem do foco é a que se vê: período, Atualizar, Nova venda; e o período vem antes dos cartões no DOM", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 800, width: 1280 });
+    await openHome(page, new FakeServer(SOLD));
+    await expect(region(page, "Vendas hoje")).toContainText("R$ 320,10");
+    await periodButton(page).focus();
+    await page.keyboard.press("Tab");
+    await expect(page.locator(":focus")).toHaveAccessibleName("Atualizar");
+    await page.keyboard.press("Tab");
+    await expect(page.locator(":focus")).toHaveAccessibleName("Nova venda");
+    const before = await periodButton(page).evaluate((button) => {
+      const all = [...document.querySelectorAll("*")];
+      const card = document.querySelector("[data-kpi-row] [data-kpi]");
+      return card !== null && all.indexOf(button) < all.indexOf(card);
+    });
+    expect(before).toBe(true);
   });
 
   for (const width of [759, 760]) {
@@ -819,7 +932,7 @@ test.describe("o Início enxuto: a dobra a 360 px e a ajuda de cada bloco", () =
     ).toBe(true);
   });
 
-  test("a 360 px o seletor de período fica entre Hoje e os cartões do mês, e Hoje, o seletor e Vendas cabem na janela", async ({
+  test("a 360 px o seletor de período fica acima dos cartões, na linha de ações, e Nova venda, o seletor e Vendas hoje cabem na janela", async ({
     page,
   }) => {
     await page.setViewportSize({ height: 740, width: 360 });
@@ -828,15 +941,15 @@ test.describe("o Início enxuto: a dobra a 360 px e a ajuda de cada bloco", () =
     const top = async (target: Locator) =>
       (await target.first().boundingBox())?.y ?? Number.NaN;
     const picker = await top(periodButton(page));
-    expect(picker).toBeGreaterThan(await top(region(page, "Vendas hoje")));
+    expect(picker).toBeLessThan(await top(region(page, "Vendas hoje")));
     expect(picker).toBeLessThan(await top(region(page, "Vendas em outubro")));
     const bottom = async (target: Locator) => {
       const box = await target.first().boundingBox();
       return (box?.y ?? Number.POSITIVE_INFINITY) + (box?.height ?? 0);
     };
-    expect(await bottom(region(page, "Vendas em outubro"))).toBeLessThanOrEqual(
-      740
-    );
+    expect(await bottom(periodButton(page))).toBeLessThanOrEqual(740);
+    expect(await bottom(newSale(page))).toBeLessThanOrEqual(740);
+    expect(await bottom(region(page, "Vendas hoje"))).toBeLessThanOrEqual(740);
   });
 
   test("a altura da página a 360 px com os mesmos três itens de ação", async ({
@@ -849,9 +962,9 @@ test.describe("o Início enxuto: a dobra a 360 px e a ajuda de cada bloco", () =
       3,
       { timeout: 20_000 }
     );
-    await expect(
-      region(page, "Vendas por dia").locator("svg").first()
-    ).toBeVisible();
+    const chart = region(page, "Vendas por dia");
+    await chartsLoaded(page, chart);
+    await expect(chart.locator("svg").first()).toBeVisible();
     const height = await page.evaluate(
       () => document.documentElement.scrollHeight
     );
@@ -1416,7 +1529,7 @@ test.describe("Vendas hoje sem base de comparação", () => {
     await page.getByRole("button", { name: "Sobre Vendas hoje" }).click();
     await expect(
       page.getByText(
-        "Vendas líquidas de hoje. Sem média das 4 sextas-feiras anteriores para comparar.",
+        "Vendas líquidas de hoje. Sem média das 4 sextas-feiras anteriores para comparar. Sempre o dia de hoje; os outros cartões seguem o período escolhido.",
         { exact: true }
       )
     ).toBeVisible();
@@ -1465,6 +1578,7 @@ test.describe("meta (AC-10, AC-11)", () => {
     await openHome(page, server);
     const meta = region(page, "Meta");
     const ring = meta.getByRole("img");
+    await chartsLoaded(page, meta);
     await expect(
       ring.locator("[data-ring-chart] svg path").first()
     ).toBeAttached();

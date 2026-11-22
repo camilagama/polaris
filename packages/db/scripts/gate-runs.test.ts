@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import {
   existsSync,
   mkdirSync,
@@ -704,6 +705,52 @@ interface Group {
 }
 
 const OPENERS: Record<string, string> = { "(": ")", "[": "]", "{": "}" };
+const BEFORE_REGEX = "(,=:[!&|?{};<>+-*%~^";
+const REGEX_KEYWORD = /\b(?:return|typeof|case|in|of)$/;
+const REGEX_FLAG = /[a-z]/i;
+
+// The index just past the regex literal that opens at `from`, or undefined when the `/` there is a division or opens a
+// comment. A `/` is read as a regex when what precedes it on its line is an operator, an opening bracket, `;`, `}`, a
+// keyword that takes an expression (`return`, `typeof`, `case`, `in`, `of`) or nothing; inside a class (`[...]`) a `/` does not close it.
+function regexEnd(text: string, from: number): number | undefined {
+  if (text[from] !== "/" || text[from + 1] === "/" || text[from + 1] === "*") {
+    return undefined;
+  }
+  let before = from - 1;
+  while (before >= 0 && (text[before] === " " || text[before] === "\t")) {
+    before -= 1;
+  }
+  if (
+    before >= 0 &&
+    text[before] !== "\n" &&
+    !BEFORE_REGEX.includes(text[before] as string) &&
+    !REGEX_KEYWORD.test(text.slice(0, before + 1))
+  ) {
+    return undefined;
+  }
+  let at = from + 1;
+  let inClass = false;
+  while (at < text.length && text[at] !== "\n") {
+    const char = text[at];
+    if (char === "\\") {
+      at += 2;
+      continue;
+    }
+    if (char === "[") {
+      inClass = true;
+    } else if (char === "]") {
+      inClass = false;
+    } else if (char === "/" && !inClass) {
+      at += 1;
+      while (REGEX_FLAG.test(text[at] ?? "")) {
+        at += 1;
+      }
+      return at;
+    }
+    at += 1;
+  }
+  return undefined;
+}
 
 // The index just past the literal or bracket pair that opens at `from`, reading nested ones and escapes.
 function skipPast(text: string, from: number): number {
@@ -730,8 +777,13 @@ function skipPast(text: string, from: number): number {
   const close = OPENERS[open] as string;
   while (at < text.length && text[at] !== close) {
     const char = text[at] as string;
-    at +=
-      char in OPENERS || "\"'`".includes(char) ? skipPast(text, at) - at : 1;
+    const regex = regexEnd(text, at);
+    if (regex === undefined) {
+      at +=
+        char in OPENERS || "\"'`".includes(char) ? skipPast(text, at) - at : 1;
+    } else {
+      at = regex;
+    }
   }
   return at + 1;
 }
@@ -767,6 +819,10 @@ function maskTopLevel(text: string): { flat: string; groups: Group[] } {
     } else if (char === '"' || char === "'") {
       const end = skipPast(text, at);
       blank(at + 1, end - 1);
+      at = end;
+    } else if (regexEnd(text, at) !== undefined) {
+      const end = regexEnd(text, at) as number;
+      blank(at, end);
       at = end;
     } else if (char === "`") {
       let inside = at + 1;
@@ -836,7 +892,7 @@ function branchesOf(text: string): string[] {
   return operands;
 }
 
-// The code with the text of its string and template literals blanked, same length, so a `role = 'x'` inside SQL is not
+// The code with the text of its string, template and regex literals blanked, same length, so a `role = 'x'` inside SQL is not
 // read as an assignment.
 function withoutLiterals(code: string): string {
   const chars = code.split("");
@@ -849,7 +905,15 @@ function withoutLiterals(code: string): string {
       }
       at = end;
     } else {
-      at += 1;
+      const regex = regexEnd(code, at);
+      if (regex === undefined) {
+        at += 1;
+      } else {
+        for (let inside = at; inside < regex; inside += 1) {
+          chars[inside] = " ";
+        }
+        at = regex;
+      }
     }
   }
   return chars.join("");
@@ -1091,6 +1155,80 @@ describe("CREATE ROLE with a fixed name outside SERIAL_GATES", () => {
         )
       )
     ).toEqual([]);
+  });
+
+  it("reads past a regex literal that holds a quote or a bracket", () => {
+    const fixed = (...code: string[]) => fixedRoleNames(planted(...code));
+    const drawn = "let login = `gate_@{randomUUID()}`;";
+    for (const regex of [
+      "/'/g",
+      '/"/g',
+      "/`/g",
+      "/[/']/g",
+      String.raw`/\/'/g`,
+      "/(/",
+    ]) {
+      expect(
+        fixed(
+          drawn,
+          `const clean = (text: string) => text.replace(${regex}, "");`,
+          "login = `fixed`;",
+          "await q(`CREATE ROLE @{login}`);"
+        ),
+        regex
+      ).toEqual([planted("name @{login}")]);
+    }
+    for (const use of [
+      "const test = (x) => /'/.test(x);",
+      "return /'/.test(x);",
+    ]) {
+      expect(
+        fixed(
+          drawn,
+          use,
+          "login = `fixed`;",
+          "await q(`CREATE ROLE @{login}`);"
+        ),
+        use
+      ).toEqual([planted("name @{login}")]);
+    }
+    expect(
+      fixed(
+        drawn,
+        "const bare = /'/;",
+        "login = `fixed`;",
+        "await q(`CREATE ROLE @{login}`);"
+      )
+    ).toEqual([planted("name @{login}")]);
+    expect(
+      fixed(
+        drawn,
+        "const clean = /'/g.test(x);",
+        "await q(`CREATE ROLE @{login}`);"
+      )
+    ).toEqual([]);
+  });
+
+  it("does not read a division as a regex", () => {
+    expect(
+      fixedRoleNames(
+        planted(
+          "const half = total / 2;",
+          "const rate = (a + b) / (c / d);",
+          "const role = `gate_@{randomUUID()}`;",
+          "await q(`CREATE ROLE @{role}`);"
+        )
+      )
+    ).toEqual([]);
+    expect(
+      fixedRoleNames(
+        planted(
+          "let login = `gate_@{randomUUID()}`;",
+          "const share = total / 2; login = `fixed`; const rest = total / 3;",
+          "await q(`CREATE ROLE @{login}`);"
+        )
+      )
+    ).toEqual([planted("name @{login}")]);
   });
 
   it("finds a name that a block gives a fixed value", () => {
@@ -1483,6 +1621,34 @@ const PLANTED_SCRIPTS = {
   "gates:ci-database": "bun scripts/run-gates.ts ci-database",
   "gates:ci-third": "bun scripts/run-gates.ts ci-third",
 };
+const SELECTED_LINE = /gates selected \([^)]*\): (.*)$/;
+
+// The gates the runner selects for a suite (its registration order, which the caller sorts away), read from the line it
+// prints before it connects. The URL points at a closed local port, so the run ends at the connection and touches no
+// database.
+function selectedByRunner(suite: string): string[] {
+  const result = spawnSync("bun", [join(SCRIPTS_DIR, "run-gates.ts"), suite], {
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      CI: "true",
+      POLARIS_GATE_BRANCH: "pr1-selection-gate",
+      POLARIS_GATE_SUPERUSER_URL: "",
+      POLARIS_GATE_WORKERS: "",
+      POLARIS_GATE_DATABASE: "polaris_gate",
+      POLARIS_GATE_DATABASE_URL:
+        "postgres://selection:x@127.0.0.1:1/polaris_gate",
+    },
+    timeout: 60_000,
+  });
+  expect(result.error, "bun did not run").toBeUndefined();
+  const line = result.stdout
+    .split("\n")
+    .find((entry) => entry.startsWith("--- "));
+  const match = SELECTED_LINE.exec(line ?? "");
+  expect(match, `${result.stdout}${result.stderr}`).not.toBeNull();
+  return (match?.[1] ?? "").split(" ").filter(Boolean);
+}
 const workflowRunning = (...scripts: string[]) =>
   scripts
     .map((script) => `      - run: bun run --filter @polaris/db ${script}\n`)
@@ -1629,7 +1795,12 @@ describe("the gates the CI workflow runs", () => {
   });
 
   it("wires the suites into the runner and the scripts into package.json", () => {
-    expect(RUNNER).toContain("Object.assign(suites, ciJobSuites(");
+    const expected = ciJobSuites(CI_GATES);
+    for (const job of [CI_MAIN_JOB, ...Object.keys(CI_SEPARATE_JOBS)]) {
+      expect(selectedByRunner(job).sort(), job).toEqual(
+        [...(expected[job] as string[])].sort()
+      );
+    }
     expect(CI_GATES.length).toBeGreaterThan(80);
     for (const job of [CI_MAIN_JOB, ...Object.keys(CI_SEPARATE_JOBS)]) {
       expect(PACKAGE_SCRIPTS[`gates:${job}`]).toBe(

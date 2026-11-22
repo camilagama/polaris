@@ -286,7 +286,7 @@ test("leitura do minigráfico, no desktop: cada dia lido troca o valor na hora, 
   const { page } = journey;
   await page.addInitScript(recordEntrances);
   await page.goto("/");
-  const today = page.getByRole("region", { name: "Vendas hoje" });
+  const today = page.locator('[aria-labelledby="home-today"]');
   const value = today.locator("[data-kpi-value]");
   await expect(value).toHaveText("R$ 90,00");
   const slider = today.getByRole("slider", {
