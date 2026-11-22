@@ -2,11 +2,13 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { SUPPORT_EMAIL } from "../lib/support-contact";
 import { challengeAlertId, EntryScreen, SubmitButton } from "./entry-ui";
+import { ENTRY_ART_PHRASE } from "./sign-in-texts";
 import type { Challenge } from "./turnstile";
 
 type ChallengeState = Challenge["state"];
 
 const ALERT_ID = challengeAlertId("form");
+const FOCUSABLE = /<(a|button|input|select|textarea)\b|tabindex=|href=/;
 const DISABLED_ATTR = /\sdisabled=/;
 const AN_ANSWER_TIME = /respond|prazo|horas|dias úteis|em até/u;
 
@@ -153,5 +155,54 @@ describe("EntryScreen with the line of help (AC-6)", () => {
 
   it("is not there unless the screen asks for it", () => {
     expect(screen(false)).not.toContain("Precisa de ajuda?");
+  });
+});
+
+describe("EntryScreen in two halves from 1024 px (S-50)", () => {
+  const screen = (props: Partial<Parameters<typeof EntryScreen>[0]> = {}) =>
+    renderToStaticMarkup(
+      <EntryScreen title="Entrar" {...props}>
+        <p>corpo</p>
+      </EntryScreen>
+    );
+  const half = (markup: string) =>
+    markup.slice(markup.indexOf("data-entry-art"));
+  const markupBefore = (markup: string) =>
+    markup.slice(markup.lastIndexOf("<div", markup.indexOf("data-entry-art")));
+
+  it("puts the drawing of the Início and the line about the product in the right half", () => {
+    const markup = screen();
+    expect(markup).toContain('data-skeleton-art="home"');
+    expect(markup).toContain(ENTRY_ART_PHRASE);
+    expect(markup).toContain("lg:grid-cols-2");
+  });
+
+  it("keeps the half out of the accessibility tree and of the tab order, with no link", () => {
+    const art = half(screen());
+    expect(art.startsWith('data-entry-art=""')).toBe(true);
+    expect(markupBefore(screen())).toContain('aria-hidden="true"');
+    expect(art).not.toMatch(FOCUSABLE);
+    expect(art).not.toContain("aria-label");
+    expect(art).not.toContain("<img");
+    expect(art).not.toContain("<image");
+  });
+
+  it("only draws it for the entry card: the reading column and the acceptance stay one column", () => {
+    for (const width of ["reading", "wide"] as const) {
+      const markup = screen({ width });
+      expect(markup).not.toContain("data-entry-art");
+      expect(markup).not.toContain("lg:grid-cols-2");
+    }
+  });
+
+  it("lets a page of the same frame stay one column", () => {
+    expect(screen({ halves: false })).not.toContain("data-entry-art");
+  });
+
+  it("leaves the card where it was: at the top, never centered", () => {
+    const markup = screen();
+    expect(markup).toContain("place-items-start");
+    expect(markup).toContain("md:pt-24");
+    expect(markup).not.toContain("place-items-center");
   });
 });

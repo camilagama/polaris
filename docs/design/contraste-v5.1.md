@@ -25,6 +25,7 @@ Mapa de contraste do desenho v5.1 (Petković, 20/10/2026), trazido para o reposi
 | `muted-foreground` / `muted` | rótulo no bloco rebaixado do cartão (12 px) | ConfirmedDetails | **7.22** | 4.5 | ✓ |
 | `foreground` / `muted` | título e link do pé do bloco com moldura (Início, `Card` `framed`) | CardFrame | **16.19** | 4.5 | ✓ |
 | `muted-foreground` / `muted` | ação de cabeçalho e contagem na moldura ("Últimas 12 semanas", "1 de 5") | CardFrame | **7.22** | 4.5 | ✓ |
+| `foreground` / `muted` | frase sob o desenho da metade direita da entrada (17 px, a partir de 1024 px) | EntryArt | **16.19** | 4.5 | ✓ |
 | `card` / `muted` | painel sobre a moldura: não chega a 3:1, então o painel leva o fio de `--border` | CardFramePanel | **1.12** | 1.0 | ✓ |
 | `border` / `muted` | fio do painel sobre a moldura (decorativo; o título e o conteúdo identificam o bloco) | CardFramePanel | **1.15** | 1.0 | ✓ |
 | `warning` / `muted` | valor desconhecido no bloco rebaixado do cartão | ConfirmedDetails | **6.78** | 4.5 | ✓ |
