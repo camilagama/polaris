@@ -19,7 +19,6 @@ const RULE_USERS = ["customer-repository.ts", "economics-repository.ts"];
 
 const SOURCE_FILE = /\.(?:tsx?|mjs|js)$/;
 const THIS_TEST = "return-given-back-sql.test.ts";
-const PARTITIONED_WINDOW = /OVER \( ?PARTITION BY line\.sale_id/g;
 
 const RULE_MARKERS = [
   /charged_unit_price\s*\*\s*100/,
@@ -65,7 +64,7 @@ describe("the rule of what a return gives back", () => {
     }
   });
 
-  it("catches a copy of any piece of the rule in any other file, tests, scripts and subfolders included", () => {
+  it("flags a piece of the rule copied into another file of packages/db/src, tests and subfolders included", () => {
     for (const piece of [
       "item.charged_unit_price * 100 AS unit_cents",
       "split.floor_cents + CASE WHEN split.rank <= split.leftover THEN 1 ELSE 0 END",
@@ -76,7 +75,7 @@ describe("the rule of what a return gives back", () => {
         "other-repository.ts",
         "schema/nested.ts",
         "other-repository.test.ts",
-        "scripts-copy.mjs",
+        "copy.mjs",
       ];
       expect(
         filesWithTheRule({
@@ -90,19 +89,17 @@ describe("the rule of what a return gives back", () => {
     }
   });
 
-  it("splits one sale without a partition and many sales by their key", () => {
-    const one = render(discountSplitColumns(sql`discount.cents`));
-    expect(one).toContain("OVER ()");
-    expect(one).toContain(
-      "OVER ( ORDER BY mod(discount.cents * line.value_cents, gross.cents) DESC"
+  it("splits one sale without a partition and many sales by their key, the whole text of the fragment", () => {
+    expect(render(discountSplitColumns(sql`discount.cents`))).toBe(
+      "div(discount.cents * line.value_cents, gross.cents) AS floor_cents, discount.cents - sum(div(discount.cents * line.value_cents, gross.cents)) OVER () AS leftover, row_number() OVER ( ORDER BY mod(discount.cents * line.value_cents, gross.cents) DESC, line.position ) AS rank"
     );
-    expect(one).not.toContain("PARTITION BY");
-
-    const many = render(
-      discountSplitColumns(sql`adjustment.discount_cents`, sql`line.sale_id`)
+    expect(
+      render(
+        discountSplitColumns(sql`adjustment.discount_cents`, sql`line.sale_id`)
+      )
+    ).toBe(
+      "div(adjustment.discount_cents * line.value_cents, gross.cents) AS floor_cents, adjustment.discount_cents - sum(div(adjustment.discount_cents * line.value_cents, gross.cents)) OVER (PARTITION BY line.sale_id) AS leftover, row_number() OVER ( PARTITION BY line.sale_id ORDER BY mod(adjustment.discount_cents * line.value_cents, gross.cents) DESC, line.position ) AS rank"
     );
-    expect(many.match(PARTITIONED_WINDOW)).toHaveLength(2);
-    expect(many).toContain("OVER ( PARTITION BY line.sale_id ORDER BY mod(");
   });
 
   it("gives back price times units minus the share, rounded half up per item", () => {
