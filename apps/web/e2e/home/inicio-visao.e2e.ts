@@ -1767,6 +1767,65 @@ test.describe("erro por bloco (§ 5.2): Nova venda sempre visível e levando à 
     });
   }
 
+  for (const width of [760, 1024]) {
+    test(`meta quebrada a ${width} px com nome longo: a Meta em erro não passa da altura com dados e a diferença é a do painel, antes e depois de Tentar novamente`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ height: 800, width });
+      const longName =
+        "Meta de vendas líquidas da loja inteira para o mês de outubro com a campanha de liquidação e as vendas do balcão";
+      const server = new FakeServer({
+        ...SOLD,
+        goals: [goal({ name: longName })],
+      });
+      await openHome(page, server);
+      const block = region(page, "Meta");
+      const heights = async () => {
+        const card = (await block.boundingBox())?.height ?? 0;
+        const panel =
+          (await block.locator("[data-slot=card-frame-panel]").boundingBox())
+            ?.height ?? 0;
+        return { card, panel };
+      };
+      await expect(block.locator("[data-goal-ring]")).toBeVisible();
+      await expect(block.locator("[data-goal-projection]")).toBeVisible();
+      await expect(block).toContainText("faltam");
+      const lines = await block
+        .getByText(longName)
+        .evaluate(
+          (element) =>
+            element.getBoundingClientRect().height /
+            Number.parseFloat(getComputedStyle(element).lineHeight)
+        );
+      expect(lines).toBeGreaterThanOrEqual(2);
+      const withData = await heights();
+
+      server.broken.set("goal/list", "500");
+      await page.reload();
+      await expect(block).toContainText("Não foi possível carregar a meta.", {
+        timeout: 15_000,
+      });
+      await expect(block.getByText(longName)).toHaveCount(0);
+      await expect
+        .poll(async () => (await heights()).panel)
+        .toBeLessThan(withData.panel);
+      const failed = await heights();
+      expect(failed.card).toBeLessThan(withData.card);
+      if (width >= 768) {
+        expect(failed.panel).toBeGreaterThanOrEqual(200);
+      }
+      expect(withData.card - failed.card).toBeCloseTo(
+        withData.panel - failed.panel,
+        2
+      );
+
+      server.broken.delete("goal/list");
+      await block.getByRole("button", { name: "Tentar novamente" }).click();
+      await expect(block.getByText(longName)).toBeVisible();
+      await expect.poll(async () => (await heights()).card).toBe(withData.card);
+    });
+  }
+
   test("401: o aviso de sessão do shell, nenhum erro nos blocos", async ({
     page,
   }) => {

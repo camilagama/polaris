@@ -18,7 +18,8 @@ import { serveHealth, WORKER_MARK } from "./worker-mark";
 /**
  * The "Cliente da venda" card of the sale detail read at 320 px with the browser font at 20 px (`./reflow`), with the
  * summary of the customer at its widest: a total of millions, a count of three digits and a date with the year. The
- * three indicators stay whole and the page does not scroll sideways.
+ * three indicators stay whole and the page does not scroll sideways. The same width holds for a long customer name,
+ * in the current customer and in the rows of the attribution history, also with two versions of the link.
  */
 skipOutsideChromium();
 
@@ -44,11 +45,16 @@ const answer = (body: string) => ({
 const rpcBody = (json: unknown) => answer(JSON.stringify(json));
 const rpc = (json: unknown) => rpcBody({ json, meta: [] });
 
-async function openSaleDetail(page: Page, name?: string) {
+async function openSaleDetail(
+  page: Page,
+  name?: string,
+  overrides: Readonly<Record<string, unknown>> = {}
+) {
   const answers = saleDetailAnswers({ withReturn: true });
   const customer = answers["customer/get"] as object;
   const withSummary = {
     ...answers,
+    ...overrides,
     "customer/get": {
       ...customer,
       ...(name === undefined ? {} : { name }),
@@ -189,6 +195,98 @@ for (const name of [LONG_NAME, UNBROKEN_NAME]) {
         (element) => element.scrollWidth - element.clientWidth
       );
       expect(overflow, "o texto da linha não passa da própria caixa").toBe(0);
+      await assertNoPageScroll(page);
+    }
+  );
+}
+
+const FORMER_CUSTOMER_ID = "0199c2d0-0000-7000-8000-000000000799";
+const CURRENT_CUSTOMER_ID = "0199c2d0-0000-7000-8000-000000000710";
+
+const twoVersionsOfLink = (formerName: string) => {
+  const at = (minutes: number) =>
+    new Date(NOW.getTime() + minutes * 60_000).toISOString();
+  return {
+    "customer/list": {
+      customers: [
+        {
+          anonymizedAt: null,
+          archivedAt: null,
+          createdAt: at(-60),
+          email: null,
+          id: FORMER_CUSTOMER_ID,
+          name: formerName,
+          notes: null,
+          organizationId: ORGANIZATION.id,
+          phone: null,
+          status: "active",
+          updatedAt: at(-60),
+          version: 1,
+        },
+      ],
+    },
+    "sale/getCustomerLink": {
+      current: { customerId: CURRENT_CUSTOMER_ID, version: 2 },
+      history: [
+        {
+          action: "assign",
+          createdAt: at(5),
+          customerId: FORMER_CUSTOMER_ID,
+          version: 1,
+        },
+        {
+          action: "reassign",
+          createdAt: at(10),
+          customerId: CURRENT_CUSTOMER_ID,
+          version: 2,
+        },
+      ],
+      saleId: DETAIL_SALE_ID,
+    },
+  };
+};
+
+for (const name of [LONG_NAME, UNBROKEN_NAME]) {
+  reflowTest(
+    `a 320 px com letra de 20 px a linha da versão 1 do histórico, com cliente de nome longo, fica dentro do painel ao lado da versão 2 (${name.includes(" ") ? "com espaços" : "sem espaços"})`,
+    async ({ page }) => {
+      await openSaleDetail(page, undefined, twoVersionsOfLink(name));
+      const card = page.locator("section[aria-labelledby=sale-customer-title]");
+      const list = card.getByRole("list");
+      const items = list.getByRole("listitem");
+      await expect(items).toHaveCount(2);
+      const newest = items.first();
+      const oldest = items.last();
+      await expect(newest).toContainText("v2 · Cliente trocado");
+      await expect(oldest).toContainText(`v1 · Cliente associado: ${name}`);
+      const windowWidth = page.viewportSize()?.width ?? 0;
+      expect(windowWidth, "a janela do teste tem 320 px").toBe(320);
+      expect(
+        await longestWordWidth(oldest, name),
+        "a maior palavra sozinha é mais larga que a janela de 320 px: sem quebra dentro da palavra a linha vazaria"
+      ).toBeGreaterThan(windowWidth);
+      const panel = await card.boundingBox();
+      const written = await oldest.boundingBox();
+      expect(panel, "o painel está na tela").not.toBeNull();
+      expect(written, "a linha da versão 1 está na tela").not.toBeNull();
+      expect(
+        (written?.x ?? 0) + (written?.width ?? 0),
+        "a linha da versão 1 não passa da borda da janela"
+      ).toBeLessThanOrEqual(windowWidth);
+      expect(
+        (panel?.x ?? 0) + (panel?.width ?? 0),
+        "o painel não passa da borda da janela"
+      ).toBeLessThanOrEqual(windowWidth);
+      const overflows = await Promise.all(
+        [oldest, list, card].map((element) =>
+          element.evaluate((node) => node.scrollWidth - node.clientWidth)
+        )
+      );
+      expect(
+        overflows,
+        "a linha, a lista e o painel não passam da própria caixa"
+      ).toEqual([0, 0, 0]);
+      await assertNothingClipped(card);
       await assertNoPageScroll(page);
     }
   );

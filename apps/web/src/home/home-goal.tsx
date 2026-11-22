@@ -65,8 +65,9 @@ function StripBody({ children }: { children: React.ReactNode }) {
 
 /**
  * The panel of the goal in error keeps, from `md`, the height the panel has with a typical active goal (12.5 rem: the
- * title block, the 7 rem ring and the panel padding), so the card does not jump when "Tentar novamente" reads it. A
- * long name, the projection or "Ver as outras" make the panel with data taller than this.
+ * title block, the 7 rem ring and the panel padding), so the card does not jump when "Tentar novamente" reads it. With
+ * the projection the panel with data still fits in it; a long name (2 or more lines) or "Ver as outras" may leave
+ * the panel with data taller than this, and then the card grows when it leaves the error (accepted).
  */
 const ERROR_PANEL_CLASS = "md:min-h-50";
 
