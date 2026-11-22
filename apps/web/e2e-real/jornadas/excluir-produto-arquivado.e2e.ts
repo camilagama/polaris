@@ -251,5 +251,8 @@ test("excluir produto arquivado: sai da lista, libera a vaga, a venda antiga seg
   await expect(ranking).toContainText("Garrafa térmica");
   await expect(ranking.getByRole("listitem")).toHaveCount(1);
   await expect(ranking).toContainText("2 un.");
-  await expect(ranking.getByRole("link")).toHaveCount(0);
+  await expect(ranking.getByRole("listitem").getByRole("link")).toHaveCount(0);
+  await expect(
+    ranking.getByRole("link", { name: "Ver os produtos" })
+  ).toHaveAttribute("href", "/products");
 });

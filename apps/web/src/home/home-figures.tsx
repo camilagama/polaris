@@ -42,6 +42,12 @@ function barWidth(netSales: string, top: bigint): number {
   return Number((cents * 100n) / top);
 }
 
+const RANKING_FOOTER = {
+  capability: "catalog:read",
+  href: "/products",
+  label: "Ver os produtos",
+} as const;
+
 const ALL_RETURNED_TEXT = "As vendas do período foram devolvidas.";
 
 /** From this many lines the list takes the height the card is given, a line each; fewer stay at the top. */
@@ -78,7 +84,7 @@ export function TopProductsBlock({
   useThumbnailSequence(covers);
   if (products.length === 0) {
     return (
-      <HomeBlock id="home-top" title={title}>
+      <HomeBlock footer={RANKING_FOOTER} id="home-top" title={title}>
         <p className="grid flex-1 place-items-center text-center text-muted-foreground">
           {salesCount > 0 ? ALL_RETURNED_TEXT : "Sem vendas no período."}
         </p>
@@ -87,7 +93,7 @@ export function TopProductsBlock({
   }
   const spread = products.length >= SPREAD_FROM;
   return (
-    <HomeBlock id="home-top" title={title}>
+    <HomeBlock footer={RANKING_FOOTER} id="home-top" title={title}>
       <ol className="flex min-w-0 flex-1 flex-col">
         {products.map((product, index) => {
           const content = (
