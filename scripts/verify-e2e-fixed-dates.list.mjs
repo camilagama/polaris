@@ -59,7 +59,6 @@ export const E2E_FIXED_DATES_LIST = {
     count: 27,
     reason: THE_SHARED_SIGN_IN_FIXES_THE_CLOCK,
   },
-  "apps/web/e2e/media-fixtures.ts": { count: 1, reason: BEFORE_THE_RULE },
   "apps/web/e2e/offline-screens.e2e.ts": { count: 12, reason: BEFORE_THE_RULE },
   "apps/web/e2e/offline-sync-cadence.e2e.ts": {
     count: 2,
