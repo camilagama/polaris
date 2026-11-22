@@ -1,9 +1,14 @@
+import ArrowLeftIcon from "lucide-react/dist/esm/icons/arrow-left";
 import {
   type ComponentProps,
   createContext,
+  type MouseEventHandler,
   type ReactNode,
+  type Ref,
   useContext,
 } from "react";
+import { cn } from "@/lib/utils";
+import { buttonVariants } from "@/ui/button";
 
 /** Whether a screen is drawn inside a tab of another one (Configurações, Produtos, Resultado: map of navigation, § 1). */
 const InTabContext = createContext(false);
@@ -70,15 +75,50 @@ export function ScreenTitle({
 /** The width of the main action of a screen: the whole line under the title on a phone, its own size beside it from 760 px. */
 export const TITLE_ACTION_CLASS = "w-full min-[47.5rem]:w-auto";
 
+export interface TitleBack {
+  href: string;
+  /** "Voltar para o histórico": the icon is all there is to see, so the name carries the destination. */
+  label: string;
+  onClick?: MouseEventHandler<HTMLAnchorElement>;
+  ref?: Ref<HTMLAnchorElement>;
+}
+
+/**
+ * "Voltar" of a detail screen: the arrow alone, no outline, before the title on its line. A link, since it goes to the
+ * list; the 44 px touch area comes from the button it is drawn as. It has no negative margin: the container guard refuses anything that
+ * leaves the column.
+ */
+function BackButton({ href, label, onClick, ref }: TitleBack) {
+  return (
+    <a
+      aria-label={label}
+      className={cn(
+        buttonVariants({ size: "icon", variant: "ghost" }),
+        "text-muted-foreground hover:text-foreground"
+      )}
+      data-back=""
+      href={href}
+      onClick={onClick}
+      ref={ref}
+    >
+      <ArrowLeftIcon aria-hidden="true" />
+    </a>
+  );
+}
+
 /**
  * The line of a screen's title with its main action: under the title, as wide as the screen, on a phone, and at the
  * right of the title from 760 px. The action is never inside a card and the first control after the title in the tab order.
+ * A detail screen passes `back`: the arrow stands before the title, on the same line, and the title wraps before it
+ * pushes the arrow.
  */
 export function TitleLine({
   action,
+  back,
   children,
 }: {
   action?: ReactNode;
+  back?: TitleBack | undefined;
   children: ReactNode;
 }) {
   return (
@@ -86,7 +126,14 @@ export function TitleLine({
       className="grid gap-3 min-[47.5rem]:flex min-[47.5rem]:min-h-ctl-md min-[47.5rem]:items-center min-[47.5rem]:justify-between min-[47.5rem]:gap-x-3"
       data-title-line=""
     >
-      {children}
+      {back ? (
+        <div className="flex min-w-0 items-center gap-1">
+          <BackButton {...back} />
+          <div className="min-w-0">{children}</div>
+        </div>
+      ) : (
+        children
+      )}
       {action ? (
         <div
           className="grid gap-3 min-[47.5rem]:ml-auto min-[47.5rem]:flex min-[47.5rem]:min-w-0 min-[47.5rem]:items-start min-[47.5rem]:gap-2"

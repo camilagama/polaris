@@ -1,4 +1,5 @@
 import type { GoalReadModel } from "@polaris/contracts";
+import ArrowRightIcon from "lucide-react/dist/esm/icons/arrow-right";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/ui/badge";
 import { Card } from "@/ui/card";
@@ -42,8 +43,10 @@ import type { Block } from "./use-home";
  * way to set one. Goals are set and changed on the Resultado: the links take the person there.
  */
 
-const LINK =
-  "touch-hit focus-ring rounded-sm text-sm underline decoration-input underline-offset-4 hover:decoration-foreground";
+const BLOCK_ACTION = cn(
+  buttonVariants({ size: "sm", variant: "ghost" }),
+  "w-fit self-end justify-self-end"
+);
 
 /**
  * With no goal the card is a thin strip under 960 px of content (the title and "Definir meta", the sentence hidden);
@@ -283,8 +286,9 @@ function ActiveGoal({
       ) : null}
       {state ? <p className="text-support">{state}</p> : null}
       {others > 0 ? (
-        <a className={cn(LINK, "w-fit")} href="/dashboard?meta=lista">
+        <a className={BLOCK_ACTION} href="/dashboard?meta=lista">
           Ver as outras
+          <ArrowRightIcon aria-hidden="true" data-icon="inline-end" />
         </a>
       ) : null}
     </>
@@ -406,8 +410,9 @@ function SettledGoal({
         </p>
       )}
       {online ? (
-        <a className={cn(LINK, "w-fit")} href="/dashboard?meta=nova">
+        <a className={BLOCK_ACTION} href="/dashboard?meta=nova">
           Definir meta
+          <ArrowRightIcon aria-hidden="true" data-icon="inline-end" />
         </a>
       ) : null}
     </>

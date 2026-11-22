@@ -9,9 +9,7 @@ import {
   PopoverTitle,
   PopoverTrigger,
 } from "./popover";
-
-const LINK =
-  "touch-hit focus-ring w-fit rounded-sm text-sm underline decoration-input underline-offset-4 hover:decoration-foreground";
+import { TextLink } from "./text-link";
 
 /**
  * The (i) next to a card's title: a toggletip, not a tooltip (DESIGN.md, "Texto curto"). It opens by touch, click, Enter
@@ -60,9 +58,9 @@ export function HelpTip({
           <PopoverDescription>{children}</PopoverDescription>
         </PopoverHeader>
         {link ? (
-          <a className={LINK} href={link.href}>
+          <TextLink className="w-fit text-sm" href={link.href}>
             {link.label}
-          </a>
+          </TextLink>
         ) : null}
       </PopoverContent>
     </Popover>

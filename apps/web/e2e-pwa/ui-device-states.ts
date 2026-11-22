@@ -233,7 +233,7 @@ export const attentionStates = {
     await openNoticeLab(
       page,
       "screen=attention&state=unavailable&motivo=plano",
-      () => page.getByRole("link", { name: "Voltar ao Início" }).waitFor()
+      () => page.getByRole("link", { name: "Voltar para o Início" }).waitFor()
     );
   },
 

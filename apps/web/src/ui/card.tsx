@@ -1,6 +1,7 @@
 import ArrowRightIcon from "lucide-react/dist/esm/icons/arrow-right";
 import type * as React from "react";
 import { cn } from "@/lib/utils";
+import { buttonVariants } from "./button";
 
 const CARD_SURFACE =
   "overflow-hidden rounded-xl text-card-foreground text-sm shadow-xs ring-1 ring-foreground/[0.06] dark:shadow-[inset_0_1px_0_var(--card-glow)]";
@@ -127,7 +128,7 @@ function CardFrameFooter({ className, ...props }: React.ComponentProps<"div">) {
   );
 }
 
-/** The link of the foot: text and a 16 px arrow, which steps 2 px toward the destination on a mouse (never on touch). */
+/** The action of the foot: a text button (ghost, small) with a 16 px arrow, which steps 2 px toward the destination on a mouse (never on touch). */
 function CardFrameLink({
   children,
   className,
@@ -136,7 +137,8 @@ function CardFrameLink({
   return (
     <a
       className={cn(
-        "group/link touch-hit focus-ring inline-flex items-center gap-1 rounded-sm text-foreground text-support underline decoration-input underline-offset-4 hover:decoration-foreground",
+        buttonVariants({ size: "sm", variant: "ghost" }),
+        "group/link",
         className
       )}
       data-slot="card-frame-link"

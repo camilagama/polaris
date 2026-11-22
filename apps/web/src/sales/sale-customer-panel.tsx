@@ -11,6 +11,7 @@ import {
 import { Alert, AlertDescription } from "@/ui/alert";
 import { Button } from "@/ui/button";
 import { Card, CardContent } from "@/ui/card";
+import { TextLink } from "@/ui/text-link";
 import {
   Dialog,
   DialogBody,
@@ -272,12 +273,9 @@ function CustomerPicker({ disabled, onChange, selectedId, view }: PickerProps) {
     return (
       <p className="text-muted-foreground">
         {view.message}{" "}
-        <a
-          className="focus-ring rounded-sm text-foreground underline decoration-input underline-offset-4 hover:decoration-foreground"
-          href={view.href}
-        >
+        <TextLink inline className="text-foreground" href={view.href}>
           Abrir clientes
-        </a>
+        </TextLink>
       </p>
     );
   }

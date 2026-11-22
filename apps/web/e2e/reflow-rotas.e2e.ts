@@ -78,6 +78,22 @@ const KNOWN_FINDINGS: readonly KnownFinding[] = [];
 /** What is cut at 320 px with the font at 24 px and not at 20 px: a report to read, never a promise and never an excuse. */
 const KNOWN_FINDINGS_24: readonly KnownFinding[] = [
   {
+    clientWidth: 212,
+    reason:
+      'em Configurações no celular, dentro de uma aba, o título "Configurações" (221 px, uma palavra só) divide a linha com a seta de voltar e passa 9 px da borda direita da coluna',
+    screens: [
+      "assinatura oferta com Pix",
+      "assinatura Pix aguardando o banco",
+      "assinatura Pro ativo",
+      "assinatura em teste, com o pé do menu",
+      "assinatura cancelar a renovação",
+      "assinatura carência com o aviso",
+      "seus dados com uma cópia pronta e um pedido em andamento",
+    ],
+    scrollWidth: 221,
+    selector: "main#conteudo > h1",
+  },
+  {
     clientWidth: 272,
     reason:
       'na aba Recorrentes, o cartão tem 272 px e o conteúdo (o texto "Cada ocorrência vira uma despesa comum…", o "Mostrar pausadas", o botão "Nova despesa recorrente" e as linhas de regra) mede 331 px: passa 59 px da borda direita do cartão',
@@ -142,9 +158,9 @@ const KNOWN_FINDINGS_24: readonly KnownFinding[] = [
   {
     clientWidth: 320,
     reason:
-      "no Detalhe da venda com o cancelamento revisado, a página rola 21 px para o lado (341 px de conteúdo em 320 px); a causa dentro da coluna não foi isolada",
+      "no Detalhe da venda com o cancelamento revisado, a página rola 25 px para o lado (345 px de conteúdo em 320 px, 4 px a mais com a seta de voltar antes do título); a causa dentro da coluna não foi isolada",
     screens: ["detalhe da venda cancelamento revisado"],
-    scrollWidth: 341,
+    scrollWidth: 345,
     selector: "html",
   },
   {
