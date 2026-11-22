@@ -171,6 +171,45 @@ for (const theme of THEMES) {
   });
 }
 
+test("Alterar data e ajustes: com a altura do painel ainda abrindo, levar um controle à vista não rola o conteúdo dentro do painel", async ({
+  page,
+}, testInfo) => {
+  test.skip(
+    testInfo.project.name !== "chromium-desktop",
+    "no celular o painel abre sem animação de altura"
+  );
+  await openSaleLab(page, "claro");
+  const extras = page.getByRole("button", { name: "Alterar data e ajustes" });
+  await expect(extras).toBeVisible();
+  // the timeline of the page stands still, so the opening stays at its first frame (height 0, clipped) for as long
+  // as the check takes, however slow the machine
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send("Animation.enable");
+  await cdp.send("Animation.setPlaybackRate", { playbackRate: 0 });
+  await extras.click();
+  const panel = page.locator("[data-slot=collapsible-content]");
+  await expect
+    .poll(() =>
+      panel.evaluate((node) =>
+        node.getAnimations().map((animation) => animation.playState)
+      )
+    )
+    .toEqual(["running"]);
+  const scrolled = await panel.evaluate((node) => {
+    const add = [...node.querySelectorAll("button")].find(
+      (button) => button.textContent?.trim() === "Adicionar ajuste"
+    );
+    add?.scrollIntoView({ block: "center" });
+    return { found: add !== undefined, scrollTop: node.scrollTop };
+  });
+  expect(scrolled).toEqual({ found: true, scrollTop: 0 });
+  await cdp.send("Animation.setPlaybackRate", { playbackRate: 1 });
+  await page.getByRole("button", { name: "Adicionar ajuste" }).click();
+  await expect(
+    page.getByRole("group", { exact: true, name: "Ajuste 1" })
+  ).toBeVisible();
+});
+
 /**
  * The touch area of a button: the `::before` of `touch-hit` when it is on (it is positioned from the padding box,
  * inside the border), or the box itself.
