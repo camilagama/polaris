@@ -438,6 +438,11 @@ const DEVICE_CHECK_REUSE_MS = RENEW_BEFORE_MS;
 export const SESSION_RECHECK_MS = 360_000;
 const EMPTY_COUNTS: PendingWork = { pending: 0, rejected: 0, sending: 0 };
 
+async function countsOf(stores: OpenedStores): Promise<PendingWork> {
+  const { pending, rejected, sending } = await stores.outbox.snapshot();
+  return { pending, rejected, sending };
+}
+
 /** What one sync run was started for, so a late answer never acts on whoever opened after it. */
 interface RunScope {
   generation: number;
@@ -1194,19 +1199,12 @@ export class OfflineRuntime {
     if (!stores) {
       return;
     }
-    const queue = await stores.outbox.snapshot();
+    const counts = await countsOf(stores);
     if (generation !== this.generation) {
       // the organization changed while the queue was being read
       return;
     }
-    this.set({
-      ...this.snapshot,
-      counts: {
-        pending: queue.pending,
-        rejected: queue.rejected,
-        sending: queue.sending,
-      },
-    });
+    this.set({ ...this.snapshot, counts });
   }
 
   // ------------------------------------------------------------- internals
@@ -1854,9 +1852,12 @@ export class OfflineRuntime {
       );
       bootstrapped = true;
     }
+    // read before announcing ready: a ready snapshot with empty counts would say "Tudo sincronizado" over a queue on disk
+    const counts = await countsOf(stores);
     this.set({
       ...this.snapshot,
       bootstrapped,
+      counts,
       dataVersion: this.snapshot.dataVersion + 1,
       expiredWhileOpen: false,
       leaseExpiresAt: new Date(claims.exp * 1000).toISOString(),
@@ -1866,7 +1867,6 @@ export class OfflineRuntime {
       renewalRefused: false,
     });
     this.scheduleExpiry(claims.exp * 1000, generation);
-    await this.refreshCounts();
   }
 
   /**
@@ -1897,9 +1897,11 @@ export class OfflineRuntime {
     this.deviceId = deviceId;
     this.lease = null;
     await stores.outbox.recoverInterrupted(); // a send cut short counts as waiting, as at any start
+    const counts = await countsOf(stores);
     this.set({
       ...this.snapshot,
       bootstrapped: false,
+      counts,
       dataVersion: this.snapshot.dataVersion + 1,
       leaseExpiresAt: claims ? new Date(claims.exp * 1000).toISOString() : null,
       online: this.dependencies.isOnline(),
@@ -1908,7 +1910,6 @@ export class OfflineRuntime {
       renewalRefused: false,
       syncing: false,
     });
-    await this.refreshCounts();
   }
 
   /** A timer at the lease's `exp`: with the app open, the access ends on time, not at the next sync. */
