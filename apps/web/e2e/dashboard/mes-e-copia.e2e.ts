@@ -25,7 +25,7 @@ import {
   chartRegion,
   choosePreset,
   expectPreset,
-  rangeFields,
+  chooseRange,
   copyNotice,
 } from "./shared";
 
@@ -340,7 +340,7 @@ test("um mês sem vendas nem despesas mostra o estado vazio, sem cartões", asyn
   const server = new FakeReportServer();
   await openDashboard(page, server);
 
-  await rangeFields(page, "2026-03-01", "2026-03-31");
+  await chooseRange(page, "2026-03-01", "2026-03-31");
 
   await expect(
     page.getByText("Sem vendas nem despesas em 1 a 31 de março")
@@ -486,7 +486,7 @@ test("sem conexão, a cópia vale só para o mês já lido, com a estimativa com
 
   server.networkDown = true;
   // a range never read has no copy at all: it opens only with a connection (AC-16)
-  await rangeFields(page, "2026-08-01", "2026-08-31");
+  await chooseRange(page, "2026-08-01", "2026-08-31");
   await expect(page.getByRole("alert")).toContainText(
     "Este período só abre com internet.",
     { timeout: 15_000 }

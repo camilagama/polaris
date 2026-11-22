@@ -2,8 +2,9 @@
 import type { Page, Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 import {
-  expectWholeMonthWhileTyping,
+  expectNoTypedDates,
   FORM_VIEWPORTS,
+  panelHeight,
   touchDay,
 } from "./date-pickers";
 import { applyEditor, onPhone } from "./filter-bar-editor";
@@ -172,6 +173,14 @@ for (const viewport of FORM_VIEWPORTS) {
       // "Limpar" empties the period: the pill goes and the list is asked for with no period
       const clearing = await openPeriod(page);
       await clearing.getByRole("button", { name: "Limpar" }).click();
+      if (onPhone(page)) {
+        await expect(
+          clearing
+            .getByRole("group", { name: "Atalhos do período" })
+            .getByRole("button")
+            .first()
+        ).toBeFocused();
+      }
       await applyEditor(page, clearing);
       await expect(clearing).toBeHidden();
       await expect(pill(page, "Período")).toHaveCount(0);
@@ -243,64 +252,43 @@ for (const viewport of FORM_VIEWPORTS) {
         .toBe(true);
     });
 
-    test("digitar as datas: a data que não existe não aplica e leva o foco ao campo; o período digitado chega à lista", async ({
+    test("o painel do período não tem campo de data digitada e mantém a altura ao abrir, marcar o início e marcar o fim", async ({
       page,
     }) => {
       const asked = await openHistory(page);
       const popup = await addFilter(page, "Período");
       await expect(popup.getByRole("grid").first()).toBeVisible();
-      // a first day touched is written in the field when the typing opens, and kept where the caller applies
+      await expectNoTypedDates(popup);
+      const opened = await panelHeight(popup);
+
       await touchDay(popup, "2026-10-12");
-      await popup.getByRole("button", { name: "Digitar as datas" }).click();
-      const start = popup.getByRole("textbox", { name: "Início" });
-      const end = popup.getByRole("textbox", { name: "Fim" });
-      await expect(start).toBeFocused();
-      await expect(start).toHaveValue("12/10/2026");
-      await expect(end).toHaveValue("");
-      await expectWholeMonthWhileTyping(popup);
+      await expect(
+        popup.getByText("Início 12/10. Escolha o último dia.")
+      ).toBeVisible();
+      await expectNoTypedDates(popup);
+      expect(await panelHeight(popup)).toBeCloseTo(opened, 1);
 
-      await start.fill("");
-      await start.pressSequentially("31022026");
-      await end.pressSequentially("14102026");
-      const apply = popup.getByRole("button", { exact: true, name: "Aplicar" });
-      await expect(apply).toHaveAttribute("aria-disabled", "true");
-      await expect(apply).toHaveAccessibleDescription(
-        "Essa data não existe. Confira dia, mês e ano."
-      );
-      await apply.focus();
-      await page.keyboard.press("Enter");
-      await expect(start).toBeFocused();
-      await expect(popup).toBeVisible();
-      await expect(popup.getByRole("alert")).toHaveText(
-        "Essa data não existe. Confira dia, mês e ano."
-      );
-      await expect(popup.getByRole("alert")).toBeInViewport({ ratio: 1 });
-
-      await start.fill("");
-      await start.pressSequentially("01102026");
-      await expect(popup.getByRole("alert")).toHaveCount(0);
-      await expect(apply).not.toHaveAttribute("aria-disabled", "true");
-      await apply.click();
+      if (onPhone(page)) {
+        await touchDay(popup, "2026-10-14");
+        await expect(popup.locator('p[aria-live="polite"]')).toHaveText("");
+        expect(await panelHeight(popup)).toBeCloseTo(opened, 1);
+        await applyEditor(page, popup);
+      } else {
+        await touchDay(popup, "2026-10-14");
+      }
       await expect(popup).toBeHidden();
       await expect(pill(page, "Período")).toHaveAccessibleName(
-        "Período: 01/10 a 14/10, editar"
+        "Período: 12/10 a 14/10, editar"
       );
       await expect
         .poll(() => lastAsked(asked))
         .toMatchObject({
-          occurredFrom: "2026-10-01",
+          occurredFrom: "2026-10-12",
           occurredTo: "2026-10-14",
         });
 
-      // reopened, the fields show the period there is, and a day touched is written in them
       const again = await openPeriod(page);
-      await again.getByRole("button", { name: "Digitar as datas" }).click();
-      await expect(again.getByRole("textbox", { name: "Início" })).toHaveValue(
-        "01/10/2026"
-      );
-      await expect(again.getByRole("textbox", { name: "Fim" })).toHaveValue(
-        "14/10/2026"
-      );
+      await expectNoTypedDates(again);
     });
   });
 }

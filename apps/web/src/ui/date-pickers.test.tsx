@@ -12,7 +12,6 @@ import {
   DateRangeFooter,
   DateRangePanel,
   DateRangePicker,
-  draftLabel,
 } from "@/ui/date-range-picker";
 import { parseIsoDate } from "@/ui/date-values";
 
@@ -238,7 +237,11 @@ describe("DateRangePicker", () => {
   });
 });
 
-const OPEN_TOGGLE = /<button[^>]*aria-expanded="false"[^>]*>[\s\S]*?<\/button>/;
+const HIDDEN_CLEAR = /<button[^>]*invisible[^>]*>Limpar<\/button>/;
+const INPUT_TAG = /<input[\s>]/;
+const EXPANDED_BUTTON = /<button[^>]*aria-expanded=/;
+const INVISIBLE_COPY =
+  /<span[^>]*aria-hidden="true"[^>]*invisible[^>]*data-text="Início 31\/12\/2099\. Escolha o último dia\."[^>]*>/;
 const SHORTCUT_GROUP = /<fieldset[^>]*aria-label="Atalhos do período"[^>]*>/;
 const PRESSED_SHORTCUT = /<button[^>]*aria-pressed="true"[^>]*>/;
 const STATUS_LINE = /<p[^>]*aria-live="polite"[^>]*sr-only/;
@@ -258,33 +261,26 @@ describe("DateRangePanel", () => {
       />
     );
 
-  it("o intervalo escolhido fica escrito sob o mês, no botão que abre os campos, e o nome do botão o contém", () => {
-    const markup = panel();
-    const toggle = OPEN_TOGGLE.exec(markup)?.[0] ?? "";
-    expect(attribute(toggle, "aria-label")).toBe(
-      "Digitar as datas: 01/10 a 31/10"
-    );
-    expect(toggle).toContain("01/10 a 31/10");
-    expect(toggle).not.toContain(">Digitar as datas<");
+  it("o painel não tem botão de digitar as datas nem campo de texto, com ou sem período", () => {
+    for (const markup of [panel(), panel({ value: null })]) {
+      expect(markup).not.toContain("Digitar as datas");
+      expect(markup).not.toMatch(INPUT_TAG);
+      expect(markup).not.toMatch(EXPANDED_BUTTON);
+    }
   });
 
-  it("sem período o botão diz Digitar as datas, sem nome próprio", () => {
-    const markup = panel({ value: null });
-    const toggle = OPEN_TOGGLE.exec(markup)?.[0] ?? "";
-    expect(attribute(toggle, "aria-label")).toBeUndefined();
-    expect(toggle).toContain("Digitar as datas");
-  });
-
-  it("sem Limpar e sem frase não há linha de rodapé (régua e altura), só a frase para o leitor de tela", () => {
+  it("sem Limpar a linha do rodapé fica (régua e altura da frase mais longa), e a frase vazia segue só para o leitor de tela", () => {
     const markup = panel({ clearable: false });
-    expect(markup).not.toContain("border-border border-t");
+    expect(markup).toContain("border-border border-t");
     expect(markup).not.toContain("Limpar");
     expect(markup).toMatch(STATUS_LINE);
+    expect(markup).toMatch(INVISIBLE_COPY);
   });
 
-  it("com Limpar a linha do rodapé volta", () => {
-    expect(panel()).toContain("border-border border-t");
+  it("com Limpar a linha do rodapé volta, e sem período o botão guarda o lugar, invisível", () => {
     expect(panel()).toContain("Limpar");
+    expect(panel()).not.toMatch(HIDDEN_CLEAR);
+    expect(panel({ value: null })).toMatch(HIDDEN_CLEAR);
   });
 
   it("com `only`, os atalhos de fora ficam no lugar, apagados e ligados ao motivo; os dois de dentro seguem ativos", () => {
@@ -312,19 +308,18 @@ describe("DateRangePanel", () => {
     expect(markup).toContain("Sem conexão: só este mês e o anterior.");
   });
 
-  it("com `only` não há campos para digitar nem Limpar (os dias desligados do calendário, que abre sob demanda, são provados no navegador)", () => {
+  it("com `only` não há rodapé nem Limpar (os dias desligados do calendário, que abre sob demanda, são provados no navegador)", () => {
     const markup = panel({
       only: { reason: "Sem conexão.", shortcuts: ["este-mes"] },
     });
-    expect(markup).not.toContain("Digitar as datas");
     expect(markup).not.toContain("Limpar");
+    expect(markup).not.toContain("border-border border-t");
   });
 
-  it("sem `only` nenhum atalho fica apagado e há campos para digitar", () => {
+  it("sem `only` nenhum atalho fica apagado", () => {
     const markup = panel();
     expect(markup).not.toContain('data-preset="este-mes" aria-disabled');
     expect(markup).not.toMatch(PRESET_OFF);
-    expect(markup).toContain("Digitar as datas");
   });
 
   it("os atalhos pressionados têm fundo próprio no escuro, na coluna e no segmentado, e o segmentado rola de lado em vez de quebrar", () => {
@@ -339,68 +334,32 @@ describe("DateRangePanel", () => {
   });
 });
 
-describe("draftLabel, o que o botão de digitar as datas escreve", () => {
-  const today = "2026-10-24";
-
-  it("o 1º dia só segue a regra de ano do intervalo completo: sem ano neste ano, com ano em outro", () => {
-    expect(draftLabel({ from: "2026-11-03" }, today)).toBe("03/11 a …");
-    expect(draftLabel({ from: "2025-11-03" }, today)).toBe("03/11/2025 a …");
-    expect(draftLabel({ from: "2027-01-05" }, today)).toBe("05/01/2027 a …");
-  });
-
-  it("o intervalo completo não muda: sem ano quando é todo deste ano, com ano nos dois quando não é", () => {
-    expect(draftLabel({ from: "2026-10-01", to: "2026-10-31" }, today)).toBe(
-      "01/10 a 31/10"
-    );
-    expect(draftLabel({ from: "2025-12-20", to: "2026-01-10" }, today)).toBe(
-      "20/12/2025 a 10/01/2026"
-    );
-  });
-
-  it("sem início não escreve nada", () => {
-    expect(draftLabel(undefined, today)).toBeUndefined();
-  });
-});
-
 describe("DateRangeFooter, a frase do 1º dia escolhido", () => {
   const today = "2026-10-24";
-  const quiet = {
-    open: false,
-    reason: undefined,
-    statusId: "status",
-    statusQuiet: false,
-  } as const;
   const footer = (half: string) =>
     html(
       <DateRangeFooter
+        canClear={false}
         clearable={false}
         half={half}
         onClear={noop}
+        statusId="status"
         today={today}
-        typed={quiet}
       />
     );
   const sentence = (half: string) =>
     FOOTER_SENTENCE.exec(footer(half))?.[1] ?? "";
-  const buttonDay = (half: string) =>
-    (draftLabel({ from: half }, today) ?? "").replace(" a …", "");
 
-  it("no ano de hoje o rodapé não escreve o ano, e é o mesmo dia do botão", () => {
+  it("no ano de hoje o rodapé não escreve o ano", () => {
     expect(sentence("2026-10-10")).toBe("Início 10/10. Escolha o último dia.");
-    expect(sentence("2026-10-10")).toBe(
-      `Início ${buttonDay("2026-10-10")}. Escolha o último dia.`
-    );
   });
 
-  it("em outro ano o rodapé escreve o ano, e é o mesmo dia do botão", () => {
+  it("em outro ano o rodapé escreve o ano", () => {
     expect(sentence("2025-10-10")).toBe(
       "Início 10/10/2025. Escolha o último dia."
     );
-    expect(sentence("2025-10-10")).toBe(
-      `Início ${buttonDay("2025-10-10")}. Escolha o último dia.`
-    );
     expect(sentence("2027-01-05")).toBe(
-      `Início ${buttonDay("2027-01-05")}. Escolha o último dia.`
+      "Início 05/01/2027. Escolha o último dia."
     );
   });
 

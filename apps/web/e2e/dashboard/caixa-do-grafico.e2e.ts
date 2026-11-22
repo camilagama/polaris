@@ -8,7 +8,7 @@ import {
   YEAR_NAME,
   choosePreset,
   expectPreset,
-  rangeFields,
+  chooseRange,
   SIZES,
   chartPlaces,
   type ChartPlaces,
@@ -116,7 +116,7 @@ test.describe("a caixa inteira do cartão do gráfico não muda de altura entre 
           await expect(drawn()).toBeVisible();
           expectSameBox(await chartPlaces(page), month);
 
-          await rangeFields(page, ...YEAR_AGO_TO_TODAY);
+          await chooseRange(page, ...YEAR_AGO_TO_TODAY);
           await expectPreset(page, "Período");
           await expect(chartRegion(page)).toContainText("Melhor mês");
           await expect(drawn()).toBeVisible();
