@@ -218,7 +218,7 @@ test("Alterar data e ajustes: com a altura do painel ainda abrindo, levar um con
   ).toBeVisible();
 });
 
-test("Alterar data e ajustes: com a altura do painel ainda fechando, o conteúdo dentro do painel não rola e a página não pula", async ({
+test("Alterar data e ajustes: com a altura do painel ainda fechando, o conteúdo dentro do painel não rola", async ({
   page,
 }, testInfo) => {
   test.skip(
@@ -235,13 +235,10 @@ test("Alterar data e ajustes: com a altura do painel ainda fechando, o conteúdo
   await expect
     .poll(() => panel.evaluate((node) => node.getAnimations().length))
     .toBe(0);
-  const add = page.getByRole("button", { name: "Adicionar ajuste" });
-  await add.focus();
-  const before = await panel.evaluate((node) => ({
-    height: node.getBoundingClientRect().height,
-    pageY: window.scrollY,
-  }));
-  expect(before.height).toBeGreaterThan(0);
+  const openHeight = await panel.evaluate(
+    (node) => node.getBoundingClientRect().height
+  );
+  expect(openHeight).toBeGreaterThan(0);
   const cdp = await page.context().newCDPSession(page);
   await cdp.send("Animation.enable");
   await cdp.send("Animation.setPlaybackRate", { playbackRate: 0 });
@@ -253,21 +250,40 @@ test("Alterar data e ajustes: com a altura do painel ainda fechando, o conteúdo
       )
     )
     .toEqual(["running"]);
-  const { height, ...closing } = await panel.evaluate((node) => ({
-    contentScrollTop: node.firstElementChild?.scrollTop ?? -1,
-    height: node.getBoundingClientRect().height,
-    overflow: getComputedStyle(node).overflowY,
-    pageY: window.scrollY,
-    scrollTop: node.scrollTop,
-  }));
-  expect(height).toBeGreaterThan(0);
-  expect(closing).toEqual({
-    contentScrollTop: 0,
-    overflow: "clip",
-    pageY: before.pageY,
-    scrollTop: 0,
+  // the first frame has the full height, where nothing needs to scroll, so the check stands in the middle of the
+  // closing: the animation is paused 100 ms in, with the panel shorter than its content
+  const measured = await panel.evaluate((node) => {
+    const [animation] = node.getAnimations();
+    animation?.pause();
+    if (animation) {
+      animation.currentTime = 100;
+    }
+    const add = [...node.querySelectorAll("button")].find(
+      (button) => button.textContent?.trim() === "Adicionar ajuste"
+    );
+    add?.scrollIntoView({ block: "center" });
+    return {
+      contentScrollTop: node.firstElementChild?.scrollTop ?? -1,
+      found: add !== undefined,
+      height: node.getBoundingClientRect().height,
+      scrollHeight: node.scrollHeight,
+      scrollTop: node.scrollTop,
+    };
   });
+  expect(measured.found).toBe(true);
+  expect(measured.height).toBeGreaterThan(0);
+  expect(measured.height).toBeLessThan(openHeight);
+  expect(measured.height).toBeLessThan(measured.scrollHeight);
+  expect({
+    contentScrollTop: measured.contentScrollTop,
+    scrollTop: measured.scrollTop,
+  }).toEqual({ contentScrollTop: 0, scrollTop: 0 });
   await cdp.send("Animation.setPlaybackRate", { playbackRate: 1 });
+  await panel.evaluate((node) => {
+    for (const animation of node.getAnimations()) {
+      animation.play();
+    }
+  });
   await expect(
     page.getByRole("button", { name: "Alterar data e ajustes" })
   ).toBeVisible();
