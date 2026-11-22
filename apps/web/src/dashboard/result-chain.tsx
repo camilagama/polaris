@@ -91,7 +91,7 @@ export function ResultChain({
       <CardHeader className="border-b py-(--card-spacing)">
         <BlockHeader
           help={{
-            about: "Como chegamos a este resultado",
+            about: "Como chegamos a este resultado: o que é",
             text: "Das vendas brutas ao resultado estimado, linha a linha.",
           }}
           id={CHAIN_TITLE_ID}

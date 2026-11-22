@@ -150,7 +150,7 @@ function SalesCover({
   return (
     <button
       aria-label={`${label} de ${periodRangeLabel(period, today)} no Histórico`}
-      className="focus-ring absolute inset-0 cursor-pointer rounded-xl hover:bg-foreground/[0.03] touch:focus-visible:-outline-offset-3"
+      className="focus-ring absolute inset-0 cursor-pointer rounded-xl hover:bg-foreground/[0.03] focus-visible:-outline-offset-3"
       data-kpi-sales-link=""
       onClick={handleClick}
       type="button"
@@ -321,7 +321,10 @@ export function ResultCardsView({
         chip={chipOf(read.sales)}
         date={date}
         entity="sales"
-        help={{ about: salesName, text: read.sales.help }}
+        help={{
+          about: salesName,
+          text: `${read.sales.help} ${read.sales.count}.`,
+        }}
         id="result-kpi-sales"
         cover={salesCover({
           count: cards.salesCount,

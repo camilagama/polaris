@@ -559,8 +559,7 @@ export const NO_CONNECTION_NOTE = "Sem conexão";
 
 /**
  * The four tiles without a connection and without a copy on the device (§ 7.4): in their places and with the height
- * of a tile without the cost warning, each with its name, "—" (an unknown value is never a zero) and "Sem conexão". Only the
- * Result tile grows, by the line of its cost warning, when the figures come.
+ * of a tile without the cost warning, each with its name, "—" (an unknown value is never a zero) and "Sem conexão".
  */
 export function NoFiguresCards({ today }: { today: string }) {
   const name = monthTitle(today).toLowerCase();
@@ -605,7 +604,7 @@ export function NoFiguresCards({ today }: { today: string }) {
 
 /**
  * The four tiles while the figures are read: the shape of `KpiCards`, each with the rows it has with figures, so the
- * tiles that come take the same places (the Result tile, with a cost warning, adds its line).
+ * tiles that come take the same places.
  */
 export function KpiCardsSkeleton() {
   return (
