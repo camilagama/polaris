@@ -137,7 +137,7 @@ export function ChartDataTable({
                     className={cn(
                       "px-2 py-2.5",
                       columns[index]?.numeric &&
-                        "text-right font-mono tabular-nums",
+                        cn("text-right tabular-nums", visible && "font-mono"),
                       !hiddenValues &&
                         row.negativeCells?.includes(index) &&
                         "text-destructive",
@@ -158,7 +158,8 @@ export function ChartDataTable({
             <tr>
               <td
                 className={cn(
-                  "px-2 py-2.5 text-right font-mono tabular-nums",
+                  "px-2 py-2.5 text-right tabular-nums",
+                  visible && "font-mono",
                   stacked && STACK_FOOT
                 )}
                 colSpan={columns.length}
