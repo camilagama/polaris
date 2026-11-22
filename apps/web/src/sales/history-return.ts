@@ -1,7 +1,7 @@
 /**
  * How the Histórico was when a sale was opened from it: the filters and the scroll, kept in `sessionStorage` (the
  * detail is another page load, and the tab's own storage ends with it) and handed back only when the person leaves
- * the detail by its "Voltar". A snapshot nobody armed is one the person walked away from: the Histórico opens as the menu
+ * the detail by its "Voltar", and only for the sale it was opened from. A snapshot nobody armed is one the person walked away from: the Histórico opens as the menu
  * opens it. The customer's name can be in the filters, so `leave-browser.ts` clears it with the session.
  */
 export const HISTORY_RETURN_KEY = "polaris.sales.historyReturn";
@@ -28,6 +28,7 @@ export interface HistoryReturn {
 interface Stored extends HistoryReturn {
   armed: boolean;
   organizationId: string;
+  saleId: string;
 }
 
 function text(value: unknown): string {
@@ -42,7 +43,7 @@ function parse(raw: string | null): Stored | null {
   try {
     value = JSON.parse(raw);
   } catch {
-    // storage blocked or full
+    // corrupted value
     return null;
   }
   if (typeof value !== "object" || value === null) {
@@ -68,6 +69,7 @@ function parse(raw: string | null): Stored | null {
       to: text(Reflect.get(filters, "to")),
     },
     organizationId,
+    saleId: text(Reflect.get(value, "saleId")),
     scrollY:
       typeof scrollY === "number" && Number.isFinite(scrollY) && scrollY > 0
         ? Math.round(scrollY)
@@ -87,9 +89,10 @@ function read(store: Store | null): Stored | null {
 export function rememberHistoryReturn(
   store: Store | null,
   organizationId: string,
+  saleId: string,
   state: HistoryReturn
 ): void {
-  const stored: Stored = { ...state, armed: false, organizationId };
+  const stored: Stored = { ...state, armed: false, organizationId, saleId };
   try {
     store?.setItem(HISTORY_RETURN_KEY, JSON.stringify(stored));
   } catch {
@@ -97,9 +100,9 @@ export function rememberHistoryReturn(
   }
 }
 
-export function armHistoryReturn(store: Store | null): void {
+export function armHistoryReturn(store: Store | null, saleId: string): void {
   const stored = read(store);
-  if (stored === null) {
+  if (stored === null || stored.saleId !== saleId) {
     return;
   }
   try {

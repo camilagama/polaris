@@ -274,6 +274,32 @@ test("AC-B2.3 · sem usar o Voltar, o Histórico abre como o menu abre: sem per�
   expect(lists.at(-1)?.status).toBeUndefined();
 });
 
+test("AC-B2.3 · o Voltar de outra venda que não saiu da lista não repõe a lista que ficou para trás", async ({
+  page,
+}) => {
+  await page.setViewportSize({ height: 800, width: 1280 });
+  const lists = await serve(page);
+  await page.goto("/sales/history");
+  await page.evaluate(() =>
+    window.history.replaceState({ historyStatus: "cancelled" }, "")
+  );
+  await page.reload();
+  await expect.poll(() => lists.at(-1)?.status).toBe("cancelled");
+  await page.locator(`a[href$="saleId=${DETAIL_SALE_ID}"]`).click();
+  await expect(
+    page.getByRole("heading", { level: 1, name: SALE_HEADING })
+  ).toBeVisible();
+  await page.goto(`/sales/detail?saleId=${saleId(5)}`);
+  await expect(
+    page.getByRole("heading", { level: 1, name: SALE_HEADING })
+  ).toBeVisible();
+  const before = lists.length;
+  await page.getByRole("link", { exact: true, name: BACK_NAME }).click();
+  await expect(page.getByRole("list", { name: "Vendas" })).toBeVisible();
+  await expect.poll(() => lists.length).toBeGreaterThan(before);
+  expect(lists.at(-1)?.status).toBeUndefined();
+});
+
 const BACK_LINK_NAME = /^Voltar/;
 const MENU_ROUTES = [...NAV_ITEMS.map((item) => item.href), HELP_HREF];
 

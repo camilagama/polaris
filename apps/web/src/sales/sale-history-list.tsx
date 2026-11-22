@@ -120,7 +120,7 @@ function HistoryItem({
   row,
 }: {
   offline: boolean;
-  onOpen?: (() => void) | undefined;
+  onOpen?: ((saleId: string) => void) | undefined;
   row: HistoryRow;
 }) {
   return (
@@ -133,7 +133,7 @@ function HistoryItem({
         <a
           className={`${ROW} focus-ring hover:bg-muted/50 focus-visible:-outline-offset-3`}
           href={row.detailHref}
-          onClick={onOpen}
+          onClick={onOpen === undefined ? undefined : () => onOpen(row.id)}
         >
           <RowBody chevron row={row} />
         </a>
@@ -151,7 +151,7 @@ export function SaleHistoryList({
 }: {
   footer?: ReactNode;
   offline: boolean;
-  onOpen?: () => void;
+  onOpen?: (saleId: string) => void;
   rows: readonly HistoryRow[];
 }) {
   return (

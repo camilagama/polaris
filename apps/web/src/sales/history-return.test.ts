@@ -17,6 +17,7 @@ function fakeStorage() {
   };
 }
 
+const SALE = "sale-1";
 const NONE = { customer: "", from: "", query: "", status: "", to: "" };
 const FILTERS = {
   ...NONE,
@@ -29,8 +30,11 @@ const FILTERS = {
 describe("what the Histórico gives back on Voltar", () => {
   it("gives back the filters and the scroll once Voltar armed them", () => {
     const store = fakeStorage();
-    rememberHistoryReturn(store, "org-1", { filters: FILTERS, scrollY: 640.4 });
-    armHistoryReturn(store);
+    rememberHistoryReturn(store, "org-1", SALE, {
+      filters: FILTERS,
+      scrollY: 640.4,
+    });
+    armHistoryReturn(store, SALE);
     expect(readHistoryReturn(store, "org-1")).toEqual({
       filters: FILTERS,
       scrollY: 640,
@@ -39,29 +43,48 @@ describe("what the Histórico gives back on Voltar", () => {
 
   it("gives nothing back when the person walked away from the detail instead of pressing Voltar", () => {
     const store = fakeStorage();
-    rememberHistoryReturn(store, "org-1", { filters: FILTERS, scrollY: 640 });
+    rememberHistoryReturn(store, "org-1", SALE, {
+      filters: FILTERS,
+      scrollY: 640,
+    });
     expect(readHistoryReturn(store, "org-1")).toBeNull();
   });
 
   it("gives nothing back to another store", () => {
     const store = fakeStorage();
-    rememberHistoryReturn(store, "org-1", { filters: FILTERS, scrollY: 640 });
-    armHistoryReturn(store);
+    rememberHistoryReturn(store, "org-1", SALE, {
+      filters: FILTERS,
+      scrollY: 640,
+    });
+    armHistoryReturn(store, SALE);
     expect(readHistoryReturn(store, "org-2")).toBeNull();
   });
 
   it("drops it", () => {
     const store = fakeStorage();
-    rememberHistoryReturn(store, "org-1", { filters: FILTERS, scrollY: 640 });
-    armHistoryReturn(store);
+    rememberHistoryReturn(store, "org-1", SALE, {
+      filters: FILTERS,
+      scrollY: 640,
+    });
+    armHistoryReturn(store, SALE);
     clearHistoryReturn(store);
     expect(readHistoryReturn(store, "org-1")).toBeNull();
     expect(store.map.has(HISTORY_RETURN_KEY)).toBe(false);
   });
 
+  it("gives nothing back when the Voltar belongs to another sale than the one opened from the list", () => {
+    const store = fakeStorage();
+    rememberHistoryReturn(store, "org-1", SALE, {
+      filters: FILTERS,
+      scrollY: 640,
+    });
+    armHistoryReturn(store, "sale-2");
+    expect(readHistoryReturn(store, "org-1")).toBeNull();
+  });
+
   it("arming with nothing remembered writes nothing", () => {
     const store = fakeStorage();
-    armHistoryReturn(store);
+    armHistoryReturn(store, SALE);
     expect(store.map.size).toBe(0);
   });
 
@@ -85,8 +108,11 @@ describe("what the Histórico gives back on Voltar", () => {
   });
 
   it("works with no storage at all", () => {
-    rememberHistoryReturn(null, "org-1", { filters: FILTERS, scrollY: 1 });
-    armHistoryReturn(null);
+    rememberHistoryReturn(null, "org-1", SALE, {
+      filters: FILTERS,
+      scrollY: 1,
+    });
+    armHistoryReturn(null, SALE);
     clearHistoryReturn(null);
     expect(readHistoryReturn(null, "org-1")).toBeNull();
   });

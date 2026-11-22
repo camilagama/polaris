@@ -211,12 +211,12 @@ function useOpeningHistory(organizationId: string): {
 function useRememberHistoryOnOpen(
   organizationId: string,
   filters: HistoryFilters
-): () => void {
+): (saleId: string) => void {
   const filtersNow = useRef(filters);
   filtersNow.current = filters;
   return useCallback(
-    () =>
-      rememberHistoryReturn(sessionStorageOrNull(), organizationId, {
+    (saleId: string) =>
+      rememberHistoryReturn(sessionStorageOrNull(), organizationId, saleId, {
         filters: filtersNow.current,
         scrollY: window.scrollY,
       }),

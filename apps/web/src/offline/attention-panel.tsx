@@ -52,10 +52,11 @@ export interface AttentionPanelProps {
   busyCommandId?: string | null;
   /** What the last attempt to resolve an item said, drawn inside the card of that item. */
   error?: AttentionError | null;
-  notices?: ReactNode;
   onDiscard: (item: AttentionItem) => void;
   onRedo?: (item: AttentionItem) => void;
   onResubmit: (item: AttentionItem) => void;
+  /** What the sign-out has to say (its failure, the work it would lose), under the list. */
+  notices?: ReactNode;
   onSignInAgain: (item: AttentionItem) => void;
   /** Why "Refazer esta venda" did not open Vender, shown in the card of that sale. */
   redoProblem?: RedoProblem | null;
@@ -71,11 +72,11 @@ export interface AttentionError {
 
 const ACTION_LABEL: Record<AttentionAction, string> = {
   discard: "Descartar…",
-  open_subscription: "Ver Assinatura",
   redo_sale: "Refazer esta venda",
   resubmit: "Reenviar venda",
   resubmit_without_profile: "Reenviar sem perfil de pagamento",
   retry: "Tentar novamente",
+  open_subscription: "Ver Assinatura",
   sign_in_again: "Sair e entrar de novo",
 };
 
