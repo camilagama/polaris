@@ -40,13 +40,13 @@ const ORGANIZATION = {
 };
 const SALE_ID = "00000000-0000-4000-8000-000000000070";
 const ITEM_LABEL = "Camiseta — Azul / M";
+const ACTIONS_MENU = { name: /^Ações/ };
 const REGISTER_RETURN = { name: "Registrar devolução" };
-const RETURN_HEADING = { level: 2, name: "Registrar devolução" };
+const RETURN_HEADING = { name: "Registrar devolução" };
 const RETURNED_FIELD = { name: `Devolvido: ${ITEM_LABEL} (até 2)` };
 const REREAD_MARKER = "Conferida no balcão";
 const REREAD_MARKER_LINE = `Observação: ${REREAD_MARKER}`;
 const DRAFT_NOTE = "Zíper quebrado";
-const HISTORY_ROW = /v1 · Cliente removido/;
 const REASON_FIELD = { name: /Motivo/ };
 const NOTE_FIELD = { name: /Observação/ };
 const RETURNED_FIELD_AFTER = { name: `Devolvido: ${ITEM_LABEL} (até 1)` };
@@ -54,20 +54,6 @@ const RETURNED_FIELD_AFTER = { name: `Devolvido: ${ITEM_LABEL} (até 1)` };
 const NO_CUSTOMER_LINK: SaleCustomerLinkReadModel = {
   current: { customerId: null, version: 0 },
   history: [],
-  saleId: SALE_ID,
-};
-
-/** What the customer card reads after the return: a link that is not the one it showed before. */
-const UNASSIGNED_LINK: SaleCustomerLinkReadModel = {
-  current: { customerId: null, version: 1 },
-  history: [
-    {
-      action: "unassign",
-      createdAt: "2026-06-11T13:00:00.000Z",
-      customerId: null,
-      version: 1,
-    },
-  ],
   saleId: SALE_ID,
 };
 
@@ -190,8 +176,14 @@ function renderPage() {
   );
 }
 
+async function openReturnFromMenu() {
+  const user = userEvent.setup();
+  await user.click(await screen.findByRole("button", ACTIONS_MENU));
+  await user.click(await screen.findByRole("menuitem", REGISTER_RETURN));
+}
+
 async function openAndConfirmReturn() {
-  fireEvent.click(await screen.findByRole("button", REGISTER_RETURN));
+  await openReturnFromMenu();
   fireEvent.change(await screen.findByRole("textbox", RETURNED_FIELD), {
     target: { value: "1" },
   });
@@ -213,20 +205,20 @@ beforeEach(() => {
 
 afterEach(cleanup);
 
-describe("the panels of the sale detail after a change to the returnable quantities", () => {
-  it("remounts the customer panel (it reads the customer again) and the return panel (back to its start) when the available quantities change", async () => {
+describe("the dialogs of the sale detail after a change to the returnable quantities", () => {
+  it("closes the return dialog, back to its start, when the available quantities change, and does not read the customer again", async () => {
     getSale.mockResolvedValueOnce(detail(0)).mockResolvedValueOnce(detail(1));
     renderPage();
     await openAndConfirmReturn();
-    await waitFor(() => expect(getCustomerLink).toHaveBeenCalledTimes(2));
     await waitFor(() =>
-      expect(screen.queryByRole("heading", RETURN_HEADING)).toBeNull()
+      expect(screen.queryByRole("dialog", RETURN_HEADING)).toBeNull()
     );
-    expect(screen.getByRole("button", REGISTER_RETURN)).toBeTruthy();
+    expect(getCustomerLink).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("button", ACTIONS_MENU)).toBeTruthy();
     expect(getSale).toHaveBeenCalledTimes(2);
   });
 
-  it("keeps both panels mounted when the detail is read again with the same available quantities", async () => {
+  it("keeps the return dialog open, with its failure, when the detail is read again with the same available quantities", async () => {
     getSale
       .mockResolvedValueOnce(detail(0))
       .mockResolvedValueOnce(detail(0, REREAD_MARKER));
@@ -235,20 +227,14 @@ describe("the panels of the sale detail after a change to the returnable quantit
     await screen.findByText(REREAD_MARKER_LINE);
 
     expect(getCustomerLink).toHaveBeenCalledTimes(1);
-    expect(screen.getByRole("heading", RETURN_HEADING)).toBeTruthy();
-    expect(screen.queryByRole("button", REGISTER_RETURN)).toBeNull();
+    expect(screen.getByRole("dialog", RETURN_HEADING)).toBeTruthy();
   });
 
-  it("remounts the customer panel after a return the server accepted, and the reopened return panel keeps nothing of the old draft", async () => {
+  it("closes the dialog after a return the server accepted, reads the customer again, and the reopened one keeps nothing of the old draft", async () => {
     getSale.mockResolvedValueOnce(detail(0)).mockResolvedValueOnce(detail(1));
-    getCustomerLink
-      .mockResolvedValueOnce(NO_CUSTOMER_LINK)
-      .mockResolvedValueOnce(UNASSIGNED_LINK);
     returnSale.mockResolvedValue(RETURN_RESULT);
     renderPage();
-    await screen.findByText("Esta venda nunca teve cliente associado.");
-
-    fireEvent.click(await screen.findByRole("button", REGISTER_RETURN));
+    await openReturnFromMenu();
     fireEvent.change(await screen.findByRole("textbox", RETURNED_FIELD), {
       target: { value: "1" },
     });
@@ -265,8 +251,9 @@ describe("the panels of the sale detail after a change to the returnable quantit
       await screen.findByRole("button", { name: "Confirmar devolução" })
     );
 
-    await screen.findByText("O cliente foi removido desta venda.");
-    expect(screen.getByText(HISTORY_ROW)).toBeTruthy();
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog", RETURN_HEADING)).toBeNull()
+    );
     expect(returnSale).toHaveBeenCalledTimes(1);
     expect(returnSale).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -275,11 +262,10 @@ describe("the panels of the sale detail after a change to the returnable quantit
         reasonNote: DRAFT_NOTE,
       })
     );
-    expect(getCustomerLink).toHaveBeenCalledTimes(2);
     expect(getSale).toHaveBeenCalledTimes(2);
-    expect(screen.queryByRole("heading", RETURN_HEADING)).toBeNull();
+    await waitFor(() => expect(getCustomerLink).toHaveBeenCalledTimes(2));
 
-    fireEvent.click(screen.getByRole("button", REGISTER_RETURN));
+    await openReturnFromMenu();
     const returned = await screen.findByRole("textbox", RETURNED_FIELD_AFTER);
     expect((returned as HTMLInputElement).value).toBe("");
     expect(screen.queryByDisplayValue(DRAFT_NOTE)).toBeNull();

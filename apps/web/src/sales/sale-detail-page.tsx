@@ -1,12 +1,14 @@
 import type { SaleDetailReadModel } from "@polaris/contracts";
 import RefreshCwIcon from "lucide-react/dist/esm/icons/refresh-cw";
 import {
+  type ComponentProps,
   type ReactNode,
   useCallback,
   useEffect,
   useRef,
   useState,
 } from "react";
+
 import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
 import { Button } from "@/ui/button";
 import { Card, CardContent } from "@/ui/card";
@@ -14,12 +16,19 @@ import { HelpTip } from "@/ui/help-tip";
 import { Skeleton } from "@/ui/skeleton";
 import { type TitleBack, TitleLine } from "../app-shell/screen-title";
 import { invalidatePreviousWindow } from "../home/previous-window-copy";
+import { useConnectionOnline } from "../lib/browser-connection";
 import { useCurrentOrganization } from "../lib/current-organization";
 import { browserStorage } from "../lib/current-organization-model";
 import { orpcClient } from "../lib/orpc";
 import { readWithRetry } from "../lib/read-with-retry";
 import { armHistoryReturn } from "./history-return";
+import {
+  type SaleAction,
+  SaleActionsMenu,
+  type SaleActionsOffer,
+} from "./sale-actions-menu";
 import { sessionStorageOrNull } from "./sale-attempt-storage";
+import { CurrentCustomerSummary } from "./customer-summary";
 import { SaleCancelPanel } from "./sale-cancel-panel";
 import type { SaleNotice } from "./sale-cancellation-model";
 import {
@@ -28,7 +37,13 @@ import {
   type RequestSequence,
   readSaleIdParam,
 } from "./sale-customer-link-model";
-import { SaleCustomerPanel } from "./sale-customer-panel";
+import {
+  CustomerDialogs,
+  CustomerHistory,
+  CustomerSaveError,
+  type SaleCustomerLink,
+  useSaleCustomerLink,
+} from "./sale-customer-panel";
 import type { Loadable } from "./sale-form-model";
 import { SaleStatusBadges } from "./sale-history-list";
 import {
@@ -42,6 +57,8 @@ import { SaleIdMissing } from "./sale-id-missing";
 import { SaleNoticeRegion } from "./sale-notice-region";
 import { SaleReceipt } from "./sale-receipt";
 import { SaleReturnPanel } from "./sale-return-panel";
+
+type DialogFinalFocus = ComponentProps<typeof SaleReturnPanel>["finalFocus"];
 import { SaleTimeline } from "./sale-timeline";
 
 /** The root of a piece of the screen, as the other screens write it. */
@@ -88,21 +105,122 @@ function LoadingCard({ message }: { message: string }) {
 }
 
 interface DetailContentProps {
+  back: TitleBack;
   organizationId: string;
   saleId: string;
 }
 
-function SaleDetailContent({ organizationId, saleId }: DetailContentProps) {
+/** The title of the screen, and its one `h1`. */
+function DetailTitle() {
+  return (
+    <div className="flex items-center gap-1">
+      <h1 className="text-title">Detalhe da venda</h1>
+      <HelpTip about="Detalhe da venda">
+        A venda confirmada é um registro que não muda. Cancelamento e cliente
+        são registros à parte.
+      </HelpTip>
+    </div>
+  );
+}
+
+/** The line of the receipt that names the customer of the sale, with the way to read it again when that failed. */
+function CustomerLine({ link }: { link: SaleCustomerLink }) {
+  const { currentView } = link;
+  const retry =
+    currentView.kind === "error" ? link.handleRetry : link.retryName;
+  const failed =
+    currentView.kind === "error" || currentView.kind === "customer-error";
+  return (
+    <div className="grid gap-3" data-sale-customer="">
+      <p className="flex flex-wrap items-center gap-x-1.5 gap-y-1 [overflow-wrap:anywhere]">
+        <span className="text-muted-foreground">Cliente:</span>
+        <span
+          className={
+            failed
+              ? "focus-ring rounded-sm text-destructive"
+              : "focus-ring rounded-sm font-medium"
+          }
+          data-sale-customer-name=""
+          ref={link.nameLine}
+          tabIndex={-1}
+        >
+          {currentView.label}
+        </span>
+        {failed ? (
+          <Button onClick={retry} size="sm" type="button" variant="link">
+            <RefreshCwIcon aria-hidden="true" data-icon="inline-start" />
+            Tentar novamente
+          </Button>
+        ) : null}
+      </p>
+      <CurrentCustomerSummary
+        customerId={link.linkedCustomerId}
+        load={link.state.currentCustomer}
+      />
+    </div>
+  );
+}
+
+function offerOf(
+  detail: SaleDetailReadModel | null,
+  refreshing: boolean,
+  link: SaleCustomerLink
+): SaleActionsOffer {
+  const view = detail === null ? null : saleDetailView(detail);
+  return {
+    cancel: view !== null && cancelOffer(view, refreshing) === "panel",
+    choose: link.chooseAction?.action ?? null,
+    linking: link.status.kind === "submitting",
+    remove: link.removeAction !== undefined,
+    return: view?.canReturn === true,
+  };
+}
+
+function SaleDetailContent({
+  back,
+  organizationId,
+  saleId,
+}: DetailContentProps) {
   const [load, setLoad] = useState<Loadable<SaleDetailReadModel>>({
     status: "loading",
   });
   const [notice, setNotice] = useState<SaleNotice | null>(null);
   // the sale changed and the detail is being read again: what the page offers is still the old state
   const [refreshing, setRefreshing] = useState(false);
+  const [dialog, setDialog] = useState<OpenDialog | null>(null);
   const sequence = useRef<RequestSequence>({ current: 0 });
   // the store's date of the sale, from the last read: a return or a cancellation of a sale from before the open month
   // changes the days the Início keeps ("janela anterior")
   const occurredOn = useRef<string | null>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const noticeRef = useRef<HTMLDivElement>(null);
+  // where the focus goes when a dialog closes: the button that opened the menu, or the notice of a result
+  const afterClose = useRef<"notice" | "trigger">("trigger");
+  const online = useConnectionOnline();
+
+  const announce = useCallback((next: SaleNotice) => {
+    afterClose.current = "notice";
+    setNotice(next);
+  }, []);
+  const link = useSaleCustomerLink({
+    onSaved: useCallback(
+      (message: string) => announce({ message, ok: true }),
+      [announce]
+    ),
+    organizationId,
+    saleId,
+  });
+
+  // a result goes to the notice at once, unless a dialog is still open over it (a failure that keeps its dialog)
+  const dialogOpen = useRef(false);
+  dialogOpen.current = dialog !== null || link.choosing || link.removing;
+  useEffect(() => {
+    if (notice !== null && !dialogOpen.current) {
+      noticeRef.current?.focus();
+    }
+  }, [notice]);
+
+  const refreshLink = link.handleRetry;
 
   const loadDetail = useCallback(async () => {
     const token = nextRequestToken(sequence.current);
@@ -141,19 +259,65 @@ function SaleDetailContent({ organizationId, saleId }: DetailContentProps) {
         organizationId,
         occurredOn.current
       );
-      setNotice(next);
-      // only after a success, whose panel is done: a failure keeps the panel mounted, with its locked attempt
+      announce(next);
+      if (next.ok) {
+        // the summary of the customer must not count the sale that was just cancelled or what was just returned
+        refreshLink().catch(() => undefined);
+      }
+      // only after a success, whose dialog is done: a failure keeps the dialog open, with its locked attempt
       setRefreshing(next.ok);
       loadDetail()
         .catch(() => undefined)
         .then(() => setRefreshing(false));
     },
-    [loadDetail, organizationId]
+    [announce, loadDetail, organizationId, refreshLink]
+  );
+  const detail = load.status === "ready" ? load.value : null;
+  const handleAction = useCallback(
+    (action: SaleAction) => {
+      afterClose.current = "trigger";
+      if (action === "choose") {
+        link.openChoice();
+      } else if (action === "remove") {
+        link.askRemove();
+      } else {
+        setDialog({
+          action,
+          panelKey:
+            detail === null ? "" : saleDetailView(detail).returnPanelKey,
+        });
+      }
+    },
+    [detail, link.askRemove, link.openChoice]
+  );
+  const handleDialogClose = useCallback(() => setDialog(null), []);
+  const finalFocus = useCallback(
+    () =>
+      afterClose.current === "notice" && noticeRef.current
+        ? noticeRef.current
+        : triggerRef.current,
+    []
   );
 
   return (
     <div className={UI_ROOT}>
-      <SaleNoticeRegion notice={notice} />
+      <header>
+        <TitleLine
+          action={
+            <SaleActionsMenu
+              offer={offerOf(detail, refreshing, link)}
+              onAction={handleAction}
+              online={online}
+              triggerRef={triggerRef}
+            />
+          }
+          back={back}
+        >
+          <DetailTitle />
+        </TitleLine>
+      </header>
+      <SaleNoticeRegion notice={notice} noticeRef={noticeRef} />
+      <CustomerSaveError link={link} />
       {load.status === "loading" ? (
         <LoadingCard message="Carregando venda…" />
       ) : null}
@@ -173,18 +337,34 @@ function SaleDetailContent({ organizationId, saleId }: DetailContentProps) {
           </AlertDescription>
         </Alert>
       ) : null}
-      {load.status === "ready" ? (
+      {detail ? (
         <>
-          <ReadyDetailTop detail={load.value} refreshing={refreshing} />
-          <ReadyDetailPanels
-            detail={load.value}
+          <ReadyDetailTop
+            customer={<CustomerLine link={link} />}
+            detail={detail}
+            refreshing={refreshing}
+          />
+          {link.history.length > 0 ? (
+            <section aria-label="Histórico de atribuição do cliente">
+              <Card className="gap-0 py-0">
+                <CardContent className="py-(--card-spacing)">
+                  <CustomerHistory level={2} link={link} />
+                </CardContent>
+              </Card>
+            </section>
+          ) : null}
+          <ReadyDetailDialogs
+            detail={detail}
+            dialog={dialog}
+            finalFocus={finalFocus}
+            onClose={handleDialogClose}
             onSaleChanged={handleSaleChanged}
             organizationId={organizationId}
-            refreshing={refreshing}
             saleId={saleId}
           />
         </>
       ) : null}
+      <CustomerDialogs finalFocus={finalFocus} link={link} />
     </div>
   );
 }
@@ -231,17 +411,24 @@ function ReturnsHistory({ view }: { view: SaleDetailView }) {
 }
 
 interface ReadyDetailTopProps {
+  /** The line that names the customer, in the receipt. */
+  customer?: ReactNode;
   detail: SaleDetailReadModel;
   refreshing: boolean;
 }
 
 /** What the detail shows on the new interface: the receipt, the timeline, the returns made, and the notes about what is offered. */
-export function ReadyDetailTop({ detail, refreshing }: ReadyDetailTopProps) {
+export function ReadyDetailTop({
+  customer,
+  detail,
+  refreshing,
+}: ReadyDetailTopProps) {
   const view = saleDetailView(detail);
   const offer = cancelOffer(view, refreshing);
   return (
     <>
       <SaleReceipt
+        customer={customer}
         before={
           view.cancellation ? (
             <Alert role="note" variant="destructive">
@@ -291,84 +478,93 @@ export function ReadyDetailTop({ detail, refreshing }: ReadyDetailTopProps) {
   );
 }
 
-interface ReadyDetailPanelsProps {
+/** The dialog the menu opened, and the quantities it was opened on: a return whose quantities changed closes. */
+interface OpenDialog {
+  action: "cancel" | "return";
+  panelKey: string;
+}
+
+interface ReadyDetailDialogsProps {
   detail: SaleDetailReadModel;
+  dialog: OpenDialog | null;
+  finalFocus: DialogFinalFocus;
+  onClose: () => void;
   onSaleChanged: (notice: SaleNotice) => void;
   organizationId: string;
-  /** The detail is being read again after a change: cancelling waits for the new state (U-20). */
-  refreshing: boolean;
   saleId: string;
 }
 
-/** Return, cancel and customer, each in its card under the receipt. */
-function ReadyDetailPanels({
+/** The forms of the return and of the cancellation, in dialogs that the menu of the title opens. */
+function ReadyDetailDialogs({
   detail,
+  dialog,
+  finalFocus,
+  onClose,
   onSaleChanged,
   organizationId,
-  refreshing,
   saleId,
-}: ReadyDetailPanelsProps) {
+}: ReadyDetailDialogsProps) {
   const view = saleDetailView(detail);
-  const offer = cancelOffer(view, refreshing);
   return (
     <>
       {view.canReturn ? (
         <SaleReturnPanel
+          finalFocus={finalFocus}
           key={view.returnPanelKey}
+          onClose={onClose}
           onSaleChanged={onSaleChanged}
+          open={
+            dialog?.action === "return" &&
+            dialog.panelKey === view.returnPanelKey
+          }
           organizationId={organizationId}
           rows={view.returnRows}
           saleId={saleId}
         />
       ) : null}
-      {offer === "panel" ? (
+      {view.canCancel ? (
         <SaleCancelPanel
+          finalFocus={finalFocus}
           key={saleId}
+          onClose={onClose}
           onSaleChanged={onSaleChanged}
+          open={dialog?.action === "cancel"}
           organizationId={organizationId}
           saleId={saleId}
           saleItemCount={detail.sale.items.length}
         />
       ) : null}
-      <SaleCustomerPanel
-        headingLevel={2}
-        key={`${saleId}:${detail.cancellation === null ? "confirmed" : "cancelled"}:${view.returnPanelKey}`}
-        organizationId={organizationId}
-        saleId={saleId}
-      />
     </>
   );
 }
 
-/** One sale in full: its receipt, cancellation, and customer attribution. */
+/** One sale in full: its receipt, its customer, and the actions that change it, in the menu of the title. */
 export function SaleDetailPage() {
   const { organizationId } = useCurrentOrganization();
   const [param] = useState(() => readSaleIdParam(window.location.search));
-  return (
-    <div className="grid gap-4">
-      <div className={UI_ROOT}>
-        <header>
-          <TitleLine
-            back={historyBack(param.kind === "valid" ? param.saleId : null)}
-          >
-            <div className="flex items-center gap-1">
-              <h1 className="text-title">Detalhe da venda</h1>
-              <HelpTip about="Detalhe da venda">
-                A venda confirmada é um registro que não muda. Cancelamento e
-                cliente são registros à parte.
-              </HelpTip>
-            </div>
-          </TitleLine>
-        </header>
-        {param.kind === "valid" ? null : <SaleIdMissing param={param} />}
-      </div>
-      {param.kind === "valid" ? (
+  const back = historyBack(param.kind === "valid" ? param.saleId : null);
+  if (param.kind === "valid") {
+    return (
+      <div className="grid gap-4">
         <SaleDetailContent
+          back={back}
           key={param.saleId}
           organizationId={organizationId}
           saleId={param.saleId}
         />
-      ) : null}
+      </div>
+    );
+  }
+  return (
+    <div className="grid gap-4">
+      <div className={UI_ROOT}>
+        <header>
+          <TitleLine back={back}>
+            <DetailTitle />
+          </TitleLine>
+        </header>
+        <SaleIdMissing param={param} />
+      </div>
     </div>
   );
 }

@@ -16,7 +16,7 @@ import {
 import { serveHealth, WORKER_MARK } from "./worker-mark";
 
 /**
- * The "Cliente da venda" card of the sale detail read at 320 px with the browser font at 20 px (`./reflow`), with the
+ * The customer line of the sale detail, with its summary, read at 320 px with the browser font at 20 px (`./reflow`), with the
  * summary of the customer at its widest: a total of millions, a count of three digits and a date with the year. The
  * three indicators stay whole and the page does not scroll sideways.
  */
@@ -79,9 +79,7 @@ async function openSaleDetail(page: Page, name?: string) {
   });
   await page.clock.setFixedTime(NOW);
   await page.goto(`/sales/detail?saleId=${DETAIL_SALE_ID}`);
-  await expect(
-    page.getByRole("heading", { level: 2, name: "Cliente da venda" })
-  ).toBeVisible();
+  await expect(page.locator("[data-sale-customer]")).toBeVisible();
   await expectReflowFont(page, 20);
   return page.locator("[data-customer-summary]");
 }
@@ -113,9 +111,7 @@ reflowTest(
   async ({ page }) => {
     const summary = await openSaleDetail(page, LONG_NAME);
     await expect(summary).toBeVisible();
-    await assertNothingClipped(
-      page.locator("section[aria-labelledby=sale-customer-title]")
-    );
+    await assertNothingClipped(page.locator("[data-sale-customer]"));
     await expect(summary.locator("dd")).toHaveText([
       String(PURCHASES),
       TOTAL_TEXT,
@@ -129,11 +125,11 @@ reflowTest(
 
 for (const name of [LONG_NAME, UNBROKEN_NAME]) {
   reflowTest(
-    `a 320 px com letra de 20 px o nome longo do cliente da venda fica dentro do cartão, sem rolagem lateral (${name.includes(" ") ? "com espaços" : "sem espaços"})`,
+    `a 320 px com letra de 20 px o nome longo do cliente da venda fica dentro da linha do cliente, sem rolagem lateral (${name.includes(" ") ? "com espaços" : "sem espaços"})`,
     async ({ page }) => {
       await openSaleDetail(page, name);
-      const card = page.locator("section[aria-labelledby=sale-customer-title]");
-      const current = card.getByRole("status").filter({ hasText: name });
+      const card = page.locator("[data-sale-customer]");
+      const current = card.locator("[data-sale-customer-name]");
       await expect(current).toBeVisible();
       await expect(current).toHaveText(name);
       const box = await card.boundingBox();
@@ -146,13 +142,13 @@ for (const name of [LONG_NAME, UNBROKEN_NAME]) {
       ).toBeGreaterThan(windowWidth);
       expect(
         (box?.x ?? 0) + (box?.width ?? 0),
-        "o cartão não passa da borda da janela"
+        "a linha do cliente não passa da borda da janela"
       ).toBeLessThanOrEqual(windowWidth);
-      expect(box, "o cartão está na tela").not.toBeNull();
+      expect(box, "a linha do cliente está na tela").not.toBeNull();
       expect(written, "o nome está na tela").not.toBeNull();
       expect(
         (written?.x ?? 0) + (written?.width ?? 0),
-        "o nome não passa da borda direita do cartão"
+        "o nome não passa da borda direita da linha do cliente"
       ).toBeLessThanOrEqual((box?.x ?? 0) + (box?.width ?? 0) + 0.5);
       expect(
         written?.x ?? 0,
@@ -169,7 +165,9 @@ for (const name of [LONG_NAME, UNBROKEN_NAME]) {
     `a 320 px com letra de 20 px o nome longo na lista de linhas do histórico fica dentro da janela (${name.includes(" ") ? "com espaços" : "sem espaços"})`,
     async ({ page }) => {
       await openSaleDetail(page, name);
-      const card = page.locator("section[aria-labelledby=sale-customer-title]");
+      const card = page.getByRole("region", {
+        name: "Histórico de atribuição do cliente",
+      });
       const row = card.getByRole("listitem").filter({ hasText: name });
       await expect(row).toHaveCount(1);
       await expect(row).toBeVisible();
@@ -193,3 +191,42 @@ for (const name of [LONG_NAME, UNBROKEN_NAME]) {
     }
   );
 }
+
+reflowTest(
+  "a 320 px com letra de 20 px o menu Ações cabe na tela e nenhum item é cortado",
+  async ({ page }) => {
+    await openSaleDetail(page);
+    await page.getByRole("button", { exact: true, name: "Ações" }).click();
+    const menu = page.getByRole("menu");
+    await expect(menu).toBeVisible();
+    const window = page.viewportSize();
+    const box = await menu.boundingBox();
+    expect(box, "o menu está na tela").not.toBeNull();
+    expect(
+      box?.x ?? -1,
+      "o menu não passa da borda esquerda"
+    ).toBeGreaterThanOrEqual(0);
+    expect(
+      (box?.x ?? 0) + (box?.width ?? 0),
+      "o menu não passa da borda direita"
+    ).toBeLessThanOrEqual(window?.width ?? 0);
+    expect(
+      (box?.y ?? 0) + (box?.height ?? 0),
+      "o menu não passa da borda de baixo"
+    ).toBeLessThanOrEqual(window?.height ?? 0);
+    const items = menu.getByRole("menuitem");
+    await expect(items).toHaveText([
+      "Trocar cliente",
+      "Remover cliente",
+      "Registrar devolução",
+    ]);
+    const overflow = await items.evaluateAll((nodes) =>
+      nodes.map((node) => node.scrollWidth - node.clientWidth)
+    );
+    expect(overflow, "o texto de cada item cabe na própria caixa").toEqual([
+      0, 0, 0,
+    ]);
+    await assertNothingClipped(menu);
+    await assertNoPageScroll(page);
+  }
+);

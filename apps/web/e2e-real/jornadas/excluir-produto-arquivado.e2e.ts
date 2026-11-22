@@ -1,5 +1,6 @@
 import { localDate } from "../calendar";
 import { expect, openJourney, runT0, test } from "../fixtures";
+import { openSaleAction } from "../pages/detalhe-da-venda";
 import { seedCashSale, seedProduct, seedStock } from "../seed";
 
 const ZONE = "America/Sao_Paulo";
@@ -185,8 +186,8 @@ test("excluir produto arquivado: sai da lista, libera a vaga, a venda antiga seg
   await saleLink(cancelledSaleId).click();
   await expect(page).toHaveURL(new RegExp(`saleId=${cancelledSaleId}`));
   await expect(page.getByText("Garrafa térmica").first()).toBeVisible();
-  const cancelPanel = page.getByRole("region", { name: "Cancelar venda" });
-  await cancelPanel.getByRole("button", { name: "Cancelar venda" }).click();
+  await openSaleAction(page, "Cancelar venda");
+  const cancelPanel = page.getByRole("dialog", { name: "Cancelar venda" });
   await cancelPanel
     .getByRole("button", { name: "Revisar cancelamento" })
     .click();
@@ -208,11 +209,8 @@ test("excluir produto arquivado: sai da lista, libera a vaga, a venda antiga seg
   // a venda antiga abre com o nome de quando foi vendida e aceita devolução
   await page.goto(`/sales/detail?saleId=${saleId}`);
   await expect(page.getByText("Garrafa térmica").first()).toBeVisible();
-  await page
-    .getByRole("region", { name: "Devolução" })
-    .getByRole("button", { name: "Registrar devolução" })
-    .click();
-  const panel = page.getByRole("region", { name: "Registrar devolução" });
+  await openSaleAction(page, "Registrar devolução");
+  const panel = page.getByRole("dialog", { name: "Registrar devolução" });
   await panel.getByLabel(RETURNED_BOTTLE).fill("1");
   // o produto saiu do catálogo: tentar devolver 1 unidade ao estoque é recusado e nada é gravado
   await panel.getByLabel(RESTOCKED_BOTTLE).fill(String(RESTOCKED_QUANTITY));
