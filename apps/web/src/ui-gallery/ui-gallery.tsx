@@ -1767,11 +1767,11 @@ export function UiGallery() {
 
           <Section title="Visor em Geist Mono">
             <p className="text-support">
-              O número dos cartões de KPI (os tamanhos lg e xl do dinheiro,
-              acima) e os percentuais leem como visor: o mesmo avanço em cada
-              dígito, então o número não muda de largura quando os dígitos
-              mudam. A lista, a tabela e o campo seguem em Geist com números
-              tabulares.
+              O número dos cartões de KPI (o dinheiro, acima) e os percentuais
+              leem como visor: o mesmo avanço em cada dígito, então o número não
+              muda de largura quando os dígitos mudam. Todo dinheiro e toda
+              quantidade leem assim; data, hora, telefone e documento seguem em
+              Geist.
             </p>
             <div className="flex flex-wrap items-center gap-3">
               <DeltaChip

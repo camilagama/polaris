@@ -341,6 +341,142 @@ export function handTypedReaisFaults(path: string, text: string): string[] {
 }
 
 /**
+ * Number in mono (DESIGN.md "Tipografia"): `tabular-nums` and `font-mono` are what make a number mono and aligned, and
+ * they live in three places only: `ui/money.tsx` (every amount in reais), `ui/figure.tsx` (every other number that is read
+ * as a quantity) and the text of the charts (`ui/charts/`, and `ui/bklit/charts/`, whose axis and tooltip they style).
+ * A screen writes a number through `Money` or `Figure`, never with the class. Today's files that still have the class
+ * are listed with how many tokens and why; the list is exact and can only shrink: a file that left it, or one that has
+ * a token more, fails the test, so each slice that moves a screen onto the components takes its file out of the list.
+ */
+const NUMBER_FONT_COMPONENTS = ["src/ui/money.tsx", "src/ui/figure.tsx"];
+const NUMBER_FONT_FOLDERS = ["src/ui/charts/", "src/ui/bklit/charts/"];
+const NUMBER_FONT_TOKEN =
+  /(?:^|:)!?(?:tabular-nums|font-mono)!?$|font-variant-numeric/;
+
+const SLICE_REASON =
+  "ainda não passou por Money ou Figure: sai da lista na fatia da tela";
+const DATE_REASON =
+  "data ou hora fica em Geist (regra do DESIGN.md); o tabular-nums só alinha os algarismos";
+const IDENTIFIER_REASON =
+  "identificador em Geist Mono por regra do DESIGN.md, não é quantidade";
+
+const NUMBER_FONT_ELSEWHERE: readonly {
+  file: string;
+  tokens: number;
+  why: string;
+}[] = [
+  { file: "src/app-shell/app-shell.tsx", tokens: 2, why: SLICE_REASON },
+  { file: "src/app-shell/menu-progress.tsx", tokens: 1, why: SLICE_REASON },
+  {
+    file: "src/app-shell/not-found-page.tsx",
+    tokens: 1,
+    why: IDENTIFIER_REASON,
+  },
+  {
+    file: "src/catalog/product-import/import-rows-table.tsx",
+    tokens: 1,
+    why: SLICE_REASON,
+  },
+  {
+    file: "src/catalog/product-import/import-run-step.tsx",
+    tokens: 1,
+    why: SLICE_REASON,
+  },
+  {
+    file: "src/catalog/product-variants-panel.tsx",
+    tokens: 1,
+    why: SLICE_REASON,
+  },
+  { file: "src/catalog/screen-parts.tsx", tokens: 1, why: SLICE_REASON },
+  { file: "src/dashboard/goal-card.tsx", tokens: 2, why: SLICE_REASON },
+  { file: "src/dashboard/parts-bar.tsx", tokens: 2, why: SLICE_REASON },
+  { file: "src/dashboard/result-chain.tsx", tokens: 1, why: SLICE_REASON },
+  { file: "src/dashboard/result-chart.tsx", tokens: 2, why: SLICE_REASON },
+  {
+    file: "src/expenses/expense-by-category.tsx",
+    tokens: 1,
+    why: SLICE_REASON,
+  },
+  { file: "src/expenses/expense-list.tsx", tokens: 1, why: SLICE_REASON },
+  {
+    file: "src/expenses/expense-rules-panel.tsx",
+    tokens: 1,
+    why: SLICE_REASON,
+  },
+  { file: "src/expenses/month-picker.tsx", tokens: 1, why: DATE_REASON },
+  { file: "src/home/home-chart.tsx", tokens: 1, why: SLICE_REASON },
+  { file: "src/home/home-figures.tsx", tokens: 4, why: SLICE_REASON },
+  { file: "src/home/home-goal.tsx", tokens: 7, why: SLICE_REASON },
+  { file: "src/inventory/inventory-page.tsx", tokens: 3, why: SLICE_REASON },
+  {
+    file: "src/offline/attention-panel.tsx",
+    tokens: 1,
+    why: IDENTIFIER_REASON,
+  },
+  {
+    file: "src/payment-profiles/payment-profile-list.tsx",
+    tokens: 1,
+    why: SLICE_REASON,
+  },
+  { file: "src/sales/confirmed-sale-parts.tsx", tokens: 4, why: SLICE_REASON },
+  { file: "src/sales/offline-sale-panels.tsx", tokens: 2, why: SLICE_REASON },
+  { file: "src/sales/sale-confirmed-panel.tsx", tokens: 1, why: SLICE_REASON },
+  { file: "src/sales/sale-fields.tsx", tokens: 1, why: SLICE_REASON },
+  { file: "src/sales/sale-history-list.tsx", tokens: 1, why: SLICE_REASON },
+  { file: "src/sales/sale-item-editor.tsx", tokens: 1, why: SLICE_REASON },
+  { file: "src/sales/sale-receipt.tsx", tokens: 3, why: SLICE_REASON },
+  { file: "src/sales/sale-return-table.tsx", tokens: 1, why: SLICE_REASON },
+  { file: "src/sales/sale-summary-panel.tsx", tokens: 4, why: SLICE_REASON },
+  { file: "src/sales/sale-timeline.tsx", tokens: 1, why: DATE_REASON },
+  {
+    file: "src/subscription/subscription-parts.tsx",
+    tokens: 2,
+    why: SLICE_REASON,
+  },
+  { file: "src/ui-gallery/ui-gallery.tsx", tokens: 12, why: SLICE_REASON },
+  { file: "src/ui/calendar.tsx", tokens: 1, why: DATE_REASON },
+  { file: "src/ui/date-picker.tsx", tokens: 1, why: DATE_REASON },
+  { file: "src/ui/date-range-picker.tsx", tokens: 2, why: DATE_REASON },
+  { file: "src/ui/kpi-card.tsx", tokens: 7, why: SLICE_REASON },
+  { file: "src/ui/progress.tsx", tokens: 1, why: SLICE_REASON },
+];
+
+const isNumberFontHome = (path: string) =>
+  NUMBER_FONT_COMPONENTS.includes(path) ||
+  NUMBER_FONT_FOLDERS.some((folder) => path.startsWith(folder));
+
+const numberFontTokens = (text: string) =>
+  classTokens(text).filter((token) => NUMBER_FONT_TOKEN.test(token)).length;
+
+export function numberFontFaults(path: string, text: string): string[] {
+  if (!TS_OR_TSX.test(path) || isNumberFontHome(path)) {
+    return [];
+  }
+  const found = numberFontTokens(text);
+  const listed =
+    NUMBER_FONT_ELSEWHERE.find((entry) => entry.file === path)?.tokens ?? 0;
+  return found === listed
+    ? []
+    : [
+        `${found} tabular-nums ou font-mono fora de ui/money.tsx, ui/figure.tsx e ui/charts, e a lista diz ${listed}: o número passa por Money ou Figure`,
+      ];
+}
+
+/** An amount written by `{formatBrlAmount(…)}` as the child of an element skips the mask of `Money`; a template (`${…}`) is text that `MoneyText` masks. */
+const BRL_IN_JSX = /(?<![=$])\{\s*formatBrlAmount\(/;
+
+export function brlInJsxFaults(path: string, text: string): string[] {
+  if (!TS_OR_TSX.test(path)) {
+    return [];
+  }
+  return BRL_IN_JSX.test(withoutComments(text))
+    ? [
+        "formatBrlAmount escrito direto no JSX: o valor em reais passa pelo Money ou pelo MoneyText",
+      ]
+    : [];
+}
+
+/**
  * Focus (DESIGN.md "Acessibilidade"): `outline-none` takes the browser's focus ring away, so the class string that
  * has it also carries the ring of its own (`focus-visible:…`, `focus:…`, `has-[…:focus-visible]…`), or the element is a
  * programmatic target that uses the `focus-ring` utility instead. Where the ring is somewhere else, the string is here
@@ -660,6 +796,42 @@ describe("regras de fonte da interface (t180, itens 4 e 5)", () => {
     }
   );
 
+  it.each(FOCUS_SCOPE)(
+    "%s: tabular-nums e font-mono só em Money, Figure e nos gráficos (ou na lista exata)",
+    (path) => {
+      expect(numberFontFaults(path, read(path))).toEqual([]);
+    }
+  );
+
+  it.each(FOCUS_SCOPE)(
+    "%s: nenhum formatBrlAmount escrito direto no JSX",
+    (path) => {
+      expect(brlInJsxFaults(path, read(path))).toEqual([]);
+    }
+  );
+
+  it("a lista do número em mono está em ordem, cada arquivo dela existe e ainda tem o que ela conta, com o motivo escrito (uma lista velha deixaria passar outra coisa)", () => {
+    const files = NUMBER_FONT_ELSEWHERE.map((entry) => entry.file);
+    expect(files).toEqual([...files].sort((a, b) => a.localeCompare(b, "en")));
+    expect(new Set(files).size).toBe(files.length);
+    for (const entry of NUMBER_FONT_ELSEWHERE) {
+      expect(FOCUS_SCOPE, entry.file).toContain(entry.file);
+      expect(isNumberFontHome(entry.file), entry.file).toBe(false);
+      expect(numberFontTokens(read(entry.file)), entry.file).toBe(entry.tokens);
+      expect(entry.tokens, entry.file).toBeGreaterThan(0);
+      expect(entry.why.length, entry.file).toBeGreaterThan(20);
+    }
+    for (const home of NUMBER_FONT_COMPONENTS) {
+      expect(existsSync(join(web, home)), home).toBe(true);
+    }
+    for (const folder of NUMBER_FONT_FOLDERS) {
+      expect(
+        FOCUS_SCOPE.some((path) => path.startsWith(folder)),
+        folder
+      ).toBe(true);
+    }
+  });
+
   it("os arquivos de dinheiro e a lista da fração ainda existem (uma lista velha deixaria passar outra coisa)", () => {
     for (const path of [
       ...MONEY_FILES,
@@ -898,6 +1070,74 @@ describe("controle: as regras de fonte pegam o que existem para pegar", () => {
       "3 texto(s) com tamanho em rem ou px em dinheiro, e a lista diz 0"
     );
     expect(money('// "text-[1.75rem]" in a comment')).toEqual([]);
+  });
+
+  it("tabular-nums e font-mono fora de Money, Figure e dos gráficos reprovam, e a lista exata reprova o que entrou (controle plantado)", () => {
+    const fault = (text: string, path = "src/home/home-page.tsx") =>
+      numberFontFaults(path, text);
+    expect(fault('const a = "text-sm tabular-nums";').join()).toContain(
+      "1 tabular-nums ou font-mono"
+    );
+    expect(fault('const a = "font-mono text-xs";')).not.toEqual([]);
+    expect(fault('const a = "md:tabular-nums";')).not.toEqual([]);
+    expect(fault('const a = "!tabular-nums";')).not.toEqual([]);
+    expect(fault("const a = `p-2 font-mono`;")).not.toEqual([]);
+    expect(
+      fault('const a = "[font-variant-numeric:tabular-nums]";')
+    ).not.toEqual([]);
+    expect(fault('const a = "tabular-nums-not font-monospace";')).toEqual([]);
+    expect(fault('// "tabular-nums" in a comment')).toEqual([]);
+    expect(
+      fault('const a = "tabular-nums";', "src/home/home-page.css")
+    ).toEqual([]);
+    for (const home of [
+      "src/ui/money.tsx",
+      "src/ui/figure.tsx",
+      "src/ui/charts/chart-text.tsx",
+      "src/ui/bklit/charts/y-axis.tsx",
+    ]) {
+      expect(fault('const a = "font-mono tabular-nums";', home)).toEqual([]);
+    }
+    expect(
+      fault('const a = "tabular-nums";', "src/ui/kpi-card.tsx").join()
+    ).toContain("a lista diz 7");
+    expect(
+      fault(
+        'const a = "tabular-nums tabular-nums tabular-nums tabular-nums";',
+        "src/home/home-figures.tsx"
+      )
+    ).toEqual([]);
+    expect(
+      fault('const a = "tabular-nums";', "src/home/home-figures.tsx").join()
+    ).toContain("a lista diz 4");
+    expect(
+      fault('const a = "p-2";', "src/home/home-figures.tsx").join()
+    ).toContain("0 tabular-nums ou font-mono");
+    expect(fault('const a = "p-2";', "src/ui-vizinha/outra.tsx")).toEqual([]);
+    expect(
+      fault('const a = "p-2 tabular-nums";', "src/ui/charts-vizinha.tsx")
+    ).not.toEqual([]);
+  });
+
+  it("formatBrlAmount como filho do JSX reprova; passar o texto ao Money e montar um texto para o MoneyText não (controle plantado)", () => {
+    expect(
+      brlInJsxFaults("src/x.tsx", "<span>{formatBrlAmount(total)}</span>")
+    ).not.toEqual([]);
+    expect(
+      brlInJsxFaults(
+        "src/x.tsx",
+        "const a = `Total $".concat("{formatBrlAmount(total)}`;")
+      )
+    ).toEqual([]);
+    expect(
+      brlInJsxFaults("src/x.tsx", "<Money text={formatBrlAmount(total)} />")
+    ).toEqual([]);
+    expect(
+      brlInJsxFaults("src/x.tsx", "const text = formatBrlAmount(total);")
+    ).toEqual([]);
+    expect(
+      brlInJsxFaults("src/x.tsx", "// {formatBrlAmount(total)} in a comment")
+    ).toEqual([]);
   });
 
   it("R$ escrito à mão numa lista reprova, e só nos arquivos da lista (controle plantado)", () => {
