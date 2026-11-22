@@ -32,6 +32,7 @@ const PACE_WORD = /Adiantada|No ritmo|Atrasada/;
 const HELP_ONLY_PACE = /^O traço marca/;
 const HELP_ONLY_PROJECTION = /^Estimativa/;
 
+const ORDER_UTILITY = /(?:^|[\s:"])order-/;
 const SENTENCE_CLASS = /<p class="([^"]*)">Defina quanto/;
 
 const FONT_SIZE = /data-goal-ring[\s\S]*?style="font-size:([^"]*)"/;
@@ -62,7 +63,7 @@ describe("the goal block on the 2nd of the month after the goal's", () => {
   it("titles the month now, invites to set its goal, and keeps the past one in a line", () => {
     const html = render("2026-11-02");
     expect(text(html)).toBe(
-      "Meta de novembro Sem meta ainda Definir meta Outubro: R$ 166.619,00 de R$ 200.000,00 (não atingida)"
+      "Meta de novembro Sem meta ainda Outubro: R$ 166.619,00 de R$ 200.000,00 (não atingida) Definir meta"
     );
     expect(html).toContain('href="/dashboard?meta=nova"');
     expect(html).not.toContain("Não atingida");
@@ -93,7 +94,7 @@ describe("the goal block on the 2nd of the month after the goal's", () => {
   });
 });
 
-describe("a faixa fina da Meta (sem meta para o mês)", () => {
+describe("o cartão da Meta sem meta para o mês (faixa fina só abaixo de 960 px)", () => {
   const STRIP = 'data-goal-strip=""';
   const SENTENCE = "Defina quanto quer vender no mês e acompanhe aqui.";
   const active: GoalReadModel = {
@@ -122,18 +123,36 @@ describe("a faixa fina da Meta (sem meta para o mês)", () => {
       />
     );
 
-  it("sem meta é faixa: o título, a frase e Definir meta, com a marca que a grade lê", () => {
+  it("sem meta: o título, a frase e Definir meta, com a marca do cartão", () => {
     const html = view({ kind: "none" });
     expect(html).toContain(STRIP);
     expect(text(html)).toBe(`Meta ${SENTENCE} Definir meta`);
     expect(html).toContain('href="/dashboard?meta=nova"');
   });
 
-  it("a frase só aparece onde a faixa tem lugar (a partir de 960 px de conteúdo)", () => {
+  it("a frase só aparece onde o cartão tem lugar (a partir de 960 px de conteúdo)", () => {
     const sentence = view({ kind: "none" }).match(SENTENCE_CLASS);
     expect(sentence?.[1]?.split(" ")).toEqual(
       expect.arrayContaining(["hidden", "@min-[60rem]/home:block"])
     );
+  });
+
+  it("a 960 px de conteúdo ou mais o cartão é de par: sem as classes da linha única da faixa e sem order-*, com o corpo tomando a altura que o mapa deixa", () => {
+    const offline = (goal: Parameters<typeof OfflineGoalBlock>[0]["goal"]) =>
+      renderToStaticMarkup(<OfflineGoalBlock goal={goal} />);
+    for (const html of [
+      view({ kind: "none" }),
+      render("2026-11-02"),
+      offline({ kind: "online-only" }),
+      offline({ currentMonth: "Novembro", goal: october, kind: "settled" }),
+    ]) {
+      expect(html).not.toContain("@min-[60rem]/home:flex-row");
+      expect(html).not.toContain("@min-[60rem]/home:py-3");
+      expect(html).not.toContain("@min-[60rem]/home:ml-auto");
+      expect(html).not.toMatch(ORDER_UTILITY);
+      expect(html).toContain("@min-[60rem]/home:grow");
+      expect(html).toContain("@min-[60rem]/home:content-center");
+    }
   });
 
   it("o mês sem meta, lido logo depois da meta do anterior, também é faixa", () => {
@@ -159,9 +178,12 @@ describe("a faixa fina da Meta (sem meta para o mês)", () => {
     ).not.toContain(STRIP);
   });
 
-  it("a meta em andamento fica em pé quando está num par (o anel e os números no meio)", () => {
+  it("a meta em andamento fica deitada também no par: o anel e os números lado a lado, sem variante de par", () => {
     const html = view({ goal: active, kind: "active", others: 0 });
-    expect(html).toContain("group-data-[pair]/row:@min-[60rem]/home:flex-col");
+    expect(html).not.toContain("group-data-[pair]");
+    expect(html).toContain(
+      "flex min-w-0 flex-wrap items-center justify-center gap-4"
+    );
   });
 });
 
