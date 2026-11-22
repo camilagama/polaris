@@ -82,7 +82,7 @@ export function TitleLine({
   children: ReactNode;
 }) {
   return (
-    <div className="grid gap-3 min-[47.5rem]:flex min-[47.5rem]:items-center min-[47.5rem]:justify-between min-[47.5rem]:gap-x-3">
+    <div className="grid gap-3 min-[47.5rem]:flex min-[47.5rem]:min-h-ctl-md min-[47.5rem]:items-center min-[47.5rem]:justify-between min-[47.5rem]:gap-x-3">
       {children}
       {action ? (
         <div className="grid gap-3 min-[47.5rem]:ml-auto min-[47.5rem]:flex min-[47.5rem]:items-start min-[47.5rem]:gap-2">
