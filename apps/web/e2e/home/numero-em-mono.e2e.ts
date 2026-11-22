@@ -34,7 +34,7 @@ test.describe("o visor em Geist Mono no Início (AC-1)", () => {
     { height: 740, width: 360 },
     { height: 800, width: 1280 },
   ]) {
-    test(`o número dos cartões, o percentual do chip e o da meta ficam em Geist Mono, e o resto em Geist, a ${width} px`, async ({
+    test(`o número dos cartões, o percentual do chip e o da meta, e o valor de uma lista ficam em Geist Mono, e o resto em Geist, a ${width} px`, async ({
       page,
     }) => {
       await page.setViewportSize({ height, width });
@@ -61,10 +61,11 @@ test.describe("o visor em Geist Mono no Início (AC-1)", () => {
         region(page, "Vendas hoje").locator("h2"),
         "o nome do cartão"
       );
-      await expectGeist(
+      await expectMono(
         region(page, "Mais vendidos do mês")
           .locator("li")
-          .filter({ hasText: "R$" }),
+          .filter({ hasText: "R$" })
+          .locator("span.font-mono"),
         "um valor de lista"
       );
       await expectGeist(

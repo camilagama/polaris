@@ -15,7 +15,7 @@ import {
   FORM_WIDTHS,
   sizeFor,
 } from "./form-dialog-checks";
-import { expectGeist, expectMono } from "./mono-face";
+import { expectMono } from "./mono-face";
 import {
   assertNoEllipsis,
   assertNoPageScroll,
@@ -602,7 +602,7 @@ test("o total do período é Geist Mono e o valor de cada despesa da lista segue
   const total = page.getByText("Total do período").locator("..");
   await expect(total).toContainText("1.500,50");
   await expectMono(total.locator("[data-money]"), "o total do período");
-  await expectGeist(
+  await expectMono(
     row(page, "Aluguel de outubro").locator("[data-money]"),
     "o valor da despesa na lista"
   );
