@@ -508,7 +508,7 @@ function monthBody(
   }
   if (month.kind === "error") {
     return (
-      <div className="md:col-span-1 xl:col-span-3" data-kpi-error="">
+      <div className="xl:col-span-3" data-kpi-error="">
         {month.error}
       </div>
     );

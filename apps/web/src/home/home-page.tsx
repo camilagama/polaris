@@ -718,7 +718,6 @@ function HomeHeader({
           }
         />
       </div>
-      {period?.notes}
       {offlineText ? (
         <p
           // sibling of the row of actions in a flex-wrap header with `gap-y-4`: the negative margin leaves 6 px between them
@@ -728,6 +727,7 @@ function HomeHeader({
           {offlineText}
         </p>
       ) : null}
+      {period?.notes}
     </header>
   );
 }

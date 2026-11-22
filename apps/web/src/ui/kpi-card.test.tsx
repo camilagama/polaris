@@ -313,6 +313,13 @@ describe("HeroValue of the hero (xl)", () => {
   });
 });
 
+describe("the title of a tile", () => {
+  it("is a polite live region only when it follows a reading", () => {
+    expect(tile({ titleLive: true })).toContain('aria-live="polite"');
+    expect(tile({})).not.toContain("aria-live");
+  });
+});
+
 describe("the strip of the tiles", () => {
   it("makes its cells and its skeletons give up the card only from 1280 px", () => {
     const skeleton = renderToStaticMarkup(<KpiTileSkeleton strip />);

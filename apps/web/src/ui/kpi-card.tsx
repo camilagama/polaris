@@ -471,6 +471,7 @@ export function KpiTile({
   date?: string | undefined;
   entity: KpiEntity;
   help?: { about: string; text: string };
+  /** Only the gallery draws it. */
   hero?: boolean;
   id: string;
   /** What goes beside the chip: the count. */

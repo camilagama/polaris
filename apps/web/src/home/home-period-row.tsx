@@ -63,13 +63,14 @@ export function HomePeriodNotes({
   }
   return (
     <div
-      className="flex w-full flex-col gap-1 sm:text-right"
+      className={cn(
+        "flex w-full flex-col gap-1 sm:text-right",
+        !note && "max-sm:contents"
+      )}
       data-home-period=""
     >
       {said ? (
-        <p
-          className={cn("text-muted-foreground text-support", "max-sm:sr-only")}
-        >
+        <p className="text-muted-foreground text-support max-sm:sr-only">
           {OFFLINE_ONLY.reason}
         </p>
       ) : null}
