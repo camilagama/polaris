@@ -21,6 +21,7 @@ import {
   PLAN_REFUSED_REASON,
   type RuntimeApi,
   type RuntimeDependencies,
+  type RuntimeSnapshot,
   SESSION_RECHECK_MS,
   SessionUnreachableError,
 } from "./offline-runtime";
@@ -467,6 +468,55 @@ describe("starting", () => {
       phase: "ready",
     });
     expect(w.calls).toEqual(online); // nothing was asked of the server
+  });
+
+  it("reopened over a queue on disk, the first ready snapshot already counts it: the chip never says synced over waiting work", async () => {
+    const w = world();
+    const first = w.make();
+    await first.start(organizationId);
+    w.network.online = false;
+    await queueProduct(first, "Camiseta", 1);
+    await first.stop();
+
+    const second = w.make();
+    const ready: RuntimeSnapshot["counts"][] = [];
+    second.subscribe(() => {
+      const snapshot = second.getSnapshot();
+      if (snapshot.phase === "ready") {
+        ready.push(snapshot.counts);
+      }
+    });
+    await second.start(organizationId);
+
+    expect(ready.length).toBeGreaterThan(0);
+    expect(ready).toEqual(
+      ready.map(() => ({ pending: 1, rejected: 0, sending: 0 }))
+    );
+  });
+
+  it("reopened expired over a queue on disk, the expired snapshot already counts it", async () => {
+    const w = world();
+    const first = w.make();
+    await first.start(organizationId);
+    w.network.online = false;
+    await queueProduct(first, "Camiseta", 1);
+    await first.stop();
+    w.advance(73);
+
+    const second = w.make();
+    const expired: RuntimeSnapshot["counts"][] = [];
+    second.subscribe(() => {
+      const snapshot = second.getSnapshot();
+      if (snapshot.phase === "expired") {
+        expired.push(snapshot.counts);
+      }
+    });
+    await second.start(organizationId);
+
+    expect(expired.length).toBeGreaterThan(0);
+    expect(expired).toEqual(
+      expired.map(() => ({ pending: 1, rejected: 0, sending: 0 }))
+    );
   });
 
   it("is unavailable, with the reason, when it cannot start without a network", async () => {

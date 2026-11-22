@@ -9,11 +9,14 @@ import { pathToFileURL } from "node:url";
  * and is not counted.
  *
  * Usage: node scripts/e2e-flaky-report.mjs apps/web/test-results/e2e-real-report.json
+ * With `--report-only` the summary is written but the run never fails because of flaky tests; `--label <text>` names
+ * the suite in the summary heading (default: "e2e na pilha real").
  */
 
 const MONEY_JOURNEYS = /jornadas\/(venda|devolucao|estoque)\.e2e\.ts$/;
 const PURPOSEFUL_RETRY = "retry-proposital";
 export const FLAKY_LIMIT = 2;
+const DEFAULT_LABEL = "e2e na pilha real";
 
 function* tests(suite, file) {
   const here = suite.file ?? file;
@@ -73,8 +76,8 @@ export function flakyReport(report) {
   return { failed: reasons.length > 0, flaky, reasons };
 }
 
-export function summary({ flaky, reasons }) {
-  const lines = ["### e2e na pilha real: testes que só passaram no retry", ""];
+export function summary({ flaky, reasons }, label = DEFAULT_LABEL) {
+  const lines = [`### ${label}: testes que só passaram no retry`, ""];
   if (flaky.length === 0) {
     lines.push("Nenhum.");
   } else {
@@ -96,20 +99,43 @@ export function summary({ flaky, reasons }) {
 
 const ANSI_COLOR = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, "g");
 
+function parseArgs(args) {
+  let reportOnly = false;
+  let label = DEFAULT_LABEL;
+  let path;
+  for (let at = 0; at < args.length; at += 1) {
+    const arg = args[at];
+    if (arg === "--report-only") {
+      reportOnly = true;
+    } else if (arg === "--label") {
+      at += 1;
+      label = args[at];
+    } else if (arg.startsWith("--") || path !== undefined) {
+      return;
+    } else {
+      path = arg;
+    }
+  }
+  if (path === undefined || !label || label.startsWith("--")) {
+    return;
+  }
+  return { label, path, reportOnly };
+}
+
 function main() {
-  const [, , path] = process.argv;
-  if (!path) {
+  const options = parseArgs(process.argv.slice(2));
+  if (!options) {
     throw new Error(
-      "usage: node scripts/e2e-flaky-report.mjs <playwright json report>"
+      "usage: node scripts/e2e-flaky-report.mjs <playwright json report> [--report-only] [--label <text>]"
     );
   }
-  const result = flakyReport(JSON.parse(readFileSync(path, "utf8")));
-  const text = summary(result);
+  const result = flakyReport(JSON.parse(readFileSync(options.path, "utf8")));
+  const text = summary(result, options.label);
   console.log(text);
   if (process.env.GITHUB_STEP_SUMMARY) {
     appendFileSync(process.env.GITHUB_STEP_SUMMARY, text);
   }
-  if (result.failed) {
+  if (result.failed && !options.reportOnly) {
     process.exitCode = 1;
   }
 }

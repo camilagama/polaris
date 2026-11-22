@@ -705,13 +705,16 @@ interface Group {
 }
 
 const OPENERS: Record<string, string> = { "(": ")", "[": "]", "{": "}" };
-const BEFORE_REGEX = "(,=:[!&|?{};<>+-*%~^";
+const BEFORE_REGEX = "(,=:[!&|?{};<>+-%~^";
+const INCREMENT = /(?:\+\+|--)$/;
 const REGEX_KEYWORD = /\b(?:return|typeof|case|in|of)$/;
 const REGEX_FLAG = /[a-z]/i;
 
 // The index just past the regex literal that opens at `from`, or undefined when the `/` there is a division or opens a
 // comment. A `/` is read as a regex when what precedes it on its line is an operator, an opening bracket, `;`, `}`, a
 // keyword that takes an expression (`return`, `typeof`, `case`, `in`, `of`) or nothing; inside a class (`[...]`) a `/` does not close it.
+// `*` is left out because the `*` of `*/` ends a block comment (a regex right after a multiplication does not occur), and
+// `++`/`--` end an operand: the `/` after them divides.
 function regexEnd(text: string, from: number): number | undefined {
   if (text[from] !== "/" || text[from + 1] === "/" || text[from + 1] === "*") {
     return undefined;
@@ -723,7 +726,8 @@ function regexEnd(text: string, from: number): number | undefined {
   if (
     before >= 0 &&
     text[before] !== "\n" &&
-    !BEFORE_REGEX.includes(text[before] as string) &&
+    (!BEFORE_REGEX.includes(text[before] as string) ||
+      INCREMENT.test(text.slice(0, before + 1))) &&
     !REGEX_KEYWORD.test(text.slice(0, before + 1))
   ) {
     return undefined;
@@ -1229,6 +1233,63 @@ describe("CREATE ROLE with a fixed name outside SERIAL_GATES", () => {
         )
       )
     ).toEqual([planted("name @{login}")]);
+  });
+
+  for (const before of [
+    "i++ / 2; login = `fixed`; const y = a / 2;",
+    "i-- / 2; login = `fixed`; const y = a / 2;",
+    "i ++ / 2; login = `fixed`; const y = a / 2;",
+  ]) {
+    it(`reads the \`/\` after an increment as a division: ${before}`, () => {
+      expect(
+        fixedRoleNames(
+          planted(
+            "let login = `gate_@{randomUUID()}`;",
+            before,
+            "await q(`CREATE ROLE @{login}`);"
+          )
+        )
+      ).toEqual([planted("name @{login}")]);
+    });
+  }
+
+  it("reads the `/` after the end of a block comment as a division", () => {
+    const code = "/* nota */ login = `fixed`; const y = a / 2;";
+    expect(withoutLiterals(code)).toBe(
+      "/* nota */ login = `     `; const y = a / 2;"
+    );
+  });
+
+  it("still masks a regex after `=`, `(` or `,`", () => {
+    for (const use of [
+      "const bare = /'/;",
+      "const test = (/'/);",
+      "const pair = [1, /'/];",
+      "const clean = text.replace(/'/g, '');",
+      "const total = i++ + /'/.source.length;",
+    ]) {
+      expect(
+        fixedRoleNames(
+          planted(
+            "const login = `gate_@{randomUUID()}`;",
+            use,
+            "await q(`CREATE ROLE @{login}`);"
+          )
+        ),
+        use
+      ).toEqual([]);
+      expect(
+        fixedRoleNames(
+          planted(
+            "let login = `gate_@{randomUUID()}`;",
+            use,
+            "login = `fixed`;",
+            "await q(`CREATE ROLE @{login}`);"
+          )
+        ),
+        use
+      ).toEqual([planted("name @{login}")]);
+    }
   });
 
   it("finds a name that a block gives a fixed value", () => {
