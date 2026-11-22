@@ -3524,9 +3524,9 @@ Origem: achado B do Diego no Pixel 6 (28/10): a venda montada em Vender sumia ao
 | Item | Status | Observação |
 | --- | --- | --- |
 | Cinco linhas | Em revisão | `home/use-home.ts` e `dashboard/use-period-summary.ts` pedem `TOP_PRODUCTS` (5, de `lib/period-summary-cache.ts`) sob a mesma chave da cópia; o esqueleto tem cinco linhas. |
-| Miniatura | Em revisão | `home/home-figures.tsx`: `ProductThumbnail` de 32 px com a posição num círculo sobre o canto; iniciais sem capa ou sem a chave; a linha de uma só fila passa de 15/20 rem para 20,75 rem de contêiner. `useThumbnailSequence` põe as cinco capas no mesmo lote. |
+| Miniatura | Em revisão | `home/home-figures.tsx`: `ProductThumbnail` de 32 px com a posição em coluna própria (grade de colunas iguais); iniciais sem capa ou sem a chave; a linha de uma só fila passa de 15/20 rem para 20,75 rem de contêiner. `useThumbnailSequence` põe as cinco capas no mesmo lote. |
 | Servidor | Em revisão | `periodSummary` devolve `coverAssetId` por produto do ranking (`readPeriodSummary`, opção `covers`, uma consulta a mais por `readProductCovers`; sem migration, SQL do ranking intacto). Contrato: campo opcional. |
-| Provas | Em revisão | `home-top-products.test.tsx`, `report-router.test.ts`, `period-summary-cache.test.ts`; e2e `home.e2e.ts` (cinco caixas de 32 px a 360 px, nome inteiro a 320/20 e nas larguras de 1150 a 1397 px). |
+| Provas | Em revisão | `home-top-products.test.tsx`, `report-router.test.ts`, `period-summary-cache.test.ts`; e2e `home.e2e.ts` (cinco caixas de 32 px a 360 px, nome inteiro a 320/20 e nas larguras de 1150 a 1397 px) e, na grade de colunas iguais, o describe "a grade de colunas das linhas" de `e2e/home/valores-e-ranking.e2e.ts` (mesmo x de posição, miniatura, nome, fim do valor e das unidades, barra do nome às unidades, um link por linha). |
 
 ### UI de 11/11: grade do Início em pares (t1039; sem migration)
 
