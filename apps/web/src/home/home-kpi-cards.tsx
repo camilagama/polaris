@@ -91,6 +91,7 @@ function useReading(): [
   return [index, setIndex, clear];
 }
 
+/** Leitor de tela não anuncia texto que muda no mesmo quadro em que a região vira `aria-live`: o texto volta depois desta espera. */
 const LIVE_RESTORE_MS = 100;
 
 function TodayTile({
