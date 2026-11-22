@@ -117,6 +117,7 @@ const MOTION_UTILITY =
 const STRING = /"([^"\n]*)"|'([^'\n]*)'|`([^`]*)`/g;
 const SPACES = /\s+/;
 const TS_OR_TSX = /\.tsx?$/;
+const TSX = /\.tsx$/;
 
 /** The words of the strings of a source: the classes, among other words. */
 const classTokens = (text: string) =>
@@ -351,7 +352,8 @@ export function handTypedReaisFaults(path: string, text: string): string[] {
 const NUMBER_FONT_COMPONENTS = ["src/ui/money.tsx", "src/ui/figure.tsx"];
 const NUMBER_FONT_FOLDERS = ["src/ui/charts/", "src/ui/bklit/charts/"];
 const NUMBER_FONT_TOKEN =
-  /(?:^|:)!?(?:tabular-nums|font-mono)!?$|font-variant-numeric/;
+  /(?:^|:)!?(?:tabular-nums|font-mono)!?$|font-variant-numeric|(?:^|:)!?font-[([][^\s]*mono|(?:^|:)!?\[font-family:[^\s\]]*mono/i;
+const NUMBER_FONT_INLINE = /fontFamily\s*:[^}]*(?:--font-mono|Geist\s*Mono)/g;
 
 const SLICE_REASON =
   "ainda não passou por Money ou Figure: sai da lista na fatia da tela";
@@ -446,7 +448,8 @@ const isNumberFontHome = (path: string) =>
   NUMBER_FONT_FOLDERS.some((folder) => path.startsWith(folder));
 
 const numberFontTokens = (text: string) =>
-  classTokens(text).filter((token) => NUMBER_FONT_TOKEN.test(token)).length;
+  classTokens(text).filter((token) => NUMBER_FONT_TOKEN.test(token)).length +
+  (withoutComments(text).match(NUMBER_FONT_INLINE)?.length ?? 0);
 
 export function numberFontFaults(path: string, text: string): string[] {
   if (!TS_OR_TSX.test(path) || isNumberFontHome(path)) {
@@ -462,11 +465,12 @@ export function numberFontFaults(path: string, text: string): string[] {
       ];
 }
 
-/** An amount written by `{formatBrlAmount(…)}` as the child of an element skips the mask of `Money`; a template (`${…}`) is text that `MoneyText` masks. */
-const BRL_IN_JSX = /(?<![=$])\{\s*formatBrlAmount\(/;
+/** An amount written by `{formatBrlAmount(…)}` as the child of an element, alone or after `?`, `&&`, `||`, `??` or `String(`, or as `children=`, skips the mask of `Money`; a template (`${…}`) is text that `MoneyText` masks, and a prop of a component (`text={…}`) reaches the mask. Only `.tsx` files are read: a model that returns text is not JSX. */
+const BRL_IN_JSX =
+  /(?<![=$])\{\s*(?:String\()?formatBrlAmount\(|(?<![=$])\{(?!\s*(?:const|let|return|\w+:))[^{};]*?(?:\?|&&|\|\|)[^{};]*?formatBrlAmount\(|children=\{\s*formatBrlAmount\(/;
 
 export function brlInJsxFaults(path: string, text: string): string[] {
-  if (!TS_OR_TSX.test(path)) {
+  if (!TSX.test(path)) {
     return [];
   }
   return BRL_IN_JSX.test(withoutComments(text))
@@ -1085,6 +1089,27 @@ describe("controle: as regras de fonte pegam o que existem para pegar", () => {
     expect(
       fault('const a = "[font-variant-numeric:tabular-nums]";')
     ).not.toEqual([]);
+    for (const form of [
+      "font-(family-name:--font-mono)",
+      "font-[family-name:var(--font-mono)]",
+      "font-[Geist_Mono]",
+      "md:font-[Geist_Mono]",
+      "[font-family:var(--font-mono)]",
+    ]) {
+      expect(fault(`const a = "p-2 ${form}";`)).not.toEqual([]);
+    }
+    expect(fault('const a = { fontFamily: "var(--font-mono)" };')).not.toEqual(
+      []
+    );
+    expect(
+      fault('const a = { fontFamily: "Geist Mono, monospace" };')
+    ).not.toEqual([]);
+    expect(
+      fault('const a = { fontFamily: "Arial, Helvetica, monospace" };')
+    ).toEqual([]);
+    expect(fault('const a = "font-[family-name:var(--font-sans)]";')).toEqual(
+      []
+    );
     expect(fault('const a = "tabular-nums-not font-monospace";')).toEqual([]);
     expect(fault('// "tabular-nums" in a comment')).toEqual([]);
     expect(
@@ -1129,8 +1154,25 @@ describe("controle: as regras de fonte pegam o que existem para pegar", () => {
         "const a = `Total $".concat("{formatBrlAmount(total)}`;")
       )
     ).toEqual([]);
+    for (const jsx of [
+      "<b>{cond ? formatBrlAmount(x) : '-'}</b>",
+      "<b>{a && formatBrlAmount(x)}</b>",
+      "<b>{a ?? formatBrlAmount(x)}</b>",
+      "<b>{a || formatBrlAmount(x)}</b>",
+      "<b>{String(formatBrlAmount(x))}</b>",
+      "<b children={formatBrlAmount(x)} />",
+      "<b>{ok ? '-' : formatBrlAmount(x)}</b>",
+    ]) {
+      expect(brlInJsxFaults("src/x.tsx", jsx), jsx).not.toEqual([]);
+    }
     expect(
       brlInJsxFaults("src/x.tsx", "<Money text={formatBrlAmount(total)} />")
+    ).toEqual([]);
+    expect(
+      brlInJsxFaults(
+        "src/x.tsx",
+        "<Money text={cond ? formatBrlAmount(a) : formatBrlAmount(b)} />"
+      )
     ).toEqual([]);
     expect(
       brlInJsxFaults("src/x.tsx", "const text = formatBrlAmount(total);")

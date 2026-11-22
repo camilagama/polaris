@@ -587,7 +587,7 @@ test("registra uma despesa com valor em formato brasileiro e a soma do período 
   );
 });
 
-test("o total do período é Geist Mono e o valor de cada despesa da lista segue em Geist", async ({
+test("o total do período e o valor de cada despesa da lista são Geist Mono", async ({
   page,
 }) => {
   const server = new FakeExpenseServer();
