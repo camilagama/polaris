@@ -79,11 +79,26 @@ describe("methodForKey", () => {
     expect(methodForKey({ ...bare, key: "9" }, many)).toBe(8);
   });
 
-  it("Ctrl, Alt, ⌘ e Shift cancelam a tecla", () => {
-    for (const modifier of ["altKey", "ctrlKey", "metaKey", "shiftKey"]) {
+  it("Ctrl, Alt e ⌘ cancelam a tecla", () => {
+    for (const modifier of ["altKey", "ctrlKey", "metaKey"]) {
       expect(
         methodForKey({ ...bare, [modifier]: true, key: "1" }, methods),
         modifier
+      ).toBeNull();
+    }
+  });
+
+  it("no AZERTY o dígito sai com Shift e escolhe a opção", () => {
+    expect(methodForKey({ ...bare, key: "2", shiftKey: true }, methods)).toBe(
+      "b"
+    );
+  });
+
+  it("em QWERTY e ABNT2 Shift mais o número escreve um símbolo e não escolhe nada", () => {
+    for (const key of ["!", "@", "#", "\u00a8", "\u00a3"]) {
+      expect(
+        methodForKey({ ...bare, key, shiftKey: true }, methods),
+        key
       ).toBeNull();
     }
   });
@@ -125,7 +140,6 @@ describe("Método de pagamento numerado", () => {
     const html = renderPayment();
     expect(html).not.toContain("data-method-key");
     expect(html).not.toContain("aria-keyshortcuts");
-    expect(html).not.toContain("data-method-key");
   });
 
   it("o grupo segue radiogroup com o mesmo nome", () => {

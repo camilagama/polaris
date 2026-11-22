@@ -16,38 +16,69 @@ const PART_COLORS: Readonly<Record<CostPartId, string>> = {
   goods: "bg-(--chart-5)",
 };
 
-/** The width of a part in the bar: its share of the cost. Only for the drawing; the value is written beside it. */
-function share(value: string, total: string): number {
-  const whole = Number(Money.from(total).minorUnits);
-  return whole > 0 ? (Number(Money.from(value).minorUnits) / whole) * 100 : 0;
+/**
+ * What the parts are divided by: the total with the refunds (negative parts) added back, so the positive parts share it
+ * whole. Zero when there is no total to divide.
+ */
+function dividend(
+  parts: readonly Pick<CostPart, "value">[],
+  total: string | null
+): bigint {
+  if (total === null) {
+    return 0n;
+  }
+  const refunded = parts.reduce<bigint>((sum, part) => {
+    const minor = part.value === null ? 0n : Money.from(part.value).minorUnits;
+    return minor < 0n ? sum - minor : sum;
+  }, 0n);
+  return Money.from(total).minorUnits + refunded;
+}
+
+/** The width of a part in the bar: its share of the cost, a refund drawing nothing. Only for the drawing; the value is written beside it. */
+function share(
+  value: string,
+  parts: readonly Pick<CostPart, "value">[],
+  total: string
+): number {
+  const whole = Number(dividend(parts, total));
+  const minor = Number(Money.from(value).minorUnits);
+  return whole > 0 && minor > 0 ? (minor / whole) * 100 : 0;
 }
 
 /**
  * The whole percent of each part in the cost, by the largest remainder so the shown percents add up to 100: each part
  * takes the floor of its share and the missing points go to the parts with the largest remainders (the earlier part on
  * a tie). A part with no known value has no percent, and with no total to divide (unknown or zero) no part has one.
+ * A negative part (a refund) counts as 0% and its amount is added back to the total, so the others still share 100:
+ * truncating a negative share toward zero would make the floors add up to more than 100.
  */
 export function partPercents(
   parts: readonly Pick<CostPart, "value">[],
   total: string | null
 ): (number | null)[] {
-  const whole = total === null ? 0n : Money.from(total).minorUnits;
+  const whole = dividend(parts, total);
   if (whole <= 0n) {
     return parts.map(() => null);
   }
-  const shares = parts.map((part) => {
-    if (part.value === null) {
+  const minors = parts.map((part) =>
+    part.value === null ? null : Money.from(part.value).minorUnits
+  );
+  const shares = minors.map((minor) => {
+    if (minor === null) {
       return null;
     }
-    const scaled = Money.from(part.value).minorUnits * 100n;
+    const scaled = (minor > 0n ? minor : 0n) * 100n;
     return { floor: scaled / whole, rest: scaled % whole };
   });
   const known = shares.flatMap((entry, index) =>
     entry === null ? [] : [{ index, rest: entry.rest }]
   );
-  const missing = Number(
-    100n -
-      known.reduce((sum, { index }) => sum + (shares[index]?.floor ?? 0n), 0n)
+  const missing = Math.max(
+    0,
+    Number(
+      100n -
+        known.reduce((sum, { index }) => sum + (shares[index]?.floor ?? 0n), 0n)
+    )
   );
   const bumped = new Set(
     [...known]
@@ -115,7 +146,9 @@ export function PartsBar({
             <div
               className={PART_COLORS[part.id]}
               key={part.id}
-              style={{ width: `${share(part.value ?? "0", total)}%` }}
+              style={{
+                width: `${share(part.value ?? "0", parts, total)}%`,
+              }}
             />
           ))}
         </div>

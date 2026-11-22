@@ -17,10 +17,6 @@ const THE_GALLERY_FIXES_TODAY =
   "as datas são do calendário da galeria, cujo hoje é fixo (24/10/2026, `TODAY` de ui-gallery.tsx) e não vem do relógio do navegador";
 
 export const E2E_FIXED_DATES_LIST = {
-  "apps/web/e2e-pwa/sale-detail-fixture.ts": {
-    count: 7,
-    reason: BEFORE_THE_RULE,
-  },
   "apps/web/e2e-pwa/ui-account-states.ts": {
     count: 1,
     reason: BEFORE_THE_RULE,
@@ -33,8 +29,6 @@ export const E2E_FIXED_DATES_LIST = {
     count: 42,
     reason: THE_GALLERY_FIXES_TODAY,
   },
-  "apps/web/e2e-pwa/ui-device-states.ts": { count: 5, reason: BEFORE_THE_RULE },
-  "apps/web/e2e-pwa/ui-sale-states.ts": { count: 6, reason: BEFORE_THE_RULE },
   "apps/web/e2e-pwa/ui-shell-isolation.e2e.ts": {
     count: 17,
     reason: BEFORE_THE_RULE,

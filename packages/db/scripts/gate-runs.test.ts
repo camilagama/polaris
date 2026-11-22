@@ -1771,6 +1771,19 @@ function setupOf(workflow: string, id: string): string {
   return text.slice(text.indexOf("    services:"), runs.at(-1)).join("\n");
 }
 
+const TWIN_JOB_NAMES = [
+  "PostgreSQL 18 gates (main)",
+  "PostgreSQL 18 gates (definer-hardening)",
+  COLLECTOR,
+];
+
+function twinProblems(workflow: string): string[] {
+  const names = workflowJobs(workflow).map((job) => job.name);
+  return TWIN_JOB_NAMES.filter((name) => !names.includes(name)).map(
+    (name) => `no job is named ${name}`
+  );
+}
+
 describe("the two jobs of the gates prove the same environment", () => {
   const twin = (image: string) =>
     [
@@ -1791,6 +1804,9 @@ describe("the two jobs of the gates prove the same environment", () => {
       "      - name: Create the gate owner",
       "      - name: Run the definer-hardening gate",
       "        run: y",
+      "  database:",
+      "    name: PostgreSQL 18 gates",
+      "    needs: [database-main, database-definer-hardening]",
       "",
     ].join("\n");
 
@@ -1803,16 +1819,39 @@ describe("the two jobs of the gates prove the same environment", () => {
     );
   });
 
-  it("holds in ci.yml once both jobs exist", () => {
-    const ids = workflowJobs(CI_WORKFLOW).map((job) => job.id);
-    if (
-      ids.includes("database-main") &&
-      ids.includes("database-definer-hardening")
-    ) {
-      expect(setupOf(CI_WORKFLOW, "database-main").length).toBeGreaterThan(0);
-      expect(setupOf(CI_WORKFLOW, "database-definer-hardening")).toBe(
-        setupOf(CI_WORKFLOW, "database-main")
-      );
-    }
+  it("fails a workflow that lacks one of the two jobs or the collector", () => {
+    expect(twinProblems(twin("postgres:18"))).toEqual([]);
+    expect(
+      twinProblems(
+        twin("postgres:18").replace(
+          "PostgreSQL 18 gates (definer-hardening)",
+          "PostgreSQL 18 gates (other)"
+        )
+      )
+    ).toEqual(["no job is named PostgreSQL 18 gates (definer-hardening)"]);
+    expect(
+      twinProblems(
+        twin("postgres:18").replace(
+          "PostgreSQL 18 gates (main)",
+          "PostgreSQL 18 gates (other)"
+        )
+      )
+    ).toEqual(["no job is named PostgreSQL 18 gates (main)"]);
+    expect(
+      twinProblems(
+        twin("postgres:18").replace(
+          "    name: PostgreSQL 18 gates\n",
+          "    name: Other\n"
+        )
+      )
+    ).toEqual(["no job is named PostgreSQL 18 gates"]);
+  });
+
+  it("holds in ci.yml", () => {
+    expect(twinProblems(CI_WORKFLOW)).toEqual([]);
+    expect(setupOf(CI_WORKFLOW, "database-main").length).toBeGreaterThan(0);
+    expect(setupOf(CI_WORKFLOW, "database-definer-hardening")).toBe(
+      setupOf(CI_WORKFLOW, "database-main")
+    );
   });
 });

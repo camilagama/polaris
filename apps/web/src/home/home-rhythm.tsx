@@ -339,9 +339,9 @@ function RhythmMap({ days }: { days: RhythmDay[] }) {
           {`Últimas ${weeks} semanas`}
         </p>
       }
-      className="@container/rhythm"
       help={{ about: "Ritmo de vendas", text: help }}
       id="home-rhythm"
+      panelClassName="@container/rhythm"
       title="Ritmo de vendas"
     >
       <div className="flex @min-[41rem]/rhythm:grid flex-1 @min-[41rem]/rhythm:grid-cols-[25.75rem_minmax(0,1fr)] flex-col gap-2 @min-[41rem]/rhythm:gap-x-6">
@@ -449,7 +449,7 @@ export function RhythmBlock({
     ) : (
       // the height of the block read, so the blocks under it stay
       <BlockSkeleton
-        className="min-h-[16.6875rem] max-[21.25rem]:min-h-[18.0625rem] md:min-h-[15.8125rem]"
+        className="min-h-[16.6875rem] max-[21.25rem]:min-h-[18.0625rem] md:min-h-[16.5625rem]"
         label="Carregando o ritmo de vendas…"
         lines={0}
       />
