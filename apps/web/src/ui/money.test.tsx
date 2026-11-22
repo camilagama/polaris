@@ -21,6 +21,7 @@ const CURRENCY_CLASS = /data-money-currency=""/;
 const CURRENCY_TAG = /<span class="([^"]*)" data-money-currency="">/;
 const BOX_CLASS = /<span[^>]*class="([^"]*whitespace-nowrap[^"]*)"/;
 const OTHER_TEXT_SIZE = /\btext-(?!\[0\.56em\])/;
+const BOX_MONO = /<span[^>]*class="[^"]*\bfont-mono\b[^"]*\btabular-nums\b/;
 const NAME_ATTRIBUTES = /\b(?:aria-label|title|alt)=/;
 
 /** What a reader gets from the markup: its text, with no tags. */
@@ -104,6 +105,20 @@ describe("Money, with the values showing", () => {
     );
   });
 
+  it("sets every amount in Geist Mono, of any size and of none, with the values showing, hidden or unknown", () => {
+    for (const hidden of [false, true]) {
+      state.hidden = hidden;
+      for (const size of SIZES) {
+        for (const text of ["R$ 1.234,50", null]) {
+          const markup = renderToStaticMarkup(
+            <Money size={size} text={text} />
+          );
+          expect(markup).toMatch(BOX_MONO);
+        }
+      }
+    }
+  });
+
   it("splits a signed amount of lg and xl with each sign, and writes a text that is not an amount as it is", () => {
     for (const sign of ["+", "-", "−"]) {
       const markup = renderToStaticMarkup(
@@ -129,7 +144,7 @@ const EM_OF_SPAN =
   /class="[^"]*text-\[([\d.]+)em\][^"]*" data-money-(?:currency|cents)/g;
 
 describe("Money, the display in Geist Mono", () => {
-  it("sets only lg and xl in the mono face, with no tracking, and leaves sm, md and the sizeless amount in Geist", () => {
+  it("sets every size in the mono face and takes the tracking away only from lg and xl", () => {
     for (const size of ["lg", "xl"] as const) {
       const markup = renderToStaticMarkup(
         <Money size={size} text="R$ 1.234,50" />
@@ -141,7 +156,8 @@ describe("Money, the display in Geist Mono", () => {
       const markup = renderToStaticMarkup(
         <Money size={size} text="R$ 1.234,50" />
       );
-      expect(markup).not.toMatch(FAMILY_MONO);
+      expect(markup).toMatch(FAMILY_MONO);
+      expect(markup).not.toContain("tracking-normal");
     }
   });
 

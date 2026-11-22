@@ -1,3 +1,4 @@
+import { Figure } from "@/ui/figure";
 import { MoneyText } from "@/ui/hidden-values";
 import {
   MASKED_SPOKEN,
@@ -138,16 +139,19 @@ function GoalProgress({
         {...(pace ? { marker: pace.position } : {})}
         value={width}
       >
-        <span className="font-medium text-sm tabular-nums">
-          <span className="font-semibold">
+        <span className="font-medium text-sm">
+          <Figure className="font-semibold">
             <MoneyText text={valueText} />
-          </span>{" "}
+          </Figure>{" "}
           <span className="font-normal text-muted-foreground">
-            de <MoneyText text={targetText} />
+            de{" "}
+            <Figure>
+              <MoneyText text={targetText} />
+            </Figure>
           </span>
         </span>
-        <ProgressValue className="font-medium font-mono text-foreground">
-          {() => percentText}
+        <ProgressValue className="font-medium text-foreground">
+          {() => <Figure>{percentText}</Figure>}
         </ProgressValue>
       </Progress>
       <PaceLine {...goalPaceLine(pace)} />

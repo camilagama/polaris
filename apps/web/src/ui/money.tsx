@@ -9,18 +9,20 @@ import { cn } from "@/lib/utils";
 /**
  * The one component that writes an amount in reais: it decides the "R$", the cents and the mask, so that hiding the
  * values changes the words and nothing about the type. The size is one of the four `text-value-*` of the scale; with
- * no size the amount takes the font of the line it is in (running text, a card that sets its own size). The two big
- * sizes are the display of a figure and are set in Geist Mono, whose digits all advance the same, so the figure does not
- * change width when its digits change; `sm`, `md` and the sizeless amount stay in Geist with `tabular-nums`.
+ * no size the amount takes the size of the line it is in (running text, a card that sets its own size). Every amount,
+ * of any size and with none, is set in Geist Mono, whose digits all advance the same, so the figure does not change
+ * width when its digits change and a column of amounts reads down its decimals.
  */
 type MoneySize = "sm" | "md" | "lg" | "xl";
 
 const SIZE_CLASS: Record<MoneySize, string> = {
-  lg: "font-mono text-value-lg",
+  lg: "text-value-lg",
   md: "text-value-md",
   sm: "text-value-sm",
-  xl: "font-mono text-value-xl",
+  xl: "text-value-xl",
 };
+
+const MONO_CLASS = "font-mono tabular-nums";
 
 /** What Geist Mono advances per character, in em: the same for every glyph the figure writes (measured at 1000 px: 600). */
 const MONO_ADVANCE_EM = 0.6;
@@ -38,6 +40,11 @@ const CENTS_CLASS = "text-[0.72em]";
 /** What the mask takes at the size of its box, in em: the small "R$ " and the dots at the size of the figure. */
 export function maskedAmountWidthEm(): number {
   return ("R$ ".length * CURRENCY_EM + MASKED_DOTS.length) * MONO_ADVANCE_EM;
+}
+
+/** A text written whole in Geist Mono ("R$ 1.234,56" with no split, "12 un."), in em of its size. */
+export function monoWidthEm(text: string): number {
+  return Number((text.length * MONO_ADVANCE_EM).toFixed(3));
 }
 
 /** "R$ 99.640,35" at the size of its box, in em: the width a split amount takes in Geist Mono, the "R$" and the cents being smaller. */
@@ -74,7 +81,8 @@ export function Money({
   const displayed = size === "lg" || size === "xl";
   const sized = cn(
     "whitespace-nowrap",
-    size && ["tabular-nums", SIZE_CLASS[size]],
+    MONO_CLASS,
+    size && SIZE_CLASS[size],
     className,
     displayed && "tracking-normal"
   );

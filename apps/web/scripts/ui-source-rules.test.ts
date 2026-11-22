@@ -390,10 +390,6 @@ const NUMBER_FONT_ELSEWHERE: readonly {
     why: SLICE_REASON,
   },
   { file: "src/catalog/screen-parts.tsx", tokens: 1, why: SLICE_REASON },
-  { file: "src/dashboard/goal-card.tsx", tokens: 2, why: SLICE_REASON },
-  { file: "src/dashboard/parts-bar.tsx", tokens: 2, why: SLICE_REASON },
-  { file: "src/dashboard/result-chain.tsx", tokens: 1, why: SLICE_REASON },
-  { file: "src/dashboard/result-chart.tsx", tokens: 2, why: SLICE_REASON },
   {
     file: "src/expenses/expense-by-category.tsx",
     tokens: 1,
@@ -406,9 +402,6 @@ const NUMBER_FONT_ELSEWHERE: readonly {
     why: SLICE_REASON,
   },
   { file: "src/expenses/month-picker.tsx", tokens: 1, why: DATE_REASON },
-  { file: "src/home/home-chart.tsx", tokens: 1, why: SLICE_REASON },
-  { file: "src/home/home-figures.tsx", tokens: 4, why: SLICE_REASON },
-  { file: "src/home/home-goal.tsx", tokens: 7, why: SLICE_REASON },
   { file: "src/inventory/inventory-page.tsx", tokens: 3, why: SLICE_REASON },
   {
     file: "src/offline/attention-panel.tsx",
@@ -1126,18 +1119,26 @@ describe("controle: as regras de fonte pegam o que existem para pegar", () => {
     expect(
       fault('const a = "tabular-nums";', "src/ui/kpi-card.tsx").join()
     ).toContain("a lista diz 7");
+    expect(fault('const a = "tabular-nums";', "src/ui/calendar.tsx")).toEqual(
+      []
+    );
     expect(
       fault(
-        'const a = "tabular-nums tabular-nums tabular-nums tabular-nums";',
-        "src/home/home-figures.tsx"
-      )
-    ).toEqual([]);
-    expect(
-      fault('const a = "tabular-nums";', "src/home/home-figures.tsx").join()
-    ).toContain("a lista diz 4");
-    expect(
-      fault('const a = "p-2";', "src/home/home-figures.tsx").join()
-    ).toContain("0 tabular-nums ou font-mono");
+        'const a = "tabular-nums tabular-nums";',
+        "src/ui/calendar.tsx"
+      ).join()
+    ).toContain("a lista diz 1");
+    expect(fault('const a = "p-2";', "src/ui/calendar.tsx").join()).toContain(
+      "0 tabular-nums ou font-mono"
+    );
+    for (const moved of [
+      "src/home/home-figures.tsx",
+      "src/dashboard/result-chain.tsx",
+    ]) {
+      expect(fault('const a = "tabular-nums";', moved).join()).toContain(
+        "a lista diz 0"
+      );
+    }
     expect(fault('const a = "p-2";', "src/ui-vizinha/outra.tsx")).toEqual([]);
     expect(
       fault('const a = "p-2 tabular-nums";', "src/ui/charts-vizinha.tsx")

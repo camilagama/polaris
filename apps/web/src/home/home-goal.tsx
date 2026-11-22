@@ -4,6 +4,7 @@ import { cn } from "@/lib/utils";
 import { Badge } from "@/ui/badge";
 import { Card } from "@/ui/card";
 import { buttonVariants } from "@/ui/button";
+import { Figure } from "@/ui/figure";
 import { MoneyText } from "@/ui/hidden-values";
 import { PaceLine } from "@/ui/pace-line";
 import { Skeleton } from "@/ui/skeleton";
@@ -155,10 +156,10 @@ function GoalRing({
         className="col-start-1 row-start-1 grid justify-items-center gap-0.5 text-center"
       >
         <span
-          className="font-mono font-semibold tabular-nums leading-6"
+          className="font-semibold leading-6"
           style={{ fontSize: percentFontSize(percent) }}
         >
-          {percent}
+          <Figure>{percent}</Figure>
         </span>
         <span className="text-muted-foreground text-xs">da meta</span>
       </span>
@@ -220,7 +221,7 @@ function ProjectionLine({ projection }: { projection: GoalProjection }) {
   return (
     <p className="mt-1.5 text-support" data-goal-projection="">
       No ritmo atual, deve chegar a{" "}
-      <span className="font-medium tabular-nums">
+      <span className="font-medium">
         <MoneyText text={projection.value} />
       </span>{" "}
       em {projection.on}.
@@ -272,13 +273,16 @@ function ActiveGoal({
             width={goalProgressWidth(progress.percent)}
           />
           <div className="grid min-w-30 grow basis-30 gap-0.5">
-            <p className="font-semibold text-lg tabular-nums leading-7 tracking-tight">
-              <MoneyText text={formatGoalValue(goal.kind, progress.value)} />
+            <p className="font-semibold text-lg leading-7 tracking-tight">
+              <Figure>
+                <MoneyText text={formatGoalValue(goal.kind, progress.value)} />
+              </Figure>
             </p>
-            <p className="text-muted-foreground text-support tabular-nums">
-              <MoneyText
-                text={`de ${formatGoalValue(goal.kind, goal.target)}`}
-              />
+            <p className="text-muted-foreground text-support">
+              de{" "}
+              <Figure>
+                <MoneyText text={formatGoalValue(goal.kind, goal.target)} />
+              </Figure>
             </p>
             {measured ? <PaceLine {...goalPaceLine(pace)} /> : null}
             {projection ? <ProjectionLine projection={projection} /> : null}
@@ -344,7 +348,7 @@ function PastMonthGoal({
   return (
     <StripBody>
       <p className="font-medium">Sem meta ainda</p>
-      <p className="text-muted-foreground text-support tabular-nums">
+      <p className="text-muted-foreground text-support">
         <MoneyText text={pastGoalSummary(goal)} />
       </p>
       {online ? (
@@ -404,7 +408,7 @@ function SettledGoal({
         </p>
       </div>
       {goal.achievedValue === null ? null : (
-        <p className="text-support tabular-nums">
+        <p className="text-support">
           <MoneyText
             text={`Chegou a ${formatGoalValue(goal.kind, goal.achievedValue)} de ${formatGoalValue(goal.kind, goal.target)}.`}
           />
