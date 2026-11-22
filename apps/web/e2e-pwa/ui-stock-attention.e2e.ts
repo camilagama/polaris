@@ -258,7 +258,16 @@ test.describe("Estoque, data do movimento", () => {
   // With the browser zone pinned to UTC only the store's zone can give the day before the turn; in São Paulo both agree.
   test.use({ timezoneId: "UTC" });
 
-  test("perto da meia-noite de São Paulo o recebimento leva o dia da loja, não o dia em UTC", async ({
+  test("perto da meia-noite de São Paulo o botão da data mostra o dia da loja, não o dia em UTC", async ({
+    page,
+  }) => {
+    await stockStates.receiveNearMidnight(page);
+    await expect(
+      page.getByRole("button", { name: DATE_BUTTON })
+    ).toHaveAttribute("aria-label", `Data, ${NEAR_MIDNIGHT_STORE_DAY.button}`);
+  });
+
+  test("perto da meia-noite de São Paulo o recebimento enviado leva o dia da loja em occurredOn", async ({
     page,
   }) => {
     const sent: { occurredOn?: string }[] = [];
@@ -267,9 +276,6 @@ test.describe("Estoque, data do movimento", () => {
       return route.abort("failed");
     });
     await stockStates.receiveNearMidnight(page);
-    await expect(
-      page.getByRole("button", { name: DATE_BUTTON })
-    ).toHaveAttribute("aria-label", `Data, ${NEAR_MIDNIGHT_STORE_DAY.button}`);
     await page.getByRole("button", { exact: true, name: "Revisar" }).click();
     await page.getByRole("button", { name: CONFIRM_BUTTON }).click();
     await expect.poll(() => sent.length).toBeGreaterThan(0);

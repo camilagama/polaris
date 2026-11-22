@@ -27,23 +27,38 @@ import {
 const SHARD_FOLDER = /shard-(\d+)$/;
 const REPORT_FILE = /^timings-(.+)\.json$/;
 
-export function reportsFromFolder(folder) {
+/**
+ * `actions/download-artifact` with a pattern that matches one artifact writes its files straight into the folder, with
+ * no `playwright-timings-shard-<n>/` level: those files belong to `onlyShard`, which the caller passes only when the
+ * plan has exactly one shard (with more, a loose file could be any of them and is left out, so the missing report is
+ * named).
+ */
+export function reportsFromFolder(folder, onlyShard) {
   const found = [];
   if (!existsSync(folder)) {
     return found;
   }
   for (const entry of readdirSync(folder, { withFileTypes: true })) {
+    const report = REPORT_FILE.exec(entry.name);
+    if (entry.isFile() && report && onlyShard !== undefined) {
+      found.push({
+        report: readJson(join(folder, entry.name)),
+        shard: onlyShard,
+        suite: report[1],
+      });
+      continue;
+    }
     const match = SHARD_FOLDER.exec(entry.name);
     if (!(entry.isDirectory() && match)) {
       continue;
     }
     for (const name of readdirSync(join(folder, entry.name))) {
-      const report = REPORT_FILE.exec(name);
-      if (report) {
+      const inside = REPORT_FILE.exec(name);
+      if (inside) {
         found.push({
           report: readJson(join(folder, entry.name, name)),
           shard: Number(match[1]),
-          suite: report[1],
+          suite: inside[1],
         });
       }
     }
@@ -246,7 +261,10 @@ function main() {
   const { problems, totals } = checkCoverage({
     lists: readLists(options.lists),
     plan,
-    reports: reportsFromFolder(options.reports),
+    reports: reportsFromFolder(
+      options.reports,
+      plan.shards?.length === 1 ? plan.shards[0].shard : undefined
+    ),
   });
   console.log(
     plan.selection?.full === false

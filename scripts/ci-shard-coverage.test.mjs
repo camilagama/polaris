@@ -423,4 +423,25 @@ describe("reportsFromFolder", () => {
       { shard: 12, suite: "offline-poc" },
     ]);
   });
+
+  it("reads a report written straight into the folder as the only shard of the plan (one artifact downloaded by pattern)", () => {
+    folder = mkdtempSync(join(tmpdir(), "shard-coverage-"));
+    writeFileSync(
+      join(folder, "timings-offline-poc.json"),
+      JSON.stringify(report({}))
+    );
+    writeFileSync(join(folder, "notas.json"), "{}");
+    expect(
+      reportsFromFolder(folder, 1).map(({ shard, suite }) => ({ shard, suite }))
+    ).toEqual([{ shard: 1, suite: "offline-poc" }]);
+  });
+
+  it("leaves a loose report out when the plan has more than one shard, so the missing report is named", () => {
+    folder = mkdtempSync(join(tmpdir(), "shard-coverage-"));
+    writeFileSync(
+      join(folder, "timings-offline-poc.json"),
+      JSON.stringify(report({}))
+    );
+    expect(reportsFromFolder(folder)).toEqual([]);
+  });
 });

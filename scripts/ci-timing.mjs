@@ -239,7 +239,7 @@ export function renderMarkdown(byEvent) {
       `Só as execuções em que o gate de navegador rodou (${gated.n} de ${data.runs}): p50 **${minutesText(gated.p50)} min**, p95 ${minutesText(gated.p95)} min.`,
       ...(data.databaseWall.n > 0
         ? [
-            `Parede dos gates de PostgreSQL (início do primeiro job → fim do último, sem a espera por runner; ${data.databaseWall.n} de ${data.runs}): p50 **${minutesText(data.databaseWall.p50)} min**, p95 ${minutesText(data.databaseWall.p95)} min.`,
+            `Parede dos gates de PostgreSQL (início do primeiro job → fim do último, sem a espera do primeiro job; a do segundo entra, e uma execução com um dos jobs cancelado entra só com o outro e subestima a parede; ${data.databaseWall.n} de ${data.runs}): p50 **${minutesText(data.databaseWall.p50)} min**, p95 ${minutesText(data.databaseWall.p95)} min.`,
           ]
         : []),
       `Minutos faturados por execução: p50 ${minutesText(data.minutesPerRun.p50 * 60)}, p95 ${minutesText(data.minutesPerRun.p95 * 60)}.`,

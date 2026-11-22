@@ -472,6 +472,20 @@ export function ProductVariantConfigurationForm({
     [clearGenerateNotice]
   );
 
+  // the index of the new row is only known after the render that draws it, so the focus leaves from an effect, not from the tap
+  const focusNewRow = useRef<boolean>(false);
+  useEffect(() => {
+    if (!focusNewRow.current) {
+      return;
+    }
+    focusNewRow.current = false;
+    const [firstField] = optionNames;
+    if (firstField) {
+      const id = `product-variant-${product.id}-${variants.length - 1}-${firstField}`;
+      focusLater(() => document.getElementById(id)?.focus());
+    }
+  });
+
   const handleAddCombination = useCallback(() => {
     if (!validation.canAdd) {
       return;
@@ -483,23 +497,8 @@ export function ProductVariantConfigurationForm({
     setVariants((current) => [...current, { values }]);
     setSaveError(null);
     clearGenerateNotice();
-    const [firstField] = optionNames;
-    if (firstField) {
-      focusLater(() =>
-        document
-          .getElementById(
-            `product-variant-${product.id}-${variants.length}-${firstField}`
-          )
-          ?.focus()
-      );
-    }
-  }, [
-    clearGenerateNotice,
-    optionNames,
-    product.id,
-    validation.canAdd,
-    variants.length,
-  ]);
+    focusNewRow.current = true;
+  }, [clearGenerateNotice, optionNames, validation.canAdd]);
 
   const handleValueChange = useCallback(
     (index: number, name: ProductVariantOptionName, value: string) => {

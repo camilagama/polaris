@@ -18,7 +18,11 @@ import {
   disposableHostPattern,
   isLocalGateHost,
 } from "./gate-hosts";
-import { setLoginRole } from "./gate-roles";
+import {
+  rollbackAndRelease,
+  rollbackQuietly,
+  setLoginRole,
+} from "./gate-roles";
 import { archiveThenDeleteProduct } from "./product-lifecycle-support";
 
 const gateDatabase =
@@ -127,11 +131,7 @@ async function expectSqlStateWithUnlinkedAsset(
       constraint
     );
   } finally {
-    try {
-      await client.query("ROLLBACK");
-    } finally {
-      client.release();
-    }
+    await rollbackAndRelease(client);
   }
 }
 
@@ -150,11 +150,7 @@ async function expectUnlinkedAssetRefusedAtCommit(
       "media_assets_product_link_required"
     );
   } finally {
-    try {
-      await client.query("ROLLBACK");
-    } finally {
-      client.release();
-    }
+    await rollbackAndRelease(client);
   }
 }
 
@@ -306,7 +302,7 @@ async function withTenantContext<T>(
     await client.query("COMMIT");
     return result;
   } catch (error) {
-    await client.query("ROLLBACK");
+    await rollbackQuietly(client);
     throw error;
   }
 }
@@ -504,11 +500,10 @@ async function main(): Promise<void> {
         ]
       );
       await linkingTransaction.query("COMMIT");
-    } catch (error) {
-      await linkingTransaction.query("ROLLBACK");
-      throw error;
-    } finally {
       linkingTransaction.release();
+    } catch (error) {
+      await rollbackAndRelease(linkingTransaction);
+      throw error;
     }
 
     await pool.query(

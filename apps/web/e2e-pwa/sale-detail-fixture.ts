@@ -1,9 +1,22 @@
+import type { Page } from "@playwright/test";
+
 /**
  * A confirmed sale as `sale/get` answers it, with its customer link and the customers of the organization, for the
  * screen checks of the sale detail and of the customer page (synthetic data only). Two lines: the first has a
  * return made, the second a long name, so the return table shows a partial line and a name that wraps.
  */
 const SALE_DETAIL_ORGANIZATION_ID = "0199c2d0-0000-7000-8000-00000000a001";
+
+const NOW = new Date("2026-10-14T12:00:00.000Z");
+const MINUTE = 60_000;
+const DAY = 86_400_000;
+const at = (offsetMs: number) =>
+  new Date(NOW.getTime() + offsetMs).toISOString();
+
+/** Fixes the page clock on the day of the sale: everything the screens read from the fixture is dated from `NOW`. */
+export async function fixSaleDetailClock(page: Page) {
+  await page.clock.setFixedTime(NOW);
+}
 
 const id = (n: number) =>
   `0199c2d0-0000-7000-8000-${n.toString(16).padStart(12, "0")}`;
@@ -61,7 +74,7 @@ const SALE_DETAIL = {
       items: [{ position: 0, restockedQuantity: 0, returnedQuantity: 1 }],
       reasonCode: "defective",
       reasonNote: "Rasgada",
-      returnedAt: "2026-10-15T12:00:00.000Z",
+      returnedAt: at(DAY),
       returnedBy: "user_1",
       saleId: DETAIL_SALE_ID,
     },
@@ -93,11 +106,11 @@ const SALE_DETAIL = {
     },
     sale: {
       commandId: id(0x7_42),
-      confirmedAt: "2026-10-14T12:00:01.000Z",
+      confirmedAt: at(1000),
       currency: "BRL",
       id: DETAIL_SALE_ID,
-      occurredAt: "2026-10-14T12:00:00.000Z",
-      occurredOn: "2026-10-14",
+      occurredAt: at(0),
+      occurredOn: at(0).slice(0, 10),
       recordedAt: null,
     },
     totals: {
@@ -116,7 +129,7 @@ const SALE_CUSTOMER_LINK = {
   history: [
     {
       action: "assign",
-      createdAt: "2026-10-14T12:05:00.000Z",
+      createdAt: at(5 * MINUTE),
       customerId: CUSTOMER_ANGELA,
       version: 1,
     },
@@ -127,7 +140,7 @@ const SALE_CUSTOMER_LINK = {
 const customer = (customerId: string, name: string) => ({
   anonymizedAt: null,
   archivedAt: null,
-  createdAt: "2026-10-01T12:00:00.000Z",
+  createdAt: at(-13 * DAY),
   email: null,
   id: customerId,
   name,
@@ -135,7 +148,7 @@ const customer = (customerId: string, name: string) => ({
   organizationId: SALE_DETAIL_ORGANIZATION_ID,
   phone: null,
   status: "active",
-  updatedAt: "2026-10-01T12:00:00.000Z",
+  updatedAt: at(-13 * DAY),
   version: 1,
 });
 

@@ -24,6 +24,12 @@ import {
   sql,
 } from "drizzle-orm";
 import { readProductCovers } from "./product-cover";
+import {
+  discountShareCents,
+  discountSplitColumns,
+  givenBackCents,
+  itemCentsColumns,
+} from "./return-given-back-sql";
 import { expenses } from "./schema/expense";
 import { saleAdjustments, saleItems, salePayments, sales } from "./schema/sale";
 import { saleCancellations } from "./schema/sale-cancellation";
@@ -542,8 +548,7 @@ function countedCte(organization: string, period: EconomicsPeriod) {
 function lineCte(organization: string) {
   return sql`line AS (
       SELECT item.sale_id, item.position, item.quantity, item.product_id, item.unit_cost,
-        item.charged_unit_price * 100 AS unit_cents,
-        item.charged_unit_price * item.quantity * 100 AS value_cents
+        ${itemCentsColumns(sql`item`)}
       FROM public.sale_items AS item
       JOIN counted ON counted.id = item.sale_id
       WHERE item.organization_id = ${organization}
@@ -612,19 +617,10 @@ function allocationCte(scope: "every_sale" | "returned_sales") {
       : sql``;
   return sql`allocation AS (
       SELECT split.sale_id, split.position,
-        split.floor_cents
-          + CASE WHEN split.rank <= split.leftover THEN 1 ELSE 0 END AS cents
+        ${discountShareCents} AS cents
       FROM (
         SELECT line.sale_id, line.position,
-          div(adjustment.discount_cents * line.value_cents, gross.cents) AS floor_cents,
-          adjustment.discount_cents
-            - sum(div(adjustment.discount_cents * line.value_cents, gross.cents))
-            OVER (PARTITION BY line.sale_id) AS leftover,
-          row_number() OVER (
-            PARTITION BY line.sale_id
-            ORDER BY mod(adjustment.discount_cents * line.value_cents, gross.cents) DESC,
-              line.position
-          ) AS rank
+          ${discountSplitColumns(sql`adjustment.discount_cents`, sql`line.sale_id`)}
         FROM line
         JOIN adjustment ON adjustment.sale_id = line.sale_id
         JOIN gross ON gross.sale_id = line.sale_id
@@ -644,11 +640,7 @@ function allocationCte(scope: "every_sale" | "returned_sales") {
 const givenBackCte = sql`given_back AS (
       SELECT returned.sale_id, returned.position, returned.quantity, returned.restocked,
         line.quantity AS sold, line.unit_cost,
-        returned.quantity * line.unit_cents
-          - div(
-              coalesce(allocation.cents, 0) * returned.quantity * 2 + line.quantity,
-              line.quantity::numeric * 2
-            ) AS cents
+        ${givenBackCents} AS cents
       FROM returned
       LEFT JOIN line ON line.sale_id = returned.sale_id
         AND line.position = returned.position
