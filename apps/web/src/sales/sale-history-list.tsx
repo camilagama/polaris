@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { Badge } from "@/ui/badge";
 import { Card } from "@/ui/card";
 import { Money } from "@/ui/money";
+import { isPlainClick } from "../lib/plain-click";
 import type { HistoryRow } from "./sale-history-model";
 
 /**
@@ -133,7 +134,15 @@ function HistoryItem({
         <a
           className={`${ROW} focus-ring hover:bg-muted/50 focus-visible:-outline-offset-3`}
           href={row.detailHref}
-          onClick={onOpen === undefined ? undefined : () => onOpen(row.id)}
+          onClick={
+            onOpen === undefined
+              ? undefined
+              : (event) => {
+                  if (isPlainClick(event)) {
+                    onOpen(row.id);
+                  }
+                }
+          }
         >
           <RowBody chevron row={row} />
         </a>
