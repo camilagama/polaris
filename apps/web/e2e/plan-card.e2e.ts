@@ -100,63 +100,81 @@ interface FootFrame {
 
 interface FootFrames {
   after: FootFrame[];
-  before: FootFrame;
+  emptyBefore: number;
+  enteredAt: number | null;
+  finished: boolean;
+  offlineAt: number | null;
 }
 
-const FRAMES_AFTER_ENTRY = 30;
+const WATCH_AFTER_ENTRY_MS = 500;
 
-/** Samples the tops of the line of the first steps and of the trial in every frame: the last frame without either, and the frames from the first one that has one. */
-async function watchFrames(page: Page, wanted: number) {
-  await page.addInitScript((limit: number) => {
+/** Samples, in every frame, the tops of the line of the first steps and of the trial: how many frames had neither, then each frame from the first one that has one, until `spanMs` after it; and when the browser went offline. */
+async function watchFrames(page: Page, spanMs: number) {
+  await page.addInitScript((span: number) => {
     const topOf = (selector: string) => {
       const found = document.querySelector(selector);
       return found === null ? null : found.getBoundingClientRect().top;
     };
     const frames = {
       after: [] as { steps: number | null; trial: number | null }[],
-      before: { steps: null, trial: null } as {
-        steps: number | null;
-        trial: number | null;
-      },
+      emptyBefore: 0,
+      enteredAt: null as number | null,
+      finished: false as boolean,
+      offlineAt: null as number | null,
     };
     Reflect.set(window, "polarisFrames", frames);
-    const sample = () => {
+    window.addEventListener("offline", () => {
+      frames.offlineAt = performance.now();
+    });
+    const sample = (at: number) => {
       const now = {
         steps: topOf("[data-menu-first-steps]"),
         trial: topOf("[data-menu-trial]"),
       };
-      if (now.steps === null && now.trial === null) {
-        frames.before = now;
-      } else if (frames.after.length < limit) {
-        frames.after.push(now);
+      if (
+        frames.enteredAt === null &&
+        now.steps === null &&
+        now.trial === null
+      ) {
+        frames.emptyBefore += 1;
+      } else {
+        frames.enteredAt ??= at;
+        if (at - frames.enteredAt <= span) {
+          frames.after.push(now);
+        } else {
+          frames.finished = true;
+        }
       }
-      requestAnimationFrame(sample);
+      if (!frames.finished) {
+        requestAnimationFrame(sample);
+      }
     };
     requestAnimationFrame(sample);
-  }, wanted);
+  }, spanMs);
 }
 
-async function footFrames(page: Page, wanted: number) {
+async function footFrames(page: Page) {
   await expect
     .poll(() =>
       page.evaluate(
-        () => (Reflect.get(window, "polarisFrames") as FootFrames).after.length
+        () => (Reflect.get(window, "polarisFrames") as FootFrames).finished
       )
     )
-    .toBeGreaterThanOrEqual(wanted);
+    .toBe(true);
   return await page.evaluate(
     () => Reflect.get(window, "polarisFrames") as FootFrames
   );
 }
 
-function expectEnteredTogetherAndStill(frames: FootFrames) {
-  expect(frames.before).toEqual({ steps: null, trial: null });
+function expectStillFromTheFirstFrame(frames: FootFrames) {
+  expect(frames.emptyBefore).toBeGreaterThan(0);
   const [entry, ...rest] = frames.after;
   expect(entry?.steps).not.toBeNull();
-  expect(entry?.trial).not.toBeNull();
+  expect(rest.length).toBeGreaterThan(0);
   for (const frame of rest) {
     expect(frame).toEqual(entry);
   }
+  return entry;
 }
 
 async function firstSighting(page: Page) {
@@ -536,7 +554,7 @@ test.describe("o cartão do plano Free", () => {
     await page.setViewportSize({ height: 800, width: 1280 });
     await serveFoot(page, { plan: TRIAL_PLAN });
     await watchFoot(page);
-    await watchFrames(page, FRAMES_AFTER_ENTRY);
+    await watchFrames(page, WATCH_AFTER_ENTRY_MS);
     const release = await holdRead(page, TRIAL_PLAN);
     await page.goto("/products");
     await expect(page.locator("main h1")).toBeVisible();
@@ -549,33 +567,30 @@ test.describe("o cartão do plano Free", () => {
     expect(first.trial).toBe(true);
     const after = await tops(page);
     expect(after.steps).toBeCloseTo(first.top, 0);
-    expectEnteredTogetherAndStill(await footFrames(page, FRAMES_AFTER_ENTRY));
+    const entry = expectStillFromTheFirstFrame(await footFrames(page));
+    expect(entry?.trial).not.toBeNull();
   });
 
-  test("a conexão cai com a leitura do plano pendente: Primeiros passos aparece antes do teto e não se move", async ({
+  test("a conexão cai com a leitura do plano pendente: Primeiros passos aparece com a queda, não com o teto, e não se move", async ({
     page,
   }) => {
     await page.setViewportSize({ height: 800, width: 1280 });
     await serveFoot(page, { plan: FREE_PLAN });
-    await watchFoot(page);
-    await watchFrames(page, FRAMES_AFTER_ENTRY);
-    await holdRead(page, FREE_PLAN);
-    await page.goto("/products");
-    await expect(page.locator("main h1")).toBeVisible();
-    await expect(page.locator("[data-menu-first-steps]")).toHaveCount(0);
-    await page.context().setOffline(true);
-    await expect(page.locator("[data-menu-first-steps]")).toBeVisible({
-      timeout: PLAN_READ_CEILING_MS - 1000,
+    await watchFrames(page, PLAN_READ_CEILING_MS + WATCH_AFTER_ENTRY_MS);
+    await page.route("**/rpc/billing/readPlan", async () => {
+      await page.context().setOffline(true);
+      await new Promise<never>(() => undefined);
     });
-    const first = await firstSighting(page);
-    const frames = await footFrames(page, FRAMES_AFTER_ENTRY);
-    expect(frames.before.steps).toBeNull();
-    for (const frame of frames.after) {
-      expect(frame.steps).toBe(frames.after[0]?.steps);
-    }
-    expect(frames.after[0]?.steps).toBeCloseTo(first.top, 0);
+    await page.goto("/products");
+    await expect(page.locator("[data-menu-first-steps]")).toBeVisible();
+    const frames = await footFrames(page);
+    expect(frames.offlineAt).not.toBeNull();
+    expect(frames.enteredAt).not.toBeNull();
+    expect((frames.enteredAt ?? 0) - (frames.offlineAt ?? 0)).toBeLessThan(
+      PLAN_READ_CEILING_MS / 2
+    );
+    expectStillFromTheFirstFrame(frames);
     await expect(card(page)).toHaveCount(0);
-    expect((await tops(page)).steps).toBeCloseTo(first.top, 0);
   });
 
   for (const item of [
