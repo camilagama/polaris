@@ -93,6 +93,7 @@ import {
   FieldSet,
   FieldTitle,
 } from "@/ui/field";
+import { Figure } from "@/ui/figure";
 import { FilterBar, type FilterField, type FilterRule } from "@/ui/filter-bar";
 import { HelpTip } from "@/ui/help-tip";
 import { HideValuesButton, MoneyText } from "@/ui/hidden-values";
@@ -1752,13 +1753,25 @@ export function UiGallery() {
             </div>
           </Section>
 
+          <Section title="Quantidade, taxa e prazo">
+            <p className="flex flex-wrap items-baseline gap-x-3 text-sm">
+              <span>Estoque</span>
+              <Figure>1.234</Figure>
+              <span>Taxa</span>
+              <Figure>3,5%</Figure>
+              <span>Prazo</span>
+              <Figure>30</Figure>
+              <span>dias</span>
+            </p>
+          </Section>
+
           <Section title="Visor em Geist Mono">
             <p className="text-support">
-              O número dos cartões de KPI (os tamanhos lg e xl do dinheiro,
-              acima) e os percentuais leem como visor: o mesmo avanço em cada
-              dígito, então o número não muda de largura quando os dígitos
-              mudam. A lista, a tabela e o campo seguem em Geist com números
-              tabulares.
+              O número dos cartões de KPI (o dinheiro, acima) e os percentuais
+              leem como visor: o mesmo avanço em cada dígito, então o número não
+              muda de largura quando os dígitos mudam. O dinheiro em lg e xl e
+              toda quantidade (Figure) leem assim; data, hora, telefone e
+              documento seguem em Geist.
             </p>
             <div className="flex flex-wrap items-center gap-3">
               <DeltaChip
