@@ -1753,7 +1753,7 @@ export function UiGallery() {
             </div>
           </Section>
 
-          <Section title="Número que não é dinheiro">
+          <Section title="Quantidade, taxa e prazo">
             <p className="flex flex-wrap items-baseline gap-x-3 text-sm">
               <span>Estoque</span>
               <Figure>1.234</Figure>
