@@ -263,12 +263,13 @@ export function OnDemandRingChart({
   if (state.status === "failed") {
     return failed ?? null;
   }
+  const side = props.fluid ? `${props.size / 16}rem` : props.size;
   return (
     <span
       aria-hidden="true"
       className={cn("block", props.className)}
       data-chart-loading=""
-      style={{ height: props.size, width: props.size }}
+      style={{ height: side, width: side }}
     />
   );
 }
