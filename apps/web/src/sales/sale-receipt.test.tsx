@@ -132,7 +132,7 @@ describe("the sale as a receipt", () => {
     expect(order).toEqual([...order].sort((a, b) => a - b));
   });
 
-  it("sets the dates and the payment back as muted blocks with no border; the dates in two columns from 760 px, the payment as lines", () => {
+  it("sets the dates and the payment back as two rounded, padded blocks with no border; the dates in two columns from 760 px, the payment as lines", () => {
     const markup = render();
     const blocks = markup.match(DETAILS_BLOCK) ?? [];
     expect(blocks).toHaveLength(2);
