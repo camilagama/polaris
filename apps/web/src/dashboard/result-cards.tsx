@@ -140,7 +140,7 @@ type SparkColor =
 
 const LINK_CLASS = cn(
   buttonVariants({ size: "xs", variant: "ghost" }),
-  "-my-1 -ml-2 h-6 shrink-0 text-sm"
+  "-my-1 h-6 shrink-0 px-0 text-sm"
 );
 const LINK_ARROW = "@min-[11.5rem]:block hidden size-4";
 

@@ -85,8 +85,9 @@ export interface TitleBack {
 
 /**
  * "Voltar" of a detail screen: the arrow alone, no outline, before the title on its line. A link, since it goes to the
- * list; the 44 px touch area comes from the button it is drawn as. The negative margin puts the arrow itself, not its
- * padding, on the left edge of the page column.
+ * list; the 44 px touch area comes from the button it is drawn as. It is narrower than the 32 px button (24 px wide, the touch area
+ * is the same) because the title beside it has to keep room at the largest letter size, and it has no negative margin:
+ * the container guard refuses anything that leaves the column.
  */
 function BackButton({ href, label, onClick, ref }: TitleBack) {
   return (
@@ -94,7 +95,7 @@ function BackButton({ href, label, onClick, ref }: TitleBack) {
       aria-label={label}
       className={cn(
         buttonVariants({ size: "icon", variant: "ghost" }),
-        "-ml-2 text-muted-foreground hover:text-foreground"
+        "w-6 text-muted-foreground hover:text-foreground"
       )}
       data-back=""
       href={href}

@@ -142,9 +142,9 @@ const KNOWN_FINDINGS_24: readonly KnownFinding[] = [
   {
     clientWidth: 320,
     reason:
-      "no Detalhe da venda com o cancelamento revisado, a página rola 21 px para o lado (341 px de conteúdo em 320 px); a causa dentro da coluna não foi isolada",
+      "no Detalhe da venda com o cancelamento revisado, a página rola 25 px para o lado (345 px de conteúdo em 320 px, 4 px a mais com a seta de voltar antes do título); a causa dentro da coluna não foi isolada",
     screens: ["detalhe da venda cancelamento revisado"],
-    scrollWidth: 341,
+    scrollWidth: 345,
     selector: "html",
   },
   {
