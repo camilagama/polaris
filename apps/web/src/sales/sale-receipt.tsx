@@ -86,6 +86,7 @@ export function SaleReceipt({ before, sale, status }: SaleReceiptProps) {
             ))}
           </dl>
           <ConfirmedDetails
+            block="dates"
             details={sale.saleDetails.filter(
               (detail) => detail.value !== sale.saleId
             )}
@@ -93,7 +94,11 @@ export function SaleReceipt({ before, sale, status }: SaleReceiptProps) {
         </CardContent>
         <CardContent className="grid gap-2 border-border border-t py-(--card-spacing)">
           <h3 className="font-medium">Pagamento</h3>
-          <ConfirmedDetails details={sale.paymentDetails} receipt />
+          <ConfirmedDetails
+            block="payment"
+            details={sale.paymentDetails}
+            receipt
+          />
           <p className="text-muted-foreground text-support">{sale.note}</p>
           <p className="pt-1 font-mono text-muted-foreground text-xs [overflow-wrap:anywhere]">
             <span className="sr-only">Identificador da venda: </span>
