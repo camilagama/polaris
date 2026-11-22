@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { InvalidSaleFactError } from "@polaris/domain/economics/sale-economics";
 import {
   dailySalesQuery,
+  foldPayments,
   inBlocks,
   periodSummaryQuery,
   readPeriodSummary,
@@ -383,5 +384,108 @@ describe("readPeriodSummary: a capa de cada produto do ranking", () => {
     const { asked, transaction } = withCovers({ [FIRST]: COVER });
     await readPeriodSummary(transaction, identity, period, { covers: true });
     expect(asked).toHaveLength(0);
+  });
+});
+
+describe("foldPayments: the fees of a sale are the sum of its payments' fees", () => {
+  const part = (
+    saleId: string,
+    processingFee: string | null,
+    anticipationFee: string | null
+  ) => ({ anticipationFee, processingFee, saleId });
+
+  it("keeps the fees of a sale with one payment", () => {
+    expect(foldPayments([part("a", "1.50", "0.00")]).get("a")).toEqual({
+      anticipationFee: "0.00",
+      processingFee: "1.50",
+    });
+  });
+
+  it("adds the fees of two payments in cents", () => {
+    const folded = foldPayments([
+      part("a", "1.50", "0.00"),
+      part("a", "2.50", "0.80"),
+    ]);
+    expect(folded.get("a")).toEqual({
+      anticipationFee: "0.80",
+      processingFee: "4.00",
+    });
+  });
+
+  it("gives the same sum in whatever order the payments come", () => {
+    const rows = [part("a", "1.50", "0.00"), part("a", "2.50", "0.80")];
+    expect(foldPayments([...rows].reverse())).toEqual(foldPayments(rows));
+  });
+
+  it("makes only the fee that a payment does not know unknown", () => {
+    const folded = foldPayments([
+      part("a", null, "0.10"),
+      part("a", "2.50", "0.80"),
+    ]);
+    expect(folded.get("a")).toEqual({
+      anticipationFee: "0.90",
+      processingFee: null,
+    });
+    const other = foldPayments([
+      part("a", "1.00", null),
+      part("a", "2.50", "0.80"),
+    ]);
+    expect(other.get("a")).toEqual({
+      anticipationFee: null,
+      processingFee: "3.50",
+    });
+  });
+
+  it("adds three payments", () => {
+    const folded = foldPayments([
+      part("a", "0.10", "0.00"),
+      part("a", "0.20", "0.00"),
+      part("a", "0.30", "0.05"),
+    ]);
+    expect(folded.get("a")).toEqual({
+      anticipationFee: "0.05",
+      processingFee: "0.60",
+    });
+  });
+
+  it("keeps the sales apart", () => {
+    const folded = foldPayments([
+      part("a", "1.50", "0.00"),
+      part("b", null, "0.00"),
+      part("a", "2.50", "0.00"),
+      part("c", "7.00", "0.00"),
+    ]);
+    expect([...folded.keys()]).toEqual(["a", "b", "c"]);
+    expect(folded.get("a")?.processingFee).toBe("4.00");
+    expect(folded.get("b")?.processingFee).toBeNull();
+    expect(folded.get("c")?.processingFee).toBe("7.00");
+  });
+
+  it("has nothing for a sale without a payment", () => {
+    expect(foldPayments([]).get("a")).toBeUndefined();
+  });
+});
+
+const PAYMENT_CTE = /payment_by_sale AS \(/;
+const PAYMENT_COUNTED =
+  /payment\.sale_id IN \(SELECT counted\.id FROM counted\)/;
+const PAYMENT_GROUP = /GROUP BY payment\.sale_id/;
+const PAYMENT_JOIN = /LEFT JOIN payment_by_sale AS payment ON/;
+const LOOSE_PAYMENT_JOIN = /LEFT JOIN public\.sale_payments/;
+
+describe("periodSummaryQuery: the payments are added up per sale before they join the sale", () => {
+  const { sql } = new PgDialect().sqlToQuery(
+    periodSummaryQuery("org", { from: "2026-10-01", to: "2026-10-31" })
+  );
+
+  it("reads only the payments of the counted sales", () => {
+    expect(sql).toMatch(PAYMENT_CTE);
+    expect(sql).toMatch(PAYMENT_COUNTED);
+    expect(sql).toMatch(PAYMENT_GROUP);
+  });
+
+  it("joins the sale to the added-up payments, never to the rows", () => {
+    expect(sql).toMatch(PAYMENT_JOIN);
+    expect(sql).not.toMatch(LOOSE_PAYMENT_JOIN);
   });
 });
