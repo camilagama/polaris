@@ -12,12 +12,4 @@ export const GATE_ROLLBACK_LIST = {
     count: 1,
     reason: BEFORE_THE_RULE,
   },
-  "packages/db/scripts/measure-period-summary.ts": {
-    count: 1,
-    reason: BEFORE_THE_RULE,
-  },
-  "packages/db/scripts/measure-plan-read.ts": {
-    count: 1,
-    reason: BEFORE_THE_RULE,
-  },
 };
