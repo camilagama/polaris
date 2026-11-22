@@ -15,9 +15,10 @@ import { useNow } from "../lib/use-now";
 import { isSessionOver } from "../offline/runtime/session-ended";
 import {
   graceNotice,
-  type PlanNoticeFacts,
   noPlanReadBackoff,
   noPlanReadsInFlight,
+  PLAN_READ_WAIT_MS,
+  type PlanNoticeFacts,
   type PlanReadBackoff,
   type PlanReadsInFlight,
   planNoticeIsOld,
@@ -35,9 +36,6 @@ import {
 import { tabHref } from "./navigation-model";
 
 const SUBSCRIPTION_HREF = tabHref("settings", "assinatura");
-
-/** A read of the plan with no deadline of its own stops holding the foot of the menu after this long. */
-export const PLAN_READ_WAIT_MS = 3000;
 
 export interface PlanNoticeState {
   facts: PlanNoticeFacts | null;
