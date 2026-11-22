@@ -10,7 +10,7 @@ import {
   DAY,
   FakeServer,
   goal,
-  heroAndMonth,
+  kpiGrid,
   HOUR,
   NOON,
   newSale,
@@ -278,13 +278,13 @@ test.describe("sem conexão (§ 7, AC-28 a AC-31)", () => {
   });
 
   for (const size of SIZES) {
-    test(`o herói tem a mesma caixa com o valor, em "Sem números de hoje" e em "Sem conexão" (${size.width} px)`, async ({
+    test(`o cartão de hoje tem a mesma caixa com o valor, em "Sem números de hoje" e em "Sem conexão" (${size.width} px)`, async ({
       page,
     }) => {
       await page.setViewportSize(size);
       const server = new FakeServer(SOLD);
       await openWithCopy(page, server);
-      const { hero: online } = await heroAndMonth(page);
+      const [online] = (await kpiGrid(page)).cells;
       expect(online?.height ?? 0).toBeGreaterThan(0);
 
       await reopenWithoutNetwork(page, server, NOON + 25 * HOUR);
@@ -292,7 +292,7 @@ test.describe("sem conexão (§ 7, AC-28 a AC-31)", () => {
         "Sem números de hoje",
         { timeout: 20_000 }
       );
-      const { hero: stale } = await heroAndMonth(page);
+      const [stale] = (await kpiGrid(page)).cells;
       expect(stale?.height).toBeCloseTo(online?.height ?? 0, 0);
 
       await page.evaluate((pattern) => {
@@ -306,9 +306,10 @@ test.describe("sem conexão (§ 7, AC-28 a AC-31)", () => {
       await expect(region(page, "Vendas hoje")).toContainText(NO_CONNECTION, {
         timeout: 20_000,
       });
-      const { cells, hero: offline } = await heroAndMonth(page);
+      const { cells } = await kpiGrid(page);
+      const [offline] = cells;
       expect(offline?.height).toBeCloseTo(online?.height ?? 0, 0);
-      expect(cells).toHaveLength(3);
+      expect(cells).toHaveLength(4);
       for (const name of [
         "Vendas em outubro",
         "Resultado estimado",
@@ -345,11 +346,9 @@ test.describe("sem conexão (§ 7, AC-28 a AC-31)", () => {
       timeout: 20_000,
     });
     await expect(periodButton(page)).toBeDisabled();
-    const hidden = page
-      .locator("[data-home-period] p")
-      .filter({ hasText: "Sem conexão: só este mês e o anterior." });
-    await expect(hidden).toHaveAttribute("aria-hidden", "true");
-    await expect(hidden).toBeHidden();
+    await expect(
+      page.getByText("Sem conexão: só este mês e o anterior.")
+    ).toHaveCount(0);
   });
 
   test("loja que já vendeu, sem venda no mês nem antes: aberta sem rede a partir da cópia, o checklist não aparece", async ({
@@ -658,10 +657,9 @@ test.describe("sem conexão (§ 7, AC-28 a AC-31)", () => {
       today: await region(page, "Vendas hoje").boundingBox(),
     });
     const before = await places();
-    // Hoje on its own line, the month under it, Meta below them
-    expect(before.month?.x).toBe(before.today?.x);
-    expect(before.month?.y ?? 0).toBeGreaterThan(
-      (before.today?.y ?? 0) + (before.today?.height ?? 0)
+    expect(before.month?.y).toBe(before.today?.y);
+    expect(before.month?.x ?? 0).toBeGreaterThan(
+      (before.today?.x ?? 0) + (before.today?.width ?? 0) - 1
     );
     const bottom = (before.month?.y ?? 0) + (before.month?.height ?? 0);
     expect(before.goal?.y ?? 0).toBeGreaterThan(bottom);
@@ -680,9 +678,7 @@ test.describe("sem conexão (§ 7, AC-28 a AC-31)", () => {
     // the sentence under "Nova venda" goes with the connection and moves the row by a few pixels: the order does not
     expect(after.today?.x).toBe(before.today?.x);
     expect(after.month?.x).toBe(before.month?.x);
-    expect(after.month?.y ?? 0).toBeGreaterThan(
-      (after.today?.y ?? 0) + (after.today?.height ?? 0)
-    );
+    expect(after.month?.y).toBe(after.today?.y);
   });
 
   test("o servidor recusa os números (FORBIDDEN): a cópia da loja é apagada e não volta sem rede", async ({

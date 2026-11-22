@@ -7,7 +7,6 @@ import {
   HeroValue,
   type KpiDelta,
   KPI_STRIP,
-  KPI_STRIP_THREE,
   KpiTile,
   KpiTileSkeleton,
 } from "./kpi-card";
@@ -314,16 +313,14 @@ describe("HeroValue of the hero (xl)", () => {
   });
 });
 
-describe("the strip of the three tiles of the month", () => {
-  it("is three columns from 1024 px and one card from 1280 px, with a line between the cells", () => {
-    expect(KPI_STRIP_THREE).toContain("grid-cols-1");
-    expect(KPI_STRIP_THREE).toContain("lg:grid-cols-3");
-    expect(KPI_STRIP_THREE).toContain("xl:divide-x");
-    expect(KPI_STRIP_THREE).not.toContain("grid-cols-4");
-    expect(KPI_STRIP_THREE).not.toContain("md:grid-cols-");
-    expect(KPI_STRIP_THREE.match(/\bxl:rounded-xl\b/g)).toHaveLength(1);
+describe("the title of a tile", () => {
+  it("is a polite live region only when it follows a reading", () => {
+    expect(tile({ titleLive: true })).toContain('aria-live="polite"');
+    expect(tile({})).not.toContain("aria-live");
   });
+});
 
+describe("the strip of the tiles", () => {
   it("makes its cells and its skeletons give up the card only from 1280 px", () => {
     const skeleton = renderToStaticMarkup(<KpiTileSkeleton strip />);
     expect(skeleton).toContain("xl:ring-0");
