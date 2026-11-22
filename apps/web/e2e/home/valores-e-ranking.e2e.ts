@@ -245,6 +245,36 @@ test.describe("o padrão único dos valores nos cartões do Início (AC-3.1, AC-
     });
   }
 
+  reflowTest(
+    "a 320 px com a letra do navegador em 20 px os quatro cartões estão em uma coluna, nenhum número é cortado e a página não rola de lado",
+    async ({ page }) => {
+      await openReflowViewport(page, { fontPixels: 20, width: 320 });
+      await openHome(page, new FakeServer(SOLD));
+      await expectReflowFont(page, 20);
+      await expect(region(page, "Resultado estimado")).toContainText("R$");
+      const areas = await page
+        .locator("[data-kpi-row] [data-kpi-headline]")
+        .evaluateAll((nodes) =>
+          nodes.map((node) => node.scrollWidth - node.clientWidth)
+        );
+      expect(areas).toHaveLength(4);
+      for (const extra of areas) {
+        expect(extra).toBeLessThanOrEqual(1);
+      }
+      const lefts = await page
+        .locator("[data-kpi-row] [data-kpi]")
+        .evaluateAll((cards) =>
+          cards.map((card) => Math.round(card.getBoundingClientRect().left))
+        );
+      expect(new Set(lefts).size).toBe(1);
+      expect(
+        await page.evaluate(
+          () => document.documentElement.scrollWidth <= window.innerWidth
+        )
+      ).toBe(true);
+    }
+  );
+
   test("a 1280 px a área do número de um cartão é estreita: um valor de quatro dígitos de milhar desce até caber, na conta do ajuste, e não corta, e Vendas hoje mantém o lg", async ({
     page,
   }, testInfo) => {

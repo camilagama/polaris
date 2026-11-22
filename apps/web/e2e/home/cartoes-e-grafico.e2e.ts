@@ -1396,32 +1396,6 @@ test.describe("os quatro cartões: uma coluna até 759 px, duas a partir de 760 
     });
   }
 
-  test("a 320 px com a letra de 20 px nenhum número é cortado e não há rolagem lateral", async ({
-    page,
-  }) => {
-    await page.setViewportSize({ height: 800, width: 320 });
-    await page.addInitScript(() => {
-      document.documentElement.style.fontSize = "20px";
-    });
-    await openHome(page, new FakeServer(SOLD));
-    await expect(region(page, "Resultado estimado")).toContainText("R$");
-    await settled(page);
-    const clipped = await page
-      .locator("[data-kpi-row] [data-kpi-headline]")
-      .evaluateAll((areas) =>
-        areas.map((area) => area.scrollWidth - area.clientWidth)
-      );
-    expect(clipped).toHaveLength(4);
-    for (const extra of clipped) {
-      expect(extra).toBeLessThanOrEqual(1);
-    }
-    expect(
-      await page.evaluate(
-        () => document.documentElement.scrollWidth <= window.innerWidth
-      )
-    ).toBe(true);
-  });
-
   for (const width of [760, 1279, 1280]) {
     test(`carregando: os esqueletos ficam nos lugares dos cartões que chegam (${width} px)`, async ({
       page,
