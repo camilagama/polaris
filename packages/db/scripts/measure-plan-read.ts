@@ -7,6 +7,7 @@ import {
 } from "../src/plan-read-repository";
 import { withAuthorizedTenantTransaction } from "../src/tenant-transaction";
 import { assertAllowedGateUrl, localCiHosts } from "./gate-hosts";
+import { rollbackAndRelease } from "./gate-roles";
 import { assertDisposableEnvironment, type MarkerClient } from "./gate-target";
 import {
   runtimeRole,
@@ -299,11 +300,10 @@ async function seedStore(admin: pg.Pool, label: string, size: StoreSize) {
       [fixture.organizationId]
     );
     await client.query("COMMIT");
-  } catch (error) {
-    await client.query("ROLLBACK");
-    throw error;
-  } finally {
     client.release();
+  } catch (error) {
+    await rollbackAndRelease(client);
+    throw error;
   }
   return fixture;
 }

@@ -12,24 +12,4 @@ export const GATE_ROLLBACK_LIST = {
     count: 1,
     reason: BEFORE_THE_RULE,
   },
-  "packages/db/scripts/concurrency-support.ts": {
-    count: 2,
-    reason: BEFORE_THE_RULE,
-  },
-  "packages/db/scripts/measure-period-summary.ts": {
-    count: 1,
-    reason: BEFORE_THE_RULE,
-  },
-  "packages/db/scripts/measure-plan-read.ts": {
-    count: 1,
-    reason: BEFORE_THE_RULE,
-  },
-  "packages/db/scripts/prepare-tenant-context-gate.ts": {
-    count: 1,
-    reason: BEFORE_THE_RULE,
-  },
-  "packages/db/scripts/sales-gate-support.ts": {
-    count: 1,
-    reason: BEFORE_THE_RULE,
-  },
 };
