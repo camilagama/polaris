@@ -1,3 +1,8 @@
+import { spawnSync } from "node:child_process";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { flakyReport, summary } from "./e2e-flaky-report.mjs";
 
@@ -103,5 +108,55 @@ describe("the flaky report of the e2e journeys", () => {
       file: "jornadas/venda.e2e.ts",
       money: true,
     });
+  });
+});
+
+describe("the command of the flaky report", () => {
+  const dir = mkdtempSync(join(tmpdir(), "flaky-report-"));
+  const path = join(dir, "report.json");
+  writeFileSync(
+    path,
+    JSON.stringify(
+      report(
+        spec("jornadas/venda.e2e.ts", "venda", "online", "flaky"),
+        spec("jornadas/cliente.e2e.ts", "cliente", "online", "flaky")
+      )
+    )
+  );
+  const run = (...args) =>
+    spawnSync(
+      process.execPath,
+      [
+        fileURLToPath(new URL("./e2e-flaky-report.mjs", import.meta.url)),
+        ...args,
+      ],
+      { encoding: "utf8", env: { ...process.env, GITHUB_STEP_SUMMARY: "" } }
+    );
+
+  it("fails on the verdict by default", () => {
+    const out = run(path);
+    expect(out.status).toBe(1);
+    expect(out.stdout).toContain("### e2e na pilha real:");
+  });
+
+  it("with --report-only writes the same summary and never fails", () => {
+    const out = run(path, "--report-only", "--label", "Catálogo (CSP)");
+    expect(out.status).toBe(0);
+    expect(out.stdout).toContain("### Catálogo (CSP): testes que só passaram");
+    expect(out.stdout).toContain("**Reprovado:**");
+  });
+
+  it("asks for the report path and refuses unknown or dangling options", () => {
+    for (const args of [
+      ["--report-only"],
+      [path, "--report-onyl"],
+      [path, "--label"],
+      [path, "--label", "--report-only"],
+      [path, "outro.json"],
+    ]) {
+      const out = run(...args);
+      expect(out.status, args.join(" ")).not.toBe(0);
+      expect(out.stderr, args.join(" ")).toContain("usage:");
+    }
   });
 });
