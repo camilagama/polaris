@@ -23,7 +23,7 @@ export default defineConfig({
       use: { ...devices["Pixel 5"], browserName: "chromium" },
     },
   ],
-  // In the CI the `github` reporter annotates each failure and the JSON is the input of scripts/e2e-flaky-report.mjs;
+  // In the CI the `github` reporter annotates each failure and the JSON is the input of the flaky report;
   // it is written outside test-results/, which Playwright empties at the start of a run.
   reporter: inCI
     ? [
