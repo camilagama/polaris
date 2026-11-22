@@ -345,11 +345,9 @@ test.describe("sem conexão (§ 7, AC-28 a AC-31)", () => {
       timeout: 20_000,
     });
     await expect(periodButton(page)).toBeDisabled();
-    const hidden = page
-      .locator("[data-home-period] p")
-      .filter({ hasText: "Sem conexão: só este mês e o anterior." });
-    await expect(hidden).toHaveAttribute("aria-hidden", "true");
-    await expect(hidden).toBeHidden();
+    await expect(
+      page.getByText("Sem conexão: só este mês e o anterior.")
+    ).toHaveCount(0);
   });
 
   test("loja que já vendeu, sem venda no mês nem antes: aberta sem rede a partir da cópia, o checklist não aparece", async ({

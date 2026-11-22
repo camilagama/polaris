@@ -53,9 +53,8 @@ import {
   THIS_MONTH,
   topProductsTitle,
 } from "./home-period";
-import { HomePeriodRow } from "./home-period-row";
+import { HomePeriodNotes, HomePeriodPicker } from "./home-period-row";
 import { RhythmBlock, type RhythmSource } from "./home-rhythm";
-import { PeriodControlProvider } from "./period-control";
 import {
   type FirstStepsMemory,
   useFirstStepsMemory,
@@ -115,7 +114,10 @@ function NewSale({ describedBy }: { describedBy: string | undefined }) {
   return (
     <a
       aria-describedby={describedBy}
-      className={cn(buttonVariants({ size: "xl" }), "w-full sm:w-auto")}
+      className={cn(
+        buttonVariants({ size: "xl" }),
+        "grow min-[47.5rem]:w-auto min-[47.5rem]:grow-0"
+      )}
       href="/sales"
     >
       <PlusIcon aria-hidden="true" data-icon="inline-start" />
@@ -318,20 +320,30 @@ function useChosenPeriod({
       refresh();
     }
   }, [reading, refresh, reload]);
-  const periodRow =
-    applies === "hidden" ? null : (
-      <HomePeriodRow
-        disabled={applies !== "yes"}
-        note={chosen?.note ?? null}
-        offline={!online}
-        onCustom={handleCustom}
-        onPreset={handlePreset}
-        period={picked.period}
-        selection={selection}
-        today={today}
-      />
-    );
-  return { chosen, periodRow, reloadAll };
+  const period =
+    applies === "hidden"
+      ? null
+      : {
+          notes: (
+            <HomePeriodNotes
+              disabled={applies !== "yes"}
+              note={chosen?.note ?? null}
+              offline={!online}
+            />
+          ),
+          picker: (
+            <HomePeriodPicker
+              disabled={applies !== "yes"}
+              offline={!online}
+              onCustom={handleCustom}
+              onPreset={handlePreset}
+              period={picked.period}
+              selection={selection}
+              today={today}
+            />
+          ),
+        };
+  return { chosen, period, reloadAll };
 }
 
 /** Mais vendidos of the period shown: a skeleton while the period is read, and the same box with a sentence when no product is left (none sold, or all returned). */
@@ -633,19 +645,23 @@ function figuresLine(
 }
 
 /**
- * The title, "Atualizar" and "Nova venda" with the line that says what the sale can do without a connection: the part
- * of the page that depends on no read (and on no connection). On a phone "Atualizar" is an icon in the corner of the
- * title and "Nova venda" takes the whole width (v7 § 3).
+ * The title with the period, "Atualizar" and "Nova venda" (in that order, which is also the order of the focus) and the
+ * line that says what the sale can do without a connection: the part of the page that depends on no read (and on no
+ * connection). From 760 px the actions are at the end of the line of the title; below it they are one row under it, as
+ * wide as the page, and "Atualizar" is an icon in the corner of the title (v7 § 3).
  */
 function HomeHeader({
   explained,
   offlineText,
+  period,
   refresh,
   updated,
 }: {
   /** The line under the title says why there are no figures (and no sales, when the device cannot keep one): "Nova venda" points to it. */
   explained: boolean;
   offlineText: string | null;
+  /** The picker of the period and what it has to say, or null for whoever cannot read the results. */
+  period: { notes: React.ReactNode; picker: React.ReactNode } | null;
   /** The gesture "Atualizar", or null when the session is refused; `offline` keeps it in place, switched off. */
   refresh: { busy: boolean; offline: boolean; onClick: () => void } | null;
   updated: React.ReactNode;
@@ -670,7 +686,7 @@ function HomeHeader({
             {updated}
           </p>
         </div>
-        <div className="flex items-start gap-2 md:hidden">
+        <div className="flex items-start gap-2 min-[47.5rem]:hidden">
           {refresh ? (
             <HomeRefresh
               busy={refresh.busy}
@@ -681,11 +697,12 @@ function HomeHeader({
           ) : null}
         </div>
       </div>
-      <div className="flex w-full items-start gap-2 sm:w-auto">
+      <div className="flex w-full flex-wrap items-start gap-2 min-[47.5rem]:w-auto min-[47.5rem]:flex-nowrap">
+        {period?.picker}
         {refresh ? (
           <HomeRefresh
             busy={refresh.busy}
-            className="max-md:hidden"
+            className="hidden min-[47.5rem]:inline-flex"
             offline={refresh.offline}
             offlineReasonId={offlineReasonId}
             onClick={refresh.onClick}
@@ -702,6 +719,7 @@ function HomeHeader({
           }
         />
       </div>
+      {period?.notes}
       {offlineText ? (
         <p
           // sibling of the row of actions in a flex-wrap header with `gap-y-4`: the negative margin leaves 6 px between them
@@ -1032,7 +1050,7 @@ export function HomePage() {
     [goals, today, timezone]
   );
   const firstSteps = useFirstStepsMemory(organizationId);
-  const { chosen, periodRow, reloadAll } = useChosenPeriod({
+  const { chosen, period, reloadAll } = useChosenPeriod({
     applies: periodApplies({
       failed,
       readsReport: reads.report,
@@ -1113,6 +1131,7 @@ export function HomePage() {
         <HomeHeader
           explained={explained}
           offlineText={offlineText}
+          period={period}
           refresh={refresh}
           updated={refreshing ? REFRESHING_TEXT : updated}
         />
@@ -1124,17 +1143,15 @@ export function HomePage() {
           }
           className="grid gap-4"
         >
-          <PeriodControlProvider value={periodRow}>
-            <FigureArea
-              attention={attention}
-              attentionNotes={attentionNotes}
-              blocks={blocks}
-              goal={picked.node}
-              goalPending={goalPending}
-              keep={explained}
-              measure={offline === null && figures !== null && !blocks.pending}
-            />
-          </PeriodControlProvider>
+          <FigureArea
+            attention={attention}
+            attentionNotes={attentionNotes}
+            blocks={blocks}
+            goal={picked.node}
+            goalPending={goalPending}
+            keep={explained}
+            measure={offline === null && figures !== null && !blocks.pending}
+          />
         </div>
       </div>
     </HomeRoleProvider>

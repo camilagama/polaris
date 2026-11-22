@@ -370,6 +370,89 @@ test.describe("loja com venda", () => {
     ).toBe(true);
   });
 
+  for (const width of [760, 1024, 1280]) {
+    test(`a ${width} px o período está na linha do título, ao lado de Atualizar e Nova venda, e não há linha só dele`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ height: 800, width });
+      await openHome(page, new FakeServer(SOLD));
+      await expect(region(page, "Vendas hoje")).toContainText("R$ 320,10");
+      const title = await page
+        .getByRole("heading", { level: 1, name: "Início" })
+        .boundingBox();
+      const period = await periodButton(page).boundingBox();
+      const refresh = await page
+        .getByRole("button", { name: "Atualizar" })
+        .first()
+        .boundingBox();
+      const sale = await newSale(page).boundingBox();
+      const cards = await region(page, "Vendas hoje").boundingBox();
+      for (const box of [period, refresh, sale]) {
+        const middle = (box?.y ?? 0) + (box?.height ?? 0) / 2;
+        expect(middle).toBeGreaterThan(title?.y ?? Number.NaN);
+        expect(middle).toBeLessThan((sale?.y ?? 0) + (sale?.height ?? 0));
+        expect(middle).toBeGreaterThan(sale?.y ?? Number.NaN);
+      }
+      expect(period?.x ?? 0).toBeGreaterThan(
+        (title?.x ?? 0) + (title?.width ?? 0)
+      );
+      expect((period?.x ?? 0) + (period?.width ?? 0)).toBeLessThanOrEqual(
+        refresh?.x ?? 0
+      );
+      expect((refresh?.x ?? 0) + (refresh?.width ?? 0)).toBeLessThanOrEqual(
+        sale?.x ?? 0
+      );
+      expect(period?.y ?? 0).toBeLessThan(cards?.y ?? 0);
+      await expect(page.locator("[data-kpi-group-line]")).toHaveCount(0);
+    });
+  }
+
+  for (const width of [320, 360, 759]) {
+    test(`a ${width} px o período fica na linha de ações sob o título, na largura toda, sem rolagem lateral`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ height: 740, width });
+      await openHome(page, new FakeServer(SOLD));
+      await expect(region(page, "Vendas hoje")).toContainText("R$ 320,10");
+      const title = await page
+        .getByRole("heading", { level: 1, name: "Início" })
+        .boundingBox();
+      const period = await periodButton(page).boundingBox();
+      const sale = await newSale(page).boundingBox();
+      expect(period?.y ?? 0).toBeGreaterThan(
+        (title?.y ?? 0) + (title?.height ?? 0) - 1
+      );
+      expect(sale?.y ?? 0).toBeGreaterThan(period?.y ?? Number.NaN);
+      expect((period?.x ?? 0) + (period?.width ?? 0)).toBeLessThanOrEqual(
+        width
+      );
+      expect(
+        await page.evaluate(
+          () => document.documentElement.scrollWidth <= window.innerWidth
+        )
+      ).toBe(true);
+    });
+  }
+
+  test("a ordem do foco é a que se vê: período, Atualizar, Nova venda; e o período vem antes dos cartões no DOM", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 800, width: 1280 });
+    await openHome(page, new FakeServer(SOLD));
+    await expect(region(page, "Vendas hoje")).toContainText("R$ 320,10");
+    await periodButton(page).focus();
+    await page.keyboard.press("Tab");
+    await expect(page.locator(":focus")).toHaveAccessibleName("Atualizar");
+    await page.keyboard.press("Tab");
+    await expect(page.locator(":focus")).toHaveAccessibleName("Nova venda");
+    const before = await periodButton(page).evaluate((button) => {
+      const all = [...document.querySelectorAll("*")];
+      const card = document.querySelector("[data-kpi-row] [data-kpi]");
+      return card !== null && all.indexOf(button) < all.indexOf(card);
+    });
+    expect(before).toBe(true);
+  });
+
   for (const width of [759, 760]) {
     const framed = width >= 760;
     test(`a moldura dos blocos ${framed ? "existe" : "não existe"} a ${width} px: ${framed ? "painel sobre a moldura, com o pé dos três blocos que levam a outra tela" : "o cartão de sempre, sem pé"}`, async ({

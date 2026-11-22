@@ -40,7 +40,6 @@ import {
   unknownDaysText,
 } from "./home-kpis";
 import { chartValue, monthTitle } from "./home-model";
-import { usePeriodControl } from "./period-control";
 import type { HomeFigures } from "./use-home";
 
 /**
@@ -278,26 +277,6 @@ function periodModel(source: PeriodSource): MonthModel {
   };
 }
 
-/**
- * The line that holds the period picker of the Início, at its end, above the three tiles of the month. It is there in
- * every state of the tiles (skeleton, figures, error, no connection), so the picker is never taken down and put up
- * again by a change of period: the focus it had stays on it.
- */
-function PeriodLine() {
-  const control = usePeriodControl();
-  if (!control) {
-    return null;
-  }
-  return (
-    <div
-      className="flex min-h-9 items-center justify-end"
-      data-kpi-group-line=""
-    >
-      {control}
-    </div>
-  );
-}
-
 function MonthTiles({
   clear,
   index,
@@ -445,7 +424,7 @@ function MonthTiles({
   );
 }
 
-/** The three tiles of the month while the period the person chose is read (the line and its picker keep their place). */
+/** The three tiles of the month while the period the person chose is read. */
 function PeriodTilesSkeleton() {
   return (
     <>
@@ -479,7 +458,7 @@ function monthSource(month: MonthPart, own: MonthSource): MonthSource | null {
   return month.kind === "figures" ? own : null;
 }
 
-/** The three tiles of the month under the line of the picker, or their skeletons or the error, in the same place. */
+/** The three tiles of the month, or their skeletons or the error, in the same place. */
 function MonthGroup({
   month,
   own,
@@ -505,12 +484,7 @@ function MonthGroup({
     setShown(key);
     clear();
   }
-  return (
-    <>
-      <PeriodLine />
-      {monthBody(month, model, { clear, index, key, setIndex, still })}
-    </>
-  );
+  return <>{monthBody(month, model, { clear, index, key, setIndex, still })}</>;
 }
 
 function monthBody(
@@ -546,7 +520,7 @@ function monthBody(
   );
 }
 
-/** The hero, the line of the period and the tiles of the month, one under the other: each in its own row, whatever the width. */
+/** The hero and the tiles of the month, one under the other: each in its own row, whatever the width. */
 const KPI_COLUMN = "flex flex-col gap-3 xl:gap-4";
 
 export function KpiCards({
@@ -607,7 +581,6 @@ export function NoFiguresCards({ today }: { today: string }) {
         title="Vendas hoje"
         value={<HeroValue amount={null} size="xl" />}
       />
-      <PeriodLine />
       <div className={KPI_STRIP_THREE} data-kpi-month="">
         <KpiTile
           entity="sales"
@@ -646,7 +619,6 @@ export function KpiCardsSkeleton() {
   return (
     <div className={KPI_COLUMN} data-kpi-row="">
       <KpiTileSkeleton hero />
-      <PeriodLine />
       <div className={KPI_STRIP_THREE} data-kpi-month="">
         <PeriodTilesSkeleton />
       </div>
