@@ -16,7 +16,7 @@ const VARIANT = {
   productStatus: "active",
   quantity: 5,
   sku: "SKU-1",
-  updatedAt: new Date(Date.parse(NOW) - 86_400_000).toISOString(),
+  updatedAt: new Date(NOW.getTime() - 86_400_000).toISOString(),
   values: [{ optionName: "cor", optionValueName: "Azul" }],
   variantId: "0199c2d0-0000-7000-8000-0000000000b1",
   version: 1,
@@ -34,7 +34,7 @@ const menuLink = (page: Page, name: string): Locator =>
   page.getByRole("link", { exact: true, name }).filter({ visible: true });
 
 export async function repricedDraft(page: Page) {
-  await page.clock.setFixedTime(new Date(NOW));
+  await page.clock.setFixedTime(NOW);
   let entries = [VARIANT];
   await serveHome(page, { signedIn: true });
   await page.route("**/rpc/inventory/listBalances", (route: Route) =>

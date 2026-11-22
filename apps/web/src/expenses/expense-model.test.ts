@@ -600,7 +600,7 @@ describe("categoryShareRows", () => {
     expect(rows?.map((row) => row.name)).not.toContain("Sem categoria");
   });
 
-  it("keeps the local name and the filter of a category the screen already read", () => {
+  it("writes the name the server sent for a category renamed elsewhere and keeps its filter", () => {
     const rows = categoryShareRows(
       [
         {
@@ -621,8 +621,61 @@ describe("categoryShareRows", () => {
     );
     expect(rows?.[0]).toMatchObject({
       categoryId: CATEGORIES[0]?.id,
+      name: "Nome do servidor",
+    });
+    expect(rows?.map((row) => row.name)).not.toContain("Aluguel");
+  });
+
+  it("falls back to the local name when the server sent none", () => {
+    const rows = categoryShareRows(
+      [
+        {
+          categoryId: CATEGORIES[0]?.id as string,
+          count: 1,
+          total: "100.00",
+        },
+        {
+          categoryId: CATEGORIES[1]?.id as string,
+          count: 1,
+          total: "30.00",
+        },
+      ],
+      CATEGORIES,
+      "130.00"
+    );
+    expect(rows?.[0]).toMatchObject({
+      categoryId: CATEGORIES[0]?.id,
       name: "Aluguel",
     });
+  });
+
+  it("marks a renamed category archived by the server flag, or by the local status when the flag is absent", () => {
+    const archived = CATEGORIES.map((item, index) =>
+      index === 1 ? { ...item, status: "archived" as const } : item
+    );
+    const rows = categoryShareRows(
+      [
+        {
+          categoryArchived: true,
+          categoryId: CATEGORIES[0]?.id as string,
+          categoryName: "Novo A",
+          count: 1,
+          total: "100.00",
+        },
+        {
+          categoryId: CATEGORIES[1]?.id as string,
+          categoryName: "Novo B",
+          count: 1,
+          total: "30.00",
+        },
+      ],
+      archived,
+      "130.00"
+    );
+    expect(rows?.map((row) => row.name)).toEqual([
+      "Novo A (arquivada)",
+      "Novo B (arquivada)",
+    ]);
   });
 
   it.each([

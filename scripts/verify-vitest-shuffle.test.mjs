@@ -260,6 +260,92 @@ describe("each project has its own order", () => {
     ).toHaveLength(1);
   });
 
+  it("passes an extending project whose own sequence leaves the shuffle alone", () => {
+    for (const sequence of ["{ seed: 1 }", "{ seed: 1, retry: 2 }"]) {
+      expect(
+        problemsFor(
+          projectsConfig(`{ extends: true, test: { sequence: ${sequence} } }`)
+        ),
+        sequence
+      ).toEqual([]);
+    }
+  });
+
+  it("refuses an extending project whose own sequence turns the shuffle off", () => {
+    for (const sequence of [
+      "{ shuffle: {} }",
+      "{ shuffle: { files: false } }",
+      "{ shuffle: { files: true } }",
+      "{ seed: 1, shuffle: { files: true } }",
+      "{ shuffle: false }",
+      "{ seed: 1, shuffle: false }",
+      "{ shuffle: { tests: false } }",
+      "{ shuffle: { files: true, tests: false } }",
+      "{ shuffle:{tests:false} }",
+      "{ shuffle: {\n tests: false,\n } }",
+      "{ shuffle: { tests: false, extra: {} } }",
+      "{ shuffle: { tests: 0 } }",
+      "{ shuffle: { tests: !1 } }",
+      "{ shuffle: { ...off } }",
+      "{ shuffle: off }",
+      "{ shuffle: cond ? false : true }",
+      "{ shuffle }",
+      '{ "shuffle": false }',
+      '{ shuffle: { "tests": false } }',
+      "{ ...off }",
+    ]) {
+      expect(
+        problemsFor(
+          projectsConfig(`{ extends: true, test: { sequence: ${sequence} } }`)
+        ),
+        sequence
+      ).toEqual([
+        `${FILE}: projeto inline 1: falta \`tests: true\` em \`sequence: { shuffle: ... }\`. ${ADVICE}`,
+      ]);
+    }
+  });
+
+  it("refuses an extending project when any of its sequence blocks turns the shuffle off", () => {
+    expect(
+      problemsFor(
+        projectsConfig(
+          "{ extends: true, test: { sequence: { seed: 1 }, poolOptions: { sequence: { shuffle: false } } } }"
+        )
+      )
+    ).toHaveLength(1);
+  });
+
+  it("passes an extending project that sets the tests shuffle on in its own sequence", () => {
+    for (const sequence of [
+      "{ shuffle: true }",
+      "{ shuffle: { tests: true } }",
+      "{ shuffle: { files: true, tests: true } }",
+      "{ shuffle: { files: false, tests: true } }",
+    ]) {
+      expect(
+        problemsFor(
+          projectsConfig(`{ extends: true, test: { sequence: ${sequence} } }`)
+        ),
+        sequence
+      ).toEqual([]);
+    }
+  });
+
+  it("refuses a project that does not extend and has a sequence without shuffle", () => {
+    expect(
+      problemsFor(
+        projectsConfig("{ test: { name: 'a', sequence: { seed: 1 } } }")
+      )
+    ).toEqual([
+      `${FILE}: projeto inline 1: falta \`tests: true\` em \`sequence: { shuffle: ... }\`. ${ADVICE}`,
+    ]);
+    expect(
+      problemsFor(
+        projectsConfig("{ extends: false, test: { sequence: { seed: 1 } } }")
+      )
+    ).toHaveLength(1);
+  });
+
   it("does not count the sequence of a project for the root", () => {
     const source = config(
       "projects: [{ test: { name: 'a', sequence: { shuffle: { files: true, tests: true } } } }]"
