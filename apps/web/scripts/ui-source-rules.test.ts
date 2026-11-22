@@ -465,9 +465,9 @@ export function numberFontFaults(path: string, text: string): string[] {
       ];
 }
 
-/** An amount written by `{formatBrlAmount(…)}` as the child of an element, alone or after `?`, `&&`, `||`, `??` or `String(`, or as `children=`, skips the mask of `Money`; a template (`${…}`) is text that `MoneyText` masks, and a prop of a component (`text={…}`) reaches the mask. Only `.tsx` files are read: a model that returns text is not JSX. */
+/** An amount written by `{formatBrlAmount(…)}` as the child of an element, alone or after `?`, `&&`, `||`, `??` or `String(`, or as `children=`, skips the mask of `Money`; a template (`${…}`) is text that `MoneyText` masks only when it is a prop (`text={`…`}`) or a variable, not when it is itself the child; a prop of a component (`text={…}`) reaches the mask. Only `.tsx` files are read: a model that returns text is not JSX. */
 const BRL_IN_JSX =
-  /(?<![=$])\{\s*(?:String\()?formatBrlAmount\(|(?<![=$])\{(?!\s*(?:const|let|return|\w+:))[^{};]*?(?:\?|&&|\|\|)[^{};]*?formatBrlAmount\(|children=\{\s*formatBrlAmount\(/;
+  /(?<![=$])\{\s*(?:String\()?formatBrlAmount\(|(?<![=$])\{(?!\s*(?:const|let|return|\w+:))[^{};]*?(?:\?|&&|\|\|)[^{};]*?formatBrlAmount\(|children=\{\s*formatBrlAmount\(|(?<![=$])\{\s*`[^`]*\$\{\s*formatBrlAmount\(/;
 
 export function brlInJsxFaults(path: string, text: string): string[] {
   if (!TSX.test(path)) {
@@ -1155,6 +1155,7 @@ describe("controle: as regras de fonte pegam o que existem para pegar", () => {
       )
     ).toEqual([]);
     for (const jsx of [
+      "<b>{`Total $".concat("{formatBrlAmount(x)}`}</b>"),
       "<b>{cond ? formatBrlAmount(x) : '-'}</b>",
       "<b>{a && formatBrlAmount(x)}</b>",
       "<b>{a ?? formatBrlAmount(x)}</b>",
@@ -1165,6 +1166,12 @@ describe("controle: as regras de fonte pegam o que existem para pegar", () => {
     ]) {
       expect(brlInJsxFaults("src/x.tsx", jsx), jsx).not.toEqual([]);
     }
+    expect(
+      brlInJsxFaults(
+        "src/x.tsx",
+        "<MoneyText text={`Total $".concat("{formatBrlAmount(x)}`} />")
+      )
+    ).toEqual([]);
     expect(
       brlInJsxFaults("src/x.tsx", "<Money text={formatBrlAmount(total)} />")
     ).toEqual([]);

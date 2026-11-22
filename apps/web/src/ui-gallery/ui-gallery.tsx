@@ -1769,9 +1769,9 @@ export function UiGallery() {
             <p className="text-support">
               O número dos cartões de KPI (o dinheiro, acima) e os percentuais
               leem como visor: o mesmo avanço em cada dígito, então o número não
-              muda de largura quando os dígitos mudam. Todo dinheiro e toda
-              quantidade leem assim; data, hora, telefone e documento seguem em
-              Geist.
+              muda de largura quando os dígitos mudam. O dinheiro em lg e xl e
+              toda quantidade (Figure) leem assim; data, hora, telefone e
+              documento seguem em Geist.
             </p>
             <div className="flex flex-wrap items-center gap-3">
               <DeltaChip
