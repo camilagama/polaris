@@ -11,6 +11,7 @@ import {
   RUNTIME_GROUP_PATTERN,
 } from "./definer-hardening-checks";
 import { assertAllowedGateUrl } from "./gate-hosts";
+import { inRolledBackTransaction } from "./gate-roles";
 import {
   assertOwnerRolesClean,
   findOwnerAttributeViolations,
@@ -351,8 +352,7 @@ async function run() {
         ).sort(),
         "the four functions of 0095 belong to their owner roles"
       );
-      await verify.query("BEGIN");
-      try {
+      await inRolledBackTransaction(verify, async () => {
         await verify.query(
           "CREATE TABLE public.gate_nosuper_sync_probe (id uuid PRIMARY KEY, organization_id text NOT NULL)"
         );
@@ -362,9 +362,7 @@ async function run() {
         await verify.query(
           "CREATE CONSTRAINT TRIGGER gate_nosuper_sync_sequence_probe AFTER INSERT ON public.gate_nosuper_sync_probe DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION public.assign_sync_change_sequence()"
         );
-      } finally {
-        await verify.query("ROLLBACK").catch(() => undefined);
-      }
+      });
       // the control: without the EXECUTE 0095 gives back, the same CREATE TRIGGER fails for this migrator (42501), as it would on Neon.
       // A superuser takes it away in the scratch database (dropped at the end) and gives it back.
       const superScratch = await connect(scratchAdminUrl);
@@ -372,8 +370,7 @@ async function run() {
         await superScratch.query(
           `REVOKE EXECUTE ON FUNCTION public.record_sync_change() FROM ${OWNER}`
         );
-        await verify.query("BEGIN");
-        try {
+        await inRolledBackTransaction(verify, async () => {
           await verify.query(
             "CREATE TABLE public.gate_nosuper_sync_probe (id uuid PRIMARY KEY, organization_id text NOT NULL)"
           );
@@ -384,9 +381,7 @@ async function run() {
             (error: unknown) => sqlState(error) === "42501",
             "without EXECUTE on record_sync_change the migrator cannot attach the trigger"
           );
-        } finally {
-          await verify.query("ROLLBACK").catch(() => undefined);
-        }
+        });
         await superScratch.query(
           `GRANT EXECUTE ON FUNCTION public.record_sync_change() TO ${OWNER}`
         );
@@ -406,8 +401,7 @@ async function run() {
         "INHERIT TRUE, SET FALSE",
         "INHERIT FALSE, SET TRUE",
       ]) {
-        await verify.query("BEGIN");
-        try {
+        await inRolledBackTransaction(verify, async () => {
           await verify.query(
             `GRANT ${quote(group)} TO ${OWNER} WITH ${option}`
           );
@@ -417,16 +411,13 @@ async function run() {
             ),
             `an owner with ${option} on ${group} is not reported`
           );
-        } finally {
-          await verify.query("ROLLBACK").catch(() => undefined);
-        }
+        });
       }
       // the same checks must be able to fail for this owner (CREATEROLE, no SUPERUSER): in a transaction that is rolled back, a throwaway
       // `polaris_*_owner` role with CREATEROLE, a throwaway role a runtime group can SET to with CREATEDB and CREATEROLE, and the owner
       // role made a member of a role with CREATEROLE (the owner administers it, having created it). BYPASSRLS, REPLICATION and SUPERUSER
       // cannot be given by this owner, so those attributes are proved by the definer-hardening gate, which runs as a superuser.
-      await verify.query("BEGIN");
-      try {
+      await inRolledBackTransaction(verify, async () => {
         await verify.query(
           "CREATE ROLE polaris_gate_probe_owner NOLOGIN CREATEROLE"
         );
@@ -451,14 +442,11 @@ async function run() {
             "polaris_gate_probe_owner->gate_probe_privileged",
           ]
         );
-      } finally {
-        await verify.query("ROLLBACK").catch(() => undefined);
-      }
+      });
       // ADMIN OPTION alone counts as reach, and an owner role has no edge out: in another transaction that is rolled back, a runtime group with
       // ADMIN OPTION alone on a role with CREATEDB and CREATEROLE reaches it (the owner administers it, having created it), and a throwaway
       // owner role that is a member of another owner role is reported
-      await verify.query("BEGIN");
-      try {
+      await inRolledBackTransaction(verify, async () => {
         await verify.query(
           "CREATE ROLE gate_probe_administered NOLOGIN CREATEDB CREATEROLE"
         );
@@ -486,9 +474,7 @@ async function run() {
           ),
           "a runtime group with ADMIN OPTION alone on a role with CREATEROLE is not reported"
         );
-      } finally {
-        await verify.query("ROLLBACK").catch(() => undefined);
-      }
+      });
       await assertOwnerRolesClean(verify);
       assertClean(await findViolations(verify));
       const risky = await verify.query<{ rolname: string }>(
@@ -520,17 +506,14 @@ async function run() {
           superuserInAlter,
           `${file}: an ALTER ROLE with NOSUPERUSER is refused to the owner on Neon`
         );
-        await prober.query("BEGIN");
-        try {
+        await inRolledBackTransaction(prober, async () => {
           await prober.query(`ALTER ROLE ${quote(role)} SUPERUSER`);
           await assert.rejects(
             prober.query(block),
             guardMessage,
             `${file}: the statement runs on a superuser ${role} without the guard failing`
           );
-        } finally {
-          await prober.query("ROLLBACK");
-        }
+        });
       }
     } finally {
       await prober.end();

@@ -11,6 +11,10 @@ import { serveLabWorker, WORKER_MARK } from "./worker-mark";
  * is measured is the screen alone.
  */
 const ORGANIZATION = "0199c2d0-0000-7000-8000-00000000a001";
+const NOW = new Date("2026-10-15T15:00:00.000Z");
+const HOUR = 3_600_000;
+const DAY = 24 * HOUR;
+const ago = (ms: number) => new Date(NOW.getTime() - ms).toISOString();
 
 const SHIRT_OPTION = /Camiseta do teste/;
 const JEANS_OPTION = /Calça jeans/;
@@ -42,7 +46,7 @@ const entry = (
   productStatus: "active",
   quantity,
   sku: `SKU-${n}`,
-  updatedAt: "2026-10-14T12:00:00.000Z",
+  updatedAt: ago(DAY + 3 * HOUR),
   values: [{ optionName: "cor", optionValueName: value }],
   variantId: `0199c2d0-0000-7000-8000-0000000000b${n}`,
   version: 1,
@@ -52,7 +56,7 @@ const JEANS = entry(2, "Calça jeans", "42", "139.90", 3, "62.40");
 
 const PROFILE = {
   archivedAt: null,
-  createdAt: "2026-10-01T12:00:00.000Z",
+  createdAt: ago(14 * DAY + 3 * HOUR),
   id: "0199c2d0-0000-7000-8000-0000000000c1",
   name: "Maquininha do balcão",
   organizationId: ORGANIZATION,
@@ -76,7 +80,7 @@ const PROFILE = {
     },
   ],
   status: "active",
-  updatedAt: "2026-10-01T12:00:00.000Z",
+  updatedAt: ago(14 * DAY + 3 * HOUR),
   version: 3,
 };
 
@@ -139,11 +143,11 @@ export const CONFIRMED_SALE = {
   replayed: false,
   sale: {
     commandId: "00000000-0000-4000-8000-000000000001",
-    confirmedAt: "2026-10-15T15:00:01.000Z",
+    confirmedAt: new Date(NOW.getTime() + 1000).toISOString(),
     currency: "BRL",
     id: "77777777-7777-4777-8777-777777777777",
-    occurredAt: "2026-10-15T15:00:00.000Z",
-    occurredOn: "2026-10-15",
+    occurredAt: NOW.toISOString(),
+    occurredOn: NOW.toISOString().slice(0, 10),
     recordedAt: null,
   },
   totals: {
@@ -189,6 +193,7 @@ async function serveSale(page: Page) {
 
 /** Starts the lab's runtime and waits for the screen; the network is the lab's checkbox. */
 async function openSaleLab(page: Page) {
+  await page.clock.setFixedTime(NOW);
   await serveSale(page);
   await serveLabWorker(page);
   await page.goto("/offline-screens-lab?screen=sale");

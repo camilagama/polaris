@@ -1,6 +1,8 @@
+// @vitest-environment happy-dom
 import type { ProductReadModel } from "@polaris/contracts";
+import { cleanup, render, screen } from "@testing-library/react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { StaticOrganizationProvider } from "../lib/current-organization";
 import { ProductVariantConfigurationForm } from "./product-variants-form";
 import { ProductVariantSkuSection } from "./product-variant-sku-section";
@@ -30,6 +32,31 @@ const configuration = (sku: string | null) => ({
   ],
 });
 
+afterEach(cleanup);
+
+const formOf = (
+  sku: string | null,
+  draft: VariantConfigurationDraft = {
+    ...emptyConfigurationDraft,
+    selectedOptions: ["color"],
+  }
+) => (
+  <StaticOrganizationProvider
+    organization={{ id: "o1", name: "Loja", role: "owner", timezone: "UTC" }}
+  >
+    <ProductVariantConfigurationForm
+      configuration={configuration(sku)}
+      draft={draft}
+      onConfigured={noop}
+      onConflict={noop}
+      onDraftChange={noop}
+      onSkuCleared={noop}
+      organizationId="o1"
+      product={{ id: "p1" } as ProductReadModel}
+    />
+  </StaticOrganizationProvider>
+);
+
 function draw(
   sku: string | null,
   draft: VariantConfigurationDraft = {
@@ -37,23 +64,16 @@ function draw(
     selectedOptions: ["color"],
   }
 ) {
-  return renderToStaticMarkup(
-    <StaticOrganizationProvider
-      organization={{ id: "o1", name: "Loja", role: "owner", timezone: "UTC" }}
-    >
-      <ProductVariantConfigurationForm
-        configuration={configuration(sku)}
-        draft={draft}
-        onConfigured={noop}
-        onConflict={noop}
-        onDraftChange={noop}
-        onSkuCleared={noop}
-        organizationId="o1"
-        product={{ id: "p1" } as ProductReadModel}
-      />
-    </StaticOrganizationProvider>
-  );
+  return renderToStaticMarkup(formOf(sku, draft));
 }
+
+const show = (
+  sku: string | null,
+  draft: VariantConfigurationDraft = {
+    ...emptyConfigurationDraft,
+    selectedOptions: ["color"],
+  }
+) => render(formOf(sku, draft));
 
 describe("warning of the SKU of the default variant", () => {
   it("the button that clears it names the SKU that will be erased", () => {
@@ -118,9 +138,6 @@ describe("the error of the SKU over the limit", () => {
   });
 });
 
-const OFF_ADD_ALL =
-  /disabled=""[^>]*>(<svg[\s\S]*?<\/svg>)?Adicionar todas as combinações</;
-
 describe("Adicionar todas as combinações", () => {
   it("names on the button how many combinations it adds, and reads nothing before the tap", () => {
     const markup = draw(null, {
@@ -139,18 +156,16 @@ describe("Adicionar todas as combinações", () => {
   });
 
   it("is off, without a count, while an option has no values", () => {
-    const markup = draw(null);
-    expect(markup).toMatch(OFF_ADD_ALL);
-    expect(markup).not.toContain("Adicionar todas as combinações (");
+    show(null);
+    const addAll = screen.getByRole("button", {
+      name: "Adicionar todas as combinações",
+    });
+    expect((addAll as HTMLButtonElement).disabled).toBe(true);
   });
 });
 
-const ADD_ROW =
-  /<button[^>]*>(<svg[\s\S]*?<\/svg>)?Adicionar combinação<\/button>/;
-const ADD_ROW_DASHED =
-  /<button type="button"[^>]*border-dashed[^>]*>(<svg[\s\S]*?<\/svg>)?Adicionar combinação</;
-const ADD_ROW_OFF =
-  /disabled=""[^>]*>(<svg[\s\S]*?<\/svg>)?Adicionar combinação</;
+const ADD_ALL = /^Adicionar todas as combinações/;
+const ADD_ROW = { name: "Adicionar combinação" };
 
 describe("Adicionar combinação, the last row of the list", () => {
   const withOptions = {
@@ -158,33 +173,41 @@ describe("Adicionar combinação, the last row of the list", () => {
     selectedOptions: ["color" as const],
     valueLines: { ...emptyConfigurationDraft.valueLines, color: "Azul" },
   };
+  const order = (node: Node) =>
+    [...document.body.querySelectorAll("*")].indexOf(node as Element);
+  const follows = (before: Node, after: Node) => order(before) < order(after);
 
   it("is a button, outside the list, and sits right under the empty-list sentence", () => {
-    const markup = draw(null, withOptions);
-    const sentence = markup.indexOf("Nenhuma combinação adicionada.");
-    const row = markup.search(ADD_ROW);
-    expect(sentence).toBeGreaterThan(-1);
-    expect(row).toBeGreaterThan(sentence);
-    expect(markup.slice(sentence, row)).not.toContain("<button");
-    expect(markup).toMatch(ADD_ROW_DASHED);
+    show(null, withOptions);
+    const sentence = screen.getByText("Nenhuma combinação adicionada.");
+    const row = screen.getByRole("button", ADD_ROW);
+    expect(row.getAttribute("type")).toBe("button");
+    expect(row.closest("ol")).toBeNull();
+    expect(follows(sentence, row)).toBe(true);
+    expect(sentence.parentElement).toBe(row.parentElement);
+    expect(sentence.nextElementSibling).toBe(row);
   });
 
   it("stays after the last combination and before the other actions", () => {
-    const markup = draw(null, {
+    show(null, {
       ...withOptions,
       variants: [{ values: { color: "Azul" } }],
     });
-    const list = markup.indexOf("</ol>");
-    const row = markup.search(ADD_ROW);
-    const addAll = markup.indexOf("Adicionar todas as combinações");
-    expect(list).toBeGreaterThan(-1);
-    expect(row).toBeGreaterThan(list);
-    expect(addAll).toBeGreaterThan(row);
-    expect(markup.slice(list, row)).not.toContain("<li");
+    const list = screen.getByRole("list");
+    const row = screen.getByRole("button", ADD_ROW);
+    const addAll = screen.getByRole("button", {
+      name: ADD_ALL,
+    });
+    expect(follows(list, row)).toBe(true);
+    expect(list.contains(row)).toBe(false);
+    expect(follows(row, addAll)).toBe(true);
+    expect(list.nextElementSibling).toBe(row);
   });
 
   it("is off, as before, while an option has no values", () => {
-    const markup = draw(null);
-    expect(markup).toMatch(ADD_ROW_OFF);
+    show(null);
+    expect(
+      (screen.getByRole("button", ADD_ROW) as HTMLButtonElement).disabled
+    ).toBe(true);
   });
 });

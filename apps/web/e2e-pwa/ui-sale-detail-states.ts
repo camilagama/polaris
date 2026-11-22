@@ -1,7 +1,11 @@
 /// <reference lib="dom" />
 // Only types from Playwright: `ui-screens.ts` is read under Vitest by the source rules.
 import type { Page, Route } from "@playwright/test";
-import { DETAIL_SALE_ID, saleDetailAnswers } from "./sale-detail-fixture";
+import {
+  DETAIL_SALE_ID,
+  fixSaleDetailClock,
+  saleDetailAnswers,
+} from "./sale-detail-fixture";
 import { showScreenAlone } from "./show-screen-alone";
 import { serveLabWorker, WORKER_MARK } from "./worker-mark";
 
@@ -50,6 +54,7 @@ async function openSaleLab(
   hold = false,
   withFee = false
 ) {
+  await fixSaleDetailClock(page);
   await serveSale(page, withReturn, hold, withFee);
   await serveLabWorker(page);
   await page.goto(
