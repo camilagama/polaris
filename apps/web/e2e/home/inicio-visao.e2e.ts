@@ -1594,6 +1594,29 @@ test.describe("erro por bloco (§ 5.2): Nova venda sempre visível e levando à 
     ).toBeVisible();
   });
 
+  test("meta quebrada a 760 px: a moldura tem o pé sem link nem alvo de toque, dentro da moldura", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 800, width: 760 });
+    const server = new FakeServer({ ...SOLD, goals: [goal({})] });
+    server.broken.set("goal/list", "500");
+    await openHome(page, server);
+    const block = region(page, "Meta");
+    await expect(block).toContainText("Não foi possível carregar a meta.", {
+      timeout: 15_000,
+    });
+    const footer = block.locator("[data-slot=card-frame-footer]");
+    await expect(footer).toBeVisible();
+    await expect(footer.locator("a, button, [tabindex]")).toHaveCount(0);
+    const inside = await footer.evaluate((element) => {
+      const frame = element.closest("[data-slot=card-frame]");
+      const foot = element.getBoundingClientRect();
+      const box = frame?.getBoundingClientRect();
+      return box ? foot.bottom <= box.bottom && foot.height > 0 : false;
+    });
+    expect(inside).toBe(true);
+  });
+
   test("401: o aviso de sessão do shell, nenhum erro nos blocos", async ({
     page,
   }) => {

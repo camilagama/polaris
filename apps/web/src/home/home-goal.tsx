@@ -449,7 +449,11 @@ export function GoalBlock({
   }
   if (block.status === "error" || view === null) {
     return (
-      <HomeBlock id="home-goal" title="Meta">
+      <HomeBlock
+        footer={{ ...GOAL_FOOTER, link: false }}
+        id="home-goal"
+        title="Meta"
+      >
         <BlockError
           message="Não foi possível carregar a meta."
           onRetry={block.status === "error" && block.retryable ? onRetry : null}
