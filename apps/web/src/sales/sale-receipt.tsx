@@ -10,6 +10,8 @@ import { LeaderRow, Perforation } from "./sale-summary-panel";
 interface SaleReceiptProps {
   /** Shown under the title and above the total: the cancellation, when the sale was cancelled. */
   before?: ReactNode;
+  /** The customer of the sale, one line under the title ("Cliente: …"). */
+  customer?: ReactNode;
   sale: ConfirmedSaleView;
   /** The states of the sale (Confirmada, Com devoluções…), at the right of the title. */
   status: ReactNode;
@@ -23,7 +25,12 @@ interface SaleReceiptProps {
  * the right edge, the names and the labels in Geist. The order is the order of the DOM, so a screen reader
  * reads what the eye sees.
  */
-export function SaleReceipt({ before, sale, status }: SaleReceiptProps) {
+export function SaleReceipt({
+  before,
+  customer,
+  sale,
+  status,
+}: SaleReceiptProps) {
   const rows = sale.totals.filter((row) => row.tone !== "total");
   const total = sale.totals.find((row) => row.tone === "total");
   return (
@@ -38,6 +45,7 @@ export function SaleReceipt({ before, sale, status }: SaleReceiptProps) {
               {status}
             </span>
           </div>
+          {customer}
           {before}
           {total ? (
             <dl

@@ -6,6 +6,7 @@ import {
   firstAccessStates,
   legalStates,
 } from "./ui-account-states";
+import { openSaleAction } from "./sale-detail-fixture";
 import { attentionStates, deviceStates } from "./ui-device-states";
 import { entryStates, settle } from "./ui-entry-states";
 import { expenseStates } from "./ui-expense-states";
@@ -507,9 +508,10 @@ const historyScreen = (
   sourceDirs: HISTORY_SOURCES,
 });
 
-/** The files of the sale detail (with its return, cancellation and customer panels). */
+/** The files of the sale detail (with its menu of actions and its return, cancellation and customer dialogs). */
 const SALE_DETAIL_SOURCES = [
   "src/sales/operation-failure-notice.tsx",
+  "src/sales/sale-actions-menu.tsx",
   "src/sales/sale-cancel-panel.tsx",
   "src/sales/sale-customer-panel.tsx",
   "src/sales/sale-detail-page.tsx",
@@ -545,9 +547,7 @@ async function exerciseCancelReason(page: Page) {
 
 async function exerciseSaleCustomer(page: Page) {
   // the customer is chosen in a form dialog: opened, the list of customers opened and closed inside it, then closed
-  await page
-    .getByRole("button", { exact: true, name: "Trocar cliente" })
-    .click();
+  await openSaleAction(page, "Trocar cliente");
   const choose = page.getByRole("dialog", { name: "Trocar cliente" });
   await choose.waitFor();
   await openAndClose(
@@ -557,11 +557,13 @@ async function exerciseSaleCustomer(page: Page) {
   );
   await page.keyboard.press("Escape");
   await choose.waitFor({ state: "detached" });
-  await openAndClose(
-    page,
-    { name: "Remover cliente", role: "button" },
-    { role: "dialog" }
-  );
+  await page.getByRole("button", { exact: true, name: "Ações" }).click();
+  await page
+    .getByRole("menuitem", { exact: true, name: "Remover cliente" })
+    .click();
+  await page.getByRole("dialog").waitFor();
+  await page.keyboard.press("Escape");
+  await page.getByRole("dialog").waitFor({ state: "detached" });
 }
 
 /** The files of the stock screen on the new interface (the logic files of `src/inventory` have no markup). */

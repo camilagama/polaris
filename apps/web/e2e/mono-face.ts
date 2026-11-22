@@ -27,6 +27,16 @@ export async function expectMono(target: Locator, what: string) {
   expect(await firstFamily(target), `${what} em Geist Mono`).toBe(MONO);
 }
 
+/** Every element the locator finds is in Geist Mono: each number of a list, not only the first. */
+export async function expectAllMono(target: Locator, what: string) {
+  await expect(target.first(), `${what} existe`).toBeVisible();
+  const families = await familiesOf(target);
+  expect(
+    families.filter((family) => family !== MONO),
+    `${what}: ${families.length} em Geist Mono`
+  ).toEqual([]);
+}
+
 export async function expectGeist(target: Locator, what: string) {
   await expect(target.first(), `${what} existe`).toBeVisible();
   expect(await firstFamily(target), `${what} em Geist`).toBe(SANS);

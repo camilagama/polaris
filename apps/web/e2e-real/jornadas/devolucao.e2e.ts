@@ -2,6 +2,7 @@ import { localDate } from "../calendar";
 import { expect, openJourney, refusedWith, runT0, test } from "../fixtures";
 import { cents } from "../oracle";
 import { chainValue } from "../pages/resultado";
+import { openSaleAction } from "../pages/detalhe-da-venda";
 import { nextCommandId, seedCashSale, seedProduct, seedStock } from "../seed";
 
 // a refusal of the rule, not a lost session, a network error or a crash of the server
@@ -94,11 +95,8 @@ test("devolução parcial da 2ª linha pelo detalhe: o estoque dela volta, venda
   });
 
   await page.goto(`/sales/detail?saleId=${saleId}`);
-  await page
-    .getByRole("region", { name: "Devolução" })
-    .getByRole("button", { name: "Registrar devolução" })
-    .click();
-  const panel = page.getByRole("region", { name: "Registrar devolução" });
+  await openSaleAction(page, "Registrar devolução");
+  const panel = page.getByRole("dialog", { name: "Registrar devolução" });
   // more than was sold: refused on screen
   await panel.getByLabel(RETURNED_BOTTLE).fill("4");
   await panel.getByRole("button", { name: "Revisar devolução" }).click();
@@ -161,11 +159,8 @@ test("cancelamento: o estoque das duas linhas volta inteiro e a venda sai do Res
   );
 
   await page.goto(`/sales/detail?saleId=${saleId}`);
-  await page
-    .getByRole("region", { name: "Cancelar venda" })
-    .getByRole("button", { name: "Cancelar venda" })
-    .click();
-  const panel = page.getByRole("region", { name: "Cancelar venda" });
+  await openSaleAction(page, "Cancelar venda");
+  const panel = page.getByRole("dialog", { name: "Cancelar venda" });
   await panel.getByRole("button", { name: "Revisar cancelamento" }).click();
   await panel.getByRole("button", { name: "Confirmar cancelamento" }).click();
   // both lines back in full

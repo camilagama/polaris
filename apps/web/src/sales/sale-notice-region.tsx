@@ -1,3 +1,4 @@
+import type { Ref } from "react";
 import { Alert, AlertDescription } from "@/ui/alert";
 import type { SaleNotice } from "./sale-cancellation-model";
 
@@ -6,11 +7,23 @@ import type { SaleNotice } from "./sale-cancellation-model";
  * the region before the notice arrives and announces what is put into it. Empty it leaves the grid flow
  * (`absolute`: no gap row) instead of `display: none`, which would take it out of the accessibility tree.
  */
-export function SaleNoticeRegion({ notice }: { notice: SaleNotice | null }) {
+export function SaleNoticeRegion({
+  notice,
+  noticeRef,
+}: {
+  notice: SaleNotice | null;
+  /** The notice takes the focus when an action ends, so the screen reader reads its result. */
+  noticeRef?: Ref<HTMLDivElement>;
+}) {
   return (
     <div aria-live="polite" className="empty:absolute">
       {notice ? (
-        <Alert variant={notice.ok ? "default" : "warning"}>
+        <Alert
+          className="focus-ring"
+          ref={noticeRef}
+          tabIndex={-1}
+          variant={notice.ok ? "default" : "warning"}
+        >
           <AlertDescription>{notice.message}</AlertDescription>
         </Alert>
       ) : null}

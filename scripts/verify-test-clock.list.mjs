@@ -35,10 +35,6 @@ export const TEST_CLOCK_LIST = {
     count: 1,
     reason: BEFORE_THE_RULE,
   },
-  "apps/web/e2e/home/offline-e-leituras.e2e.ts": {
-    count: 2,
-    reason: BEFORE_THE_RULE,
-  },
   "apps/web/e2e/home/shared.ts": { count: 1, reason: BEFORE_THE_RULE },
   "apps/web/e2e/offline-runtime-api.e2e.ts": {
     count: 1,
@@ -50,31 +46,7 @@ export const TEST_CLOCK_LIST = {
     count: 3,
     reason: BEFORE_THE_RULE,
   },
-  "apps/web/src/offline/runtime/offline-runtime.test.ts": {
-    count: 1,
-    reason: BEFORE_THE_RULE,
-  },
   "apps/web/src/pwa/sw.test.ts": { count: 1, reason: BEFORE_THE_RULE },
-  "apps/web/src/server/auth/access-log.test.ts": {
-    count: 3,
-    reason: BEFORE_THE_RULE,
-  },
-  "apps/web/src/server/auth/better-auth-characterization.test.ts": {
-    count: 1,
-    reason: BEFORE_THE_RULE,
-  },
-  "apps/web/src/server/auth/get-session-single-read.test.ts": {
-    count: 1,
-    reason: BEFORE_THE_RULE,
-  },
-  "apps/web/src/server/billing/asaas-adapter.test.ts": {
-    count: 2,
-    reason: BEFORE_THE_RULE,
-  },
-  "apps/web/src/server/rpc/report-router.test.ts": {
-    count: 1,
-    reason: BEFORE_THE_RULE,
-  },
   "apps/web/worker/index.workerd-db.test.ts": {
     count: 2,
     reason: BEFORE_THE_RULE,

@@ -13,6 +13,12 @@ const DAY = 86_400_000;
 const at = (offsetMs: number) =>
   new Date(NOW.getTime() + offsetMs).toISOString();
 
+/** Opens the "Ações" menu of the title of the sale detail and chooses one of its items. */
+export async function openSaleAction(page: Page, action: string) {
+  await page.getByRole("button", { exact: true, name: "Ações" }).click();
+  await page.getByRole("menuitem", { exact: true, name: action }).click();
+}
+
 /** Fixes the page clock on the day of the sale: everything the screens read from the fixture is dated from `NOW`. */
 export async function fixSaleDetailClock(page: Page) {
   await page.clock.setFixedTime(NOW);
@@ -187,7 +193,43 @@ const SALE_DETAIL_WITH_FEE = {
   },
 };
 
-function saleDetailRead(withReturn: boolean, withFee: boolean) {
+/** The same sale cancelled: no return and no cancellation is offered, only the customer. */
+const SALE_DETAIL_CANCELLED = {
+  ...SALE_DETAIL_WITHOUT_RETURNS,
+  cancellation: {
+    cancelledAt: at(2 * DAY),
+    cancelledBy: "user_1",
+    commandId: id(0x7_50),
+    id: id(0x7_51),
+    reasonCode: null,
+    reasonNote: null,
+    saleId: DETAIL_SALE_ID,
+  },
+};
+
+/** The same sale with every unit returned: nothing is left to return and it cannot be cancelled as a whole. */
+const SALE_DETAIL_ALL_RETURNED = {
+  ...SALE_DETAIL,
+  returnSummary: SALE_DETAIL.returnSummary.map((line) => ({
+    ...line,
+    availableToReturn: 0,
+    returnedQuantity: line.sold,
+  })),
+};
+
+export type SaleDetailSituation = "allReturned" | "cancelled";
+
+function saleDetailRead(
+  withReturn: boolean,
+  withFee: boolean,
+  situation: SaleDetailSituation | undefined
+) {
+  if (situation === "cancelled") {
+    return SALE_DETAIL_CANCELLED;
+  }
+  if (situation === "allReturned") {
+    return SALE_DETAIL_ALL_RETURNED;
+  }
   if (withFee) {
     return SALE_DETAIL_WITH_FEE;
   }
@@ -196,14 +238,16 @@ function saleDetailRead(withReturn: boolean, withFee: boolean) {
 
 /** The answers of the detail and of the customer page, by procedure (`/rpc/<procedure>`). */
 export const saleDetailAnswers = ({
+  situation,
   withFee = false,
   withReturn,
 }: {
+  situation?: SaleDetailSituation | undefined;
   withFee?: boolean;
   withReturn: boolean;
 }): Readonly<Record<string, unknown>> => ({
   "customer/get": customer(CUSTOMER_ANGELA, "Ângela Souza"),
   "customer/list": SALE_CUSTOMERS,
-  "sale/get": saleDetailRead(withReturn, withFee),
+  "sale/get": saleDetailRead(withReturn, withFee, situation),
   "sale/getCustomerLink": SALE_CUSTOMER_LINK,
 });

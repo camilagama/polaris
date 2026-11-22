@@ -1,5 +1,6 @@
 import { Client } from "pg";
 import { assertAllowedGateUrl } from "./gate-hosts";
+import { rollbackQuietly } from "./gate-roles";
 
 /**
  * Support for the race checks of the gates (suite `gates:concurrency`,
@@ -209,7 +210,13 @@ export async function raceBehindLock<T>(
         await pause(POLL_MS);
       }
     }
-    await holder.query(options.release === "commit" ? "COMMIT" : "ROLLBACK");
+    if (options.release === "commit") {
+      await holder.query("COMMIT");
+    } else if (!(await rollbackQuietly(holder))) {
+      throw new Error(
+        `${label}: the holder's ROLLBACK failed, so the race did not release its lock.`
+      );
+    }
     open = false;
     const results = await started;
     if (waiting < minWaiting) {
@@ -225,7 +232,7 @@ export async function raceBehindLock<T>(
     return { results, waiting };
   } finally {
     if (open) {
-      await holder.query("ROLLBACK").catch(() => undefined);
+      await rollbackQuietly(holder);
     }
     // racers never outlive the call, even when the observer or the holder broke
     if (running) {
