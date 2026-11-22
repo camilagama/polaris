@@ -151,8 +151,8 @@ describe("the sale as a receipt", () => {
   it("writes every amount of the lines in Geist Mono, at the right: items, subtotal, discount, total and the payment amounts", () => {
     const markup = render();
     const mono = markup.match(MONO_CELL) ?? [];
-    // the total and the count of the strip, the item prices, the subtotal, the discount, the payment amount and the processing fee, the identifier
-    expect(mono).toHaveLength(8);
+    // the 8 cells (the total and the count of the strip, the item prices, the subtotal, the discount, the payment amount and the processing fee, the identifier) and the 7 amounts of `Money` inside them
+    expect(mono).toHaveLength(15);
     expect(markup).toMatch(ITEM_PRICES);
     const lines = markup.slice(markup.indexOf(PERFORATION));
     const cells = [...lines.matchAll(DD)].map((match) => match[1] ?? "");

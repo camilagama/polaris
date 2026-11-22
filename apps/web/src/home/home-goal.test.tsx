@@ -37,7 +37,8 @@ const SENTENCE_CLASS = /<p class="([^"]*)">Defina quanto/;
 const FONT_SIZE = /data-goal-ring[\s\S]*?style="font-size:([^"]*)"/;
 const RING_BOX = /class="[^"]*size-28[^"]*"[^>]*data-goal-ring/;
 
-const NO_BREAK_AMOUNT = /<span class="whitespace-nowrap">([^<]*)<\/span>/g;
+const NO_BREAK_AMOUNT =
+  /<span class="whitespace-nowrap font-mono tabular-nums">([^<]*)<\/span>/g;
 
 const text = (html: string) =>
   html

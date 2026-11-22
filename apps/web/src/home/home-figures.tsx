@@ -136,7 +136,7 @@ export function TopProductsBlock({
               >
                 {product.name}
               </span>
-              <span className="col-start-3 col-end-5 row-start-2 flex @min-[20.75rem]:contents flex-wrap items-baseline justify-between gap-x-2">
+              <span className="col-start-3 col-end-5 row-start-2 flex @min-[20.75rem]:contents flex-wrap items-baseline justify-between gap-x-1">
                 <span
                   className="@min-[20.75rem]:col-start-4 @min-[20.75rem]:row-start-1 @min-[20.75rem]:justify-self-end font-semibold tabular-nums"
                   data-top-value=""
@@ -164,7 +164,7 @@ export function TopProductsBlock({
             </>
           );
           const row =
-            "grid min-h-12 grid-cols-[1.25rem_auto_minmax(0,1fr)_auto] @min-[20.75rem]:grid-cols-[1.25rem_auto_minmax(0,1fr)_var(--top-value)_var(--top-units)] content-center items-center gap-x-2 gap-y-1 py-2";
+            "grid min-h-12 grid-cols-[1.25rem_auto_minmax(0,1fr)_auto] @min-[20.75rem]:grid-cols-[1.25rem_auto_minmax(0,1fr)_var(--top-value)_var(--top-units)] content-center items-center gap-x-1.5 @min-[20.75rem]:gap-x-2 gap-y-1 py-2";
           return (
             <li
               className={cn(

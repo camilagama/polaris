@@ -1,5 +1,6 @@
 import { Money } from "@polaris/domain/money/money";
 import { useHiddenValues } from "@/lib/hidden-values";
+import { Figure } from "@/ui/figure";
 import { MoneyText } from "@/ui/hidden-values";
 import { formatBrlAmount } from "../lib/format";
 import {
@@ -167,7 +168,7 @@ export function PartsBar({
                 className={`size-2 shrink-0 rounded-full ${PART_COLORS[part.id]}`}
               />
               <span>{part.label}</span>
-              <span className="font-medium tabular-nums">
+              <span className="font-medium">
                 {part.value === null ? (
                   <>
                     <span aria-hidden="true">{EMPTY_VALUE}</span>
@@ -178,9 +179,9 @@ export function PartsBar({
                 )}
               </span>
               {percent === null || percent === undefined ? null : (
-                <span className="text-muted-foreground tabular-nums">
+                <Figure className="text-muted-foreground">
                   <PartPercent percent={percent} />
-                </span>
+                </Figure>
               )}
               {mark ? (
                 <span className="text-warning text-xs italic">{mark}</span>

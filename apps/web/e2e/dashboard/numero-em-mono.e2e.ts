@@ -1,10 +1,17 @@
 /// <reference lib="dom" />
 
 import { expect, test } from "@playwright/test";
-import { expectGeist, expectMono, familiesOf, MONO } from "../mono-face";
+import {
+  expectAllMono,
+  expectGeist,
+  expectMono,
+  familiesOf,
+  MONO,
+} from "../mono-face";
 import {
   chain,
   chainRow,
+  chartRegion,
   FakeReportServer,
   kpiCards,
   openDashboard,
@@ -14,6 +21,37 @@ const SIZES = [
   { height: 740, width: 360 },
   { height: 800, width: 1280 },
 ] as const;
+
+test.describe("todo valor e toda quantidade do Resultado em Geist Mono (AC-B1.1)", () => {
+  for (const { height, width } of SIZES) {
+    test(`os totais do gráfico, os valores da cadeia e as partes dos custos ficam em Geist Mono, e os nomes em Geist, a ${width} px`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ height, width });
+      await openDashboard(page, new FakeReportServer());
+      await expectAllMono(
+        chartRegion(page).locator("dd > span"),
+        "os totais do gráfico"
+      );
+      await expectGeist(
+        chartRegion(page).locator("dt").first(),
+        "o nome do total"
+      );
+      await expectAllMono(
+        chain(page).locator("tbody td > span"),
+        "os valores da cadeia"
+      );
+      await expectGeist(
+        chainRow(page, "Vendas brutas").locator("th"),
+        "o nome da linha"
+      );
+      await expectAllMono(
+        chain(page).locator("li [data-figure]"),
+        "o percentual de cada parte dos custos"
+      );
+    });
+  }
+});
 
 test.describe("o visor em Geist Mono no Resultado (AC-1)", () => {
   for (const { height, width } of SIZES) {
