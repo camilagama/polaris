@@ -23,7 +23,15 @@ export default defineConfig({
       use: { ...devices["Pixel 5"], browserName: "chromium" },
     },
   ],
-  reporter: "list",
+  // In the CI the `github` reporter annotates each failure and the JSON is the input of the flaky report;
+  // it is written outside test-results/, which Playwright empties at the start of a run.
+  reporter: inCI
+    ? [
+        ["list"],
+        ["github"],
+        ["json", { outputFile: "test-timings/timings-catalog.json" }],
+      ]
+    : "list",
   // no retry on purpose: a retry would hide flakiness in the hydration test (CSP violations are timing-free)
   retries: 0,
   testDir: "./e2e",

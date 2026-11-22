@@ -45,7 +45,6 @@ import {
 } from "@polaris/domain/privacy/organization-purge";
 import {
   rollbackAndRelease,
-  rollbackQuietly,
   withGateRole,
 } from "../../../packages/db/scripts/gate-roles";
 import {
@@ -459,7 +458,7 @@ async function raceCancellationAgainstMark(
   pool: {
     connect: () => Promise<{
       query: (statement: string, values?: unknown[]) => Promise<unknown>;
-      release: () => void;
+      release: (destroy?: boolean) => void;
     }>;
   },
   organizationId: string,
@@ -496,11 +495,10 @@ async function raceCancellationAgainstMark(
     );
     await marker.query("COMMIT");
   } catch (error) {
-    await rollbackQuietly(marker);
+    await rollbackAndRelease(marker);
     throw error;
-  } finally {
-    marker.release();
   }
+  marker.release();
   return await outcome;
 }
 
@@ -514,7 +512,7 @@ async function raceMarkAgainstCancellation(
   pool: {
     connect: () => Promise<{
       query: (statement: string, values?: unknown[]) => Promise<unknown>;
-      release: () => void;
+      release: (destroy?: boolean) => void;
     }>;
   },
   cancellation: {
@@ -564,11 +562,10 @@ async function raceMarkAgainstCancellation(
     );
     await canceller.query("COMMIT");
   } catch (error) {
-    await rollbackQuietly(canceller);
+    await rollbackAndRelease(canceller);
     throw error;
-  } finally {
-    canceller.release();
   }
+  canceller.release();
   return await outcome;
 }
 
@@ -1011,11 +1008,10 @@ async function run() {
         );
         await client.query("COMMIT");
       } catch (error) {
-        await rollbackQuietly(client);
+        await rollbackAndRelease(client);
         throw error;
-      } finally {
-        client.release();
       }
+      client.release();
       // a removed product keeps its links frozen (tombstone guard), the purge still takes them
       await owner.pool.query(
         "UPDATE public.products SET deleted_at = now(), version = version + 1 WHERE organization_id = $1 AND id = $2",
@@ -2904,11 +2900,10 @@ async function run() {
       );
       await restoreClient.query("COMMIT");
     } catch (error) {
-      await rollbackQuietly(restoreClient);
+      await rollbackAndRelease(restoreClient);
       throw error;
-    } finally {
-      restoreClient.release();
     }
+    restoreClient.release();
     // the storage went with the purge that left the tombstone: the reapplied one cannot be cancelled either
     await assert.rejects(
       () => cancel(privacyCase.id, "Depois do restore"),
