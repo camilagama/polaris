@@ -132,9 +132,9 @@ export const RING_OFFSET = 1.5;
 export const TODAY_RING_WIDTH = 1;
 export const READ_RING_WIDTH = 1.5;
 
-export type RingKind = "read" | "today";
+type RingKind = "read" | "today";
 
-export interface Ring {
+interface Ring {
   index: number;
   kind: RingKind;
   strokeWidth: number;

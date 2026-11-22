@@ -271,6 +271,7 @@ test.describe("Ritmo de vendas (revisão de UI v7, § 3 item 10)", () => {
     expect((last?.y ?? 0) - (first?.y ?? 0)).toBeCloseTo(6 * 15, 1);
     // no ring touches a neighbor: its stroke box keeps 0.5 px from every other cell
     await cells.nth(175).hover();
+    await expectTooltip(page, "Domingo, 18/10");
     expect(await ringsDrawn(page)).toEqual([
       { cell: 180, dash: "none", kind: "today", width: 1 },
       { cell: 175, dash: "none", kind: "read", width: 1.5 },
@@ -312,6 +313,7 @@ test.describe("Ritmo de vendas (revisão de UI v7, § 3 item 10)", () => {
     }
     // reading today: only the ring of the read day, never two on one square
     await cells.nth(180).hover();
+    await expectTooltip(page, "Sexta, 23/10");
     expect(await ringsDrawn(page)).toEqual([
       { cell: 180, dash: "none", kind: "read", width: 1.5 },
     ]);
