@@ -407,7 +407,6 @@ export const FILE_SCREENS = [
       "apps/web/src/home/home-period-row.tsx",
       "apps/web/src/home/home-period.ts",
       "apps/web/src/home/home-rhythm.tsx",
-      "apps/web/src/home/period-control.ts",
       "apps/web/src/home/use-first-steps-memory.ts",
       "apps/web/src/home/use-home-period.ts",
       "apps/web/src/home/use-home.ts",
