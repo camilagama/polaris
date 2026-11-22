@@ -485,11 +485,31 @@ test.describe("o cartão do plano Free", () => {
   }) => {
     await page.setViewportSize({ height: 800, width: 1280 });
     const reads = await serveFoot(page, { plan: FREE_PLAN });
-    await page.goto("/products");
+    await page.addInitScript(() => {
+      const seen = { offline: 0, online: 0 };
+      Reflect.set(window, "polarisLinkEvents", seen);
+      window.addEventListener("offline", () => {
+        seen.offline += 1;
+      });
+      window.addEventListener("online", () => {
+        seen.online += 1;
+      });
+    });
+    const linkEvents = () =>
+      page.evaluate(
+        () =>
+          Reflect.get(window, "polarisLinkEvents") as {
+            offline: number;
+            online: number;
+          }
+      );
+    await page.goto("/sales/history");
     await expect(card(page)).toContainText(USE_TEXT);
     await page.context().setOffline(true);
+    await expect.poll(async () => (await linkEvents()).offline).toBe(1);
     await expect(card(page)).toContainText(USE_TEXT);
     await page.context().setOffline(false);
+    await expect.poll(async () => (await linkEvents()).online).toBe(1);
     await page.waitForLoadState("networkidle");
     await expect(card(page)).toContainText(USE_TEXT);
     expect(reads.plan).toBe(1);
