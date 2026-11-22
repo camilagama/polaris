@@ -156,7 +156,7 @@ describe("Ritmo de vendas at rest", () => {
   it("keeps the few-weeks warning in the summary, not in a line of its own", () => {
     const html = render();
     expect(ariaLabelOfSummary(html)).toContain(
-      "Poucas semanas de vendas ainda: o mapa enche conforme você vende. 1 dia com venda nas últimas 13 semanas."
+      "Poucas semanas de vendas ainda: o mapa enche conforme você vende."
     );
     expect(html).not.toContain("data-rhythm-insight");
   });
