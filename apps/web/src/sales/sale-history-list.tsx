@@ -114,7 +114,15 @@ function RowBody({ chevron, row }: { chevron: boolean; row: HistoryRow }) {
  * is drawn inside it because the card clips); without one there is no detail to open (it is read from the
  * server), so the row is plain text.
  */
-function HistoryItem({ offline, row }: { offline: boolean; row: HistoryRow }) {
+function HistoryItem({
+  offline,
+  onOpen,
+  row,
+}: {
+  offline: boolean;
+  onOpen?: ((saleId: string) => void) | undefined;
+  row: HistoryRow;
+}) {
   return (
     <li className="@container">
       {offline ? (
@@ -125,6 +133,7 @@ function HistoryItem({ offline, row }: { offline: boolean; row: HistoryRow }) {
         <a
           className={`${ROW} focus-ring hover:bg-muted/50 focus-visible:-outline-offset-3`}
           href={row.detailHref}
+          onClick={onOpen === undefined ? undefined : () => onOpen(row.id)}
         >
           <RowBody chevron row={row} />
         </a>
@@ -137,17 +146,24 @@ function HistoryItem({ offline, row }: { offline: boolean; row: HistoryRow }) {
 export function SaleHistoryList({
   footer,
   offline,
+  onOpen,
   rows,
 }: {
   footer?: ReactNode;
   offline: boolean;
+  onOpen?: (saleId: string) => void;
   rows: readonly HistoryRow[];
 }) {
   return (
     <Card className="gap-0 py-0">
       <ul aria-label="Vendas" className="divide-y divide-border">
         {rows.map((row) => (
-          <HistoryItem key={row.id} offline={offline} row={row} />
+          <HistoryItem
+            key={row.id}
+            offline={offline}
+            onOpen={onOpen}
+            row={row}
+          />
         ))}
       </ul>
       {footer}

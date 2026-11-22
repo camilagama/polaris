@@ -21,6 +21,11 @@ import { Card, CardContent } from "@/ui/card";
 import { Field, FieldError, FieldLabel } from "@/ui/field";
 import { InputGroup, InputGroupInput } from "@/ui/input-group";
 import { SkeletonArt } from "@/ui/skeleton-art";
+import {
+  INLINE_TEXT_LINK_CLASS,
+  TEXT_LINK_CLASS,
+  TextLink,
+} from "@/ui/text-link";
 import { mailtoHref, SUPPORT_EMAIL } from "../lib/support-contact";
 import { useChallengeRetry } from "./challenge-retry";
 import { useEntryMethods } from "./entry-methods";
@@ -60,12 +65,10 @@ import type { Challenge } from "./turnstile";
  * `/redefinir-senha` and `/desbloquear`. "Trocar senha" inside the app uses the same fields and notices.
  */
 
-export const TEXT_LINK =
-  "touch-hit focus-ring relative rounded-sm underline decoration-input underline-offset-4 hover:decoration-foreground";
+export const TEXT_LINK = `${TEXT_LINK_CLASS} relative`;
 /** A link inside a line of running text: no area of its own, which would cover the line above and below
    (WCAG 2.5.8 exempts it from the size), and in one piece, so its box never spans two lines. */
-export const INLINE_LINK =
-  "focus-ring whitespace-nowrap rounded-sm underline decoration-input underline-offset-4 hover:decoration-foreground";
+export const INLINE_LINK = `${INLINE_TEXT_LINK_CLASS} whitespace-nowrap`;
 
 /** The provisional brand: an "i" with its dot in the mark color. */
 function BrandMark() {
@@ -130,13 +133,14 @@ function HelpLine() {
   return (
     <p className="mt-5 text-center text-muted-foreground text-support">
       Precisa de ajuda? Escreva para{" "}
-      <a
+      <TextLink
         aria-label={`Escrever para o suporte: ${SUPPORT_EMAIL}`}
-        className="focus-ring select-text break-words rounded-sm underline decoration-input underline-offset-4 hover:decoration-foreground"
+        className="select-text break-words"
         href={mailtoHref(SUPPORT_EMAIL)}
+        inline
       >
         {SUPPORT_EMAIL}
-      </a>
+      </TextLink>
       .
     </p>
   );

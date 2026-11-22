@@ -698,6 +698,7 @@ export const SPEC_SCREENS = {
   "apps/web/e2e-pwa/update.e2e.ts": "all",
   "apps/web/e2e-pwa/valores-escondidos-todas-as-telas.e2e.ts": "all",
   "apps/web/e2e-pwa/valores-escondidos.e2e.ts": "all",
+  "apps/web/e2e-pwa/voltar-e-links.e2e.ts": "all",
   "apps/web/e2e-real/cls/layout-shift.e2e.ts": "all",
   "apps/web/e2e-real/harness/chave-do-runtime.e2e.ts": ["home", "settings"],
   "apps/web/e2e-real/harness/relogio-retry.e2e.ts": ["home"],
