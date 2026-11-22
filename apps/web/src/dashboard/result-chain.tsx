@@ -1,4 +1,5 @@
 import { Fragment } from "react";
+import { Figure } from "@/ui/figure";
 import { MoneyText } from "@/ui/hidden-values";
 import { cn } from "@/lib/utils";
 import {
@@ -59,6 +60,15 @@ const STACKED_TABLE = "@max-[19rem]:block @max-[19rem]:[&_tbody]:block";
 const STACKED_ROW = "@max-[19rem]:grid";
 const STACKED_VALUE =
   "@max-[19rem]:pt-0 @max-[19rem]:pl-4 @max-[19rem]:text-left";
+
+/**
+ * Side by side, the value is at least as wide as "R$ 9.999,99" in the Geist Mono of a line (11 characters of 0.6 em at
+ * `text-sm`, 0.875 rem: 5.775 rem, in rem so the larger result line has the same floor): the name, which takes the rest of
+ * the row (`w-full`), then has the same width in every period whose values fit there, so a name does not wrap in one
+ * period and not in the other and the card keeps its height. A wider value widens the column, as before. The floor is on
+ * the value and not on the cell because the name's `w-full` shrinks the cell to its content.
+ */
+const VALUE_FLOOR = "inline-block min-w-[5.775rem] @max-[19rem]:min-w-0";
 
 /** On a line of its own, so the row is as wide as the others. */
 const EXPENSES_LINK =
@@ -132,14 +142,16 @@ export function ResultChain({
                     row.negative && row.kind !== "line" && "text-destructive"
                   )}
                 >
-                  {row.value === EMPTY_VALUE ? (
-                    <>
-                      <span aria-hidden="true">{EMPTY_VALUE}</span>
-                      <span className="sr-only">sem valor</span>
-                    </>
-                  ) : (
-                    <MoneyText text={row.value} />
-                  )}
+                  <Figure className={VALUE_FLOOR}>
+                    {row.value === EMPTY_VALUE ? (
+                      <>
+                        <span aria-hidden="true">{EMPTY_VALUE}</span>
+                        <span className="sr-only">sem valor</span>
+                      </>
+                    ) : (
+                      <MoneyText text={row.value} />
+                    )}
+                  </Figure>
                 </TableCell>
               </TableRow>
               {row.id === "operatingExpenses" && canCreateExpense ? (

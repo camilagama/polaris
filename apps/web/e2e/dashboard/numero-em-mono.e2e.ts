@@ -38,7 +38,7 @@ test.describe("todo valor e toda quantidade do Resultado em Geist Mono (AC-B1.1)
         "o nome do total"
       );
       await expectAllMono(
-        chain(page).locator("tbody td > span:not(.sr-only)"),
+        chain(page).locator("tbody td [data-figure]"),
         "os valores da cadeia"
       );
       await expectGeist(
