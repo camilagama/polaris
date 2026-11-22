@@ -83,7 +83,7 @@ async function rankingRows(page: Page): Promise<RankingRow[]> {
     .evaluateAll((rows) =>
       rows.map((row) => {
         const name = row.querySelector("[data-top-name]") as HTMLElement;
-        const figures = row.querySelector("[data-top-figures]") as HTMLElement;
+        const figures = row.querySelector("[data-top-value]") as HTMLElement;
         const box = row.getBoundingClientRect();
         const origin = (
           row.parentElement as HTMLElement
@@ -115,7 +115,7 @@ async function rankingRows(page: Page): Promise<RankingRow[]> {
             visible += 1;
           }
         }
-        const value = figures.firstElementChild as HTMLElement;
+        const value = figures;
         return {
           bottom: box.bottom - origin,
           clipped:
@@ -505,12 +505,19 @@ test.describe("Mais vendidos do mês a 320 px com a letra do navegador em 20 px"
       }
       const block = region(page, "Mais vendidos do mês");
       await assertNothingClipped(block);
-      await assertNoEllipsis(block.locator("[data-top-figures]"));
+      await assertNoEllipsis(
+        block.locator("[data-top-value], [data-top-units]")
+      );
       await assertNoPageScroll(page);
-      await expect(block.locator("[data-top-figures]")).toHaveText([
-        "R$ 900,0012 un.",
-        "R$ 600,008 un.",
-        "R$ 300,004 un.",
+      await expect(block.locator("[data-top-value]")).toHaveText([
+        "R$ 900,00",
+        "R$ 600,00",
+        "R$ 300,00",
+      ]);
+      await expect(block.locator("[data-top-units]")).toHaveText([
+        "12 un.",
+        "8 un.",
+        "4 un.",
       ]);
       await expect(block.getByRole("link")).toHaveCount(2);
       await expect(block.getByRole("link").first()).toHaveAttribute(
@@ -674,14 +681,15 @@ test.describe("Mais vendidos do mês com a letra de 16 px: a linha de cada largu
             ).toBeGreaterThanOrEqual(row.nameBottom - 1);
           }
         }
-        const line = region(page, "Mais vendidos do mês").locator(
-          "[data-top-line]"
-        );
-        expect(
-          await line.evaluateAll((nodes) =>
-            nodes.map((node) => getComputedStyle(node).display)
-          )
-        ).toEqual(new Array(3).fill(oneLine ? "flex" : "grid"));
+        const tracks = region(page, "Mais vendidos do mês")
+          .locator("ol > li > :is(a, span)")
+          .evaluateAll((nodes) =>
+            nodes.map(
+              (node) =>
+                getComputedStyle(node).gridTemplateColumns.split(" ").length
+            )
+          );
+        expect(await tracks).toEqual(new Array(3).fill(oneLine ? 5 : 4));
         if (oneLine) {
           const cut = await region(page, "Mais vendidos do mês")
             .locator("[data-top-name]")
@@ -866,6 +874,297 @@ test.describe("Mais vendidos do mês: a linha por largura da coluna (uma linha s
       }
     },
     { coarse: false }
+  );
+});
+
+interface Box {
+  bottom: number;
+  left: number;
+  right: number;
+  top: number;
+}
+
+interface GridRow {
+  bar: Box;
+  deleted: boolean;
+  name: Box;
+  rank: Box;
+  row: Box;
+  thumb: Box;
+  units: Box;
+  value: Box;
+}
+
+/** The box of each cell of each line of the ranking, in the page's coordinates. */
+async function gridRows(page: Page): Promise<GridRow[]> {
+  await settled(page);
+  return region(page, "Mais vendidos do mês")
+    .locator("ol > li")
+    .evaluateAll((rows) => {
+      const boxOf = (node: Element | null): Box => {
+        const box = (node as HTMLElement).getBoundingClientRect();
+        return {
+          bottom: box.bottom,
+          left: box.left,
+          right: box.right,
+          top: box.top,
+        };
+      };
+      return rows.map((row) => {
+        const line = row.firstElementChild as HTMLElement;
+        const cell = (name: string) => boxOf(row.querySelector(name));
+        return {
+          bar: cell("[data-top-track]"),
+          deleted: line.tagName !== "A",
+          name: cell("[data-top-name]"),
+          rank: cell("[data-top-rank]"),
+          row: boxOf(line),
+          thumb: cell("[data-thumbnail]"),
+          units: cell("[data-top-units]"),
+          value: cell("[data-top-value]"),
+        };
+      });
+    });
+}
+
+const AT_MOST_HALF_A_PIXEL = 0.5;
+
+/** What a name keeps of the line in the narrowest one-row column, with the widest value of the test: about eight letters. */
+const NARROWEST_NAME = 56;
+
+function expectSameX(
+  rows: readonly GridRow[],
+  cell: keyof Omit<GridRow, "deleted">,
+  edge: "left" | "right",
+  when: string
+) {
+  const first = rows[0]?.[cell][edge] ?? Number.NaN;
+  for (const [index, row] of rows.entries()) {
+    expect(
+      Math.abs(row[cell][edge] - first),
+      `${when}: ${edge} de ${cell} na linha ${index + 1}`
+    ).toBeLessThanOrEqual(AT_MOST_HALF_A_PIXEL);
+  }
+}
+
+function expectInsideTheLine(rows: readonly GridRow[], when: string) {
+  for (const [index, row] of rows.entries()) {
+    if (row.value.top < row.name.bottom - AT_MOST_HALF_A_PIXEL) {
+      expect(
+        row.value.left,
+        `${when}: o valor não entra no nome na linha ${index + 1}`
+      ).toBeGreaterThanOrEqual(row.name.right - AT_MOST_HALF_A_PIXEL);
+    }
+    const sameLine = row.units.top < row.value.bottom - AT_MOST_HALF_A_PIXEL;
+    if (sameLine) {
+      expect(
+        row.value.right,
+        `${when}: o valor não passa sobre as unidades na linha ${index + 1}`
+      ).toBeLessThanOrEqual(row.units.left + AT_MOST_HALF_A_PIXEL);
+    }
+    for (const cell of [
+      "bar",
+      "name",
+      "rank",
+      "thumb",
+      "units",
+      "value",
+    ] as const) {
+      const box = row[cell];
+      expect(
+        box.left,
+        `${when}: ${cell} da linha ${index + 1}`
+      ).toBeGreaterThanOrEqual(row.row.left - 0.5);
+      expect(
+        box.right,
+        `${when}: ${cell} da linha ${index + 1}`
+      ).toBeLessThanOrEqual(row.row.right + 0.5);
+      expect(
+        box.top,
+        `${when}: ${cell} da linha ${index + 1}`
+      ).toBeGreaterThanOrEqual(row.row.top - 0.5);
+      expect(
+        box.bottom,
+        `${when}: ${cell} da linha ${index + 1}`
+      ).toBeLessThanOrEqual(row.row.bottom + 0.5);
+    }
+  }
+}
+
+const NAME_FIRST = /^1 Camiseta lisa R\$\s900,00 12 un\.$/;
+const NAME_THIRD = /^3 Calça jeans R\$\s300,00 4 un\.$/;
+const ENDS_IN_UNITS = /un\.$/;
+
+const GRID_NAMES = [
+  "Camiseta de algodão manga lisa e gola redonda branca",
+  "Boné antigo",
+  "Calça jeans masculina slim fit azul escuro 44",
+  "Tênis",
+  "Meia esportiva",
+];
+
+test.describe("Mais vendidos do mês: a grade de colunas das linhas (AC-A3.1 a AC-A3.5)", () => {
+  for (const [width, height] of [
+    [360, 740],
+    [1280, 800],
+  ] as const) {
+    reflowTest(
+      `a ${width} px a posição, a miniatura e o início do nome têm o mesmo x em todas as linhas, e o fim do valor e das unidades também`,
+      async ({ page }) => {
+        await page.setViewportSize({ height, width });
+        const server = new FakeServer(SOLD);
+        server.top = rankingOf(GRID_NAMES).map((product, index) => ({
+          ...product,
+          netSales: `${[99_640.35, 12.5, 7000.1, 45, 3210.9][index]}`,
+          quantity: [1234, 9, 40, 1, 305][index] ?? 1,
+        }));
+        await openHome(page, server);
+        await expect(region(page, "Mais vendidos do mês")).toContainText("un.");
+        const rows = await gridRows(page);
+        expect(rows).toHaveLength(5);
+        const when = `${width} px`;
+        expectSameX(rows, "rank", "right", when);
+        expectSameX(rows, "thumb", "left", when);
+        expectSameX(rows, "name", "left", when);
+        expectSameX(rows, "units", "right", when);
+        expectSameX(rows, "bar", "left", when);
+        expectSameX(rows, "bar", "right", when);
+        for (const row of rows) {
+          expect(
+            Math.abs(row.bar.left - row.name.left),
+            `${when}: a barra parte do nome`
+          ).toBeLessThanOrEqual(AT_MOST_HALF_A_PIXEL);
+          expect(
+            Math.abs(row.bar.right - row.units.right),
+            `${when}: a barra termina nas unidades`
+          ).toBeLessThanOrEqual(AT_MOST_HALF_A_PIXEL);
+          expect(row.thumb.right - row.thumb.left, `${when}: miniatura`).toBe(
+            32
+          );
+          expect(row.thumb.bottom - row.thumb.top, `${when}: miniatura`).toBe(
+            32
+          );
+          expect(
+            row.row.bottom - row.row.top,
+            `${when}: alvo da linha`
+          ).toBeGreaterThanOrEqual(48);
+        }
+        if (width >= 760) {
+          expectSameX(rows, "value", "right", when);
+        } else {
+          expectSameX(rows, "value", "left", when);
+        }
+        expectInsideTheLine(rows, when);
+        await assertNoPageScroll(page);
+      }
+    );
+  }
+
+  reflowTest(
+    "a 320 px com a letra em 20 px, o nome de 40 caracteres e o valor de sete dígitos ficam dentro da linha, nas mesmas colunas",
+    async ({ page }) => {
+      const server = new FakeServer(SOLD);
+      server.top = rankingOf(GRID_NAMES).map((product, index) => ({
+        ...product,
+        netSales: `${[99_640.35, 12.5, 7000.1, 45, 3210.9][index]}`,
+        quantity: [1234, 9, 40, 1, 305][index] ?? 1,
+      }));
+      await openRanking(page, server);
+      const rows = await gridRows(page);
+      expect(rows).toHaveLength(5);
+      expectSameX(rows, "rank", "right", "320 px, letra 20 px");
+      expectSameX(rows, "thumb", "left", "320 px, letra 20 px");
+      expectSameX(rows, "name", "left", "320 px, letra 20 px");
+      expectSameX(rows, "value", "left", "320 px, letra 20 px");
+      expectSameX(rows, "units", "right", "320 px, letra 20 px");
+      expectSameX(rows, "bar", "left", "320 px, letra 20 px");
+      expectSameX(rows, "bar", "right", "320 px, letra 20 px");
+      expectInsideTheLine(rows, "320 px, letra 20 px");
+      await assertNoPageScroll(page);
+    }
+  );
+
+  reflowTest(
+    "a 388 px, a menor coluna de uma linha só, o valor de sete dígitos e as unidades de quatro não passam sobre o nome, que fica com espaço",
+    async ({ page }) => {
+      await page.setViewportSize({ height: 800, width: 388 });
+      const server = new FakeServer(SOLD);
+      server.top = rankingOf(GRID_NAMES).map((product, index) => ({
+        ...product,
+        netSales: `${[99_640.35, 12.5, 7000.1, 45, 3210.9][index]}`,
+        quantity: [1234, 9, 40, 1, 305][index] ?? 1,
+      }));
+      await openHome(page, server);
+      await expect(region(page, "Mais vendidos do mês")).toContainText("un.");
+      const rows = await gridRows(page);
+      expect(rows).toHaveLength(5);
+      expectInsideTheLine(rows, "388 px");
+      expectSameX(rows, "name", "left", "388 px");
+      expectSameX(rows, "value", "right", "388 px");
+      for (const row of rows) {
+        expect(
+          row.name.right - row.name.left,
+          "largura do nome na coluna estreita"
+        ).toBeGreaterThanOrEqual(NARROWEST_NAME);
+      }
+      await assertNoPageScroll(page);
+    }
+  );
+
+  reflowTest(
+    "com os valores escondidos as colunas não se mexem e o valor mascarado continua dentro da sua coluna",
+    async ({ page }) => {
+      await page.setViewportSize({ height: 800, width: 1280 });
+      const server = new FakeServer(SOLD);
+      server.top = rankingOf(GRID_NAMES).map((product, index) => ({
+        ...product,
+        netSales: `${[99_640.35, 12.5, 7000.1, 45, 3210.9][index]}`,
+        quantity: [1234, 9, 40, 1, 305][index] ?? 1,
+      }));
+      await openHome(page, server);
+      await expect(region(page, "Mais vendidos do mês")).toContainText("un.");
+      const shown = await gridRows(page);
+      await page.getByRole("button", { name: "Esconder valores" }).click();
+      await expect(region(page, "Mais vendidos do mês")).toContainText(
+        "R$ ••••"
+      );
+      const hidden = await gridRows(page);
+      expectInsideTheLine(hidden, "valores escondidos");
+      expectSameX(hidden, "value", "right", "valores escondidos");
+      for (const [index, row] of hidden.entries()) {
+        for (const cell of ["name", "units", "value"] as const) {
+          expect(
+            Math.abs(row[cell].right - (shown[index]?.[cell].right ?? 0)),
+            `${cell} da linha ${index + 1} não muda de lugar`
+          ).toBeLessThanOrEqual(AT_MOST_HALF_A_PIXEL);
+        }
+      }
+    }
+  );
+
+  reflowTest(
+    "a linha é um só link com o nome acessível de posição, nome, valor e unidades, e a do excluído não tem link",
+    async ({ page }) => {
+      await page.setViewportSize({ height: 800, width: 1280 });
+      const server = new FakeServer(SOLD);
+      server.top = rankingOf(["Camiseta lisa", "Boné antigo", "Calça jeans"]);
+      await openHome(page, server);
+      const block = region(page, "Mais vendidos do mês");
+      await expect(block).toContainText("un.");
+      const links = block.getByRole("link", { name: ENDS_IN_UNITS });
+      await expect(links).toHaveCount(2);
+      await expect(links.first()).toHaveAccessibleName(NAME_FIRST);
+      await expect(links.last()).toHaveAccessibleName(NAME_THIRD);
+      expect(
+        await block
+          .locator("ol > li")
+          .evaluateAll((lines) =>
+            lines.map((line) => line.querySelectorAll("a").length)
+          )
+      ).toEqual([1, 0, 1]);
+      const rows = await gridRows(page);
+      expect(rows.map((row) => row.deleted)).toEqual([false, true, false]);
+    }
   );
 });
 
