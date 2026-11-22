@@ -31,8 +31,8 @@ const present = (cells: (readonly [string, React.ReactNode])[]) =>
  * The blocks under the KPI cards, in pairs by the width of the content area (the container, not the window: the side
  * menu opened or closed moves it by about 230 px). The DOM is the reading order on every width: Vendas por dia, Mais
  * vendidos, Meta, Ritmo de vendas. From 960 px a row is a pair of one height: the chart (3/5) and the ranking (2/5);
- * then the goal with the rest and the map with the 30 rem it needs. A store with no goal has a thin strip in the place
- * of the card, and the map takes the row under it. Below 960 px every block takes a row.
+ * then the goal with the rest and the map with the 30 rem it needs; a store with no goal has there a card with the way to
+ * set one, as tall as the map. Below 960 px every block takes a row (the goal with none is a thin strip).
  */
 export function LowerBlocks({
   chart,
@@ -72,7 +72,7 @@ export function LowerBlocks({
           <LowerRow
             className={
               lower.length === 2
-                ? "@min-[60rem]/home:grid-cols-[minmax(0,1fr)_30rem] @min-[60rem]/home:has-data-[goal-strip]:grid-cols-1"
+                ? "@min-[60rem]/home:grid-cols-[minmax(0,1fr)_30rem]"
                 : ""
             }
             pair={lower.length === 2}

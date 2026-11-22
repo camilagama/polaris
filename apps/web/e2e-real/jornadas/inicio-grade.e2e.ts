@@ -8,8 +8,9 @@ const ZONE = "America/Sao_Paulo";
 const WIDE = { viewport: { height: 900, width: 1280 } };
 /** The room a card may leave empty at its foot, in pixels. */
 const EMPTY_FOOT_LIMIT = 24;
-/** What the strip of a store with no goal may be tall. */
+/** What the strip of a store with no goal may be tall under 960 px of content. */
 const STRIP_HEIGHT_LIMIT = 100;
+const NARROW = { viewport: { height: 900, width: 800 } };
 /** The 30 rem the map takes in its pair with the goal. */
 const RHYTHM_WIDTH = 480;
 const PRODUCTS = [
@@ -237,15 +238,11 @@ for (const { goal, items } of SCENARIOS) {
     expect(Math.abs(chart.top - top.top)).toBeLessThanOrEqual(1);
     expect(Math.abs(chart.height - top.height)).toBeLessThanOrEqual(1);
     expect(chart.width).toBeGreaterThan(top.width * 1.4);
-    if (goal) {
-      expect(Math.abs(meta.top - rhythm.top)).toBeLessThanOrEqual(1);
-      expect(Math.abs(meta.height - rhythm.height)).toBeLessThanOrEqual(1);
-      expect(Math.abs(rhythm.width - RHYTHM_WIDTH)).toBeLessThanOrEqual(1);
-    } else {
-      expect(meta.height, "a thin strip").toBeLessThan(STRIP_HEIGHT_LIMIT);
-      expect(meta.top).toBeGreaterThanOrEqual(chart.bottom);
-      expect(rhythm.top).toBeGreaterThanOrEqual(meta.bottom);
-      expect(Math.abs(meta.width - area.width)).toBeLessThanOrEqual(1);
+    expect(Math.abs(meta.top - rhythm.top)).toBeLessThanOrEqual(1);
+    expect(Math.abs(meta.height - rhythm.height)).toBeLessThanOrEqual(1);
+    expect(Math.abs(rhythm.width - RHYTHM_WIDTH)).toBeLessThanOrEqual(1);
+    expect(meta.width + rhythm.width).toBeLessThan(area.width);
+    if (!goal) {
       await expect(
         page
           .getByRole("region", { name: "Meta" })
@@ -267,3 +264,50 @@ for (const { goal, items } of SCENARIOS) {
     expect(got.shifts, "layout shift inside the blocks").toBe(0);
   });
 }
+
+test("início a 800 (sem meta): abaixo de 960 px de conteúdo a Meta é a faixa fina, na linha inteira, e o Ritmo vem embaixo dela", async ({
+  browser,
+}, testInfo) => {
+  const journey = await openJourney(browser, testInfo, "inicio-grade-faixa", {
+    device: NARROW,
+    organization: { timezone: ZONE },
+  });
+  const { page } = journey;
+  const organizationId = journey.organizationId as string;
+  const today = localDate(runT0(), ZONE);
+  const product = PRODUCTS[0];
+  const seeded = await seedProduct(
+    journey.user.rpc,
+    organizationId,
+    product.name,
+    product.price
+  );
+  await seedStock(
+    journey.user.rpc,
+    organizationId,
+    seeded.variantId,
+    30,
+    "12.00",
+    today
+  );
+  await seedCashSale(
+    journey.user.rpc,
+    organizationId,
+    [{ price: product.price, quantity: 2, variantId: seeded.variantId }],
+    new Date(runT0()).toISOString()
+  );
+  await page.goto("/");
+  await settled(page);
+  const { area, cards } = await measure(page);
+  const meta = cards.Meta as Card;
+  const rhythm = cards["Ritmo de vendas"] as Card;
+  expect(area.width).toBeLessThan(960);
+  expect(meta.height, "a thin strip").toBeLessThan(STRIP_HEIGHT_LIMIT);
+  expect(Math.abs(meta.width - area.width)).toBeLessThanOrEqual(1);
+  expect(rhythm.top).toBeGreaterThanOrEqual(meta.bottom);
+  await expect(
+    page
+      .getByRole("region", { name: "Meta" })
+      .getByText("Defina quanto quer vender no mês e acompanhe aqui.")
+  ).toBeHidden();
+});

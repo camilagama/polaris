@@ -1603,7 +1603,7 @@ test.describe("meta (AC-10, AC-11)", () => {
     server.scenario = { ...SOLD, goals: [] };
     await page.reload();
     const empty = region(page, "Meta");
-    // no goal: the title and the button, no ring; the thin strip of the wide layout has room for the sentence
+    // no goal: the title and the button, no ring; from 960 px of content the card has room for the sentence
     await expect(empty.locator("[data-goal-ring]")).toHaveCount(0);
     await expect(
       empty.getByText("Defina quanto quer vender no mês e acompanhe aqui.")

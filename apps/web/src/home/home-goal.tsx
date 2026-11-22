@@ -46,13 +46,20 @@ const LINK =
   "touch-hit focus-ring rounded-sm text-sm underline decoration-input underline-offset-4 hover:decoration-foreground";
 
 /**
- * With no goal the card is a thin strip from 960 px of content: the title, a sentence and the way to set one on one
- * row, and the map takes the row under it (`data-goal-strip` is what the grid of the page reads).
+ * With no goal the card is a thin strip under 960 px of content (the title and "Definir meta", the sentence hidden);
+ * from 960 px it is a card of the pair of the map, as tall as it (`data-goal-strip` marks it for the tests).
  */
 const STRIP_ATTRIBUTES = { "data-goal-strip": "" } as const;
-const STRIP_CLASS =
-  "@min-[60rem]/home:flex-row @min-[60rem]/home:flex-wrap @min-[60rem]/home:items-center @min-[60rem]/home:gap-x-6 @min-[60rem]/home:gap-y-1 @min-[60rem]/home:py-3";
-const STRIP_END = "@min-[60rem]/home:order-last @min-[60rem]/home:ml-auto";
+const STRIP_END = "@min-[60rem]/home:order-last";
+
+/** The body of the card with no goal: from 960 px it takes the room the map's height leaves and centers what it says in it. */
+function StripBody({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="@min-[60rem]/home:grow @min-[60rem]/home:content-center grid gap-(--card-spacing)">
+      {children}
+    </div>
+  );
+}
 
 /**
  * The panel of the goal in error keeps, from `md`, the height the panel has with a typical active goal (12.5 rem: the
@@ -288,21 +295,17 @@ function ActiveGoal({
 /** No goal: the title of the block and the way to set one, nothing else (the button says what the sentence did). */
 function NoGoal() {
   return (
-    <>
+    <StripBody>
       <p className="@min-[60rem]/home:block hidden text-muted-foreground text-support">
         Defina quanto quer vender no mês e acompanhe aqui.
       </p>
       <a
-        className={cn(
-          buttonVariants({ variant: "outline" }),
-          "w-fit",
-          STRIP_END
-        )}
+        className={cn(buttonVariants({ variant: "outline" }), "w-fit")}
         href="/dashboard?meta=nova"
       >
         Definir meta
       </a>
-    </>
+    </StripBody>
   );
 }
 
@@ -337,6 +340,7 @@ function PastMonthGoal({
   return (
     <>
       <p className="font-medium">Sem meta ainda</p>
+      <StripBody>
       {online ? (
         <a
           className={cn(
@@ -352,6 +356,7 @@ function PastMonthGoal({
       <p className="text-muted-foreground text-support tabular-nums">
         <MoneyText text={pastGoalSummary(goal)} />
       </p>
+      </StripBody>
     </>
   );
 }
@@ -478,7 +483,7 @@ export function GoalBlock({
   return (
     <HomeBlock
       {...(strip
-        ? { attributes: STRIP_ATTRIBUTES, className: STRIP_CLASS, plain: true }
+        ? { attributes: STRIP_ATTRIBUTES, plain: true }
         : { footer: GOAL_FOOTER })}
       id="home-goal"
       title={pastMonth ? monthGoalTitle(monthTitle(pastMonth)) : "Meta"}
@@ -530,15 +535,17 @@ export function OfflineGoalBlock({ goal }: { goal: OfflineGoal }) {
       break;
     default:
       content = (
-        <p className="flex min-h-ctl-md items-center text-muted-foreground">
-          Sem conexão
-        </p>
+        <StripBody>
+          <p className="flex min-h-ctl-md items-center text-muted-foreground">
+            Sem conexão
+          </p>
+        </StripBody>
       );
   }
   return (
     <HomeBlock
       {...(strip
-        ? { attributes: STRIP_ATTRIBUTES, className: STRIP_CLASS, plain: true }
+        ? { attributes: STRIP_ATTRIBUTES, plain: true }
         : { footer: { ...GOAL_FOOTER, link: false } })}
       id="home-goal"
       title={title}

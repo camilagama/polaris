@@ -46,12 +46,11 @@ describe("os blocos sob os cartões do Início", () => {
     );
   });
 
-  it("a faixa da Meta passa o mapa para a linha inteira (a linha lê a marca da faixa), e a linha de cima não lê a faixa", () => {
+  it("sem meta a grade não muda: nenhuma linha lê a marca da faixa, a Meta fica no par com o mapa", () => {
     const [upper, lower] = rows(html({}));
-    expect(lower).toContain(
-      "@min-[60rem]/home:has-data-[goal-strip]:grid-cols-1"
-    );
     expect(upper).not.toContain("goal-strip");
+    expect(lower).not.toContain("goal-strip");
+    expect(lower).not.toContain("grid-cols-1");
   });
 
   it("o par é medido pelo contêiner dos blocos, não pela janela", () => {
