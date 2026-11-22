@@ -138,10 +138,15 @@ for (const name of [LONG_NAME, UNBROKEN_NAME]) {
       await expect(current).toHaveText(name);
       const box = await card.boundingBox();
       const written = await current.boundingBox();
+      const windowWidth = page.viewportSize()?.width ?? 0;
       expect(
         await longestWordWidth(current, name),
-        "a maior palavra sozinha é mais larga que o cartão: sem quebra dentro da palavra o nome vazaria"
-      ).toBeGreaterThan(box?.width ?? 0);
+        "a maior palavra sozinha é mais larga que a janela de 320 px: sem quebra dentro da palavra o nome vazaria"
+      ).toBeGreaterThan(windowWidth);
+      expect(
+        (box?.x ?? 0) + (box?.width ?? 0),
+        "o cartão não passa da borda da janela"
+      ).toBeLessThanOrEqual(windowWidth);
       expect(box, "o cartão está na tela").not.toBeNull();
       expect(written, "o nome está na tela").not.toBeNull();
       expect(
