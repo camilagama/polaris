@@ -28,7 +28,6 @@ export const BLIND_WAITS_LIST = {
     count: 1,
     reason: ONE_TURN_AFTER_THE_CLICK,
   },
-  "apps/web/e2e-pwa/ui-entry-states.ts": { count: 1, reason: BEFORE_THE_RULE },
   "apps/web/e2e-pwa/ui-filter-bar-dialog.e2e.ts": {
     count: 1,
     reason: ONE_TURN_AFTER_THE_CLICK,
