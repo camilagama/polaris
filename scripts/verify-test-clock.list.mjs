@@ -59,14 +59,6 @@ export const TEST_CLOCK_LIST = {
     count: 3,
     reason: BEFORE_THE_RULE,
   },
-  "apps/web/src/server/billing/asaas-adapter.test.ts": {
-    count: 2,
-    reason: BEFORE_THE_RULE,
-  },
-  "apps/web/src/server/rpc/report-router.test.ts": {
-    count: 1,
-    reason: BEFORE_THE_RULE,
-  },
   "apps/web/worker/index.workerd-db.test.ts": {
     count: 2,
     reason: BEFORE_THE_RULE,
