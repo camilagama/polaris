@@ -436,7 +436,7 @@ const NUMBER_FONT_ELSEWHERE: readonly {
   { file: "src/ui-gallery/ui-gallery.tsx", tokens: 12, why: SLICE_REASON },
   { file: "src/ui/calendar.tsx", tokens: 1, why: DATE_REASON },
   { file: "src/ui/date-picker.tsx", tokens: 1, why: DATE_REASON },
-  { file: "src/ui/date-range-picker.tsx", tokens: 2, why: DATE_REASON },
+  { file: "src/ui/date-range-picker.tsx", tokens: 1, why: DATE_REASON },
   { file: "src/ui/kpi-card.tsx", tokens: 7, why: SLICE_REASON },
   { file: "src/ui/progress.tsx", tokens: 1, why: SLICE_REASON },
 ];
