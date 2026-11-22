@@ -3,9 +3,10 @@ import { hasCapabilityForRole } from "@polaris/domain/authorization/capabilities
 import ArrowRightIcon from "lucide-react/dist/esm/icons/arrow-right";
 import CloudOffIcon from "lucide-react/dist/esm/icons/cloud-off";
 import RefreshCwIcon from "lucide-react/dist/esm/icons/refresh-cw";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { cn } from "@/lib/utils";
 import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
-import { Button } from "@/ui/button";
+import { Button, buttonVariants } from "@/ui/button";
 import { Card } from "@/ui/card";
 import { Skeleton } from "@/ui/skeleton";
 import {
@@ -49,6 +50,13 @@ import {
   periodTotalPeriod,
   statusFromState,
 } from "./sale-history-model";
+import {
+  clearHistoryReturn,
+  type HistoryReturn,
+  readHistoryReturn,
+  rememberHistoryReturn,
+} from "./history-return";
+import { sessionStorageOrNull } from "./sale-attempt-storage";
 import { useHistoryPeriodTotal } from "./use-history-period-total";
 import { useSaleHistory } from "./use-sale-history";
 
@@ -66,6 +74,11 @@ function OfflineHistoryNotice() {
   );
 }
 
+const RESULT_LINK_CLASS = cn(
+  buttonVariants({ size: "sm", variant: "ghost" }),
+  "w-fit"
+);
+
 /** "Ver o resultado deste período": a line of its own under the pills, since everything in the row of the pills filters. */
 function ResultLink({ period }: { period: Period }) {
   const handleClick = useCallback(
@@ -75,7 +88,7 @@ function ResultLink({ period }: { period: Period }) {
   return (
     <button
       aria-label={`Ver o resultado deste período, de ${periodRangeLabel(period, todayOr(undefined))}`}
-      className="touch-hit focus-ring inline-flex h-ctl-sm w-fit items-center gap-1 whitespace-nowrap rounded-sm font-medium text-foreground text-sm hover:underline"
+      className={RESULT_LINK_CLASS}
       data-history-result-link=""
       onClick={handleClick}
       type="button"
@@ -157,6 +170,70 @@ function hasFocusableControl(
   return more.visible || more.refreshFailed || fullScreenError;
 }
 
+function returnedFilters(
+  returned: HistoryReturn | null
+): HistoryFilters | null {
+  return returned
+    ? { ...returned.filters, status: statusFromState(returned.filters.status) }
+    : null;
+}
+
+/**
+ * The filters the Histórico opens with: what "Voltar" of the detail gives back, else the period and the situation the
+ * Resultado left in the entry, else none. What was given back is dropped once the page is on screen, as the
+ * navigation state is: a reload opens the page as the menu opens it.
+ */
+function useOpeningHistory(organizationId: string): {
+  filters: HistoryFilters;
+  scrollY: number;
+} {
+  const [opening] = useState(() => {
+    const returned = readHistoryReturn(sessionStorageOrNull(), organizationId);
+    const period = periodFromState(readNavigationState(HISTORY_PERIOD_STATE));
+    const status = statusFromState(readNavigationState(HISTORY_STATUS_STATE));
+    return {
+      filters: returnedFilters(returned) ?? {
+        ...emptyHistoryFilters,
+        ...(period ? { from: period.from, to: period.to } : {}),
+        status,
+      },
+      scrollY: returned?.scrollY ?? 0,
+    };
+  });
+  useEffect(() => {
+    dropNavigationState(HISTORY_PERIOD_STATE);
+    dropNavigationState(HISTORY_STATUS_STATE);
+    clearHistoryReturn(sessionStorageOrNull());
+  }, []);
+  return opening;
+}
+
+function useRememberHistoryOnOpen(
+  organizationId: string,
+  filters: HistoryFilters
+): (saleId: string) => void {
+  const filtersNow = useRef(filters);
+  filtersNow.current = filters;
+  return useCallback(
+    (saleId: string) =>
+      rememberHistoryReturn(sessionStorageOrNull(), organizationId, saleId, {
+        filters: filtersNow.current,
+        scrollY: window.scrollY,
+      }),
+    [organizationId]
+  );
+}
+
+function useScrollBackOnce(listReady: boolean, scrollY: number): void {
+  const pending = useRef(scrollY);
+  useEffect(() => {
+    if (listReady && pending.current > 0) {
+      window.scrollTo({ top: pending.current });
+      pending.current = 0;
+    }
+  }, [listReady]);
+}
+
 /** Newest-first list of confirmed and cancelled sales, filterable on the server. */
 export function SaleHistoryPage() {
   const { organization, organizationId } = useCurrentOrganization();
@@ -166,16 +243,7 @@ export function SaleHistoryPage() {
   const offlineWorkspace =
     workspace !== null && !workspace.online ? workspace : null;
   const offline = offlineWorkspace !== null;
-  const [initialPeriod] = useState(() =>
-    periodFromState(readNavigationState(HISTORY_PERIOD_STATE))
-  );
-  const [initialStatus] = useState(() =>
-    statusFromState(readNavigationState(HISTORY_STATUS_STATE))
-  );
-  useEffect(() => {
-    dropNavigationState(HISTORY_PERIOD_STATE);
-    dropNavigationState(HISTORY_STATUS_STATE);
-  }, []);
+  const opening = useOpeningHistory(organizationId);
   const {
     filters,
     listKey,
@@ -184,13 +252,7 @@ export function SaleHistoryPage() {
     reloadVersion,
     setFilters,
     state,
-  } = useSaleHistory(organizationId, offlineWorkspace, {
-    ...emptyHistoryFilters,
-    ...(initialPeriod
-      ? { from: initialPeriod.from, to: initialPeriod.to }
-      : {}),
-    status: initialStatus,
-  });
+  } = useSaleHistory(organizationId, offlineWorkspace, opening.filters);
   const resultPeriod =
     offline || !hasCapabilityForRole(organization.role, "report:read")
       ? null
@@ -207,6 +269,8 @@ export function SaleHistoryPage() {
     [setFilters]
   );
   const more = loadMoreView(state, listKey);
+  const handleOpenSale = useRememberHistoryOnOpen(organizationId, filters);
+  useScrollBackOnce(view.kind === "ready", opening.scrollY);
   const focus = useFocusTitleWhenGone<HTMLHeadingElement>(
     hasFocusableControl(more, view.kind === "error")
   );
@@ -306,6 +370,7 @@ export function SaleHistoryPage() {
             />
           }
           offline={offline}
+          onOpen={handleOpenSale}
           rows={view.rows}
         />
       ) : null}

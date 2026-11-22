@@ -1,5 +1,6 @@
 import { Button } from "@/ui/button";
 import { Card } from "@/ui/card";
+import { TextLink } from "@/ui/text-link";
 import type { HistoryView } from "./sale-history-model";
 
 type EmptyView = Extract<HistoryView, { kind: "empty" }>;
@@ -22,12 +23,7 @@ export function HistoryEmptyCard({
         {view.href ? (
           <>
             {" "}
-            <a
-              className="touch-hit focus-ring rounded-sm underline decoration-input underline-offset-4 hover:decoration-foreground"
-              href={view.href}
-            >
-              Registrar uma venda
-            </a>
+            <TextLink href={view.href}>Registrar uma venda</TextLink>
           </>
         ) : null}
       </p>

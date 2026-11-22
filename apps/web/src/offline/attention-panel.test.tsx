@@ -21,11 +21,12 @@ const {
   signInAgainButtonId,
 } = await import("./attention-panel");
 type AttentionPanelProps = import("./attention-panel").AttentionPanelProps;
+
 import { RECOGNIZING_UNAVAILABLE_TEXT } from "./runtime/devices-model";
 import { PLAN_REFUSED_REASON } from "./runtime/offline-runtime";
 
 const AMOUNT = /R\$\s?\d/;
-const HOME_LINK = /<a [^>]*href="\/"[^>]*>Voltar ao Início<\/a>/;
+const HOME_LINK = /<a aria-label="Voltar para o Início"[^>]*href="\/"/;
 const SIGN_IN_AGAIN_OFF = /disabled=""[^>]*>Sair e entrar de novo/;
 const none = () => undefined;
 const item = (overrides: Partial<AttentionItem> = {}): AttentionItem => ({

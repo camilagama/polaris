@@ -6,6 +6,7 @@ import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
 import { EmptyState } from "@/ui/empty-state";
 import { Card } from "@/ui/card";
+import { TextLink } from "@/ui/text-link";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -281,12 +282,9 @@ function ProductRow({
                 {syncStateLabel(syncState)}
               </Badge>
               {syncState.state === "rejected" ? (
-                <a
-                  className="focus-ring touch-hit rounded-sm text-support underline decoration-input underline-offset-4 hover:decoration-foreground"
-                  href="/attention"
-                >
+                <TextLink className="text-support" href="/attention">
                   Resolver em Pendências
-                </a>
+                </TextLink>
               ) : null}
             </div>
           ) : null}

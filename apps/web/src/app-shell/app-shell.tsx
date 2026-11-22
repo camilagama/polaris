@@ -39,6 +39,7 @@ import {
   SidebarRail,
   useSidebar,
 } from "@/ui/sidebar";
+import { TextLink } from "@/ui/text-link";
 import { MediaThumbnailScope } from "../catalog/media-thumbnail-scope";
 import { ACCEPTANCE_OPENING_SCREEN } from "../legal/acceptance/acceptance-texts";
 import { hasCapabilityForRole } from "@polaris/domain/authorization/capabilities";
@@ -177,32 +178,28 @@ function NavLink({
 
 /** The two legal pages at the foot of "Mais", small: they open in another tab, so nothing open in the app is lost. */
 function SheetLegalLinks() {
-  const link =
-    "touch-hit focus-ring rounded-sm underline decoration-input underline-offset-4 hover:decoration-foreground";
   return (
     <ul
       className="m-0 flex list-none flex-wrap gap-x-4 gap-y-1 p-0 px-2 py-1 text-muted-foreground text-xs"
       data-sheet-legal=""
     >
       <li>
-        <a
-          className={link}
+        <TextLink
           href={LEGAL_PATHS.terms}
           rel="noopener noreferrer"
           target="_blank"
         >
           Termos de Uso
-        </a>
+        </TextLink>
       </li>
       <li>
-        <a
-          className={link}
+        <TextLink
           href={LEGAL_PATHS.privacy}
           rel="noopener noreferrer"
           target="_blank"
         >
           Política de Privacidade
-        </a>
+        </TextLink>
       </li>
     </ul>
   );

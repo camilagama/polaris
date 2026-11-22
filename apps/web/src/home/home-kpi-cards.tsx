@@ -9,6 +9,7 @@ import {
   KpiTile,
   KpiTileSkeleton,
 } from "@/ui/kpi-card";
+import { TextLink } from "@/ui/text-link";
 import {
   isIncompleteEstimate,
   NO_SALES_UNTIL_DAY,
@@ -61,9 +62,6 @@ const TODAY_NOTE =
   "Sempre o dia de hoje; os outros cartões seguem o período escolhido.";
 
 const TODAY_HELP = { about: "Vendas hoje", text: TODAY_NOTE };
-
-const START_SALE_LINK =
-  "touch-hit focus-ring w-fit rounded-sm text-xs underline decoration-input underline-offset-4 hover:decoration-foreground";
 
 /**
  * What the keyboard control says of a reading: "Até 17/10: R$ 1.926,30", with the amount hidden when asked. A day with
@@ -337,11 +335,7 @@ function MonthTiles({
     <>
       <KpiTile
         action={
-          noSale ? (
-            <a className={START_SALE_LINK} href="/sales">
-              Fazer uma venda
-            </a>
-          ) : null
+          noSale ? <TextLink href="/sales">Fazer uma venda</TextLink> : null
         }
         chip={chipOf(read.sales)}
         date={date}
