@@ -34,7 +34,8 @@ const HELP_ONLY_PROJECTION = /^Estimativa/;
 
 const SENTENCE_CLASS = /<p class="([^"]*)">Defina quanto/;
 
-const NO_BREAK_AMOUNT = /<span class="whitespace-nowrap">([^<]*)<\/span>/g;
+const NO_BREAK_AMOUNT =
+  /<span class="whitespace-nowrap font-mono tabular-nums">([^<]*)<\/span>/g;
 
 const text = (html: string) =>
   html
