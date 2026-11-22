@@ -3,7 +3,7 @@ import { hasCapabilityForRole } from "@polaris/domain/authorization/capabilities
 import ArrowRightIcon from "lucide-react/dist/esm/icons/arrow-right";
 import CloudOffIcon from "lucide-react/dist/esm/icons/cloud-off";
 import RefreshCwIcon from "lucide-react/dist/esm/icons/refresh-cw";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
 import { Button } from "@/ui/button";
 import { Card } from "@/ui/card";
@@ -49,6 +49,12 @@ import {
   periodTotalPeriod,
   statusFromState,
 } from "./sale-history-model";
+import {
+  clearHistoryReturn,
+  readHistoryReturn,
+  rememberHistoryReturn,
+} from "./history-return";
+import { sessionStorageOrNull } from "./sale-attempt-storage";
 import { useHistoryPeriodTotal } from "./use-history-period-total";
 import { useSaleHistory } from "./use-sale-history";
 
@@ -157,6 +163,64 @@ function hasFocusableControl(
   return more.visible || more.refreshFailed || fullScreenError;
 }
 
+/**
+ * The filters the Histórico opens with: what "Voltar" of the detail gives back, else the period and the situation the
+ * Resultado left in the entry, else none. What was given back is dropped once the page is on screen, as the
+ * navigation state is: a reload opens the page as the menu opens it.
+ */
+function useOpeningHistory(organizationId: string): {
+  filters: HistoryFilters;
+  scrollY: number;
+} {
+  const [opening] = useState(() => {
+    const returned = readHistoryReturn(sessionStorageOrNull(), organizationId);
+    const period = periodFromState(readNavigationState(HISTORY_PERIOD_STATE));
+    const status = statusFromState(readNavigationState(HISTORY_STATUS_STATE));
+    return {
+      filters: returned?.filters ?? {
+        ...emptyHistoryFilters,
+        ...(period ? { from: period.from, to: period.to } : {}),
+        status,
+      },
+      scrollY: returned?.scrollY ?? 0,
+    };
+  });
+  useEffect(() => {
+    dropNavigationState(HISTORY_PERIOD_STATE);
+    dropNavigationState(HISTORY_STATUS_STATE);
+    clearHistoryReturn(sessionStorageOrNull());
+  }, []);
+  return opening;
+}
+
+/** Keeps the list as it stands when a sale is opened, with the scroll, to give it back on "Voltar" of the detail. */
+function useRememberHistoryOnOpen(
+  organizationId: string,
+  filters: HistoryFilters
+): () => void {
+  const filtersNow = useRef(filters);
+  filtersNow.current = filters;
+  return useCallback(
+    () =>
+      rememberHistoryReturn(sessionStorageOrNull(), organizationId, {
+        filters: filtersNow.current,
+        scrollY: window.scrollY,
+      }),
+    [organizationId]
+  );
+}
+
+/** Scrolls to where the list was left, once, when its rows are on screen. */
+function useScrollBackOnce(listReady: boolean, scrollY: number): void {
+  const pending = useRef(scrollY);
+  useEffect(() => {
+    if (listReady && pending.current > 0) {
+      window.scrollTo({ top: pending.current });
+      pending.current = 0;
+    }
+  }, [listReady]);
+}
+
 /** Newest-first list of confirmed and cancelled sales, filterable on the server. */
 export function SaleHistoryPage() {
   const { organization, organizationId } = useCurrentOrganization();
@@ -166,16 +230,7 @@ export function SaleHistoryPage() {
   const offlineWorkspace =
     workspace !== null && !workspace.online ? workspace : null;
   const offline = offlineWorkspace !== null;
-  const [initialPeriod] = useState(() =>
-    periodFromState(readNavigationState(HISTORY_PERIOD_STATE))
-  );
-  const [initialStatus] = useState(() =>
-    statusFromState(readNavigationState(HISTORY_STATUS_STATE))
-  );
-  useEffect(() => {
-    dropNavigationState(HISTORY_PERIOD_STATE);
-    dropNavigationState(HISTORY_STATUS_STATE);
-  }, []);
+  const opening = useOpeningHistory(organizationId);
   const {
     filters,
     listKey,
@@ -184,13 +239,7 @@ export function SaleHistoryPage() {
     reloadVersion,
     setFilters,
     state,
-  } = useSaleHistory(organizationId, offlineWorkspace, {
-    ...emptyHistoryFilters,
-    ...(initialPeriod
-      ? { from: initialPeriod.from, to: initialPeriod.to }
-      : {}),
-    status: initialStatus,
-  });
+  } = useSaleHistory(organizationId, offlineWorkspace, opening.filters);
   const resultPeriod =
     offline || !hasCapabilityForRole(organization.role, "report:read")
       ? null
@@ -207,6 +256,8 @@ export function SaleHistoryPage() {
     [setFilters]
   );
   const more = loadMoreView(state, listKey);
+  const handleOpenSale = useRememberHistoryOnOpen(organizationId, filters);
+  useScrollBackOnce(view.kind === "ready", opening.scrollY);
   const focus = useFocusTitleWhenGone<HTMLHeadingElement>(
     hasFocusableControl(more, view.kind === "error")
   );
@@ -306,6 +357,7 @@ export function SaleHistoryPage() {
             />
           }
           offline={offline}
+          onOpen={handleOpenSale}
           rows={view.rows}
         />
       ) : null}

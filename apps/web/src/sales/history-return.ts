@@ -1,0 +1,128 @@
+import { type HistoryFilters, statusFromState } from "./sale-history-model";
+
+/**
+ * How the Histórico was when a sale was opened from it: the filters and the scroll, kept in `sessionStorage` (the
+ * detail is another page load, and the tab's own storage ends with it) and handed back only when the person leaves
+ * the detail by its "Voltar". A snapshot nobody armed is one the person walked away from: the Histórico opens as the menu
+ * opens it. The customer's name can be in the filters, so `leave-browser.ts` clears it with the session.
+ */
+export const HISTORY_RETURN_KEY = "polaris.sales.historyReturn";
+
+type Store = Pick<Storage, "getItem" | "removeItem" | "setItem">;
+
+export interface HistoryReturn {
+  filters: HistoryFilters;
+  scrollY: number;
+}
+
+interface Stored extends HistoryReturn {
+  armed: boolean;
+  organizationId: string;
+}
+
+function text(value: unknown): string {
+  return typeof value === "string" ? value : "";
+}
+
+function parse(raw: string | null): Stored | null {
+  if (raw === null) {
+    return null;
+  }
+  let value: unknown;
+  try {
+    value = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  if (typeof value !== "object" || value === null) {
+    return null;
+  }
+  const organizationId: unknown = Reflect.get(value, "organizationId");
+  const filters: unknown = Reflect.get(value, "filters");
+  const scrollY: unknown = Reflect.get(value, "scrollY");
+  if (
+    typeof organizationId !== "string" ||
+    typeof filters !== "object" ||
+    filters === null
+  ) {
+    return null;
+  }
+  return {
+    armed: Reflect.get(value, "armed") === true,
+    filters: {
+      customer: text(Reflect.get(filters, "customer")),
+      from: text(Reflect.get(filters, "from")),
+      query: text(Reflect.get(filters, "query")),
+      status: statusFromState(Reflect.get(filters, "status")),
+      to: text(Reflect.get(filters, "to")),
+    },
+    organizationId,
+    scrollY:
+      typeof scrollY === "number" && Number.isFinite(scrollY) && scrollY > 0
+        ? Math.round(scrollY)
+        : 0,
+  };
+}
+
+function read(store: Store | null): Stored | null {
+  try {
+    return parse(store?.getItem(HISTORY_RETURN_KEY) ?? null);
+  } catch {
+    return null;
+  }
+}
+
+/** A row of the Histórico was opened: the list as it stands, not yet to be given back. */
+export function rememberHistoryReturn(
+  store: Store | null,
+  organizationId: string,
+  state: HistoryReturn
+): void {
+  const stored: Stored = { ...state, armed: false, organizationId };
+  try {
+    store?.setItem(HISTORY_RETURN_KEY, JSON.stringify(stored));
+  } catch {
+    // a blocked or full storage: the Histórico opens as the menu opens it
+  }
+}
+
+/** The person pressed "Voltar" on the detail: what was remembered is to be given back to the Histórico. */
+export function armHistoryReturn(store: Store | null): void {
+  const stored = read(store);
+  if (stored === null) {
+    return;
+  }
+  try {
+    store?.setItem(
+      HISTORY_RETURN_KEY,
+      JSON.stringify({ ...stored, armed: true })
+    );
+  } catch {
+    // see rememberHistoryReturn
+  }
+}
+
+/** What the Histórico of this store is given back on opening, or null: nothing remembered, not armed, or another store's. */
+export function readHistoryReturn(
+  store: Store | null,
+  organizationId: string
+): HistoryReturn | null {
+  const stored = read(store);
+  if (
+    stored === null ||
+    !stored.armed ||
+    stored.organizationId !== organizationId
+  ) {
+    return null;
+  }
+  return { filters: stored.filters, scrollY: stored.scrollY };
+}
+
+/** Drops what was remembered: the Histórico took it (or did not need it), or the session ended. */
+export function clearHistoryReturn(store: Store | null): void {
+  try {
+    store?.removeItem(HISTORY_RETURN_KEY);
+  } catch {
+    // nothing kept in a blocked storage
+  }
+}

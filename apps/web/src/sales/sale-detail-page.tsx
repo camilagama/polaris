@@ -18,6 +18,8 @@ import { useCurrentOrganization } from "../lib/current-organization";
 import { browserStorage } from "../lib/current-organization-model";
 import { orpcClient } from "../lib/orpc";
 import { readWithRetry } from "../lib/read-with-retry";
+import { armHistoryReturn } from "./history-return";
+import { sessionStorageOrNull } from "./sale-attempt-storage";
 import { SaleCancelPanel } from "./sale-cancel-panel";
 import type { SaleNotice } from "./sale-cancellation-model";
 import {
@@ -47,6 +49,7 @@ const UI_ROOT = "grid gap-4 font-sans text-foreground text-sm antialiased";
 const HISTORY_BACK = {
   href: "/sales/history",
   label: "Voltar para o histórico",
+  onClick: () => armHistoryReturn(sessionStorageOrNull()),
 };
 
 function StateCard({ children }: { children: ReactNode }) {
