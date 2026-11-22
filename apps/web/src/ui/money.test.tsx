@@ -110,7 +110,9 @@ describe("Money, with the values showing", () => {
       state.hidden = hidden;
       for (const size of SIZES) {
         for (const text of ["R$ 1.234,50", null]) {
-          const markup = renderToStaticMarkup(<Money size={size} text={text} />);
+          const markup = renderToStaticMarkup(
+            <Money size={size} text={text} />
+          );
           expect(markup).toMatch(BOX_MONO);
         }
       }

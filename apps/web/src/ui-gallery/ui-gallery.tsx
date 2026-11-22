@@ -93,6 +93,7 @@ import {
   FieldSet,
   FieldTitle,
 } from "@/ui/field";
+import { Figure } from "@/ui/figure";
 import { FilterBar, type FilterField, type FilterRule } from "@/ui/filter-bar";
 import { HelpTip } from "@/ui/help-tip";
 import { HideValuesButton, MoneyText } from "@/ui/hidden-values";
@@ -1750,6 +1751,18 @@ export function UiGallery() {
                 </p>
               ))}
             </div>
+          </Section>
+
+          <Section title="Número que não é dinheiro">
+            <p className="flex flex-wrap items-baseline gap-x-3 text-sm">
+              <span>Estoque</span>
+              <Figure>1.234</Figure>
+              <span>Taxa</span>
+              <Figure>3,5%</Figure>
+              <span>Prazo</span>
+              <Figure>30</Figure>
+              <span>dias</span>
+            </p>
           </Section>
 
           <Section title="Visor em Geist Mono">
