@@ -120,10 +120,13 @@ export function HistoryPeriodPicker({
   filters: HistoryFilters;
   onChange: (changes: Pick<HistoryFilters, "from" | "to">) => void;
 }) {
-  const value =
-    filters.from !== "" && filters.to !== ""
-      ? { from: filters.from, to: filters.to }
-      : null;
+  const value = useMemo(
+    () =>
+      filters.from !== "" && filters.to !== ""
+        ? { from: filters.from, to: filters.to }
+        : null,
+    [filters.from, filters.to]
+  );
   const handleChange = useCallback(
     (range: DateRange | null) =>
       onChange({ from: range?.from ?? "", to: range?.to ?? "" }),

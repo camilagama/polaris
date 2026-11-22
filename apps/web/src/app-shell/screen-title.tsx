@@ -89,7 +89,7 @@ export function TitleLine({
       {children}
       {action ? (
         <div
-          className="grid gap-3 min-[47.5rem]:ml-auto min-[47.5rem]:flex min-[47.5rem]:items-start min-[47.5rem]:gap-2"
+          className="grid gap-3 min-[47.5rem]:ml-auto min-[47.5rem]:flex min-[47.5rem]:min-w-0 min-[47.5rem]:items-start min-[47.5rem]:gap-2"
           data-title-actions=""
         >
           {action}

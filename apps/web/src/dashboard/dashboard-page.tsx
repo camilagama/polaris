@@ -155,7 +155,8 @@ function updatedText(
 /**
  * The controls of the Resultado, on the line of its title: the period and, beside it, the time of the server's read,
  * which is the button that reads again. They are the title's action only on the Resultado tab: the Metas have their
- * own period and their own "Atualizar". When the two do not fit, the time goes down before anything is cut.
+ * own period and their own "Atualizar". Under 760 px, when the two do not fit, the time goes down to the line below; from
+ * there the group does not wrap (it would grow the title line), the button's own text wraps first.
  */
 function ResultActions({
   onCustom,
