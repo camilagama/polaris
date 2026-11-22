@@ -1,4 +1,10 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { deflateRawSync } from "node:zlib";
@@ -281,6 +287,19 @@ describe("databaseWallOf", () => {
     });
     expect(text).toContain("Parede dos gates de PostgreSQL");
     expect(text).toContain("p50 **4,0 min**");
+    expect(text).toContain("sem a espera do primeiro job");
+    expect(text).toContain("subestima a parede");
+    expect(text).not.toContain("sem a espera por runner");
+  });
+
+  it("is worded the same way in the runbook", () => {
+    const runbook = readFileSync(
+      new URL("../docs/runbooks/medir-o-ci.md", import.meta.url),
+      "utf8"
+    );
+    expect(runbook).toContain("sem a espera do primeiro job");
+    expect(runbook).toContain("subestima a parede");
+    expect(runbook).not.toContain("sem a espera por runner");
   });
 });
 
