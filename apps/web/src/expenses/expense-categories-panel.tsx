@@ -20,9 +20,14 @@ import { type CommandOutcome, useCommandRunner } from "./use-command-runner";
 import type { ExpenseCategoriesState } from "./use-expense-categories";
 import { useFormDialog } from "./use-form-dialog";
 
+export type CategoryChange = "create" | "update";
+
 interface ExpenseCategoriesPanelProps {
   onReload: () => Promise<void>;
-  onUpsert: (category: ExpenseCategoryReadModel) => void;
+  onUpsert: (
+    category: ExpenseCategoryReadModel,
+    change: CategoryChange
+  ) => void;
   organizationId: string;
   state: ExpenseCategoriesState;
 }
@@ -115,7 +120,8 @@ function useCategoryCommands({
               group,
               name,
               organizationId,
-            })
+            }),
+            "create"
           );
           return "Categoria criada.";
         })
@@ -133,7 +139,7 @@ function useCategoryCommands({
             name,
             organizationId,
           });
-          onUpsert(result.category);
+          onUpsert(result.category, "update");
           return "Categoria renomeada.";
         })
       ),
@@ -156,7 +162,7 @@ function useCategoryCommands({
             const result = archiving
               ? await orpcClient.expense.archiveCategory(input)
               : await orpcClient.expense.restoreCategory(input);
-            onUpsert(result.category);
+            onUpsert(result.category, "update");
             return archiving ? "Categoria arquivada." : "Categoria restaurada.";
           }
         )

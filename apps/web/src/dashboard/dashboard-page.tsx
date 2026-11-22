@@ -72,10 +72,10 @@ import {
 
 const RESULT_TABS = ["resultado", "metas"] as const;
 
-function Heading() {
+function Heading({ action }: { action?: ReactNode }) {
   return (
     <header>
-      <TitleLine>
+      <TitleLine action={action}>
         <div className="flex items-center gap-1">
           <h1 className="text-title">Resultado</h1>
           <HelpTip about="Resultado">
@@ -138,38 +138,40 @@ function statusLine(
     : null;
 }
 
+/** "às 09:00" of the server's read on screen, or null while the figures are not the server's. */
+function updatedText(
+  { source, summary }: PeriodSummaryState,
+  timezone: string
+): string | null {
+  return source === "server" && summary
+    ? formatUpdatedAt(
+        summary.generatedAt,
+        timezone,
+        calendarDayInTimezone(new Date(), timezone)
+      )
+    : null;
+}
+
 /**
- * The one line of control: the period on the left and, on the right, the time of the server's read, which is the
- * button that reads again. When the two do not fit, the time goes down before anything is cut. The status line comes
- * under it only when it has something to say (no height kept for it), in the same `aria-live` region that is always in
- * in place; with nothing to say on screen it is `sr-only`: it tells the screen reader that the same period is being
- * read again and, once a read ends, the time, as the button name does not change under a reader that is not looking
- * at it.
+ * The controls of the Resultado, on the line of its title: the period and, beside it, the time of the server's read,
+ * which is the button that reads again. They are the title's action only on the Resultado tab: the Metas have their
+ * own period and their own "Atualizar". Under 760 px, when the two do not fit, the time goes down to the line below; from
+ * there the group does not wrap (it would grow the title line), the button's own text wraps first.
  */
-function Toolbar({
+function ResultActions({
   onCustom,
   onPreset,
   onRefresh,
   period,
   preset,
   state,
-  thisYear,
   timezone,
   today,
-}: ToolbarProps) {
-  const { source, summary } = state;
-  const updated =
-    source === "server" && summary
-      ? formatUpdatedAt(
-          summary.generatedAt,
-          timezone,
-          calendarDayInTimezone(new Date(), timezone)
-        )
-      : null;
-  const status = statusLine(state, timezone, period, thisYear);
+}: Omit<ToolbarProps, "thisYear">) {
+  const updated = updatedText(state, timezone);
   return (
-    <div>
-      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-3">
+    <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-3 min-[47.5rem]:flex-nowrap">
+      <div className="min-w-0">
         <PeriodPicker
           onCustom={onCustom}
           onPreset={onPreset}
@@ -177,23 +179,42 @@ function Toolbar({
           preset={preset}
           today={today}
         />
-        <RefreshButton
-          busy={state.isLoading}
-          disabled={state.isLoading}
-          onClick={onRefresh}
-          updated={updated ?? undefined}
-        />
       </div>
-      <p
-        aria-live="polite"
-        className={
-          status?.seen ? "mt-2 text-muted-foreground text-support" : "sr-only"
-        }
-        id="dashboard-updated"
-      >
-        {status?.text ?? (updated ? `Atualizado ${updated}` : null)}
-      </p>
+      <RefreshButton
+        busy={state.isLoading}
+        className="min-[47.5rem]:shrink-0"
+        disabled={state.isLoading}
+        onClick={onRefresh}
+        updated={updated ?? undefined}
+      />
     </div>
+  );
+}
+
+/**
+ * What the line under the title says, only when there is something to say (no height kept for it), in the
+ * `aria-live` region that is always in place; with nothing to say on screen it is `sr-only`: it tells the screen reader
+ * that the same period is being read again and, once a read ends, the time, as the button name does not change under a
+ * reader that is not looking at it.
+ */
+function ResultStatus({
+  period,
+  state,
+  thisYear,
+  timezone,
+}: Pick<ToolbarProps, "period" | "state" | "thisYear" | "timezone">) {
+  const updated = updatedText(state, timezone);
+  const status = statusLine(state, timezone, period, thisYear);
+  return (
+    <p
+      aria-live="polite"
+      className={
+        status?.seen ? "text-muted-foreground text-support" : "sr-only"
+      }
+      id="dashboard-updated"
+    >
+      {status?.text ?? (updated ? `Atualizado ${updated}` : null)}
+    </p>
   );
 }
 
@@ -433,8 +454,23 @@ export function DashboardPage() {
       : groupGoals(goals.state.goals).active.length;
 
   return (
-    <div className="grid gap-5 font-sans text-foreground text-sm antialiased">
-      <Heading />
+    <div className="grid gap-4 font-sans text-foreground text-sm antialiased">
+      <Heading
+        action={
+          tab === "resultado" ? (
+            <ResultActions
+              onCustom={handleCustom}
+              onPreset={handlePreset}
+              onRefresh={refresh}
+              period={period}
+              preset={selection.preset}
+              state={state}
+              timezone={organization.timezone}
+              today={today}
+            />
+          ) : undefined
+        }
+      />
       <Tabs className="min-w-0 gap-5" onValueChange={handleTab} value={tab}>
         <ScreenTabList label="Resultado e metas" value={tab}>
           <ScreenTabTrigger value="resultado">Resultado</ScreenTabTrigger>
@@ -449,15 +485,10 @@ export function DashboardPage() {
           </ScreenTabTrigger>
         </ScreenTabList>
         <TabsContent className="grid gap-5" value="resultado">
-          <Toolbar
-            onCustom={handleCustom}
-            onPreset={handlePreset}
-            onRefresh={refresh}
+          <ResultStatus
             period={period}
-            preset={selection.preset}
             state={state}
             thisYear={today.slice(0, 4)}
-            today={today}
             timezone={organization.timezone}
           />
           {state.summary && state.source === "cache" ? (

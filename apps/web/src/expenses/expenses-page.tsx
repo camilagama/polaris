@@ -23,7 +23,10 @@ import { browserStorage } from "../lib/current-organization-model";
 import { focusLater } from "../lib/focus";
 import { orpcClient } from "../lib/orpc";
 import { markPeriodSummaryStale } from "../lib/period-summary-stale";
-import { ExpenseCategoriesPanel } from "./expense-categories-panel";
+import {
+  type CategoryChange,
+  ExpenseCategoriesPanel,
+} from "./expense-categories-panel";
 import { ExpenseByCategory } from "./expense-by-category";
 import { ActionNotice, LoadError } from "./expense-fields";
 import { ExpenseForm } from "./expense-form";
@@ -166,7 +169,10 @@ export function ExpensesPage() {
   const online = useConnectionOnline();
   const noticeRef = useRef<HTMLDivElement>(null);
   const categories = useExpenseCategories(organizationId);
-  const { loadMore, refresh, state } = useExpenseList(organizationId, filters);
+  const { loadMore, refresh, refreshKeepingPages, state } = useExpenseList(
+    organizationId,
+    filters
+  );
   const reloadCategories = categories.reload;
   const form = useFormDialog<ExpenseReadModel, ExpenseDraft>({
     busy: busy !== null,
@@ -332,13 +338,16 @@ export function ExpensesPage() {
   }, [refresh, reloadCategories]);
 
   const upsertCategories = categories.upsert;
-  // the split by category keeps the name the server sent with it, so a rename or an archive here has to be read again
+  // the rows and the split by category keep the name the server sent with them, so a rename or an archive reads the
+  // pages on screen again without going back to the first one. A new category has no expense, so nothing is read.
   const handleCategoryUpsert = useCallback(
-    (category: ExpenseCategoryReadModel) => {
+    (category: ExpenseCategoryReadModel, change: CategoryChange) => {
       upsertCategories(category);
-      refresh();
+      if (change === "update") {
+        refreshKeepingPages();
+      }
     },
-    [refresh, upsertCategories]
+    [refreshKeepingPages, upsertCategories]
   );
 
   const handleRetry = useCallback(() => {
