@@ -626,11 +626,11 @@ describe("the link of the sales card to the Histórico", () => {
   it("stays on the one support line of the tile, with the chip or without it, and covers the card", () => {
     const withChip = sales(october([]));
     expect(withChip).toContain("data-kpi-chip-row");
-    expect(withChip.indexOf("data-kpi-chip-row")).toBeLessThan(
-      withChip.indexOf("data-kpi-sales-link")
+    expect(withChip.indexOf("data-kpi-sales-link")).toBeLessThan(
+      withChip.indexOf("data-kpi-chip-row")
     );
     expect(withChip).not.toContain("basis-full");
-    expect(withChip).toContain("absolute inset-0");
+    expect(withChip).toContain("after:absolute after:inset-0");
     const without = card(
       renderToStaticMarkup(
         <ResultCards

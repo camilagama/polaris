@@ -108,8 +108,8 @@ describe("KpiTile", () => {
     expect(covered).toContain("h-5 flex-nowrap overflow-hidden");
     expect(covered).toContain("data-kpi-warning-detail");
     expect(covered).not.toContain("data-kpi-warning=");
-    expect(covered.indexOf("data-kpi-note-row")).toBeLessThan(
-      covered.indexOf("data-cover")
+    expect(covered.indexOf("data-cover")).toBeLessThan(
+      covered.indexOf("data-kpi-note-row")
     );
   });
 });

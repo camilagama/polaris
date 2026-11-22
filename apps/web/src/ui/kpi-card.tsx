@@ -470,7 +470,7 @@ export function KpiTile({
   action?: ReactNode;
   chip?: ReactNode;
   className?: string;
-  /** A control that covers the whole tile (its box is `absolute inset-0`; the (i) and the sparkline stay above it): the tile is the target. */
+  /** The control at the end of the title row whose `::after` covers the whole tile (the (i) and the sparkline stay above it): the tile is the target. */
   cover?: ReactNode;
   /** The day read on the sparkline ("Até 17/10"), in the place of the chip; none at rest. */
   date?: string | undefined;
@@ -505,6 +505,7 @@ export function KpiTile({
     >
       <div className={cn(TOP_ROW, TILE_TITLE_ROW)}>
         <CardTitle help={help} id={id} live={titleLive} title={title} />
+        {cover}
       </div>
       <div className={hero ? HERO_BODY : TILE_BODY} data-kpi-body="">
         <div className={TILE_FIGURE} data-kpi-headline="">
@@ -540,7 +541,6 @@ export function KpiTile({
         {action}
         {warningDetail ? <WarningDetail>{warningDetail}</WarningDetail> : null}
       </div>
-      {cover}
     </Card>
   );
 }

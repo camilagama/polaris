@@ -378,6 +378,7 @@ interface ResultChartProps {
 export function ResultChart({ source, summary, timezone }: ResultChartProps) {
   const numbersId = useId();
   const drawingFailed = useChartsFailed();
+  const [hidden] = useHiddenValues();
   const { afterToday, daily, granularity } = summary;
   const today = calendarDayInTimezone(new Date(summary.generatedAt), timezone);
   const series = useMemo(
@@ -428,9 +429,7 @@ export function ResultChart({ source, summary, timezone }: ResultChartProps) {
           {sent ? null : <span>{costsNote(source === "cache")}</span>}
         </div>
         {best ? (
-          <p className="sr-only">
-            <MoneyText text={best} />
-          </p>
+          <p className="sr-only">{hidden ? maskMoney(best) : best}</p>
         ) : null}
         <Body
           details={numbersId}

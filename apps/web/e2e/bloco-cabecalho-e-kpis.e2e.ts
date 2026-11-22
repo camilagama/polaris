@@ -131,20 +131,23 @@ test.describe("cabeçalho de bloco e cartões de KPI: o Início e o Resultado t�
     const sales = card(page, 1);
     const link = sales.getByRole("button", { name: SALES_LINK });
     await expect(link).toBeVisible();
-    const [tile, cover] = await Promise.all([
-      sales.boundingBox(),
-      link.boundingBox(),
+    const hit = await sales.evaluate((tile) => {
+      const box = tile.getBoundingClientRect();
+      const button = tile.querySelector("[data-kpi-sales-link]");
+      const at = (x: number, y: number) =>
+        document.elementFromPoint(box.left + x, box.top + y) === button;
+      return [
+        at(6, box.height - 6),
+        at(box.width / 2, box.height - 6),
+        at(box.width - 6, box.height - 6),
+      ];
+    });
+    expect(hit, "o botão cobre o cartão nas bordas de baixo").toEqual([
+      true,
+      true,
+      true,
     ]);
-    expect(
-      Math.abs((cover?.width ?? 0) - (tile?.width ?? 0)),
-      "o botão cobre o cartão: a largura"
-    ).toBeLessThanOrEqual(2);
-    expect(
-      Math.abs((cover?.height ?? 0) - (tile?.height ?? 0)),
-      "o botão cobre o cartão: a altura"
-    ).toBeLessThanOrEqual(2);
     await sales.getByRole("button", { name: ABOUT_BUTTON }).focus();
-    await page.keyboard.press("Tab");
     await page.keyboard.press("Tab");
     await expect(link).toBeFocused();
   });

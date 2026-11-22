@@ -1,3 +1,4 @@
+import ArrowRightIcon from "lucide-react/dist/esm/icons/arrow-right";
 import { useCallback, useMemo, useState } from "react";
 import { Badge } from "@/ui/badge";
 import { OnDemandSparkline } from "@/ui/charts/on-demand";
@@ -129,10 +130,11 @@ type SparkColor =
   | "var(--destructive)";
 
 /**
- * The way from the sales card to the Histórico: the whole card is the target. The button covers the tile and the (i)
- * and the keyboard control of the sparkline stay above it (`z-10`), as the title of the Resultado card of the Início
- * does. Its name says what it opens and the dates, from the first day to today, the ones of the pill it opens. The count
- * on the support line is text, as on the Início, so the line stays one line.
+ * The way from the sales card to the Histórico: the whole card is the target. The button is an arrow at the end of the
+ * title row, and its `::after` covers the tile (the button stays static, so the cover is measured against the tile);
+ * the (i) and the keyboard control of the sparkline stay above it (`z-10`), as the title of the Resultado card of the
+ * Início does. Its name says what it opens and the dates, from the first day to today, the ones of the pill it opens.
+ * The count on the support line is text, as on the Início, so the line stays one line.
  */
 function SalesCover({
   count,
@@ -150,11 +152,13 @@ function SalesCover({
   return (
     <button
       aria-label={`${label} de ${periodRangeLabel(period, today)} no Histórico`}
-      className="focus-ring absolute inset-0 cursor-pointer rounded-xl hover:bg-foreground/[0.03] focus-visible:-outline-offset-3"
+      className="focus-ring -my-1 inline-flex size-6 touch:size-11 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted-foreground after:absolute after:inset-0 after:rounded-xl hover:text-foreground focus-visible:-outline-offset-2"
       data-kpi-sales-link=""
       onClick={handleClick}
       type="button"
-    />
+    >
+      <ArrowRightIcon aria-hidden="true" className="size-4" />
+    </button>
   );
 }
 

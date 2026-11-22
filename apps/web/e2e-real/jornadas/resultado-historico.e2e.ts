@@ -129,31 +129,28 @@ test("o cartão inteiro é o link, a linha de apoio é uma só e o minigráfico 
     return await page.evaluate(() => {
       const rect = (selector: string) =>
         document.querySelector(selector)?.getBoundingClientRect();
-      const box = rect("[data-kpi=sales] [data-kpi-sales-link]");
+      const button = document.querySelector(
+        "[data-kpi=sales] [data-kpi-sales-link]"
+      );
       const row = rect("[data-kpi=sales] [data-kpi-note-row]");
       const tile = rect("[data-kpi=sales]");
       const spark = document.querySelector("[data-kpi=sales] [data-kpi-spark]");
       const sparkBox = spark?.getBoundingClientRect();
-      const hit = sparkBox
-        ? document.elementFromPoint(
+      const hitAt = (x: number, y: number) => document.elementFromPoint(x, y);
+      const sparkHit = sparkBox
+        ? hitAt(
             sparkBox.left + sparkBox.width / 2,
             sparkBox.top + sparkBox.height / 2
           )
         : null;
+      const tileHit = tile ? hitAt(tile.left + 6, tile.bottom - 6) : null;
       const lineHeight = Number.parseFloat(
         getComputedStyle(document.documentElement).fontSize
       );
       return {
-        covers: Boolean(
-          box &&
-            tile &&
-            Math.abs(box.left - tile.left) <= 1 &&
-            Math.abs(box.right - tile.right) <= 1 &&
-            Math.abs(box.top - tile.top) <= 1 &&
-            Math.abs(box.bottom - tile.bottom) <= 1
-        ),
+        covers: Boolean(button && tileHit === button),
         oneLine: Boolean(row && row.height <= lineHeight * 1.3),
-        sparkOnTop: Boolean(spark && hit && spark.contains(hit)),
+        sparkOnTop: Boolean(spark && sparkHit && spark.contains(sparkHit)),
       };
     });
   };
@@ -229,7 +226,9 @@ test("com o chip de comparação o cartão não cresce: chip e contagem na mesma
           await page.evaluate(() => {
             const rect = (selector: string) =>
               document.querySelector(selector)?.getBoundingClientRect();
-            const box = rect("[data-kpi=sales] [data-kpi-sales-link]");
+            const button = document.querySelector(
+              "[data-kpi=sales] [data-kpi-sales-link]"
+            );
             const row = rect("[data-kpi=sales] [data-kpi-note-row]");
             const tile = rect("[data-kpi=sales]");
             const rem = Number.parseFloat(
@@ -237,12 +236,10 @@ test("com o chip de comparação o cartão não cresce: chip e contagem na mesma
             );
             return {
               covers: Boolean(
-                box &&
+                button &&
                   tile &&
-                  box.left <= tile.left + 1 &&
-                  box.right >= tile.right - 1 &&
-                  box.top <= tile.top + 1 &&
-                  box.bottom >= tile.bottom - 1
+                  document.elementFromPoint(tile.left + 6, tile.bottom - 6) ===
+                    button
               ),
               oneLine: Boolean(row && row.height <= rem * 1.3),
             };
