@@ -100,7 +100,8 @@ test.describe("o vão entre a contagem e a lista a 360 px", () => {
   }) => {
     await stockStates.list(page);
     const rows = page.getByRole("list", { name: "Saldos por variante" });
-    const top = async () => (await rows.boundingBox())?.y ?? 0;
+    const top = () =>
+      rows.evaluate((list) => list.getBoundingClientRect().top + scrollY);
     const before = await top();
     await page.getByRole("button", { name: RECEIVE_JEANS }).click();
     await expect(
