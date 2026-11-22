@@ -335,7 +335,9 @@ function DayTooltip({
               {shown.tip.rows.map((row) => (
                 <div className="flex justify-between gap-6" key={row.label}>
                   <dt className="text-chart-tooltip-muted">{row.label}</dt>
-                  <dd className="font-medium tabular-nums">{row.value}</dd>
+                  <dd className="font-medium font-mono tabular-nums">
+                    {row.value}
+                  </dd>
                 </div>
               ))}
             </dl>

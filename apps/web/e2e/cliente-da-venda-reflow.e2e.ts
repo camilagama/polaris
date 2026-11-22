@@ -1,5 +1,5 @@
 /// <reference lib="dom" />
-import type { Page } from "@playwright/test";
+import type { Locator, Page } from "@playwright/test";
 import { expect } from "@playwright/test";
 import {
   DETAIL_SALE_ID,
@@ -87,14 +87,35 @@ async function openSaleDetail(page: Page, name?: string) {
 }
 
 const LONG_NAME =
-  "Maria Aparecida dos Santos Albuquerque Figueiredo Nascimento";
-const UNBROKEN_NAME = "MariaAparecidaDosSantosAlbuquerqueFigueiredoNascimento";
+  "Ana Albuquerquefigueiredonascimentodossantosoliveira de Lima Vasconcelossampaiocavalcantipereira";
+const UNBROKEN_NAME =
+  "MariaAparecidaDosSantosAlbuquerqueFigueiredoNascimentoVasconcelosSampaioCavalcanti";
+
+const longestWordWidth = (current: Locator, name: string) =>
+  current.evaluate((element, text) => {
+    const word =
+      text
+        .split(" ")
+        .sort((first, second) => second.length - first.length)
+        .at(0) ?? "";
+    const probe = document.createElement("span");
+    probe.textContent = word;
+    probe.style.cssText =
+      "position:absolute;visibility:hidden;white-space:nowrap";
+    element.append(probe);
+    const { width } = probe.getBoundingClientRect();
+    probe.remove();
+    return width;
+  }, name);
 
 reflowTest(
   "a 320 px com letra de 20 px o resumo do cliente da venda lê inteiro, com total de milhões, várias compras e a data com ano",
   async ({ page }) => {
-    const summary = await openSaleDetail(page);
+    const summary = await openSaleDetail(page, LONG_NAME);
     await expect(summary).toBeVisible();
+    await assertNothingClipped(
+      page.locator("section[aria-labelledby=sale-customer-title]")
+    );
     await expect(summary.locator("dd")).toHaveText([
       String(PURCHASES),
       TOTAL_TEXT,
@@ -117,6 +138,16 @@ for (const name of [LONG_NAME, UNBROKEN_NAME]) {
       await expect(current).toHaveText(name);
       const box = await card.boundingBox();
       const written = await current.boundingBox();
+      const windowWidth = page.viewportSize()?.width ?? 0;
+      expect(windowWidth, "a janela do teste tem 320 px").toBe(320);
+      expect(
+        await longestWordWidth(current, name),
+        "a maior palavra sozinha é mais larga que a janela de 320 px: sem quebra dentro da palavra o nome vazaria"
+      ).toBeGreaterThan(windowWidth);
+      expect(
+        (box?.x ?? 0) + (box?.width ?? 0),
+        "o cartão não passa da borda da janela"
+      ).toBeLessThanOrEqual(windowWidth);
       expect(box, "o cartão está na tela").not.toBeNull();
       expect(written, "o nome está na tela").not.toBeNull();
       expect(

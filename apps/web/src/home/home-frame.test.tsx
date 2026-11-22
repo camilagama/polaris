@@ -1,4 +1,8 @@
 import type { GoalReadModel } from "@polaris/contracts";
+import {
+  capabilitiesForRole,
+  rolesWithCapability,
+} from "@polaris/domain/authorization/capabilities";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import type { StoredPeriodSummary } from "../lib/period-summary-cache";
@@ -222,5 +226,50 @@ describe("o pé de cada bloco do Início", () => {
     );
     expect(FOOTER.test(offline)).toBe(true);
     expect(footerHref(offline)).toBeNull();
+  });
+
+  it("Meta em erro tem a moldura com o pé sem link nem alvo de toque", () => {
+    const html = withRole(
+      "owner",
+      <GoalBlock
+        block={{ retryable: true, status: "error" } as never}
+        onRetry={noRetry}
+        projection={null}
+        today={null}
+        view={null}
+      />
+    );
+    expect(html).toContain('data-slot="card-frame"');
+    expect(html).toContain("Não foi possível carregar a meta.");
+    expect(FOOTER.test(html)).toBe(true);
+    expect(footerHref(html)).toBeNull();
+    const footer = html.slice(html.indexOf('data-slot="card-frame-footer"'));
+    expect(footer).not.toContain("<a ");
+    expect(footer).not.toContain("<button");
+    expect(footer).not.toContain("touch-hit");
+  });
+
+  it("o pé da Meta segue a capacidade goal:manage do domínio, não um papel escrito à mão", () => {
+    // Na V1 só existe o papel owner (ADR 0022): sem papel real que perca goal:manage, o lado negativo usa um papel desconhecido, que o domínio trata como sem capacidades.
+    const withGoalManage = rolesWithCapability("goal:manage");
+    expect(withGoalManage).toEqual(["owner"]);
+    const unknown = "ninguem";
+    expect(withGoalManage).not.toContain(unknown);
+    expect(capabilitiesForRole(unknown)).toEqual([]);
+    const readyGoal = (role: string) =>
+      withRole(
+        role,
+        <GoalBlock
+          block={{ data: [goal], status: "ready" }}
+          onRetry={noRetry}
+          projection={null}
+          today="2026-11-11"
+          view={{ goal, kind: "active", others: 0 }}
+        />
+      );
+    for (const role of withGoalManage) {
+      expect(footerHref(readyGoal(role))).toBe("/dashboard?aba=metas");
+    }
+    expect(FOOTER.test(readyGoal(unknown))).toBe(false);
   });
 });

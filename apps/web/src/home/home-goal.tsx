@@ -57,6 +57,13 @@ const STRIP_CLASS =
   "@min-[60rem]/home:flex-row @min-[60rem]/home:flex-wrap @min-[60rem]/home:items-center @min-[60rem]/home:gap-x-6 @min-[60rem]/home:gap-y-1 @min-[60rem]/home:py-3";
 const STRIP_END = "@min-[60rem]/home:order-last @min-[60rem]/home:ml-auto";
 
+/**
+ * The panel of the goal in error keeps, from `md`, the height the panel has with a typical active goal (12.5 rem: the
+ * title block, the 7 rem ring and the panel padding), so the card does not jump when "Tentar novamente" reads it. A
+ * long name, the projection or "Ver as outras" make the panel with data taller than this.
+ */
+const ERROR_PANEL_CLASS = "md:min-h-50";
+
 const GOAL_FOOTER = {
   capability: "goal:manage",
   href: "/dashboard?aba=metas",
@@ -454,7 +461,12 @@ export function GoalBlock({
   }
   if (block.status === "error" || view === null) {
     return (
-      <HomeBlock id="home-goal" title="Meta">
+      <HomeBlock
+        footer={{ ...GOAL_FOOTER, link: false }}
+        id="home-goal"
+        panelClassName={ERROR_PANEL_CLASS}
+        title="Meta"
+      >
         <BlockError
           message="Não foi possível carregar a meta."
           onRetry={block.status === "error" && block.retryable ? onRetry : null}
