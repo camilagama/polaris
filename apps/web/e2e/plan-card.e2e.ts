@@ -504,6 +504,7 @@ test.describe("o cartão do plano Free", () => {
             online: number;
           }
       );
+    // /sales/history does not read the plan on its own; on /products, `useNearLimit` reads it again when the connection returns and the count of reads below would no longer be stable.
     await page.goto("/sales/history");
     await expect(card(page)).toContainText(USE_TEXT);
     await page.context().setOffline(true);
