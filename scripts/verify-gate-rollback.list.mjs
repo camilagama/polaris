@@ -20,8 +20,4 @@ export const GATE_ROLLBACK_LIST = {
     count: 1,
     reason: BEFORE_THE_RULE,
   },
-  "packages/db/scripts/prepare-tenant-context-gate.ts": {
-    count: 1,
-    reason: BEFORE_THE_RULE,
-  },
 };
