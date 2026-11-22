@@ -12,6 +12,9 @@ import { subscribePlanUsageChanges } from "../lib/plan-usage-changes";
  * Kept apart from the screen's model, so the shell does not carry the screen.
  */
 
+/** A read of the plan with no deadline of its own stops holding the foot of the menu after this long. */
+export const PLAN_READ_WAIT_MS = 3000;
+
 export const DAY_MS = 86_400_000;
 
 /** The last day an access that ends at `instant` covers: the end is the first instant after that day. */

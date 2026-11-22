@@ -40,7 +40,10 @@ const saleCount = Number(process.env.MEASURE_SALES ?? 50_000);
 const heavyPercent = Number(process.env.MEASURE_HEAVY_PERCENT ?? 10);
 const runs = Number(process.env.MEASURE_RUNS ?? 5);
 
-/** The sizes are interpolated into utility statements, which take no parameters: refuse anything but whole numbers in range before any connection. */
+/**
+ * The sizes are interpolated into utility statements, which take no parameters: refuse anything but whole numbers in range before any connection.
+ * The floor of 251 customers is left from the first choice of the typical customer, the fixed 251st by name (`OFFSET 250`); it is now the middle one (`floor(MEASURE_CUSTOMERS / 2)`), and the seed only needs 2 customers or more (`customerCount - 1` is a modulus), so the code does not require the 251.
+ */
 function assertSizes() {
   const inRange = (value: number, min: number, max: number) =>
     Number.isInteger(value) && value >= min && value <= max;
