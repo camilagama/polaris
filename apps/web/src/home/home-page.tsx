@@ -402,7 +402,7 @@ function readBlocks(
 }
 
 const STEPS_SKELETON_HEIGHT =
-  "min-h-59 max-sm:min-h-73 lg:min-h-95 lg:touch:min-h-96";
+  "min-h-59 max-sm:min-h-73 md:min-h-62 lg:min-h-98 lg:touch:min-h-99";
 
 /**
  * The cards are still to come: the figures, or what hangs on them. The checklist is read only when the figures counted
