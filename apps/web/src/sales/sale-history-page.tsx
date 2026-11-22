@@ -13,6 +13,7 @@ import {
   navigateInApp,
   readNavigationState,
 } from "../app-shell/address";
+import { TitleLine } from "../app-shell/screen-title";
 import { ListTotalFooter } from "../catalog/screen-parts";
 import {
   HISTORY_PERIOD_STATE,
@@ -33,7 +34,7 @@ import { useLocalWorkspace } from "../offline/runtime/use-local-workspace";
 import { todayOr } from "../ui/date-values";
 import { SavedSalesCard } from "./offline-sale-panels";
 import { HistoryEmptyCard } from "./sale-history-empty";
-import { HistoryFiltersBar } from "./sale-history-filters";
+import { HistoryFiltersBar, HistoryPeriodPicker } from "./sale-history-filters";
 import { SaleHistoryList } from "./sale-history-list";
 import {
   emptyHistoryFilters,
@@ -212,9 +213,17 @@ export function SaleHistoryPage() {
 
   return (
     <div className="grid gap-4 font-sans text-foreground text-sm antialiased">
-      <h1 className="text-title" ref={focus.title} tabIndex={-1}>
-        Histórico de vendas
-      </h1>
+      <header className="grid gap-1">
+        <TitleLine
+          action={
+            <HistoryPeriodPicker filters={filters} onChange={setFilters} />
+          }
+        >
+          <h1 className="text-title" ref={focus.title} tabIndex={-1}>
+            Histórico de vendas
+          </h1>
+        </TitleLine>
+      </header>
       {offline ? <OfflineHistoryNotice /> : null}
       <SavedSalesCard countStyle="items" workspace={workspace} />
       <HistoryFiltersBar

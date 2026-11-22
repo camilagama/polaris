@@ -137,6 +137,14 @@ async function addFilter(page: Page, field: string) {
   return popup;
 }
 
+/** The picker of the period, the button of the title line: opened, with its calendar. */
+async function openPeriod(page: Page) {
+  await page.locator('header button[aria-label^="Período"]').click();
+  const popup = page.getByRole("dialog", { name: "Período" });
+  await popup.waitFor();
+  return popup;
+}
+
 export const WORST_CUSTOMER_NAME = WORST_NAME;
 
 export const historyStates = {
@@ -174,17 +182,16 @@ export const historyStates = {
     await showScreenAlone(page);
   },
 
-  /** The period pill alone, with the server's net total of the period in the footer (the other pills take it away). */
+  /** The period alone, with the server's net total of the period in the footer (the other filters take it away). */
   async periodTotal(page: Page) {
     await page.route("**/rpc/report/periodSummary", (route: Route) =>
       route.fulfill(rpc({ cards: { netSales: "123.40", salesCount: 3 } }))
     );
     await openHistoryLab(page, true);
     await page.getByText("Ângela Souza").waitFor();
-    const period = await addFilter(page, "Período");
+    const period = await openPeriod(page);
     await period.locator('button[data-day="2026-10-12"]').click();
     await period.locator('button[data-day="2026-10-05"]').click();
-    await applyEditor(page, period);
     await period.waitFor({ state: "hidden" });
     const footer = page.locator("[data-list-total]");
     await footer.getByText("Vendas líquidas do período").waitFor();
@@ -194,14 +201,13 @@ export const historyStates = {
     await showScreenAlone(page);
   },
 
-  /** The bar with three pills (Período, Situação, Cliente) and "Limpar tudo", every editor closed. */
+  /** The period of the title line and the bar with two pills (Situação, Cliente) and "Limpar tudo", every editor closed. */
   async filters(page: Page) {
     await openHistoryLab(page, true);
     await page.getByText("Ângela Souza").waitFor();
-    const period = await addFilter(page, "Período");
+    const period = await openPeriod(page);
     await period.locator('button[data-day="2026-10-12"]').click();
     await period.locator('button[data-day="2026-10-05"]').click();
-    await applyEditor(page, period);
     await period.waitFor({ state: "hidden" });
     const status = await addFilter(page, "Situação");
     await status
