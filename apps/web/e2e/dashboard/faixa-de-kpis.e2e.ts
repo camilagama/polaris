@@ -216,17 +216,6 @@ async function measureStrip(page: Page) {
       .filter((value) => value.scrollWidth > value.clientWidth)
       .map((value) => value.textContent),
     height: strip.getBoundingClientRect().height,
-    linkLine: (() => {
-      const row = strip.querySelector("[data-kpi=sales] [data-kpi-note-row]");
-      return row
-        ? Math.max(
-            0,
-            row.getBoundingClientRect().height -
-              Number.parseFloat(getComputedStyle(row).minHeight)
-          )
-        : 0;
-    })(),
-    warned: strip.querySelector("[data-kpi-notice]") !== null,
   }));
 }
 
@@ -272,35 +261,17 @@ type Measured = Record<string, Awaited<ReturnType<typeof sweepStrip>>>;
 
 function expectSameStripHeight(measured: Measured, width: number) {
   const heights = Object.fromEntries(
-    Object.entries(measured)
-      .filter(([, run]) => run.states[width]?.warned === false)
-      .map(([name, run]) => [
-        name,
-        (run.states[width]?.height ?? 0) - (run.states[width]?.linkLine ?? 0),
-      ])
+    Object.entries(measured).map(([name, run]) => [
+      name,
+      run.states[width]?.height ?? 0,
+    ])
   );
   const values = Object.values(heights);
-  expect(values.length, `${width} px: estados sem aviso`).toBeGreaterThan(0);
+  expect(values.length, `${width} px: estados medidos`).toBeGreaterThan(0);
   expect(
     Math.max(...values) - Math.min(...values),
     `${width} px: ${JSON.stringify(heights)}`
   ).toBeLessThanOrEqual(1);
-  const rest = Math.max(...values);
-  for (const [name, run] of Object.entries(measured)) {
-    expect(
-      run.states[width]?.linkLine ?? 0,
-      `${name} a ${width} px: o cartão de vendas acrescenta no máximo uma linha de apoio sob o chip`
-    ).toBeLessThanOrEqual(17);
-  }
-  for (const [name, run] of Object.entries(measured)) {
-    const state = run.states[width];
-    if (state?.warned) {
-      expect(
-        state.height,
-        `${name} a ${width} px: só o aviso acrescenta altura`
-      ).toBeGreaterThanOrEqual(rest - 1);
-    }
-  }
 }
 
 function expectNothingCut(measured: Measured, width: number) {
@@ -325,7 +296,7 @@ function expectChipMovesNothing(measured: Measured, width: number) {
   }
 }
 
-test.describe("a altura da faixa de KPIs só cresce pelo aviso de estimativa; o período, a comparação e Esconder valores não a mudam (AC-T1.3, AC-T1.5)", () => {
+test.describe("a altura da faixa de KPIs não muda com o aviso de estimativa, o período, a comparação nem Esconder valores (AC-T1.3, AC-T1.5, AC-B3.5)", () => {
   for (const side of ["aberta", "recolhida"] as const) {
     test(`lateral ${side}, de 1024 a 1440 px`, async ({ baseURL, browser }) => {
       test.setTimeout(300_000);

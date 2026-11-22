@@ -1,8 +1,5 @@
-import ArrowRightIcon from "lucide-react/dist/esm/icons/arrow-right";
 import { useCallback, useMemo, useState } from "react";
-import { cn } from "@/lib/utils";
 import { Badge } from "@/ui/badge";
-import { buttonVariants } from "@/ui/button";
 import { OnDemandSparkline } from "@/ui/charts/on-demand";
 import {
   DeltaChip,
@@ -12,11 +9,8 @@ import {
   type KpiRange,
   KpiTile,
 } from "@/ui/kpi-card";
-import {
-  type KpiReading,
-  unknownDaysFit,
-  unknownDaysText,
-} from "../home/home-kpis";
+import type { KpiReading } from "../home/home-kpis";
+import { IncompleteSign, incompleteDetail } from "../home/home-kpi-cards";
 import { salesCountText } from "../home/home-model";
 import { formatBrlAmount } from "../lib/format";
 import {
@@ -32,7 +26,6 @@ import { useIsMobile } from "../lib/use-mobile";
 import {
   formatPercentOrDash,
   isIncompleteEstimate,
-  NO_KNOWN_COST_RESULT,
   NO_SALES_UNTIL_DAY,
 } from "./dashboard-model";
 import {
@@ -84,8 +77,8 @@ export function noCostDayText(
 }
 
 /**
- * The warning of an estimate that is not whole, on a row of its own under the support line of the tile (the badge, the
- * cause when no cost is known, and the days with no cost beside it when the line fits: a warning is not hidden).
+ * The sign of an estimate that is not whole, on the one support line of the tile, and what it adds after the rest of the
+ * line (the cause when no cost is known, else the days with no cost when they fit the words): a warning is not hidden.
  */
 export function resultWarning({
   incomplete,
@@ -96,15 +89,12 @@ export function resultWarning({
   missing: MissingDays | null;
   noCost: boolean;
 }) {
-  return incomplete ? (
-    <>
-      <IncompleteBadge />
-      {noCost ? <span data-kpi-no-cost="">{NO_KNOWN_COST_RESULT}</span> : null}
-      {!noCost && missing && unknownDaysFit(missing) ? (
-        <span data-kpi-unknown="">{unknownDaysText(missing)}</span>
-      ) : null}
-    </>
-  ) : null;
+  return incomplete
+    ? {
+        warning: <IncompleteSign />,
+        warningDetail: incompleteDetail({ missing, noCost }),
+      }
+    : {};
 }
 
 /** No day: the same array on every render, so a copy without the series does not redo the memoized cards. */
@@ -138,96 +128,66 @@ type SparkColor =
   | "var(--chart-ticket)"
   | "var(--destructive)";
 
-const LINK_CLASS = cn(
-  buttonVariants({ size: "xs", variant: "ghost" }),
-  "-my-1 h-6 shrink-0 px-0 text-sm"
-);
-const LINK_ARROW = "@min-[11.5rem]:block hidden size-4";
-
 /**
- * "Ver as 8 vendas" on the support line of the sales card, in the place of the count: a text button with an arrow, no
- * outline, whose name says the dates and where it goes. With the comparison chip it takes a line of
- * its own under the chip, on the left, and the tile grows by that line; without the chip it stays on the support line.
- * The box is 24 px tall in a 20 px line (negative margin), the least a target may have; the arrow goes first when the
- * tile is narrower than the words need (320 px with the letter at 20 px).
+ * The way from the sales card to the Histórico: the whole card is the target. The button covers the tile and the (i)
+ * and the keyboard control of the sparkline stay above it (`z-10`), as the title of the Resultado card of the Início
+ * does. Its name says what it opens and the dates, from the first day to today, the ones of the pill it opens. The count
+ * on the support line is text, as on the Início, so the line stays one line.
  */
-function SalesLink({
+function SalesCover({
   count,
   onOpen,
   period,
   today,
-  underChip,
 }: {
   count: number;
   onOpen: (period: Period) => void;
   period: Period;
   today: string;
-  underChip: boolean;
 }) {
   const label = count === 1 ? "Ver a venda" : `Ver as ${salesCountText(count)}`;
   const handleClick = useCallback(() => onOpen(period), [onOpen, period]);
   return (
-    <>
-      {underChip ? (
-        <span aria-hidden="true" className="h-0 basis-full" />
-      ) : null}
-      <button
-        aria-label={`${label} de ${periodRangeLabel(period, today)} no Histórico`}
-        className={LINK_CLASS}
-        data-kpi-sales-link=""
-        onClick={handleClick}
-        type="button"
-      >
-        {label}
-        <ArrowRightIcon aria-hidden="true" className={LINK_ARROW} />
-      </button>
-    </>
+    <button
+      aria-label={`${label} de ${periodRangeLabel(period, today)} no Histórico`}
+      className="focus-ring absolute inset-0 cursor-pointer rounded-xl hover:bg-foreground/[0.03] touch:focus-visible:-outline-offset-3"
+      data-kpi-sales-link=""
+      onClick={handleClick}
+      type="button"
+    />
   );
 }
 
 /**
- * What the support line of the sales card says of the count: the link to the Histórico when the count is the server's
- * for the whole period (none while a day is read on the sparkline, whose count is another), the text otherwise. The
- * period is from its first day to today, since nothing is sold after it. With the comparison chip the link or the text
- * is always on the line under it, so the tile has the same height with or without sales, with or without connection,
- * and while a day is read (the date is 4 px shorter than the chip, and the text line makes it up).
+ * The cover of the sales card when the count is the server's for the whole period (none while a day is read on the
+ * sparkline, whose count is another, nor with no sale, no connection or a copy of the device). The period is from its
+ * first day to today, since nothing is sold after it.
  */
-function salesNote({
-  chip,
+function salesCover({
   count,
   onOpen,
   period,
   reading,
-  text,
   today,
 }: {
-  chip: boolean;
   count: number;
   onOpen: ((period: Period) => void) | null;
   period: Period;
   reading: boolean;
-  text: string;
   today: string;
 }) {
   const to = period.to < today ? period.to : today;
   if (onOpen && !reading && count > 0 && period.from <= to) {
     return (
-      <SalesLink
+      <SalesCover
         count={count}
         onOpen={onOpen}
         period={{ from: period.from, to }}
         today={today}
-        underChip={chip}
       />
     );
   }
-  return chip ? (
-    <span className={cn("flex basis-full items-center", reading && "min-h-5")}>
-      {text}
-    </span>
-  ) : (
-    text
-  );
+  return null;
 }
 
 interface ResultCardsProps {
@@ -333,7 +293,7 @@ export function ResultCardsView({
         help={{ about: "Resultado estimado", text: read.result.help }}
         id="result-kpi-result"
         strip
-        notice={resultWarning({ incomplete, missing, noCost })}
+        {...resultWarning({ incomplete, missing, noCost })}
         {...(kpis.series.result && drawn && !noCost
           ? {
               range: range(
@@ -363,15 +323,15 @@ export function ResultCardsView({
         entity="sales"
         help={{ about: salesName, text: read.sales.help }}
         id="result-kpi-sales"
-        note={salesNote({
-          chip: Boolean(kpis.read(null).sales.delta),
+        cover={salesCover({
           count: cards.salesCount,
           onOpen: onOpenSales,
           period: summary.period,
           reading: index !== null,
-          text: read.sales.count,
           today,
         })}
+        oneLine
+        warningDetail={read.sales.count}
         strip
         {...(drawn
           ? {
@@ -439,7 +399,7 @@ function MarginCard({
           }
         />
       }
-      notice={incomplete ? <IncompleteBadge /> : null}
+      warning={incomplete ? <IncompleteSign /> : null}
     />
   );
 }

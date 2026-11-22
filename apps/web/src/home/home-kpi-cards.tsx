@@ -157,7 +157,7 @@ function TodayTile({
 }
 
 /** The sign of an estimate that is not whole, always in sight on the support line of the Resultado. */
-function IncompleteSign() {
+export function IncompleteSign() {
   return (
     <span
       className="inline-flex items-center gap-1 font-medium text-warning"
@@ -170,7 +170,7 @@ function IncompleteSign() {
 }
 
 /** What the sign adds, after the rest of the line: the cause when no cost is known, else the days with no cost, when they fit the words. */
-function incompleteDetail({
+export function incompleteDetail({
   missing,
   noCost,
 }: {

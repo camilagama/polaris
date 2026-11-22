@@ -528,8 +528,8 @@ test.describe("o aviso dos dias sem custo com o mês nomeado tem teto: a contage
           await expect(kpiCards(page)).toHaveCount(4);
           await scenario.period(page);
           const result = card(page, CARD.result);
-          const notice = result.locator("[data-kpi-notice]");
-          await expect(notice).toContainText("estimativa incompleta");
+          const notice = result.locator("[data-kpi-note-row]");
+          await expect(notice).toContainText("Incompleta");
           const unknown = notice.locator("[data-kpi-unknown]");
           if (scenario.line === null) {
             await expect(
@@ -572,8 +572,8 @@ test.describe("o aviso dos dias sem custo com o mês nomeado tem teto: a contage
         for (const [name, count] of Object.entries(lines)) {
           expect(
             count,
-            `${name}: o selo numa linha e a contagem em outra, no máximo`
-          ).toBeLessThanOrEqual(2);
+            `${name}: o sinal e a contagem na única linha de apoio`
+          ).toBeLessThanOrEqual(1);
         }
       }
     );

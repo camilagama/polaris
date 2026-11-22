@@ -450,6 +450,7 @@ export function KpiTile({
   action,
   chip,
   className,
+  cover,
   date,
   entity,
   help,
@@ -457,6 +458,7 @@ export function KpiTile({
   id,
   note,
   notice,
+  oneLine = false,
   range,
   spark,
   strip = false,
@@ -470,6 +472,8 @@ export function KpiTile({
   action?: ReactNode;
   chip?: ReactNode;
   className?: string;
+  /** A control that covers the whole tile (its box is `absolute inset-0`; the (i) and the sparkline stay above it): the tile is the target. */
+  cover?: ReactNode;
   /** The day read on the sparkline ("Até 17/10"), in the place of the chip; none at rest. */
   date?: string | undefined;
   entity: KpiEntity;
@@ -481,6 +485,8 @@ export function KpiTile({
   note?: ReactNode;
   /** A warning on a row of its own under the support line, free to wrap and to make the tile taller: the Resultado's, where the badge and the days do not fit one line at 320 px. */
   notice?: ReactNode;
+  /** The support line is one line with no warning on it: what `warningDetail` says is shown whole or not at all. */
+  oneLine?: boolean;
   range?: KpiRange;
   spark?: ReactNode;
   /** The tile is a column of `KPI_STRIP`: from 1280 px it gives up its own card. */
@@ -513,7 +519,7 @@ export function KpiTile({
         ) : null}
       </div>
       <div
-        className={cn(TILE_SUPPORT, warning && TILE_WARNING)}
+        className={cn(TILE_SUPPORT, (warning || oneLine) && TILE_WARNING)}
         data-kpi-note-row=""
       >
         {warning ? (
@@ -543,6 +549,7 @@ export function KpiTile({
           {notice}
         </div>
       ) : null}
+      {cover}
     </Card>
   );
 }
