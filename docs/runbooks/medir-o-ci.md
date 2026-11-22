@@ -18,6 +18,16 @@ A saída traz p50 e p95 de cada parte (interpolação linear entre postos), os m
 
 A parede aparece duas vezes: com todas as execuções e só com as que rodaram o gate de navegador. Pull request que não o aciona (`scripts/ci-changed.mjs`) termina em bem menos tempo e puxa o p50 para baixo; a conta que importa para o tempo de espera de quem mexe no app é a segunda.
 
+## Orçamento de tempo por job
+
+Regra para fixar o `timeout-minutes` de cada job do `ci.yml`: o p95 da duração do job (do início ao fim, preparação mais execução, shards agrupados) × 1,3, arredondado para cima ao minuto, medido nas 25 últimas execuções verdes de `pull_request` e nas 25 de `workflow_dispatch` (vale o maior p95 dos dois eventos). Job com menos de 10 execuções em qualquer um dos dois eventos (o `Dependency audit` não roda em PR sem mudança de dependência) fica como estava, e o orçamento só desce: um aumento exige uma medida nova e a decisão de quem revisa. Com isso, uma lentidão nova derruba o job em vez de passar despercebida. A conta é feita à mão com o `--json` da medição acima; o script confere o resultado, não o calcula.
+
+```sh
+GITHUB_TOKEN=... node scripts/ci-timing.mjs --budget [--workflow caminho/do/ci.yml] [--runs 25] [--repo dono/nome]
+```
+
+Lê o `timeout-minutes` de cada job (o grupo é o `name` do job sem o sufixo `(shard n/m)`; job sem `timeout-minutes` não tem orçamento) e, por evento, lista numa tabela o job cujo p95 passou de 1/1,3 do orçamento e que passou desse limite em 2 execuções ou mais (uma execução conta uma vez, mesmo com dois shards lentos; com 25 execuções o p95 só passa do limite quando as duas mais lentas passam, então as duas condições andam juntas). Sai com 1 se houver algum e com 0 se não; erro de leitura ou de API também sai com 1, mas com a mensagem no erro padrão e sem tabela. Grupo com orçamento e nenhuma execução na amostra do evento aparece numa linha "sem vigia" e não reprova. Quando acusar, a causa é uma lentidão a investigar (ou, se a carga cresceu de propósito, uma medida nova e uma decisão de subir o orçamento), não um motivo para subir o número sem olhar.
+
 ## Tempo por arquivo de teste
 
 Com `CI` definido, as duas configs do Playwright (`playwright.pwa.config.ts` e `playwright.offline-poc.config.ts`) acrescentam o reporter `json`, que grava `apps/web/test-timings/timings-<nome>.json`. A pasta não é `test-results/`: o Playwright a esvazia no começo de cada execução, e o segundo comando do shard apagaria o arquivo do primeiro. Cada shard do gate de navegador sobe a pasta como o artefato `playwright-timings-shard-<n>` (retenção de 3 dias), pelo passo `upload-artifact` do job `offline-poc-browser-part`, e o job `shard-coverage` baixa os mesmos artefatos (`pattern: playwright-timings-shard-*`) para conferir a cobertura dos shards. Uma execução anterior ao passo não tem o artefato, e `--durations <id>` não acha nada nela.

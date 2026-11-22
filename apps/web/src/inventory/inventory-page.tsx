@@ -20,6 +20,7 @@ import { MoneyText } from "@/ui/hidden-values";
 import { RefreshButton } from "@/ui/refresh-button";
 import { SearchField } from "@/ui/search-field";
 import { Skeleton } from "@/ui/skeleton";
+import { TextLink } from "@/ui/text-link";
 import { TitleLine } from "../app-shell/screen-title";
 import {
   ProductThumbnail,
@@ -36,7 +37,7 @@ import { useMediaThumbsEnabled } from "../lib/media-thumbs-flag";
 import { useFocusTitleWhenGone } from "../lib/use-focus-title-when-gone";
 import { useStoreToday } from "../lib/use-store-today";
 import { useLocalWorkspace } from "../offline/runtime/use-local-workspace";
-import { LINK, StockActionStrip } from "./stock-action-strip";
+import { StockActionStrip } from "./stock-action-strip";
 import { isStockAction, type StockAction } from "./stock-command-model";
 import { StockCommandPanel } from "./stock-command-panel";
 import { StockFiltersBar } from "./stock-filters";
@@ -84,9 +85,6 @@ function isPanelMounted(
   );
 }
 
-/** A link on a line of its own: it gets the 44 px touch area. */
-const STANDALONE_LINK = `touch-hit ${LINK}`;
-
 function EntryNotFoundNotice({ unavailable }: { unavailable: boolean }) {
   return (
     <Alert variant="warning">
@@ -108,9 +106,9 @@ function OfflineStockNotice() {
       <AlertDescription>
         Saldo do aparelho. Receber, contar e baixar vão quando a conexão voltar
         (veja{" "}
-        <a className={LINK} href="/attention">
+        <TextLink inline href="/attention">
           Pendências
-        </a>
+        </TextLink>
         ). Custo médio só com conexão.
       </AlertDescription>
     </Alert>
@@ -131,9 +129,6 @@ function Figure({ children, className, label }: FigureProps) {
     </div>
   );
 }
-
-/** The name of a row that leads to its product: a link on a line of its own, with the 44 px touch area. */
-const PRODUCT_NAME_LINK = `touch-hit ${LINK}`;
 
 interface StockItemProps {
   canOpenProduct: boolean;
@@ -178,13 +173,12 @@ function StockItem({
           <div className="min-w-0">
             <p className="flex flex-wrap items-center gap-x-2 gap-y-1 font-medium [overflow-wrap:anywhere]">
               {canOpenProduct && !rowLocked ? (
-                <a
+                <TextLink
                   aria-label={`${row.productName}, ${row.variantText}. Abrir o produto`}
-                  className={PRODUCT_NAME_LINK}
                   href={row.productHref}
                 >
                   {row.productName}
-                </a>
+                </TextLink>
               ) : (
                 row.productName
               )}
@@ -533,9 +527,7 @@ export function InventoryPage() {
           {view.showCatalogLink ? (
             <>
               {" "}
-              <a className={STANDALONE_LINK} href="/products">
-                Ir para Produtos
-              </a>
+              <TextLink href="/products">Ir para Produtos</TextLink>
             </>
           ) : null}
         </StateCard>

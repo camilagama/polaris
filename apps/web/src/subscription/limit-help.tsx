@@ -11,6 +11,7 @@ import {
 } from "react";
 import { buttonVariants } from "@/ui/button";
 import { dialogEntries } from "@/ui/dialog-history";
+import { TextLink } from "@/ui/text-link";
 import { navigateInApp } from "../app-shell/address";
 import { tabHref } from "../app-shell/navigation-model";
 import { ARCHIVED_PRODUCTS_HREF } from "../catalog/products-link-model";
@@ -329,9 +330,6 @@ export function useNearLimitRead(
   return { settled, view: settled ? read.view : null };
 }
 
-const TEXT_LINK =
-  "focus-ring touch-hit rounded-sm text-foreground underline decoration-input underline-offset-4 hover:decoration-foreground";
-
 /** How the second line ("N produtos arquivados sem estoque") shows: with its link, without it (already in Arquivados) or not. */
 export type FreeableLine = "hidden" | "link" | "plain";
 
@@ -361,13 +359,13 @@ function FreeableNotice({
       {line === "link" ? (
         <>
           {" "}
-          <a
-            className={TEXT_LINK}
+          <TextLink
+            className="text-foreground"
             href={ARCHIVED_PRODUCTS_HREF}
             onClick={handleClick}
           >
             Ver arquivados
-          </a>
+          </TextLink>
         </>
       ) : null}
     </p>
@@ -425,9 +423,13 @@ export function NearLimitNotice({
       data-near-limit={held ? undefined : shown.kind}
     >
       {sentences}{" "}
-      <a className={TEXT_LINK} href={SUBSCRIPTION_HREF} onClick={handleClick}>
+      <TextLink
+        className="text-foreground"
+        href={SUBSCRIPTION_HREF}
+        onClick={handleClick}
+      >
         Conhecer o Pro
-      </a>
+      </TextLink>
     </p>
   );
   if (freeable === "hidden" || freeableText === null) {

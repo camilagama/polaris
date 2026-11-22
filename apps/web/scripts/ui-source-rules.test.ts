@@ -1734,3 +1734,131 @@ describe("o app não tem caixa alta (L1-13, AC-13.2)", () => {
     expect(uppercaseStyleFaults(path, text)).toEqual([]);
   });
 });
+
+/**
+ * Link sublinhado (DESIGN.md "Link sublinhado é o `TextLink`"): `underline` é escrito em `ui/text-link.tsx` e em mais
+ * nenhum arquivo do app, fora esta lista exata, cada um com a razão. A lista só encolhe: quem tira o último uso do
+ * arquivo tira a linha dele daqui. Os e-mails escrevem `textDecoration` em estilo em linha, que o cliente de e-mail lê.
+ */
+const UNDERLINE_COMPONENT = "src/ui/text-link.tsx";
+const UNDERLINE_EMAILS = "src/server/activation/emails/";
+export const UNDERLINE_ELSEWHERE: readonly { file: string; why: string }[] = [
+  {
+    file: "src/home/home-kpi-cards.tsx",
+    why: "o título do cartão do Resultado estimado é o link do cartão inteiro: o sublinhado ao passar o mouse é a única dica de que o cartão leva ao Resultado",
+  },
+  {
+    file: "src/legal/legal-page.tsx",
+    why: "texto legal: os links são parte do texto corrido dos Termos e da Política",
+  },
+  {
+    file: "src/ui/alert.tsx",
+    why: "o link que o aviso traz dentro da própria frase",
+  },
+  {
+    file: "src/ui/button.tsx",
+    why: "a variante `link` do Button, texto de ação dentro de uma frase (Tentar novamente ao lado do aviso)",
+  },
+  {
+    file: "src/ui/calendar.tsx",
+    why: "a marca do dia de hoje no calendário, que não é link",
+  },
+  {
+    file: "src/ui/dialog.tsx",
+    why: "o link que a descrição do diálogo traz dentro da própria frase",
+  },
+  {
+    file: "src/ui/field.tsx",
+    why: "o link que a descrição do campo traz dentro da própria frase",
+  },
+];
+
+const UNDERLINE = /(?<![\w-])underline(?![\w])/;
+const UNDERLINE_SCOPE = sourcesUnder("src").filter(
+  (path) => !path.startsWith(UNDERLINE_EMAILS)
+);
+
+export function underlineFaults(
+  files: readonly string[],
+  source: (path: string) => string
+): string[] {
+  const allowed = new Set([
+    UNDERLINE_COMPONENT,
+    ...UNDERLINE_ELSEWHERE.map((entry) => entry.file),
+  ]);
+  return files
+    .filter(
+      (path) =>
+        !(allowed.has(path) || path.startsWith(UNDERLINE_EMAILS)) &&
+        UNDERLINE.test(withoutComments(source(path)))
+    )
+    .map(
+      (path) =>
+        `${path}: sublinhado fora do TextLink: use <TextLink> (link dentro de texto) ou um botão ghost (ação do bloco)`
+    );
+}
+
+describe("o sublinhado de link mora no TextLink (item 12, AC-B2.5)", () => {
+  it("a árvore de src foi lida", () => {
+    expect(UNDERLINE_SCOPE.length).toBeGreaterThan(500);
+    expect(UNDERLINE_SCOPE).toContain(UNDERLINE_COMPONENT);
+    expect(UNDERLINE_SCOPE).toContain("src/sales/sale-detail-page.tsx");
+  });
+
+  it("nenhum arquivo de src escreve underline fora do TextLink e da lista", () => {
+    expect(underlineFaults(UNDERLINE_SCOPE, read)).toEqual([]);
+  });
+
+  it("o TextLink escreve o sublinhado e a lista é exata: cada arquivo dela ainda o usa e a razão está escrita", () => {
+    expect(UNDERLINE.test(withoutComments(read(UNDERLINE_COMPONENT)))).toBe(
+      true
+    );
+    expect(UNDERLINE_ELSEWHERE.map((entry) => entry.file)).toEqual(
+      UNDERLINE_ELSEWHERE.map((entry) => entry.file).sort()
+    );
+    for (const entry of UNDERLINE_ELSEWHERE) {
+      expect(entry.why.length, entry.file).toBeGreaterThan(20);
+      expect(
+        UNDERLINE.test(withoutComments(read(entry.file))),
+        entry.file
+      ).toBe(true);
+    }
+  });
+
+  it.each([
+    ['<a className="underline decoration-input underline-offset-4">', 1],
+    ['<a className="hover:underline">', 1],
+    ['<p className="[&_a]:underline">', 1],
+    ['<a className={cn("text-sm", "underline")}>', 1],
+    ["<a style={{ textDecoration: 'underline' }}>", 1],
+    ["cn({ underline: active })", 1],
+  ])("%s reprova num arquivo qualquer (controle plantado)", (text, count) => {
+    expect(
+      underlineFaults(["src/sales/sale-detail-page.tsx"], () => text)
+    ).toHaveLength(count);
+  });
+
+  it("a exceção vale para o caminho exato: o mesmo nome em outra pasta reprova (controle plantado)", () => {
+    const plant = '<a className="underline">';
+    expect(underlineFaults(["src/ui/text-link.tsx"], () => plant)).toEqual([]);
+    expect(underlineFaults(["src/x/text-link.tsx"], () => plant)).toHaveLength(
+      1
+    );
+    expect(underlineFaults(["src/ui/alert.tsx.bak"], () => plant)).toHaveLength(
+      1
+    );
+  });
+
+  it.each([
+    '<a className="no-underline">',
+    '<a className="focus-ring rounded-sm no-underline!">',
+    "// underline na documentação",
+    "/* hover:underline */",
+    'const name = "underlined";',
+    "const underlineOffset = 4;",
+  ])("%s passa (controle plantado)", (text) => {
+    expect(
+      underlineFaults(["src/sales/sale-detail-page.tsx"], () => text)
+    ).toEqual([]);
+  });
+});

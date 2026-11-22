@@ -3656,3 +3656,14 @@ Origem: achado B do Diego no Pixel 6 (28/10): a venda montada em Vender sumia ao
 | Painel | Em revisão | O botão "Digitar as datas" e os campos Início e Fim saem do `DateRangePanel` (`ui/date-range-picker.tsx`; o `DatePicker` de uma data nunca teve o botão). A linha sob o mês existe sempre, com a altura da frase "Início … Escolha o último dia." ao lado do "Limpar", que guarda o lugar invisível; o painel mede o mesmo ao abrir e ao marcar o primeiro dia (o toque no último dia fecha o painel). |
 | Código morto | Em revisão | Saem `TypedDateField`, o estado dos campos, `draftLabel`, `maskTypedDate`, `parseTypedDate`, `typedProblems`, `typedRange` e `typedTextsOf` (`ui/date-values.ts`), os testes deles e a spec `ui-date-pickers-digitar.e2e.ts`. |
 | Provas | Em revisão | `e2e-pwa/ui-date-pickers.e2e.ts` (ausência do botão e do campo, altura e largura iguais com e sem período, intervalo de dois meses atrás só pelo teclado com PageUp e Enter, atalhos por Shift+Tab), `e2e/history-period.e2e.ts` (o período do título, a altura do painel ao abrir e ao marcar o início; o toque do fim fecha o painel), `e2e/goals.e2e.ts`, `e2e/dashboard/*` e `e2e/home/valores-e-ranking.e2e.ts` escolhem o período pelos toques. |
+
+### "Voltar" como seta antes do título e `TextLink` (t1602, B2 dos ajustes de interface de 21/11; sem migration)
+
+| Parte | Estado | O que há |
+| --- | --- | --- |
+| "Voltar" | Em revisão | `TitleLine` aceita `back` (`app-shell/screen-title.tsx`): a seta sem contorno antes do título, na mesma linha, com o nome "Voltar para <lista>". O Detalhe da venda, Configurações no celular (`useSettingsBack`) e a Pendências sem modo offline usam; o parágrafo "Voltar ao histórico" saiu. |
+| Lista como estava | Em revisão | Abrir uma venda guarda os filtros e a rolagem do Histórico em `sessionStorage` (`sales/history-return.ts`); o "Voltar" do detalhe arma o retorno e o Histórico abre com eles. Quem chega por outro caminho abre como o menu abre; o sair limpa. |
+| Links | Em revisão | `TextLink` (`ui/text-link.tsx`) no lugar das cópias da classe do link sublinhado. A ação de bloco ("Ver as outras", "Definir meta", "Ver despesas", "Ver as N vendas", o rodapé do cartão do Início, "Ver o resultado deste período") virou botão `ghost` com seta. |
+| Guarda | Em revisão | `scripts/ui-source-rules.test.ts` reprova `underline` fora de `ui/text-link.tsx`, dos e-mails e de uma lista exata com a razão de cada arquivo. |
+| Provas | Em revisão | `e2e-pwa/voltar-e-links.e2e.ts` (posição da seta a 1280 e 360 px, claro e escuro; primeiro Tab, foco e alvo de 44 px; período, situação e rolagem repostos; telas do menu sem "Voltar"; 320 px com letra de 20 px). |
+| Fora | Pendente | O cabeçalho de bloco que recebe a ação à direita (B3, `BlockHeader`); baselines do `ui-visual` das telas com link, refeitas pelo CI. |
