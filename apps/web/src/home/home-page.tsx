@@ -660,7 +660,6 @@ function HomeHeader({
   /** The line under the title says why there are no figures (and no sales, when the device cannot keep one): "Nova venda" points to it. */
   explained: boolean;
   offlineText: string | null;
-  /** The picker of the period and what it has to say, or null for whoever cannot read the results. */
   period: { notes: React.ReactNode; picker: React.ReactNode } | null;
   /** The gesture "Atualizar", or null when the session is refused; `offline` keeps it in place, switched off. */
   refresh: { busy: boolean; offline: boolean; onClick: () => void } | null;

@@ -51,7 +51,6 @@ const SIGN = /^[+-]/;
 const HERO_BOX_LG =
   "h-(--text-value-lg--line-height) whitespace-nowrap font-mono font-semibold text-value-lg tabular-nums";
 
-/** The box of the number of the large card (the gallery): the same, one step up the scale, `text-value-xl`. */
 const HERO_BOX_XL =
   "h-(--text-value-xl--line-height) whitespace-nowrap font-mono font-semibold text-value-xl tabular-nums";
 
@@ -95,7 +94,6 @@ export function HeroValue({
   emptyText?: string | undefined;
   /** The amount is the day read on a sparkline: it swaps with no entrance (the return to rest is handled by `AnimatedFigure`). */
   reading?: boolean;
-  /** The step of the scale of the number: `lg` in every card of a screen, `xl` only in the large card of the gallery. */
   size?: HeroSize;
   /** The value of a `KpiTile`: its size follows the width of its own area, which a long amount does not change. */
   tile?: boolean;
@@ -473,7 +471,6 @@ export function KpiTile({
   date?: string | undefined;
   entity: KpiEntity;
   help?: { about: string; text: string };
-  /** The large card of the gallery: alone on its line, its number a step up (`HeroValue size="xl"`). */
   hero?: boolean;
   id: string;
   /** What goes beside the chip: the count. */
@@ -485,7 +482,6 @@ export function KpiTile({
   /** The tile is a column of `KPI_STRIP`: from 1280 px it gives up its own card. */
   strip?: boolean;
   title: ReactNode;
-  /** The title changes with the day read on the sparkline: a screen reader announces the change, politely. */
   titleLive?: boolean;
   value: ReactNode;
   /** The sign of a warning that must stay in sight: it opens the support line, which stays one line tall. */

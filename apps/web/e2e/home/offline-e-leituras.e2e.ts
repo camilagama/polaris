@@ -657,7 +657,6 @@ test.describe("sem conexão (§ 7, AC-28 a AC-31)", () => {
       today: await region(page, "Vendas hoje").boundingBox(),
     });
     const before = await places();
-    // Hoje and the month side by side in the strip, Meta below them
     expect(before.month?.y).toBe(before.today?.y);
     expect(before.month?.x ?? 0).toBeGreaterThan(
       (before.today?.x ?? 0) + (before.today?.width ?? 0) - 1

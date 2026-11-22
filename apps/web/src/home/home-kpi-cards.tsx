@@ -424,7 +424,6 @@ function MonthTiles({
   );
 }
 
-/** The three tiles that follow the period while it is read. */
 function PeriodTilesSkeleton() {
   return (
     <>
@@ -458,7 +457,6 @@ function monthSource(month: MonthPart, own: MonthSource): MonthSource | null {
   return month.kind === "figures" ? own : null;
 }
 
-/** The three tiles of the month, or their skeletons or the error, in the same place. */
 function MonthGroup({
   month,
   own,
