@@ -163,3 +163,33 @@ for (const name of [LONG_NAME, UNBROKEN_NAME]) {
     }
   );
 }
+
+for (const name of [LONG_NAME, UNBROKEN_NAME]) {
+  reflowTest(
+    `a 320 px com letra de 20 px o nome longo na lista de linhas do histórico fica dentro da janela (${name.includes(" ") ? "com espaços" : "sem espaços"})`,
+    async ({ page }) => {
+      await openSaleDetail(page, name);
+      const card = page.locator("section[aria-labelledby=sale-customer-title]");
+      const row = card.getByRole("listitem").filter({ hasText: name });
+      await expect(row).toHaveCount(1);
+      await expect(row).toBeVisible();
+      const windowWidth = page.viewportSize()?.width ?? 0;
+      expect(windowWidth, "a janela do teste tem 320 px").toBe(320);
+      expect(
+        await longestWordWidth(row, name),
+        "a maior palavra sozinha é mais larga que a janela de 320 px: sem quebra dentro da palavra a linha vazaria"
+      ).toBeGreaterThan(windowWidth);
+      const written = await row.boundingBox();
+      expect(written, "a linha está na tela").not.toBeNull();
+      expect(
+        (written?.x ?? 0) + (written?.width ?? 0),
+        "a linha do histórico não passa da borda da janela"
+      ).toBeLessThanOrEqual(windowWidth);
+      const overflow = await row.evaluate(
+        (element) => element.scrollWidth - element.clientWidth
+      );
+      expect(overflow, "o texto da linha não passa da própria caixa").toBe(0);
+      await assertNoPageScroll(page);
+    }
+  );
+}
