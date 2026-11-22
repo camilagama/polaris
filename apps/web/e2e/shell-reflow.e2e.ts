@@ -351,6 +351,9 @@ function pageMargins(page: Page, panel: string) {
     const shown = document.querySelector(selector);
     take("painel", shown);
     for (const child of shown?.children ?? []) {
+      if (child.classList.contains("sr-only")) {
+        continue;
+      }
       take(`filho ${child.tagName.toLowerCase()}`, child);
     }
     return margins;

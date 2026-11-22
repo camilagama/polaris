@@ -34,6 +34,9 @@ const HELP_ONLY_PROJECTION = /^Estimativa/;
 
 const SENTENCE_CLASS = /<p class="([^"]*)">Defina quanto/;
 
+const FONT_SIZE = /data-goal-ring[\s\S]*?style="font-size:([^"]*)"/;
+const RING_BOX = /class="[^"]*size-28[^"]*"[^>]*data-goal-ring/;
+
 const NO_BREAK_AMOUNT = /<span class="whitespace-nowrap">([^<]*)<\/span>/g;
 
 const text = (html: string) =>
@@ -266,5 +269,48 @@ describe("o ritmo da Meta (o traço e a palavra)", () => {
       HELP_ONLY_PROJECTION
     );
     expect(goalHelpText(null, null)).toBeNull();
+  });
+});
+
+describe("o tamanho do percentual no furo do anel", () => {
+  const renderActive = (percent: string) =>
+    renderToStaticMarkup(
+      <GoalBlock
+        block={{ data: [], status: "ready" }}
+        onRetry={noRetry}
+        projection={null}
+        today="2026-11-19"
+        view={{
+          goal: {
+            ...october,
+            achievedValue: null,
+            endsOn: "2026-11-30",
+            progress: {
+              percent,
+              periodEnded: false,
+              reached: false,
+              value: "1500.00",
+            },
+            settledAt: null,
+            startsOn: "2026-11-01",
+            status: "active",
+          },
+          kind: "active",
+          others: 0,
+        }}
+      />
+    );
+
+  it("é o menor entre text-xl e o que o texto escrito pede do furo, com piso de 0,875 rem, em rem", () => {
+    expect(FONT_SIZE.exec(renderActive("100.0"))?.[1]).toBe(
+      "max(0.875rem, min(1.25rem, calc((4.75rem - 4px) / 3.6)))"
+    );
+    expect(FONT_SIZE.exec(renderActive("12500.0"))?.[1]).toContain("/ 4.8)");
+  });
+
+  it("a caixa do anel mede 7 rem e o desenho acompanha a caixa", () => {
+    const html = renderActive("53.4");
+    expect(html).toMatch(RING_BOX);
+    expect(html).toContain('style="height:7rem;width:7rem"');
   });
 });

@@ -1,14 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { historyFields } from "../sales/sale-history-filters";
+import { HISTORY_PERIOD_ENDS_TODAY } from "../sales/sale-history-filters";
 import { shortcutRange } from "../ui/date-values";
 import { presetPeriod } from "./result-period";
-
-function historyEndsToday(): boolean {
-  const period = historyFields(false).find(
-    (field) => field.label === "Período"
-  );
-  return period?.type === "date-range" && period.endsToday === true;
-}
 
 describe("Este mês: o mesmo mês de calendário em cada tela, cortado só no limite dela", () => {
   const table = [
@@ -33,10 +26,10 @@ describe("Este mês: o mesmo mês de calendário em cada tela, cortado só no li
   ] as const;
 
   it.each(table)("em $today", ({ historico, metas, resultado, today }) => {
-    expect(historyEndsToday()).toBe(true);
+    expect(HISTORY_PERIOD_ENDS_TODAY).toBe(true);
     expect(presetPeriod("this-month", today, null)).toEqual(resultado);
     expect(shortcutRange("este-mes", today, false)).toEqual(metas);
-    expect(shortcutRange("este-mes", today, historyEndsToday())).toEqual(
+    expect(shortcutRange("este-mes", today, HISTORY_PERIOD_ENDS_TODAY)).toEqual(
       historico
     );
   });
