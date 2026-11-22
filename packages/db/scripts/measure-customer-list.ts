@@ -42,7 +42,7 @@ const runs = Number(process.env.MEASURE_RUNS ?? 5);
 
 /**
  * The sizes are interpolated into utility statements, which take no parameters: refuse anything but whole numbers in range before any connection.
- * The floor of 251 customers is left from the first choice of the typical customer, the fixed 251st by name (`OFFSET 250`); it is now the middle one (`floor(MEASURE_CUSTOMERS / 2)`), and the seed only needs 2 customers or more (`customerCount - 1` is a modulus), so the code does not require the 251.
+ * `assertSizes` still enforces a floor of 251 customers (`inRange(customerCount, 251, …)`), although nothing below needs it: the typical customer is the middle one (`floor(MEASURE_CUSTOMERS / 2)`) and the seed only needs 2 customers or more (`customerCount - 1` is a modulus). The floor stays so the measured list is never smaller than the fixed 251st by name (`OFFSET 250`) that an earlier version of the measurement picked.
  */
 function assertSizes() {
   const inRange = (value: number, min: number, max: number) =>

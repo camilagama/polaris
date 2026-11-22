@@ -373,7 +373,15 @@ export function rhythmSummary(view: RhythmView): string {
   if (!best?.netSales) {
     return `${head}: nenhum dia com venda.`;
   }
-  return `${head}: ${soldDaysCount(view.soldDays)}. Melhor dia ${shortDate(best.date)}, ${formatBrlAmount(best.netSales)}. ${PAST_UNTIL_YESTERDAY} A tabela dia a dia está no fim deste bloco.`;
+  return `${head}: ${soldDaysCount(view.soldDays)}. Melhor dia ${shortDate(best.date)}, ${formatBrlAmount(best.netSales)}. ${rhythmInsightText(view)} ${PAST_UNTIL_YESTERDAY} A tabela dia a dia está no fim deste bloco.`;
+}
+
+/** The sentence about the weekdays, in one piece, for the summary and the caption of the table. */
+export function rhythmInsightText(view: RhythmView): string {
+  const insight = rhythmInsight(view);
+  return insight.kind === "few"
+    ? `${insight.text} ${insight.detail}`
+    : insight.text;
 }
 
 /** The ranges of the four levels, for the (i) of the block and the legend title: "Vazio: sem venda · até R$ 57,98 · até R$ 83,64 · até R$ 142,73 · acima". */

@@ -246,7 +246,7 @@ interface HomeServed {
   failing?: boolean;
   /** A store that never sold and has no product: the checklist. */
   fresh?: boolean;
-  /** A store with sales and no goal: the thin strip of the Meta. */
+  /** A store with sales and no goal: the card of the Meta beside the map (a thin strip under 960 px of content). */
   noGoal?: boolean;
   signedIn?: boolean;
 }
@@ -485,7 +485,7 @@ export const homeStates = {
     ),
   /** A store with sales: every block, with the chart and the map drawn (not the boxes that hold their places). */
   sold: (page: Page) => openSold(page, {}),
-  /** The same store with no goal: the thin strip of the Meta over the chart. */
+  /** The same store with no goal: the card of the Meta beside the map. */
   soldNoGoal: (page: Page) => openSold(page, { noGoal: true }),
 };
 

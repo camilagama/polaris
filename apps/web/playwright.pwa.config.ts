@@ -29,6 +29,7 @@ const DESKTOP_ONLY = [
   "**/ui-acoes-na-linha-do-titulo.e2e.ts",
   "**/ui-vao-contagem.e2e.ts",
   "**/ui-mesmo-botao.e2e.ts",
+  "**/entrada-duas-metades.e2e.ts",
 ];
 
 export default defineConfig({

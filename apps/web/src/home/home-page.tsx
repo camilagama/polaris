@@ -64,7 +64,7 @@ import { useHomePeriod } from "./use-home-period";
 
 /**
  * The Início (`/`): "Nova venda" at once, at the top, depending on no read; then "Precisa de ação" (only when there is
- * something to do), Hoje, Mês, Meta, the chart, the map and Mais vendidos, in this order at 360 px, and in two columns
+ * something to do), Hoje, Mês, the chart, Mais vendidos, Meta and the map, in this order at 360 px, and in two columns
  * from 1024 px with Nova venda, Hoje and Mês above the fold (AC-4 emendado: with three lines of action the number of Hoje
  * and the title of Mês stay inside a 360 × 740 window). A store that never sold sees the checklist in place of the
  * figures (AC-22). Each block fails on its own (§ 5.2); the blocks under the cards wait together, as one skeleton, for
@@ -946,7 +946,7 @@ function FigureArea({
   attentionNotes: React.ReactNode;
   blocks: Blocks;
   goal: React.ReactNode;
-  /** The goal has not been read yet: its card is a thin strip or a tall one, and the chart's row depends on which. */
+  /** The goal has not been read yet: its card is a thin strip or a tall one, and the blocks under it move with which. */
   goalPending: boolean;
   /** The cards keep the height they had with figures (no connection and no copy). */
   keep: boolean;
@@ -990,8 +990,8 @@ function FigureArea({
 }
 
 /**
- * The blocks under the cards wait for the first answer of the goals of the store: the shape of the row of the chart is
- * that answer's (a card beside it, or a thin strip over it). A read again of the same store keeps what is on the screen.
+ * The blocks under the cards wait for the first answer of the goals of the store: the height of the goal's card, and
+ * so where the blocks under it sit, is that answer's (a tall card, or a thin strip under 960 px of content). A read again of the same store keeps what is on the screen.
  */
 function useFirstGoalRead(
   organizationId: string,

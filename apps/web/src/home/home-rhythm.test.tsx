@@ -105,10 +105,10 @@ function textBetweenTags(markup: string) {
   return text;
 }
 
-/** The text of the paragraph that carries `attribute` (null when there is none). */
-function textOf(html: string, attribute: string) {
-  const match = html.match(new RegExp(`<p[^>]*${attribute}[^>]*>(.*?)</p>`));
-  return match?.[1] === undefined ? null : textBetweenTags(match[1]);
+/** The name the screen reader gives the map (the summary). */
+function ariaLabelOfSummary(html: string) {
+  const label = html.match(SUMMARY_LABEL)?.[1] ?? "";
+  return label.replaceAll("&quot;", '"').replaceAll("&amp;", "&");
 }
 
 beforeEach(() => {
@@ -117,13 +117,33 @@ beforeEach(() => {
 });
 
 describe("Ritmo de vendas at rest", () => {
-  it("says what only the rhythm knows over the map, not the day of today", () => {
+  it("shows no sentence under the map and no 'Últimas N semanas': the weeks and the best weekday are in the summary", () => {
     const html = render({ saturdays: true });
     expect(html).not.toContain("data-rhythm-reading");
-    expect(textOf(html, "data-rhythm-insight")).toBe(
+    expect(html).not.toContain("data-rhythm-insight");
+    const text = textBetweenTags(html.replace(TABLE, ""));
+    expect(text).not.toContain("Últimas");
+    expect(text).not.toContain("melhor dia da semana");
+    expect(text).not.toContain("23/10 · R$");
+    expect(ariaLabelOfSummary(html)).toContain(
+      "Vendas por dia nas últimas 26 semanas"
+    );
+    expect(ariaLabelOfSummary(html)).toContain(
       "Sábado é o seu melhor dia da semana nas últimas 13 semanas: média de R$ 100,00."
     );
-    expect(textBetweenTags(html)).not.toContain("23/10 · R$");
+  });
+
+  it("puts the legend in the line of the title, after the (i), and no line under the map", () => {
+    const html = render({ saturdays: true });
+    const header = html.match(HEADER)?.[0] ?? "";
+    expect(header).toContain('data-rhythm-legend=""');
+    expect(textBetweenTags(header)).toBe("Ritmo de vendasMenosMais");
+    expect(header.indexOf("Sobre Ritmo de vendas")).toBeLessThan(
+      header.indexOf("data-rhythm-legend")
+    );
+    expect(
+      html.slice(html.indexOf("</div>", html.indexOf("<input")))
+    ).not.toContain("data-rhythm-legend");
   });
 
   it("is the map alone: no chart of the mean by weekday and no line that changes with the day read", () => {
@@ -133,12 +153,12 @@ describe("Ritmo de vendas at rest", () => {
     expect(textBetweenTags(html)).not.toContain("Média por dia da semana");
   });
 
-  it("keeps the few-weeks warning in the line of the insight, not in a line of its own", () => {
+  it("keeps the few-weeks warning in the summary, not in a line of its own", () => {
     const html = render();
-    expect(textOf(html, "data-rhythm-insight")).toBe(
+    expect(ariaLabelOfSummary(html)).toContain(
       "Poucas semanas de vendas ainda: o mapa enche conforme você vende. 1 dia com venda nas últimas 13 semanas."
     );
-    expect(html.match(/data-rhythm-insight/g)).toHaveLength(1);
+    expect(html).not.toContain("data-rhythm-insight");
   });
 
   it("puts the keyboard control and the finger on today, which the control says though the line does not", () => {
@@ -177,11 +197,11 @@ describe("Ritmo de vendas at rest", () => {
   it("masks the amount of the weekday insight with the values hidden, and the value of today in the control", () => {
     hiddenValues.hidden = true;
     const html = render({ saturdays: true });
-    const insight = textOf(html, "data-rhythm-insight") ?? "";
-    expect(insight).toBe(
-      "Sábado é o seu melhor dia da semana nas últimas 13 semanas: média de R$ ••••valor escondido."
+    const summary = ariaLabelOfSummary(html);
+    expect(summary).toContain(
+      "Sábado é o seu melhor dia da semana nas últimas 13 semanas: média de valor escondido."
     );
-    expect(insight).not.toMatch(MONEY_WITH_DIGIT);
+    expect(summary).not.toMatch(MONEY_WITH_DIGIT);
     expect(html).not.toContain("100,00");
     const range = html.match(RANGE)?.[0] ?? "";
     expect(range).toContain("valor escondido");
@@ -194,11 +214,29 @@ const ROWS = /<tr[ >]/g;
 const HIDDEN_WRAPPER =
   /<div class="[^"]*overflow-hidden[^"]*" data-chart-data-table="hidden">/;
 const CAPTION =
-  /<caption[^>]*>Vendas por dia, do mais novo ao mais antigo\. Meses anteriores atualizados até ontem\.<\/caption>/;
+  /<caption[^>]*>Vendas por dia nas últimas 26 semanas, do mais novo ao mais antigo\. Sábado é o seu melhor dia da semana nas últimas 13 semanas: média de R\$ 100,00\. Meses anteriores atualizados até ontem\.<\/caption>/;
+const HEADER =
+  /<div[^>]*data-slot="card-frame-header"[^>]*>[\s\S]*?<\/div><div[^>]*data-slot="card-frame-panel"/;
+const SUMMARY_LABEL = /<div[^>]*aria-details="[^"]*"[^>]*aria-label="([^"]*)"/;
 const HEADERS = /<th[^>]*scope="col"/g;
 const ATTRIBUTES = /(?:aria-label|aria-valuetext|title)="[^"]*"/g;
 const HEAD = /<thead[^>]*>[\s\S]*<\/thead>/;
 const NEWEST_ROW = /<tbody[^>]*><tr[^>]*>([\s\S]*?)<\/tr>/;
+
+describe("the skeleton of the Ritmo", () => {
+  it("keeps the height of the block read: 199 px on a phone and 203 px from 768 px, in rem", () => {
+    const html = renderToStaticMarkup(
+      <RhythmBlock
+        figures={{} as unknown as HomeFigures}
+        onRetry={NO_RETRY}
+        source={{ status: "loading" }}
+      />
+    );
+    expect(html).toContain("min-h-[12.4375rem]");
+    expect(html).toContain("md:min-h-[12.6875rem]");
+    expect(html).not.toContain("max-[21.25rem]:min-h");
+  });
+});
 
 describe("the legend of the Ritmo", () => {
   it("is there with the map", () => {
@@ -210,8 +248,6 @@ describe("the legend of the Ritmo", () => {
     const html = render();
     expect(html).not.toContain("data-rhythm-legend");
     expect(html).not.toContain("Menos");
-    expect(html).toContain("min-h-20");
-    expect(html).toContain("md:min-h-13.5");
   });
 });
 
@@ -264,7 +300,7 @@ describe("the numbers of the Ritmo, for assistive technology", () => {
     const everywhere = `${text} ${attributes}`;
     for (const said of [
       "Ritmo de vendas",
-      "Últimas 26 semanas",
+      "Vendas por dia nas últimas 26 semanas, do mais novo ao mais antigo.",
       "Sábado é o seu melhor dia da semana nas últimas 13 semanas: média de R$ 100,00.",
       "Menos",
       "Mais",

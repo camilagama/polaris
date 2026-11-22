@@ -23,8 +23,8 @@ import { Field, FieldDescription, FieldLabel } from "@/ui/field";
 import { Input } from "@/ui/input";
 import { navigateInApp } from "../app-shell/address";
 import { orpcClient } from "../lib/orpc";
+import { isPlainClick } from "../lib/plain-click";
 import { INLINE_LINK } from "../sign-in/entry-ui";
-import { isPlainClick } from "../subscription/limit-help";
 import type { ProductDeleteRefusal } from "./product-errors";
 import { typedNameMatches } from "./product-search-model";
 

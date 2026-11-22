@@ -623,6 +623,11 @@ export const SPEC_SCREENS = {
   "apps/web/e2e-pwa/app-shell.e2e.ts": "all",
   "apps/web/e2e-pwa/boot-retry.e2e.ts": ["home", "inventory", "dashboard"],
   "apps/web/e2e-pwa/dialog-voltar.e2e.ts": ["legal", "ui-gallery"],
+  "apps/web/e2e-pwa/entrada-duas-metades.e2e.ts": [
+    "sign-in",
+    "home",
+    "settings",
+  ],
   "apps/web/e2e-pwa/home-offline.e2e.ts": ["home"],
   "apps/web/e2e-pwa/lazy-retry.e2e.ts": ["home"],
   "apps/web/e2e-pwa/legal-pages.e2e.ts": ["home", "legal"],
