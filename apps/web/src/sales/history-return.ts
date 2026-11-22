@@ -1,5 +1,3 @@
-import { type HistoryFilters, statusFromState } from "./sale-history-model";
-
 /**
  * How the Histórico was when a sale was opened from it: the filters and the scroll, kept in `sessionStorage` (the
  * detail is another page load, and the tab's own storage ends with it) and handed back only when the person leaves
@@ -10,8 +8,20 @@ export const HISTORY_RETURN_KEY = "polaris.sales.historyReturn";
 
 type Store = Pick<Storage, "getItem" | "removeItem" | "setItem">;
 
+/**
+ * The filters as the Histórico keeps them, `status` still a string: this module is imported by the sign-out, which must
+ * not pull the model of the list into every screen; the page reads the situation through `statusFromState`.
+ */
+export interface StoredFilters {
+  customer: string;
+  from: string;
+  query: string;
+  status: string;
+  to: string;
+}
+
 export interface HistoryReturn {
-  filters: HistoryFilters;
+  filters: StoredFilters;
   scrollY: number;
 }
 
@@ -53,7 +63,7 @@ function parse(raw: string | null): Stored | null {
       customer: text(Reflect.get(filters, "customer")),
       from: text(Reflect.get(filters, "from")),
       query: text(Reflect.get(filters, "query")),
-      status: statusFromState(Reflect.get(filters, "status")),
+      status: text(Reflect.get(filters, "status")),
       to: text(Reflect.get(filters, "to")),
     },
     organizationId,

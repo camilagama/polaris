@@ -52,6 +52,7 @@ import {
 } from "./sale-history-model";
 import {
   clearHistoryReturn,
+  type HistoryReturn,
   readHistoryReturn,
   rememberHistoryReturn,
 } from "./history-return";
@@ -169,6 +170,14 @@ function hasFocusableControl(
   return more.visible || more.refreshFailed || fullScreenError;
 }
 
+function returnedFilters(
+  returned: HistoryReturn | null
+): HistoryFilters | null {
+  return returned
+    ? { ...returned.filters, status: statusFromState(returned.filters.status) }
+    : null;
+}
+
 /**
  * The filters the Histórico opens with: what "Voltar" of the detail gives back, else the period and the situation the
  * Resultado left in the entry, else none. What was given back is dropped once the page is on screen, as the
@@ -183,7 +192,7 @@ function useOpeningHistory(organizationId: string): {
     const period = periodFromState(readNavigationState(HISTORY_PERIOD_STATE));
     const status = statusFromState(readNavigationState(HISTORY_STATUS_STATE));
     return {
-      filters: returned?.filters ?? {
+      filters: returnedFilters(returned) ?? {
         ...emptyHistoryFilters,
         ...(period ? { from: period.from, to: period.to } : {}),
         status,

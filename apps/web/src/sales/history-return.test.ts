@@ -6,7 +6,6 @@ import {
   readHistoryReturn,
   rememberHistoryReturn,
 } from "./history-return";
-import { emptyHistoryFilters } from "./sale-history-model";
 
 function fakeStorage() {
   const map = new Map<string, string>();
@@ -18,13 +17,14 @@ function fakeStorage() {
   };
 }
 
+const NONE = { customer: "", from: "", query: "", status: "", to: "" };
 const FILTERS = {
-  ...emptyHistoryFilters,
+  ...NONE,
   customer: "Ana",
   from: "2026-10-01",
   status: "cancelled",
   to: "2026-10-31",
-} as const;
+};
 
 describe("what the Histórico gives back on Voltar", () => {
   it("gives back the filters and the scroll once Voltar armed them", () => {
@@ -65,7 +65,7 @@ describe("what the Histórico gives back on Voltar", () => {
     expect(store.map.size).toBe(0);
   });
 
-  it("reads a damaged or foreign value as nothing, and a situation that is not one as no filter", () => {
+  it("reads a damaged or foreign value as nothing, and a field that is not text as empty", () => {
     const store = fakeStorage();
     store.setItem(HISTORY_RETURN_KEY, "{not json");
     expect(readHistoryReturn(store, "org-1")).toBeNull();
@@ -73,13 +73,13 @@ describe("what the Histórico gives back on Voltar", () => {
       HISTORY_RETURN_KEY,
       JSON.stringify({
         armed: true,
-        filters: { customer: 3, status: "bogus" },
+        filters: { customer: 3, status: 7 },
         organizationId: "org-1",
         scrollY: -5,
       })
     );
     expect(readHistoryReturn(store, "org-1")).toEqual({
-      filters: emptyHistoryFilters,
+      filters: NONE,
       scrollY: 0,
     });
   });
