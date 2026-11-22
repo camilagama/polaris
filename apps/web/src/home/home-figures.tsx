@@ -141,16 +141,21 @@ export function TopProductsBlock({
                 {product.name}
               </span>
               <span
-                className="@min-[20.75rem]:col-start-4 col-start-3 @min-[20.75rem]:row-start-1 row-start-2 justify-self-start @min-[20.75rem]:justify-self-end font-semibold tabular-nums"
-                data-top-value=""
+                className="col-start-3 col-end-5 row-start-2 flex @min-[20.75rem]:contents flex-wrap items-baseline justify-between gap-x-2"
+                data-top-figures=""
               >
-                <MoneyText text={formatBrlAmount(product.netSales)} />
-              </span>
-              <span
-                className="@min-[20.75rem]:col-start-5 col-start-4 @min-[20.75rem]:row-start-1 row-start-2 justify-self-end text-muted-foreground tabular-nums"
-                data-top-units=""
-              >
-                {unitsText(product.quantity)}
+                <span
+                  className="@min-[20.75rem]:col-start-4 @min-[20.75rem]:row-start-1 @min-[20.75rem]:justify-self-end font-semibold tabular-nums"
+                  data-top-value=""
+                >
+                  <MoneyText text={formatBrlAmount(product.netSales)} />
+                </span>
+                <span
+                  className="@min-[20.75rem]:col-start-5 @min-[20.75rem]:row-start-1 @min-[20.75rem]:ml-0 ml-auto @min-[20.75rem]:justify-self-end text-muted-foreground tabular-nums"
+                  data-top-units=""
+                >
+                  {unitsText(product.quantity)}
+                </span>
               </span>
               <span
                 aria-hidden="true"

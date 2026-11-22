@@ -923,6 +923,13 @@ function expectSameX(
 
 function expectInsideTheLine(rows: readonly GridRow[], when: string) {
   for (const [index, row] of rows.entries()) {
+    const sameLine = row.units.top < row.value.bottom - AT_MOST_HALF_A_PIXEL;
+    if (sameLine) {
+      expect(
+        row.value.right,
+        `${when}: o valor não passa sobre as unidades na linha ${index + 1}`
+      ).toBeLessThanOrEqual(row.units.left + AT_MOST_HALF_A_PIXEL);
+    }
     for (const cell of [
       "bar",
       "name",
