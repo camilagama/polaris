@@ -59,14 +59,6 @@ export const TEST_CLOCK_LIST = {
     count: 3,
     reason: BEFORE_THE_RULE,
   },
-  "apps/web/src/server/auth/better-auth-characterization.test.ts": {
-    count: 1,
-    reason: BEFORE_THE_RULE,
-  },
-  "apps/web/src/server/auth/get-session-single-read.test.ts": {
-    count: 1,
-    reason: BEFORE_THE_RULE,
-  },
   "apps/web/src/server/billing/asaas-adapter.test.ts": {
     count: 2,
     reason: BEFORE_THE_RULE,
