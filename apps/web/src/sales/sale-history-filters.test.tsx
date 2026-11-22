@@ -1,5 +1,12 @@
+// @vitest-environment happy-dom
+import {
+  cleanup,
+  fireEvent,
+  render as mount,
+  screen,
+} from "@testing-library/react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   type FilterRule,
   removeRule,
@@ -39,6 +46,7 @@ const apply = (
 });
 
 const PERIOD_LABEL = /aria-label="Período: [^"]*, editar"/;
+const PERIOD_BUTTON = /^Período/;
 const noop = () => undefined;
 const render = (filters: HistoryFilters, offline = false) =>
   renderToStaticMarkup(
@@ -218,5 +226,120 @@ describe("o período da linha do título", () => {
     expect(
       renderPeriod({ ...emptyHistoryFilters, from: PERIOD.from })
     ).toContain('aria-label="Período, Escolher período"');
+  });
+});
+
+describe("os atalhos do período do Histórico chegam como as duas datas da consulta", () => {
+  const originalZone = process.env.TZ;
+
+  beforeEach(() => {
+    process.env.TZ = "America/Sao_Paulo";
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.useRealTimers();
+    if (originalZone === undefined) {
+      Reflect.deleteProperty(process.env, "TZ");
+    } else {
+      process.env.TZ = originalZone;
+    }
+  });
+
+  const pickShortcut = (now: Date, label: string) => {
+    vi.useFakeTimers({ now, toFake: ["Date"] });
+    const onChange = vi.fn();
+    mount(
+      <HistoryPeriodPicker filters={emptyHistoryFilters} onChange={onChange} />
+    );
+    fireEvent.click(screen.getByRole("button", { name: PERIOD_BUTTON }));
+    fireEvent.click(screen.getByRole("button", { name: label }));
+    expect(onChange).toHaveBeenCalledTimes(1);
+    return onChange.mock.calls[0]?.[0];
+  };
+
+  const atNoon = (year: number, month: number, day: number) =>
+    new Date(year, month - 1, day, 12);
+
+  it.each([
+    {
+      from: "2026-10-14",
+      label: "Hoje",
+      now: atNoon(2026, 10, 14),
+      to: "2026-10-14",
+    },
+    {
+      from: "2026-10-08",
+      label: "7 dias",
+      now: atNoon(2026, 10, 14),
+      to: "2026-10-14",
+    },
+    {
+      from: "2026-02-25",
+      label: "7 dias",
+      now: atNoon(2026, 3, 3),
+      to: "2026-03-03",
+    },
+    {
+      from: "2026-10-01",
+      label: "Este mês",
+      now: atNoon(2026, 10, 14),
+      to: "2026-10-14",
+    },
+    {
+      from: "2026-10-01",
+      label: "Este mês",
+      now: atNoon(2026, 10, 31),
+      to: "2026-10-31",
+    },
+    {
+      from: "2026-09-01",
+      label: "Mês passado",
+      now: atNoon(2026, 10, 14),
+      to: "2026-09-30",
+    },
+    {
+      from: "2025-12-01",
+      label: "Mês passado",
+      now: atNoon(2026, 1, 5),
+      to: "2025-12-31",
+    },
+    {
+      from: "2028-02-01",
+      label: "Mês passado",
+      now: atNoon(2028, 3, 10),
+      to: "2028-02-29",
+    },
+  ])("$label: de $from a $to", ({ from, label, now, to }) => {
+    expect(pickShortcut(now, label)).toEqual({ from, to });
+  });
+
+  it("perto da meia-noite o dia é o do relógio do aparelho (com TZ=America/Sao_Paulo, não o do UTC)", () => {
+    const late = new Date(2026, 9, 31, 23, 50);
+    expect(pickShortcut(late, "Hoje")).toEqual({
+      from: "2026-10-31",
+      to: "2026-10-31",
+    });
+    cleanup();
+    expect(pickShortcut(late, "Este mês")).toEqual({
+      from: "2026-10-01",
+      to: "2026-10-31",
+    });
+    cleanup();
+    expect(pickShortcut(late, "Mês passado")).toEqual({
+      from: "2026-09-01",
+      to: "2026-09-30",
+    });
+    cleanup();
+    const justAfter = new Date(2026, 10, 1, 0, 10);
+    expect(pickShortcut(justAfter, "Mês passado")).toEqual({
+      from: "2026-10-01",
+      to: "2026-10-31",
+    });
+    cleanup();
+    expect(pickShortcut(justAfter, "7 dias")).toEqual({
+      from: "2026-10-26",
+      to: "2026-11-01",
+    });
   });
 });

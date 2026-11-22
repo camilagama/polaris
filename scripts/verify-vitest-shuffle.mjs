@@ -25,7 +25,8 @@ import { stripComments } from "./verify-no-history-comments.mjs";
  * `true` or `false` and no key repeats. Anything else (`shuffle: false`, `tests: false`, a variable, also in `files`, an
  * expression, a spread, a quoted key, a nested object) is refused.
  * Not caught: a `shuffle` built in a variable or a spread outside an `extends: true` project, a `shuffle` repeated in
- * one root `sequence` (only the first is read), `projects` that is not an
+ * one root `sequence` (only the first one in an accepted form is read: after `shuffle: false, shuffle: true` it reads the
+ * second), `projects` that is not an
  * array literal (a variable, a spread) or is nested in another project, a regular expression literal with a quote in it,
  * an order switched off from the command line.
  * Quoted keys (`"sequence":`) are not recognised: in the root they fail loudly (the key is missing), in an `extends: true`
