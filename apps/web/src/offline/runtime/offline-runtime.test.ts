@@ -2351,19 +2351,22 @@ describe("whether the last pull was idle (the scheduler stretches its interval o
 describe("whether the copy is fresh (the scheduler skips the sync of a page load by it)", () => {
   // the pull stamps the copy with the browser's clock: these runtimes read the same one, at the world's time
   const start = new Date("2026-10-14T12:00:00.000Z");
+  let elapsed = 0;
   beforeEach(() => {
+    elapsed = 0;
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(start);
   });
   afterEach(() => {
     vi.useRealTimers();
   });
-  const now = () => new Date();
+  const now = () => new Date(start.getTime() + elapsed);
   function freshWorld() {
     const w = world();
     const runtime = w.make(null, { now });
     const offset = {
       set ms(value: number) {
+        elapsed = value;
         vi.setSystemTime(start.getTime() + value);
       },
     };

@@ -50,15 +50,7 @@ export const TEST_CLOCK_LIST = {
     count: 3,
     reason: BEFORE_THE_RULE,
   },
-  "apps/web/src/offline/runtime/offline-runtime.test.ts": {
-    count: 1,
-    reason: BEFORE_THE_RULE,
-  },
   "apps/web/src/pwa/sw.test.ts": { count: 1, reason: BEFORE_THE_RULE },
-  "apps/web/src/server/auth/access-log.test.ts": {
-    count: 3,
-    reason: BEFORE_THE_RULE,
-  },
   "apps/web/worker/index.workerd-db.test.ts": {
     count: 2,
     reason: BEFORE_THE_RULE,
