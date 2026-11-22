@@ -2,11 +2,12 @@
 import type { Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 import { entryStates } from "./ui-entry-states";
+import { passwordStates } from "./ui-password-states";
 import { axeFaults } from "./ui-guardrails/measures";
 
 /**
- * A entrada em duas metades a partir de 1024 px (S-50): a metade direita só decora, o cartão fica onde estava (no
- * alto, a 96 px) em todos os estados, e abaixo de 1024 px a página é a de uma coluna de antes.
+ * A entrada em duas metades a partir de 1024 px: a metade direita só decora, o cartão fica onde estava (no
+ * alto, a 96 px) em todos os estados, e abaixo de 1024 px a página é de uma coluna.
  */
 const CARD_TOP = 96;
 const TOLERANCE = 1;
@@ -132,6 +133,28 @@ test("a metade direita não tem nada focável nem nome acessível, e o Tab é o 
   expect(await order()).toEqual(wide);
   expect(await axeFaults(page)).toEqual([]);
 });
+
+const PASSWORD_PAGES = [
+  ["esqueci a senha", passwordStates.forgot],
+  ["redefinir senha", passwordStates.reset],
+  ["confirmar e-mail", passwordStates.confirmNoLink],
+  ["liberar a entrada", passwordStates.unlockNoLink],
+] as const;
+
+for (const [name, state] of PASSWORD_PAGES) {
+  test(`a tela de senha tem as duas metades e o cartão a 96 px: ${name}`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 800, width: 1280 });
+    await state(page);
+    await expect(page.locator(ART)).toBeVisible();
+    const box = await cardBox(page);
+    expect(Math.abs((box?.y ?? Number.NaN) - CARD_TOP)).toBeLessThanOrEqual(
+      TOLERANCE
+    );
+    expect((box?.x ?? 0) + (box?.width ?? 0) / 2).toBeCloseTo(320, 0);
+  });
+}
 
 async function mediaRequestsAt(page: Page, width: number) {
   const fresh = await page.context().newPage();

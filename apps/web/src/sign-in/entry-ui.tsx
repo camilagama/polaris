@@ -155,7 +155,7 @@ const ENTRY_WIDTH: Record<EntryWidth, string> = {
 /**
  * The right half from 1024 px: the drawing of the Início and one line about the product. Decoration only, so it
  * is out of the accessibility tree and of the tab order, has no link, and brings no request: the drawing is the
- * inline SVG of the app. Under 1024 px it is `display: none`, and the page is the one column of before.
+ * inline SVG of the app. Under 1024 px it is `display: none`, and the page is a single column.
  */
 function EntryArt() {
   return (
