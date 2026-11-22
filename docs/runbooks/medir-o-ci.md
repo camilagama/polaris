@@ -49,6 +49,8 @@ O job `shard-coverage` (`Offline browser gate (shard coverage)`) roda `scripts/c
 node scripts/ci-shard-coverage.mjs --plan plan.json --list offline-poc=list-offline-poc.json --list pwa=list-pwa.json --reports <pasta com playwright-timings-shard-<n>/timings-<suíte>.json>
 ```
 
+Se o plano tem um shard só (PR que seleciona um spec), o `download-artifact` por padrão grava o `timings-<suíte>.json` direto na pasta, sem o nível `playwright-timings-shard-<n>/`: a guarda lê esses arquivos soltos como o shard único do plano. Com mais de um shard, arquivo solto não diz de qual é e fica de fora (o relatório que falta é acusado).
+
 Ele reprova, com uma linha que diz o arquivo ou a contagem (num PR com seleção, compara com os arquivos selecionados: [o PR roda só o selecionado](#o-pr-roda-só-o-selecionado)): arquivo do `--list` fora do plano, arquivo do plano fora do `--list`, arquivo em dois shards, shard sem o `timings-<suíte>.json` de uma suíte que tinha arquivos, shard que rodou arquivo de outro, e diferença entre os testes executados (com ao menos um resultado no relatório; o pulado por modificador conta, o que a execução não alcançou não) e os do `--list`, por suíte, arquivo e projeto. O plano, as listas e os relatórios ficam nos artefatos `shard-plan` e `playwright-timings-shard-<n>` do run.
 
 ## Mapa de cobertura dos e2e e seletor de specs
