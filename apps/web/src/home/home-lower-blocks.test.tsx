@@ -2,6 +2,8 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { LowerBlocks } from "./home-lower-blocks";
 
+const ORDER_UTILITY = /(?:^|[\s:"])-?order-/;
+
 const block = (name: string) => <section data-block={name}>{name}</section>;
 
 const html = (props: Partial<Parameters<typeof LowerBlocks>[0]>) =>
@@ -24,42 +26,47 @@ const rows = (markup: string) =>
   );
 
 describe("os blocos sob os cartões do Início", () => {
-  it("a ordem do DOM é a da leitura: Meta, Vendas por dia, Ritmo, Mais vendidos", () => {
-    expect(order(html({}))).toEqual(["goal", "chart", "rhythm", "ranking"]);
+  it("a ordem do DOM é a da leitura: Vendas por dia, Mais vendidos, Meta, Ritmo", () => {
+    expect(order(html({}))).toEqual(["chart", "ranking", "goal", "rhythm"]);
   });
 
-  it("são duas linhas de par: Meta e gráfico, mapa e ranking", () => {
+  it("nenhuma linha inverte a ordem do DOM com order-*", () => {
+    expect(html({})).not.toMatch(ORDER_UTILITY);
+  });
+
+  it("são duas linhas de par: gráfico (2/3) e ranking (1/3), Meta e mapa", () => {
     const [upper, lower] = rows(html({}));
     expect(upper).toContain("data-pair");
     expect(upper).toContain(
-      "@min-[60rem]/home:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]"
+      "@min-[60rem]/home:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]"
     );
     expect(lower).toContain("data-pair");
     expect(lower).toContain(
-      "@min-[60rem]/home:grid-cols-[30rem_minmax(0,1fr)]"
+      "@min-[60rem]/home:grid-cols-[minmax(0,1fr)_30rem]"
     );
   });
 
-  it("a faixa da Meta passa o gráfico para a linha inteira (a linha lê a marca da faixa)", () => {
-    const [upper] = rows(html({}));
-    expect(upper).toContain(
+  it("a faixa da Meta passa o mapa para a linha inteira (a linha lê a marca da faixa), e a linha de cima não lê a faixa", () => {
+    const [upper, lower] = rows(html({}));
+    expect(lower).toContain(
       "@min-[60rem]/home:has-data-[goal-strip]:grid-cols-1"
     );
+    expect(upper).not.toContain("goal-strip");
   });
 
   it("o par é medido pelo contêiner dos blocos, não pela janela", () => {
     expect(html({})).toContain('class="@container/home min-w-0"');
   });
 
-  it("sem o Ritmo (sem conexão e sem cópia) o ranking ocupa a linha inteira", () => {
+  it("sem o Ritmo (sem conexão e sem cópia) a Meta ocupa a linha inteira", () => {
     const markup = html({ rhythm: null });
-    expect(order(markup)).toEqual(["goal", "chart", "ranking"]);
+    expect(order(markup)).toEqual(["chart", "ranking", "goal"]);
     const [, lower] = rows(markup);
     expect(lower).not.toContain("data-pair");
-    expect(lower).not.toContain("grid-cols-[30rem");
+    expect(lower).not.toContain("_30rem]");
   });
 
-  it("sem o gráfico a Meta fica sozinha na linha e deitada (não é par)", () => {
+  it("sem o gráfico o ranking fica sozinho na linha (não é par)", () => {
     const [upper] = rows(html({ chart: null }));
     expect(upper).not.toContain("data-pair");
   });

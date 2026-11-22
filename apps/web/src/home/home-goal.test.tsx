@@ -159,9 +159,12 @@ describe("a faixa fina da Meta (sem meta para o mês)", () => {
     ).not.toContain(STRIP);
   });
 
-  it("a meta em andamento fica em pé quando está num par (o anel e os números no meio)", () => {
+  it("a meta em andamento fica deitada também no par: o anel e os números lado a lado, sem variante de par", () => {
     const html = view({ goal: active, kind: "active", others: 0 });
-    expect(html).toContain("group-data-[pair]/row:@min-[60rem]/home:flex-col");
+    expect(html).not.toContain("group-data-[pair]");
+    expect(html).toContain(
+      "flex min-w-0 flex-wrap items-center justify-center gap-4"
+    );
   });
 });
 

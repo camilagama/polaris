@@ -10,7 +10,7 @@ const WIDE = { viewport: { height: 900, width: 1280 } };
 const EMPTY_FOOT_LIMIT = 24;
 /** What the strip of a store with no goal may be tall. */
 const STRIP_HEIGHT_LIMIT = 100;
-/** The 30 rem the map takes in its pair. */
+/** The 30 rem the map takes in its pair with the goal. */
 const RHYTHM_WIDTH = 480;
 const PRODUCTS = [
   { name: "Camiseta básica", price: "59.90" },
@@ -151,7 +151,7 @@ const before = (a: Card, b: Card) =>
 
 for (const { goal, items } of SCENARIOS) {
   const label = `${items} itens, ${goal ? "com" : "sem"} meta`;
-  test(`início a 1280 (${label}): pares da mesma altura, nenhum cartão com faixa vazia no pé, o Ritmo com 480 px e a ordem do DOM é a da tela`, async ({
+  test(`início a 1280 (${label}): pares da mesma altura (gráfico e ranking, Meta e Ritmo), nenhum cartão com faixa vazia no pé, o Ritmo com 480 px com a Meta e a ordem do DOM é a da tela`, async ({
     browser,
   }, testInfo) => {
     const journey = await openJourney(
@@ -214,10 +214,10 @@ for (const { goal, items } of SCENARIOS) {
     const top = cards["Mais vendidos do mês"] as Card;
 
     expect(order, "the DOM is the reading order").toEqual([
-      "Meta",
       "Vendas por dia",
-      "Ritmo de vendas",
       "Mais vendidos do mês",
+      "Meta",
+      "Ritmo de vendas",
     ]);
     expect(top).toBeDefined();
     expect(items === 5 ? 5 : 3).toBe(
@@ -226,7 +226,7 @@ for (const { goal, items } of SCENARIOS) {
         .locator("li")
         .count()
     );
-    const ordered = [meta, chart, rhythm, top];
+    const ordered = [chart, top, meta, rhythm];
     for (const [index, card] of ordered.slice(1).entries()) {
       expect(
         before(ordered[index] as Card, card),
@@ -234,14 +234,18 @@ for (const { goal, items } of SCENARIOS) {
       ).toBe(true);
     }
 
+    expect(Math.abs(chart.top - top.top)).toBeLessThanOrEqual(1);
+    expect(Math.abs(chart.height - top.height)).toBeLessThanOrEqual(1);
+    expect(chart.width).toBeGreaterThan(top.width * 1.9);
     if (goal) {
-      expect(Math.abs(meta.top - chart.top)).toBeLessThanOrEqual(1);
-      expect(Math.abs(meta.height - chart.height)).toBeLessThanOrEqual(1);
-      expect(chart.width).toBeGreaterThan(meta.width * 1.9);
+      expect(Math.abs(meta.top - rhythm.top)).toBeLessThanOrEqual(1);
+      expect(Math.abs(meta.height - rhythm.height)).toBeLessThanOrEqual(1);
+      expect(Math.abs(rhythm.width - RHYTHM_WIDTH)).toBeLessThanOrEqual(1);
     } else {
       expect(meta.height, "a thin strip").toBeLessThan(STRIP_HEIGHT_LIMIT);
-      expect(chart.top).toBeGreaterThanOrEqual(meta.bottom);
-      expect(Math.abs(chart.width - area.width)).toBeLessThanOrEqual(1);
+      expect(meta.top).toBeGreaterThanOrEqual(chart.bottom);
+      expect(rhythm.top).toBeGreaterThanOrEqual(meta.bottom);
+      expect(Math.abs(meta.width - area.width)).toBeLessThanOrEqual(1);
       await expect(
         page
           .getByRole("region", { name: "Meta" })
@@ -253,9 +257,6 @@ for (const { goal, items } of SCENARIOS) {
         })
       ).toBeVisible();
     }
-    expect(Math.abs(rhythm.top - top.top)).toBeLessThanOrEqual(1);
-    expect(Math.abs(rhythm.height - top.height)).toBeLessThanOrEqual(1);
-    expect(Math.abs(rhythm.width - RHYTHM_WIDTH)).toBeLessThanOrEqual(1);
 
     for (const [name, card] of Object.entries(cards)) {
       expect(

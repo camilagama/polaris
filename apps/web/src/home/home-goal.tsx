@@ -246,7 +246,7 @@ function ActiveGoal({
         </p>
       </div>
       {progress && !goal.paused ? (
-        <div className="flex min-w-0 flex-wrap items-center justify-center gap-4 group-data-[pair]/row:@min-[60rem]/home:flex-1 group-data-[pair]/row:@min-[60rem]/home:flex-col group-data-[pair]/row:@min-[60rem]/home:flex-nowrap group-data-[pair]/row:@min-[60rem]/home:justify-center group-data-[pair]/row:@min-[60rem]/home:text-center">
+        <div className="flex min-w-0 flex-wrap items-center justify-center gap-4">
           <GoalRing
             goal={goal}
             percent={formatGoalPercent(progress.percent)}
@@ -254,7 +254,7 @@ function ActiveGoal({
             spoken={`${formatGoalPercent(progress.percent)} da meta: ${formatGoalValue(goal.kind, progress.value)} de ${formatGoalValue(goal.kind, goal.target)}${pace ? `. ${goalPaceSpoken(pace)}` : ""}`}
             width={goalProgressWidth(progress.percent)}
           />
-          <div className="grid min-w-30 grow basis-30 gap-0.5 group-data-[pair]/row:@min-[60rem]/home:grow-0 group-data-[pair]/row:@min-[60rem]/home:basis-auto group-data-[pair]/row:@min-[60rem]/home:justify-items-center">
+          <div className="grid min-w-30 grow basis-30 gap-0.5">
             <p className="font-semibold text-lg tabular-nums leading-7 tracking-tight">
               <MoneyText text={formatGoalValue(goal.kind, progress.value)} />
             </p>
