@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import type { PoolClient } from "pg";
 import { createDatabase } from "../src/client";
-import { inRolledBackTransaction } from "./gate-roles";
+import { inRolledBackTransaction, rollbackAndRelease } from "./gate-roles";
 import {
   disposableHostPattern,
   expectSqlState,
@@ -241,8 +241,7 @@ async function run() {
         `it gives up after its lock_timeout of 10 s (waited ${waited} ms)`
       );
     } finally {
-      await holder.query("ROLLBACK");
-      holder.release();
+      await rollbackAndRelease(holder);
     }
     tests.push(
       "with a write holding account, the migration gives up with 55P03 after its lock_timeout of 10 s instead of queueing sign-ins behind it"
