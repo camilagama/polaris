@@ -16,7 +16,7 @@ import {
   periodButton,
   choosePreset,
   expectPreset,
-  rangeFields,
+  chooseRange,
   copyNotice,
   metasTab,
   resultTab,
@@ -83,7 +83,7 @@ test.describe("o período no endereço (L2-11 a, AC-3.1 a AC-3.7)", () => {
   }) => {
     const server = new FakeReportServer();
     const user = await openDashboard(page, server);
-    await rangeFields(page, "2026-10-05", "2026-10-12");
+    await chooseRange(page, "2026-10-05", "2026-10-12");
     await expect.poll(() => search(page).get("de")).toBe("2026-10-05");
     expect(search(page).get("ate")).toBe("2026-10-12");
     expect(search(page).has("periodo")).toBe(false);
@@ -362,7 +362,7 @@ test.describe("períodos longos por mês: trocar entre o mês, 30 dias e o ano n
       await expect(chartRegion(page)).toContainText("Melhor dia");
       const days = await resultHeights(page);
 
-      await rangeFields(page, "2026-05-05", "2026-07-06");
+      await chooseRange(page, "2026-05-05", "2026-07-06");
       await expect(chartRegion(page)).toContainText("Melhor mês");
       const sales = card(page, CARD.netSales).getByRole("slider");
       await expect(sales).toHaveAttribute("max", "2");
@@ -381,7 +381,7 @@ test.describe("o período do Resultado não tem setas de mês", () => {
     ],
     [
       "com um mês inteiro digitado",
-      async (page: Page) => rangeFields(page, "2026-07-01", "2026-07-31"),
+      async (page: Page) => chooseRange(page, "2026-07-01", "2026-07-31"),
     ],
     [
       "com Últimos 30 dias",

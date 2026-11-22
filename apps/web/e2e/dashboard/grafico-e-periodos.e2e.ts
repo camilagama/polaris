@@ -1,6 +1,7 @@
 /// <reference lib="dom" />
 import { expect, test } from "@playwright/test";
 import { axeFaults } from "../../e2e-pwa/ui-guardrails/measures";
+import { expectNoTypedDates, touchDay } from "../date-pickers";
 import {
   COMPLETE_MONTH,
   FIXTURE,
@@ -17,8 +18,7 @@ import {
   openPeriod,
   choosePreset,
   expectPreset,
-  typeRange,
-  rangeFields,
+  chooseRange,
   reading,
   METAS_TAB,
   metasTab,
@@ -124,7 +124,7 @@ test.describe("o gráfico de vendas e custos (AC-4 a AC-12)", () => {
   }) => {
     const server = new FakeReportServer();
     await openDashboard(page, server);
-    await rangeFields(page, "2026-07-01", "2026-07-31");
+    await chooseRange(page, "2026-07-01", "2026-07-31");
 
     const region = chartRegion(page);
     expect(await chartHelp(page, region, "o período")).toContain(
@@ -531,7 +531,7 @@ test.describe("os períodos (AC-1 a AC-3)", () => {
       to: "2026-09-30",
     });
 
-    await rangeFields(page, "2026-10-05", "2026-10-12");
+    await chooseRange(page, "2026-10-05", "2026-10-12");
     await expectPreset(page, "Período");
     expect(server.periods.at(-1)).toEqual({
       from: "2026-10-05",
@@ -591,7 +591,7 @@ test.describe("os períodos (AC-1 a AC-3)", () => {
     // a free range of a whole year is accepted too
     // the fake server reads the records of the month the range starts in
     server.fixture = { ...server.fixture, "2025-10": COMPLETE_MONTH };
-    await rangeFields(page, "2025-10-15", "2026-10-14");
+    await chooseRange(page, "2025-10-15", "2026-10-14");
     await expectPreset(page, "Período");
     await expect
       .poll(() => server.periods.at(-1))
@@ -605,7 +605,7 @@ test.describe("os períodos (AC-1 a AC-3)", () => {
     await expect(yearRegion.locator("table tbody tr")).toHaveCount(13);
   });
 
-  test("um intervalo inválido diz o que está errado e não chama o servidor", async ({
+  test("o painel não tem campo de data digitada: o dia além de 1 ano do início fica desligado e diz o motivo, e o servidor não é chamado", async ({
     page,
   }) => {
     const server = new FakeReportServer();
@@ -615,34 +615,25 @@ test.describe("os períodos (AC-1 a AC-3)", () => {
 
     await openPeriod(page);
     const panel = periodPanel(page);
-    await typeRange(page, "2026-10-10", "2026-10-09");
-    await panel.getByLabel("Início", { exact: true }).focus();
-    await expect(panel.getByRole("alert")).toContainText(
-      "A data final vem antes da inicial."
-    );
-
-    await panel.getByLabel("Início", { exact: true }).fill("13/10/2025");
-    await panel.getByLabel("Fim", { exact: true }).fill("14/10/2026");
-    await panel.getByLabel("Início", { exact: true }).focus();
-    await expect(panel.getByRole("alert")).toContainText("Escolha até 1 ano");
-    const apply = panel.getByRole("button", { name: "Aplicar" });
-    await expect(apply).toHaveAttribute("aria-disabled", "true");
-    await apply.focus();
-    await page.keyboard.press("Enter");
+    await expectNoTypedDates(panel);
+    await touchDay(panel, "2025-10-13");
+    await expect(
+      panel.getByText("Início 13/10/2025. Escolha o último dia.")
+    ).toBeVisible();
+    await touchDay(panel, "2026-10-14", { force: true });
     await expect(panel).toBeVisible();
-
-    await panel.getByLabel("Início", { exact: true }).fill("");
-    await panel.getByLabel("Fim", { exact: true }).focus();
-    await expect(panel.getByRole("alert")).toContainText(
-      "Digite a data de início, como 01/10/2026."
-    );
+    await expect(
+      panel.locator('button[data-day="2026-10-14"]')
+    ).toHaveAttribute("aria-disabled", "true");
+    await expect(
+      panel.locator('button[data-day="2026-10-14"]')
+    ).toHaveAccessibleDescription("Escolha até 1 ano");
     expect(server.periods).toHaveLength(asked);
-    // and the period on screen is still the one it was
     await page.keyboard.press("Escape");
     await expect(card(page, CARD.netSales)).toContainText("R$ 130,00");
   });
 
-  test("abrir o painel e errar uma data não troca o período: o atalho continua apertado e o botão diz as datas lidas", async ({
+  test("abrir o painel e marcar só o 1º dia não troca o período: o atalho continua apertado e o botão diz as datas lidas", async ({
     page,
   }) => {
     const server = new FakeReportServer();
@@ -658,7 +649,7 @@ test.describe("os períodos (AC-1 a AC-3)", () => {
     const asked = server.periods.length;
 
     await openPeriod(page);
-    await typeRange(page, "2025-10-13", "2026-10-14");
+    await touchDay(periodPanel(page), "2025-10-13");
     await expect(shortcut(page, "Este ano")).toHaveAttribute(
       "aria-pressed",
       "true"
@@ -813,12 +804,12 @@ test.describe("os períodos (AC-1 a AC-3)", () => {
     expect(await axeFaults(page, "main")).toEqual([]);
   });
 
-  test("quem digita um período livre continua podendo: o Resultado lê as datas digitadas", async ({
+  test("um período livre feito nos dois toques do calendário: o Resultado lê as datas escolhidas", async ({
     page,
   }) => {
     const server = new FakeReportServer();
     await openDashboard(page, server);
-    await rangeFields(page, "2026-10-05", "2026-10-12");
+    await chooseRange(page, "2026-10-05", "2026-10-12");
     await expect
       .poll(() => server.periods.at(-1))
       .toEqual({ from: "2026-10-05", to: "2026-10-12" });
@@ -1020,15 +1011,15 @@ test.describe("Vendas × custos por dia: trocar de período não muda a altura d
       }) => {
         await page.setViewportSize(size);
         await openDashboard(page, new FakeReportServer());
-        await rangeFields(page, data[0], data[1]);
+        await chooseRange(page, data[0], data[1]);
         await expect(chartRegion(page)).toContainText("Melhor dia");
         const withSales = await chartPlaces(page);
 
-        await rangeFields(page, empty[0], empty[1]);
+        await chooseRange(page, empty[0], empty[1]);
         await expect(chartRegion(page)).toContainText("Sem vendas no período.");
         expectSamePlaces(await chartPlaces(page), withSales);
 
-        await rangeFields(page, data[0], data[1]);
+        await chooseRange(page, data[0], data[1]);
         await expect(chartRegion(page)).toContainText("Melhor dia");
         expectSamePlaces(await chartPlaces(page), withSales);
       });
