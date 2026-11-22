@@ -1,15 +1,16 @@
 // @vitest-environment happy-dom
 import { act, cleanup, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { useNearLimitRead } from "../subscription/limit-help";
 import { planRead } from "../lib/plan-read";
 import { notifyPlanUsageChanged } from "../lib/plan-usage-changes";
+import { useNearLimitRead } from "../subscription/limit-help";
 import {
   clearPlanNotice,
+  PLAN_READ_WAIT_MS,
   rememberedPlanNotice,
   rememberPlanNotice,
 } from "../subscription/plan-notice";
-import { PLAN_READ_WAIT_MS, usePlanNoticeFacts } from "./grace-notice";
+import { usePlanNoticeFacts } from "./grace-notice";
 
 const store = { id: "org-a", online: true };
 const readPlan = vi.fn();

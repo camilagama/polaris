@@ -2,6 +2,7 @@
 
 import type { Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
+import { PLAN_READ_WAIT_MS } from "../src/subscription/plan-notice";
 import { json, serveFoot, TRIAL_PLAN } from "./shell-server";
 
 /**
@@ -20,7 +21,7 @@ const FREE_PLAN = {
   usage: { goals: 0, images: 3, variants: 12 },
 };
 
-const PLAN_READ_CEILING_MS = 3000;
+const PLAN_READ_CEILING_MS = PLAN_READ_WAIT_MS;
 const FREE_STATES = new Set(["free", "free_over_limit"]);
 const USE_TEXT = "Você usa 12 de 50 variantes no plano Free.";
 const PITCH =
@@ -503,6 +504,7 @@ test.describe("o cartão do plano Free", () => {
             online: number;
           }
       );
+    // /sales/history does not read the plan on its own; on /products, `useNearLimit` reads it again when the connection returns and the count of reads below would no longer be stable.
     await page.goto("/sales/history");
     await expect(card(page)).toContainText(USE_TEXT);
     await page.context().setOffline(true);

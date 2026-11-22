@@ -23,6 +23,7 @@ import {
 } from "@/ui/dialog";
 import { Field, FieldDescription, FieldLabel } from "@/ui/field";
 import { Textarea } from "@/ui/textarea";
+import { TextLink } from "@/ui/text-link";
 import { orpcClient } from "../lib/orpc";
 import {
   canCancelRenewal,
@@ -442,14 +443,14 @@ function OverduePayment({
       {opened ? (
         <p className="m-0 text-muted-foreground text-support">
           A página de pagamento abriu em outra aba. Se não abriu,{" "}
-          <a
-            className="underline underline-offset-4"
+          <TextLink
+            inline
             href={opened}
             rel="noopener noreferrer"
             target="_blank"
           >
             abra a página de pagamento
-          </a>
+          </TextLink>
           . Depois de pagar, volte aqui.
         </p>
       ) : null}

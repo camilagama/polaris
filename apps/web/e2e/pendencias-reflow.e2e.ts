@@ -314,7 +314,7 @@ async function expectUnavailableWhole(
   width: number,
   fontPixels: number
 ) {
-  const link = page.getByRole("link", { name: "Voltar ao Início" });
+  const link = page.getByRole("link", { name: "Voltar para o Início" });
   await expect(link).toBeVisible();
   const box = await link.boundingBox();
   expect((box?.x ?? 0) + (box?.width ?? 0)).toBeLessThanOrEqual(width);
@@ -342,7 +342,7 @@ for (const { motivo, other, reason } of UNAVAILABLE_STATES) {
       await expect(notice).toContainText(reason);
       await expect(notice).not.toContainText(other);
       await expect(
-        page.getByRole("link", { name: "Voltar ao Início" })
+        page.getByRole("link", { name: "Voltar para o Início" })
       ).toHaveAttribute("href", "/");
       await expectUnavailableWhole(page, 320, 20);
     }

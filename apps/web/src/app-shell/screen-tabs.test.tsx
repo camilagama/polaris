@@ -168,7 +168,7 @@ describe("the tabs on a phone: a menu of rows in place of the strip", () => {
         label="Abas"
         panels={PANELS}
         phone={{
-          back: <a href="/products">Voltar</a>,
+          back: { href: "/products", label: "Voltar para Produtos" },
           menu: <p>O menu de linhas</p>,
           showMenu,
         }}
