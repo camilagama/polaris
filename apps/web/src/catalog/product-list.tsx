@@ -360,6 +360,7 @@ export function ProductList({
     return (
       <EmptyState
         afterRead
+        art={status === "active" ? "products" : undefined}
         icon={TagIcon}
         title={
           status === "active"

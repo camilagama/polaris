@@ -215,7 +215,7 @@ export async function axeFaults(page: Page, within?: string) {
   );
 }
 
-/** A square inside a hidden tab stays in the DOM and is not counted. */
+/** A square inside a hidden tab stays in the DOM and is not counted; where the drawing of the screen takes the place of the squares (from 760 px), none is expected. */
 export function emptyIconFaults(page: Page, squares: number) {
   return page.evaluate((expected) => {
     const found = [
@@ -223,6 +223,10 @@ export function emptyIconFaults(page: Page, squares: number) {
         "[data-empty-state] [data-slot='empty-icon']"
       ),
     ].filter((square) => square.getClientRects().length > 0);
+    const arts = [
+      ...document.querySelectorAll("[data-empty-state] [data-skeleton-art]"),
+    ].filter((art) => art.getClientRects().length > 0);
+    const wanted = arts.length > 0 ? 0 : expected;
     const faults = found.flatMap((square, index) => {
       const box = square.getBoundingClientRect();
       const svg = square.querySelector("svg.lucide");
@@ -248,9 +252,14 @@ export function emptyIconFaults(page: Page, squares: number) {
     if (tops.size > 1) {
       faults.push("os quadros não ficam numa linha só");
     }
-    return found.length === expected
+    for (const [index, art] of arts.entries()) {
+      if (art.getAttribute("aria-hidden") !== "true") {
+        faults.push(`ilustração ${index}: sem aria-hidden`);
+      }
+    }
+    return found.length === wanted
       ? faults
-      : [`${found.length} quadros, esperava ${expected}`, ...faults];
+      : [`${found.length} quadros, esperava ${wanted}`, ...faults];
   }, squares);
 }
 
