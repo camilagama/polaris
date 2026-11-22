@@ -1,6 +1,5 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { presetRange } from "@/ui/date-values";
 import {
   type FilterRule,
   removeRule,
@@ -9,6 +8,7 @@ import {
 } from "@/ui/filter-bar-model";
 import {
   HistoryFiltersBar,
+  HistoryPeriodPicker,
   historyFields,
   historyFilters,
   historyRules,
@@ -21,21 +21,24 @@ import {
 
 /**
  * The history on the filter bar. What the shopkeeper does on the bar (apply a filter, take a pill out, clear
- * all, pick a shortcut of the period) is the bar's own list of rules (`filter-bar-model.ts`, tested there) turned into
+ * all) is the bar's own list of rules (`filter-bar-model.ts`, tested there) turned into
  * the filters the page keeps and the list request; that turn is checked here without a browser. The touches
- * themselves (menu, editors, targets, no `motion` on the phone) are in e2e/history-period.e2e.ts.
+ * themselves (menu, editors, targets, no `motion` on the phone) and the period of the title line are in
+ * e2e/history-period.e2e.ts.
  */
 const FIELDS = historyFields(false);
-const TODAY = "2026-10-14";
 const PERIOD = { from: "2026-10-01", to: "2026-10-14" };
 
 const apply = (
   filters: HistoryFilters,
   fieldId: string,
   value: FilterRule["value"] | null
-) => historyFilters(setRule(FIELDS, historyRules(filters), fieldId, value));
+) => ({
+  ...filters,
+  ...historyFilters(setRule(FIELDS, historyRules(filters), fieldId, value)),
+});
 
-const PERIOD_PILL = /Período: [^"]*, editar/;
+const PERIOD_LABEL = /aria-label="Período: [^"]*, editar"/;
 const noop = () => undefined;
 const render = (filters: HistoryFilters, offline = false) =>
   renderToStaticMarkup(
@@ -57,17 +60,29 @@ describe("a barra de filtros do Histórico", () => {
     const one = render({ ...emptyHistoryFilters, status: "cancelled" });
     expect(one).toContain("Situação: Canceladas, editar");
     expect(one).not.toContain("Limpar tudo");
-    const three = render({
+    const two = render({
       ...emptyHistoryFilters,
       customer: "Maria",
-      from: PERIOD.from,
       status: "confirmed",
+    });
+    expect(two).toContain("Situação: Confirmadas, editar");
+    expect(two).toContain("Cliente: Maria, editar");
+    expect(two).toContain("Limpar tudo");
+  });
+
+  it("o período não é filtro da barra: está na linha do título", () => {
+    const withPeriod = render({
+      ...emptyHistoryFilters,
+      from: PERIOD.from,
       to: PERIOD.to,
     });
-    expect(three).toContain("Situação: Confirmadas, editar");
-    expect(three).toContain("Cliente: Maria, editar");
-    expect(three).toMatch(PERIOD_PILL);
-    expect(three).toContain("Limpar tudo");
+    expect(withPeriod).not.toContain("Período");
+    expect(withPeriod).not.toContain("filter-pill");
+    expect(historyFields(false).map((field) => field.id)).toEqual([
+      "status",
+      "customer",
+      "query",
+    ]);
   });
 
   it('o campo da consulta por item se chama Produto vendido, com "Nome do produto" no editor', () => {
@@ -92,7 +107,7 @@ describe("os filtros que a página guarda a partir da lista da barra", () => {
     let filters = apply(emptyHistoryFilters, "status", "with_returns");
     filters = apply(filters, "customer", "  Maria ");
     filters = apply(filters, "query", "camiseta");
-    filters = apply(filters, "period", PERIOD);
+    filters = { ...filters, from: PERIOD.from, to: PERIOD.to };
     expect(filters).toEqual({
       customer: "Maria",
       from: PERIOD.from,
@@ -110,9 +125,10 @@ describe("os filtros que a página guarda a partir da lista da barra", () => {
   });
 
   it("um valor que a página não conhece ou um texto vazio não vira filtro", () => {
-    expect(
-      historyFilters([{ fieldId: "status", value: "nao-existe" }])
-    ).toEqual(emptyHistoryFilters);
+    expect({
+      ...emptyHistoryFilters,
+      ...historyFilters([{ fieldId: "status", value: "nao-existe" }]),
+    }).toEqual(emptyHistoryFilters);
     expect(apply(emptyHistoryFilters, "status", "nao-existe")).toEqual(
       emptyHistoryFilters
     );
@@ -121,7 +137,7 @@ describe("os filtros que a página guarda a partir da lista da barra", () => {
     );
   });
 
-  it("remover a pílula limpa só aquele filtro (o período, as duas pontas)", () => {
+  it("remover a pílula limpa só aquele filtro, e o período fica como está", () => {
     const filters: HistoryFilters = {
       customer: "Maria",
       from: PERIOD.from,
@@ -129,16 +145,30 @@ describe("os filtros que a página guarda a partir da lista da barra", () => {
       status: "cancelled",
       to: PERIOD.to,
     };
-    const without = historyFilters(removeRule(historyRules(filters), "period"));
-    expect(without).toEqual({ ...filters, from: "", to: "" });
-    expect(historyListRequest("org", without, 0)).not.toHaveProperty(
-      "occurredFrom"
-    );
+    const without = {
+      ...filters,
+      ...historyFilters(removeRule(historyRules(filters), "customer")),
+    };
+    expect(without).toEqual({ ...filters, customer: "" });
+    expect(historyListRequest("org", without, 0)).toMatchObject({
+      occurredFrom: PERIOD.from,
+      occurredTo: PERIOD.to,
+    });
   });
 
-  it("limpar tudo (a lista da barra vazia) volta ao estado vazio, e a consulta sai sem filtro", () => {
-    expect(historyFilters([])).toEqual(emptyHistoryFilters);
-    expect(historyListRequest("org", historyFilters([]), 0)).toEqual({
+  it("limpar tudo (a lista da barra vazia) zera os três filtros da barra, e a consulta sai sem filtro", () => {
+    expect(historyFilters([])).toEqual({
+      customer: "",
+      query: "",
+      status: "",
+    });
+    expect(
+      historyListRequest(
+        "org",
+        { ...emptyHistoryFilters, ...historyFilters([]) },
+        0
+      )
+    ).toEqual({
       limit: 50,
       offset: 0,
       organizationId: "org",
@@ -159,17 +189,6 @@ describe("os filtros que a página guarda a partir da lista da barra", () => {
     expect(historyRules(emptyHistoryFilters)).toEqual([]);
   });
 
-  it("os atalhos do período chegam como as duas datas da consulta", () => {
-    const sevenDays = presetRange("7-dias", TODAY);
-    const filters = apply(emptyHistoryFilters, "period", sevenDays);
-    expect(filters).toMatchObject({ from: "2026-10-08", to: TODAY });
-    const lastMonth = presetRange("mes-passado", TODAY);
-    expect(apply(filters, "period", lastMonth)).toMatchObject({
-      from: "2026-09-01",
-      to: "2026-09-30",
-    });
-  });
-
   it("sem conexão o Produto vendido já aplicado continua nos filtros quando outro muda", () => {
     const filters = apply(
       { ...emptyHistoryFilters, query: "camiseta" },
@@ -177,5 +196,27 @@ describe("os filtros que a página guarda a partir da lista da barra", () => {
       "cancelled"
     );
     expect(filters).toMatchObject({ query: "camiseta", status: "cancelled" });
+  });
+});
+
+describe("o período da linha do título", () => {
+  const renderPeriod = (filters: HistoryFilters) =>
+    renderToStaticMarkup(
+      <HistoryPeriodPicker filters={filters} onChange={noop} />
+    );
+
+  it("sem período: 'Período, Escolher período'; com as duas pontas: o nome termina em editar", () => {
+    expect(renderPeriod(emptyHistoryFilters)).toContain(
+      'aria-label="Período, Escolher período"'
+    );
+    expect(
+      renderPeriod({ ...emptyHistoryFilters, from: PERIOD.from, to: PERIOD.to })
+    ).toMatch(PERIOD_LABEL);
+  });
+
+  it("uma ponta só (só um endereço a traria) vale como sem período", () => {
+    expect(
+      renderPeriod({ ...emptyHistoryFilters, from: PERIOD.from })
+    ).toContain('aria-label="Período, Escolher período"');
   });
 });

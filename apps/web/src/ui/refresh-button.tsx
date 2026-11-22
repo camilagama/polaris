@@ -9,6 +9,8 @@ type RefreshButtonProps = Omit<
 > & {
   /** The read is running: the icon turns (only with full motion) and the button says `aria-busy`. */
   busy?: boolean;
+  /** Under 760 px the button takes the whole line with its word, as the main action of a screen does (`TitleLine`). */
+  fill?: boolean;
   /** What is read again, when the page has more than one "Atualizar" ("metas"): it ends the accessible name. */
   object?: string;
   /**
@@ -17,6 +19,18 @@ type RefreshButtonProps = Omit<
    */
   updated?: string | undefined;
 };
+
+function refreshClass(timed: boolean, fill: boolean): string {
+  if (timed) {
+    return cn(
+      "h-auto min-h-ctl-md max-w-full whitespace-normal px-2.5 py-1 text-support max-md:min-h-ctl-lg",
+      fill && "max-md:w-full"
+    );
+  }
+  return fill
+    ? "max-md:h-ctl-lg max-md:w-full"
+    : "max-md:size-ctl-lg max-md:px-0";
+}
 
 /**
  * "Atualizar": the one button that reads a screen again, outline, with the control height (32 with a mouse, 36 with
@@ -30,6 +44,7 @@ type RefreshButtonProps = Omit<
 export function RefreshButton({
   busy = false,
   className,
+  fill = false,
   object,
   updated,
   ...props
@@ -41,12 +56,7 @@ export function RefreshButton({
       {...props}
       aria-busy={busy || undefined}
       aria-label={label ?? (object ? name : undefined)}
-      className={cn(
-        updated
-          ? "h-auto min-h-ctl-md max-w-full whitespace-normal px-2.5 py-1 text-support max-md:min-h-ctl-lg"
-          : "max-md:size-ctl-lg max-md:px-0",
-        className
-      )}
+      className={cn(refreshClass(Boolean(updated), fill), className)}
       type="button"
       variant="outline"
     >
@@ -58,7 +68,7 @@ export function RefreshButton({
       {updated ? (
         <span className="text-left">Atualizado {updated}</span>
       ) : (
-        <span className="max-md:sr-only">Atualizar</span>
+        <span className={fill ? undefined : "max-md:sr-only"}>Atualizar</span>
       )}
     </Button>
   );

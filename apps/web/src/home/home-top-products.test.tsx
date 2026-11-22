@@ -24,6 +24,15 @@ const PRODUCTS = [
   },
 ];
 
+const FIRST_NAME =
+  "Tênis esportivo de corrida leve com amortecedor duplo, preto";
+
+const LINK_OPEN = /<a /g;
+
+const ABSOLUTE_CLASS = /\babsolute\b/;
+
+const IMAGE_TAG = /<img[^>]*>/g;
+
 const THUMBNAIL_STATE = /data-thumbnail="(\w+)"/;
 
 const SPREAD_ROW = /^<li[^>]*class="[^"]*\bflex-1\b/;
@@ -48,8 +57,8 @@ describe("Mais vendidos do mês: a marcação de cada linha", () => {
 
   it("mantém a ordem, o nome completo, o valor e as unidades de cada produto", () => {
     expect(rows.map(text)).toEqual([
-      "TÊ 1 Tênis esportivo de corrida leve com amortecedor duplo, preto R$ 900,00 12 un.",
-      "BO 2 Boné antigo R$ 120,00 4 un.",
+      "1 TÊ Tênis esportivo de corrida leve com amortecedor duplo, preto R$ 900,00 12 un.",
+      "2 BO Boné antigo R$ 120,00 4 un.",
     ]);
   });
 
@@ -76,6 +85,31 @@ describe("Mais vendidos do mês: a marcação de cada linha", () => {
       expect(row).toMatch(CONTAINER_ROW);
       expect(row).toContain("line-clamp-2");
     }
+  });
+
+  it("a posição é uma coluna da linha, e nada fica pendurado em posição absoluta fora da miniatura", () => {
+    for (const [index, row] of rows.entries()) {
+      expect(row).toContain(`data-top-rank="">${index + 1}<`);
+      expect(row.replace(IMAGE_TAG, "")).not.toMatch(ABSOLUTE_CLASS);
+    }
+  });
+
+  it("o nome inteiro está no texto da linha, sem title que o repita, e cada linha tem um só link", () => {
+    expect(rows[0]).toContain(`>${FIRST_NAME}<`);
+    expect(rows.join("")).not.toContain("title=");
+    expect(rows.map((row) => row.match(LINK_OPEN)?.length ?? 0)).toEqual([
+      1, 0,
+    ]);
+  });
+
+  it("as colunas do valor e das unidades têm a largura do maior das linhas, e a barra não leva recuo calculado", () => {
+    const html = renderToStaticMarkup(
+      <TopProductsBlock products={PRODUCTS} salesCount={9} />
+    );
+    expect(html).toContain("--top-value:9ch");
+    expect(html).toContain("--top-units:6ch");
+    expect(html).not.toContain("ml-[calc");
+    expect(html).toContain("@min-[20.75rem]:col-end-6");
   });
 });
 
