@@ -23,6 +23,11 @@ const RPC_PREFIX = /^.*\/rpc\//;
 const procedureOf = (route: Route) =>
   new URL(route.request().url()).pathname.replace(RPC_PREFIX, "");
 
+const NOW = new Date("2026-11-10T12:00:00.000Z");
+const DAY = 24 * 3_600_000;
+const daysAgo = (days: number) =>
+  new Date(NOW.getTime() - days * DAY).toISOString().slice(0, 10);
+
 const BOTH_PENDING = [
   { changes: null, document: "terms", effectiveFrom: null, version: 1 },
   { changes: null, document: "privacy", effectiveFrom: null, version: 1 },
@@ -32,12 +37,13 @@ const PRIVACY_CHANGED = [
     changes:
       "Passamos a dizer por quanto tempo guardamos o registro de acesso. Nada mudou no que coletamos.",
     document: "privacy",
-    effectiveFrom: "2026-11-01",
+    effectiveFrom: daysAgo(9),
     version: 2,
   },
 ];
 
 async function signedIn(page: Page) {
+  await page.clock.setFixedTime(NOW);
   await page.route("**/api/auth-methods", (route) =>
     route.fulfill(
       json(200, { emailPassword: true, google: true, turnstileSiteKey: null })
