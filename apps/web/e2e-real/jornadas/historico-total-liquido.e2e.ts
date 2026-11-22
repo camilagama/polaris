@@ -97,8 +97,10 @@ async function compare(
     (await footer.getByText(SALES_COUNT).innerText()).trim()
   );
 
+  await openPeriodPicker(page);
   await page
-    .getByRole("button", { exact: true, name: "Tirar o filtro Período" })
+    .getByRole("dialog", { name: "Período" })
+    .getByRole("button", { name: "Limpar" })
     .click();
   await expect(footer).toContainText(SCREEN_LABEL);
   const screenNet = cents(footerMoney(await footer.innerText()));
