@@ -881,6 +881,11 @@ function expectSameKpiPlaces(
   }
 }
 
+const CARD_IDS: Record<string, string> = {
+  "Vendas em outubro": "home-month",
+  "Vendas hoje": "home-today",
+};
+
 /** Reads, by the arrows, each of the 29 days before today on the sparkline of a card, and the same places as at rest at each stop. */
 async function walkDays(
   page: Page,
@@ -888,7 +893,9 @@ async function walkDays(
   rest: KpiPlaces,
   chips: Set<boolean>
 ) {
-  const slider = region(page, name).getByRole("slider");
+  const slider = page
+    .locator(`[aria-labelledby="${CARD_IDS[name]}"]`)
+    .getByRole("slider");
   await slider.focus();
   for (let step = 1; step <= 29; step += 1) {
     // biome-ignore lint/performance/noAwaitInLoops: one key, then one measure
