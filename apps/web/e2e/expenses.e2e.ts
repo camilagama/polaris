@@ -2222,7 +2222,10 @@ for (const viewport of [
     await expect(footer).toContainText("50 despesas · há mais");
     const count = footer.getByText("50 despesas · há mais");
     const countBox = await count.boundingBox();
-    const valueBox = await footer.locator(".tabular-nums").first().boundingBox();
+    const valueBox = await footer
+      .locator(".tabular-nums")
+      .first()
+      .boundingBox();
     expect(countBox?.height ?? 99).toBeLessThanOrEqual(24);
     expect(valueBox).not.toBeNull();
     if (viewport.width === 320) {
