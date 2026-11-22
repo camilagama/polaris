@@ -133,7 +133,6 @@ export function TopProductsBlock({
               <span
                 className="col-start-3 @min-[20.75rem]:col-end-4 col-end-5 row-start-1 line-clamp-2 @min-[20.75rem]:line-clamp-none min-w-0 @min-[20.75rem]:truncate break-words"
                 data-top-name=""
-                title={product.name}
               >
                 {product.name}
               </span>

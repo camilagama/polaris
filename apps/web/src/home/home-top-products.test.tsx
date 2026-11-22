@@ -94,9 +94,9 @@ describe("Mais vendidos do mês: a marcação de cada linha", () => {
     }
   });
 
-  it("o nome inteiro está no title, e cada linha tem um só link", () => {
-    expect(rows[0]).toContain(`title="${FIRST_NAME}"`);
-    expect(rows[1]).toContain('title="Boné antigo"');
+  it("o nome inteiro está no texto da linha, sem title que o repita, e cada linha tem um só link", () => {
+    expect(rows[0]).toContain(`>${FIRST_NAME}<`);
+    expect(rows.join("")).not.toContain("title=");
     expect(rows.map((row) => row.match(LINK_OPEN)?.length ?? 0)).toEqual([
       1, 0,
     ]);
