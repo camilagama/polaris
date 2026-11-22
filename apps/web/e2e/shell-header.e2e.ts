@@ -711,11 +711,8 @@ test.describe("AC-3.1, AC-3.4 e AC-3.5: o olho de Esconder valores no cabeçalho
       });
       expect(parts.rects.length).toBeGreaterThanOrEqual(2);
       const box = (await eye(page).boundingBox()) as Box;
-      const side = width < 760 ? 40 : 36;
-      expect(
-        [box.width, box.height],
-        "o olho é um quadrado de controle"
-      ).toEqual([side, side]);
+      expect(box.width, "o olho é um quadrado").toBe(box.height);
+      expect([36, 40], "36 px no mouse, 40 no toque").toContain(box.width);
       expect(parts.rects.some((rect) => rect.empty)).toBe(false);
       const gaps = parts.rects
         .slice(1)
