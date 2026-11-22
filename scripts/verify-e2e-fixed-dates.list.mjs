@@ -65,5 +65,4 @@ export const E2E_FIXED_DATES_LIST = {
     count: 2,
     reason: BEFORE_THE_RULE,
   },
-  "apps/web/e2e/product-import.e2e.ts": { count: 1, reason: BEFORE_THE_RULE },
 };
