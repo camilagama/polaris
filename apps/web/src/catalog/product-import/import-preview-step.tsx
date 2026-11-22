@@ -180,7 +180,7 @@ export function ImportPreviewStep({
           ))}
         </ul>
       ) : null}
-      <Tabs onValueChange={setFilter} value={filter}>
+      <Tabs className="min-w-0" onValueChange={setFilter} value={filter}>
         <ScreenTabList
           label="Linhas do arquivo"
           signature={shown.map(([value]) => value).join()}

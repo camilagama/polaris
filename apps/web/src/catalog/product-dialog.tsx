@@ -242,7 +242,7 @@ function ProductTabs({
       ? ["dados", "variantes", "imagens"]
       : ["dados", "variantes"];
   return (
-    <Tabs className="gap-4" onValueChange={handleTab} value={tab}>
+    <Tabs className="min-w-0 gap-4" onValueChange={handleTab} value={tab}>
       <ScreenTabList
         label="Partes do produto"
         signature={tabs.join()}

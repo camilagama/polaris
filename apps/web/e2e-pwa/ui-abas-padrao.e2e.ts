@@ -216,6 +216,16 @@ for (const item of TABS) {
             .map((tab) => tab.textContent)
         );
       expect(cut, "abas com o texto cortado").toEqual([]);
+      const strip = await tablist.evaluate((element) => {
+        const box = (
+          element.parentElement as HTMLElement
+        ).getBoundingClientRect();
+        return { right: box.right, window: innerWidth };
+      });
+      expect(
+        strip.right,
+        "a faixa rola dentro da própria caixa, não alarga a tela"
+      ).toBeLessThanOrEqual(strip.window);
       await assertNoPageScroll(page);
     });
   });
