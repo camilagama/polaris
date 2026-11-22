@@ -906,6 +906,9 @@ async function gridRows(page: Page): Promise<GridRow[]> {
 
 const AT_MOST_HALF_A_PIXEL = 0.5;
 
+/** What a name keeps of the line in the narrowest one-row column, with the widest value of the test: about eight letters. */
+const NARROWEST_NAME = 56;
+
 function expectSameX(
   rows: readonly GridRow[],
   cell: keyof Omit<GridRow, "deleted">,
@@ -923,6 +926,12 @@ function expectSameX(
 
 function expectInsideTheLine(rows: readonly GridRow[], when: string) {
   for (const [index, row] of rows.entries()) {
+    if (row.value.top < row.name.bottom - AT_MOST_HALF_A_PIXEL) {
+      expect(
+        row.value.left,
+        `${when}: o valor não entra no nome na linha ${index + 1}`
+      ).toBeGreaterThanOrEqual(row.name.right - AT_MOST_HALF_A_PIXEL);
+    }
     const sameLine = row.units.top < row.value.bottom - AT_MOST_HALF_A_PIXEL;
     if (sameLine) {
       expect(
@@ -1049,6 +1058,64 @@ test.describe("Mais vendidos do mês: a grade de colunas das linhas (AC-A3.1 a A
       expectSameX(rows, "bar", "right", "320 px, letra 20 px");
       expectInsideTheLine(rows, "320 px, letra 20 px");
       await assertNoPageScroll(page);
+    }
+  );
+
+  reflowTest(
+    "a 388 px, a menor coluna de uma linha só, o valor de sete dígitos e as unidades de quatro não passam sobre o nome, que fica com espaço",
+    async ({ page }) => {
+      await page.setViewportSize({ height: 800, width: 388 });
+      const server = new FakeServer(SOLD);
+      server.top = rankingOf(GRID_NAMES).map((product, index) => ({
+        ...product,
+        netSales: `${[99_640.35, 12.5, 7000.1, 45, 3210.9][index]}`,
+        quantity: [1234, 9, 40, 1, 305][index] ?? 1,
+      }));
+      await openHome(page, server);
+      await expect(region(page, "Mais vendidos do mês")).toContainText("un.");
+      const rows = await gridRows(page);
+      expect(rows).toHaveLength(5);
+      expectInsideTheLine(rows, "388 px");
+      expectSameX(rows, "name", "left", "388 px");
+      expectSameX(rows, "value", "right", "388 px");
+      for (const row of rows) {
+        expect(
+          row.name.right - row.name.left,
+          "largura do nome na coluna estreita"
+        ).toBeGreaterThanOrEqual(NARROWEST_NAME);
+      }
+      await assertNoPageScroll(page);
+    }
+  );
+
+  reflowTest(
+    "com os valores escondidos as colunas não se mexem e o valor mascarado continua dentro da sua coluna",
+    async ({ page }) => {
+      await page.setViewportSize({ height: 800, width: 1280 });
+      const server = new FakeServer(SOLD);
+      server.top = rankingOf(GRID_NAMES).map((product, index) => ({
+        ...product,
+        netSales: `${[99_640.35, 12.5, 7000.1, 45, 3210.9][index]}`,
+        quantity: [1234, 9, 40, 1, 305][index] ?? 1,
+      }));
+      await openHome(page, server);
+      await expect(region(page, "Mais vendidos do mês")).toContainText("un.");
+      const shown = await gridRows(page);
+      await page.getByRole("button", { name: "Esconder valores" }).click();
+      await expect(region(page, "Mais vendidos do mês")).toContainText(
+        "R$ ••••"
+      );
+      const hidden = await gridRows(page);
+      expectInsideTheLine(hidden, "valores escondidos");
+      expectSameX(hidden, "value", "right", "valores escondidos");
+      for (const [index, row] of hidden.entries()) {
+        for (const cell of ["name", "units", "value"] as const) {
+          expect(
+            Math.abs(row[cell].right - (shown[index]?.[cell].right ?? 0)),
+            `${cell} da linha ${index + 1} não muda de lugar`
+          ).toBeLessThanOrEqual(AT_MOST_HALF_A_PIXEL);
+        }
+      }
     }
   );
 

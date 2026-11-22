@@ -61,7 +61,7 @@ const ALL_RETURNED_TEXT = "As vendas do período foram devolvidas.";
 /** From this many lines the list takes the height the card is given, a line each; fewer stay at the top. */
 const SPREAD_FROM = 3;
 
-/** The widest of the formatted texts, in characters: with tabular figures a character is at most one `ch`, so it bounds the column. */
+/** The widest of the formatted texts, in characters, to size a column in `ch`: the digits are tabular (one `ch` each) and the points, the comma and the space are narrower, which leaves the room the bold weight takes. */
 function widestCh(texts: readonly string[]): number {
   return texts.reduce((widest, text) => Math.max(widest, text.length), 0);
 }
@@ -118,15 +118,12 @@ export function TopProductsBlock({
           const content = (
             <>
               <span
-                className="col-start-1 row-start-1 justify-self-end text-muted-foreground tabular-nums"
+                className="col-start-1 @min-[20.75rem]:row-span-1 row-span-2 row-start-1 justify-self-end text-muted-foreground tabular-nums"
                 data-top-rank=""
               >
                 {index + 1}
               </span>
-              <span
-                className="col-start-2 @min-[20.75rem]:row-span-1 row-span-2 row-start-1 grid self-center"
-                data-top-thumb=""
-              >
+              <span className="col-start-2 @min-[20.75rem]:row-span-1 row-span-2 row-start-1 grid self-center">
                 <ProductThumbnail
                   assetId={product.coverAssetId}
                   name={product.name}
@@ -140,10 +137,7 @@ export function TopProductsBlock({
               >
                 {product.name}
               </span>
-              <span
-                className="col-start-3 col-end-5 row-start-2 flex @min-[20.75rem]:contents flex-wrap items-baseline justify-between gap-x-2"
-                data-top-figures=""
-              >
+              <span className="col-start-3 col-end-5 row-start-2 flex @min-[20.75rem]:contents flex-wrap items-baseline justify-between gap-x-2">
                 <span
                   className="@min-[20.75rem]:col-start-4 @min-[20.75rem]:row-start-1 @min-[20.75rem]:justify-self-end font-semibold tabular-nums"
                   data-top-value=""
