@@ -50,13 +50,19 @@ const BLOCK_ACTION = cn(
 );
 
 /**
- * With no goal the card is a thin strip from 960 px of content: the title, a sentence and the way to set one on one
- * row, and the chart takes the row under it (`data-goal-strip` is what the grid of the page reads).
+ * With no goal the card is a thin strip under 960 px of content (the title and "Definir meta", the sentence hidden);
+ * from 960 px it is a card of the pair of the map, as tall as it (`data-goal-strip` marks it for the tests).
  */
 const STRIP_ATTRIBUTES = { "data-goal-strip": "" } as const;
-const STRIP_CLASS =
-  "@min-[60rem]/home:flex-row @min-[60rem]/home:flex-wrap @min-[60rem]/home:items-center @min-[60rem]/home:gap-x-6 @min-[60rem]/home:gap-y-1 @min-[60rem]/home:py-3";
-const STRIP_END = "@min-[60rem]/home:order-last @min-[60rem]/home:ml-auto";
+
+/** The body of the card with no goal: from 960 px it takes the room the map's height leaves and centers what it says in it. */
+function StripBody({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="grid @min-[60rem]/home:grow @min-[60rem]/home:content-center gap-(--card-spacing)">
+      {children}
+    </div>
+  );
+}
 
 /**
  * The panel of the goal in error keeps, from `md`, the height the panel has with a typical active goal (12.5 rem: the
@@ -258,7 +264,7 @@ function ActiveGoal({
         </p>
       </div>
       {progress && !goal.paused ? (
-        <div className="flex min-w-0 flex-wrap items-center justify-center gap-4 group-data-[pair]/row:@min-[60rem]/home:flex-1 group-data-[pair]/row:@min-[60rem]/home:flex-col group-data-[pair]/row:@min-[60rem]/home:flex-nowrap group-data-[pair]/row:@min-[60rem]/home:justify-center group-data-[pair]/row:@min-[60rem]/home:text-center">
+        <div className="flex min-w-0 flex-wrap items-center justify-center gap-4">
           <GoalRing
             goal={goal}
             percent={formatGoalPercent(progress.percent)}
@@ -266,7 +272,7 @@ function ActiveGoal({
             spoken={`${formatGoalPercent(progress.percent)} da meta: ${formatGoalValue(goal.kind, progress.value)} de ${formatGoalValue(goal.kind, goal.target)}${pace ? `. ${goalPaceSpoken(pace)}` : ""}`}
             width={goalProgressWidth(progress.percent)}
           />
-          <div className="grid min-w-30 grow basis-30 gap-0.5 group-data-[pair]/row:@min-[60rem]/home:grow-0 group-data-[pair]/row:@min-[60rem]/home:basis-auto group-data-[pair]/row:@min-[60rem]/home:justify-items-center">
+          <div className="grid min-w-30 grow basis-30 gap-0.5">
             <p className="font-semibold text-lg leading-7 tracking-tight">
               <Figure>
                 <MoneyText text={formatGoalValue(goal.kind, progress.value)} />
@@ -297,21 +303,17 @@ function ActiveGoal({
 /** No goal: the title of the block and the way to set one, nothing else (the button says what the sentence did). */
 function NoGoal() {
   return (
-    <>
+    <StripBody>
       <p className="@min-[60rem]/home:block hidden text-muted-foreground text-support">
         Defina quanto quer vender no mês e acompanhe aqui.
       </p>
       <a
-        className={cn(
-          buttonVariants({ variant: "outline" }),
-          "w-fit",
-          STRIP_END
-        )}
+        className={cn(buttonVariants({ variant: "outline" }), "w-fit")}
         href="/dashboard?meta=nova"
       >
         Definir meta
       </a>
-    </>
+    </StripBody>
   );
 }
 
@@ -344,24 +346,20 @@ function PastMonthGoal({
   online?: boolean;
 }) {
   return (
-    <>
+    <StripBody>
       <p className="font-medium">Sem meta ainda</p>
+      <p className="text-muted-foreground text-support">
+        <MoneyText text={pastGoalSummary(goal)} />
+      </p>
       {online ? (
         <a
-          className={cn(
-            buttonVariants({ variant: "outline" }),
-            "w-fit",
-            STRIP_END
-          )}
+          className={cn(buttonVariants({ variant: "outline" }), "w-fit")}
           href="/dashboard?meta=nova"
         >
           Definir meta
         </a>
       ) : null}
-      <p className="text-muted-foreground text-support">
-        <MoneyText text={pastGoalSummary(goal)} />
-      </p>
-    </>
+    </StripBody>
   );
 }
 
@@ -488,7 +486,7 @@ export function GoalBlock({
   return (
     <HomeBlock
       {...(strip
-        ? { attributes: STRIP_ATTRIBUTES, className: STRIP_CLASS, plain: true }
+        ? { attributes: STRIP_ATTRIBUTES, plain: true }
         : { footer: GOAL_FOOTER })}
       id="home-goal"
       title={pastMonth ? monthGoalTitle(monthTitle(pastMonth)) : "Meta"}
@@ -540,15 +538,17 @@ export function OfflineGoalBlock({ goal }: { goal: OfflineGoal }) {
       break;
     default:
       content = (
-        <p className="flex min-h-ctl-md items-center text-muted-foreground">
-          Sem conexão
-        </p>
+        <StripBody>
+          <p className="flex min-h-ctl-md items-center text-muted-foreground">
+            Sem conexão
+          </p>
+        </StripBody>
       );
   }
   return (
     <HomeBlock
       {...(strip
-        ? { attributes: STRIP_ATTRIBUTES, className: STRIP_CLASS, plain: true }
+        ? { attributes: STRIP_ATTRIBUTES, plain: true }
         : { footer: { ...GOAL_FOOTER, link: false } })}
       id="home-goal"
       title={title}

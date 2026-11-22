@@ -552,13 +552,17 @@ const NO_COST_HELP =
 
 const CHARTS_CHUNK = "**/assets/charts-*.js";
 
+const RANKING_NAME = /^Mais vendidos/;
+
 /** The block "Vendas por dia" and what sits under it, as the page lays them out now. */
 async function chartPlaces(page: Page) {
   await settled(page);
   const chart = region(page, "Vendas por dia");
+  const ranking = page.getByRole("region", { name: RANKING_NAME });
   return {
     card: await placeOf(chart),
-    next: await placeOf(region(page, "Ritmo de vendas")),
+    next: await placeOf(ranking),
+    rhythm: await placeOf(region(page, "Ritmo de vendas")),
     total: await placeOf(chart.locator("p.grid > span").first()),
   };
 }
@@ -570,16 +574,21 @@ type ChartPlaces = Awaited<ReturnType<typeof chartPlaces>>;
  * its top. The block's own top is not compared: the cards above it have another shape when the month sold nothing.
  */
 function expectSamePlaces(after: ChartPlaces, before: ChartPlaces) {
+  const beside = (places: ChartPlaces) =>
+    Math.abs(places.next.top - places.card.top) <= 1;
   const from = (places: ChartPlaces) => ({
     card: places.card.height,
     next: places.next.top - places.card.top,
-    nextHeight: places.next.height,
     total: places.total.top - places.card.top,
     totalHeight: places.total.height,
+    ...(beside(places) ? { rhythm: places.rhythm.top - places.card.top } : {}),
   });
   const [now, then] = [from(after), from(before)];
   for (const key of Object.keys(now) as (keyof typeof now)[]) {
-    expect(Math.abs(now[key] - then[key]), key).toBeLessThanOrEqual(1);
+    expect(
+      Math.abs((now[key] ?? 0) - (then[key] ?? 0)),
+      key
+    ).toBeLessThanOrEqual(1);
   }
 }
 

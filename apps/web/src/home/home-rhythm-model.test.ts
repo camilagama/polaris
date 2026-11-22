@@ -405,7 +405,7 @@ describe("the reading of a day and the summary", () => {
 
   it("the summary says in words what the map shows; the numbers are in the table", () => {
     expect(rhythmSummary(view)).toBe(
-      "Vendas por dia nas últimas 26 semanas: 3 dias com venda. Melhor dia 17/10, R$ 412,40. Meses anteriores atualizados até ontem. A tabela dia a dia está no fim deste bloco."
+      "Vendas por dia nas últimas 26 semanas: 3 dias com venda. Melhor dia 17/10, R$ 412,40. Poucas semanas de vendas ainda: o mapa enche conforme você vende. 3 dias com venda nas últimas 13 semanas. Meses anteriores atualizados até ontem. A tabela dia a dia está no fim deste bloco."
     );
     expect(rhythmSummary(rhythmView(daysWith({}), 13))).toBe(
       "Vendas por dia nas últimas 13 semanas: nenhum dia com venda."

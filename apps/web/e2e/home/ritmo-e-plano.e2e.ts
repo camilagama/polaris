@@ -9,6 +9,7 @@ import {
   expectInvisibleTable,
   FakeServer,
   failure,
+  goal,
   json,
   NOON,
   newSale,
@@ -30,7 +31,7 @@ import {
 
 test.describe("Ritmo de vendas (revisão de UI v7, § 3 item 10)", () => {
   // Friday `23/10`: the 26 weeks go from Sunday `26/04` to Saturday `24/10`; the days that sold are those of SOLD
-  // the sentence under the map is fixed and says what only the rhythm knows; the value of a day is in the tooltip over
+  // the summary of the map says what only the rhythm knows (the weeks, the best day and the best weekday); the value of a day is in the tooltip over
   // its square, opened by the pointer, the finger or the keyboard; the best day (Sunday `18/10`) is in the summary of
   // the map and in the tooltip of its day
   const READING = "Sexta, 23/10 · R$ 320,10 · 2 vendas · hoje";
@@ -51,31 +52,84 @@ test.describe("Ritmo de vendas (revisão de UI v7, § 3 item 10)", () => {
         .filter({ has: page.getByText(label, { exact: true }) })
         .locator("dd")
     ).toHaveText(value);
-  const atRest = (page: Page) => rhythm(page).locator("[data-rhythm-insight]");
+  /** Beside the goal, under the chart and the ranking, with the 30 rem the map needs and the height of the pair. */
+  const expectBesideTheGoal = async (page: Page) => {
+    const mapBox = await rhythm(page).boundingBox();
+    const goalBox = await region(page, "Meta").boundingBox();
+    const topBox = await region(page, "Mais vendidos do mês").boundingBox();
+    const chartBox = await region(page, "Vendas por dia").boundingBox();
+    expect(mapBox?.width ?? 0).toBeCloseTo(480, 0);
+    expect(
+      Math.abs((mapBox?.height ?? 0) - (goalBox?.height ?? 900))
+    ).toBeLessThan(2);
+    expect(Math.abs((mapBox?.y ?? 0) - (goalBox?.y ?? 900))).toBeLessThan(2);
+    expect((goalBox?.x ?? 900) + (goalBox?.width ?? 0)).toBeLessThan(
+      mapBox?.x ?? 0
+    );
+    expect(mapBox?.y ?? 0).toBeGreaterThan(
+      Math.max(
+        (chartBox?.y ?? 900) + (chartBox?.height ?? 0),
+        (topBox?.y ?? 900) + (topBox?.height ?? 0)
+      ) - 1
+    );
+  };
+  /** The legend is level with the title, after it and inside the card. */
+  const expectLegendOnTheTitleLine = async (page: Page) => {
+    const map = rhythm(page);
+    const mapBox = await map.boundingBox();
+    const titleBox = await map.getByRole("heading").boundingBox();
+    const legendBox = await map.locator("[data-rhythm-legend]").boundingBox();
+    expect(
+      Math.abs(
+        (legendBox?.y ?? 0) +
+          (legendBox?.height ?? 0) / 2 -
+          ((titleBox?.y ?? 0) + (titleBox?.height ?? 0) / 2)
+      )
+    ).toBeLessThan(8);
+    expect(legendBox?.x ?? 0).toBeGreaterThan(
+      (titleBox?.x ?? 0) + (titleBox?.width ?? 0)
+    );
+    expect((legendBox?.x ?? 0) + (legendBox?.width ?? 0)).toBeLessThanOrEqual(
+      (mapBox?.x ?? 0) + (mapBox?.width ?? 0)
+    );
+  };
+  /** What the card says outside the invisible table, whose caption repeats the weeks and the best weekday for assistive technology. */
+  const textOutsideTable = (page: Page) =>
+    rhythm(page).evaluate((card) => {
+      const copy = card.cloneNode(true) as HTMLElement;
+      copy.querySelector("[data-chart-data-table]")?.remove();
+      return copy.textContent ?? "";
+    });
+  const expectAtRest = (page: Page, options?: { timeout: number }) =>
+    expect(rhythm(page).getByRole("img")).toHaveAttribute(
+      "aria-label",
+      new RegExp(AT_REST.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")),
+      options
+    );
   const dataCells = (page: Page) =>
     rhythm(page).locator(
       '[data-heatmap] rect.visx-heatmap-rect:not([pointer-events="none"])'
     );
 
-  test("a 1280 px: 26 semanas ao lado de Mais vendidos, hoje lido e o melhor dia em linha própria, os vazios com contorno e a camada acessível nossa", async ({
+  test("a 1280 px: 26 semanas ao lado da Meta, a legenda na linha do título, hoje lido e o melhor dia no resumo, os vazios com contorno e a camada acessível nossa", async ({
     page,
   }) => {
     await page.setViewportSize({ height: 800, width: 1280 });
-    const server = new FakeServer(SOLD);
+    const server = new FakeServer({ ...SOLD, goals: [goal({})] });
     await openHome(page, server);
     const map = rhythm(page);
-    // the line says only the weeks; how to read a square is in the (i) of the block
-    await expect(map).toContainText("Últimas 26 semanas");
+    // the title line carries the legend and no "Últimas N semanas": the weeks are in the summary and in the (i)
+    expect(await textOutsideTable(page)).not.toContain("Últimas");
     await expect(map).not.toContainText("um quadrado por dia");
     await map.getByRole("button", { name: "Sobre Ritmo de vendas" }).click();
-    // the ranges of the four levels are in the (i), not written under the map
+    // what the map is for, how to read a square and the ranges of the four levels are in the (i), not under the map
     await expect(
       page.getByText(
-        "Cada quadrado é um dia: quanto mais escuro, mais venda. Vazio: sem venda · até R$ 80,00 · até R$ 320,10 · até R$ 420,50 · acima"
+        "Em que dias da semana você vende mais. Cada quadrado é um dia das últimas 26 semanas: quanto mais escuro, mais venda. Vazio: sem venda · até R$ 80,00 · até R$ 320,10 · até R$ 420,50 · acima"
       )
     ).toBeVisible();
     await page.keyboard.press("Escape");
-    await expect(atRest(page)).toHaveText(AT_REST);
+    await expectAtRest(page);
     await expect(tooltip(page)).toHaveCount(0);
     // one read of the series: from the first Sunday of the 26 weeks to the eve of the month (the month is A's)
     expect(
@@ -90,7 +144,7 @@ test.describe("Ritmo de vendas (revisão de UI v7, § 3 item 10)", () => {
     );
     await expect(map.getByRole("img")).toHaveAttribute(
       "aria-label",
-      "Vendas por dia nas últimas 26 semanas: 6 dias com venda. Melhor dia 18/10, R$ 1.840,00. Meses anteriores atualizados até ontem. A tabela dia a dia está no fim deste bloco."
+      `Vendas por dia nas últimas 26 semanas: 6 dias com venda. Melhor dia 18/10, R$ 1.840,00. ${AT_REST} Meses anteriores atualizados até ontem. A tabela dia a dia está no fim deste bloco.`
     );
     // a cell per day of the 26 weeks; 175 known days with no sale are outlined (181 days read, 6 sold); Saturday
     // `24/10`, to come, has no outline and no fill
@@ -98,27 +152,19 @@ test.describe("Ritmo de vendas (revisão de UI v7, § 3 item 10)", () => {
     await expect(map.locator("[data-heatmap-empty]")).toHaveCount(175);
     await expect(map).not.toContainText("Vazio: sem venda");
     await expect(map.locator("[data-rhythm-legend]")).toHaveText("MenosMais");
-    // 3 weeks with a sale: the map says it is filling up, in the sentence under it; there is no chart of the mean by weekday
+    // 3 weeks with a sale: the map says it is filling up in its summary; there is no chart of the mean by weekday
     await expect(map).not.toContainText("Média por dia da semana");
     await expect(map.locator("[data-weekday-bars]")).toHaveCount(0);
     // the cells are 12 px with a gap of 3
     const first = await dataCells(page).first().boundingBox();
     expect(first?.width).toBeCloseTo(12, 0);
-    // beside Mais vendidos, under the chart, with the 30 rem the map needs and the height of the pair
     const mapBox = await map.boundingBox();
-    const topBox = await region(page, "Mais vendidos do mês").boundingBox();
-    const chartBox = await region(page, "Vendas por dia").boundingBox();
-    expect(mapBox?.width ?? 0).toBeCloseTo(480, 0);
-    expect(
-      Math.abs((mapBox?.height ?? 0) - (topBox?.height ?? 900))
-    ).toBeLessThan(2);
-    expect(Math.abs((mapBox?.y ?? 0) - (topBox?.y ?? 900))).toBeLessThan(2);
-    expect((mapBox?.x ?? 900) + (mapBox?.width ?? 0)).toBeLessThan(
-      topBox?.x ?? 0
-    );
-    expect(mapBox?.y ?? 0).toBeGreaterThan(
-      (chartBox?.y ?? 900) + (chartBox?.height ?? 0)
-    );
+    await expectBesideTheGoal(page);
+    await expectLegendOnTheTitleLine(page);
+    await expect(map.locator("[data-rhythm-insight]")).toHaveCount(0);
+    const said = await textOutsideTable(page);
+    expect(said).not.toContain("melhor dia da semana");
+    expect(said).not.toContain("semanas");
     // the drawing fits its card: no cell beyond the right edge
     const svgBox = await map.locator("[data-heatmap] svg").boundingBox();
     expect((svgBox?.x ?? 0) + (svgBox?.width ?? 0)).toBeLessThanOrEqual(
@@ -143,7 +189,7 @@ test.describe("Ritmo de vendas (revisão de UI v7, § 3 item 10)", () => {
   }) => {
     await page.setViewportSize({ height: 800, width: 1280 });
     await openHome(page, new FakeServer(SOLD));
-    await expect(atRest(page)).toHaveText(AT_REST);
+    await expectAtRest(page);
     // the column of the week of `18/10` is the last, the 26th (index 25); Sunday is its 1st row
     await dataCells(page)
       .nth(25 * 7)
@@ -157,7 +203,7 @@ test.describe("Ritmo de vendas (revisão de UI v7, § 3 item 10)", () => {
       "6",
       "melhor dia"
     );
-    await expect(atRest(page)).toHaveText(AT_REST);
+    await expectAtRest(page);
     await dataCells(page)
       .nth(25 * 7 + 1)
       .hover();
@@ -165,7 +211,7 @@ test.describe("Ritmo de vendas (revisão de UI v7, § 3 item 10)", () => {
     await expect(tooltip(page)).not.toContainText("melhor dia");
     await page.mouse.move(5, 5);
     await expect(tooltip(page)).toHaveCount(0);
-    await expect(atRest(page)).toHaveText(AT_REST);
+    await expectAtRest(page);
   });
 
   test("pelo teclado: o foco abre o tooltip em hoje, cima e baixo andam um dia, esquerda e direita uma semana, o aria-valuetext diz a leitura", async ({
@@ -206,7 +252,7 @@ test.describe("Ritmo de vendas (revisão de UI v7, § 3 item 10)", () => {
     // leaving the map, the tooltip closes
     await page.keyboard.press("Tab");
     await expect(tooltip(page)).toHaveCount(0);
-    await expect(atRest(page)).toHaveText(AT_REST);
+    await expectAtRest(page);
     // Escape puts the tooltip away without leaving the control
     await slider.focus();
     await expectTooltip(page, "Sexta, 23/10");
@@ -222,13 +268,20 @@ test.describe("Ritmo de vendas (revisão de UI v7, § 3 item 10)", () => {
     const map = rhythm(page);
     await expect(dataCells(page).first()).toBeVisible();
     const weeks = (await dataCells(page).count()) / 7;
-    await expect(map).toContainText(`Últimas ${weeks} semanas`);
+    expect(await textOutsideTable(page)).not.toContain("semanas");
+    // the legend does not fit beside the title: it drops whole under it, on one line
+    const titleBox = await map.getByRole("heading").boundingBox();
+    const legendBox = await map.locator("[data-rhythm-legend]").boundingBox();
+    expect(legendBox?.y ?? 0).toBeGreaterThanOrEqual(
+      (titleBox?.y ?? 0) + (titleBox?.height ?? 0) - 1
+    );
+    expect(legendBox?.height ?? 99).toBeLessThanOrEqual(20);
     expect(weeks).toBeGreaterThanOrEqual(13);
     expect(weeks).toBeLessThanOrEqual(20);
-    await expect(atRest(page)).toHaveText(AT_REST);
+    await expectAtRest(page);
     const mapBox = await map.boundingBox();
     // the whole block keeps to a part of a screen, with the numbers closed
-    expect(mapBox?.height ?? 999).toBeLessThanOrEqual(270);
+    expect(mapBox?.height ?? 999).toBeLessThanOrEqual(215);
     const svgBox = await map.locator("[data-heatmap] svg").boundingBox();
     expect((svgBox?.x ?? 0) + (svgBox?.width ?? 0)).toBeLessThanOrEqual(
       (mapBox?.x ?? 0) + (mapBox?.width ?? 0)
@@ -261,7 +314,7 @@ test.describe("Ritmo de vendas (revisão de UI v7, § 3 item 10)", () => {
     );
     await expect(map.getByRole("img")).toHaveAttribute(
       "aria-label",
-      "Vendas por dia nas últimas 26 semanas: 6 dias com venda. Melhor dia 18/10, valor escondido. Meses anteriores atualizados até ontem. A tabela dia a dia está no fim deste bloco."
+      `Vendas por dia nas últimas 26 semanas: 6 dias com venda. Melhor dia 18/10, valor escondido. ${AT_REST} Meses anteriores atualizados até ontem. A tabela dia a dia está no fim deste bloco.`
     );
     await page.mouse.move(5, 5);
     await expect(
@@ -312,7 +365,7 @@ test.describe("Ritmo de vendas (revisão de UI v7, § 3 item 10)", () => {
     await expect(
       map.getByRole("button", { name: "Tentar novamente" })
     ).toBeVisible();
-    await expect(atRest(page)).toHaveText(AT_REST);
+    await expectAtRest(page);
     // the numbers are on the screen, not an option: the table, newest day first, with the values
     await expect(map.getByRole("table")).toBeVisible();
     await expect(map.locator("[data-chart-data-table]")).toHaveAttribute(
@@ -357,7 +410,7 @@ test.describe("Ritmo de vendas (revisão de UI v7, § 3 item 10)", () => {
       const reserved = (await placeOf(loading)).height;
 
       release();
-      await expect(atRest(page)).toHaveText(AT_REST);
+      await expectAtRest(page);
       await settled(page);
       const ready = await placeOf(rhythm(page));
       expect(Math.abs(ready.height - reserved)).toBeLessThanOrEqual(1);
@@ -384,7 +437,7 @@ test.describe("Ritmo de vendas (revisão de UI v7, § 3 item 10)", () => {
     }) => {
       await page.setViewportSize(size);
       await openHome(page, new FakeServer(SOLD));
-      await expect(atRest(page)).toHaveText(AT_REST);
+      await expectAtRest(page);
       await settled(page);
       const columns = Math.floor((await dataCells(page).count()) / 7);
       expect(columns).toBeGreaterThanOrEqual(16);
@@ -434,7 +487,7 @@ test.describe("Ritmo de vendas (revisão de UI v7, § 3 item 10)", () => {
         .filter((call) => call.procedure === "report/dailySales")
         .map((call) => [call.input.from, call.input.to]);
     await openHome(page, server);
-    await expect(atRest(page)).toHaveText(AT_REST);
+    await expectAtRest(page);
     await expect
       .poll(() =>
         page.evaluate(() =>
@@ -448,7 +501,7 @@ test.describe("Ritmo de vendas (revisão de UI v7, § 3 item 10)", () => {
 
     // the second opening of the day: the figures are read again, the series comes from the copy of today
     await page.reload();
-    await expect(atRest(page)).toHaveText(AT_REST, { timeout: 20_000 });
+    await expectAtRest(page, { timeout: 20_000 });
     await expect
       .poll(() => periodCalls(server).length)
       .toBeGreaterThan(summaries);
@@ -471,7 +524,7 @@ test.describe("Ritmo de vendas (revisão de UI v7, § 3 item 10)", () => {
     await page.setViewportSize({ height: 800, width: 1280 });
     const rpc = countRpc(page);
     await openHome(page, new FakeServer(SOLD));
-    await expect(atRest(page)).toHaveText(AT_REST);
+    await expectAtRest(page);
     await expect(region(page, "Meta")).toBeVisible();
     await expect(region(page, "Precisa de ação")).toBeVisible();
     await expect
@@ -593,7 +646,7 @@ test.describe("Ritmo de vendas (revisão de UI v7, § 3 item 10)", () => {
       server.calls.filter((call) => call.procedure === "report/dailySales")
         .length;
     await openHome(page, server);
-    await expect(atRest(page)).toHaveText(AT_REST);
+    await expectAtRest(page);
     expect(dailyCalls()).toBe(1);
 
     server.broken.set("report/periodSummary", "403");
@@ -606,7 +659,7 @@ test.describe("Ritmo de vendas (revisão de UI v7, § 3 item 10)", () => {
     await page.clock.runFor(RETURN_REFRESH_MS);
     await page.evaluate(() => window.dispatchEvent(new Event("focus")));
     await expect.poll(dailyCalls).toBe(2);
-    await expect(atRest(page)).toHaveText(AT_REST);
+    await expectAtRest(page);
   });
 
   test("a série quebrada: o bloco diz o seu erro e Tentar novamente lê só a série; o resto fica", async ({
@@ -626,7 +679,7 @@ test.describe("Ritmo de vendas (revisão de UI v7, § 3 item 10)", () => {
     const summaries = periodCalls(server).length;
     server.broken.delete("report/dailySales");
     await page.getByRole("button", { name: "Tentar novamente" }).click();
-    await expect(atRest(page)).toHaveText(AT_REST);
+    await expectAtRest(page);
     expect(periodCalls(server).length).toBe(summaries);
   });
 
@@ -662,11 +715,11 @@ test.describe("Ritmo de vendas (revisão de UI v7, § 3 item 10)", () => {
         exact: true,
       })
     ).toBeVisible();
-    await expect(atRest(page)).toHaveText(AT_REST);
+    await expectAtRest(page);
     await page.context().setOffline(false);
 
     await reopenWithoutNetwork(page, server);
-    await expect(atRest(page)).toHaveText(AT_REST, { timeout: 20_000 });
+    await expectAtRest(page, { timeout: 20_000 });
 
     await page.evaluate(() => {
       for (const key of Object.keys(localStorage)) {

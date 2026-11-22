@@ -782,7 +782,7 @@ test.describe("Mais vendidos do mês com a letra de 16 px: a linha de cada largu
               };
             });
           expect(cut).toEqual({
-            cut: width < WIDE_WINDOW,
+            cut: true,
             ellipsis: "ellipsis",
             overflow: "hidden",
             wrap: "nowrap",
