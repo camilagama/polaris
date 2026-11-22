@@ -24,9 +24,10 @@ import {
   DialogTitle,
 } from "@/ui/dialog";
 import { FORM_ELEMENT_CLASS, FORM_NOTICE_CLASS } from "@/ui/dialog-layout";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/ui/tabs";
+import { Tabs, TabsContent } from "@/ui/tabs";
 import { dialogEntries } from "@/ui/dialog-history";
 import { navigateInApp } from "../app-shell/address";
+import { ScreenTabList, ScreenTabTrigger } from "../app-shell/screen-tabs";
 import { tryConnectionNow } from "../lib/browser-connection";
 import { focusLater } from "../lib/focus";
 import { leaveForReturn } from "../lib/kept-for-return";
@@ -242,24 +243,20 @@ function ProductTabs({
       : ["dados", "variantes"];
   return (
     <Tabs className="gap-4" onValueChange={handleTab} value={tab}>
-      <TabsList
-        activateOnFocus
-        aria-label="Partes do produto"
-        className="h-auto w-full flex-wrap gap-y-4"
+      <ScreenTabList
+        label="Partes do produto"
+        signature={tabs.join()}
+        value={tab}
       >
         {tabs.map((value) => (
-          <TabsTrigger
-            className="h-[calc(var(--spacing-ctl-md)-0.375rem)]"
-            key={value}
-            value={value}
-          >
+          <ScreenTabTrigger key={value} value={value}>
             <TabLabel
               invalid={value === "dados" && dataInvalid}
               label={TAB_LABELS[value]}
             />
-          </TabsTrigger>
+          </ScreenTabTrigger>
         ))}
-      </TabsList>
+      </ScreenTabList>
       {/* the data is always in the page: the footer's button submits its form from any tab */}
       <TabsContent keepMounted value="dados">
         {form}
