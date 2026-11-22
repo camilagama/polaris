@@ -18,14 +18,15 @@ export function HideValuesButton({ className }: { className?: string }) {
   const toggle = useCallback(() => setHidden(!hidden), [hidden, setHidden]);
   return (
     <Button
+      aria-label="Esconder valores"
       aria-pressed={hidden}
-      className={cn("size-ctl-lg px-0 aria-pressed:bg-accent", className)}
+      className={cn("aria-pressed:bg-accent", className)}
       onClick={toggle}
+      size="icon-lg"
       type="button"
       variant="outline"
     >
-      <Icon aria-hidden="true" data-icon="inline-start" />
-      <span className="sr-only">Esconder valores</span>
+      <Icon aria-hidden="true" />
     </Button>
   );
 }

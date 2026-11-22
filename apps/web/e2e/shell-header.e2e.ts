@@ -648,6 +648,81 @@ test.describe("AC-3.1, AC-3.4 e AC-3.5: o olho de Esconder valores no cabeçalho
     ).toHaveCount(1);
   });
 
+  /** The center of the drawn eye against the center of its button, in both states. */
+  const iconOffset = (button: Locator) =>
+    button.evaluate((element) => {
+      const icon = element.querySelector("svg");
+      if (!icon) {
+        throw new Error("o botão não tem ícone");
+      }
+      const center = (target: Element) => {
+        const rect = target.getBoundingClientRect();
+        return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
+      };
+      const middle = center(element);
+      const drawn = center(icon);
+      return { x: drawn.x - middle.x, y: drawn.y - middle.y };
+    });
+
+  for (const width of [320, 360, 1280]) {
+    test(`AC-A5.1: ${width} px: o centro do olho é o centro do botão, aberto e fechado`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ height: 800, width });
+      await serve(page);
+      await openShell(page);
+      for (const pressed of ["false", "true"]) {
+        // biome-ignore lint/performance/noAwaitInLoops: the two states in order
+        const offset = await iconOffset(eye(page));
+        expect(
+          Math.abs(offset.x),
+          `aria-pressed=${pressed}: eixo x`
+        ).toBeLessThanOrEqual(0.5);
+        expect(
+          Math.abs(offset.y),
+          `aria-pressed=${pressed}: eixo y`
+        ).toBeLessThanOrEqual(0.5);
+        if (pressed === "false") {
+          await eye(page).click();
+          await expect(eye(page)).toHaveAttribute("aria-pressed", "true");
+        }
+      }
+    });
+  }
+
+  for (const width of [360, 1280]) {
+    test(`AC-A5.2: ${width} px: o olho está a mesma distância dos vizinhos que os outros controles do grupo, e o grupo não tem elemento vazio`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ height: 800, width });
+      await serve(page);
+      await openShell(page);
+      const parts = await eye(page).evaluate((element) => {
+        const group = element.parentElement as HTMLElement;
+        const rects = [...group.children].map((child) => {
+          const rect = child.getBoundingClientRect();
+          return {
+            empty: rect.width === 0 || rect.height === 0,
+            x: rect.x,
+            right: rect.right,
+          };
+        });
+        return { gap: getComputedStyle(group).columnGap, rects };
+      });
+      expect(parts.rects.length).toBeGreaterThanOrEqual(3);
+      expect(parts.rects.some((rect) => rect.empty)).toBe(false);
+      const gaps = parts.rects
+        .slice(1)
+        .map(
+          (rect, index) =>
+            rect.x - (parts.rects[index] as { right: number }).right
+        );
+      for (const gap of gaps) {
+        expect(gap).toBeCloseTo(Number.parseFloat(parts.gap), 1);
+      }
+    });
+  }
+
   test("a ordem do Tab no cabeçalho é o chip, o olho e a conta", async ({
     page,
   }) => {
