@@ -15,7 +15,9 @@ import { COLLAPSIBLE_QUERY } from "@/lib/breakpoints";
 import { cn } from "@/lib/utils";
 import { useMediaQuery } from "@/lib/use-mobile";
 import { buttonVariants } from "@/ui/button";
+import { Figure } from "@/ui/figure";
 import { MoneyText } from "@/ui/hidden-values";
+import { monoWidthEm } from "@/ui/money";
 import { ProgressRing } from "@/ui/progress-ring";
 import { SkeletonArt, type SkeletonArtKind } from "@/ui/skeleton-art";
 import {
@@ -54,16 +56,27 @@ const RANKING_FOOTER = {
   label: "Ver os produtos",
 } as const;
 
-const unitsText = (quantity: number) => `${formatQuantity(quantity)} un.`;
+/**
+ * The units of a line: the quantity is a figure, in Geist Mono, and the " un." after it is a word, in the Geist of the
+ * line. The column keeps 1.5 em for the word, more than Geist takes to write it; `valores-e-ranking.e2e.ts` holds the
+ * units inside the column with nine digits of value.
+ */
+const UNIT_WORD = " un.";
+const UNIT_WORD_EM = 1.5;
 
 const ALL_RETURNED_TEXT = "As vendas do período foram devolvidas.";
 
 /** From this many lines the list takes the height the card is given, a line each; fewer stay at the top. */
 const SPREAD_FROM = 3;
 
-/** The widest of the formatted texts, in characters, to size a column in `ch`: the digits are tabular (one `ch` each) and the points, the comma and the space are narrower, which leaves the room the bold weight takes. */
-function widestCh(texts: readonly string[]): number {
-  return texts.reduce((widest, text) => Math.max(widest, text.length), 0);
+/**
+ * The width of the widest of the formatted texts, in em of the line: the value and the quantity are in Geist Mono, whose
+ * every glyph (digit, point, comma, space) advances the same at every weight, the semibold of the value too, so the
+ * width is the count of characters times that advance. A `ch` would be the zero of the Geist of the line, not the
+ * advance of the mono.
+ */
+function widestEm(texts: readonly string[]): number {
+  return texts.reduce((widest, text) => Math.max(widest, monoWidthEm(text)), 0);
 }
 
 /**
@@ -108,8 +121,8 @@ export function TopProductsBlock({
   }
   const spread = products.length >= SPREAD_FROM;
   const columns = {
-    "--top-units": `${widestCh(products.map((product) => unitsText(product.quantity)))}ch`,
-    "--top-value": `${widestCh(products.map((product) => formatBrlAmount(product.netSales)))}ch`,
+    "--top-units": `${widestEm(products.map((product) => formatQuantity(product.quantity))) + UNIT_WORD_EM}em`,
+    "--top-value": `${widestEm(products.map((product) => formatBrlAmount(product.netSales)))}em`,
   } as CSSProperties;
   return (
     <HomeBlock footer={RANKING_FOOTER} id="home-top" title={title}>
@@ -118,10 +131,10 @@ export function TopProductsBlock({
           const content = (
             <>
               <span
-                className="col-start-1 @min-[20.75rem]:row-span-1 row-span-2 row-start-1 justify-self-end text-muted-foreground tabular-nums"
+                className="col-start-1 @min-[20.75rem]:row-span-1 row-span-2 row-start-1 justify-self-end text-muted-foreground"
                 data-top-rank=""
               >
-                {index + 1}
+                <Figure>{index + 1}</Figure>
               </span>
               <span className="col-start-2 @min-[20.75rem]:row-span-1 row-span-2 row-start-1 grid self-center">
                 <ProductThumbnail
@@ -138,16 +151,17 @@ export function TopProductsBlock({
               </span>
               <span className="col-start-3 col-end-5 row-start-2 flex @min-[20.75rem]:contents flex-wrap items-baseline justify-between gap-x-1">
                 <span
-                  className="@min-[20.75rem]:col-start-4 @min-[20.75rem]:row-start-1 @min-[20.75rem]:justify-self-end font-semibold tabular-nums"
+                  className="@min-[20.75rem]:col-start-4 @min-[20.75rem]:row-start-1 @min-[20.75rem]:justify-self-end font-semibold"
                   data-top-value=""
                 >
                   <MoneyText text={formatBrlAmount(product.netSales)} />
                 </span>
                 <span
-                  className="@min-[20.75rem]:col-start-5 @min-[20.75rem]:row-start-1 @min-[20.75rem]:ml-0 ml-auto @min-[20.75rem]:justify-self-end text-muted-foreground tabular-nums"
+                  className="@min-[20.75rem]:col-start-5 @min-[20.75rem]:row-start-1 @min-[20.75rem]:ml-0 ml-auto @min-[20.75rem]:justify-self-end text-muted-foreground"
                   data-top-units=""
                 >
-                  {unitsText(product.quantity)}
+                  <Figure>{formatQuantity(product.quantity)}</Figure>
+                  {UNIT_WORD}
                 </span>
               </span>
               <span
@@ -217,9 +231,11 @@ function stepState(isDone: boolean, isCurrent: boolean) {
 /** The count beside the title: the ring and "N de 3", the figure always written. */
 function StepsCount({ done }: { done: number }) {
   return (
-    <span className="flex items-center gap-1.5 text-muted-foreground tabular-nums">
+    <span className="flex items-center gap-1.5 text-muted-foreground">
       <ProgressRing done={done} total={FIRST_STEPS_TOTAL} />
-      {done} de {FIRST_STEPS_TOTAL}
+      <Figure>
+        {done} de {FIRST_STEPS_TOTAL}
+      </Figure>
     </span>
   );
 }

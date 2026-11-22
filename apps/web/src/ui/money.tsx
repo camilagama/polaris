@@ -42,6 +42,11 @@ export function maskedAmountWidthEm(): number {
   return ("R$ ".length * CURRENCY_EM + MASKED_DOTS.length) * MONO_ADVANCE_EM;
 }
 
+/** A text written whole in Geist Mono ("R$ 1.234,56" with no split, "12 un."), in em of its size. */
+export function monoWidthEm(text: string): number {
+  return Number((text.length * MONO_ADVANCE_EM).toFixed(3));
+}
+
 /** "R$ 99.640,35" at the size of its box, in em: the width a split amount takes in Geist Mono, the "R$" and the cents being smaller. */
 export function splitAmountWidthEm(text: string): number {
   const parts = AMOUNT.exec(text);

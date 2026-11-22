@@ -134,6 +134,42 @@ async function rankingRows(page: Page): Promise<RankingRow[]> {
     );
 }
 
+/** Three lines whose net sales reach nine digits ("R$ 1.234.567,89"), the widest the value column has to take. */
+const nineDigitRanking = () =>
+  [
+    { netSales: "1234567.89", quantity: 12_345 },
+    { netSales: "98765.43", quantity: 8 },
+    { netSales: "120.00", quantity: 4 },
+  ].map((line, index) => ({
+    ...(rankingOf(SHORT_NAMES)[index] as ReturnType<typeof rankingOf>[number]),
+    ...line,
+  }));
+
+const NINE_DIGIT_VALUES = ["R$ 1.234.567,89", "R$ 98.765,43", "R$ 120,00"];
+
+/** The right edge of the value and of the units of each line, and whether each one is wider than its box. */
+async function figureEdges(block: Locator) {
+  return await block.locator("ol > li").evaluateAll((rows) =>
+    rows.map((row) => {
+      const edge = (selector: string) => {
+        const cell = row.querySelector(selector) as HTMLElement;
+        const inner = cell.firstElementChild as HTMLElement;
+        return {
+          family: getComputedStyle(inner).fontFamily,
+          overflows:
+            inner.getBoundingClientRect().right >
+            cell.getBoundingClientRect().right + 0.5,
+          right: Math.round(cell.getBoundingClientRect().right),
+        };
+      };
+      return {
+        units: edge("[data-top-units]"),
+        value: edge("[data-top-value]"),
+      };
+    })
+  );
+}
+
 const BIG_SALE = 9_964_035;
 const NINE_DIGITS = 123_456_789;
 
@@ -527,6 +563,32 @@ test.describe("Mais vendidos do mês a 320 px com a letra do navegador em 20 px"
     }
   );
 
+  reflowTest(
+    "com nove dígitos (R$ 1.234.567,89) o valor e as unidades ficam inteiros, em Geist Mono, e nada rola de lado",
+    async ({ page }) => {
+      const server = new FakeServer(SOLD);
+      server.top = nineDigitRanking();
+      await openRanking(page, server);
+      const block = region(page, "Mais vendidos do mês");
+      await expect(block.locator("[data-top-value]")).toHaveText(
+        NINE_DIGIT_VALUES
+      );
+      await assertNothingClipped(block);
+      await assertNoEllipsis(
+        block.locator("[data-top-value], [data-top-units]")
+      );
+      await assertNoPageScroll(page);
+      for (const line of await figureEdges(block)) {
+        expect(line.value.overflows, "valor dentro da sua caixa").toBe(false);
+        expect(line.units.overflows, "unidades dentro da sua caixa").toBe(
+          false
+        );
+        expect(line.value.family).toContain("Geist Mono");
+        expect(line.units.family).toContain("Geist Mono");
+      }
+    }
+  );
+
   test("a altura de cada linha não depende do estado: Esconder valores, o 3º produto ausente e outro mês", async ({
     browser,
     page,
@@ -804,6 +866,28 @@ test.describe("Mais vendidos do mês: a linha por largura da coluna (uma linha s
       { coarse: false }
     );
   }
+
+  test("a 1280 px com nove dígitos a coluna do valor, medida no peso semibold da Geist Mono, cabe o maior e alinha a borda direita de todas as linhas", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 800, width: 1280 });
+    const server = new FakeServer(SOLD);
+    server.top = nineDigitRanking();
+    await openHome(page, server);
+    const block = region(page, "Mais vendidos do mês");
+    await expect(block.locator("[data-top-value]")).toHaveText(
+      NINE_DIGIT_VALUES
+    );
+    expect(await columnRem(block)).toBeGreaterThanOrEqual(ONE_LINE_REM);
+    const lines = await figureEdges(block);
+    for (const line of lines) {
+      expect(line.value.overflows, "valor dentro da coluna").toBe(false);
+      expect(line.units.overflows, "unidades dentro da coluna").toBe(false);
+    }
+    expect(new Set(lines.map((line) => line.value.right)).size).toBe(1);
+    expect(new Set(lines.map((line) => line.units.right)).size).toBe(1);
+    await assertNoEllipsis(block.locator("[data-top-value], [data-top-units]"));
+  });
 
   // on a phone the card is the width of the screen less the page's and the card's own padding: 20,75 rem of line at 388 px
   const PHONE_EDGES = [
