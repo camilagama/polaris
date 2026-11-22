@@ -100,7 +100,7 @@ for (const viewport of VIEWPORTS) {
       await expect(footer).toContainText("1 cancelada fica fora da soma.");
       const filled = await heightOf(footer);
 
-      const total = footer.locator(".tabular-nums");
+      const total = footer.locator("div.tabular-nums");
       await expect(total).toHaveCSS("font-variant-numeric", TABULAR_NUMS);
       const rowValue = page
         .getByRole("list", { name: "Vendas" })
@@ -143,5 +143,5 @@ test("o valor de cada linha e o total da lista estão em Geist Mono", async ({
       .locator("[data-money]"),
     "o valor da linha do histórico"
   );
-  await expectMono(footer.locator("[data-money]"), "o total da lista");
+  await expectMono(footer.locator("span.font-mono"), "o total da lista");
 });
