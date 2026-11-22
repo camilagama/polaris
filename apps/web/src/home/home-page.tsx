@@ -672,13 +672,15 @@ function HomeHeader({
     offlineReasonId = "home-new-sale-offline";
   }
   return (
-    <header className="flex flex-wrap items-end justify-between gap-x-6 gap-y-4">
-      <div className="flex min-w-0 flex-1 items-start justify-between gap-3">
-        <div className="grid min-w-0 gap-1">
-          <h1 className="text-title">Início</h1>
+    <header className="flex flex-wrap items-end justify-between gap-x-6 gap-y-4 min-[47.5rem]:grid min-[47.5rem]:grid-cols-[minmax(0,1fr)_auto] min-[47.5rem]:items-center min-[47.5rem]:gap-x-3 min-[47.5rem]:gap-y-1">
+      <div className="flex min-w-0 flex-1 items-start justify-between gap-3 min-[47.5rem]:contents">
+        <div className="grid min-w-0 gap-1 min-[47.5rem]:contents">
+          <h1 className="text-title min-[47.5rem]:col-start-1 min-[47.5rem]:row-start-1">
+            Início
+          </h1>
           {/* two lines kept on a phone: the long day and hour, or "Carregando…", take the same box */}
           <p
-            className="min-h-10 text-muted-foreground text-support md:min-h-5"
+            className="min-h-10 text-muted-foreground text-support md:min-h-5 min-[47.5rem]:col-span-2 min-[47.5rem]:row-start-2"
             id="home-updated"
             role="status"
           >
@@ -696,7 +698,7 @@ function HomeHeader({
           ) : null}
         </div>
       </div>
-      <div className="flex w-full flex-wrap items-start gap-2 min-[47.5rem]:w-auto min-[47.5rem]:flex-nowrap">
+      <div className="flex w-full flex-wrap items-start gap-2 min-[47.5rem]:col-start-2 min-[47.5rem]:row-start-1 min-[47.5rem]:w-auto min-[47.5rem]:flex-nowrap">
         {period?.picker}
         {refresh ? (
           <HomeRefresh
@@ -721,7 +723,7 @@ function HomeHeader({
       {offlineText ? (
         <p
           // sibling of the row of actions in a flex-wrap header with `gap-y-4`: the negative margin leaves 6 px between them
-          className="-mt-2.5 w-full text-muted-foreground text-support sm:text-right"
+          className="-mt-2.5 w-full text-muted-foreground text-support sm:text-right min-[47.5rem]:col-span-2 min-[47.5rem]:mt-0.5"
           id="home-new-sale-offline"
         >
           {offlineText}

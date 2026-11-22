@@ -404,6 +404,16 @@ test.describe("loja com venda", () => {
       );
       expect(period?.y ?? 0).toBeLessThan(cards?.y ?? 0);
       await expect(page.locator("[data-kpi-group-line]")).toHaveCount(0);
+      const updated = await page.locator("#home-updated").boundingBox();
+      expect(
+        updated?.height,
+        "a linha do atualizado fica numa linha, sob o título"
+      ).toBeLessThan(30);
+      expect(
+        await page
+          .getByRole("heading", { level: 1, name: "Início" })
+          .evaluate((h1) => h1.scrollWidth <= h1.clientWidth)
+      ).toBe(true);
     });
   }
 

@@ -64,7 +64,7 @@ export function HomePeriodNotes({
   return (
     <div
       className={cn(
-        "flex w-full flex-col gap-1 sm:text-right",
+        "flex w-full flex-col gap-1 sm:text-right min-[47.5rem]:col-span-2",
         !note && "max-sm:contents"
       )}
       data-home-period=""
