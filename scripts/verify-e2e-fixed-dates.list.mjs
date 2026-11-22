@@ -26,7 +26,7 @@ export const E2E_FIXED_DATES_LIST = {
     reason: BEFORE_THE_RULE,
   },
   "apps/web/e2e-pwa/ui-date-pickers.e2e.ts": {
-    count: 42,
+    count: 43,
     reason: THE_GALLERY_FIXES_TODAY,
   },
   "apps/web/e2e-pwa/ui-shell-isolation.e2e.ts": {
