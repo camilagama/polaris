@@ -144,7 +144,9 @@ async function footFrames(page: Page, wanted: number) {
       )
     )
     .toBeGreaterThanOrEqual(wanted);
-  return await page.evaluate(() => Reflect.get(window, "polarisFrames") as FootFrames);
+  return await page.evaluate(
+    () => Reflect.get(window, "polarisFrames") as FootFrames
+  );
 }
 
 function expectEnteredTogetherAndStill(frames: FootFrames) {
