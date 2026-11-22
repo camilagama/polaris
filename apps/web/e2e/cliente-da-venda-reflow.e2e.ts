@@ -139,6 +139,7 @@ for (const name of [LONG_NAME, UNBROKEN_NAME]) {
       const box = await card.boundingBox();
       const written = await current.boundingBox();
       const windowWidth = page.viewportSize()?.width ?? 0;
+      expect(windowWidth, "a janela do teste tem 320 px").toBe(320);
       expect(
         await longestWordWidth(current, name),
         "a maior palavra sozinha é mais larga que a janela de 320 px: sem quebra dentro da palavra o nome vazaria"
