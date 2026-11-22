@@ -107,7 +107,7 @@ describe("Vendas hoje anda pelos dias", () => {
     unmount();
   });
 
-  it("sem o controle em foco (o ponteiro no gráfico), a mudança do título continua anunciada", async () => {
+  it("sem o controle em foco, a mudança do título continua anunciada (o caminho do ponteiro no gráfico usa o mesmo título vivo)", async () => {
     const { container, unmount } = render(<KpiCards figures={figures()} />);
     const { range, title } = todayCard(container);
     const watch = watchAnnouncements(title);
