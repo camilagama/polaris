@@ -141,13 +141,21 @@ export function SaleReturnPanel({
     },
     [handleClose]
   );
+  // an attempt that ended (accepted, or discarded) is dropped once the dialog has faded, not while it does
+  const ended = useRef<boolean>(false);
   const handleClosed = useCallback(
     (next: boolean) => {
-      if (!next) {
-        setState((current) =>
-          closeReturn(current) === current ? current : openedReturn(rows)
-        );
+      if (next) {
+        return;
       }
+      if (ended.current) {
+        ended.current = false;
+        setState(openedReturn(rows));
+        return;
+      }
+      setState((current) =>
+        closeReturn(current) === current ? current : openedReturn(rows)
+      );
     },
     [rows]
   );
@@ -199,13 +207,13 @@ export function SaleReturnPanel({
     if (discarded === null) {
       return;
     }
-    setState(openedReturn(rows));
+    ended.current = true;
     onClose();
     onSaleChanged({
       message: "Tentativa descartada. Conferimos o estado atual da venda.",
       ok: false,
     });
-  }, [onClose, onSaleChanged, rows, state]);
+  }, [onClose, onSaleChanged, state]);
 
   const handleConfirm = useCallback(async () => {
     if (inFlight.current) {
@@ -224,7 +232,7 @@ export function SaleReturnPanel({
     inFlight.current = true;
     try {
       const result = await orpcClient.sale.return(prepared.request);
-      setState(openedReturn(rows));
+      ended.current = true;
       onClose();
       onSaleChanged({ message: returnSuccessMessage(result), ok: true });
     } catch (error) {
@@ -236,7 +244,7 @@ export function SaleReturnPanel({
     } finally {
       inFlight.current = false;
     }
-  }, [onClose, onSaleChanged, organizationId, rows, saleId, state]);
+  }, [onClose, onSaleChanged, organizationId, saleId, state]);
   const handleConfirmEvent = useCallback(() => {
     handleConfirm().catch(() => undefined);
   }, [handleConfirm]);
@@ -251,7 +259,11 @@ export function SaleReturnPanel({
       onOpenChangeComplete={handleClosed}
       open={open}
     >
-      <DialogContent finalFocus={finalFocus} layout="form">
+      <DialogContent
+        finalFocus={finalFocus}
+        layout="form"
+        showCloseButton={!locked}
+      >
         <DialogForm onSubmit={handleSubmit}>
           <DialogHeader>
             <DialogTitle>Registrar devolução</DialogTitle>

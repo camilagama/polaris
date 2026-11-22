@@ -242,7 +242,7 @@ export const saleDetailAnswers = ({
   withFee = false,
   withReturn,
 }: {
-  situation?: SaleDetailSituation;
+  situation?: SaleDetailSituation | undefined;
   withFee?: boolean;
   withReturn: boolean;
 }): Readonly<Record<string, unknown>> => ({

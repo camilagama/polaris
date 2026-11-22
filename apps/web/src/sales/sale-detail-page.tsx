@@ -17,6 +17,7 @@ import { Skeleton } from "@/ui/skeleton";
 import { type TitleBack, TitleLine } from "../app-shell/screen-title";
 import { invalidatePreviousWindow } from "../home/previous-window-copy";
 import { useConnectionOnline } from "../lib/browser-connection";
+import { focusLater } from "../lib/focus";
 import { useCurrentOrganization } from "../lib/current-organization";
 import { browserStorage } from "../lib/current-organization-model";
 import { orpcClient } from "../lib/orpc";
@@ -57,9 +58,9 @@ import { SaleIdMissing } from "./sale-id-missing";
 import { SaleNoticeRegion } from "./sale-notice-region";
 import { SaleReceipt } from "./sale-receipt";
 import { SaleReturnPanel } from "./sale-return-panel";
+import { SaleTimeline } from "./sale-timeline";
 
 type DialogFinalFocus = ComponentProps<typeof SaleReturnPanel>["finalFocus"];
-import { SaleTimeline } from "./sale-timeline";
 
 /** The root of a piece of the screen, as the other screens write it. */
 const UI_ROOT = "grid gap-4 font-sans text-foreground text-sm antialiased";
@@ -166,13 +167,22 @@ function offerOf(
   refreshing: boolean,
   link: SaleCustomerLink
 ): SaleActionsOffer {
-  const view = detail === null ? null : saleDetailView(detail);
+  if (detail === null) {
+    return {
+      cancel: false,
+      choose: null,
+      linking: false,
+      remove: false,
+      return: false,
+    };
+  }
+  const view = saleDetailView(detail);
   return {
-    cancel: view !== null && cancelOffer(view, refreshing) === "panel",
+    cancel: cancelOffer(view, refreshing) === "panel",
     choose: link.chooseAction?.action ?? null,
     linking: link.status.kind === "submitting",
     remove: link.removeAction !== undefined,
-    return: view?.canReturn === true,
+    return: view.canReturn,
   };
 }
 
@@ -211,9 +221,24 @@ function SaleDetailContent({
     saleId,
   });
 
+  const detail = load.status === "ready" ? load.value : null;
+  const open = openDialogs(dialog, detail);
+  // a dialog whose panel is gone (the sale changed under it) is not left "open" for the next one with the same key
+  const stale = dialog !== null && !open.cancel && !open.return;
+  useEffect(() => {
+    if (stale) {
+      setDialog(null);
+      // after the dialog that went away has given the focus back to what opened it
+      focusLater(() => noticeRef.current?.focus());
+    }
+  }, [stale]);
   // a result goes to the notice at once, unless a dialog is still open over it (a failure that keeps its dialog)
-  const dialogOpen = useRef(false);
-  dialogOpen.current = dialog !== null || link.choosing || link.removing;
+  const anyDialogOpen =
+    open.cancel || open.return || link.choosing || link.removing;
+  const dialogOpen = useRef<boolean>(anyDialogOpen);
+  useEffect(() => {
+    dialogOpen.current = anyDialogOpen;
+  }, [anyDialogOpen]);
   useEffect(() => {
     if (notice !== null && !dialogOpen.current) {
       noticeRef.current?.focus();
@@ -272,7 +297,6 @@ function SaleDetailContent({
     },
     [announce, loadDetail, organizationId, refreshLink]
   );
-  const detail = load.status === "ready" ? load.value : null;
   const handleAction = useCallback(
     (action: SaleAction) => {
       afterClose.current = "trigger";
@@ -318,6 +342,11 @@ function SaleDetailContent({
       </header>
       <SaleNoticeRegion notice={notice} noticeRef={noticeRef} />
       <CustomerSaveError link={link} />
+      {link.status.kind === "submitting" ? (
+        <p className="text-muted-foreground" role="status">
+          {link.status.message}
+        </p>
+      ) : null}
       {load.status === "loading" ? (
         <LoadingCard message="Carregando venda…" />
       ) : null}
@@ -355,7 +384,7 @@ function SaleDetailContent({
           ) : null}
           <ReadyDetailDialogs
             detail={detail}
-            dialog={dialog}
+            open={open}
             finalFocus={finalFocus}
             onClose={handleDialogClose}
             onSaleChanged={handleSaleChanged}
@@ -484,12 +513,27 @@ interface OpenDialog {
   panelKey: string;
 }
 
+/** Which of the two dialogs is open: only while its panel is still there and, for the return, on the same quantities. */
+function openDialogs(
+  dialog: OpenDialog | null,
+  detail: SaleDetailReadModel | null
+) {
+  const view = detail === null ? null : saleDetailView(detail);
+  return {
+    cancel: dialog?.action === "cancel" && view?.canCancel === true,
+    return:
+      dialog?.action === "return" &&
+      view?.canReturn === true &&
+      dialog.panelKey === view.returnPanelKey,
+  };
+}
+
 interface ReadyDetailDialogsProps {
   detail: SaleDetailReadModel;
-  dialog: OpenDialog | null;
   finalFocus: DialogFinalFocus;
   onClose: () => void;
   onSaleChanged: (notice: SaleNotice) => void;
+  open: ReturnType<typeof openDialogs>;
   organizationId: string;
   saleId: string;
 }
@@ -497,10 +541,10 @@ interface ReadyDetailDialogsProps {
 /** The forms of the return and of the cancellation, in dialogs that the menu of the title opens. */
 function ReadyDetailDialogs({
   detail,
-  dialog,
   finalFocus,
   onClose,
   onSaleChanged,
+  open,
   organizationId,
   saleId,
 }: ReadyDetailDialogsProps) {
@@ -513,10 +557,7 @@ function ReadyDetailDialogs({
           key={view.returnPanelKey}
           onClose={onClose}
           onSaleChanged={onSaleChanged}
-          open={
-            dialog?.action === "return" &&
-            dialog.panelKey === view.returnPanelKey
-          }
+          open={open.return}
           organizationId={organizationId}
           rows={view.returnRows}
           saleId={saleId}
@@ -528,7 +569,7 @@ function ReadyDetailDialogs({
           key={saleId}
           onClose={onClose}
           onSaleChanged={onSaleChanged}
-          open={dialog?.action === "cancel"}
+          open={open.cancel}
           organizationId={organizationId}
           saleId={saleId}
           saleItemCount={detail.sale.items.length}

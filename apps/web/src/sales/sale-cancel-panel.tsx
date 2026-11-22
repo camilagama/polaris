@@ -132,12 +132,20 @@ export function SaleCancelPanel({
     },
     [handleClose]
   );
+  // an attempt that ended (accepted, or discarded) is dropped once the dialog has faded, not while it does
+  const ended = useRef<boolean>(false);
   const handleClosed = useCallback((next: boolean) => {
-    if (!next) {
-      setState((current) =>
-        closeCancel(current) === current ? current : openedCancel()
-      );
+    if (next) {
+      return;
     }
+    if (ended.current) {
+      ended.current = false;
+      setState(openedCancel());
+      return;
+    }
+    setState((current) =>
+      closeCancel(current) === current ? current : openedCancel()
+    );
   }, []);
   const handleSubmit = useCallback((event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -177,7 +185,7 @@ export function SaleCancelPanel({
     if (discarded === null) {
       return;
     }
-    setState(openedCancel());
+    ended.current = true;
     onClose();
     onSaleChanged({
       message: "Tentativa descartada. Conferimos o estado atual da venda.",
@@ -202,7 +210,7 @@ export function SaleCancelPanel({
     inFlight.current = true;
     try {
       const result = await orpcClient.sale.cancel(prepared.request);
-      setState(openedCancel());
+      ended.current = true;
       onClose();
       onSaleChanged({
         message: cancelSuccessMessage(result, saleItemCount),
@@ -233,7 +241,11 @@ export function SaleCancelPanel({
       onOpenChangeComplete={handleClosed}
       open={open}
     >
-      <DialogContent finalFocus={finalFocus} layout="form">
+      <DialogContent
+        finalFocus={finalFocus}
+        layout="form"
+        showCloseButton={!locked}
+      >
         <DialogForm onSubmit={handleSubmit}>
           <DialogHeader>
             <DialogTitle>Cancelar venda</DialogTitle>

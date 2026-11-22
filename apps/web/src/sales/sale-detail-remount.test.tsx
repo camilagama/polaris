@@ -216,6 +216,9 @@ describe("the dialogs of the sale detail after a change to the returnable quanti
     expect(getCustomerLink).toHaveBeenCalledTimes(1);
     expect(screen.getByRole("button", ACTIONS_MENU)).toBeTruthy();
     expect(getSale).toHaveBeenCalledTimes(2);
+    await waitFor(() =>
+      expect(document.activeElement?.getAttribute("data-slot")).toBe("alert")
+    );
   });
 
   it("keeps the return dialog open, with its failure, when the detail is read again with the same available quantities", async () => {
