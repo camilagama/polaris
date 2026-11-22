@@ -4,7 +4,13 @@ import CheckIcon from "lucide-react/dist/esm/icons/check";
 import ShoppingBagIcon from "lucide-react/dist/esm/icons/shopping-bag";
 import StoreIcon from "lucide-react/dist/esm/icons/store";
 import TagIcon from "lucide-react/dist/esm/icons/tag";
-import { type ReactNode, useEffect, useMemo, useRef } from "react";
+import {
+  type CSSProperties,
+  type ReactNode,
+  useEffect,
+  useMemo,
+  useRef,
+} from "react";
 import { COLLAPSIBLE_QUERY } from "@/lib/breakpoints";
 import { cn } from "@/lib/utils";
 import { useMediaQuery } from "@/lib/use-mobile";
@@ -48,20 +54,29 @@ const RANKING_FOOTER = {
   label: "Ver os produtos",
 } as const;
 
+const unitsText = (quantity: number) => `${formatQuantity(quantity)} un.`;
+
 const ALL_RETURNED_TEXT = "As vendas do período foram devolvidas.";
 
 /** From this many lines the list takes the height the card is given, a line each; fewer stay at the top. */
 const SPREAD_FROM = 3;
 
+/** The widest of the formatted texts, in characters, to size a column in `ch`: the digits are tabular (one `ch` each) and the points, the comma and the space are narrower, which leaves the room the bold weight takes. */
+function widestCh(texts: readonly string[]): number {
+  return texts.reduce((widest, text) => Math.max(widest, text.length), 0);
+}
+
 /**
- * The five most sold products of the month, by units net of returns; none sold, or every sale of the period returned, the same box says so (AC-16). Each line has the
- * miniature of the product (its two initials when it has no photo or while it comes, in a box of the same size, so
- * nothing moves when the photo arrives) with the position in a small circle over its corner, the name, the net sales
- * and the units, and a green bar proportional to the net sales (v7 § 3 item 11), drawn in CSS: it says the same as
- * the value beside it. Each line is its own container: from 20.75 rem the five are one row, and the name is cut with
- * an ellipsis when it does not fit; under that (a phone, a narrow column, the browser font enlarged) the name takes its
- * own line, up to two, the miniature sits beside both lines, and the net sales and the units go to the line under
- * the name.
+ * The five most sold products of the month, by units net of returns; none sold, or every sale of the period returned, the same box says so (AC-16). Each line is
+ * a grid of columns that are the same in every line: the position (a figure, right-aligned), the miniature of the
+ * product (its two initials when it has no photo or while it comes, in a box of the same size, so nothing moves when
+ * the photo arrives), the name, the net sales and the units (both right-aligned, in the width of the widest of the
+ * five lines, so every line ends at the same x), and under them a green bar proportional to the net sales (v7 § 3
+ * item 11), drawn in CSS, from the name column to the units column: it says the same as the value beside it. Each
+ * line is its own container: from 20.75 rem the five columns are one row and the name is cut with an ellipsis when
+ * it does not fit; under that (a phone, a narrow column, the browser font enlarged) the name takes the width of the
+ * name and units columns, up to two lines, the miniature sits beside both rows, and the net sales and the units
+ * go to the row under the name.
  */
 export function TopProductsBlock({
   products,
@@ -92,47 +107,53 @@ export function TopProductsBlock({
     );
   }
   const spread = products.length >= SPREAD_FROM;
+  const columns = {
+    "--top-units": `${widestCh(products.map((product) => unitsText(product.quantity)))}ch`,
+    "--top-value": `${widestCh(products.map((product) => formatBrlAmount(product.netSales)))}ch`,
+  } as CSSProperties;
   return (
     <HomeBlock footer={RANKING_FOOTER} id="home-top" title={title}>
-      <ol className="flex min-w-0 flex-1 flex-col">
+      <ol className="flex min-w-0 flex-1 flex-col" style={columns}>
         {products.map((product, index) => {
           const content = (
             <>
               <span
-                data-top-line=""
-                className="@min-[20.75rem]:flex grid min-w-0 grid-cols-[32px_minmax(0,1fr)] items-center gap-x-3 gap-y-0.5"
+                className="col-start-1 @min-[20.75rem]:row-span-1 row-span-2 row-start-1 justify-self-end text-muted-foreground tabular-nums"
+                data-top-rank=""
               >
-                <span className="relative row-span-2 shrink-0 self-center">
-                  <ProductThumbnail
-                    assetId={product.coverAssetId}
-                    name={product.name}
-                    size={32}
-                  />
-                  <span className="absolute -top-1.5 -left-1.5 grid size-[1.125rem] place-items-center rounded-full bg-background font-semibold text-xs tabular-nums ring-1 ring-border">
-                    {index + 1}
-                  </span>
+                {index + 1}
+              </span>
+              <span className="col-start-2 @min-[20.75rem]:row-span-1 row-span-2 row-start-1 grid self-center">
+                <ProductThumbnail
+                  assetId={product.coverAssetId}
+                  name={product.name}
+                  size={32}
+                />
+              </span>
+              <span
+                className="col-start-3 @min-[20.75rem]:col-end-4 col-end-5 row-start-1 line-clamp-2 @min-[20.75rem]:line-clamp-none min-w-0 @min-[20.75rem]:truncate break-words"
+                data-top-name=""
+              >
+                {product.name}
+              </span>
+              <span className="col-start-3 col-end-5 row-start-2 flex @min-[20.75rem]:contents flex-wrap items-baseline justify-between gap-x-2">
+                <span
+                  className="@min-[20.75rem]:col-start-4 @min-[20.75rem]:row-start-1 @min-[20.75rem]:justify-self-end font-semibold tabular-nums"
+                  data-top-value=""
+                >
+                  <MoneyText text={formatBrlAmount(product.netSales)} />
                 </span>
                 <span
-                  data-top-name=""
-                  className="line-clamp-2 @min-[20.75rem]:line-clamp-none min-w-0 @min-[20.75rem]:flex-1 @min-[20.75rem]:truncate break-words"
+                  className="@min-[20.75rem]:col-start-5 @min-[20.75rem]:row-start-1 @min-[20.75rem]:ml-0 ml-auto @min-[20.75rem]:justify-self-end text-muted-foreground tabular-nums"
+                  data-top-units=""
                 >
-                  {product.name}
-                </span>
-                <span
-                  data-top-figures=""
-                  className="col-start-2 flex @min-[20.75rem]:contents flex-wrap items-baseline gap-x-3"
-                >
-                  <span className="shrink-0 font-semibold tabular-nums">
-                    <MoneyText text={formatBrlAmount(product.netSales)} />
-                  </span>
-                  <span className="@min-[20.75rem]:ml-0 ml-auto @min-[20.75rem]:w-12 @min-[20.75rem]:shrink-0 text-right text-muted-foreground tabular-nums">
-                    {`${formatQuantity(product.quantity)} un.`}
-                  </span>
+                  {unitsText(product.quantity)}
                 </span>
               </span>
               <span
                 aria-hidden="true"
-                className="ml-[calc(32px+0.75rem)] block h-1.5 overflow-hidden rounded-full bg-muted"
+                className="col-start-3 @min-[20.75rem]:col-end-6 col-end-5 @min-[20.75rem]:row-start-2 row-start-3 block h-1.5 overflow-hidden rounded-full bg-muted"
+                data-top-track=""
               >
                 <span
                   className="block h-full rounded-full bg-chart-sales"
@@ -142,13 +163,15 @@ export function TopProductsBlock({
               </span>
             </>
           );
-          const row = "grid min-h-12 content-center gap-1.5 py-2";
+          const row =
+            "grid min-h-12 grid-cols-[1.25rem_auto_minmax(0,1fr)_auto] @min-[20.75rem]:grid-cols-[1.25rem_auto_minmax(0,1fr)_var(--top-value)_var(--top-units)] content-center items-center gap-x-2 gap-y-1 py-2";
           return (
             <li
               className={cn(
                 "@container grid min-w-0 border-t first:border-t-0",
                 spread && "flex-1"
               )}
+              data-top-line=""
               key={product.productId}
             >
               {product.deleted ? (
