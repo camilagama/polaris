@@ -18,14 +18,22 @@ import { inflateRawSync } from "node:zlib";
  * the read of the Playwright version and the check of it against the image tag) and the execution (the rest). With
  * `--durations`, sums the time per test file from the JSON reports the browser shards upload.
  *
+ * With `--budget`, reads the `timeout-minutes` of every job of the workflow and lists the jobs whose p95 passed
+ * 1/1.3 of that budget in at least two runs, exiting 1 when there is one: the budget is the p95 plus 30%, and a job
+ * past it is a slowdown that would otherwise go unseen until the job is cut by the timeout.
+ *
  * Usage:
  *   GITHUB_TOKEN=... node scripts/ci-timing.mjs [--runs 25] [--json out.json] [--repo owner/name]
+ *   GITHUB_TOKEN=... node scripts/ci-timing.mjs --budget [--workflow .github/workflows/ci.yml] [--runs 25]
  *   node scripts/ci-timing.mjs --durations <folder | run id> [--out ci/test-durations.json]
  */
 
 const DEFAULT_RUNS = 25;
 const DEFAULT_REPO = "camilagama/polaris";
 const WORKFLOW = "ci.yml";
+const WORKFLOW_PATH = `.github/workflows/${WORKFLOW}`;
+export const BUDGET_FACTOR = 1.3;
+export const BUDGET_MIN_RUNS = 2;
 export const EVENTS = ["pull_request", "workflow_dispatch"];
 const JOB_SETUP_STEP = "Set up job";
 const IMAGE_PULL_STEP = "Initialize containers";
@@ -34,6 +42,13 @@ const BROWSER_GATE = "Offline browser gate";
 const DATABASE_GATES = "PostgreSQL 18 gates";
 const SHARD_SUFFIX = /^(.*?)\s*\(shard (\d+\/\d+)\)\s*$/;
 const RUN_ID = /^\d+$/;
+const TOP_LEVEL_LINE = /^[^\s#]/;
+const JOBS_LINE = /^jobs:\s*(#.*)?$/;
+const JOB_KEY_LINE = /^ {2}([\w-]+):\s*(#.*)?$/;
+const JOB_NAME_LINE = /^ {4}name:\s*(.+?)\s*(\s#.*)?$/;
+const JOB_TIMEOUT_LINE = /^ {4}timeout-minutes:\s*(\d+)\s*(#.*)?$/;
+const SHARD_TEMPLATE = /\s*\(shard (\d+\/\d+|\$\{\{.*)\)\s*$/;
+const QUOTED = /^(["'])(.*)\1$/;
 const TIMINGS_ARTIFACT = /^playwright-timings-/;
 const TIMINGS_FILE = /^timings-(.+)\.json$/;
 const INSTALL_STEP = new RegExp(
@@ -271,6 +286,148 @@ export function renderMarkdown(byEvent) {
   return `${lines.join("\n")}\n`;
 }
 
+/**
+ * The `timeout-minutes` of each job of a workflow, by the group the report uses (the job `name`, without the shard
+ * suffix), as a Map of group to minutes. Reads the two-space-indented keys under `jobs:`; a job with no
+ * `timeout-minutes` has no budget, and groups that share a name keep the largest.
+ */
+export function readBudgets(workflowText) {
+  const budgets = new Map();
+  let inJobs = false;
+  let current = null;
+  const close = () => {
+    if (current?.timeout !== undefined && !current.name.includes("${{")) {
+      budgets.set(
+        current.name,
+        Math.max(budgets.get(current.name) ?? 0, current.timeout)
+      );
+    }
+  };
+  for (const line of workflowText.split("\n")) {
+    if (TOP_LEVEL_LINE.test(line)) {
+      close();
+      current = null;
+      inJobs = JOBS_LINE.test(line);
+      continue;
+    }
+    if (!inJobs) {
+      continue;
+    }
+    const key = JOB_KEY_LINE.exec(line);
+    if (key) {
+      close();
+      current = { name: key[1], timeout: undefined };
+      continue;
+    }
+    const name = JOB_NAME_LINE.exec(line);
+    if (name && current) {
+      current.name = name[1].replace(QUOTED, "$2").replace(SHARD_TEMPLATE, "");
+      continue;
+    }
+    const timeout = JOB_TIMEOUT_LINE.exec(line);
+    if (timeout && current) {
+      current.timeout = Number(timeout[1]);
+    }
+  }
+  close();
+  return budgets;
+}
+
+/**
+ * The jobs of one event whose p95 passed 1/1.3 of their `timeout-minutes` in at least two runs, from `entries`
+ * (`{ run, jobs }`) and `budgets` (group to minutes). Every job of a group counts, so a slow shard counts for its
+ * group; a run counts once. Sorted by name.
+ */
+export function overBudget(entries, budgets) {
+  const groups = new Map();
+  for (const { run, jobs } of entries) {
+    for (const job of jobs) {
+      const parts = splitJob(job);
+      const { group } = groupOf(job.name);
+      if (!(parts && budgets.has(group))) {
+        continue;
+      }
+      const bucket = groups.get(group) ?? {
+        durations: [],
+        slowRuns: new Set(),
+      };
+      const duration = parts.preparation + parts.execution;
+      bucket.durations.push(duration);
+      if (duration > (budgets.get(group) * 60) / BUDGET_FACTOR) {
+        bucket.slowRuns.add(run.id);
+      }
+      groups.set(group, bucket);
+    }
+  }
+  return [...groups.entries()]
+    .map(([name, bucket]) => ({
+      limit: (budgets.get(name) * 60) / BUDGET_FACTOR,
+      n: bucket.durations.length,
+      name,
+      p95: percentile(bucket.durations, 95),
+      slowRuns: bucket.slowRuns.size,
+      timeout: budgets.get(name),
+    }))
+    .filter((row) => row.p95 > row.limit && row.slowRuns >= BUDGET_MIN_RUNS)
+    .sort((a, b) => a.name.localeCompare(b.name, "en"));
+}
+
+/**
+ * The groups with a budget and no execution in the sample of one event (a renamed job, or one that does not run in
+ * that event): they have no watch, and the report says so instead of passing as clean. Sorted by name.
+ */
+export function unmeasured(entries, budgets) {
+  const seen = new Set();
+  for (const { jobs } of entries) {
+    for (const job of jobs) {
+      if (splitJob(job)) {
+        seen.add(groupOf(job.name).group);
+      }
+    }
+  }
+  return [...budgets.keys()]
+    .filter((name) => !seen.has(name))
+    .sort((a, b) => a.localeCompare(b, "en"));
+}
+
+/** 1 when any event has a job over budget; `byEvent` is `{ [event]: { over, unmeasured } }`. */
+export function budgetExitCode(byEvent) {
+  return Object.values(byEvent).some((event) => event.over.length > 0) ? 1 : 0;
+}
+
+export function renderBudget(byEvent) {
+  const lines = [];
+  for (const [event, { over, unmeasured: missing }] of Object.entries(
+    byEvent
+  )) {
+    lines.push(`### ${event}`, "");
+    if (over.length === 0) {
+      lines.push(
+        "Nenhum job passou de 1/1,3 do `timeout-minutes` em 2 execuções ou mais.",
+        ""
+      );
+    } else {
+      lines.push(
+        "| Job | n | p95 (min) | Limite (min) | `timeout-minutes` | Execuções acima do limite |",
+        "| --- | ---: | ---: | ---: | ---: | ---: |"
+      );
+      for (const row of over) {
+        lines.push(
+          `| ${row.name} | ${row.n} | ${minutesText(row.p95)} | ${minutesText(row.limit)} | ${row.timeout} | ${row.slowRuns} |`
+        );
+      }
+      lines.push("");
+    }
+    if (missing.length > 0) {
+      lines.push(
+        `Sem execução na amostra, portanto sem vigia neste evento: ${missing.join("; ")}.`,
+        ""
+      );
+    }
+  }
+  return `${lines.join("\n")}\n`;
+}
+
 function* specsOf(suite) {
   for (const spec of suite.specs ?? []) {
     yield spec;
@@ -391,31 +548,15 @@ export function reportsFromFolder(folder) {
   }));
 }
 
-function parseArgs(argv) {
-  const options = { runs: DEFAULT_RUNS };
-  for (let i = 0; i < argv.length; i += 1) {
-    const arg = argv[i];
-    const value = () => {
-      i += 1;
-      if (argv[i] === undefined) {
-        throw new Error(`${arg} needs a value`);
-      }
-      return argv[i];
-    };
-    if (arg === "--runs") {
-      options.runs = Number(value());
-    } else if (arg === "--json") {
-      options.json = value();
-    } else if (arg === "--repo") {
-      options.repo = value();
-    } else if (arg === "--durations") {
-      options.durations = value();
-    } else if (arg === "--out") {
-      options.out = value();
-    } else {
-      throw new Error(`unknown argument ${arg}`);
-    }
-  }
+const VALUE_FLAGS = {
+  "--durations": "durations",
+  "--json": "json",
+  "--out": "out",
+  "--repo": "repo",
+  "--workflow": "workflow",
+};
+
+function checkOptions(options) {
   if (
     !Number.isInteger(options.runs) ||
     options.runs < 1 ||
@@ -423,6 +564,36 @@ function parseArgs(argv) {
   ) {
     throw new Error("--runs must be a whole number from 1 to 100");
   }
+  if (options.budget && (options.json || options.durations)) {
+    throw new Error("--budget does not combine with --json or --durations");
+  }
+  if (options.workflow && !options.budget) {
+    throw new Error("--workflow only goes with --budget");
+  }
+}
+
+function parseArgs(argv) {
+  const options = { runs: DEFAULT_RUNS };
+  for (let i = 0; i < argv.length; i += 1) {
+    const arg = argv[i];
+    if (arg === "--budget") {
+      options.budget = true;
+      continue;
+    }
+    if (arg !== "--runs" && !(arg in VALUE_FLAGS)) {
+      throw new Error(`unknown argument ${arg}`);
+    }
+    i += 1;
+    if (argv[i] === undefined) {
+      throw new Error(`${arg} needs a value`);
+    }
+    if (arg === "--runs") {
+      options.runs = Number(argv[i]);
+    } else {
+      options[VALUE_FLAGS[arg]] = argv[i];
+    }
+  }
+  checkOptions(options);
   return options;
 }
 
@@ -487,6 +658,12 @@ async function jobsOf(api, run) {
 }
 
 async function measure(options) {
+  const budgets = options.budget
+    ? readBudgets(readFileSync(options.workflow ?? WORKFLOW_PATH, "utf8"))
+    : null;
+  if (budgets && budgets.size === 0) {
+    throw new Error("no job with timeout-minutes in the workflow");
+  }
   const api = client(options.repo);
   const measured = [];
   for (const event of EVENTS) {
@@ -503,9 +680,25 @@ async function measure(options) {
       );
       entries.push(...batch);
     }
-    measured.push([event, summarize(entries)]);
+    if (budgets && entries.length === 0) {
+      throw new Error(`no green ${event} run of ${WORKFLOW} to measure`);
+    }
+    measured.push([
+      event,
+      budgets
+        ? {
+            over: overBudget(entries, budgets),
+            unmeasured: unmeasured(entries, budgets),
+          }
+        : summarize(entries),
+    ]);
   }
   const byEvent = Object.fromEntries(measured);
+  if (budgets) {
+    process.stdout.write(renderBudget(byEvent));
+    process.exitCode = budgetExitCode(byEvent);
+    return;
+  }
   process.stdout.write(renderMarkdown(byEvent));
   if (options.json) {
     writeFileSync(options.json, `${JSON.stringify(byEvent, null, 2)}\n`);
