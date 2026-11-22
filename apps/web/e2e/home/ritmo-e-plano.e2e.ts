@@ -2,7 +2,6 @@
 
 import type { Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
-import { expectReflowFont, openReflowViewport } from "../reflow";
 import {
   AN_AMOUNT,
   CONFIRMED,
@@ -289,34 +288,6 @@ test.describe("Ritmo de vendas (revisão de UI v7, § 3 item 10)", () => {
     );
     const cell = await dataCells(page).first().boundingBox();
     expect(cell?.width ?? 0).toBeCloseTo(12, 0);
-    expect(
-      await page.evaluate(
-        () => document.documentElement.scrollWidth <= window.innerWidth
-      )
-    ).toBe(true);
-  });
-
-  test("a 320 px com letra de 20 px: a legenda desce inteira para baixo do título, em uma linha, sem rolagem lateral", async ({
-    page,
-    browserName,
-  }) => {
-    test.skip(browserName !== "chromium", "`Page.setFontSizes` is Chromium's");
-    await openReflowViewport(page, { fontPixels: 20, height: 740, width: 320 });
-    await openHome(page, new FakeServer(SOLD));
-    await expectReflowFont(page, 20);
-    const map = rhythm(page);
-    await expect(dataCells(page).first()).toBeVisible();
-    const titleBox = await map.getByRole("heading").boundingBox();
-    const legendBox = await map.locator("[data-rhythm-legend]").boundingBox();
-    const mapBox = await map.boundingBox();
-    expect(legendBox?.y ?? 0).toBeGreaterThanOrEqual(
-      (titleBox?.y ?? 0) + (titleBox?.height ?? 0) - 1
-    );
-    expect(legendBox?.height ?? 99).toBeLessThanOrEqual(26);
-    expect(legendBox?.x ?? 0).toBeGreaterThanOrEqual(mapBox?.x ?? 0);
-    expect((legendBox?.x ?? 0) + (legendBox?.width ?? 0)).toBeLessThanOrEqual(
-      (mapBox?.x ?? 0) + (mapBox?.width ?? 0)
-    );
     expect(
       await page.evaluate(
         () => document.documentElement.scrollWidth <= window.innerWidth

@@ -421,9 +421,9 @@ export function RhythmBlock({
         <p className="text-muted-foreground">O mapa abre com internet.</p>
       </HomeBlock>
     ) : (
-      // the height of the block read, so the blocks under it stay: the 123 px of the map (`MAP_TOP` and seven rows of cells) plus the title line and the paddings, which follow the letter
+      // the height of the block read at the default letter (199 px, 203 px from 768 px), so the blocks under it stay
       <BlockSkeleton
-        className="min-h-[calc(123px+4.75rem)] md:min-h-[calc(123px+5rem)]"
+        className="min-h-[12.4375rem] md:min-h-[12.6875rem]"
         label="Carregando o ritmo de vendas…"
         lines={0}
       />

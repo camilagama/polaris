@@ -162,7 +162,7 @@ for (const width of [320, 360]) {
 }
 
 reflowTest(
-  "a 1280 px o anel fica em cima do texto, os dois centralizados na coluna",
+  "a 1280 px, no par com o Ritmo, o anel continua ao lado do texto",
   async ({ page }) => {
     await openReflowViewport(page, {
       fontPixels: 16,
@@ -173,8 +173,8 @@ reflowTest(
     const meta = region(page, "Meta");
     await expect(meta.locator("[data-goal-ring]")).toContainText("53,4%");
     const read = await ringAndText(meta);
-    expect(read.textTop).toBeGreaterThanOrEqual(read.ringBottom - 1);
-    expect(Math.abs(read.ringCenter - read.textCenter)).toBeLessThanOrEqual(1);
+    expect(read.textLeft).toBeGreaterThanOrEqual(read.ringRight - 1);
+    expect(read.textTop).toBeLessThan(read.ringBottom);
   },
   { coarse: false }
 );
@@ -190,6 +190,30 @@ reflowTest(
     const read = await ringAndText(meta);
     expect(read.textTop).toBeGreaterThanOrEqual(read.ringBottom - 1);
     await assertNothingClipped(meta);
+    await assertNoPageScroll(page);
+  }
+);
+
+reflowTest(
+  "a 320 px com a letra em 20 px a legenda do Ritmo desce inteira para baixo do título, em uma linha, e nada rola de lado",
+  async ({ page }) => {
+    await openReflowViewport(page, { fontPixels: 20, width: 320 });
+    await openHome(page, withPercent("53.4"));
+    await expectReflowFont(page, 20);
+    const map = region(page, "Ritmo de vendas");
+    await expect(map.locator("[data-heatmap] svg")).toBeVisible();
+    const title = await map.getByRole("heading").boundingBox();
+    const legend = await map.locator("[data-rhythm-legend]").boundingBox();
+    const card = await map.boundingBox();
+    expect(legend?.y ?? 0).toBeGreaterThanOrEqual(
+      (title?.y ?? 0) + (title?.height ?? 0) - 1
+    );
+    expect(legend?.height ?? 99).toBeLessThanOrEqual(26);
+    expect(legend?.x ?? 0).toBeGreaterThanOrEqual(card?.x ?? 0);
+    expect((legend?.x ?? 0) + (legend?.width ?? 0)).toBeLessThanOrEqual(
+      (card?.x ?? 0) + (card?.width ?? 0)
+    );
+    await assertNothingClipped(map);
     await assertNoPageScroll(page);
   }
 );
