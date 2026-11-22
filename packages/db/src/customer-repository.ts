@@ -13,6 +13,12 @@ import {
 } from "@polaris/domain/customers/customer";
 import { and, asc, eq, isNotNull, isNull, or, sql } from "drizzle-orm";
 import { recordDeletionLedgerEntry } from "./deletion-ledger";
+import {
+  discountShareCents,
+  discountSplitColumns,
+  givenBackCents,
+  itemCentsColumns,
+} from "./return-given-back-sql";
 import { customers } from "./schema/customer";
 import { saleAdjustments, saleItems, sales } from "./schema/sale";
 import { saleCancellations } from "./schema/sale-cancellation";
@@ -143,8 +149,7 @@ function returnsGivenBack() {
   return sql`(
     WITH line AS (
       SELECT item.position, item.quantity,
-        item.charged_unit_price * 100 AS unit_cents,
-        item.charged_unit_price * item.quantity * 100 AS value_cents
+        ${itemCentsColumns(sql`item`)}
       FROM ${saleItems} AS item
       WHERE item.organization_id = ${sales.organizationId}
         AND item.sale_id = ${sales.id}
@@ -159,14 +164,10 @@ function returnsGivenBack() {
     gross AS (SELECT sum(line.value_cents) AS cents FROM line),
     allocation AS (
       SELECT split.position,
-        split.floor_cents + CASE WHEN split.rank <= split.leftover THEN 1 ELSE 0 END AS cents
+        ${discountShareCents} AS cents
       FROM (
         SELECT line.position,
-          div(discount.cents * line.value_cents, gross.cents) AS floor_cents,
-          discount.cents - sum(div(discount.cents * line.value_cents, gross.cents)) OVER () AS leftover,
-          row_number() OVER (
-            ORDER BY mod(discount.cents * line.value_cents, gross.cents) DESC, line.position
-          ) AS rank
+          ${discountSplitColumns(sql`discount.cents`)}
         FROM line, discount, gross
         WHERE gross.cents <> 0 AND discount.cents <> 0
       ) AS split
@@ -178,10 +179,7 @@ function returnsGivenBack() {
         AND returned_item.sale_id = ${sales.id}
       GROUP BY returned_item.item_position
     )
-    SELECT coalesce(sum(
-      returned.quantity * line.unit_cents
-        - div(coalesce(allocation.cents, 0) * returned.quantity * 2 + line.quantity, line.quantity::numeric * 2)
-    ), 0) / 100
+    SELECT coalesce(sum(${givenBackCents}), 0) / 100
     FROM returned
     JOIN line ON line.position = returned.position
     LEFT JOIN allocation ON allocation.position = returned.position
