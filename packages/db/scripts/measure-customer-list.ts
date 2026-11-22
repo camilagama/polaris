@@ -26,8 +26,10 @@ import {
  * nodes of each statement.
  *
  * Nothing but the database it is given is written, and only through the owner connection with the
- * triggers off for the bulk insert (the rows are plain facts, not commands). Run it on the disposable
- * database of the gates, never on one you keep.
+ * triggers off for the bulk insert (the rows are plain facts, not commands; `session_replication_role`
+ * needs a superuser, so the cluster with a non-superuser owner refuses it). Each run adds a new store and
+ * deletes nothing: run it on the disposable database of the gates, recreated by `reset.sh` or the gate
+ * runner, never on one you keep.
  *
  *   CI=true POLARIS_GATE_DATABASE_URL=postgresql://…@localhost:5432/polaris_gate \
  *   MEASURE_CUSTOMERS=500 MEASURE_SALES=50000 bun scripts/measure-customer-list.ts
@@ -37,6 +39,24 @@ const customerCount = Number(process.env.MEASURE_CUSTOMERS ?? 500);
 const saleCount = Number(process.env.MEASURE_SALES ?? 50_000);
 const heavyPercent = Number(process.env.MEASURE_HEAVY_PERCENT ?? 10);
 const runs = Number(process.env.MEASURE_RUNS ?? 5);
+
+/** The sizes are interpolated into utility statements, which take no parameters: refuse anything but whole numbers in range before any connection. */
+function assertSizes() {
+  const inRange = (value: number, min: number, max: number) =>
+    Number.isInteger(value) && value >= min && value <= max;
+  if (
+    !(
+      inRange(customerCount, 251, 100_000) &&
+      inRange(saleCount, 2, 5_000_000) &&
+      inRange(heavyPercent, 1, 100) &&
+      inRange(runs, 1, 100)
+    )
+  ) {
+    throw new Error(
+      "MEASURE_CUSTOMERS must be 251..100000, MEASURE_SALES 2..5000000, MEASURE_HEAVY_PERCENT 1..100 and MEASURE_RUNS 1..100"
+    );
+  }
+}
 
 interface Captured {
   text: string;
@@ -62,11 +82,6 @@ async function seedStore(
   product: { productId: string; variantId: string }
 ) {
   const org = fixture.organizationId;
-  for (const number of [customerCount, saleCount, heavyPercent]) {
-    if (!Number.isInteger(number) || number < 2) {
-      throw new Error("the sizes must be integers of at least 2");
-    }
-  }
   await inCommittedTransaction(admin.pool, async (client) => {
     await client.query("SET LOCAL session_replication_role = replica");
     await client.query(
@@ -217,7 +232,11 @@ async function explainRuns(
       (row: Record<string, string>) => row["QUERY PLAN"] as string
     );
     const execution = lines.find((line) => line.startsWith("Execution Time"));
-    times.push(Number.parseFloat(execution?.split(":")[1] ?? "NaN"));
+    const milliseconds = Number.parseFloat(execution?.split(":")[1] ?? "");
+    if (Number.isNaN(milliseconds)) {
+      throw new Error("the plan has no Execution Time line");
+    }
+    times.push(milliseconds);
     lastPlan = lines;
     buffers = lines.find((line) => line.includes("Buffers:")) ?? "";
   }
@@ -230,6 +249,7 @@ async function explainRuns(
 }
 
 async function main() {
+  assertSizes();
   const adminUrl = process.env.POLARIS_GATE_DATABASE_URL ?? "";
   const parsed = assertAllowedGateUrl(adminUrl);
   if (!["localhost", "127.0.0.1"].includes(parsed.hostname)) {
@@ -251,7 +271,11 @@ async function main() {
     runtime = createDatabase(runtimeUrl, { maxConnections: 2 });
 
     const fixture = await createTenantFixture(admin.pool, "customer-list");
-    const product = await createProductFixture(runtime.db, fixture, "t1588");
+    const product = await createProductFixture(
+      runtime.db,
+      fixture,
+      "customer-list"
+    );
     const size = await seedStore(admin, fixture, product);
 
     const heavy = await admin.pool.query(
@@ -259,8 +283,8 @@ async function main() {
       [fixture.organizationId]
     );
     const typical = await admin.pool.query(
-      "SELECT id FROM public.customers WHERE organization_id = $1 ORDER BY name, id OFFSET 250 LIMIT 1",
-      [fixture.organizationId]
+      "SELECT id FROM public.customers WHERE organization_id = $1 ORDER BY name, id OFFSET floor($2::int / 2) LIMIT 1",
+      [fixture.organizationId, customerCount]
     );
     const heavyId = heavy.rows[0].id as string;
     const typicalId = typical.rows[0].id as string;
@@ -319,22 +343,29 @@ async function main() {
     };
     for (const label of ["heavy", "typical"]) {
       const [statement] = detailStatements[label] ?? [];
-      if (statement) {
-        // biome-ignore lint/performance/noAwaitInLoops: sequential on purpose, one run at a time
-        const explain = await explainRuns(runtimeUrl, fixture, statement);
-        result.detail[label] = {
-          explain,
-          wall: summarize(detailWall[label] ?? []),
-        };
+      if (!statement) {
+        throw new Error(`the ${label} customer statement was not captured`);
       }
+      // biome-ignore lint/performance/noAwaitInLoops: sequential on purpose, one run at a time
+      const explain = await explainRuns(runtimeUrl, fixture, statement);
+      result.detail[label] = {
+        explain,
+        wall: summarize(detailWall[label] ?? []),
+      };
     }
     console.log(JSON.stringify(result, null, 2));
   } finally {
-    await runtime?.pool.end();
-    if (roleCreated) {
-      await admin.pool.query(`DROP ROLE IF EXISTS "${loginRole}"`);
+    try {
+      await runtime?.pool.end();
+    } finally {
+      try {
+        if (roleCreated) {
+          await admin.pool.query(`DROP ROLE IF EXISTS "${loginRole}"`);
+        }
+      } finally {
+        await admin.pool.end();
+      }
     }
-    await admin.pool.end();
   }
 }
 
