@@ -21,6 +21,8 @@ import {
   tileAreas,
 } from "./shared";
 
+const READING_TITLE = /^Vendas em \d\d\/\d\d$/;
+
 test.describe("cartões de KPI (revisão de UI v7, § 3 e § 6)", () => {
   /** The results of the days that sold: 30 % of the net sales, known on every day of both months. */
   const KNOWN: Record<string, number> = {
@@ -91,7 +93,9 @@ test.describe("cartões de KPI (revisão de UI v7, § 3 e § 6)", () => {
       })
     ).toEqual(["3px", "-3px"]);
 
-    const today = region(page, "Vendas hoje").getByRole("slider");
+    const today = page
+      .locator('[aria-labelledby="home-today"]')
+      .getByRole("slider");
     await today.focus();
     await expect(sales.locator("[data-kpi-date]")).toHaveCount(0);
     await page.keyboard.press("ArrowLeft");
@@ -100,9 +104,53 @@ test.describe("cartões de KPI (revisão de UI v7, § 3 e § 6)", () => {
       "qui, 22/10: R$ 0,00"
     );
     await expect(
-      region(page, "Vendas hoje").locator("[data-kpi-date]")
+      region(page, "Vendas em 22/10").locator("[data-kpi-date]")
     ).toHaveText("qui, 22/10");
-    await expect(region(page, "Vendas hoje")).toContainText("Nenhuma venda");
+    await expect(region(page, "Vendas em 22/10")).toContainText(
+      "Nenhuma venda"
+    );
+  });
+
+  test("Vendas hoje acompanha o dia lido: o título vira “Vendas em DD/MM”, o leitor de tela é avisado e, ao soltar, volta a “Vendas hoje” sem mover nada", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 800, width: 1280 });
+    await openHome(page, new FakeServer({ ...SOLD, results: KNOWN }));
+    const today = region(page, "Vendas hoje");
+    const title = today.getByRole("heading", { level: 2 });
+    await expect(title).toHaveText("Vendas hoje");
+    await expect(title).toHaveAttribute("aria-live", "polite");
+    await expect(today.locator("[data-kpi-spark] svg")).toBeVisible();
+    const strip = await today.locator("[data-kpi-spark] svg").boundingBox();
+    if (!strip) {
+      throw new Error("a sparkline de Vendas hoje não apareceu");
+    }
+    const still = await today.boundingBox();
+    const titleStill = await title.boundingBox();
+    await page.mouse.move(strip.x + 4, strip.y + strip.height / 2);
+    const read = page.getByRole("region", { name: READING_TITLE });
+    await expect(read).toHaveCount(1);
+    const heading = (await read.getByRole("heading").textContent()) ?? "";
+    const date = (await read.locator("[data-kpi-date]").textContent()) ?? "";
+    expect(date.endsWith(heading.replace("Vendas em ", ""))).toBe(true);
+    const reading = await read.boundingBox();
+    expect(reading?.height).toBeCloseTo(still?.height ?? Number.NaN, 0);
+    expect(reading?.y).toBeCloseTo(still?.y ?? Number.NaN, 0);
+    const titleReading = await read.getByRole("heading").boundingBox();
+    expect(titleReading?.y).toBeCloseTo(titleStill?.y ?? Number.NaN, 0);
+    expect(titleReading?.height).toBeCloseTo(
+      titleStill?.height ?? Number.NaN,
+      0
+    );
+
+    await page.mouse.move(10, 10);
+    await expect(region(page, "Vendas hoje")).toHaveCount(1);
+    await expect(region(page, "Vendas hoje").getByRole("heading")).toHaveText(
+      "Vendas hoje"
+    );
+    await expect(
+      region(page, "Vendas hoje").locator("[data-kpi-date]")
+    ).toHaveCount(0);
   });
 
   test("um dia lido antes da primeira venda de um mês com vendas diz só “Sem vendas”, no texto e na fala do minigráfico, nas Vendas e no Ticket (KPI-2)", async ({

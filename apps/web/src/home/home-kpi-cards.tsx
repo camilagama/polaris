@@ -39,7 +39,7 @@ import {
   unknownDaysFit,
   unknownDaysText,
 } from "./home-kpis";
-import { chartValue, monthTitle } from "./home-model";
+import { chartValue, monthTitle, shortDate } from "./home-model";
 import type { HomeFigures } from "./use-home";
 
 /**
@@ -144,7 +144,10 @@ function TodayTile({
           values={values}
         />
       }
-      title="Vendas hoje"
+      title={
+        day === figures.today ? "Vendas hoje" : `Vendas em ${shortDate(day)}`
+      }
+      titleLive
       value={<HeroValue amount={reading.value} reading={index !== null} tile />}
     />
   );

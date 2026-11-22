@@ -343,15 +343,18 @@ const TOP_ROW =
 function CardTitle({
   help,
   id,
+  live,
   title,
 }: {
   help: { about: string; text: string } | undefined;
   id: string;
+  live: boolean;
   title: ReactNode;
 }) {
   return (
     <div className="flex min-w-0 items-center gap-1 touch:gap-2.5">
       <h2
+        aria-live={live ? "polite" : undefined}
         className="flex min-w-0 items-center font-medium text-foreground"
         id={id}
       >
@@ -457,6 +460,7 @@ export function KpiTile({
   spark,
   strip = false,
   title,
+  titleLive = false,
   value,
   warning,
   warningDetail,
@@ -481,6 +485,8 @@ export function KpiTile({
   /** The tile is a column of `KPI_STRIP`: from 1280 px it gives up its own card. */
   strip?: boolean;
   title: ReactNode;
+  /** The title changes with the day read on the sparkline: a screen reader announces the change, politely. */
+  titleLive?: boolean;
   value: ReactNode;
   /** The sign of a warning that must stay in sight: it opens the support line, which stays one line tall. */
   warning?: ReactNode;
@@ -496,7 +502,7 @@ export function KpiTile({
       role="region"
     >
       <div className={cn(TOP_ROW, TILE_TITLE_ROW)}>
-        <CardTitle help={help} id={id} title={title} />
+        <CardTitle help={help} id={id} live={titleLive} title={title} />
       </div>
       <div className={hero ? HERO_BODY : TILE_BODY} data-kpi-body="">
         <div className={TILE_FIGURE} data-kpi-headline="">
