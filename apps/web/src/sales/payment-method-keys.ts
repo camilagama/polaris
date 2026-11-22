@@ -52,12 +52,16 @@ function isTextTarget(target: unknown): boolean {
   );
 }
 
-/** The option a key picks, or `null` when the key is not a bare digit of an existing option or the focus is on a text field. */
+/**
+ * The option a key picks, or `null` when the key is not a digit of an existing option or the focus is on a text field.
+ * Shift is not a cancel: on an AZERTY keyboard the digit is only written with it, and on QWERTY or ABNT2 Shift plus the
+ * number writes a symbol, which fails the digit test below.
+ */
 export function methodForKey<T>(
   event: KeyLike,
   methods: readonly T[]
 ): T | null {
-  if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) {
+  if (event.altKey || event.ctrlKey || event.metaKey) {
     return null;
   }
   if (event.key.length !== 1 || event.key < "1" || event.key > "9") {

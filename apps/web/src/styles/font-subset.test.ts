@@ -414,7 +414,7 @@ const MONO_FILE = fileURLToPath(
   )
 );
 
-const DISPLAY_CHARACTERS = "R$0123456789.,%+\u2212-\u2022\u2014 ";
+const DISPLAY_CHARACTERS = "R$0123456789.,%+\u2212-\u2022\u2014\u00d7 ";
 
 const WOFF2_TAGS = [
   "cmap",

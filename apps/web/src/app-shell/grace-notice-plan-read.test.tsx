@@ -7,8 +7,9 @@ import { notifyPlanUsageChanged } from "../lib/plan-usage-changes";
 import {
   clearPlanNotice,
   rememberedPlanNotice,
+  rememberPlanNotice,
 } from "../subscription/plan-notice";
-import { usePlanNoticeFacts } from "./grace-notice";
+import { PLAN_READ_WAIT_MS, usePlanNoticeFacts } from "./grace-notice";
 
 const store = { id: "org-a", online: true };
 const readPlan = vi.fn();
@@ -52,7 +53,7 @@ const flush = () =>
 
 function Both() {
   return {
-    facts: usePlanNoticeFacts(store.id, true, true),
+    facts: usePlanNoticeFacts(store.id, true, true).facts,
     variants: useNearLimitRead("variants"),
   };
 }
@@ -107,13 +108,13 @@ describe("o aviso do shell lê o plano pela memória compartilhada", () => {
     );
     const view = renderHook(() => usePlanNoticeFacts(store.id, true, true));
     await flush();
-    expect(view.result.current?.state).toBe("free");
+    expect(view.result.current.facts?.state).toBe("free");
     store.id = "org-b";
     view.rerender();
     await flush();
     expect(readPlan).toHaveBeenCalledTimes(2);
     expect(readPlan).toHaveBeenLastCalledWith({ organizationId: "org-b" });
-    expect(view.result.current?.state).toBe("pro");
+    expect(view.result.current.facts?.state).toBe("pro");
   });
 
   it("o uso do cartão é o da loja da tela: A → B → A nunca mostra o número de outra loja", async () => {
@@ -123,17 +124,20 @@ describe("o aviso do shell lê o plano pela memória compartilhada", () => {
     );
     const view = renderHook(() => usePlanNoticeFacts(store.id, true, true));
     await flush();
-    expect(view.result.current?.variants).toEqual({ max: 50, used: 12 });
+    expect(view.result.current.facts?.variants).toEqual({ max: 50, used: 12 });
     store.id = "org-b";
     view.rerender();
-    expect(view.result.current).toBeNull();
+    expect(view.result.current.facts).toBeNull();
     await flush();
-    expect(view.result.current?.variants).toEqual({ max: 50, used: 31 });
+    expect(view.result.current.facts?.variants).toEqual({ max: 50, used: 31 });
     store.id = "org-a";
     view.rerender();
-    expect(view.result.current?.variants).not.toEqual({ max: 50, used: 31 });
+    expect(view.result.current.facts?.variants).not.toEqual({
+      max: 50,
+      used: 31,
+    });
     await flush();
-    expect(view.result.current?.variants).toEqual({ max: 50, used: 12 });
+    expect(view.result.current.facts?.variants).toEqual({ max: 50, used: 12 });
   });
 
   it("a resposta que chega depois de a sessão acabar não é gravada", async () => {
@@ -150,5 +154,109 @@ describe("o aviso do shell lê o plano pela memória compartilhada", () => {
     answer(plan("free"));
     await flush();
     expect(rememberedPlanNotice("org-a")).toBeNull();
+  });
+});
+
+describe("o pé do menu espera só a leitura do plano que está pendente", () => {
+  const pending = (
+    enabled = true,
+    readsItself = true,
+    organizationId = "org-a"
+  ) =>
+    renderHook(() => usePlanNoticeFacts(organizationId, enabled, readsItself));
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("pendente até a resposta; com ela, os fatos chegam no mesmo quadro em que a espera acaba", async () => {
+    let answer: (value: unknown) => void = () => undefined;
+    readPlan.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          answer = resolve;
+        })
+    );
+    const view = pending();
+    await flush();
+    expect(view.result.current).toEqual({ facts: null, pending: true });
+    answer(plan("free"));
+    await flush();
+    expect(view.result.current.pending).toBe(false);
+    expect(view.result.current.facts?.state).toBe("free");
+  });
+
+  it("falha de leitura encerra a espera e ela não volta na nova tentativa", async () => {
+    readPlan.mockRejectedValue(new Error("rede"));
+    const view = pending();
+    await flush();
+    expect(view.result.current).toEqual({ facts: null, pending: false });
+    view.rerender();
+    await flush();
+    expect(view.result.current.pending).toBe(false);
+  });
+
+  it("uma leitura sem resposta encerra a espera no teto de 3 s", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    readPlan.mockImplementation(() => new Promise(() => undefined));
+    const view = pending();
+    expect(PLAN_READ_WAIT_MS).toBe(3000);
+    expect(view.result.current.pending).toBe(true);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(PLAN_READ_WAIT_MS - 1);
+    });
+    expect(view.result.current.pending).toBe(true);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
+    });
+    expect(view.result.current.pending).toBe(false);
+    expect(readPlan).toHaveBeenCalledTimes(1);
+  });
+
+  it("queda de conexão encerra a espera", async () => {
+    readPlan.mockImplementation(() => new Promise(() => undefined));
+    const view = pending();
+    await flush();
+    expect(view.result.current.pending).toBe(true);
+    store.online = false;
+    view.rerender();
+    expect(view.result.current.pending).toBe(false);
+  });
+
+  it("queda de conexão encerra a espera de vez: a volta da conexão não a religa", async () => {
+    readPlan.mockImplementation(() => new Promise(() => undefined));
+    const view = pending();
+    await flush();
+    store.online = false;
+    view.rerender();
+    await flush();
+    store.online = true;
+    view.rerender();
+    expect(view.result.current.pending).toBe(false);
+  });
+
+  it("A → B → A: a espera que terminou numa loja não volta ao voltar para ela", async () => {
+    readPlan.mockRejectedValue(new Error("rede"));
+    const view = renderHook(() => usePlanNoticeFacts(store.id, true, true));
+    await flush();
+    expect(view.result.current.pending).toBe(false);
+    store.id = "org-b";
+    view.rerender();
+    await flush();
+    store.id = "org-a";
+    view.rerender();
+    expect(view.result.current.pending).toBe(false);
+  });
+
+  it("sem conexão, sem cobrança, na Assinatura ou com leitura guardada na aba não há espera", () => {
+    store.online = false;
+    expect(pending().result.current.pending).toBe(false);
+    store.online = true;
+    expect(pending(false).result.current.pending).toBe(false);
+    expect(pending(true, false).result.current.pending).toBe(false);
+    expect(readPlan).not.toHaveBeenCalled();
+    rememberPlanNotice("org-a", { ...plan("free"), state: "free" });
+    expect(pending().result.current.pending).toBe(false);
+    expect(pending().result.current.facts?.state).toBe("free");
   });
 });

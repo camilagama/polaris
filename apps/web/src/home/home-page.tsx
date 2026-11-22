@@ -41,7 +41,13 @@ import {
   noSaleCounted,
   pickGoal,
 } from "./home-model";
-import { BlockError, BlockSkeleton, HomeBlock, KeptHeight } from "./home-parts";
+import {
+  BlockError,
+  BlockSkeleton,
+  HomeBlock,
+  HomeRoleProvider,
+  KeptHeight,
+} from "./home-parts";
 import {
   type HomeSelection,
   THIS_MONTH,
@@ -335,7 +341,9 @@ function rankingBlock(
   salesCount: number
 ): React.ReactNode {
   if (chosen?.month.kind === "loading") {
-    return <BlockSkeleton label="Carregando os mais vendidos…" lines={5} />;
+    return (
+      <BlockSkeleton foot label="Carregando os mais vendidos…" lines={5} />
+    );
   }
   // a copy kept before the ranking was read has none to say: the block is left out, never drawn as an empty period
   if (top === undefined) {
@@ -367,7 +375,7 @@ function readBlocks(
   const chartToday = chosen ? chosen.today : figures.today;
   let chart: React.ReactNode = null;
   if (chosen?.month.kind === "loading") {
-    chart = <BlockSkeleton label="Carregando o gráfico…" lines={5} />;
+    chart = <BlockSkeleton foot label="Carregando o gráfico…" lines={5} />;
   } else if (shown?.daily !== undefined && (chosen !== null || series)) {
     chart = <ChartBlock summary={shown} today={chartToday} />;
   }
@@ -393,11 +401,8 @@ function readBlocks(
   };
 }
 
-/**
- * What the "Primeiros passos" skeleton keeps, half way between the block with the two buttons of the 2nd step (stacked
- * under 640 px, in a row from there) and the one with the button under the steps, which is the shape not known while it reads.
- */
-const STEPS_SKELETON_HEIGHT = "min-h-52 max-sm:min-h-60";
+const STEPS_SKELETON_HEIGHT =
+  "min-h-59 max-sm:min-h-73 md:min-h-62 lg:min-h-98 lg:touch:min-h-99";
 
 /**
  * The cards are still to come: the figures, or what hangs on them. The checklist is read only when the figures counted
@@ -578,7 +583,16 @@ function pageBlocks({
         ...NO_BLOCKS,
         // the chart's place stays, with its name: the goal beside it does not change columns
         chart: (
-          <HomeBlock id="home-chart" title="Vendas por dia">
+          <HomeBlock
+            footer={{
+              capability: "report:read",
+              href: "/dashboard",
+              label: "Ver o resultado",
+              link: false,
+            }}
+            id="home-chart"
+            title="Vendas por dia"
+          >
             <p className="text-muted-foreground">{NO_CONNECTION_NOTE}</p>
           </HomeBlock>
         ),
@@ -1094,33 +1108,35 @@ export function HomePage() {
   );
 
   return (
-    <div className="grid gap-5 font-sans text-foreground text-sm antialiased">
-      <HomeHeader
-        explained={explained}
-        offlineText={offlineText}
-        refresh={refresh}
-        updated={refreshing ? REFRESHING_TEXT : updated}
-      />
-      <ReopenedNotice />
-      <ClosedStoreLine activeIds={activeIds} />
-      <div
-        aria-busy={
-          refreshing || (view === null && state.figures.status === "loading")
-        }
-        className="grid gap-4"
-      >
-        <PeriodControlProvider value={periodRow}>
-          <FigureArea
-            attention={attention}
-            attentionNotes={attentionNotes}
-            blocks={blocks}
-            goal={picked.node}
-            goalPending={goalPending}
-            keep={explained}
-            measure={offline === null && figures !== null && !blocks.pending}
-          />
-        </PeriodControlProvider>
+    <HomeRoleProvider value={organization.role}>
+      <div className="grid gap-5 font-sans text-foreground text-sm antialiased">
+        <HomeHeader
+          explained={explained}
+          offlineText={offlineText}
+          refresh={refresh}
+          updated={refreshing ? REFRESHING_TEXT : updated}
+        />
+        <ReopenedNotice />
+        <ClosedStoreLine activeIds={activeIds} />
+        <div
+          aria-busy={
+            refreshing || (view === null && state.figures.status === "loading")
+          }
+          className="grid gap-4"
+        >
+          <PeriodControlProvider value={periodRow}>
+            <FigureArea
+              attention={attention}
+              attentionNotes={attentionNotes}
+              blocks={blocks}
+              goal={picked.node}
+              goalPending={goalPending}
+              keep={explained}
+              measure={offline === null && figures !== null && !blocks.pending}
+            />
+          </PeriodControlProvider>
+        </div>
       </div>
-    </div>
+    </HomeRoleProvider>
   );
 }

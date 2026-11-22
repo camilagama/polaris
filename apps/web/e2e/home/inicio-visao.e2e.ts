@@ -56,6 +56,21 @@ async function openMenuFoot(page: Page) {
   }
 }
 
+/**
+ * The area chart arrives after the heading: its chunk is downloaded on demand, then the chart measures its box and
+ * draws. Each step waits for its own state, so a starved CPU delays the drawing without eating the budget of the next
+ * check: the network idle says the chunk was downloaded, the box that holds the place leaves when the chart takes it, the
+ * chart's box says it was mounted, the svg says it was measured and drawn.
+ */
+async function drawnAreaChart(page: Page, chart: Locator) {
+  await page.waitForLoadState("networkidle");
+  await expect(chart.locator("[data-chart-loading]")).toHaveCount(0);
+  const area = chart.locator("[data-chart-area]");
+  await expect(area).toBeAttached();
+  await expect(area.locator("svg").first()).toBeVisible();
+  return area;
+}
+
 /** "Mais" is a modal dialog: the page behind it waits for it to close. */
 async function closeMenuFoot(page: Page) {
   const panel = page.getByRole("dialog", { name: "Mais" });
@@ -63,6 +78,79 @@ async function closeMenuFoot(page: Page) {
     await page.keyboard.press("Escape");
     await expect(panel).toBeHidden();
   }
+}
+
+const FRAMED_BLOCKS = [
+  "Meta",
+  "Vendas por dia",
+  "Ritmo de vendas",
+  "Mais vendidos do mês",
+];
+
+const BLOCK_FEET = [
+  ["Vendas por dia", "Ver o resultado", "/dashboard"],
+  ["Meta", "Ver as metas", "/dashboard?aba=metas"],
+  ["Mais vendidos do mês", "Ver os produtos", "/products"],
+] as const;
+
+/** From 760 px the frame is `--muted` and the panel has its own fill and 16 px; under it the panel has no box at all. */
+async function expectFrameLooks(block: Locator, name: string, framed: boolean) {
+  await expect(block).toBeVisible();
+  const looks = await block.evaluate((frame) => {
+    const panel = frame.querySelector("[data-slot=card-frame-panel]");
+    const heading = frame.querySelector("h2");
+    if (!(panel && heading)) {
+      return null;
+    }
+    return {
+      frameBackground: getComputedStyle(frame).backgroundColor,
+      headingInsidePanel: panel.contains(heading),
+      panelBackground: getComputedStyle(panel).backgroundColor,
+      panelPadding: Number.parseFloat(getComputedStyle(panel).paddingLeft),
+    };
+  });
+  expect(looks, `${name}: moldura e painel`).not.toBeNull();
+  expect(looks?.headingInsidePanel).toBe(false);
+  expect(looks?.panelPadding, `${name}: painel`).toBe(framed ? 16 : 0);
+  if (framed) {
+    expect(looks?.frameBackground, `${name}: moldura`).not.toBe(
+      looks?.panelBackground
+    );
+  } else {
+    expect(looks?.panelBackground, `${name}: sem painel`).toBe(
+      "rgba(0, 0, 0, 0)"
+    );
+  }
+}
+
+/** The foot is a link to the destination inside the frame, with a 44 px touch area when the pointer is coarse; under 760 px it is not there. */
+async function expectFoot(
+  page: Page,
+  name: string,
+  label: string,
+  href: string,
+  framed: boolean
+) {
+  const link = region(page, name).getByRole("link", { name: label });
+  if (!framed) {
+    await expect(link).toHaveCount(0);
+    return;
+  }
+  await expect(link).toHaveAttribute("href", href);
+  const touch = await link.evaluate((element) => ({
+    area: Number.parseFloat(getComputedStyle(element, "::before").height),
+    coarse: matchMedia("(pointer: coarse)").matches,
+  }));
+  if (touch.coarse) {
+    expect(touch.area, `${name}: área de toque do pé`).toBeGreaterThanOrEqual(
+      44
+    );
+  }
+  const box = await link.boundingBox();
+  const frame = await region(page, name).boundingBox();
+  expect((box?.y ?? 0) + (box?.height ?? 0)).toBeLessThanOrEqual(
+    (frame?.y ?? 0) + (frame?.height ?? 0)
+  );
 }
 
 test.describe("loja com venda", () => {
@@ -282,6 +370,28 @@ test.describe("loja com venda", () => {
     ).toBe(true);
   });
 
+  for (const width of [759, 760]) {
+    const framed = width >= 760;
+    test(`a moldura dos blocos ${framed ? "existe" : "não existe"} a ${width} px: ${framed ? "painel sobre a moldura, com o pé dos três blocos que levam a outra tela" : "o cartão de sempre, sem pé"}`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ height: 800, width });
+      await openHome(page, new FakeServer({ ...SOLD, goals: [goal({})] }));
+      await expect(region(page, "Vendas hoje")).toContainText("R$ 320,10");
+      for (const name of FRAMED_BLOCKS) {
+        // biome-ignore lint/performance/noAwaitInLoops: one block at a time
+        await expectFrameLooks(region(page, name), name, framed);
+      }
+      for (const [name, label, href] of BLOCK_FEET) {
+        // biome-ignore lint/performance/noAwaitInLoops: one block at a time
+        await expectFoot(page, name, label, href, framed);
+      }
+      await expect(
+        region(page, "Ritmo de vendas").locator("[data-slot=card-frame-footer]")
+      ).toHaveCount(0);
+    });
+  }
+
   test("Nova venda leva à Venda num toque (AC-2), e a barra mantém Vender a um toque", async ({
     page,
   }) => {
@@ -367,9 +477,7 @@ test.describe("loja com venda", () => {
     await page.setViewportSize({ height: 740, width: 360 });
     const server = new FakeServer(SOLD);
     await openHome(page, server);
-    const chart = region(page, "Vendas por dia");
-    const area = chart.locator("[data-chart-area]");
-    await expect(area.locator("svg").first()).toBeVisible();
+    const area = await drawnAreaChart(page, region(page, "Vendas por dia"));
 
     // the box and the drawing of the chart ask for the horizontal drag only, so a finger that starts on the chart still
     // scrolls the page: a "none" anywhere between the drawing and the document takes the vertical gesture away
@@ -402,7 +510,7 @@ test.describe("loja com venda", () => {
     const server = new FakeServer(SOLD);
     await openHome(page, server);
     const chart = region(page, "Vendas por dia");
-    await expect(chart.locator("[data-chart-area] svg").first()).toBeVisible();
+    await drawnAreaChart(page, chart);
     await expect(chart.locator('input[type="range"]')).toHaveAttribute(
       "max",
       "22"
@@ -829,6 +937,7 @@ test.describe("loja sem venda: o checklist (AC-22, AC-23)", () => {
   test("sem produto, o próximo passo é cadastrar; Meta e Atenção continuam", async ({
     page,
   }) => {
+    await page.setViewportSize({ height: 800, width: 1023 });
     await openHome(
       page,
       new FakeServer(
@@ -838,9 +947,11 @@ test.describe("loja sem venda: o checklist (AC-22, AC-23)", () => {
     const checklist = region(page, "Primeiros passos");
     await expect(checklist.getByRole("listitem")).toHaveText([
       "Loja criada (feito)",
-      "Cadastrar o 1º produtoCadastrar à mãoImportar planilha",
+      "Cadastrar o 1º produtoNome, preço e quantas unidades você tem. Só o nome é obrigatório.Cadastrar à mãoImportar planilha",
       "Fazer a 1ª venda",
     ]);
+    await expect(checklist.locator("[data-step-preview]")).toHaveCount(0);
+    await expect(checklist.locator("[data-skeleton-art]")).toHaveCount(0);
     await expect(
       checklist.getByRole("heading", { name: "Primeiros passos" })
     ).toBeVisible();
@@ -1013,6 +1124,154 @@ test.describe("loja sem venda: o checklist (AC-22, AC-23)", () => {
       .click();
     await expect(panel).toBeHidden();
     await expect(title).toBeInViewport();
+  });
+
+  const PREVIEW_STATES = [
+    [
+      "sem produto",
+      { all: 0, unknownCost: 0, withoutStock: 0, withStock: 0 },
+      "products",
+      ["/products?novo=1", "/products?importar=1"],
+      "Nome, preço e quantas unidades você tem. Só o nome é obrigatório.",
+    ],
+    [
+      "com produto, sem saldo",
+      { all: 1, unknownCost: 1, withoutStock: 1, withStock: 0 },
+      "products",
+      [`/products?produto=${PRODUCT}`],
+      "Diga quantas unidades você tem para poder vender.",
+    ],
+    [
+      "com produto e saldo",
+      { all: 1, unknownCost: 0, withoutStock: 0, withStock: 1 },
+      "sale",
+      ["/sales"],
+      "Escolha o produto, o pagamento e confirme.",
+    ],
+  ] as const;
+
+  async function checkPreviewState(
+    page: Page,
+    [state, stock, art, links, sentence]: (typeof PREVIEW_STATES)[number]
+  ) {
+    await page.setViewportSize({ height: 800, width: 1024 });
+    await openHome(page, new FakeServer(empty({ ...stock })));
+    const checklist = region(page, "Primeiros passos");
+    const preview = checklist.locator("[data-step-preview]");
+    await expect(preview, state).toHaveCount(1);
+    const steps = checklist.getByRole("list");
+    const [stepsBox, previewBox] = await Promise.all([
+      steps.boundingBox(),
+      preview.boundingBox(),
+    ]);
+    expect(previewBox?.x ?? 0, state).toBeGreaterThanOrEqual(
+      (stepsBox?.x ?? 0) + (stepsBox?.width ?? 0)
+    );
+    await expect(preview.locator(`[data-skeleton-art="${art}"]`)).toBeVisible();
+    await expect(preview.getByText(sentence)).toBeVisible();
+    await expect(checklist.getByText(sentence)).toHaveCount(1);
+    expect(
+      await checklist
+        .getByRole("link")
+        .evaluateAll((nodes) => nodes.map((node) => node.getAttribute("href"))),
+      state
+    ).toEqual([...links]);
+    await Promise.all(
+      links.flatMap((link) => [
+        expect(
+          preview.locator(`a[href="${link}"]`),
+          `${state}: ${link}`
+        ).toHaveCount(1),
+        expect(
+          steps.locator(`a[href="${link}"]`),
+          `${state}: ${link} fora dos passos`
+        ).toHaveCount(0),
+      ])
+    );
+    const decoration = preview.locator("svg[data-skeleton-art]");
+    await expect(decoration).toHaveAttribute("aria-hidden", "true");
+    await expect(preview.locator(".animate-pulse")).toHaveCount(0);
+    const height = (await checklist.boundingBox())?.height ?? 0;
+    await page.setViewportSize({ height: 800, width: 1023 });
+    await expect(preview, state).toHaveCount(0);
+    await expect(checklist.locator("[data-skeleton-art]")).toHaveCount(0);
+    await expect(checklist.getByText(sentence)).toHaveCount(1);
+    await expect(checklist.getByRole("link")).toHaveCount(links.length);
+    return height;
+  }
+
+  test("a partir de 1024 px, passos e prévia ficam lado a lado, com um só link por destino e a mesma altura nos três passos; abaixo, uma coluna com a frase no passo atual", async ({
+    page,
+  }) => {
+    const [first, second, third] = PREVIEW_STATES;
+    const heights = [
+      await checkPreviewState(page, first),
+      await checkPreviewState(page, second),
+      await checkPreviewState(page, third),
+    ];
+    for (const height of heights) {
+      expect(Math.abs(height - (heights[0] ?? 0))).toBeLessThanOrEqual(1);
+    }
+  });
+
+  for (const [width, tolerance] of [
+    [360, 30],
+    [1023, 30],
+    [1024, 1],
+    [1280, 1],
+  ] as const) {
+    test(`o esqueleto dos primeiros passos tem a altura do bloco: ${width} px`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ height: 800, width });
+      const server = new FakeServer(
+        empty({ all: 0, unknownCost: 0, withoutStock: 0, withStock: 0 })
+      );
+      let answer: () => void = () => undefined;
+      server.held.set(
+        "inventory/listBalances",
+        new Promise((resolve) => {
+          answer = resolve;
+        })
+      );
+      await openHome(page, server);
+      const skeleton = page
+        .getByRole("status")
+        .filter({ hasText: "Carregando os primeiros passos…" });
+      await expect(skeleton).toBeVisible();
+      const loading = (await skeleton.boundingBox())?.height ?? 0;
+      answer();
+      await expect(region(page, "Primeiros passos")).toBeVisible();
+      await expect(skeleton).toHaveCount(0);
+      const loaded =
+        (await region(page, "Primeiros passos").boundingBox())?.height ?? 0;
+      expect(Math.abs(loaded - loading)).toBeLessThanOrEqual(tolerance);
+    });
+  }
+
+  test("a prévia segue o passo atual, não o ponteiro nem o foco", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 800, width: 1280 });
+    await openHome(
+      page,
+      new FakeServer(
+        empty({ all: 0, unknownCost: 0, withoutStock: 0, withStock: 0 })
+      )
+    );
+    const checklist = region(page, "Primeiros passos");
+    const preview = checklist.locator("[data-step-preview]");
+    await expect(preview).toHaveAttribute("data-step-preview", "product");
+    const items = checklist.getByRole("listitem");
+    await items.nth(2).hover();
+    await items.nth(0).hover();
+    await expect(preview).toHaveAttribute("data-step-preview", "product");
+    await checklist.getByRole("link", { name: "Cadastrar à mão" }).focus();
+    await expect(preview).toHaveAttribute("data-step-preview", "product");
+    await page.keyboard.press("Tab");
+    await expect(
+      checklist.getByRole("link", { name: "Importar planilha" })
+    ).toBeFocused();
   });
 
   for (const [state, stock, current] of [

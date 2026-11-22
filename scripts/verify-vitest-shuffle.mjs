@@ -13,11 +13,18 @@ import { stripComments } from "./verify-no-history-comments.mjs";
  * emptied. A config passes when the `sequence: { ... }` blocks of its own text (outside the objects of `projects: [...]`)
  * set `shuffle: true` (files and tests) or `shuffle: { files: true, tests: true }` with every key the list asks for to
  * the literal `true`; the keys of the blocks of one project add up, at any depth. An object of `projects: [...]` is a
- * project of its own: with `extends: true` and no `sequence` it inherits the root's, otherwise its own `sequence` has to
- * turn `tests` on. Not caught: a `shuffle` built in a variable or a spread, `projects` that is not an array literal
- * (a variable, a spread) or is nested in another project, a regular expression literal with a quote in it, an order
- * switched off from the command line.
- * Quoted keys (`"sequence":`) are not recognised and fail loudly. A config that is not in the list is not read.
+ * project of its own. Without `extends: true` its own `sequence` has to turn `tests` on. With `extends: true` it
+ * inherits the root's order, because Vitest merges the `sequence` of the project into the root's key by key (`mergeConfig`
+ * in its project resolution): `sequence: { seed: 1 }` keeps the root's `shuffle`. An object `shuffle` in the project
+ * does not: when the root's is the boolean `true`, the merge replaces it by the project's object, and Vitest reads a
+ * missing `tests` as off. Only the forms known to keep the tests order are accepted: no `shuffle` in the project's
+ * `sequence` blocks, `shuffle: true`, or `shuffle: { ... }` whose only keys are `files` (a literal) and `tests: true`,
+ * the latter always written out. Anything else (`shuffle: false`, `tests: false`, a variable, a spread, a quoted key, a nested object) is refused.
+ * Not caught: a `shuffle` built in a variable or a spread outside an `extends: true` project, `projects` that is not an
+ * array literal (a variable, a spread) or is nested in another project, a regular expression literal with a quote in it,
+ * an order switched off from the command line.
+ * Quoted keys (`"sequence":`) are not recognised: in the root they fail loudly (the key is missing), in an `extends: true`
+ * project the quoted `sequence` is not seen, so its block is ignored and the project inherits.
  */
 const root = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
 
@@ -30,10 +37,18 @@ export const ADVICE =
 
 const PROJECTS_OPENER = /\bprojects\s*:\s*\[/g;
 const EXTENDS_TRUE = /\bextends\s*:\s*true\b/;
-const SEQUENCE_PRESENT = /\bsequence\s*:\s*\{/;
 const QUOTES = "\"'`";
 const SEQUENCE_OPENER = /\bsequence\s*:\s*\{/g;
 const SHUFFLE_VALUE = /\bshuffle\s*:\s*(true\b|\{([^{}]*)\})/;
+const SHUFFLE_WORD = /\bshuffle\b/g;
+const SHUFFLE_KEY_START = /^\s*:\s*/;
+const QUOTED_KEY = /(""|''|``)\s*:/;
+const SPREAD = /\.\.\./;
+const TRUE_VALUE = /^true\b/;
+const FILES_OR_TESTS_LITERAL = /\b(files|tests)\s*:\s*(true|false)\b/g;
+const UNKNOWN_SYNTAX = /[{}[\]()]|=>|\?/;
+const UNKNOWN_KEY = /\b(?!files\b|tests\b)[A-Za-z_$][\w$]*\s*:/;
+const TESTS_FALSE = /\btests\s*:\s*false\b/;
 const SHUFFLE_KEY = (key) => new RegExp(String.raw`\b${key}\s*:\s*true\b`);
 
 function objectBody(code, openIndex) {
@@ -156,6 +171,46 @@ function keysOfBlocks(code) {
   return keys;
 }
 
+function shuffleValueKeepsTests(value) {
+  if (TRUE_VALUE.test(value)) {
+    return true;
+  }
+  if (!value.startsWith("{")) {
+    return false;
+  }
+  const inner = objectBody(value, 0);
+  const rest = inner.replace(FILES_OR_TESTS_LITERAL, "");
+  if (UNKNOWN_SYNTAX.test(rest) || UNKNOWN_KEY.test(rest)) {
+    return false;
+  }
+  return SHUFFLE_KEY("tests").test(inner) && !TESTS_FALSE.test(inner);
+}
+
+function sequenceBodyKeepsTests(body) {
+  if (QUOTED_KEY.test(body) || SPREAD.test(body)) {
+    return false;
+  }
+  for (const word of body.matchAll(SHUFFLE_WORD)) {
+    const rest = body.slice(word.index + word[0].length);
+    const colon = SHUFFLE_KEY_START.exec(rest);
+    if (
+      colon === null ||
+      !shuffleValueKeepsTests(rest.slice(colon[0].length))
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function keepsTestsShuffle(code) {
+  return [...code.matchAll(SEQUENCE_OPENER)].every((opener) =>
+    sequenceBodyKeepsTests(
+      objectBody(code, opener.index + opener[0].length - 1)
+    )
+  );
+}
+
 /**
  * The places a config orders tests: its own text first (`inline: 0`), then each object of `projects: [...]`
  * (`inline: 1, 2, ...`), with the `shuffle` keys each turns on and whether it inherits the root's order.
@@ -171,7 +226,7 @@ export function shuffleUnits(source) {
   const projects = ranges.map(([from, to], index) => {
     const text = code.slice(from, to);
     return {
-      inherits: EXTENDS_TRUE.test(text) && !SEQUENCE_PRESENT.test(text),
+      inherits: EXTENDS_TRUE.test(text) && keepsTestsShuffle(text),
       inline: index + 1,
       keys: keysOfBlocks(text),
     };

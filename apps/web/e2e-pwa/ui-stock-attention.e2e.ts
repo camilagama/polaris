@@ -3,7 +3,7 @@ import type { Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 import { attentionStates } from "./ui-device-states";
 import { axeFaults } from "./ui-guardrails/measures";
-import { stockStates } from "./ui-stock-states";
+import { NEAR_MIDNIGHT_STORE_DAY, stockStates } from "./ui-stock-states";
 
 /**
  * "Precisa de ação" on Estoque and Pendências, and the texts of Estoque: each link of the strip applies its filter
@@ -13,6 +13,8 @@ import { stockStates } from "./ui-stock-states";
  */
 const JEANS_PANEL = /^Saldo atual: 3 · custo médio R\$ 62,40$/;
 const LAST_MOVEMENT_DATE = /^\d{2}\/\d{2}(\/\d{4})? \d{2}:\d{2}$/;
+const DATE_BUTTON = /^Data/;
+const CONFIRM_BUTTON = /^Confirmar/;
 const RECEIVE_JEANS = /^Receber estoque de Calça jeans/;
 const RECEIVE_SHIRT = /^Receber estoque de Camiseta/;
 const DEVICE_PANEL = /Saldo do aparelho: \d+ · custo médio só com conexão/;
@@ -249,6 +251,35 @@ test.describe("Estoque, Precisa de ação", () => {
       "Só com conexão"
     );
     expect(await axeFaults(page)).toEqual([]);
+  });
+});
+
+test.describe("Estoque, data do movimento", () => {
+  // With the browser zone pinned to UTC only the store's zone can give the day before the turn; in São Paulo both agree.
+  test.use({ timezoneId: "UTC" });
+
+  test("perto da meia-noite de São Paulo o botão da data mostra o dia da loja, não o dia em UTC", async ({
+    page,
+  }) => {
+    await stockStates.receiveNearMidnight(page);
+    await expect(
+      page.getByRole("button", { name: DATE_BUTTON })
+    ).toHaveAttribute("aria-label", `Data, ${NEAR_MIDNIGHT_STORE_DAY.button}`);
+  });
+
+  test("perto da meia-noite de São Paulo o recebimento enviado leva o dia da loja em occurredOn", async ({
+    page,
+  }) => {
+    const sent: { occurredOn?: string }[] = [];
+    await page.route("**/rpc/inventory/receiveStock", (route) => {
+      sent.push(JSON.parse(route.request().postData() ?? "{}").json);
+      return route.abort("failed");
+    });
+    await stockStates.receiveNearMidnight(page);
+    await page.getByRole("button", { exact: true, name: "Revisar" }).click();
+    await page.getByRole("button", { name: CONFIRM_BUTTON }).click();
+    await expect.poll(() => sent.length).toBeGreaterThan(0);
+    expect(sent[0]?.occurredOn).toBe(NEAR_MIDNIGHT_STORE_DAY.sent);
   });
 });
 

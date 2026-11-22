@@ -2,6 +2,7 @@
 import type { Locator, Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 import { watchCspViolations } from "../e2e/csp-fixture";
+import { expectNoTypedDates, panelHeight, touchDay } from "../e2e/date-pickers";
 import { expectMotionLevel } from "./motion-expect";
 import { axeFaults } from "./ui-guardrails/measures";
 
@@ -582,47 +583,80 @@ for (const viewport of VIEWPORTS) {
       await expect(button).toHaveAccessibleName("Período, Escolher período");
     });
 
-    test("período: com só o 1º dia o botão de digitar escreve a data pela regra do ano e o painel não muda de largura", async ({
+    for (const [name, label, state] of [
+      ["Período das vendas,", "Período das vendas", "sem período"],
+      ["Período,", "Período", "com período"],
+    ] as const) {
+      test(`período ${state}: não há botão de digitar as datas nem campo de texto, e o painel mantém a altura e a largura ao marcar o 1º dia`, async ({
+        page,
+      }) => {
+        await openGallery(page);
+        const popup = await openPicker(page, name, label);
+        await expectNoTypedDates(popup);
+        await expectStill(popup.getByRole("grid").first());
+        const before = await popup.boundingBox();
+        const heightBefore = await panelHeight(popup);
+        const clear = popup.locator("button", { hasText: "Limpar" });
+        if (state === "sem período") {
+          await expect(clear).toBeHidden();
+        }
+
+        await day(popup, "2026-10-10").click();
+        await expect(
+          popup.getByText("Início 10/10. Escolha o último dia.")
+        ).toBeVisible();
+        await expectNoTypedDates(popup);
+        const after = await popup.boundingBox();
+        expect(after?.height).toBeCloseTo(before?.height ?? 0, 0);
+        expect(after?.width).toBeCloseTo(before?.width ?? 0, 0);
+        expect(await panelHeight(popup)).toBeCloseTo(heightBefore, 1);
+        await expect(clear).toBeVisible();
+      });
+    }
+
+    test("período só pelo teclado: PageUp leva ao mês de dois meses atrás, Enter marca o início e o fim, e os atalhos seguem por Tab", async ({
       page,
     }) => {
       await openGallery(page);
-      const open = () =>
-        openPicker(page, "Período das vendas,", "Período das vendas");
-      let popup = await open();
-      let toggle = popup.getByRole("button", { name: "Digitar as datas" });
-      await expect(toggle).toHaveText("Digitar as datas");
-      const before = await popup.boundingBox();
-      const toggleBefore = await toggle.boundingBox();
+      await trigger(page, "Período das vendas,").focus();
+      await page.keyboard.press("Enter");
+      const popup = page.getByRole("dialog", { name: "Período das vendas" });
+      await expect(day(popup, "2026-10-24")).toBeFocused();
 
-      await day(popup, "2026-10-10").click();
-      await expect(toggle).toHaveText("10/10 a …");
-      await expect(toggle).toHaveAccessibleName("Digitar as datas: 10/10 a …");
-      const after = await popup.boundingBox();
-      expect(after?.width).toBeCloseTo(before?.width ?? 0, 0);
-      expect((await toggle.boundingBox())?.height).toBeCloseTo(
-        toggleBefore?.height ?? 0,
-        0
-      );
-
-      await page.keyboard.press("Escape");
+      await page.keyboard.press("PageUp");
+      await expect(day(popup, "2026-09-24")).toBeFocused();
+      await page.keyboard.press("PageUp");
+      await expect(day(popup, "2026-08-24")).toBeFocused();
+      await expect(popup.getByText("Agosto de 2026").first()).toBeVisible();
+      await page.keyboard.press("Enter");
+      await expect(
+        popup.getByText("Início 24/08. Escolha o último dia.")
+      ).toBeVisible();
+      await expect(popup).toBeVisible();
+      await page.keyboard.press("ArrowDown");
+      await expect(day(popup, "2026-08-31")).toBeFocused();
+      await page.keyboard.press("Enter");
       await expect(popup).toBeHidden();
-      popup = await open();
-      toggle = popup.getByRole("button", { name: "Digitar as datas" });
-      await expect(toggle).toHaveText("Digitar as datas");
-      const next = popup.getByRole("button", { name: "Próximo mês" });
-      await next.click();
-      await next.click();
-      await next.click();
-      await expect(popup.getByText("Janeiro de 2027").first()).toBeVisible();
-      await day(popup, "2027-01-05").click();
-      await expect(toggle).toHaveText("05/01/2027 a …");
-      await expect(toggle).toHaveAccessibleName(
-        "Digitar as datas: 05/01/2027 a …"
-      );
-      expect((await popup.boundingBox())?.width).toBeCloseTo(
-        before?.width ?? 0,
-        0
-      );
+      const button = trigger(page, "Período das vendas,");
+      await expect(button).toHaveText("24/08 a 31/08");
+      await expect(button).toBeFocused();
+
+      await page.keyboard.press("Enter");
+      const again = page.getByRole("dialog", { name: "Período das vendas" });
+      await expect(day(again, "2026-08-24")).toBeFocused();
+      await expect
+        .poll(
+          async () => {
+            await page.keyboard.press("Shift+Tab");
+            return await page.evaluate(
+              () => (document.activeElement as HTMLElement).dataset.preset ?? ""
+            );
+          },
+          { intervals: [50], timeout: 5000 }
+        )
+        .not.toBe("");
+      await page.keyboard.press("Enter");
+      await expect(again).toBeHidden();
     });
 
     test("período: um mês em qualquer largura, o dia com 36 px no mouse e 44 no toque, nada fora da janela", async ({
@@ -1056,6 +1090,37 @@ test.describe("Hoje desligado, com o motivo à vista", () => {
     ).not.toHaveAttribute("aria-disabled");
     await expect(popup.locator("[data-date-footer] p")).toHaveCount(0);
   });
+});
+
+test.describe("o painel do período com a frase do 1º dia quebrando", () => {
+  for (const size of [
+    { fontPixels: 20, height: 740, width: 320 },
+    { fontPixels: 16, height: 740, width: 360 },
+  ]) {
+    test(`período a ${size.width} px com a letra em ${size.fontPixels} px: a frase do 1º dia, com o ano de outro ano, quebra sem mudar a altura do painel`, async ({
+      page,
+    }) => {
+      await page.setViewportSize(size);
+      await openGallery(page);
+      await page.evaluate((pixels) => {
+        document.documentElement.style.fontSize = `${pixels}px`;
+      }, size.fontPixels);
+      const popup = await openPicker(
+        page,
+        "Período das vendas,",
+        "Período das vendas"
+      );
+      await expectStill(popup.getByRole("grid").first());
+      const before = await panelHeight(popup);
+
+      await touchDay(popup, "2025-10-10");
+      await expect(
+        popup.getByText("Início 10/10/2025. Escolha o último dia.")
+      ).toBeVisible();
+      await expectStill(popup.getByRole("grid").first());
+      expect(await panelHeight(popup)).toBeCloseTo(before, 1);
+    });
+  }
 });
 
 test.describe("Hoje desligado, a 360 x 600 e a 320 px com fonte de 20 px", () => {

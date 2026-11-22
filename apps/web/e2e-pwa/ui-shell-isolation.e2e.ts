@@ -2,7 +2,11 @@
 import type { Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 import { mediaListBody, solidPng } from "../e2e/media-fixtures";
-import { DETAIL_SALE_ID, saleDetailAnswers } from "./sale-detail-fixture";
+import {
+  DETAIL_SALE_ID,
+  fixSaleDetailClock,
+  saleDetailAnswers,
+} from "./sale-detail-fixture";
 import { acceptanceStates, firstAccessStates } from "./ui-account-states";
 import { serveEntry } from "./ui-entry-states";
 import { serveHome } from "./ui-home-states";
@@ -522,12 +526,13 @@ const HISTORY = {
 };
 
 /** The real route `/sales/detail`, the API answered here: the receipt, a return made and the three panels in cards. */
-const openSaleDetail = (
+const openSaleDetail = async (
   page: Page,
   withReturn: boolean,
   then: (page: Page) => Promise<void> = async () => undefined
-) =>
-  openInShell(
+) => {
+  await fixSaleDetailClock(page);
+  return openInShell(
     page,
     `/sales/detail?saleId=${DETAIL_SALE_ID}`,
     async () => {
@@ -539,6 +544,7 @@ const openSaleDetail = (
     },
     saleDetailAnswers({ withReturn })
   );
+};
 
 const SALE_DETAIL_SCREENS = [
   {

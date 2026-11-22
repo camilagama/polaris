@@ -29,11 +29,8 @@ import {
   chainRow,
   chartRegion,
   periodButton,
-  periodPanel,
-  openPeriod,
   choosePreset,
-  typeRange,
-  rangeFields,
+  chooseRange,
   chartHelp,
   placeOf,
   MonthlyReportServer,
@@ -102,27 +99,6 @@ test.describe("a tela em um celular e o dia da loja (revisão do PR)", () => {
         document.documentElement.clientWidth
     );
     expect(overflow).toBeLessThanOrEqual(0);
-  });
-
-  test("o erro do intervalo fica sob o campo Fim e é lido com ele", async ({
-    page,
-  }) => {
-    const server = new FakeReportServer();
-    await openDashboard(page, server);
-    await openPeriod(page);
-    await typeRange(page, "2026-10-10", "2026-10-09");
-    const panel = periodPanel(page);
-    await panel.getByLabel("Início", { exact: true }).focus();
-
-    const alert = panel.getByRole("alert");
-    await expect(alert).toContainText("A data final vem antes da inicial.");
-    const until = panel.getByLabel("Fim", { exact: true });
-    const describedBy = await until.getAttribute("aria-describedby");
-    expect(describedBy).toBe(await alert.getAttribute("id"));
-    const alertBox = await alert.boundingBox();
-    const untilBox = await until.boundingBox();
-    expect(alertBox?.y ?? 0).toBeGreaterThan(untilBox?.y ?? 0);
-    await expect(until).toHaveAttribute("aria-invalid", "true");
   });
 
   test("o dia da loja vem do relógio do servidor: com o aparelho em outro dia, os períodos são calculados de novo, uma vez", async ({
@@ -472,7 +448,7 @@ test.describe("o aviso dos dias sem custo com o mês nomeado tem teto: a contage
       help: HELP_OF_ANOTHER_YEAR,
       line: null,
       name: "mês de outro ano",
-      period: (page: Page) => rangeFields(page, ...YEAR_AGO_TO_TODAY),
+      period: (page: Page) => chooseRange(page, ...YEAR_AGO_TO_TODAY),
     },
   ] as const;
 

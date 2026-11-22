@@ -646,10 +646,6 @@ export const SPEC_SCREENS = {
   "apps/web/e2e-pwa/ui-charts.e2e.ts": ["home", "ui-gallery"],
   "apps/web/e2e-pwa/ui-components.e2e.ts": ["ui-gallery"],
   "apps/web/e2e-pwa/ui-csp.e2e.ts": ["home", "ui-gallery"],
-  "apps/web/e2e-pwa/ui-date-pickers-digitar.e2e.ts": [
-    "inventory",
-    "ui-gallery",
-  ],
   "apps/web/e2e-pwa/ui-date-pickers-leitor-de-tela.e2e.ts": ["ui-gallery"],
   "apps/web/e2e-pwa/ui-date-pickers.e2e.ts": ["ui-gallery"],
   "apps/web/e2e-pwa/ui-dialog-form.e2e.ts": ["ui-gallery"],

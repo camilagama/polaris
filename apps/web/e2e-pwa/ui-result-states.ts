@@ -13,7 +13,7 @@ import { serveLabWorker, WORKER_MARK } from "./worker-mark";
  * controls are hidden at the end of each state, so what is measured is the screen alone.
  */
 const ORGANIZATION_ID = "0199c2d0-0000-7000-8000-00000000a001";
-const NOW = "2026-10-14T12:00:00.000Z";
+const NOW = new Date("2026-10-14T12:00:00.000Z");
 const uuid = (n: number) =>
   `0199c2d0-0000-7000-8000-${n.toString(16).padStart(12, "0")}`;
 
@@ -85,7 +85,7 @@ const PARTIAL_SUMMARY = (from: string, to: string) => ({
     returns: "5.00",
   },
   daily: dailyOf(from, to, true),
-  generatedAt: NOW,
+  generatedAt: NOW.toISOString(),
   period: { from, to },
   quality: {
     anticipationFeesUnknown: 0,
@@ -170,7 +170,7 @@ const EMPTY_SUMMARY = (from: string, to: string) => ({
     processingFees: "0.00",
     returns: "0.00",
   },
-  generatedAt: NOW,
+  generatedAt: NOW.toISOString(),
   period: { from, to },
   quality: {
     anticipationFeesUnknown: 0,
@@ -329,7 +329,7 @@ async function signIn(page: Page, user: string, extra = "") {
 /** Starts the lab's runtime and waits for the screen with the month read. */
 async function openResultLab(page: Page, served: Served = {}, extra = "") {
   // the month the screen opens on is the organization's today: keep it October 2026
-  await page.clock.setFixedTime(new Date(NOW));
+  await page.clock.setFixedTime(NOW);
   await serveResult(page, served);
   await signIn(page, `guardrails-${crypto.randomUUID()}`, extra);
 }
@@ -400,7 +400,7 @@ export const resultStates = {
   /** The server out of reach after a read: the copy the device kept, the notice, and the goals that could not load. */
   async offline(page: Page) {
     const served: Served = {};
-    await page.clock.setFixedTime(new Date(NOW));
+    await page.clock.setFixedTime(NOW);
     await serveResult(page, served);
     const user = `guardrails-${crypto.randomUUID()}`;
     await signIn(page, user);

@@ -54,6 +54,12 @@ const STRIP_CLASS =
   "@min-[60rem]/home:flex-row @min-[60rem]/home:flex-wrap @min-[60rem]/home:items-center @min-[60rem]/home:gap-x-6 @min-[60rem]/home:gap-y-1 @min-[60rem]/home:py-3";
 const STRIP_END = "@min-[60rem]/home:order-last @min-[60rem]/home:ml-auto";
 
+const GOAL_FOOTER = {
+  capability: "goal:manage",
+  href: "/dashboard?aba=metas",
+  label: "Ver as metas",
+} as const;
+
 /**
  * The side of the ring of the goal and the width of its arc (v7 § 3 item 9), in pixels at the default 16 px letter:
  * the ring is 7 rem, the arc 0.625 rem and the margin 0.5 rem, so it grows with the letter of the person.
@@ -460,8 +466,8 @@ export function GoalBlock({
   return (
     <HomeBlock
       {...(strip
-        ? { attributes: STRIP_ATTRIBUTES, className: STRIP_CLASS }
-        : {})}
+        ? { attributes: STRIP_ATTRIBUTES, className: STRIP_CLASS, plain: true }
+        : { footer: GOAL_FOOTER })}
       id="home-goal"
       title={pastMonth ? monthGoalTitle(monthTitle(pastMonth)) : "Meta"}
       {...(helpText ? { help: { about: "Meta", text: helpText } } : {})}
@@ -520,8 +526,8 @@ export function OfflineGoalBlock({ goal }: { goal: OfflineGoal }) {
   return (
     <HomeBlock
       {...(strip
-        ? { attributes: STRIP_ATTRIBUTES, className: STRIP_CLASS }
-        : {})}
+        ? { attributes: STRIP_ATTRIBUTES, className: STRIP_CLASS, plain: true }
+        : { footer: { ...GOAL_FOOTER, link: false } })}
       id="home-goal"
       title={title}
     >

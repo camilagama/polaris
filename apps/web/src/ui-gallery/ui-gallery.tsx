@@ -19,6 +19,11 @@ import {
   Card,
   CardContent,
   CardDescription,
+  CardFrame,
+  CardFrameFooter,
+  CardFrameHeader,
+  CardFrameLink,
+  CardFramePanel,
   CardHeader,
   CardTitle,
 } from "@/ui/card";
@@ -137,6 +142,7 @@ import {
   SidebarMenuItem,
 } from "@/ui/sidebar";
 import { Skeleton } from "@/ui/skeleton";
+import { SkeletonArt, type SkeletonArtKind } from "@/ui/skeleton-art";
 import { Switch } from "@/ui/switch";
 import {
   Table,
@@ -376,6 +382,21 @@ function PaceExamples() {
     </ul>
   );
 }
+
+const SKELETON_ART_SAMPLES: readonly {
+  caption: string;
+  kind: SkeletonArtKind;
+}[] = [
+  {
+    caption: "Lista de produtos: Primeiros passos e vazio de Produtos.",
+    kind: "products",
+  },
+  {
+    caption: "Tela de venda: Primeiros passos e Venda sem produto.",
+    kind: "sale",
+  },
+  { caption: "Início com números: página não encontrada.", kind: "home" },
+];
 
 function Section({
   children,
@@ -1514,6 +1535,68 @@ export function UiGallery() {
             </p>
           </Section>
 
+          <Section title="Cartão com moldura">
+            <p className="max-w-prose text-muted-foreground text-support">
+              Só em bloco de painel, a partir de 760 px: moldura em muted com o
+              título, painel em card e, quando há destino, um pé com uma ação.
+              Abaixo de 760 px é o cartão simples, sem pé.
+            </p>
+            <div className="grid gap-4 md:grid-cols-2">
+              {[
+                { foot: true, icon: true },
+                { foot: false, icon: true },
+                { foot: true, icon: false },
+                { foot: false, icon: false },
+              ].map(({ foot, icon }) => (
+                <CardFrame
+                  aria-labelledby={`gallery-frame-${icon}-${foot}`}
+                  key={`${icon}-${foot}`}
+                  role="region"
+                >
+                  <CardFrameHeader>
+                    <div className="flex min-w-0 items-center gap-1">
+                      <h3
+                        className="flex items-center gap-2 text-section"
+                        id={`gallery-frame-${icon}-${foot}`}
+                      >
+                        {icon ? (
+                          <ChartColumnIcon
+                            aria-hidden="true"
+                            className="size-4 shrink-0"
+                          />
+                        ) : null}
+                        {foot ? "Com pé" : "Sem pé"}
+                        {icon ? ", com ícone" : ", sem ícone"}
+                      </h3>
+                      <HelpTip about="Cartão com moldura">
+                        O (i) fica ao lado do título, na moldura.
+                      </HelpTip>
+                    </div>
+                    <p className="text-muted-foreground text-support">
+                      Ação de cabeçalho
+                    </p>
+                  </CardFrameHeader>
+                  <CardFramePanel>
+                    <p className="font-semibold text-value-lg tabular-nums tracking-[-0.035em]">
+                      <Money split text="R$ 1.234,56" />
+                    </p>
+                    <p className="text-muted-foreground">
+                      O painel guarda o conteúdo, com o raio da moldura menos a
+                      folga e sem sombra própria.
+                    </p>
+                  </CardFramePanel>
+                  {foot ? (
+                    <CardFrameFooter>
+                      <CardFrameLink href="/dashboard">
+                        Ver o resultado
+                      </CardFrameLink>
+                    </CardFrameFooter>
+                  ) : null}
+                </CardFrame>
+              ))}
+            </div>
+          </Section>
+
           <Section title="Cartão de KPI e Esconder valores">
             <div className="flex flex-wrap items-center gap-3">
               <HideValuesButton />
@@ -1625,6 +1708,18 @@ export function UiGallery() {
             >
               <Button type="button">Nova venda</Button>
             </EmptyState>
+            <ul className="grid list-none gap-4 p-0 sm:grid-cols-3">
+              {SKELETON_ART_SAMPLES.map((sample) => (
+                <li key={sample.kind}>
+                  <figure className="m-0 grid gap-2">
+                    <SkeletonArt kind={sample.kind} />
+                    <figcaption className="text-muted-foreground text-support">
+                      {sample.caption}
+                    </figcaption>
+                  </figure>
+                </li>
+              ))}
+            </ul>
             <Card>
               <CardContent>
                 <Empty>

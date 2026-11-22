@@ -20,7 +20,7 @@ A parede aparece duas vezes: com todas as execuções e só com as que rodaram o
 
 ## Tempo por arquivo de teste
 
-Com `CI` definido, as duas configs do Playwright (`playwright.pwa.config.ts` e `playwright.offline-poc.config.ts`) acrescentam o reporter `json`, que grava `apps/web/test-timings/timings-<nome>.json`. A pasta não é `test-results/`: o Playwright a esvazia no começo de cada execução, e o segundo comando do shard apagaria o arquivo do primeiro. Cada shard do gate de navegador sobe a pasta como o artefato `playwright-timings-shard-<n>` (retenção de 3 dias), pelo passo `upload-artifact` do job `offline-poc-browser-part`; esse passo só existe depois que o patch do workflow que acompanha o PR do script é aplicado ao `ci.yml`, e antes disso `--durations <id>` não acha artefato.
+Com `CI` definido, as duas configs do Playwright (`playwright.pwa.config.ts` e `playwright.offline-poc.config.ts`) acrescentam o reporter `json`, que grava `apps/web/test-timings/timings-<nome>.json`. A pasta não é `test-results/`: o Playwright a esvazia no começo de cada execução, e o segundo comando do shard apagaria o arquivo do primeiro. Cada shard do gate de navegador sobe a pasta como o artefato `playwright-timings-shard-<n>` (retenção de 3 dias), pelo passo `upload-artifact` do job `offline-poc-browser-part`, e o job `shard-coverage` baixa os mesmos artefatos (`pattern: playwright-timings-shard-*`) para conferir a cobertura dos shards. Uma execução anterior ao passo não tem o artefato, e `--durations <id>` não acha nada nela.
 
 ```sh
 node scripts/ci-timing.mjs --durations <id-da-execucao | pasta> [--out ci/test-durations.json]
@@ -48,6 +48,8 @@ O job `shard-coverage` (`Offline browser gate (shard coverage)`) roda `scripts/c
 ```sh
 node scripts/ci-shard-coverage.mjs --plan plan.json --list offline-poc=list-offline-poc.json --list pwa=list-pwa.json --reports <pasta com playwright-timings-shard-<n>/timings-<suíte>.json>
 ```
+
+Se o plano tem um shard só (PR que seleciona um spec), o `download-artifact` por padrão grava o `timings-<suíte>.json` direto na pasta, sem o nível `playwright-timings-shard-<n>/`: a guarda lê esses arquivos soltos como o shard único do plano. Com mais de um shard, arquivo solto não diz de qual é e fica de fora (o relatório que falta é acusado).
 
 Ele reprova, com uma linha que diz o arquivo ou a contagem (num PR com seleção, compara com os arquivos selecionados: [o PR roda só o selecionado](#o-pr-roda-só-o-selecionado)): arquivo do `--list` fora do plano, arquivo do plano fora do `--list`, arquivo em dois shards, shard sem o `timings-<suíte>.json` de uma suíte que tinha arquivos, shard que rodou arquivo de outro, e diferença entre os testes executados (com ao menos um resultado no relatório; o pulado por modificador conta, o que a execução não alcançou não) e os do `--list`, por suíte, arquivo e projeto. O plano, as listas e os relatórios ficam nos artefatos `shard-plan` e `playwright-timings-shard-<n>` do run.
 
@@ -121,4 +123,4 @@ bun run --filter @polaris/db gates:ci-definer-hardening  # o job do definer-hard
 
 As suítes saem de `CI_SEPARATE_JOBS` (`packages/db/scripts/gate-runs.ts`): um gate entra ali para sair do job principal; gate novo em `ci` cai no principal. A guarda de `gate-runs.test.ts` lê os comandos `gates:ci*` do `ci.yml` e reprova se a união dos jobs não for exatamente a lista `ci` (gate sem job ou em dois). A primeira linha da saída do executor, `--- N gates selected (<suítes>): <nomes>`, e o resumo final listam o que cada job rodou: a união das duas listas é a lista da `ci`.
 
-**Parede dos gates de PostgreSQL.** `node scripts/ci-timing.mjs` imprime `Parede dos gates de PostgreSQL`: do início do primeiro job `PostgreSQL 18 gates (...)` ao fim do último, sem a espera por runner (antes da divisão, o tempo do job único). A espera por runner aparece na coluna `Espera` de cada job: o `ci.yml` pede cerca de 15 dos 20 jobs simultâneos do plano Free (PRX-1257a), e o job novo e o coletor entram nessa conta, então com a fila cheia o segundo job começa mais tarde e o ganho some.
+**Parede dos gates de PostgreSQL.** `node scripts/ci-timing.mjs` imprime `Parede dos gates de PostgreSQL`: do início do primeiro job `PostgreSQL 18 gates (...)` ao fim do último, sem a espera do primeiro job (a espera do segundo entra na parede; antes da divisão, o tempo do job único). Uma execução com um dos jobs cancelado entra só com o outro e subestima a parede. A espera por runner aparece na coluna `Espera` de cada job: o `ci.yml` pede cerca de 15 dos 20 jobs simultâneos do plano Free (PRX-1257a), e o job novo e o coletor entram nessa conta, então com a fila cheia o segundo job começa mais tarde e o ganho some.
