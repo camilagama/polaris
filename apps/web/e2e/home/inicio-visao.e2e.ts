@@ -1625,8 +1625,14 @@ test.describe("erro por bloco (§ 5.2): Nova venda sempre visível e levando à 
       const server = new FakeServer({ ...SOLD, goals: [goal({})] });
       await openHome(page, server);
       const block = region(page, "Meta");
-      await expect(block.locator("[data-goal-ring]")).toBeVisible();
-      const withData = (await block.boundingBox())?.height ?? 0;
+      const heightOf = async () => (await block.boundingBox())?.height ?? 0;
+      const ready = async () => {
+        await expect(block.locator("[data-goal-ring]")).toBeVisible();
+        await expect(block.locator("[data-goal-projection]")).toBeVisible();
+        await expect(block).toContainText("faltam");
+      };
+      await ready();
+      const withData = await heightOf();
       expect(withData).toBeGreaterThan(0);
 
       server.broken.set("goal/list", "500");
@@ -1634,14 +1640,16 @@ test.describe("erro por bloco (§ 5.2): Nova venda sempre visível e levando à 
       await expect(block).toContainText("Não foi possível carregar a meta.", {
         timeout: 15_000,
       });
-      const broken = (await block.boundingBox())?.height ?? 0;
-      expect(Math.abs(broken - withData)).toBeLessThanOrEqual(1);
+      await expect
+        .poll(async () => Math.abs((await heightOf()) - withData))
+        .toBeLessThanOrEqual(1);
 
       server.broken.delete("goal/list");
       await block.getByRole("button", { name: "Tentar novamente" }).click();
-      await expect(block.locator("[data-goal-ring]")).toBeVisible();
-      const after = (await block.boundingBox())?.height ?? 0;
-      expect(Math.abs(after - broken)).toBeLessThanOrEqual(1);
+      await ready();
+      await expect
+        .poll(async () => Math.abs((await heightOf()) - withData))
+        .toBeLessThanOrEqual(1);
     });
   }
 
