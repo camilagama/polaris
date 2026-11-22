@@ -1,6 +1,7 @@
 /// <reference lib="dom" />
 import type { Locator, Page, Route } from "@playwright/test";
 import { expect } from "@playwright/test";
+import { touchDay } from "../date-pickers";
 import { serveLabWorker, WORKER_MARK } from "../worker-mark";
 
 /**
@@ -646,20 +647,16 @@ export async function expectPreset(page: Page, name: string) {
   await expect(periodPanel(page)).toHaveCount(0);
 }
 
-const ptDate = (iso: string) => iso.split("-").reverse().join("/");
-
-/** `AAAA-MM-DD` in, `dd/mm/aaaa` typed. */
-export async function typeRange(page: Page, from: string, to: string) {
+/** Touches the first and the last day in the open panel, walking the calendar month by month; the panel closes on the second. */
+async function touchRange(page: Page, from: string, to: string) {
   const panel = periodPanel(page);
-  await panel.getByRole("button", { name: "Digitar as datas" }).click();
-  await panel.getByLabel("Início", { exact: true }).fill(ptDate(from));
-  await panel.getByLabel("Fim", { exact: true }).fill(ptDate(to));
+  await touchDay(panel, from);
+  await touchDay(panel, to);
 }
 
-export const rangeFields = async (page: Page, from: string, to: string) => {
+export const chooseRange = async (page: Page, from: string, to: string) => {
   await openPeriod(page);
-  await typeRange(page, from, to);
-  await periodPanel(page).getByRole("button", { name: "Aplicar" }).click();
+  await touchRange(page, from, to);
   await expect(periodPanel(page)).toHaveCount(0);
 };
 

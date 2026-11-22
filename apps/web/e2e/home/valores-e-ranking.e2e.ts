@@ -2,6 +2,7 @@
 
 import type { Browser, Locator, Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
+import { touchDay } from "../date-pickers";
 import {
   assertNoEllipsis,
   assertNoPageScroll,
@@ -27,7 +28,6 @@ import {
   SOBRE,
   SOLD,
   settled,
-  TYPE_DATES,
   tileAreas,
 } from "./shared";
 
@@ -869,19 +869,19 @@ test.describe("Mais vendidos do mês: a linha por largura da coluna (uma linha s
   );
 });
 
-test.describe("os dias sem custo de um mês de outro ano, no período digitado do Início", () => {
+test.describe("os dias sem custo de um mês de outro ano, no período escolhido nos dias do Início", () => {
   const SALE = "2025-05-31";
   const SOLD_IN_MAY: Scenario = {
     ...SOLD,
     days: { ...SOLD.days, [SALE]: [5000, 1], "2025-06-10": [7000, 1] },
     results: { "2025-05-30": 0, [SALE]: null },
   };
-  const typeAndApply = async (page: Page, from: string, to: string) => {
+  const chooseDays = async (page: Page, from: string, to: string) => {
     await periodButton(page).click();
-    await page.getByRole("button", { name: TYPE_DATES }).click();
-    await page.getByRole("textbox", { exact: true, name: "Início" }).fill(from);
-    await page.getByRole("textbox", { exact: true, name: "Fim" }).fill(to);
-    await page.getByRole("button", { name: "Aplicar" }).click();
+    const panel = page.getByRole("dialog", { name: "Período" });
+    await touchDay(panel, from);
+    await touchDay(panel, to);
+    await expect(panel).toBeHidden();
   };
 
   for (const size of [
@@ -895,7 +895,7 @@ test.describe("os dias sem custo de um mês de outro ano, no período digitado d
         await openHome(page, new FakeServer(SOLD_IN_MAY));
         await expectReflowFont(page, size.fontPixels);
 
-        await typeAndApply(page, "31/05/2025", "31/08/2025");
+        await chooseDays(page, "2025-05-31", "2025-08-31");
         const result = region(page, "Resultado estimado");
         const unknown = result.locator("[data-kpi-unknown]");
         await expect(unknown).toHaveText("maio de 2025: 1 de 1 dia sem custo");
@@ -918,7 +918,7 @@ test.describe("os dias sem custo de um mês de outro ano, no período digitado d
         await page.keyboard.press("Escape");
         await assertNoPageScroll(page);
 
-        await typeAndApply(page, "30/05/2025", "31/08/2025");
+        await chooseDays(page, "2025-05-30", "2025-08-31");
         await expect(periodButton(page)).toContainText("30/05/2025");
         await expect(result.locator("[data-kpi-incomplete]")).toContainText(
           "Incompleta"

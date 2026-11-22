@@ -13,13 +13,12 @@ const CLOCK_FIXED_BY_THE_HELPER =
 const THE_SHARED_SIGN_IN_FIXES_THE_CLOCK =
   "a data é da fixture do Resultado e o relógio é fixado por `signIn`, em `dashboard/shared.ts`, que a checagem não segue; o arquivo já tinha essas datas junto da fixação quando era um só";
 
+const THE_GALLERY_FIXES_TODAY =
+  "as datas são do calendário da galeria, cujo hoje é fixo (24/10/2026, `TODAY` de ui-gallery.tsx) e não vem do relógio do navegador";
+
 export const E2E_FIXED_DATES_LIST = {
   "apps/web/e2e-pwa/ui-account-states.ts": {
     count: 1,
-    reason: BEFORE_THE_RULE,
-  },
-  "apps/web/e2e-pwa/ui-date-pickers-digitar.e2e.ts": {
-    count: 8,
     reason: BEFORE_THE_RULE,
   },
   "apps/web/e2e-pwa/ui-date-pickers-leitor-de-tela.e2e.ts": {
@@ -27,8 +26,8 @@ export const E2E_FIXED_DATES_LIST = {
     reason: BEFORE_THE_RULE,
   },
   "apps/web/e2e-pwa/ui-date-pickers.e2e.ts": {
-    count: 38,
-    reason: BEFORE_THE_RULE,
+    count: 43,
+    reason: THE_GALLERY_FIXES_TODAY,
   },
   "apps/web/e2e-pwa/ui-shell-isolation.e2e.ts": {
     count: 17,
@@ -41,7 +40,7 @@ export const E2E_FIXED_DATES_LIST = {
     reason: CLOCK_FIXED_BY_THE_HELPER,
   },
   "apps/web/e2e/home/valores-e-ranking.e2e.ts": {
-    count: 9,
+    count: 13,
     reason: CLOCK_FIXED_BY_THE_HELPER,
   },
   "apps/web/e2e/dashboard/caixa-do-grafico.e2e.ts": {
@@ -53,7 +52,7 @@ export const E2E_FIXED_DATES_LIST = {
     reason: THE_SHARED_SIGN_IN_FIXES_THE_CLOCK,
   },
   "apps/web/e2e/dashboard/grafico-e-periodos.e2e.ts": {
-    count: 41,
+    count: 40,
     reason: THE_SHARED_SIGN_IN_FIXES_THE_CLOCK,
   },
   "apps/web/e2e/dashboard/mes-e-copia.e2e.ts": {

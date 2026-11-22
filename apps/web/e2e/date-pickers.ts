@@ -21,8 +21,15 @@ export async function openDatePicker(scope: Locator | Page, label: string) {
   return popup;
 }
 
-/** Walks the calendar month by month until `iso` is in view, then touches it. */
-export async function touchDay(popup: Locator, iso: string) {
+/**
+ * Walks the calendar month by month until `iso` is in view, then touches it; `force` touches a day that is turned off
+ * (aria-disabled), which Playwright otherwise waits on for good.
+ */
+export async function touchDay(
+  popup: Locator,
+  iso: string,
+  options: { force?: boolean } = {}
+) {
   const target = popup.locator(`button[data-day="${iso}"]`);
   // biome-ignore lint/performance/noAwaitInLoops: one month after the other, until the day is in view
   for (let step = 0; step < 48 && (await target.count()) === 0; step += 1) {
@@ -35,7 +42,7 @@ export async function touchDay(popup: Locator, iso: string) {
       .getByRole("button", { name: back ? "Mês anterior" : "Próximo mês" })
       .click();
   }
-  await target.click();
+  await target.click(options);
 }
 
 /** Opens one date's picker, touches the day and waits for the popover to close. */
@@ -62,20 +69,34 @@ export async function pickPeriod(
   await expect(popup).toBeHidden();
 }
 
+const TYPE_DATES_BUTTON = /Digitar as datas/;
+
+/** The panel of a period has no button to type the dates and no text field, whatever the width. */
+export async function expectNoTypedDates(popup: Locator) {
+  await expect(
+    popup.getByRole("button", { name: TYPE_DATES_BUTTON })
+  ).toHaveCount(0);
+  await expect(popup.getByRole("textbox")).toHaveCount(0);
+  await expect(popup.locator("[aria-expanded]")).toHaveCount(0);
+}
+
 /**
- * With "Digitar as datas" open the month keeps its six weeks and no box of its own scrolls: what does not fit is
- * reached by scrolling the panel as a whole, and the last week can be brought into view.
+ * The height of what the period panel holds, from the top of the shortcuts to the bottom of the line under the month
+ * (the panel itself is `display: contents` on a phone, and the Dialog around it has the height of the screen). Read from
+ * the layout (offsets), which the scale of the entrance animation does not touch.
  */
-export async function expectWholeMonthWhileTyping(popup: Locator) {
-  const month = popup.locator("[data-range-month]");
-  const { clientHeight, scrollHeight } = await month.evaluate((element) => ({
-    clientHeight: element.clientHeight,
-    scrollHeight: element.scrollHeight,
-  }));
-  expect(scrollHeight).toBeLessThanOrEqual(clientHeight + 1);
-  const rows = popup.getByRole("grid").first().getByRole("row");
-  await expect(rows).toHaveCount(6);
-  const lastWeek = rows.last();
-  await lastWeek.scrollIntoViewIfNeeded();
-  await expect(lastWeek).toBeInViewport({ ratio: 1 });
+export async function panelHeight(popup: Locator) {
+  return await popup.evaluate((root) => {
+    const shortcuts = root.querySelector<HTMLElement>(
+      'fieldset[aria-label="Atalhos do período"]'
+    );
+    const footer = root.querySelector<HTMLElement>("[data-range-footer]");
+    if (!(shortcuts && footer)) {
+      throw new Error("o painel do período não tem atalhos ou rodapé");
+    }
+    if (shortcuts.offsetParent !== footer.offsetParent) {
+      throw new Error("atalhos e rodapé não medem do mesmo ponto");
+    }
+    return footer.offsetTop + footer.offsetHeight - shortcuts.offsetTop;
+  });
 }

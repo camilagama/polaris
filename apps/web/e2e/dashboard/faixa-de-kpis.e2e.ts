@@ -15,7 +15,7 @@ import {
   periodButton,
   YEAR_NAME,
   choosePreset,
-  rangeFields,
+  chooseRange,
   placeOf,
   settled,
   MonthlyReportServer,
@@ -53,7 +53,7 @@ test.describe("o cartão do gráfico mantém a altura entre o mês, Este ano, 30
         ["mês", async () => undefined],
         ["Este ano", () => choosePreset(page, "Este ano")],
         ["30 dias", () => choosePreset(page, "Últimos 30 dias")],
-        ["366 dias", () => rangeFields(page, ...YEAR_AGO_TO_TODAY)],
+        ["366 dias", () => chooseRange(page, ...YEAR_AGO_TO_TODAY)],
       ];
       const heights = new Map<number, Record<string, number>>();
       for (const [period, act] of periods) {
@@ -484,14 +484,14 @@ test.describe("ler um dia no minigráfico do Resultado: a data toma o lugar do c
     page,
   }) => {
     await openDashboard(page, new FakeReportServer());
-    await rangeFields(page, "2026-05-05", "2026-05-06");
+    await chooseRange(page, "2026-05-05", "2026-05-06");
     await expect(periodButton(page)).toHaveAccessibleName(MAY_5_TO_6);
     await expect(page.locator("[data-stale]")).toHaveCount(0);
     await expect(kpiCards(page)).toHaveCount(4);
     await expect(page.locator("[data-kpi-spark]")).toHaveCount(0);
     await expect(stripOf(page).getByRole("slider")).toHaveCount(0);
     await expect(card(page, CARD.netSales)).toContainText("R$");
-    await rangeFields(page, "2026-05-05", "2026-05-07");
+    await chooseRange(page, "2026-05-05", "2026-05-07");
     await expect(periodButton(page)).toHaveAccessibleName(MAY_5_TO_7);
     await expect(page.locator("[data-stale]")).toHaveCount(0);
     await expect(

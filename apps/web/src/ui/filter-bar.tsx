@@ -409,7 +409,7 @@ function DraftContent({
  * (Cancelar, ×, Esc, the step back) drops it. A draft with no value (an empty text, no choice, "Limpar") applies as
  * taking the filter out, as in the Popover. With only the first day of a period marked "Aplicar" is `aria-disabled`
  * (described by the line that asks for the last day), so the day touched is never dropped by applying the old range.
- * In a period a shortcut applies and closes at once, and "Aplicar" shows only after a day was touched or typed, or
+ * In a period a shortcut applies and closes at once, and "Aplicar" shows only after a day was touched, or
  * "Limpar" was pressed: until then there is no draft to confirm.
  */
 function PhoneEditorContent({
