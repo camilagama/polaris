@@ -75,7 +75,7 @@ const SHELL_ROUTES = [
   "/dashboard",
   "/expenses",
   "/configuracoes",
-  "/configuracoes?aba=aparelhos",
+  "/conta?aba=aparelhos",
   "/attention",
   "/ajuda",
   "/uma-pagina-que-nao-existe",
@@ -530,6 +530,7 @@ async function expectTwoTaps(page: Page, width: number, label: string) {
   const menu = page.getByRole("menu");
   const items = menu.getByRole("menuitem");
   await expect(items, label).toHaveText([
+    "Minha conta",
     "Ajuda e contato",
     "Termos de Uso (abre em outra aba)",
     "Política de Privacidade (abre em outra aba)",

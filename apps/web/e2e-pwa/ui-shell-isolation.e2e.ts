@@ -107,7 +107,7 @@ const ENTRY_PAGES = [
 const CHANGE_PASSWORD = {
   name: "Trocar senha no shell",
   open: (page: Page) =>
-    openInShell(page, "/conta/seguranca", () =>
+    openInShell(page, "/conta", () =>
       expect(page.getByLabel("Senha atual")).toBeVisible()
     ),
 };
