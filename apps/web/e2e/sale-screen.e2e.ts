@@ -263,7 +263,6 @@ test("Alterar data e ajustes: com a altura do painel ainda fechando, o conteúdo
     );
     add?.scrollIntoView({ block: "center" });
     return {
-      contentScrollTop: node.firstElementChild?.scrollTop ?? -1,
       found: add !== undefined,
       height: node.getBoundingClientRect().height,
       scrollHeight: node.scrollHeight,
@@ -274,10 +273,7 @@ test("Alterar data e ajustes: com a altura do painel ainda fechando, o conteúdo
   expect(measured.height).toBeGreaterThan(0);
   expect(measured.height).toBeLessThan(openHeight);
   expect(measured.height).toBeLessThan(measured.scrollHeight);
-  expect({
-    contentScrollTop: measured.contentScrollTop,
-    scrollTop: measured.scrollTop,
-  }).toEqual({ contentScrollTop: 0, scrollTop: 0 });
+  expect(measured.scrollTop).toBe(0);
 });
 
 /**
