@@ -3703,3 +3703,12 @@ Origem: achado B do Diego no Pixel 6 (28/10): a venda montada em Vender sumia ao
 | Servidor | Em revisão | `confirmSale` grava `payment_count` e as partes num `INSERT` com `position`; perfis e regras de todas as partes em duas leituras; replay compara a lista por posição; `readConfirmedSale` e `listSales` ordenam pela posição (a regra provisória do maior valor saiu). Recusas: `sale_payment_split_mismatch` (RPC 400 e sync), perfil recusado em qualquer parte recusa a venda inteira, com `data.part` no RPC. |
 | Provas | Em revisão | Gates `sale-transaction` (2 partes gravadas com as taxas de cada perfil sobre o valor da parte, soma errada sem efeito, replay e conflitos, 4 entregas simultâneas, perfil recusado na parte 1, parte sem perfil ou sem regra com taxa desconhecida), `read-models` (lista e Detalhe pela posição), `offline-sale` (sync de venda dividida, soma errada e perfil velho na parte 1) e `web-worker` (`sale/confirm` com 1 e com 2 partes: 28 statements cada). |
 | Fora | Pendente | Tela (S3), leitura nas telas (S4), offline do app (S5). No sync, a recusa de perfil tem o código estável sem o índice da parte (a linha recusada de `sync_commands` não guarda resultado). |
+
+### Pagamento dividido, S3a: modelo da tela, sem tela (t1663)
+
+| Parte | Estado | O que há |
+| --- | --- | --- |
+| Modelo | Em revisão | `apps/web/src/sales/sale-split-model.ts` (puro, em centavos `bigint`): o restante da última parte enquanto ninguém digita nela, "Falta R$ X" / "Passou R$ X" / "Fechou: R$ X", a dica de troco só para a parte em dinheiro, "Pôr na parte 2" / "Tirar da parte 2", o aviso "O total mudou. Confira as partes." e as mensagens de cada parte. `SaleFormState` ganha `split` (nulo com 1 parte): a Parte 1 segue em `payment` e `profile`. |
+| Comando | Em revisão | 1 parte monta `payment` e `paymentProfile` como antes; 2 partes montam `payments[]` com `amount` e `paymentProfile` por parte, e só com a soma fechada no centavo; a avaliação devolve `firstIssueKey` e a prévia de taxas de cada parte. A tentativa sem resposta guarda a versão do perfil de cada parte (`paymentProfiles`). |
+| Rascunho e lembrança | Em revisão | Chave `polaris.sale.draft.v2:<loja>`; um rascunho `v1` ainda volta, como 1 parte, e passa para a chave nova. Venda dividida não grava a lembrança do último pagamento, e a tela nunca abre dividida. |
+| Fora | Pendente | Tela (S3b), leitura nas telas (S4), offline do app (S5): a fila offline ainda lê só `payment`, e a S3b mantém "Dividir pagamento" desligado sem internet. |
