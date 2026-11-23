@@ -7,7 +7,6 @@ import {
   useRef,
   useState,
 } from "react";
-import { SegmentedFilter } from "@/ui/segmented-filter";
 import { useCurrentOrganization } from "../lib/current-organization";
 import { browserConnection } from "../lib/browser-connection";
 import { calendarDayInTimezone } from "../lib/dates";
@@ -64,7 +63,12 @@ import {
   ProductsImportFooter,
 } from "./products-page-parts";
 import { countLineShown, shownListCount } from "./list-page-model";
-import { ListCountLine, LoadMoreButton, useListPage } from "./screen-parts";
+import {
+  ListCountLine,
+  LoadMoreButton,
+  StatusNav,
+  useListPage,
+} from "./screen-parts";
 import { useProductDelete } from "./use-product-delete";
 import { useProductsData } from "./use-products-data";
 import { useProductsLink } from "./use-products-link";
@@ -967,7 +971,7 @@ export function ProductsPage() {
             />
 
             <ProductSearch onChange={setQuery} value={query} />
-            <SegmentedFilter
+            <StatusNav
               label="Estado dos produtos"
               onSelect={handleStatus}
               options={PRODUCT_STATUS_OPTIONS}
