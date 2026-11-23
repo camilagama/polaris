@@ -234,13 +234,14 @@ test.describe("o gráfico de vendas e custos (AC-4 a AC-12)", () => {
   }) => {
     await openDashboard(page, new FakeReportServer());
     const region = chartRegion(page);
-    await expect(reading(page)).toBeVisible();
+    const lastDay = await readLastDay(page);
+    await expect(lastDay).toBeVisible();
     await expectAllMono(
       region.locator("dd > span"),
       "os totais acima do desenho"
     );
     await expectAllMono(
-      reading(page).locator("span.whitespace-nowrap"),
+      lastDay.locator("span.whitespace-nowrap"),
       "os valores da leitura do dia"
     );
   });
