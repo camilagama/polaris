@@ -20,6 +20,10 @@ const opening = vi.hoisted(() => ({ filters: null as unknown }));
 const seen = vi.hoisted(() => ({ filters: [] as unknown[] }));
 
 vi.mock("../lib/orpc", () => ({ orpcClient: {} }));
+vi.mock("../lib/motion-level", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../lib/motion-level")>()),
+  useMotionLevel: () => "none",
+}));
 vi.mock("../offline/runtime/use-local-workspace", () => ({
   useLocalWorkspace: () => null,
 }));
