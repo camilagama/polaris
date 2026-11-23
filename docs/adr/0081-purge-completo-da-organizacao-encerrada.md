@@ -89,7 +89,7 @@ As decisões acima não ligavam purge automático: o purge era só manual (agend
 
 ## Emenda de 20/10/2026: o apagamento automático (ADR 0102)
 
-> Desenho t107 (§3 e §4) com a consolidação do Arrascaeta de 19/10/2026 21:25 (correção M1 do Filipe Luís: a emenda deste ADR vem com o PR do apagamento automático). Migration 0087 e o número do ADR 0102 são provisórios até o merge.
+> Desenho t107 (§3 e §4) com a consolidação do Arrascaeta de 19/10/2026 21:25 (correção M1 do Filipe Luís: a emenda deste ADR vem com o PR do apagamento automático).
 
 - **O gatilho deixa de ser só administrativo.** A classe `closed_organization` passa a `aprovada` (90 dias de calendário depois do encerramento, no fuso da organização), e a varredura de privacidade agenda o purge sozinha em D menos 7 dias locais, **sem caso de privacidade**, atrás da chave `CLOSURE_AUTO_PURGE_ENABLED` (ligada só no staging; na produção, desligada até o go-live). O purge do período nunca roda antes do maior entre D mais 48 horas e o agendamento mais 7 dias. Ele não é agendado com legal hold vigente, com acesso temporário do Admin vigente, depois de um cancelamento do Admin neste encerramento, ou com a renovação ainda viva no provedor. As regras, o banco e as alternativas estão no [ADR 0102](0102-apagamento-automatico-da-loja-encerrada.md).
 - **O caminho do Admin continua**, com as mesmas recusas (inclusive `paid_access_running`), para as exceções: agendar de novo depois de um cancelamento, ou sob um caso de exclusão. Agendado de novo sobre uma linha do período, o purge volta a ser do operador (`trigger = 'admin'`).
