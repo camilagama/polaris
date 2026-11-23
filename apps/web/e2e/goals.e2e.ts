@@ -813,6 +813,20 @@ for (const address of ["&aba=metas", "&meta=lista"]) {
   });
 }
 
+test("aberto pelo endereço (?meta=nova) no desktop: o Esc devolve o foco ao Nova meta da linha do título", async ({
+  page,
+}) => {
+  await page.setViewportSize({ height: 800, width: 1280 });
+  await openDashboard(page, new FakeGoalServer(), "&meta=nova");
+  await expect(page.getByRole("dialog", { name: "Nova meta" })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  const openForm = page
+    .locator("[data-title-actions]")
+    .getByRole("button", { name: "Nova meta" });
+  await expect(openForm).toBeFocused();
+});
+
 test("uma meta que chegou ao alvo vira Concluída e continua concluída", async ({
   page,
 }) => {
@@ -1386,7 +1400,7 @@ test("uma falha ao carregar mostra o erro e deixa tentar de novo", async ({
   await expect(card(page, "Depois da falha")).toContainText("Em andamento");
 });
 
-test("durante a leitura das metas o cabeçalho já traz Nova meta e não muda de altura quando a lista chega", async ({
+test("durante a leitura das metas a linha do título já traz Nova meta e não muda de altura quando a lista chega", async ({
   page,
 }) => {
   const server = new FakeGoalServer();
@@ -1399,10 +1413,10 @@ test("durante a leitura das metas o cabeçalho já traz Nova meta e não muda de
 
   const region = page.getByRole("region", { exact: true, name: "Metas" });
   await expect(region.getByText("Carregando as metas…")).toBeVisible();
-  const newButton = region.getByRole("button", { name: "Nova meta" });
+  const newButton = page.getByRole("button", { name: "Nova meta" });
   await expect(newButton).toHaveCount(1);
   await expect(newButton).toBeVisible();
-  const header = region.locator("h2").locator("xpath=../..");
+  const header = page.locator("[data-title-line]");
   const heightOf = async () => (await header.boundingBox())?.height ?? 0;
   const whileReading = await heightOf();
   expect(whileReading).toBeGreaterThan(0);
@@ -1416,7 +1430,7 @@ test("durante a leitura das metas o cabeçalho já traz Nova meta e não muda de
 const GOALS_TAB = /^Metas/;
 
 for (const viewport of FORM_VIEWPORTS) {
-  test(`Metas a ${viewport.name} px: o título, a aba e o botão Nova meta ficam no mesmo lugar (até 1 px) lendo, com metas e vazio, e o botão é um só`, async ({
+  test(`Metas a ${viewport.name} px: o título, a aba e o botão Nova meta (na linha do título) ficam no mesmo lugar (até 1 px) lendo, com metas e vazio, e o botão é um só`, async ({
     page,
   }, testInfo) => {
     test.skip(
@@ -1433,7 +1447,7 @@ for (const viewport of FORM_VIEWPORTS) {
     await openGoals(page, server);
     const region = page.getByRole("region", { exact: true, name: "Metas" });
     const parts = {
-      button: region.getByRole("button", { name: "Nova meta" }),
+      button: page.getByRole("button", { name: "Nova meta" }),
       heading: region.getByRole("heading", { exact: true, name: "Metas" }),
       screenTitle: page.getByRole("heading", {
         exact: true,

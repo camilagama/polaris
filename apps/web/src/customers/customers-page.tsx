@@ -16,7 +16,8 @@ import {
   LoadErrorNotice,
 } from "../catalog/products-page-parts";
 import { countLineShown, shownListCount } from "../catalog/list-page-model";
-import { ListCountLine, StatusNav } from "../catalog/screen-parts";
+import { ListCountLine } from "../catalog/screen-parts";
+import { SegmentedFilter } from "@/ui/segmented-filter";
 import { focusLater } from "../lib/focus";
 import { useCurrentOrganization } from "../lib/current-organization";
 import { useStoreToday } from "../lib/use-store-today";
@@ -648,7 +649,7 @@ export function CustomersPage() {
         open={formOpen}
       />
       <CustomerSearch onChange={setQuery} value={query} />
-      <StatusNav
+      <SegmentedFilter
         disabled={pendingAction !== null}
         label="Estado dos clientes"
         onSelect={handleStatus}

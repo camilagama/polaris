@@ -2198,7 +2198,7 @@ Plano de 23/10/2026, item 3.1, primeira parte; emenda de 24/10/2026 do [ADR 0103
 
 | Item | Estado | Detalhe |
 | --- | --- | --- |
-| Abas (`Tabs`) | Concluído (PR 290, 16751930) | Produtos, Despesas, Categorias, Clientes e o filtro de saldo do Estoque usam o `Tabs` de `src/ui/tabs.tsx` pela peça `SegmentedFilter` (`ui/segmented-filter.tsx`, a única cópia; as telas a importam como `StatusNav` de `catalog/screen-parts.tsx`). `role="tablist"` com o nome de antes e `role="tab"` com `aria-selected`; as setas escolhem a aba, só a escolhida é parada do Tab e Tab sai do grupo. Saíram `ProductStatusNav`, as abas feitas à mão de Despesas e o `ButtonGroup` do Estoque. O visual passa da linha sob a escolhida para a faixa do componente. |
+| Abas (`Tabs`) | Concluído (PR 290, 16751930) | Produtos, Despesas, Categorias, Clientes e o filtro de saldo do Estoque usam o `Tabs` de `src/ui/tabs.tsx` pela peça `SegmentedFilter` (`ui/segmented-filter.tsx`, a única cópia, que as telas importam direto). `role="tablist"` com o nome de antes e `role="tab"` com `aria-selected`; as setas escolhem a aba, só a escolhida é parada do Tab e Tab sai do grupo. Saíram a navegação de estado de Produtos feita à mão, as abas feitas à mão de Despesas e o `ButtonGroup` do Estoque. O visual passa da linha sob a escolhida para a faixa do componente. |
 | Esqueleto (`Skeleton`) | Concluído (PR 290, 16751930) | Estoque e Detalhe da venda: cartão `role="status"` com a frase só para o leitor de tela e três linhas de `Skeleton`. O Histórico de vendas já era assim. As três cópias do cartão não foram juntadas (a t266 mediu que fica maior). O estado vazio continua um cartão com uma frase. |
 | `/sales/customer` sem `saleId` | Já estava na main | Feito na t255 (sem campo de identificador; leva ao Histórico). A t300 só acrescenta a prova no navegador. |
 | Seletor de aparência | Sem mudança | Fica com botões `aria-pressed`: o `RadioGroup` no shell sobe o primeiro script em 8 187 B gzip (medido). |
@@ -3677,3 +3677,20 @@ Origem: achado B do Diego no Pixel 6 (28/10): a venda montada em Vender sumia ao
 | Informação | Em revisão | O cliente virou a linha "Cliente: …" no comprovante, com o resumo de compras logo abaixo; o histórico de atribuição fica em cartão próprio quando há versões; as devoluções feitas e os motivos de não poder devolver ou cancelar seguem à vista. |
 | Provas | Em revisão | `e2e-pwa/sale-detail-operations.e2e.ts` (AC-C1.1 a C1.7: posição a 1280 e 360 px, ordem e separador, confirmações que contam as chamadas, teclado, alvo de 44 px no toque, venda cancelada, devolvida por inteiro e fora do servidor, sem conexão); `e2e/cliente-da-venda-reflow.e2e.ts` (C1.8: 320 px com letra de 20 px); `e2e/recibo-pagamento-reflow.e2e.ts` (a 320 px com letra de 16 e de 20 px, nenhuma palavra do aviso "desconhecida — não é zero" / "prazo desconhecido — não é zero" quebra no meio; a linha do bloco Pagamento quebra e o valor desce inteiro, à direita); `sales/sale-actions-menu.test.tsx`. |
 | Fora | Pendente | Baselines `detalhe-da-venda*` do `ui-visual`, refeitas pelo CI. |
+
+### Metas: as ações na linha do título, e as abas não pulam (t1701, C8 do corte de 23/11; sem migration)
+
+| Parte | Estado | O que há |
+| --- | --- | --- |
+| Telas | Em revisão | Na aba Metas, a `action` da linha do título (`TitleLine`) leva "Atualizar metas" e "Nova meta", desenhados pelo `GoalsPanel` por um portal no espaço que `dashboard-page.tsx` reserva (o painel guarda o estado dos comandos); a linha existe nas duas abas e as abas não mudam de lugar ao trocar, a 360 e a 1280 px. O cabeçalho da região Metas fica só com o título e a linha de apoio. |
+| Provas | Em revisão | `e2e-pwa/ui-acoes-na-linha-do-titulo.e2e.ts` (Metas na matriz da linha do título e da ordem do foco; "as abas não pulam" a 1280 e 360 px, até 1 px, nos dois sentidos); `e2e/goals.e2e.ts` com o botão procurado na página, não na região. |
+| Fora | Pendente | Baselines do `ui-visual` das Metas, refeitas pelo CI. |
+
+### Pagamento dividido, S1: o banco aceita de 1 a 3 partes (t1660; migration 0139, provisória)
+
+| Parte | Estado | O que há |
+| --- | --- | --- |
+| Banco | Em revisão | `0139_pagamento_em_partes.sql` (só acrescenta, ADR 0096): `sale_payments.position smallint NOT NULL DEFAULT 0` com `CHECK` de 0 a 2; índice único `(organization_id, sale_id, position)` no lugar de `sale_payments_organization_sale_unique`; `sales.payment_count smallint NOT NULL DEFAULT 1` com `CHECK` de 1 a 3; `check_sale_confirmation_complete` confere contagem igual à do cabeçalho, posições sem buraco, soma exata igual ao total devido e partes acima de zero quando há mais de uma (recusa `sales_confirmation_payment_complete`); `SELECT` das duas colunas novas ao leitor do export de loja encerrada, como toda coluna exportada (0085). `lock_timeout` de 10 s. As vendas já gravadas ficam com uma parte na posição 0, sem backfill. |
+| Worker | Sem mudança | `confirmSale` segue gravando uma parte sem posição e o cabeçalho sem contagem; os defaults mantêm isso válido. |
+| Provas | Em revisão | Gate `sale-transaction` (2 e 3 partes aceitas; soma errada, parte zero, buraco, contagem diferente e parte acrescentada recusadas; 4ª parte e contagem 4 pelos `CHECK`s; posição repetida pelo índice; forma do Worker anterior e venda de total zero aceitas; varredura de todas as vendas do banco); `sales-aggregate` (o segundo pagamento sem posição bate no índice, 23505); `period-summary-sql` e `read-models` com partes reais na posição, sem tirar o índice, e o sorteio do `periodSummary` com vendas de 2 partes. ADR 0107 (emenda o 0019). |
+| Fora | Pendente | Contrato e escrita de mais de uma parte (S2b), tela (S3), leitura por posição (S4), offline (S5); a prova da migration no Neon antes da liberação. |

@@ -366,7 +366,7 @@ test("metas", async ({ evidence, page }) => {
     edit.first().or(goals.getByText("Nenhuma meta ainda"))
   ).toBeVisible();
   if ((await edit.count()) === 0) {
-    await goals.getByRole("button", { name: "Nova meta" }).click();
+    await page.getByRole("button", { name: "Nova meta" }).click();
     const dialog = page.getByRole("dialog", { name: "Nova meta" });
     await dialog.getByLabel("Nome").fill("Meta verify");
     await dialog.getByLabel("Alvo").fill("50.000,00");

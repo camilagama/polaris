@@ -1,6 +1,7 @@
 import type { GoalReadModel } from "@polaris/contracts";
 import PlusIcon from "lucide-react/dist/esm/icons/plus";
 import TargetIcon from "lucide-react/dist/esm/icons/target";
+import { createPortal } from "react-dom";
 import {
   useCallback,
   useEffect,
@@ -32,6 +33,8 @@ import { type GoalOutcome, useGoalCommands } from "./use-goal-commands";
 import type { GoalsState } from "./use-goals";
 
 interface GoalsPanelProps {
+  /** The title line's slot for "Atualizar metas" and "Nova meta": null while the Metas tab is not the open one. */
+  actionsHost: HTMLElement | null;
   /** The read of the goals, owned by the screen so that the tab can say how many are in progress (AC-13, AC-15). */
   goals: { reload: () => Promise<void>; state: GoalsState };
   /** The store's current month (YYYY-MM): a new goal starts as that whole month. The tab does not follow the period of the Resultado (AC-15). */
@@ -175,6 +178,7 @@ function GoalLimitHelp({
 
 /** Goals of the organization: what to reach in a period, and how far along it is. Always open: hiding them saves nothing. */
 export function GoalsPanel({
+  actionsHost,
   goals: { reload, state },
   month,
   organizationId,
@@ -230,7 +234,7 @@ export function GoalsPanel({
     clearFeedback();
     setCreating(true);
   }, [clearFeedback]);
-  // the focus goes back to what opened the form (the button, or the heading when the address did)
+  // the focus goes back to what opened the form (the button in the title line, or the heading when that line is not drawn)
   const finalFocus = useCallback(
     () => newButtonRef.current ?? document.getElementById(HEADING_ID) ?? true,
     []
@@ -286,33 +290,37 @@ export function GoalsPanel({
 
   return (
     <section aria-labelledby={HEADING_ID} className="grid gap-3">
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-        <div className="grid gap-0.5">
-          <h2 className="text-section" id={HEADING_ID} tabIndex={-1}>
-            Metas
-          </h2>
-          <p className="text-muted-foreground text-support">
-            Também estimativas. Uma meta concluída continua concluída.
-          </p>
-        </div>
-        <div className="ml-auto flex gap-2">
-          <RefreshButton
-            busy={state.isLoading}
-            disabled={state.isLoading || busy !== null}
-            object="metas"
-            onClick={handleRetry}
-          />
-          <Button
-            disabled={busy !== null}
-            onClick={handleNew}
-            ref={newButtonRef}
-            size="sm"
-            type="button"
-          >
-            <PlusIcon aria-hidden="true" data-icon="inline-start" />
-            Nova meta
-          </Button>
-        </div>
+      {actionsHost
+        ? createPortal(
+            <>
+              <RefreshButton
+                busy={state.isLoading}
+                className="shrink-0"
+                disabled={state.isLoading || busy !== null}
+                object="metas"
+                onClick={handleRetry}
+              />
+              <Button
+                className="flex-1 min-[47.5rem]:flex-none"
+                disabled={busy !== null}
+                onClick={handleNew}
+                ref={newButtonRef}
+                type="button"
+              >
+                <PlusIcon aria-hidden="true" data-icon="inline-start" />
+                Nova meta
+              </Button>
+            </>,
+            actionsHost
+          )
+        : null}
+      <div className="grid gap-0.5">
+        <h2 className="text-section" id={HEADING_ID} tabIndex={-1}>
+          Metas
+        </h2>
+        <p className="text-muted-foreground text-support">
+          Também estimativas. Uma meta concluída continua concluída.
+        </p>
       </div>
       {/* while the form is open it covers this part of the screen: what the commands say is said inside it */}
       <ActionNotice
