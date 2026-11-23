@@ -73,10 +73,16 @@ async function openPaymentBlock(page: Page, fontPixels: number) {
   return block;
 }
 
+function escapeRegExp(text: string) {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 /** Where the label and the value of one line of the payment block sit, so the value can be checked against both. */
 async function rowBox(block: Locator, label: string) {
   const row = block.locator(":scope > div").filter({
-    has: block.page().locator("dt", { hasText: new RegExp(`^${label}$`) }),
+    has: block
+      .page()
+      .locator("dt", { hasText: new RegExp(`^${escapeRegExp(label)}$`) }),
   });
   await expect(row).toHaveCount(1);
   return row.evaluate((line) => {
