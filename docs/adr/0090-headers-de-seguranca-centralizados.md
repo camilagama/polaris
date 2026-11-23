@@ -4,8 +4,6 @@ status: accepted
 
 # Headers de segurança e CSP centralizados num módulo único
 
-> O número deste ADR (0090) é o próximo livre na `main` (a última é a 0089, do PR do evlog) e nos PRs abertos no momento da escrita; pode mudar se outro entrar antes.
-
 ## Contexto
 
 O plano (Fase 12, PR120) pede CSP e headers centralizados, com testes automatizados. Antes deste PR cada superfície escrevia os seus:

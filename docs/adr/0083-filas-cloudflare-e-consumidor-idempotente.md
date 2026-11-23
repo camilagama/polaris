@@ -4,8 +4,6 @@ status: accepted
 
 # Filas Cloudflare e consumidor idempotente
 
-> O número deste ADR (0083) é o próximo livre na `main` e nos PRs abertos no momento da escrita (o PR do purge usa 0081 e o do teto de custo, 0076); pode mudar se outro entrar antes.
-
 > **Emenda ([ADR 0084](0084-despachante-e-varredor-do-outbox.md)):** o registro de processamento passou a ser durável (`queue_processing`, papel do outbox), a interface `ProcessingLedger` recebe organização, tipo, ID do evento e tentativa, o handler da exportação toma o pedido por ID, a falha da exportação tem recuo na tomada, o prazo da tomada do consumidor é 960 s e o despachante existe. O texto abaixo é o da decisão original.
 
 > **Emenda ([ADR 0085](0085-dlq-incidente-operacional-e-retry-no-admin.md)):** a DLQ existe (`polaris-dlq`): a mensagem que esgota as tentativas é movida pela plataforma, e a que o consumidor recusa de vez (envelope inválido, tipo ou versão desconhecidos, fila errada) é enviada a ela como aviso, e só então recebe `ack`, em vez de ser descartada com um aviso no log. Onde este texto diz "sem DLQ", vale o ADR 0085.
