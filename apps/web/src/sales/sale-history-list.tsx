@@ -42,12 +42,13 @@ export function SaleStatusBadges({
 }
 
 /**
- * Narrower than 17.9 rem the row stops being one line of cells: the data take the full width, wrapping instead of
- * being cut, and the value goes under them, beside the chevron. The width is the row's own (`@container` on the
- * `li`) and in `rem`, so a bigger browser font reaches it on a wider window. A 320 px window at the default font is
- * 18 rem of row, the narrowest width the one-line layout is proven at (the name is cut first, then the method; the
- * date and time stay whole), so it keeps that layout; at 20 px the same window is about 14 rem and wraps. From
- * 20.5 rem (360 px, default font) up the avatar column fits and nothing wraps.
+ * The line of the customer and the method wraps instead of cutting: the method (and the count) move under the name
+ * when they do not fit beside it, and only the end of a name wider than the line gets an ellipsis. The date and the
+ * time wrap the same way, the time as one piece. Narrower than 17.9 rem the row stops being one line of cells: the
+ * data take the full width, nothing is cut, and the value goes under them, beside the chevron. The width is the row's
+ * own (`@container` on the `li`) and in `rem`, so a bigger browser font reaches it on a wider window. A 320 px window
+ * at the default font is 18 rem of row and keeps the layout beside the value; at 20 px the same window is about 14 rem
+ * and wraps. From 20.5 rem (360 px, default font) up the avatar column fits.
  */
 const ROW =
   "flex items-center gap-2 px-2.5 py-2.5 md:gap-3 md:px-4 @max-[17.9rem]:flex-wrap";
@@ -68,13 +69,15 @@ function RowBody({ chevron, row }: { chevron: boolean; row: HistoryRow }) {
         className={`grid min-w-0 flex-1 grid-cols-[minmax(0,1fr)] gap-0.5 overflow-hidden ${WRAPPED_DATA}`}
       >
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-          <p className="@max-[17.9rem]:whitespace-normal whitespace-nowrap font-medium">
+          <p className="font-medium">
             {row.dateText}
             {row.timeText ? (
-              <span className="font-normal text-muted-foreground tabular-nums">
+              <>
                 {" "}
-                · {row.timeText}
-              </span>
+                <span className="whitespace-nowrap font-normal text-muted-foreground tabular-nums">
+                  · {row.timeText}
+                </span>
+              </>
             ) : null}
           </p>
           <SaleStatusBadges
@@ -86,13 +89,13 @@ function RowBody({ chevron, row }: { chevron: boolean; row: HistoryRow }) {
           />
         </div>
         <p
-          className={`flex min-w-0 text-muted-foreground text-support ${WRAPPED_LINE}`}
+          className={`flex min-w-0 flex-wrap gap-x-1 text-muted-foreground text-support ${WRAPPED_LINE}`}
         >
-          <span className="min-w-[5ch] truncate">{row.customerText}</span>
-          <span className="flex max-w-[calc(100%_-_5ch)] shrink-0 whitespace-pre">
-            <span className="overflow-hidden text-ellipsis">{` · ${row.methodText}`}</span>
-            <span className="shrink-0">{` · ${row.itemCountText}`}</span>
+          <span className="flex min-w-0 max-w-full">
+            <span className="truncate">{row.customerText}</span>
+            <span className="shrink-0 whitespace-pre">{" ·"}</span>
           </span>
+          <span className="min-w-0 max-w-full">{` ${row.methodText} · ${row.itemCountText}`}</span>
         </p>
       </div>
       <Money
