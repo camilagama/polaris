@@ -110,6 +110,32 @@ test.describe("Ritmo de vendas (revisão de UI v7, § 3 item 10)", () => {
     rhythm(page).locator(
       '[data-heatmap] rect.visx-heatmap-rect:not([pointer-events="none"])'
     );
+  const rings = (page: Page) => rhythm(page).locator("[data-heatmap-ring]");
+  /** The rings with what they draw: the kind, the stroke, whether it is dashed and the index of the cell they enclose. */
+  const ringsDrawn = (page: Page) =>
+    rhythm(page).evaluate((root) => {
+      const cells = [
+        ...root.querySelectorAll(
+          '[data-heatmap] rect.visx-heatmap-rect:not([pointer-events="none"])'
+        ),
+      ].map((cell) => cell.getBoundingClientRect());
+      return [...root.querySelectorAll("[data-heatmap-ring]")].map((ring) => {
+        const box = ring.getBoundingClientRect();
+        const style = getComputedStyle(ring);
+        const cx = box.x + box.width / 2;
+        const cy = box.y + box.height / 2;
+        return {
+          cell: cells.findIndex(
+            (cell) =>
+              Math.abs(cell.x + cell.width / 2 - cx) < 1 &&
+              Math.abs(cell.y + cell.height / 2 - cy) < 1
+          ),
+          dash: style.strokeDasharray,
+          kind: ring.getAttribute("data-heatmap-ring"),
+          width: Number.parseFloat(style.strokeWidth),
+        };
+      });
+    });
 
   test("a 1280 px: 26 semanas ao lado da Meta, a legenda na linha do título, hoje lido e o melhor dia no resumo, os vazios com contorno e a camada acessível nossa", async ({
     page,
@@ -209,9 +235,88 @@ test.describe("Ritmo de vendas (revisão de UI v7, § 3 item 10)", () => {
       .hover();
     await expectTooltip(page, "Segunda, 19/10", "R$ 0,00");
     await expect(tooltip(page)).not.toContainText("melhor dia");
+    await expect(rings(page)).toHaveCount(2);
+    expect(await ringsDrawn(page)).toEqual([
+      { cell: 180, dash: "none", kind: "today", width: 1 },
+      { cell: 25 * 7 + 1, dash: "none", kind: "read", width: 1.5 },
+    ]);
     await page.mouse.move(5, 5);
     await expect(tooltip(page)).toHaveCount(0);
     await expectAtRest(page);
+    expect(await ringsDrawn(page)).toEqual([
+      { cell: 180, dash: "none", kind: "today", width: 1 },
+    ]);
+  });
+
+  test("os anéis: hoje a 1 px, o dia lido a 1,5 px, contínuos, um por quadrado, sem anel do melhor dia, e as células no mesmo lugar", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 800, width: 1280 });
+    await openHome(page, new FakeServer(SOLD));
+    await expectAtRest(page);
+    // the best day (Sunday `18/10`, index 175) is the darkest cell and has no ring; at rest only today has one
+    await expect(rings(page)).toHaveCount(1);
+    expect(await ringsDrawn(page)).toEqual([
+      { cell: 180, dash: "none", kind: "today", width: 1 },
+    ]);
+    // the cells stay where they were: 12 px, 15 px apart, the last week 25 steps from the first
+    const cells = dataCells(page);
+    const first = await cells.first().boundingBox();
+    const last = await cells.nth(181).boundingBox();
+    const second = await cells.nth(1).boundingBox();
+    expect(first?.width).toBeCloseTo(12, 1);
+    expect(first?.height).toBeCloseTo(12, 1);
+    expect((second?.y ?? 0) - (first?.y ?? 0)).toBeCloseTo(15, 1);
+    expect((last?.x ?? 0) - (first?.x ?? 0)).toBeCloseTo(25 * 15, 1);
+    expect((last?.y ?? 0) - (first?.y ?? 0)).toBeCloseTo(6 * 15, 1);
+    // no ring touches a neighbor: its stroke box keeps 0.5 px from every other cell
+    await cells.nth(175).hover();
+    await expectTooltip(page, "Domingo, 18/10");
+    expect(await ringsDrawn(page)).toEqual([
+      { cell: 180, dash: "none", kind: "today", width: 1 },
+      { cell: 175, dash: "none", kind: "read", width: 1.5 },
+    ]);
+    const clearances = await rhythm(page).evaluate((root) => {
+      const boxes = [
+        ...root.querySelectorAll(
+          '[data-heatmap] rect.visx-heatmap-rect:not([pointer-events="none"])'
+        ),
+      ].map((cell) => cell.getBoundingClientRect());
+      return [...root.querySelectorAll("[data-heatmap-ring]")].map((ring) => {
+        const box = ring.getBoundingClientRect();
+        const width = Number.parseFloat(getComputedStyle(ring).strokeWidth);
+        const outer = {
+          bottom: box.bottom + width / 2,
+          left: box.left - width / 2,
+          right: box.right + width / 2,
+          top: box.top - width / 2,
+        };
+        let nearest = Number.POSITIVE_INFINITY;
+        for (const cell of boxes) {
+          const inside =
+            cell.left >= box.left &&
+            cell.right <= box.right &&
+            cell.top >= box.top &&
+            cell.bottom <= box.bottom;
+          if (inside) {
+            continue;
+          }
+          const dx = Math.max(cell.left - outer.right, outer.left - cell.right);
+          const dy = Math.max(cell.top - outer.bottom, outer.top - cell.bottom);
+          nearest = Math.min(nearest, Math.max(dx, dy));
+        }
+        return nearest;
+      });
+    });
+    for (const clearance of clearances) {
+      expect(clearance).toBeGreaterThanOrEqual(0.5);
+    }
+    // reading today: only the ring of the read day, never two on one square
+    await cells.nth(180).hover();
+    await expectTooltip(page, "Sexta, 23/10");
+    expect(await ringsDrawn(page)).toEqual([
+      { cell: 180, dash: "none", kind: "read", width: 1.5 },
+    ]);
   });
 
   test("pelo teclado: o foco abre o tooltip em hoje, cima e baixo andam um dia, esquerda e direita uma semana, o aria-valuetext diz a leitura", async ({
@@ -228,6 +333,11 @@ test.describe("Ritmo de vendas (revisão de UI v7, § 3 item 10)", () => {
     await slider.focus();
     await expectTooltip(page, "Sexta, 23/10", "R$ 320,10", "hoje");
     await expectTooltipRow(page, "Vendas", "2");
+    // the 3 px outline of the focus is around the whole map, and the ring of the read day is the one of the pointer
+    await expect(slider).toHaveCSS("outline-width", "3px");
+    expect(await ringsDrawn(page)).toEqual([
+      { cell: 180, dash: "none", kind: "read", width: 1.5 },
+    ]);
     // the keyboard starts on today: down is Saturday `24/10`, to come, so it stays; up is the day before
     await page.keyboard.press("ArrowDown");
     await expectTooltip(page, "Sexta, 23/10", "R$ 320,10");
@@ -237,8 +347,16 @@ test.describe("Ritmo de vendas (revisão de UI v7, § 3 item 10)", () => {
       "aria-valuetext",
       "Quinta, 22/10 · sem venda"
     );
+    expect(await ringsDrawn(page)).toEqual([
+      { cell: 180, dash: "none", kind: "today", width: 1 },
+      { cell: 179, dash: "none", kind: "read", width: 1.5 },
+    ]);
     await page.keyboard.press("ArrowLeft");
     await expectTooltip(page, "Quinta, 15/10");
+    expect(await ringsDrawn(page)).toEqual([
+      { cell: 180, dash: "none", kind: "today", width: 1 },
+      { cell: 172, dash: "none", kind: "read", width: 1.5 },
+    ]);
     await page.keyboard.press("ArrowUp");
     await page.keyboard.press("ArrowUp");
     await expectTooltip(page, "Terça, 13/10");
