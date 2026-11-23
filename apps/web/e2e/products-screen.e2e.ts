@@ -10,7 +10,7 @@ import { emptyIconFaults } from "../e2e-pwa/ui-guardrails/measures";
 import { activateByKeyboard, expectFocusRing } from "./focus-ring";
 import { solidPng } from "./media-fixtures";
 import { outboxCommands } from "./outbox-commands";
-import { expectTabsKeyboard } from "./tabs-keyboard";
+import { expectScreenTabsKeyboard, expectTabsKeyboard } from "./tabs-keyboard";
 import { serveLabWorker, WORKER_MARK } from "./worker-mark";
 
 /**
@@ -2179,7 +2179,7 @@ const setLabNetwork = (page: Page, online: boolean) =>
     }
   }, online);
 
-test("as abas do produto: nome de cada aba e do painel, setas trocam de aba e Tab sai do grupo", async ({
+test("as abas do produto: nome de cada aba e do painel, setas movem o foco, Enter abre e Home/End vão às pontas", async ({
   page,
 }, testInfo) => {
   onlyDesktop(testInfo.project.name);
@@ -2191,14 +2191,22 @@ test("as abas do produto: nome de cada aba e do painel, setas trocam de aba e Ta
   ).toBeVisible();
   // each panel is named by its tab
   await expect(dialog.getByRole("tabpanel", { name: "Dados" })).toBeVisible();
-  await expectTabsKeyboard(page, "Partes do produto", ["Dados", "Variantes"]);
+  await expectScreenTabsKeyboard(page, "Partes do produto", [
+    "Dados",
+    "Variantes",
+    "Imagens",
+  ]);
+  await dialog.getByRole("tab", { name: "Dados" }).click();
+  await expect(dialog.getByRole("tabpanel", { name: "Dados" })).toBeVisible();
   await dialog.getByRole("tab", { name: "Dados" }).focus();
   await page.keyboard.press("ArrowRight");
+  await page.keyboard.press("Enter");
   await expect(
     dialog.getByRole("tabpanel", { name: "Variantes" })
   ).toBeVisible();
   await page.keyboard.press("ArrowRight");
   await expect(dialog.getByRole("tab", { name: "Imagens" })).toBeFocused();
+  await page.keyboard.press("Enter");
   await expect(dialog.getByRole("tabpanel", { name: "Imagens" })).toBeVisible();
 });
 
@@ -2624,4 +2632,26 @@ test("Novo produto a 360 x 740: o formulário em seções cresce só o que valem
   expect(measured.height - measured.before).toBeLessThanOrEqual(
     measured.chrome + 1
   );
+});
+
+test("Novo produto: o nome da seção pesa 600 e o rótulo do campo 500", async ({
+  page,
+}) => {
+  await openServerScreen(page, { lists: [answer([])] });
+  await page.getByRole("button", { name: "Novo produto" }).first().click();
+  const form = page.locator("#product-form");
+  await expect(form.getByLabel("Nome do produto")).toBeVisible();
+  const weightOf = (locator: ReturnType<Page["locator"]>) =>
+    locator.evaluate((element) => getComputedStyle(element).fontWeight);
+  const sections = await Promise.all(
+    ["Produto", "Preço e estoque"].map((name) =>
+      weightOf(
+        form.getByRole("group", { exact: true, name }).locator("> legend")
+      )
+    )
+  );
+  expect(sections).toEqual(["600", "600"]);
+  expect(
+    await weightOf(form.locator("label", { hasText: "Nome do produto" }))
+  ).toBe("500");
 });

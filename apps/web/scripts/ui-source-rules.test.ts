@@ -1863,3 +1863,171 @@ describe("o sublinhado de link mora no TextLink (item 12, AC-B2.5)", () => {
     ).toEqual([]);
   });
 });
+
+/**
+ * Aba de tela (DESIGN.md "Abas"): a lista e a aba vêm do `ScreenTabList` e do `ScreenTabTrigger` (ou do `ScreenTabs`),
+ * então altura, fonte, estado ativo e teclado são os mesmos em toda tela. `TabsList` e `TabsTrigger` só se importam em
+ * `app-shell/screen-tabs.tsx` e em `ui/`; o filtro de estado de uma lista é o `SegmentedFilter`. A lista abaixo é exata
+ * e só encolhe, cada arquivo com a razão.
+ */
+const TABS_HOME = "src/app-shell/screen-tabs.tsx";
+const TABS_FOLDER = "src/ui/";
+export const TABS_ELSEWHERE: readonly { file: string; why: string }[] = [
+  {
+    file: "src/ui-gallery/ui-gallery.tsx",
+    why: "a galeria mostra o primitivo Tabs como ele é e só importa de @/ui e @/lib: ScreenTabs vive em app-shell",
+  },
+];
+
+const TABS_STATEMENT =
+  /\b(?:import|export)\s+([^;'"`]*?)\s*from\s*(["'`])([^"'`]+)\2/g;
+const TABS_DYNAMIC = /\bimport\s*\(\s*(["'`])([^"'`]+)\1/g;
+const TABS_UI_MODULE =
+  /^(?:@\/ui|(?:\.{1,2}\/)+(?:[\w-]+\/)*ui)\/tabs(?:\.tsx?)?$|^\.\/tabs(?:\.tsx?)?$/;
+const TABS_BASE_MODULE = /^@base-ui\/react\/tabs(?:\/|$)/;
+const TABS_BASE_BARREL = "@base-ui/react";
+const TABS_NAME = /\bTabs\b/;
+const TABS_PART = /\bTabs(?:List|Trigger)\b|\*/;
+const TABS_BASE_JSX = /<Tabs\.(?:List|Tab)\b/;
+const TABS_ROLE = /(?<!\[)\brole=(?:"tab"|'tab'|\{["'`]tab["'`]\})/;
+const TABS_SCOPE = sourcesUnder("src").filter(
+  (path) => !path.startsWith(UNDERLINE_EMAILS)
+);
+
+export function rawTabsFaults(
+  files: readonly string[],
+  source: (path: string) => string
+): string[] {
+  const allowed = new Set([
+    TABS_HOME,
+    ...TABS_ELSEWHERE.map((entry) => entry.file),
+  ]);
+  return files
+    .filter((path) => {
+      if (allowed.has(path) || path.startsWith(TABS_FOLDER)) {
+        return false;
+      }
+      const code = withoutComments(source(path));
+      const statements = [...code.matchAll(TABS_STATEMENT)].map(
+        ([, clause = "", , specifier = ""]) => ({ clause, specifier })
+      );
+      const dynamic = [...code.matchAll(TABS_DYNAMIC)].map(
+        ([, , specifier = ""]) => ({ clause: "*", specifier })
+      );
+      return (
+        TABS_BASE_JSX.test(code) ||
+        TABS_ROLE.test(code) ||
+        [...statements, ...dynamic].some(
+          ({ clause, specifier }) =>
+            TABS_BASE_MODULE.test(specifier) ||
+            (specifier === TABS_BASE_BARREL && TABS_NAME.test(clause)) ||
+            (TABS_UI_MODULE.test(specifier) && TABS_PART.test(clause))
+        )
+      );
+    })
+    .map(
+      (path) =>
+        `${path}: TabsList/TabsTrigger fora de app-shell/screen-tabs.tsx e de ui/: use ScreenTabs (ou ScreenTabList + ScreenTabTrigger) para aba de tela e SegmentedFilter para filtro de lista`
+    );
+}
+
+describe("a aba de tela mora no ScreenTabs (item 16, AC-B3.1)", () => {
+  it("a árvore de src foi lida", () => {
+    expect(TABS_SCOPE.length).toBeGreaterThan(500);
+    expect(TABS_SCOPE).toContain(TABS_HOME);
+    expect(TABS_SCOPE).toContain("src/expenses/expenses-page.tsx");
+    expect(TABS_SCOPE).toContain("src/ui/segmented-filter.tsx");
+  });
+
+  it("nenhuma tela importa TabsList ou TabsTrigger fora do ScreenTabs, de ui/ e da lista", () => {
+    expect(rawTabsFaults(TABS_SCOPE, read)).toEqual([]);
+  });
+
+  it("a lista é exata e ordenada: cada arquivo dela ainda importa o primitivo e a razão está escrita", () => {
+    expect(TABS_ELSEWHERE.map((entry) => entry.file)).toEqual(
+      TABS_ELSEWHERE.map((entry) => entry.file).sort()
+    );
+    for (const entry of TABS_ELSEWHERE) {
+      expect(entry.why.length, entry.file).toBeGreaterThan(20);
+      expect(
+        rawTabsFaults([`${entry.file}.x`], () => read(entry.file)),
+        entry.file
+      ).toHaveLength(1);
+    }
+  });
+
+  it("o ScreenTabs e o SegmentedFilter usam o primitivo, e as telas trocadas usam o ScreenTabTrigger", () => {
+    expect(read(TABS_HOME)).toMatch(TABS_PART);
+    expect(read("src/ui/segmented-filter.tsx")).toMatch(TABS_PART);
+    for (const path of [
+      "src/expenses/expenses-page.tsx",
+      "src/catalog/product-dialog.tsx",
+      "src/catalog/product-import/import-preview-step.tsx",
+    ]) {
+      expect(read(path), path).toContain("ScreenTabTrigger");
+    }
+  });
+
+  it.each([
+    'import { Tabs, TabsList, TabsTrigger } from "@/ui/tabs";',
+    'import { TabsTrigger } from "@/ui/tabs";',
+    'import { TabsList as List } from "@/ui/tabs";',
+    'import {\n  Tabs,\n  TabsTrigger,\n} from "@/ui/tabs";',
+    'import { TabsTrigger } from "../ui/tabs";',
+    'import { TabsTrigger } from "../../ui/tabs";',
+    'import * as T from "@/ui/tabs";',
+    'import { Tabs } from "@base-ui/react/tabs";',
+    'import { Tabs as TabsPrimitive } from "@base-ui/react/tabs";',
+    'export { TabsList } from "@/ui/tabs";',
+    'const tabs = await import("@/ui/tabs");',
+    "const tabs = await import(`@/ui/tabs`);",
+    'import { TabsTrigger } from "@/ui/tabs.tsx";',
+    'export * from "@/ui/tabs";',
+    'import { Tabs } from "@base-ui/react";\nconst x = <Tabs.List />;',
+    'import { Tabs } from "@base-ui/react";',
+    'import { List } from "@base-ui/react/tabs/list";',
+    'const x = <Tabs.Tab value="a" />;',
+    'const x = <button role="tab" />;',
+    "const x = <button role={'tab'} />;",
+  ])("%s reprova numa tela (controle plantado)", (text) => {
+    expect(
+      rawTabsFaults(["src/expenses/expenses-page.tsx"], () => text)
+    ).toHaveLength(1);
+  });
+
+  it("a exceção vale para o caminho exato: o mesmo nome em outra pasta reprova (controle plantado)", () => {
+    const plant = 'import { TabsTrigger } from "@/ui/tabs";';
+    expect(rawTabsFaults([TABS_HOME], () => plant)).toEqual([]);
+    expect(rawTabsFaults(["src/ui/segmented-filter.tsx"], () => plant)).toEqual(
+      []
+    );
+    for (const path of [
+      "src/x/screen-tabs.tsx",
+      "src/ui-gallery/other.tsx",
+      "src/ui-other/tabs.tsx",
+      "src/app-shell/screen-tabs.tsx.bak",
+    ]) {
+      expect(
+        rawTabsFaults([path], () => plant),
+        path
+      ).toHaveLength(1);
+    }
+  });
+
+  it.each([
+    'import { Tabs, TabsContent } from "@/ui/tabs";',
+    'import { ScreenTabList, ScreenTabTrigger } from "../app-shell/screen-tabs";',
+    'import { SegmentedFilter } from "@/ui/segmented-filter";',
+    "// import { TabsTrigger } from '@/ui/tabs';",
+    "/* TabsList from @/ui/tabs */",
+    'import { TabsTrigger } from "./tabs-trigger";',
+    'const name = "TabsTrigger";',
+    'const x = document.querySelector(\'[role="tab"][aria-selected="true"]\');',
+    'import { Button } from "@base-ui/react/button";',
+    '// <Tabs.List /> e role="tab" na documentação',
+  ])("%s passa (controle plantado)", (text) => {
+    expect(
+      rawTabsFaults(["src/expenses/expenses-page.tsx"], () => text)
+    ).toEqual([]);
+  });
+});

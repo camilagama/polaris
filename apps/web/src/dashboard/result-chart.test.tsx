@@ -336,14 +336,26 @@ describe("the chart with unknown days (AC-9, emenda de 25/10)", () => {
   });
 });
 
+const NOTE_LINE = /<div class="[^"]*min-h-5\.5[^"]*"[^>]*>/g;
+const BEST_DAY_FOR_READERS = /<p class="sr-only">[^<]*Melhor dia/;
+const BEST_DAY_LINE = /<p class="[^"]*min-h-\[1\.125rem\]/;
+const TITLE_HEADING = /<h2 class="text-section" id="dashboard-chart-title"/;
+
 describe("the room the card keeps for its lines (lugar reservado)", () => {
-  it("keeps the line of the note and the line of the best day in the box, whatever the state", () => {
+  it("keeps the line of the note in the box, whatever the state, and writes the best day only for the screen reader", () => {
     const complete = chart(october([]));
     const incomplete = chart(october([3]));
-    const lines = (markup: string) =>
-      markup.match(/<p class="[^"]*min-h-\[1\.125rem\][^"]*"[^>]*>/g) ?? [];
-    expect(lines(complete)).toHaveLength(lines(incomplete).length);
-    expect(lines(complete).length).toBeGreaterThanOrEqual(2);
+    const lines = (markup: string) => markup.match(NOTE_LINE) ?? [];
+    expect(lines(complete)).toHaveLength(1);
+    expect(lines(incomplete)).toHaveLength(1);
+    expect(complete).toMatch(BEST_DAY_FOR_READERS);
+    expect(complete).not.toMatch(BEST_DAY_LINE);
+  });
+
+  it("has the header of every block: the title and its (i) in the one row of the BlockHeader", () => {
+    const markup = chart(october([3]));
+    expect(markup).toContain('data-slot="block-header"');
+    expect(markup).toMatch(TITLE_HEADING);
   });
 
   it("holds the same row in the box that stands in for the drawing while its chunk loads", () => {
@@ -536,7 +548,7 @@ describe("the (i) of the title and the caveat said once (AC-7.2 to AC-7.4)", () 
     });
   }
 
-  it("the seal of the estimate stays beside the title of an incomplete chart", () => {
+  it("the seal of the estimate stays on the note line of an incomplete chart", () => {
     expect(text(chart(october([3])))).toContain("estimativa incompleta");
     expect(text(chart(october([])))).not.toContain("estimativa incompleta");
   });

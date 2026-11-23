@@ -8,13 +8,13 @@ import { Button } from "@/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/ui/card";
 import { Dialog, DialogContent } from "@/ui/dialog";
 import { HelpTip } from "@/ui/help-tip";
-import { Tabs, TabsContent, TabsTrigger } from "@/ui/tabs";
+import { Tabs, TabsContent } from "@/ui/tabs";
 import {
   ScreenTitle,
   TITLE_ACTION_CLASS,
   TitleLine,
 } from "../app-shell/screen-title";
-import { ScreenTabList } from "../app-shell/screen-tabs";
+import { ScreenTabList, ScreenTabTrigger } from "../app-shell/screen-tabs";
 import { connectionControlProps } from "../app-shell/connection-required-notice";
 import { useConnectionOnline } from "../lib/browser-connection";
 import { useCurrentOrganization } from "../lib/current-organization";
@@ -374,16 +374,10 @@ export function ExpensesPage() {
           label="Lançamentos, recorrentes e categorias"
           value={view}
         >
-          {/* below 360 px a narrower padding keeps the three parts on screen, with no sideways scroll */}
           {EXPENSE_VIEWS.map((item) => (
-            <TabsTrigger
-              className="flex-none max-[22.5rem]:px-1.5"
-              data-value={item.value}
-              key={item.value}
-              value={item.value}
-            >
+            <ScreenTabTrigger key={item.value} value={item.value}>
               {item.label}
-            </TabsTrigger>
+            </ScreenTabTrigger>
           ))}
         </ScreenTabList>
 
