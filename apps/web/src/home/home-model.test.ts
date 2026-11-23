@@ -2,7 +2,6 @@ import type { GoalReadModel } from "@polaris/contracts";
 import { describe, expect, it } from "vitest";
 import {
   attentionLines,
-  bestDay,
   checklistLink,
   checklistNext,
   copyLine,
@@ -157,11 +156,6 @@ describe("the chart's totals come from the series of the period (AC-17)", () => 
 
   it("the series adds up to the month's figure", () => {
     expect(sumNetSales(month)).toBe("125.60");
-  });
-
-  it("finds the best day of a period, and none when nothing sold", () => {
-    expect(bestDay(month)?.date).toBe("2026-10-23");
-    expect(bestDay(series("2026-10-01", "2026-10-07"))).toBeNull();
   });
 });
 

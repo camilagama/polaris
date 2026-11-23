@@ -141,21 +141,6 @@ export function shortDate(day: string): string {
   return `${day.slice(8, 10)}/${day.slice(5, 7)}`;
 }
 
-/** The best day of a series (the first one with the highest net sales), or null when no day sold anything. */
-export function bestDay(series: Daily): Daily[number] | null {
-  let best: Daily[number] | null = null;
-  for (const entry of series) {
-    const cents = Money.from(entry.netSales).minorUnits;
-    if (
-      cents > 0n &&
-      (best === null || cents > Money.from(best.netSales).minorUnits)
-    ) {
-      best = entry;
-    }
-  }
-  return best;
-}
-
 const MONTH_NAMES = [
   "janeiro",
   "fevereiro",
