@@ -294,6 +294,7 @@ export function SaleHistoryPage() {
         filters={filters}
         offline={offline}
         onChange={setFilters}
+        onClearAll={handleClearFilters}
       />
       {resultPeriod ? <ResultLink period={resultPeriod} /> : null}
       {more.refreshFailed ? (

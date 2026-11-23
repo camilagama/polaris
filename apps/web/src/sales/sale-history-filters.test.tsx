@@ -50,7 +50,12 @@ const PERIOD_BUTTON = /^Período/;
 const noop = () => undefined;
 const render = (filters: HistoryFilters, offline = false) =>
   renderToStaticMarkup(
-    <HistoryFiltersBar filters={filters} offline={offline} onChange={noop} />
+    <HistoryFiltersBar
+      filters={filters}
+      offline={offline}
+      onChange={noop}
+      onClearAll={noop}
+    />
   );
 
 describe("a barra de filtros do Histórico", () => {
@@ -164,7 +169,7 @@ describe("os filtros que a página guarda a partir da lista da barra", () => {
     });
   });
 
-  it("limpar tudo (a lista da barra vazia) zera os três filtros da barra, e a consulta sai sem filtro", () => {
+  it("a lista da barra vazia (o X da última pílula) zera os três filtros da barra, e a consulta sai sem filtro", () => {
     expect(historyFilters([])).toEqual({
       customer: "",
       query: "",

@@ -26,6 +26,8 @@ interface FiltersProps {
   /** Without a connection the text search over the items is not available. */
   offline: boolean;
   onChange: (changes: Partial<HistoryFilters>) => void;
+  /** "Limpar tudo": the pills and the period of the title line, the same as "Limpar filtros" of the empty list. */
+  onClearAll: () => void;
 }
 
 /** The screen has no future days: "Este mês" of its period ends today. */
@@ -92,6 +94,7 @@ export function HistoryFiltersBar({
   filters,
   offline,
   onChange,
+  onClearAll,
 }: FiltersProps) {
   const fields = useMemo(() => historyFields(offline), [offline]);
   const rules = useMemo(() => historyRules(filters), [filters]);
@@ -104,6 +107,7 @@ export function HistoryFiltersBar({
       fields={fields}
       label="Filtrar vendas"
       onChange={handleChange}
+      onClearAll={onClearAll}
       value={rules}
     />
   );
