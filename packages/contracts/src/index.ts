@@ -1027,7 +1027,10 @@ const salePaymentInput = z.object({
 });
 
 /** At most 18 integer digits, so a part stays below the `1e18` the `sale_payments` amount check allows. */
-const salePaymentPartAmount = z.string().regex(/^\d{1,18}\.\d{2}$/);
+const salePaymentPartAmount = z
+  .string()
+  .max(21)
+  .regex(/^\d{1,18}\.\d{2}$/);
 
 /**
  * One part of a split payment: its own amount (two decimal places), method,

@@ -165,6 +165,7 @@ describe("the input schemas of the contract", () => {
       "publicCatalog.unpublishProducts.productIds",
       "sale.confirm.adjustments",
       "sale.confirm.items",
+      "sale.confirm.payments",
       "sale.return.items",
       "sync.bootstrapPage.ids",
       "sync.push.commands",
