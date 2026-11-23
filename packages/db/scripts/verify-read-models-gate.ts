@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { randomBytes, randomUUID } from "node:crypto";
-import { drizzle } from "drizzle-orm/node-postgres";
+import { sql } from "drizzle-orm";
 import { createDatabase } from "../src/client";
 import { createCustomer } from "../src/customer-repository";
 import {
@@ -18,7 +18,7 @@ import { changeSaleCustomerLink } from "../src/sale-customer-link-repository";
 import { getSale, listSales } from "../src/sale-query-repository";
 import { createSaleReturn } from "../src/sale-return-repository";
 import { runClock, storeDay, storeNoon } from "./gate-clock";
-import { inRolledBackTransaction, withGateRole } from "./gate-roles";
+import { inRolledBackTransaction } from "./gate-roles";
 import { archiveThenDeleteProduct } from "./product-lifecycle-support";
 import {
   confirmPlainSale,
@@ -617,104 +617,112 @@ async function run() {
     );
 
     // ------------------------ 4. the main part of a sale with more than one part
-    const splitSale = async (quantity: number) =>
-      (
-        await confirmPlainSale(rt, tenantA, [
-          { quantity, variantId: itemProduct.variantId },
-        ])
-      ).sale.id;
-    const biggestFirst = await splitSale(1);
-    const biggestLast = await splitSale(1);
-    const tieLowerIdLast = await splitSale(1);
-    const tieHigherIdLast = await splitSale(1);
-    const onlyPart = await splitSale(1);
-    const splitIndexName = "sale_payments_organization_sale_unique";
-    const splitIndex = () =>
-      admin.pool.query<{ indexdef: string }>(
-        "SELECT indexdef FROM pg_indexes WHERE schemaname = 'public' AND tablename = 'sale_payments' AND indexname = $1",
-        [splitIndexName]
+    const partsDay = storeDay(runClock, -1);
+    const writeParts = (
+      parts: { amount: string; id?: string; method: string }[]
+    ) =>
+      withTenantAs(
+        runtimeDatabase.db,
+        tenantA,
+        "sale:create",
+        async (transaction, identity) => {
+          const org = identity.organizationId;
+          const commandId = randomUUID();
+          const total = parts
+            .reduce(
+              (sum, part) => sum + Math.round(Number(part.amount) * 100),
+              0
+            )
+            .toString();
+          const price = `${total.slice(0, -2) || "0"}.${total.slice(-2).padStart(2, "0")}`;
+          const header = await transaction.execute<{ id: string }>(
+            sql`INSERT INTO public.sales (organization_id, command_id, occurred_at, occurred_on, item_count, adjustment_count, payment_count) VALUES (${org}, ${commandId}, ${storeNoon(partsDay)}, ${partsDay}, 1, 0, ${parts.length}) RETURNING id`
+          );
+          const saleId = header.rows[0]?.id;
+          assert.ok(saleId);
+          await transaction.execute(
+            sql`INSERT INTO public.sale_items (organization_id, sale_id, position, product_id, variant_id, product_label, quantity, listed_unit_price, charged_unit_price, unit_cost) VALUES (${org}, ${saleId}, 0, ${itemProduct.productId}, ${itemProduct.variantId}, 'Historico', 1, ${price}, ${price}, '3.000000')`
+          );
+          for (const [position, part] of parts.entries()) {
+            const card = part.method === "credit_card";
+            // biome-ignore lint/performance/noAwaitInLoops: the parts go in at their positions, one after the other
+            await transaction.execute(
+              sql`INSERT INTO public.sale_payments (id, organization_id, sale_id, method, amount, position, installments, installment_plan_unknown) VALUES (COALESCE(${part.id ?? null}::uuid, uuidv7()), ${org}, ${saleId}, ${part.method}, ${part.amount}, ${position}, ${card ? 1 : null}, ${card})`
+            );
+          }
+          // a receipt of the unit sold keeps the ledger at the balance
+          await transaction.execute(
+            sql`INSERT INTO public.stock_movements (organization_id, command_id, command_index, command_version, occurred_on, movement_type, product_id, variant_id, quantity_delta, unit_cost) VALUES (${org}, ${randomUUID()}, 0, 1, ${partsDay}, 'receipt', ${itemProduct.productId}, ${itemProduct.variantId}, 1, '3.000000')`
+          );
+          await transaction.execute(
+            sql`INSERT INTO public.stock_movements (organization_id, command_id, command_index, command_version, occurred_on, movement_type, product_id, variant_id, quantity_delta, unit_cost) VALUES (${org}, ${commandId}, 0, 1, ${partsDay}, 'sale', ${itemProduct.productId}, ${itemProduct.variantId}, -1, '3.000000')`
+          );
+          return saleId;
+        }
       );
-    const indexBefore = (await splitIndex()).rows[0]?.indexdef;
-    assert.ok(indexBefore, "the one-payment-per-sale index exists before");
     const lowestId = "00000000-0000-7000-8000-000000000001";
     const highestId = "ffffffff-ffff-7fff-bfff-ffffffffffff";
-    const seen: Record<string, { detail: string | null; list: string | null }> =
-      {};
-    const splitClient = await admin.pool.connect();
-    let discardSplit = true;
-    try {
-      await inRolledBackTransaction(splitClient, async () => {
-        await splitClient.query("SET LOCAL lock_timeout = '10s'");
-        await splitClient.query(`DROP INDEX public.${splitIndexName}`);
-        await withGateRole(splitClient, runtimeRole, async () => {
-          const onClient = drizzle({ client: splitClient });
-          const sameTransaction = {
-            transaction: (
-              operation: (transaction: typeof onClient) => unknown
-            ) => operation(onClient),
-          } as unknown as RuntimeDatabase["db"];
-          await withTenantAs(
-            sameTransaction,
-            tenantA,
-            "sale:read",
-            async (transaction, identity) => {
-              const addPart = (
-                saleId: string,
-                part: { amount: string; id?: string; method: string }
-              ) =>
-                splitClient.query(
-                  `INSERT INTO public.sale_payments (id, organization_id, sale_id, method, amount, installments, installment_plan, installment_plan_unknown, anticipation_requested, payment_profile_id, payment_profile_version_snapshot, payment_profile_name_snapshot, payment_profile_rule_id_snapshot, expected_settlement_days_snapshot, processing_fee_mode_snapshot, processing_fee_percentage_snapshot, processing_fee_fixed_amount_snapshot, processing_fee_amount_snapshot, anticipation_fee_mode_snapshot, anticipation_fee_percentage_snapshot, anticipation_fee_fixed_amount_snapshot, anticipation_fee_amount_snapshot)
-                   SELECT COALESCE($3::uuid, uuidv7()), organization_id, sale_id, $1::text, $2::numeric, CASE WHEN $1::text = 'credit_card' THEN 1 END, NULL, $1::text = 'credit_card', false, payment_profile_id, payment_profile_version_snapshot, payment_profile_name_snapshot, payment_profile_rule_id_snapshot, expected_settlement_days_snapshot, processing_fee_mode_snapshot, processing_fee_percentage_snapshot, processing_fee_fixed_amount_snapshot, processing_fee_amount_snapshot, anticipation_fee_mode_snapshot, anticipation_fee_percentage_snapshot, anticipation_fee_fixed_amount_snapshot, anticipation_fee_amount_snapshot
-                   FROM public.sale_payments WHERE sale_id = $4::uuid`,
-                  [part.method, part.amount, part.id ?? null, saleId]
-                );
-              await addPart(biggestFirst, { amount: "5.00", method: "cash" });
-              await addPart(biggestLast, {
-                amount: "30.00",
-                method: "credit_card",
-              });
-              await addPart(tieLowerIdLast, {
-                amount: "19.90",
-                id: lowestId,
-                method: "debit_card",
-              });
-              await addPart(tieHigherIdLast, {
-                amount: "19.90",
-                id: highestId,
-                method: "bank_transfer",
-              });
-              const count = await splitClient.query<{ count: string }>(
-                "SELECT count(*)::text AS count FROM public.sale_payments WHERE sale_id = $1::uuid",
-                [biggestFirst]
-              );
-              assert.equal(count.rows[0]?.count, "2", "the sale has two parts");
-              const listed = await listSales(transaction, identity, {
-                limit: 100,
-              });
-              for (const [name, saleId] of Object.entries({
-                biggestFirst,
-                biggestLast,
-                onlyPart,
-                tieHigherIdLast,
-                tieLowerIdLast,
-              })) {
-                // biome-ignore lint/performance/noAwaitInLoops: one connection, one statement at a time
-                const detail = await getSale(transaction, identity, saleId);
-                seen[name] = {
-                  detail: detail.sale.payment.method,
-                  list:
-                    listed.sales.find((sale) => sale.id === saleId)
-                      ?.paymentMethod ?? null,
-                };
-              }
-            }
-          );
-        });
-      });
-      discardSplit = false;
-    } finally {
-      splitClient.release(discardSplit);
-    }
+    const partSales = {
+      biggestFirst: await writeParts([
+        { amount: "14.90", method: "pix" },
+        { amount: "5.00", method: "cash" },
+      ]),
+      biggestLast: await writeParts([
+        { amount: "9.90", method: "pix" },
+        { amount: "30.00", method: "credit_card" },
+      ]),
+      onlyPart: (
+        await confirmPlainSale(rt, tenantA, [
+          { quantity: 1, variantId: itemProduct.variantId },
+        ])
+      ).sale.id,
+      tieHigherIdLast: await writeParts([
+        { amount: "19.90", method: "pix" },
+        { amount: "19.90", id: highestId, method: "bank_transfer" },
+      ]),
+      tieLowerIdLast: await writeParts([
+        { amount: "19.90", method: "pix" },
+        { amount: "19.90", id: lowestId, method: "debit_card" },
+      ]),
+    };
+    const stored = await admin.pool.query<{ parts: string }>(
+      "SELECT string_agg(payment.position || ':' || payment.method, ',' ORDER BY payment.position) AS parts FROM public.sale_payments AS payment JOIN public.sales AS sale ON sale.organization_id = payment.organization_id AND sale.id = payment.sale_id WHERE payment.sale_id = ANY($1::uuid[]) GROUP BY sale.id, sale.payment_count HAVING count(*) = sale.payment_count ORDER BY 1",
+      [Object.values(partSales)]
+    );
+    assert.deepEqual(
+      stored.rows.map((row) => row.parts),
+      [
+        "0:pix",
+        "0:pix,1:bank_transfer",
+        "0:pix,1:cash",
+        "0:pix,1:credit_card",
+        "0:pix,1:debit_card",
+      ],
+      "the parts are committed at their positions, as many as each header counts"
+    );
+    const seen = await withTenantAs(
+      runtimeDatabase.db,
+      tenantA,
+      "sale:read",
+      async (transaction, identity) => {
+        const listed = await listSales(transaction, identity, { limit: 100 });
+        const read: Record<
+          string,
+          { detail: string | null; list: string | null }
+        > = {};
+        for (const [name, saleId] of Object.entries(partSales)) {
+          // biome-ignore lint/performance/noAwaitInLoops: one transaction, one statement at a time
+          const detail = await getSale(transaction, identity, saleId);
+          read[name] = {
+            detail: detail.sale.payment.method,
+            list:
+              listed.sales.find((sale) => sale.id === saleId)?.paymentMethod ??
+              null,
+          };
+        }
+        return read;
+      }
+    );
     assert.deepEqual(
       seen,
       {
@@ -724,20 +732,10 @@ async function run() {
         tieHigherIdLast: { detail: "pix", list: "pix" },
         tieLowerIdLast: { detail: "debit_card", list: "debit_card" },
       },
-      "the list and the detail name the main part: the biggest amount, the smaller id on a tie, wherever the part was inserted"
+      "the list and the detail name the main part: the biggest amount, the smaller id on a tie, at whatever position"
     );
-    assert.equal(
-      (await splitIndex()).rows[0]?.indexdef,
-      indexBefore,
-      "the one-payment-per-sale index is back, as it was"
-    );
-    const leftover = await admin.pool.query<{ count: string }>(
-      "SELECT count(*)::text AS count FROM public.sale_payments WHERE sale_id = ANY($1::uuid[])",
-      [[biggestFirst, biggestLast, tieLowerIdLast, tieHigherIdLast, onlyPart]]
-    );
-    assert.equal(leftover.rows[0]?.count, "5", "no second part persisted");
     tests.push(
-      "sale.list paymentMethod and sale.get payment.method name the same main part (biggest amount, smaller id on a tie) of a sale with two parts, whichever was inserted first, read in a transaction that drops the one-payment-per-sale index, adds the second part and ends in ROLLBACK; the index and the single payments are back afterwards"
+      "sale.list paymentMethod and sale.get payment.method name the same main part (biggest amount, smaller id on a tie) of a sale committed in two parts, the biggest at position 0 or 1"
     );
 
     console.log(
