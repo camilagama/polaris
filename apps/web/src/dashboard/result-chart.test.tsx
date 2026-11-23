@@ -1,8 +1,8 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import type { StoredPeriodSummary } from "../lib/period-summary-cache";
-import { GapSeries } from "../ui/charts/chart-gaps";
 import { knownRuns } from "../ui/charts/chart-data";
+import { GapSeries } from "../ui/charts/chart-gaps";
 import { NumbersTable, periodHelp, ResultChart } from "./result-chart";
 import { addDays } from "./result-period";
 import { resultSeries, supportParts } from "./result-series";
@@ -424,21 +424,29 @@ describe("the room the card keeps for its lines (lugar reservado)", () => {
     expect(markup).toMatch(TITLE_HEADING);
   });
 
-  it("holds the same row in the box that stands in for the drawing while its chunk loads", () => {
+  it("keeps no row above the drawing: the legend sits in the header and the box that stands in for the drawing is the plot's", () => {
     const markup = chart(october([3]));
     expect(markup).toContain("data-chart-loading");
-    const rows =
-      markup.match(
-        /<div aria-hidden="true" class="[^"]*min-h-\[9\.625rem\][^"]*"/g
-      ) ?? [];
-    expect(rows).toHaveLength(1);
-    expect(markup).not.toContain("min-h-[calc(5*1.125rem)]");
+    expect(markup).not.toContain("min-h-[8.5rem]");
+    expect(markup).toContain("height:240px");
+    const header = markup.slice(
+      markup.indexOf('data-slot="block-header"'),
+      markup.indexOf('data-slot="card-frame-panel"')
+    );
+    expect(header).toContain("data-chart-legend");
+    expect(header).toContain("Custos (CMV, taxas e despesas)");
+    expect(header).toContain("dia sem custo informado");
+    expect(markup.match(/data-chart-legend=""/g)).toHaveLength(1);
+  });
+
+  it("draws the costs in the grey of the comparison and the sales in the green of the entity", () => {
+    const markup = chart(october([3]));
+    expect(markup).toContain('stroke="var(--chart-sales)"');
+    expect(markup).toContain('stroke="var(--chart-context)"');
   });
 
   it("reserves with min-h only: nothing is cut with max-h or a line clamp", () => {
-    const markup = chart(october([3]));
-    expect(markup).toContain("min-h-[");
-    expect(markup).not.toMatch(CUTS_TEXT);
+    expect(chart(october([3]))).not.toMatch(CUTS_TEXT);
   });
 });
 

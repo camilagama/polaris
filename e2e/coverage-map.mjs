@@ -828,6 +828,7 @@ export const SPEC_SCREENS = {
     "expenses",
   ],
   "apps/web/e2e/dashboard/numero-em-mono.e2e.ts": ["home", "dashboard"],
+  "apps/web/e2e/dashboard/padrao-do-inicio.e2e.ts": ["home", "dashboard"],
   "apps/web/e2e/dashboard/periodo-e-controle.e2e.ts": ["home", "dashboard"],
   "apps/web/e2e/dashboard/reflow-320.e2e.ts": [
     "home",
