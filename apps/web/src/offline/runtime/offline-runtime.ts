@@ -496,19 +496,42 @@ export const ACCOUNT_UNAVAILABLE_REASONS: ReadonlySet<string> = new Set([
   "session_refused",
 ]);
 
-/** Whether an `unavailable` reason blames the browser: anything that is not the plan, the account/store or a server that did not answer. */
+/** The reason when the server answered the start with a failure of its own: the browser is fine and a new try may work. */
+export const SERVER_FAILED_REASON = "start_server_failed";
+
+const SERVER_FAILURE_CODES: ReadonlySet<string> = new Set([
+  "INTERNAL_SERVER_ERROR",
+  "SERVICE_UNAVAILABLE",
+  "BAD_GATEWAY",
+  "TIMEOUT",
+]);
+
+/** The mismatch is recognised by name because `runtime-api.ts` imports this module. */
+function isServerFailure(error: unknown): boolean {
+  if (
+    error instanceof Error &&
+    error.name === "BootstrapResponseMismatchError"
+  ) {
+    return true;
+  }
+  const code = rpcErrorCode(error);
+  return code !== undefined && SERVER_FAILURE_CODES.has(code);
+}
+
+/** Whether an `unavailable` reason blames the browser: anything that is not the plan, the account/store or a server that did not answer or failed. */
 export function isBrowserFailure(reason: string | null): boolean {
   return (
     reason === null ||
     !(
       reason === PLAN_REFUSED_REASON ||
+      reason === SERVER_FAILED_REASON ||
       reason === DEVICE_CHECK_UNAVAILABLE_REASON ||
       ACCOUNT_UNAVAILABLE_REASONS.has(reason)
     )
   );
 }
 
-function startFailureReason(
+export function startFailureReason(
   error: unknown,
   legal: boolean,
   failure: string
@@ -516,7 +539,10 @@ function startFailureReason(
   if (legal) {
     return LEGAL_ACCEPTANCE_REASON;
   }
-  return isPlanRefusal(error) ? PLAN_REFUSED_REASON : failure;
+  if (isPlanRefusal(error)) {
+    return PLAN_REFUSED_REASON;
+  }
+  return isServerFailure(error) ? SERVER_FAILED_REASON : failure;
 }
 
 export class OfflineRuntime {

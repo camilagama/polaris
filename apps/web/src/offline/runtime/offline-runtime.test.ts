@@ -11,9 +11,15 @@ import { createOfflineProduct } from "../product-create";
 import { FakeCatalogServer, FakeWriter } from "../test-support";
 import { logoutDependencies } from "./logout-dependencies";
 import {
+  RECOGNIZING_SLOW_TEXT,
+  recognitionState,
+  recognitionText,
+} from "./devices-model";
+import {
   type DataChannel,
   DEVICE_CHECK_BACK_ONLINE_MS,
   DEVICE_CHECK_RETRY_STEPS_MS,
+  isBrowserFailure,
   type KeyValueStore,
   NoSessionForDiscardError,
   OfflineRuntime,
@@ -22,6 +28,7 @@ import {
   type RuntimeApi,
   type RuntimeDependencies,
   type RuntimeSnapshot,
+  SERVER_FAILED_REASON,
   SESSION_RECHECK_MS,
   SessionUnreachableError,
 } from "./offline-runtime";
@@ -597,7 +604,7 @@ describe("starting", () => {
       return { device, w };
     }
 
-    const unanswered: [string, () => Error][] = [
+    const unanswered: [string, () => Error, boolean][] = [
       [
         "a 503 with an oRPC code",
         () =>
@@ -605,6 +612,7 @@ describe("starting", () => {
             code: "SERVICE_UNAVAILABLE",
             status: 503,
           }),
+        true,
       ],
       [
         "a 500 with an oRPC code",
@@ -613,6 +621,7 @@ describe("starting", () => {
             code: "INTERNAL_SERVER_ERROR",
             status: 500,
           }),
+        true,
       ],
       [
         "a 500 with an oRPC code and a reason of its own",
@@ -622,10 +631,12 @@ describe("starting", () => {
             data: { reason: "lease_signing_failed" },
             status: 500,
           }),
+        true,
       ],
       [
         "a 5xx with no oRPC code",
         () => Object.assign(new Error("bad gateway"), { status: 502 }),
+        false,
       ],
       [
         "a 429",
@@ -634,6 +645,7 @@ describe("starting", () => {
             code: "TOO_MANY_REQUESTS",
             status: 429,
           }),
+        false,
       ],
       [
         "a 4xx outside the definite ones",
@@ -642,13 +654,14 @@ describe("starting", () => {
             code: "UNPROCESSABLE_CONTENT",
             status: 422,
           }),
+        false,
       ],
-      ["a network failure", () => new TypeError("Failed to fetch")],
+      ["a network failure", () => new TypeError("Failed to fetch"), false],
     ];
 
     it.each(unanswered)(
       "%s keeps the device: nothing is removed and nothing is registered again",
-      async (_name, failure) => {
+      async (_name, failure, serverFailed) => {
         const { device, w } = await deviceWithoutLease();
         const registered = w.calls.registerDevice;
         const remove = vi.spyOn(w.keyValues, "remove");
@@ -664,7 +677,7 @@ describe("starting", () => {
         expect(runtime.getSnapshot()).toMatchObject({
           bootstrapped: false,
           phase: "unavailable",
-          reason: error.message,
+          reason: serverFailed ? SERVER_FAILED_REASON : error.message,
         });
         expect(runtime.context()).toBeNull();
       }
@@ -957,6 +970,25 @@ describe("starting", () => {
     const second = other.make();
     await second.start(organizationId);
     expect(second.getSnapshot().reason).not.toBe(PLAN_REFUSED_REASON);
+  });
+
+  it("a failure of the server while starting is unavailable with the neutral reason, not the browser's", async () => {
+    const w = world();
+    w.failures.issueLease.push(
+      Object.assign(new Error("Internal server error"), {
+        code: "INTERNAL_SERVER_ERROR",
+      })
+    );
+    const runtime = w.make();
+    await runtime.start(organizationId);
+
+    const { phase, reason } = runtime.getSnapshot();
+    expect(phase).toBe("unavailable");
+    expect(reason).toBe(SERVER_FAILED_REASON);
+    expect(isBrowserFailure(reason)).toBe(false);
+    const state = recognitionState(false, phase, reason);
+    expect(state).toBe("slow");
+    expect(recognitionText(state, phase, reason)).toBe(RECOGNIZING_SLOW_TEXT);
   });
 
   it("a second user of the same browser gets their own device, lease and namespace, and the first user's work is left alone", async () => {

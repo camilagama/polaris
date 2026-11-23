@@ -23,7 +23,10 @@ const {
 type AttentionPanelProps = import("./attention-panel").AttentionPanelProps;
 
 import { RECOGNIZING_UNAVAILABLE_TEXT } from "./runtime/devices-model";
-import { PLAN_REFUSED_REASON } from "./runtime/offline-runtime";
+import {
+  PLAN_REFUSED_REASON,
+  SERVER_FAILED_REASON,
+} from "./runtime/offline-runtime";
 
 const AMOUNT = /R\$\s?\d/;
 const HOME_LINK = /<a aria-label="Voltar para o Início"[^>]*href="\/"/;
@@ -405,6 +408,13 @@ describe("Pendências without the offline mode", () => {
       expect(out).not.toContain(OFFLINE_PLAN_REASON);
     }
   );
+
+  it("does not blame the browser when the server failed to start the runtime", () => {
+    const out = html(SERVER_FAILED_REASON);
+    expect(out).toContain(OFFLINE_NEUTRAL_REASON);
+    expect(out).not.toContain(OFFLINE_BROWSER_REASON);
+    expect(out).not.toContain(OFFLINE_PLAN_REASON);
+  });
 
   it("uses the words of Aparelhos for the browser", () => {
     expect(
