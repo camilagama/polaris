@@ -374,7 +374,7 @@ describe("the bootstrap source refuses an answer for another collection", () => 
     ).resolves.toEqual({ nextAfterId: null, rows: [{ id: "product-1" }] });
   });
 
-  it("writes and removes nothing, and leaves the store bootstrapping", async () => {
+  it("writes and removes nothing from the first collection the engine reads, and leaves the store bootstrapping", async () => {
     const writer = new FakeWriter();
     writer.data.categories.set("category-1", { id: "category-1" });
     const upsert = vi.spyOn(writer, "upsert");
