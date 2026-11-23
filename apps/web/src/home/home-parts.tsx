@@ -10,6 +10,7 @@ import {
 } from "react";
 import { cn } from "@/lib/utils";
 import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
+import { BlockHeader } from "@/ui/block-header";
 import { Button } from "@/ui/button";
 import {
   Card,
@@ -19,7 +20,6 @@ import {
   CardFrameLink,
   CardFramePanel,
 } from "@/ui/card";
-import { HelpTip } from "@/ui/help-tip";
 import { Skeleton } from "@/ui/skeleton";
 
 /** The role of the person in the store: the foot of a block shows only for who has the capability of its destination. */
@@ -81,19 +81,13 @@ export function HomeBlock({
       ? footer
       : null;
   const heading = (
-    <>
-      <div className="flex min-w-0 items-center gap-1">
-        <h2 className="text-section" id={id}>
-          {title}
-        </h2>
-        {help ? (
-          <HelpTip about={help.about} className="-my-1">
-            {help.text}
-          </HelpTip>
-        ) : null}
-      </div>
-      {action}
-    </>
+    <BlockHeader
+      action={action}
+      className={plain ? "md:min-h-0" : "md:flex-nowrap"}
+      help={help}
+      id={id}
+      title={title}
+    />
   );
   if (plain) {
     return (
@@ -103,9 +97,7 @@ export function HomeBlock({
         role="region"
         {...attributes}
       >
-        <div className="flex min-w-0 flex-wrap items-center justify-between gap-x-3 gap-y-1">
-          {heading}
-        </div>
+        {heading}
         {children}
       </Card>
     );

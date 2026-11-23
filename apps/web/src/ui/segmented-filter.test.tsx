@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { StatusNav } from "./screen-parts";
+import { SegmentedFilter } from "./segmented-filter";
 
 /**
  * The state choice of a list drawn without a browser: the roles Base UI gives the Tabs, the chosen tab and the
@@ -20,7 +20,7 @@ const TAB_LIST =
 
 function draw(value: (typeof OPTIONS)[number][0], disabled = false) {
   return renderToStaticMarkup(
-    <StatusNav
+    <SegmentedFilter
       disabled={disabled}
       label="Estado das categorias"
       onSelect={noop}
@@ -30,7 +30,7 @@ function draw(value: (typeof OPTIONS)[number][0], disabled = false) {
   );
 }
 
-describe("StatusNav", () => {
+describe("SegmentedFilter", () => {
   it("is a named list of tabs, the chosen one selected, and no toggle button or nav left", () => {
     const markup = draw("archived");
     expect(markup).toMatch(TAB_LIST);

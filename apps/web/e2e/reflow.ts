@@ -210,7 +210,11 @@ export async function findClipped(
     (element, { allowed, skipped, slack }) => {
       const hiddenOnPurpose = (item: Element) => {
         const style = getComputedStyle(item);
-        return style.clipPath !== "none" || style.clip !== "auto";
+        return (
+          style.clipPath !== "none" ||
+          style.clip !== "auto" ||
+          style.visibility === "hidden"
+        );
       };
       const mayCut = (item: Element) =>
         (item.textContent ?? "").trim() !== "" &&
