@@ -1,21 +1,28 @@
+import { useCallback, useId, useMemo } from "react";
+import { cn } from "@/lib/utils";
+import { BlockHeader } from "@/ui/block-header";
+import { Button } from "@/ui/button";
+import { CardFrame, CardFrameHeader, CardFramePanel } from "@/ui/card";
+import { ChartDataTable } from "@/ui/charts/chart-data-table";
+import {
+  EXTRA_HEIGHT,
+  OnDemandAreaChart,
+  useChartsFailed,
+} from "@/ui/charts/on-demand";
 import { MoneyText } from "@/ui/hidden-values";
+import { Skeleton } from "@/ui/skeleton";
+import { SlowReadNote } from "../app-shell/read-wait";
+import { useConnectionOnline } from "../lib/browser-connection";
+import { calendarDayInTimezone } from "../lib/dates";
+import { formatBrlAmount } from "../lib/format";
 import {
   MASKED_MONEY,
   MASKED_SPOKEN,
   maskMoney,
   useHiddenValues,
 } from "../lib/hidden-values";
-import { useCallback, useId, useMemo } from "react";
-import { cn } from "@/lib/utils";
-import { Button } from "@/ui/button";
-import { BlockHeader } from "@/ui/block-header";
-import { Card, CardContent, CardHeader } from "@/ui/card";
-import { ChartDataTable } from "@/ui/charts/chart-data-table";
-import { OnDemandAreaChart, useChartsFailed } from "@/ui/charts/on-demand";
-import { useConnectionOnline } from "../lib/browser-connection";
-import { calendarDayInTimezone } from "../lib/dates";
-import { formatBrlAmount } from "../lib/format";
 import type { StoredPeriodSummary } from "../lib/period-summary-cache";
+import { useIsMobile } from "../lib/use-mobile";
 import { isIncompleteEstimate } from "./dashboard-model";
 import { missingInformed, missingInputOf } from "./missing-input";
 import { IncompleteBadge } from "./result-cards";
@@ -141,16 +148,6 @@ function costsNote(fromCopy: boolean): string {
     : "Os custos por dia não estão disponíveis agora.";
 }
 
-/**
- * The room the lines of the card keep so the box does not change height between periods: `min-h` of the tallest form the
- * line takes at that width, never `max-h` nor a clamp, so nothing is cut. The row that holds the reading of the day and
- * the legend (side by side from 400 px, stacked below) was measured every 4 px from 320 to 500 px, every 20 up to 820 and every 50 up
- * to 1360, over the month, 30 days, the year and 366 days, whole, with unknown days and with amounts of R$ 999.999,99, and a
- * month with an expense on its last day, with the values shown and hidden; a step is placed at the first width where the tallest form changes.
- * The row takes `content-start`, so the room goes below the text and not between its fragments.
- */
-const TOP_RESERVE =
-  "min-h-[8.5rem] min-[20.75rem]:min-h-[7.375rem] min-[21.75rem]:min-h-[6.25rem] min-[23.75rem]:min-h-[5rem] min-[25rem]:min-h-[5.5rem] min-[28.25rem]:min-h-[4.5rem] min-[40rem]:min-h-[3.5rem] min-[45rem]:min-h-[2.25rem]";
 const NOTE_RESERVE = "min-h-5.5";
 
 interface HeaderProps {
@@ -179,8 +176,129 @@ export function periodHelp({
     .join(" ");
 }
 
+/**
+ * What the legend of the header names: the sales line, the cost line when it is drawn, and the hatch of an unknown day.
+ * `shown` false is a card with nothing to name (no cost line sent, or nothing to draw).
+ */
+interface LegendModel {
+  costs: boolean;
+  hatched: boolean;
+  hatchedText: string;
+  shown: boolean;
+}
+
+const LEGEND_COSTS = "Custos (CMV, taxas e despesas)";
+const COST_DASH = "5,4";
+const HATCH_DEFAULT = "dia sem custo informado";
+
+function legendOf(series: ResultSeries, drawn: boolean): LegendModel {
+  const hatchedText = `${series.grouped ? "mês com dia" : "dia"} ${missingInformed(series.missing)}`;
+  if (!series.costsSent || series.rows.length === 0 || !drawn) {
+    return { costs: false, hatched: false, hatchedText, shown: false };
+  }
+  const costs = costSeries(series.rows);
+  return {
+    costs: costs.some((value) => value !== null),
+    hatched: costs.some((value) => value === null),
+    hatchedText,
+    shown: true,
+  };
+}
+
+function LegendLine({ dash, color }: { color: string; dash?: string }) {
+  return (
+    <svg aria-hidden="true" height={8} width={16}>
+      <line
+        stroke={color}
+        strokeDasharray={dash}
+        strokeLinecap="round"
+        strokeWidth={2}
+        x1={1}
+        x2={15}
+        y1={4}
+        y2={4}
+      />
+    </svg>
+  );
+}
+
+function LegendHatch() {
+  return (
+    <svg aria-hidden="true" height={10} width={10}>
+      <rect
+        fill="var(--chart-unknown)"
+        fillOpacity={0.08}
+        height={10}
+        width={10}
+      />
+      {[2, 6, 10, 14].map((offset) => (
+        <line
+          key={offset}
+          stroke="var(--chart-unknown)"
+          strokeWidth={1.6}
+          x1={offset - 10}
+          x2={offset}
+          y1={10}
+          y2={0}
+        />
+      ))}
+    </svg>
+  );
+}
+
+/** Under 760 px the names wrap under the title, and an absent one keeps its place unseen so the card has the same height with and without it. */
+const LEGEND_ABSENT = "invisible md:hidden";
+
+/**
+ * The names of the lines, each with its own trace (color is never the only sign), on the right of the header of the card
+ * as the blocks of the Início put what they show at the side of the title; on a narrow window the list wraps under the
+ * title, whole, with the three names laid out whatever is drawn.
+ */
+function HeaderLegend({ legend }: { legend: LegendModel }) {
+  const item = (present: boolean) =>
+    cn("flex items-center gap-1.5", !present && LEGEND_ABSENT);
+  const ariaHidden = (present: boolean) =>
+    present ? {} : ({ "aria-hidden": "true" } as const);
+  return (
+    <ul
+      className={cn(
+        "flex min-w-0 flex-wrap gap-x-4 gap-y-1 text-muted-foreground text-xs",
+        !legend.shown && "pointer-events-none"
+      )}
+      {...(legend.shown ? { "data-chart-legend": "" } : {})}
+    >
+      <li className={item(legend.shown)} {...ariaHidden(legend.shown)}>
+        <LegendLine color="var(--chart-sales)" />
+        Vendas líquidas
+      </li>
+      <li
+        className={item(legend.shown && legend.costs)}
+        {...ariaHidden(legend.shown && legend.costs)}
+      >
+        <LegendLine color="var(--chart-context)" dash={COST_DASH} />
+        {LEGEND_COSTS}
+      </li>
+      <li
+        className={item(legend.shown && legend.hatched)}
+        {...(legend.shown && legend.hatched
+          ? { "data-chart-legend-unknown": "" }
+          : { "aria-hidden": "true" })}
+      >
+        <LegendHatch />
+        {legend.hatchedText || HATCH_DEFAULT}
+      </li>
+    </ul>
+  );
+}
+
 /** The title with its (i): the dates and the sentences that support the drawing are in the (i); a second (i) says the lines when there are any. */
-function ChartHeader({ range, source, support, unit }: HeaderProps) {
+function ChartHeader({
+  legend,
+  range,
+  source,
+  support,
+  unit,
+}: HeaderProps & { legend: LegendModel }) {
   const title = `Vendas × custos por ${unit}`;
   const tips = [
     {
@@ -192,9 +310,14 @@ function ChartHeader({ range, source, support, unit }: HeaderProps) {
       : []),
   ];
   return (
-    <CardHeader className="border-b py-(--card-spacing)">
-      <BlockHeader help={tips} id={TITLE_ID} title={title} />
-    </CardHeader>
+    <CardFrameHeader>
+      <BlockHeader
+        aside={<HeaderLegend legend={legend} />}
+        help={tips}
+        id={TITLE_ID}
+        title={title}
+      />
+    </CardFrameHeader>
   );
 }
 
@@ -251,11 +374,13 @@ function useDrawingData(
     }
     const costs = costSeries(rows);
     return {
+      color: "var(--chart-context)" as const,
       data: rows.map((row, index) => ({
         label: row.label,
         value: costs[index] ?? null,
       })),
-      legend: "Custos (CMV, taxas e despesas)",
+      legend: LEGEND_COSTS,
+      legendInHeader: true,
       name: "Custos",
       unknown: {
         // a month with one unknown day is unknown as a whole (never a partial sum): the hatch names it so
@@ -286,8 +411,14 @@ const maskedValue = () => MASKED_MONEY;
 const spokenMasked = () => MASKED_SPOKEN;
 const noAxis = () => "";
 
-/** One height for every period and every cost state, so the card of the chart never changes its box. */
-const PLOT_HEIGHT = 220;
+/**
+ * The height of the plot of the Início (140 px on a phone, 200 from 768 px), one for every period and every cost
+ * state, so the card of the chart never changes its box and the two screens draw the same area.
+ */
+function usePlotHeight() {
+  const still = useIsMobile();
+  return { height: still ? 140 : 200, still };
+}
 
 /**
  * The area chart of the charts chunk, with the sales and the dashed cost line, broken on a hatched day whose cost is
@@ -308,6 +439,7 @@ function Drawing({
 }) {
   const { data, note, secondary, spoken } = useDrawingData(series, thisYear);
   const [hidden] = useHiddenValues();
+  const { height, still } = usePlotHeight();
   return (
     <OnDemandAreaChart
       color="var(--chart-sales)"
@@ -319,14 +451,15 @@ function Drawing({
       formatSpoken={hidden ? spokenMasked : moneyText}
       formatValue={hidden ? maskedValue : moneyText}
       {...(hidden ? {} : { axisUnit: "R$" })}
-      height={PLOT_HEIGHT}
+      height={height}
       label={hidden ? maskMoney(label, MASKED_SPOKEN) : label}
       legend="Vendas líquidas"
       name="Vendas"
       rangeLabel={series.grouped ? "Mês" : "Dia"}
+      readingAtRest={false}
       readingNote={note}
-      reserve={TOP_RESERVE}
       spokenNote={spoken}
+      still={still}
       {...(secondary ? { secondary } : {})}
     />
   );
@@ -408,14 +541,15 @@ export function ResultChart({ source, summary, timezone }: ResultChartProps) {
   const label = `Vendas líquidas${costsDrawn ? " e custos" : ""} por ${series.grouped ? "mês" : "dia"}, ${range}: ${formatBrlAmount(salesTotal)} de vendas${costsTotal ? ` e ${formatBrlAmount(costsTotal)} de custos` : ""}${unknown ? `. ${unknownDaysCount({ ...days, input: series.missing })}` : ""}`;
 
   return (
-    <Card aria-labelledby={TITLE_ID} className="gap-0 py-0" role="region">
+    <CardFrame aria-labelledby={TITLE_ID} role="region">
       <ChartHeader
+        legend={legendOf(series, hasAnyValue(rows, costsDrawn))}
         range={range}
         source={source}
         support={supportParts(series, summary.chain)}
         unit={series.grouped ? "mês" : "dia"}
       />
-      <CardContent className="grid grid-cols-[minmax(0,1fr)] gap-2 py-(--card-spacing)">
+      <CardFramePanel className="grid grid-cols-[minmax(0,1fr)] gap-2">
         <Totals costsTotal={costsTotal} salesTotal={salesTotal} />
         <div
           className={cn(
@@ -445,7 +579,67 @@ export function ResultChart({ source, summary, timezone }: ResultChartProps) {
             visible={drawingFailed}
           />
         ) : null}
-      </CardContent>
-    </Card>
+      </CardFramePanel>
+    </CardFrame>
+  );
+}
+
+/**
+ * The card while the figures are read: the header, the labels of the totals, the line of the note and the box of the plot
+ * with its floor, at the heights they have with figures, so nothing moves when they come. Under the
+ * line of the note goes the "Demorando mais que o normal" of a read that takes long.
+ */
+export function ResultChartSkeleton() {
+  const { height } = usePlotHeight();
+  return (
+    <CardFrame>
+      <CardFrameHeader>
+        <BlockHeader
+          aside={
+            <HeaderLegend
+              legend={{
+                costs: true,
+                hatched: false,
+                hatchedText: HATCH_DEFAULT,
+                shown: true,
+              }}
+            />
+          }
+          id="dashboard-chart-loading"
+          title="Vendas × custos por dia"
+        />
+      </CardFrameHeader>
+      <CardFramePanel className="grid grid-cols-[minmax(0,1fr)] gap-2">
+        <dl className="flex flex-wrap gap-x-6 gap-y-2">
+          {["Vendas líquidas", "Custos"].map((name) => (
+            <div className="grid gap-0.5" key={name}>
+              <dt className="text-muted-foreground text-support">{name}</dt>
+              <dd className="flex h-7 items-center">
+                <Skeleton aria-hidden="true" className="h-5 w-28" />
+              </dd>
+            </div>
+          ))}
+        </dl>
+        <div
+          className={cn(
+            "flex flex-wrap items-center gap-x-2 gap-y-1 text-muted-foreground text-support",
+            NOTE_RESERVE
+          )}
+        >
+          <SlowReadNote announce={false} />
+        </div>
+        <div
+          aria-hidden="true"
+          className="relative w-full"
+          data-chart-loading=""
+          style={{ height: height + EXTRA_HEIGHT }}
+        >
+          <div
+            className="absolute inset-x-0 border-border border-t"
+            style={{ bottom: 32 }}
+          />
+        </div>
+      </CardFramePanel>
+    </CardFrame>
   );
 }

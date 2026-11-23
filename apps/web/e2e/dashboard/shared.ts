@@ -669,6 +669,18 @@ export const copyNotice = (page: Page) =>
 export const reading = (page: Page) =>
   chartRegion(page).locator("[data-chart-reading]");
 
+/**
+ * The reading of the last day, which at rest is not written (as in the Início): the keyboard control walks one day back and
+ * returns to the last, and the line shows over the corner of the drawing while the control has the focus.
+ */
+export async function readLastDay(page: Page) {
+  const slider = chartRegion(page).getByRole("slider");
+  await slider.focus();
+  await slider.press("ArrowLeft");
+  await slider.press("ArrowRight");
+  return reading(page);
+}
+
 export const METAS_TAB = /^Metas/;
 
 export const metasTab = (page: Page) =>
@@ -731,9 +743,9 @@ const rowStep = (chart: Locator) =>
     )) {
       const tops = [
         ...new Set(
-          [...lines.children].map((child) =>
-            Math.round(child.getBoundingClientRect().top)
-          )
+          [...lines.children]
+            .filter((child) => child.getClientRects().length > 0)
+            .map((child) => Math.round(child.getBoundingClientRect().top))
         ),
       ].sort((a, b) => a - b);
       for (let at = 1; at < tops.length; at += 1) {

@@ -71,6 +71,8 @@ interface AreaChartSecondary {
   data: readonly SecondaryDatum[];
   /** The name in the legend ("Custos (CMV, taxas e despesas)"). */
   legend: string;
+  /** The screen writes the legend in the header of its block: the chart keeps no row for it. */
+  legendInHeader?: boolean;
   /** The short name in the reading of the day ("Custos"). */
   name: string;
   /**
@@ -311,7 +313,8 @@ function AreaTop({
   secondary: AreaChartSecondary | undefined;
   unseen: boolean;
 }) {
-  const showsLegend = secondary && !secondary.subtle;
+  const showsLegend =
+    secondary && !secondary.subtle && !secondary.legendInHeader;
   const sameRow = place === "above" && (showsLegend || reserve);
   const readingLine =
     place === "above" ? (

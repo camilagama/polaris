@@ -231,7 +231,10 @@ export function OnDemandAreaChart({
       height={areaBlockHeight({
         height: props.height,
         readingAtRest: props.readingAtRest,
-        secondary: props.secondary && !props.secondary.subtle,
+        secondary:
+          props.secondary &&
+          !props.secondary.subtle &&
+          !props.secondary.legendInHeader,
       })}
       message={props.empty}
     />
