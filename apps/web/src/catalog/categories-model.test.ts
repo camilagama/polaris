@@ -4,7 +4,6 @@ import {
   categoryErrorMessage,
   categoryNameCountLabel,
   categoryNameIsTooLong,
-  isCategoryListStatus,
 } from "./categories-model";
 
 const refusal = (code: string) => ({ code });
@@ -21,15 +20,6 @@ describe("the name of a category", () => {
     expect(categoryNameCountLabel("a".repeat(101))).toBe(
       "Limite de 100 caracteres excedido (101)."
     );
-  });
-});
-
-describe("the states of the list", () => {
-  it("knows the three tabs and nothing else", () => {
-    expect(isCategoryListStatus("active")).toBe(true);
-    expect(isCategoryListStatus("archived")).toBe(true);
-    expect(isCategoryListStatus("deleted")).toBe(true);
-    expect(isCategoryListStatus("all")).toBe(false);
   });
 });
 

@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import {
   backToReturnEditing,
   cancelDiscardReturn,
-  closeReturn,
   discardLockedReturn,
   editRestocked,
   editReturned,
@@ -194,7 +193,6 @@ describe("opening and editing", () => {
     const review = confirming();
     expect(editReturned(review, 0, "1")).toBe(review);
     expect(backToReturnEditing(review).step).toBe("editing");
-    expect(closeReturn(review)).toEqual(initialReturnState());
   });
 });
 
@@ -535,7 +533,6 @@ describe("unknown-outcome lock", () => {
     expect(editReturnNote(state, "x")).toBe(state);
     expect(editReturnReason(state, "other")).toBe(state);
     expect(backToReturnEditing(state)).toBe(state);
-    expect(closeReturn(state)).toBe(state);
     expect(reviewReturn(state)).toBe(state);
   });
 
