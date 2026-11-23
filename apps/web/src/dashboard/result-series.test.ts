@@ -13,7 +13,6 @@ import {
   costText,
   hasAnyValue,
   hasSurcharges,
-  hasUnknownCostDay,
   moneyText,
   readingNote,
   resultSeries,
@@ -147,7 +146,6 @@ describe("the total of the costs only exists when every day has its cost (AC-9)"
     const old = withoutCosts(days("2026-10-01", "2026-10-07"));
     expect(costsKnown(old)).toBe(false);
     expect(costsSent(old)).toBe(false);
-    expect(hasUnknownCostDay(old)).toBe(false);
   });
 
   it("is not known nor sent when only some days have the field", () => {
@@ -163,16 +161,6 @@ describe("the total of the costs only exists when every day has its cost (AC-9)"
     );
     expect(costsSent(daily)).toBe(true);
     expect(costsKnown(daily)).toBe(false);
-  });
-
-  it("tells an unknown day from a field that was never sent", () => {
-    expect(
-      hasUnknownCostDay(
-        days("2026-10-01", "2026-10-03", (date) =>
-          date === "2026-10-02" ? { costs: null, operatingResult: null } : {}
-        )
-      )
-    ).toBe(true);
   });
 
   it("is not drawn with no days at all", () => {

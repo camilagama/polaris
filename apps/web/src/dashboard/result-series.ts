@@ -98,11 +98,6 @@ export function costsKnown(days: readonly StoredDay[]): boolean {
   );
 }
 
-/** True when the period has a day with an unknown cost, as opposed to costs the server never sent. */
-export function hasUnknownCostDay(days: readonly StoredDay[]): boolean {
-  return days.some(isUnknownDay);
-}
-
 /** A day the server could not know the cost of: both fields `null` (AC-8), or either one. */
 function isUnknownDay(day: StoredDay): boolean {
   return day.costs === null || day.operatingResult === null;
