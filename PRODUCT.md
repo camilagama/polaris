@@ -4,6 +4,8 @@
 
 O Polaris é um ERP operacional enxuto para pequenos revendedores que hoje dependem de planilhas, anotações e ferramentas fragmentadas. A primeira prioridade é registrar catálogo, estoque, vendas, clientes, despesas e resultado estimado com confiança.
 
+**Espinha dorsal (decidida pelo usuário em 23/11/2026):** o Polaris é um ERP simples para importadores. Toda funcionalidade tem de ser simples e fácil para eles. O diferencial no mercado, nesta primeira versão, é o design: bonito, sóbrio, elegante e moderno; todas as páginas seguem o mesmo padrão e todos os componentes são bonitos.
+
 ## Escopo planejado
 
 A V1 está organizada em etapas:
@@ -18,6 +20,8 @@ Ter uma aplicação ou pacote previsto na arquitetura não significa que sua fun
 ## Princípios do produto
 
 - Tornar as tarefas diárias simples e rápidas.
+- Simplicidade para o importador: menos passos, menos texto e menos opções; na dúvida, a forma mais simples.
+- Um padrão visual só: a melhoria visual vale para o app inteiro, nunca para uma tela só.
 - Preservar o histórico econômico e de estoque.
 - Permitir trabalho offline nas operações escolhidas.
 - Proteger os dados de cada organização e coletar apenas dados necessários.
