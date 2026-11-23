@@ -1662,7 +1662,7 @@ export function UiGallery() {
             </Tabs>
           </Section>
 
-          <Section title="Abas de tela (SectionTabs)">
+          <Section title="SectionTabs: com e sem rota">
             <p className="max-w-prose text-muted-foreground text-support">
               Uma peça só, com rota (a aba aberta vai para o endereço) e sem
               rota (a aba é local, no diálogo ou no bloco).
