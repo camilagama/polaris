@@ -253,9 +253,7 @@ test.describe("320 e 360 px, sem rolagem lateral; com letra de 20 px a legenda d
       });
       await settled(page);
       expect(await noSideScroll(page)).toBe(true);
-      const items = chartRegion(page).locator(
-        "[data-chart-legend] li:not([aria-hidden])"
-      );
+      const items = chartRegion(page).locator("[data-chart-legend] li:visible");
       await expect(items).toHaveCount(2);
       const card = await chartRegion(page).evaluate((block) => {
         const box = block.getBoundingClientRect();

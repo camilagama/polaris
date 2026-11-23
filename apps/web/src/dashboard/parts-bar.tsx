@@ -22,12 +22,6 @@ const PART_COLORS: Readonly<Record<CostPartId, string>> = {
  * What the parts are divided by: the total with the refunds (negative parts) added back, so the positive parts share it
  * whole. Zero when there is no total to divide.
  */
-const PART_NAMES: Readonly<Record<CostPartId, string>> = {
-  expenses: "Despesas",
-  fees: "Taxas",
-  goods: "Mercadorias",
-};
-
 function dividend(
   parts: readonly Pick<CostPart, "value">[],
   total: string | null
@@ -205,6 +199,12 @@ export function PartsBar({
     </div>
   );
 }
+
+const PART_NAMES: Readonly<Record<CostPartId, string>> = {
+  expenses: "Despesas",
+  fees: "Taxas",
+  goods: "Mercadorias",
+};
 
 /** The block while the figures are read: the same rows, the names written and the figures in `Skeleton`, so it takes the height it will have. */
 export function PartsBarSkeleton() {

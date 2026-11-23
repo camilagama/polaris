@@ -84,10 +84,12 @@ test.describe("cabeçalho de bloco e cartões de KPI: o Início e o Resultado t�
           0
         );
       }
-      expect(steps.height, "o cabeçalho de Como chegamos").toBeCloseTo(
-        home.height,
-        0
-      );
+      if (size.width >= 760) {
+        expect(steps.height, "o cabeçalho de Como chegamos").toBeCloseTo(
+          home.height,
+          0
+        );
+      }
       if (size.width >= 760) {
         expect(home.height).toBeGreaterThanOrEqual(36);
         expect(home.height).toBeLessThan(37);

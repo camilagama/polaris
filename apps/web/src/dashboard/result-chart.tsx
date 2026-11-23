@@ -189,7 +189,6 @@ interface LegendModel {
 
 const LEGEND_COSTS = "Custos (CMV, taxas e despesas)";
 const COST_DASH = "5,4";
-const HATCH_DEFAULT = "dia sem custo informado";
 
 function legendOf(series: ResultSeries, drawn: boolean): LegendModel {
   const hatchedText = `${series.grouped ? "mês com dia" : "dia"} ${missingInformed(series.missing)}`;
@@ -246,8 +245,13 @@ function LegendHatch() {
   );
 }
 
-/** Under 760 px the names wrap under the title, and an absent one keeps its place unseen so the card has the same height with and without it. */
-const LEGEND_ABSENT = "invisible md:hidden";
+/**
+ * An absent name keeps its place unseen (`invisible` leaves it out of the accessibility tree too), so the names take the
+ * same room, wrap at the same width and the card keeps its height with and without them. From 760 px, where the names
+ * sit at the right of the title, the unseen one goes first, so what is drawn stays against the right edge.
+ */
+const LEGEND_ABSENT = "invisible md:order-first";
+const HATCH_LONGEST = "mês com dia sem custo informado";
 
 /**
  * The names of the lines, each with its own trace (color is never the only sign), on the right of the header of the card
@@ -257,35 +261,35 @@ const LEGEND_ABSENT = "invisible md:hidden";
 function HeaderLegend({ legend }: { legend: LegendModel }) {
   const item = (present: boolean) =>
     cn("flex items-center gap-1.5", !present && LEGEND_ABSENT);
-  const ariaHidden = (present: boolean) =>
-    present ? {} : ({ "aria-hidden": "true" } as const);
+  const hatched = legend.shown && legend.hatched;
   return (
     <ul
-      className={cn(
-        "flex min-w-0 flex-wrap gap-x-4 gap-y-1 text-muted-foreground text-xs",
-        !legend.shown && "pointer-events-none"
-      )}
+      aria-hidden={legend.shown ? undefined : "true"}
+      className="flex min-w-0 flex-wrap justify-end gap-x-4 gap-y-1 text-muted-foreground text-xs"
       {...(legend.shown ? { "data-chart-legend": "" } : {})}
     >
-      <li className={item(legend.shown)} {...ariaHidden(legend.shown)}>
+      <li className={item(legend.shown)}>
         <LegendLine color="var(--chart-sales)" />
         Vendas líquidas
       </li>
-      <li
-        className={item(legend.shown && legend.costs)}
-        {...ariaHidden(legend.shown && legend.costs)}
-      >
+      <li className={item(legend.shown && legend.costs)}>
         <LegendLine color="var(--chart-context)" dash={COST_DASH} />
         {LEGEND_COSTS}
       </li>
       <li
-        className={item(legend.shown && legend.hatched)}
-        {...(legend.shown && legend.hatched
-          ? { "data-chart-legend-unknown": "" }
-          : { "aria-hidden": "true" })}
+        className={item(hatched)}
+        {...(hatched ? { "data-chart-legend-unknown": "" } : {})}
       >
         <LegendHatch />
-        {legend.hatchedText || HATCH_DEFAULT}
+        <span className="grid">
+          <span className="col-start-1 row-start-1">{legend.hatchedText}</span>
+          <span
+            aria-hidden="true"
+            className="invisible col-start-1 row-start-1"
+          >
+            {HATCH_LONGEST}
+          </span>
+        </span>
       </li>
     </ul>
   );
@@ -593,14 +597,14 @@ export function ResultChartSkeleton() {
   const { height } = usePlotHeight();
   return (
     <CardFrame>
-      <CardFrameHeader>
+      <CardFrameHeader aria-hidden="true">
         <BlockHeader
           aside={
             <HeaderLegend
               legend={{
                 costs: true,
                 hatched: false,
-                hatchedText: HATCH_DEFAULT,
+                hatchedText: "dia sem custo informado",
                 shown: true,
               }}
             />
@@ -610,16 +614,16 @@ export function ResultChartSkeleton() {
         />
       </CardFrameHeader>
       <CardFramePanel className="grid grid-cols-[minmax(0,1fr)] gap-2">
-        <dl className="flex flex-wrap gap-x-6 gap-y-2">
+        <div aria-hidden="true" className="flex flex-wrap gap-x-6 gap-y-2">
           {["Vendas líquidas", "Custos"].map((name) => (
             <div className="grid gap-0.5" key={name}>
-              <dt className="text-muted-foreground text-support">{name}</dt>
-              <dd className="flex h-7 items-center">
+              <span className="text-muted-foreground text-support">{name}</span>
+              <span className="flex h-7 items-center">
                 <Skeleton aria-hidden="true" className="h-5 w-28" />
-              </dd>
+              </span>
             </div>
           ))}
-        </dl>
+        </div>
         <div
           className={cn(
             "flex flex-wrap items-center gap-x-2 gap-y-1 text-muted-foreground text-support",
