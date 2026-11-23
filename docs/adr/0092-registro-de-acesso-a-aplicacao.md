@@ -4,7 +4,7 @@ status: accepted
 
 # Registro de acesso a aplicação (Marco Civil, art. 15)
 
-> A migration é a 0076 (`0076_registro_de_acesso.sql`), depois da 0075 da `main`.
+> A migration é a `0076_registro_de_acesso.sql`.
 
 ## Contexto
 
