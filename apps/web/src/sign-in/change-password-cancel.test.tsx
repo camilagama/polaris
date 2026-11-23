@@ -12,5 +12,6 @@ describe("Cancelar of the Senha tab", () => {
     expect(html).toContain('href="/conta"');
     expect(html).toContain('aria-label="Cancelar e voltar para Minha conta"');
     expect(html).not.toContain("configuracoes");
+    expect(html).not.toContain("aba=");
   });
 });
