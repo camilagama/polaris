@@ -784,7 +784,9 @@ test.describe("AC-2.3: teclado, foco e alvos", () => {
     await page.keyboard.press("Enter");
     const menu = page.getByRole("menu");
     await expect(menu).toBeVisible();
-    await expect(menu.getByRole("menuitemradio").first()).toBeFocused();
+    await expect(
+      menu.getByRole("menuitem", { name: "Minha conta" })
+    ).toBeFocused();
     await settled(page);
     for (const item of await menu
       .locator('[role="menuitem"], [role="menuitemradio"]')
