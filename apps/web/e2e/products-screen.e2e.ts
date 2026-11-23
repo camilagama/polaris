@@ -10,7 +10,7 @@ import { emptyIconFaults } from "../e2e-pwa/ui-guardrails/measures";
 import { activateByKeyboard, expectFocusRing } from "./focus-ring";
 import { solidPng } from "./media-fixtures";
 import { outboxCommands } from "./outbox-commands";
-import { expectTabsKeyboard } from "./tabs-keyboard";
+import { expectScreenTabsKeyboard, expectTabsKeyboard } from "./tabs-keyboard";
 import { serveLabWorker, WORKER_MARK } from "./worker-mark";
 
 /**
@@ -2179,7 +2179,7 @@ const setLabNetwork = (page: Page, online: boolean) =>
     }
   }, online);
 
-test("as abas do produto: nome de cada aba e do painel, setas trocam de aba e Tab sai do grupo", async ({
+test("as abas do produto: nome de cada aba e do painel, setas movem o foco, Enter abre e Home/End vão às pontas", async ({
   page,
 }, testInfo) => {
   onlyDesktop(testInfo.project.name);
@@ -2191,14 +2191,22 @@ test("as abas do produto: nome de cada aba e do painel, setas trocam de aba e Ta
   ).toBeVisible();
   // each panel is named by its tab
   await expect(dialog.getByRole("tabpanel", { name: "Dados" })).toBeVisible();
-  await expectTabsKeyboard(page, "Partes do produto", ["Dados", "Variantes"]);
+  await expectScreenTabsKeyboard(page, "Partes do produto", [
+    "Dados",
+    "Variantes",
+    "Imagens",
+  ]);
+  await dialog.getByRole("tab", { name: "Dados" }).click();
+  await expect(dialog.getByRole("tabpanel", { name: "Dados" })).toBeVisible();
   await dialog.getByRole("tab", { name: "Dados" }).focus();
   await page.keyboard.press("ArrowRight");
+  await page.keyboard.press("Enter");
   await expect(
     dialog.getByRole("tabpanel", { name: "Variantes" })
   ).toBeVisible();
   await page.keyboard.press("ArrowRight");
   await expect(dialog.getByRole("tab", { name: "Imagens" })).toBeFocused();
+  await page.keyboard.press("Enter");
   await expect(dialog.getByRole("tabpanel", { name: "Imagens" })).toBeVisible();
 });
 

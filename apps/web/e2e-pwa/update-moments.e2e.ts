@@ -6,6 +6,7 @@ import {
   fakeQueue,
   markPage,
   openControlled,
+  PUBLISHED,
   runningVersion,
   setVisibility,
   stillHere,
@@ -173,8 +174,9 @@ test("uma build que o aparelho viu há menos de 2 h não entra, mesmo de um comm
   page,
 }) => {
   await openVersion1(page, buildVersion);
-  // the commit is 3 h old (promoted late): the time it carries is not when it got here
-  buildVersion("2", { publishedAt: Date.now() - 3 * HOUR, urgent: false });
+  // the commit is 3 h older than the default one (promoted late): the time it carries is not when it got here, and the
+  // different time makes the worker's bytes differ from the build the other checks of this worker made
+  buildVersion("2", { publishedAt: PUBLISHED - 3 * HOUR, urgent: false });
   await checkForUpdate(page);
   await waitForWaiting(page);
   await setVisibility(page, "hidden");

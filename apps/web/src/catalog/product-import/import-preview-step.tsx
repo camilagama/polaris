@@ -2,7 +2,8 @@ import TriangleAlertIcon from "lucide-react/dist/esm/icons/triangle-alert";
 import { type ReactNode, type Ref, useMemo, useState } from "react";
 import { Alert, AlertDescription } from "@/ui/alert";
 import { Button } from "@/ui/button";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/ui/tabs";
+import { Tabs, TabsContent } from "@/ui/tabs";
+import { ScreenTabList, ScreenTabTrigger } from "../../app-shell/screen-tabs";
 import { LimitHelp } from "../../subscription/limit-help";
 import type { LimitHelpView } from "../../subscription/limit-help-model";
 import { IMPORT_OFFLINE_ID, StepFrame } from "./import-frame";
@@ -179,21 +180,18 @@ export function ImportPreviewStep({
           ))}
         </ul>
       ) : null}
-      <Tabs onValueChange={setFilter} value={filter}>
-        <TabsList
-          aria-label="Linhas do arquivo"
-          className="h-auto w-full flex-wrap justify-start gap-x-1 gap-y-4"
+      <Tabs className="min-w-0" onValueChange={setFilter} value={filter}>
+        <ScreenTabList
+          label="Linhas do arquivo"
+          signature={shown.map(([value]) => value).join()}
+          value={filter}
         >
           {shown.map(([value, label]) => (
-            <TabsTrigger
-              className="h-ctl-md flex-none"
-              key={value}
-              value={value}
-            >
+            <ScreenTabTrigger key={value} value={value}>
               {label} ({counts.get(value) ?? 0})
-            </TabsTrigger>
+            </ScreenTabTrigger>
           ))}
-        </TabsList>
+        </ScreenTabList>
         {shown.map(([value, label]) => (
           <TabsContent key={value} value={value}>
             <ImportRowsTable
