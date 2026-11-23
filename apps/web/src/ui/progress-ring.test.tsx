@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
-import { cleanup, render } from "@testing-library/react";
+import { act } from "react";
+import { createRoot } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it } from "vitest";
 import { ProgressRing, ringOffset } from "./progress-ring";
@@ -16,11 +17,19 @@ const ARC_MOTION_CLASSES = [
   "motion-full:ease-out",
 ];
 
+const mounted: (() => void)[] = [];
+
 function renderRing() {
-  const { container } = render(<ProgressRing done={1} total={3} />);
-  const svg = container.querySelector("svg");
-  const arc = container.querySelector("circle[data-progress-arc]");
-  const track = container.querySelector("circle:not([data-progress-arc])");
+  Reflect.set(globalThis, "IS_REACT_ACT_ENVIRONMENT", true);
+  const host = document.createElement("div");
+  const root = createRoot(host);
+  act(() => {
+    root.render(<ProgressRing done={1} total={3} />);
+  });
+  mounted.push(() => act(() => root.unmount()));
+  const svg = host.querySelector("svg");
+  const arc = host.querySelector("circle[data-progress-arc]");
+  const track = host.querySelector("circle:not([data-progress-arc])");
   if (!(svg && arc && track)) {
     throw new Error("the ring did not draw its svg, arc and track");
   }
@@ -33,7 +42,11 @@ function arcShare(html: string): number {
   return 1 - Number(offset) / CIRCUMFERENCE;
 }
 
-afterEach(cleanup);
+afterEach(() => {
+  for (const unmount of mounted.splice(0)) {
+    unmount();
+  }
+});
 
 describe("ProgressRing", () => {
   it("draws a third of the circle with 1 of 3 and two thirds with 2 of 3", () => {
@@ -64,7 +77,12 @@ describe("ProgressRing", () => {
     expect(track.classList.contains("stroke-primary")).toBe(false);
     expect(arc.classList.contains("stroke-primary")).toBe(true);
     expect(arc.classList.contains("stroke-primary/15")).toBe(false);
-    expect(svg.outerHTML).not.toContain("stroke-muted");
+    const everyClass = [...svg.querySelectorAll("*"), svg].flatMap((node) => [
+      ...node.classList,
+    ]);
+    expect(everyClass.some((name) => name.includes("stroke-muted"))).toBe(
+      false
+    );
   });
 
   it("moves its arc only where the interface moves, once and in 300 ms", () => {
