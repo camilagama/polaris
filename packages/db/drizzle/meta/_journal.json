@@ -953,6 +953,13 @@
       "when": 1795200596670,
       "tag": "0138_aceite_na_entrada_do_tenant",
       "breakpoints": true
+    },
+    {
+      "idx": 137,
+      "version": "7",
+      "when": 1795399531725,
+      "tag": "0139_pagamento_em_partes",
+      "breakpoints": true
     }
   ]
 }

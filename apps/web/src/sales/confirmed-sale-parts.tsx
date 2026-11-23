@@ -14,6 +14,8 @@ function isAmount(detail: ConfirmedDetail): boolean {
  * The dates or the payment of a confirmed sale: label above, value below, in a block set back into the card (the
  * muted fill, no border: a ring inside the card's ring reads as a box in a box). Two columns from 760 px, one on touch.
  * `receipt` writes it as the lines of a receipt instead: label at the left, value at the right edge, amounts in mono.
+ * A line wraps when label and value do not fit together: the value goes whole to the line below, still at the right
+ * edge, instead of being squeezed into what the label leaves and cut inside a word.
  */
 export function ConfirmedDetails({
   block,
@@ -35,15 +37,15 @@ export function ConfirmedDetails({
       >
         {details.map((detail) => (
           <div
-            className="flex items-baseline justify-between gap-3"
+            className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5"
             key={detail.label}
           >
-            <dt className="min-w-0 text-muted-foreground text-xs [overflow-wrap:anywhere]">
+            <dt className="min-w-0 text-muted-foreground text-xs [overflow-wrap:break-word]">
               {detail.label}
             </dt>
             <dd
               className={cn(
-                "flex-1 text-right text-sm [overflow-wrap:anywhere]",
+                "ml-auto min-w-0 text-right text-sm [overflow-wrap:break-word]",
                 isAmount(detail) && "font-mono tabular-nums"
               )}
             >
