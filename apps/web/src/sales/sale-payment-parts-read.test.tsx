@@ -4,6 +4,7 @@ import { createRef } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { confirmedSaleView } from "./sale-form-model";
+import { RETURN_EXPLANATION, returnExplanation } from "./sale-return-model";
 
 const state = vi.hoisted(() => ({ hidden: false }));
 
@@ -281,5 +282,18 @@ describe("the summary right after confirming a sale in two parts", () => {
     const html = panel(sale([pixPart]));
     expect(html).not.toContain("Pagamento em");
     expect(html).toContain("Valor do pagamento");
+  });
+});
+
+describe("the explanation of the return", () => {
+  it("is the one of today for a sale of one part", () => {
+    expect(returnExplanation(1)).toBe(RETURN_EXPLANATION);
+    expect(returnExplanation(1)).not.toContain("cada parte");
+  });
+
+  it("adds that each part goes back by the same way for a sale of two parts", () => {
+    expect(returnExplanation(2)).toBe(
+      `${RETURN_EXPLANATION} Devolva o dinheiro pelo mesmo meio de cada parte.`
+    );
   });
 });
