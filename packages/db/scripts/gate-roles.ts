@@ -1,5 +1,5 @@
 import type { Pool, QueryResult, QueryResultRow } from "pg";
-import { redactConnectionStrings, sqlState } from "./sales-gate-support";
+import { redactConnectionStrings, sqlState } from "./gate-errors";
 
 /**
  * The two ways a gate acts as another role, so it runs the same with an owner who is a superuser (the CI service)

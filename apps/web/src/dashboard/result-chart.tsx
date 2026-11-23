@@ -8,10 +8,10 @@ import {
 import { useCallback, useId, useMemo } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/ui/card";
+import { BlockHeader } from "@/ui/block-header";
+import { Card, CardContent, CardHeader } from "@/ui/card";
 import { ChartDataTable } from "@/ui/charts/chart-data-table";
 import { OnDemandAreaChart, useChartsFailed } from "@/ui/charts/on-demand";
-import { HelpTip } from "@/ui/help-tip";
 import { useConnectionOnline } from "../lib/browser-connection";
 import { calendarDayInTimezone } from "../lib/dates";
 import { formatBrlAmount } from "../lib/format";
@@ -143,20 +143,17 @@ function costsNote(fromCopy: boolean): string {
 
 /**
  * The room the lines of the card keep so the box does not change height between periods: `min-h` of the tallest form the
- * line takes at that width, never `max-h` nor a clamp, so nothing is cut. The title row (with its two (i) and the seal
- * of an incomplete estimate, which wraps below 460 px; the two (i) are 20 px apart so their touch areas do not overlap) and the row that holds the reading of the day and the legend
- * (side by side from 400 px, stacked below) were measured every 4 px from 320 to 500 px, every 20 up to 820 and every 50 up
+ * line takes at that width, never `max-h` nor a clamp, so nothing is cut. The row that holds the reading of the day and
+ * the legend (side by side from 400 px, stacked below) was measured every 4 px from 320 to 500 px, every 20 up to 820 and every 50 up
  * to 1360, over the month, 30 days, the year and 366 days, whole, with unknown days and with amounts of R$ 999.999,99, and a
  * month with an expense on its last day, with the values shown and hidden; a step is placed at the first width where the tallest form changes.
  * The row takes `content-start`, so the room goes below the text and not between its fragments.
  */
-const TITLE_RESERVE = "min-h-[2.875rem] min-[28.75rem]:min-h-[1.375rem]";
 const TOP_RESERVE =
   "min-h-[8.5rem] min-[20.75rem]:min-h-[7.375rem] min-[21.75rem]:min-h-[6.25rem] min-[23.75rem]:min-h-[5rem] min-[25rem]:min-h-[5.5rem] min-[28.25rem]:min-h-[4.5rem] min-[40rem]:min-h-[3.5rem] min-[45rem]:min-h-[2.25rem]";
-const NOTE_RESERVE = "min-h-[1.125rem]";
+const NOTE_RESERVE = "min-h-5.5";
 
 interface HeaderProps {
-  incomplete: boolean;
   range: string;
   source: "cache" | "server";
   support: { count: string | null; tail: string | null };
@@ -182,38 +179,21 @@ export function periodHelp({
     .join(" ");
 }
 
-/** The title with its two (i) and, beside them, the seal of an incomplete estimate: the dates and the sentences that support the drawing are in the (i). */
-function ChartHeader({
-  incomplete,
-  range,
-  source,
-  support,
-  unit,
-}: HeaderProps) {
+/** The title with its (i): the dates and the sentences that support the drawing are in the (i); a second (i) says the lines when there are any. */
+function ChartHeader({ range, source, support, unit }: HeaderProps) {
   const title = `Vendas × custos por ${unit}`;
+  const tips = [
+    {
+      about: `${title}: o período`,
+      text: periodHelp({ count: support.count, range, source }),
+    },
+    ...(support.tail
+      ? [{ about: `${title}: as linhas`, text: support.tail }]
+      : []),
+  ];
   return (
     <CardHeader className="border-b py-(--card-spacing)">
-      <div
-        className={cn(
-          "flex flex-wrap items-center gap-x-2 gap-y-1",
-          TITLE_RESERVE
-        )}
-      >
-        <div className="flex min-w-0 items-center gap-1">
-          <CardTitle aria-level={2} id={TITLE_ID} role="heading">
-            {title}
-          </CardTitle>
-          <HelpTip about={`${title}: o período`} className="-my-1">
-            {periodHelp({ count: support.count, range, source })}
-          </HelpTip>
-          {support.tail ? (
-            <HelpTip about={`${title}: as linhas`} className="-my-1 ml-4">
-              {support.tail}
-            </HelpTip>
-          ) : null}
-        </div>
-        {incomplete ? <IncompleteBadge /> : null}
-      </div>
+      <BlockHeader help={tips} id={TITLE_ID} title={title} />
     </CardHeader>
   );
 }
@@ -398,6 +378,7 @@ interface ResultChartProps {
 export function ResultChart({ source, summary, timezone }: ResultChartProps) {
   const numbersId = useId();
   const drawingFailed = useChartsFailed();
+  const [hidden] = useHiddenValues();
   const { afterToday, daily, granularity } = summary;
   const today = calendarDayInTimezone(new Date(summary.generatedAt), timezone);
   const series = useMemo(
@@ -429,7 +410,6 @@ export function ResultChart({ source, summary, timezone }: ResultChartProps) {
   return (
     <Card aria-labelledby={TITLE_ID} className="gap-0 py-0" role="region">
       <ChartHeader
-        incomplete={isIncompleteEstimate(summary.quality) || unknown}
         range={range}
         source={source}
         support={supportParts(series, summary.chain)}
@@ -437,14 +417,19 @@ export function ResultChart({ source, summary, timezone }: ResultChartProps) {
       />
       <CardContent className="grid grid-cols-[minmax(0,1fr)] gap-2 py-(--card-spacing)">
         <Totals costsTotal={costsTotal} salesTotal={salesTotal} />
-        <p className={cn("text-muted-foreground text-support", NOTE_RESERVE)}>
-          {sent ? null : costsNote(source === "cache")}
-        </p>
-        {/* the line of the best day keeps its height in a period with no sale, so the chart under it does not move */}
-        {rows.length > 0 ? (
-          <p className="min-h-[1.125rem] text-support">
-            {best ? <MoneyText text={best} /> : null}
-          </p>
+        <div
+          className={cn(
+            "flex flex-wrap items-center gap-x-2 gap-y-1 text-muted-foreground text-support",
+            NOTE_RESERVE
+          )}
+        >
+          {isIncompleteEstimate(summary.quality) || unknown ? (
+            <IncompleteBadge />
+          ) : null}
+          {sent ? null : <span>{costsNote(source === "cache")}</span>}
+        </div>
+        {best ? (
+          <p className="sr-only">{hidden ? maskMoney(best) : best}</p>
         ) : null}
         <Body
           details={numbersId}

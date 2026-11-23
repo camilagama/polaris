@@ -29,7 +29,7 @@ function FieldLegend({
   return (
     <legend
       className={cn(
-        "mb-1.5 font-medium data-[variant=label]:text-sm data-[variant=legend]:text-section",
+        "mb-1.5 data-[variant=label]:font-medium data-[variant=label]:text-sm data-[variant=legend]:text-section",
         className
       )}
       data-slot="field-legend"

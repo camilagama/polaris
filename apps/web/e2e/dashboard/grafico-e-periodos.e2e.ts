@@ -170,7 +170,7 @@ test.describe("o gráfico de vendas e custos (AC-4 a AC-12)", () => {
     await expect(region.locator("dt", { hasText: "Custos" })).toHaveCount(0);
     // the card of the result: the badge and the count, no sparkline and no chip (AC-9)
     const result = card(page, CARD.result);
-    await expect(result).toContainText("estimativa incompleta");
+    await expect(result).toContainText("Incompleta");
     await expect(result).toContainText("1 de 30 dias sem custo");
     await expect(result.locator("[data-kpi-spark]")).toHaveCount(0);
     await expect(result.locator("[data-kpi-delta]")).toHaveCount(0);
@@ -261,12 +261,8 @@ test.describe("Vendas × custos por dia: só o gráfico, com a ressalva dita uma
     await choosePreset(page, "Mês passado");
     const region = chartRegion(page);
     await expect(region).toContainText("estimativa incompleta");
-    await expect(card(page, CARD.result)).toContainText(
-      "estimativa incompleta"
-    );
-    await expect(card(page, CARD.margin)).toContainText(
-      "estimativa incompleta"
-    );
+    await expect(card(page, CARD.result)).toContainText("Incompleta");
+    await expect(card(page, CARD.margin)).toContainText("Incompleta");
     await expect(card(page, CARD.result)).not.toContainText("lucro líquido");
     await expect(region).not.toContainText("lucro líquido");
     await expect(region.getByText("dinheiro já recebido")).toHaveCount(0);
@@ -945,7 +941,7 @@ test.describe("o Resultado estimado num dia sem custo diz o porquê e não muda 
       await openDashboard(page, new FakeReportServer());
       await choosePreset(page, "Mês passado");
       const result = card(page, CARD.result);
-      await expect(result).toContainText("estimativa incompleta");
+      await expect(result).toContainText("Incompleta");
       await settled(page);
       const rest = await placeOf(result);
       const restValue = await placeOf(result.locator("p").first());

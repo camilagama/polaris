@@ -1103,3 +1103,26 @@ test("Catálogo público a 320 px: nada transborda com o endereço de teste long
   await expect(page.locator("#public-slug-error")).toBeVisible();
   await expectNoSidewaysScroll(page);
 });
+
+test("Catálogo público: o nome da seção pesa 600 e o rótulo do campo 500", async ({
+  page,
+}) => {
+  await openScreen(page, "/public-catalog", "Catálogo público", {
+    "product/list": reply({ products: [] }),
+    "publicCatalog/setup": reply(SETUP),
+  });
+  await expect(page.getByLabel("Nome público")).toBeVisible();
+  const weightOf = (locator: ReturnType<Page["locator"]>) =>
+    locator.evaluate((element) => getComputedStyle(element).fontWeight);
+  const sections = await Promise.all(
+    ["Como a loja aparece", "Contato"].map((name) =>
+      weightOf(
+        page.getByRole("group", { exact: true, name }).locator("> legend")
+      )
+    )
+  );
+  expect(sections).toEqual(["600", "600"]);
+  expect(
+    await weightOf(page.locator("label", { hasText: "Nome público" }))
+  ).toBe("500");
+});

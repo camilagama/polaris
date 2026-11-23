@@ -178,7 +178,9 @@ function RuleEditor({
   const credit = rule.method === "credit_card";
   return (
     <FieldSet className="@container min-w-0 gap-4">
-      <FieldLegend className="mb-3">Regra {index + 1}</FieldLegend>
+      <FieldLegend className="mb-3" variant="label">
+        Regra {index + 1}
+      </FieldLegend>
       <div className="grid @md:grid-cols-2 gap-4">
         <SelectField
           id={ruleFieldId(rule, "method")}
