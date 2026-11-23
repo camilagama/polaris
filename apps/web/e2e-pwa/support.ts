@@ -14,7 +14,7 @@ import { createStaticServer } from "../scripts/static-server.mjs";
 export interface BuildOptions {
   /** Built again even if this worker already made it (the same content built later). */
   fresh?: boolean;
-  /** When the build was published (ms, the commit's time); by default one time for the whole run. */
+  /** When the build was published (ms, the commit's time); by default the fixed time `PUBLISHED`. */
   publishedAt?: number;
   /**
    * `POLARIS_SWAP_URGENT=1`: no settling, in at the first safe moment. By default true: the settling counts from when
