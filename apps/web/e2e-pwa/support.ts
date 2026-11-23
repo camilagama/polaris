@@ -23,9 +23,12 @@ export interface BuildOptions {
   urgent?: boolean;
 }
 
-const HOUR = 60 * 60 * 1000;
-/** One time for the whole run: the same variant built twice is the same worker, as the same commit is. */
-const PUBLISHED = Date.now() - 3 * HOUR;
+/**
+ * A fixed commit time: the same variant built twice is the same worker, as the same commit is, and nothing in the
+ * swap reads `publishedAt` against the clock (the settling counts from when the device saw the build), so it only has
+ * to be old and the same in every run.
+ */
+export const PUBLISHED = Date.UTC(2026, 9, 14, 9);
 
 export const test = base.extend<
   { buildVersion: (variant: string, options?: BuildOptions) => void },
