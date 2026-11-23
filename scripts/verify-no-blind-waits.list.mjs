@@ -15,6 +15,15 @@ const ABSENCE_IS_THE_TEST =
 const SIMULATED_LATENCY =
   "a espera é a latência de uma resposta simulada dentro de page.route: o tempo é o que o servidor falso leva para responder";
 
+const SIMULATED_ANSWER_LATENCY =
+  "a espera é a latência de uma resposta do servidor falso do Início dentro de page.route (o atraso configurado de cada resposta e a resposta que nunca chega no prazo da tela): o tempo é o que o servidor falso leva para responder";
+
+const SIMULATED_SESSION_STALL =
+  "a espera é a resposta lenta da sessão simulada dentro de page.route: a rota segura o get-session até a página desistir e só então a aborta; o tempo é o que o servidor falso leva para responder";
+
+const NO_COPY_KEPT_AFTER_ANSWER =
+  "o tempo é o comportamento testado: um segundo depois de a resposta ser lida, a cópia local continua sem ser guardada; a espera prova a ausência dessa gravação, e um sinal positivo não provaria isso";
+
 export const BLIND_WAITS_LIST = {
   "apps/web/e2e-pwa/motion-level.e2e.ts": {
     count: 1,
@@ -67,16 +76,19 @@ export const BLIND_WAITS_LIST = {
   },
   "apps/web/e2e/home/offline-e-leituras.e2e.ts": {
     count: 1,
-    reason: BEFORE_THE_RULE,
+    reason: NO_COPY_KEPT_AFTER_ANSWER,
   },
-  "apps/web/e2e/home/shared.ts": { count: 2, reason: BEFORE_THE_RULE },
+  "apps/web/e2e/home/shared.ts": {
+    count: 2,
+    reason: SIMULATED_ANSWER_LATENCY,
+  },
   "apps/web/e2e/offline-devices.e2e.ts": {
     count: 3,
     reason: ABSENCE_IS_THE_TEST,
   },
   "apps/web/e2e/offline-runtime-api.e2e.ts": {
     count: 1,
-    reason: BEFORE_THE_RULE,
+    reason: SIMULATED_SESSION_STALL,
   },
   "apps/web/e2e/offline-sair.e2e.ts": { count: 3, reason: BEFORE_THE_RULE },
   "apps/web/e2e/offline-screens.e2e.ts": { count: 6, reason: BEFORE_THE_RULE },
