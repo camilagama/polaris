@@ -317,10 +317,6 @@ const monthNames = [
   "dezembro",
 ] as const;
 
-export function isMonthValue(value: string): boolean {
-  return monthPattern.test(value);
-}
-
 function parseMonth(month: string): { month: number; year: number } | null {
   const match = monthPattern.exec(month);
   if (!match) {
@@ -507,6 +503,28 @@ function nameOf(
     return null;
   }
   return { id, name: categoryLabel(local.name, local.archived) };
+}
+
+/**
+ * Whether the split by category carries a name for a category this screen has read that differs from the local one:
+ * a rename elsewhere, which the filter chip (named from the local list) would not show.
+ */
+export function categoryNamesDiffer(
+  entries: readonly ExpenseCategoryTotalReadModel[] | undefined,
+  categories: readonly ExpenseCategoryReadModel[]
+): boolean {
+  if (entries === undefined) {
+    return false;
+  }
+  const localNames = new Map(categories.map((item) => [item.id, item.name]));
+  return entries.some((entry) => {
+    const local = localNames.get(entry.categoryId);
+    return (
+      local !== undefined &&
+      entry.categoryName !== undefined &&
+      entry.categoryName !== local
+    );
+  });
 }
 
 function groupKnownCategories(

@@ -71,6 +71,8 @@ interface AreaChartSecondary {
   data: readonly SecondaryDatum[];
   /** The name in the legend ("Custos (CMV, taxas e despesas)"). */
   legend: string;
+  /** The screen writes the legend in the header of its block: the chart keeps no row for it. */
+  legendInHeader?: boolean;
   /** The short name in the reading of the day ("Custos"). */
   name: string;
   /**
@@ -127,12 +129,6 @@ export interface AreaChartProps {
   readingAtRest?: boolean;
   /** Drawn finished, with no reveal and no tween (a phone, v7 § 7); `prefers-reduced-motion` does the same. */
   still?: boolean;
-  /**
-   * Classes that hold the room of the row above the drawing, where the reading of the day in focus and the legend of the
-   * series share the line (`min-h` of the longest form, by width), so a change of period does not move the drawing. The
-   * row is kept, empty, when there is no legend.
-   */
-  reserve?: string;
   /** The block's own loading state (`status="loading"`): a pulsing line and a shimmering grid, then the reveal. */
   loading?: boolean;
   /** The text that shimmers in the middle of the chart while `loading` ("Carregando"). */
@@ -298,7 +294,6 @@ function AreaTop({
   loadingAtRest,
   place,
   reading,
-  reserve,
   secondary,
   unseen,
 }: {
@@ -307,12 +302,12 @@ function AreaTop({
   loadingAtRest: boolean;
   place: "above" | "over" | null;
   reading: DayReading;
-  reserve: string | undefined;
   secondary: AreaChartSecondary | undefined;
   unseen: boolean;
 }) {
-  const showsLegend = secondary && !secondary.subtle;
-  const sameRow = place === "above" && (showsLegend || reserve);
+  const showsLegend =
+    secondary && !secondary.subtle && !secondary.legendInHeader;
+  const sameRow = place === "above" && showsLegend;
   const readingLine =
     place === "above" ? (
       <Unseen on={unseen}>
@@ -335,10 +330,10 @@ function AreaTop({
   return (
     <>
       {loadingAtRest ? (
-        <p aria-hidden="true" className={cn("min-h-[1.125rem]", reserve)} />
+        <p aria-hidden="true" className="min-h-[1.125rem]" />
       ) : null}
       {sameRow ? (
-        <div className={cn(SAME_ROW, reserve)} data-chart-top="">
+        <div className={SAME_ROW}>
           {readingLine}
           {legendLine}
         </div>
@@ -537,7 +532,6 @@ export function AreaChart({
   rangeLabel = "Dia",
   readingAtRest = true,
   readingNote,
-  reserve,
   secondary,
   spokenNote,
   still = false,
@@ -632,7 +626,6 @@ export function AreaChart({
         loadingAtRest={loading && readingAtRest}
         place={place}
         reading={reading}
-        reserve={reserve}
         secondary={secondary}
         unseen={isEmpty}
       />

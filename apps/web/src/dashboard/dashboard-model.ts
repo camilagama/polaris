@@ -25,11 +25,6 @@ export const EMPTY_VALUE = "—";
 
 const percentTextPattern = /^(-?)(\d+)(?:\.(\d+))?$/;
 
-/** An exact BRL text ("-12.30") as "-R$ 12,30", or the dash for no value. */
-export function formatMoneyOrDash(value: string | null): string {
-  return value === null ? EMPTY_VALUE : formatBrlAmount(value);
-}
-
 /** A percent text with two places ("72.50") as "72,50%", or the dash for no value. */
 export function formatPercentOrDash(value: string | null): string {
   if (value === null) {
@@ -266,7 +261,7 @@ interface ChainLine {
 }
 
 /** The chain in the order it is read: each "=" row follows from the rows above it. */
-const CHAIN_LINES: readonly ChainLine[] = [
+export const CHAIN_LINES: readonly ChainLine[] = [
   { id: "grossSales", kind: "line", label: "Vendas brutas" },
   { id: "discounts", kind: "line", label: "(−) Descontos" },
   { id: "returns", kind: "line", label: "(−) Devoluções" },

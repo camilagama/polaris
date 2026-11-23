@@ -23,7 +23,7 @@ import {
   assertSaleOccurredWithinWindow,
   retroactiveLimitDaysForRole,
 } from "@polaris/domain/sales/sale-dates";
-import { and, asc, desc, eq, inArray, isNull } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull } from "drizzle-orm";
 import { recordSaleStockMovement } from "./inventory-repository";
 import { assertVariantsOperational } from "./operational-selection-repository";
 import { organizations } from "./schema/organization";
@@ -64,30 +64,10 @@ export interface ConfirmedSaleReadModel {
     unitCost: string | null;
     variantId: string;
   }>;
-  payment: {
-    amount: string;
-    anticipationFee: {
-      amount: string | null;
-      fixedAmount: string | null;
-      mode: string;
-      percentage: string | null;
-    };
-    anticipationRequested: boolean;
-    expectedSettlementDays: number | null;
-    installmentPlan: string | null;
-    installments: number | null;
-    method: string;
-    paymentProfileId: string | null;
-    paymentProfileName: string | null;
-    paymentProfileRuleId: string | null;
-    paymentProfileVersion: number | null;
-    processingFee: {
-      amount: string | null;
-      fixedAmount: string | null;
-      mode: string;
-      percentage: string | null;
-    };
-  };
+  /** The part at position 0, for readers that still handle one payment. */
+  payment: ConfirmedSalePaymentReadModel;
+  /** Every part, by position. */
+  payments: Array<ConfirmedSalePaymentReadModel & { position: number }>;
   sale: {
     recordedAt: Date | null;
     commandId: string;
@@ -98,6 +78,31 @@ export interface ConfirmedSaleReadModel {
     occurredOn: string;
   };
   totals: ConfirmedSaleTotals;
+}
+
+export interface ConfirmedSalePaymentReadModel {
+  amount: string;
+  anticipationFee: {
+    amount: string | null;
+    fixedAmount: string | null;
+    mode: string;
+    percentage: string | null;
+  };
+  anticipationRequested: boolean;
+  expectedSettlementDays: number | null;
+  installmentPlan: string | null;
+  installments: number | null;
+  method: string;
+  paymentProfileId: string | null;
+  paymentProfileName: string | null;
+  paymentProfileRuleId: string | null;
+  paymentProfileVersion: number | null;
+  processingFee: {
+    amount: string | null;
+    fixedAmount: string | null;
+    mode: string;
+    percentage: string | null;
+  };
 }
 
 export interface ConfirmSaleResult extends ConfirmedSaleReadModel {
@@ -122,26 +127,33 @@ function samePercentage(left: string | null, right: string | null): boolean {
     : Percentage.from(left).toString() === Percentage.from(right).toString();
 }
 
-/**
- * Main part of a sale: highest amount, ties broken by the smaller id (UUIDv7,
- * so the part that entered first). Independent of the order of the rows.
- */
-export function mainPayment<Row extends { amount: string; id: string }>(
-  rows: readonly Row[]
-): Row | undefined {
-  let main: Row | undefined;
-  for (const row of rows) {
-    if (main === undefined) {
-      main = row;
-      continue;
-    }
-    const rowUnits = Money.from(row.amount).minorUnits;
-    const mainUnits = Money.from(main.amount).minorUnits;
-    if (rowUnits > mainUnits || (rowUnits === mainUnits && row.id < main.id)) {
-      main = row;
-    }
-  }
-  return main;
+type SalePaymentRow = typeof salePayments.$inferSelect;
+
+function paymentReadModel(row: SalePaymentRow): ConfirmedSalePaymentReadModel {
+  return {
+    amount: Money.from(row.amount).toString(),
+    anticipationFee: {
+      amount: row.anticipationFeeAmountSnapshot,
+      fixedAmount: row.anticipationFeeFixedAmountSnapshot,
+      mode: row.anticipationFeeModeSnapshot,
+      percentage: row.anticipationFeePercentageSnapshot,
+    },
+    anticipationRequested: row.anticipationRequested,
+    expectedSettlementDays: row.expectedSettlementDaysSnapshot,
+    installmentPlan: row.installmentPlan,
+    installments: row.installments,
+    method: row.method,
+    paymentProfileId: row.paymentProfileId,
+    paymentProfileName: row.paymentProfileNameSnapshot,
+    paymentProfileRuleId: row.paymentProfileRuleIdSnapshot,
+    paymentProfileVersion: row.paymentProfileVersionSnapshot,
+    processingFee: {
+      amount: row.processingFeeAmountSnapshot,
+      fixedAmount: row.processingFeeFixedAmountSnapshot,
+      mode: row.processingFeeModeSnapshot,
+      percentage: row.processingFeePercentageSnapshot,
+    },
+  };
 }
 
 export async function readConfirmedSale(
@@ -178,9 +190,15 @@ export async function readConfirmedSale(
         eq(salePayments.saleId, header.id)
       )
     )
-    .orderBy(desc(salePayments.amount), asc(salePayments.id));
-  const payment = mainPayment(paymentRows);
-  if (!payment) {
+    .orderBy(asc(salePayments.position), asc(salePayments.id));
+  // Every row of the sale is read, whatever their number: the part at the
+  // lowest position is the sale's `payment`.
+  const payments = paymentRows.map((row) => ({
+    ...paymentReadModel(row),
+    position: row.position,
+  }));
+  const [firstRow] = paymentRows;
+  if (!firstRow) {
     throw new Error("confirmed_sale_payment_missing");
   }
 
@@ -208,30 +226,8 @@ export async function readConfirmedSale(
   return {
     adjustments: adjustmentModels,
     items: itemModels,
-    payment: {
-      amount: Money.from(payment.amount).toString(),
-      anticipationFee: {
-        amount: payment.anticipationFeeAmountSnapshot,
-        fixedAmount: payment.anticipationFeeFixedAmountSnapshot,
-        mode: payment.anticipationFeeModeSnapshot,
-        percentage: payment.anticipationFeePercentageSnapshot,
-      },
-      anticipationRequested: payment.anticipationRequested,
-      expectedSettlementDays: payment.expectedSettlementDaysSnapshot,
-      installmentPlan: payment.installmentPlan,
-      installments: payment.installments,
-      method: payment.method,
-      paymentProfileId: payment.paymentProfileId,
-      paymentProfileName: payment.paymentProfileNameSnapshot,
-      paymentProfileRuleId: payment.paymentProfileRuleIdSnapshot,
-      paymentProfileVersion: payment.paymentProfileVersionSnapshot,
-      processingFee: {
-        amount: payment.processingFeeAmountSnapshot,
-        fixedAmount: payment.processingFeeFixedAmountSnapshot,
-        mode: payment.processingFeeModeSnapshot,
-        percentage: payment.processingFeePercentageSnapshot,
-      },
-    },
+    payment: paymentReadModel(firstRow),
+    payments,
     sale: {
       recordedAt: header.recordedAt,
       commandId: header.commandId,
@@ -250,8 +246,6 @@ function replayMatchesCommand(
   saved: ConfirmedSaleReadModel,
   command: NormalizedConfirmSaleCommand
 ): boolean {
-  const { payment } = saved;
-  const selection = command.paymentProfile;
   return (
     saved.sale.commandId === command.commandId &&
     sameNullableInstant(saved.sale.occurredAt, command.occurredAt) &&
@@ -279,13 +273,35 @@ function replayMatchesCommand(
         samePercentage(savedAdjustment.percentage, adjustment.percentage)
       );
     }) &&
-    payment.method === command.payment.method &&
-    payment.amount === command.payment.amount &&
-    payment.installments === command.payment.installments &&
-    payment.installmentPlan === command.payment.installmentPlan &&
-    payment.anticipationRequested === command.payment.anticipationRequested &&
-    payment.paymentProfileId === (selection?.id ?? null) &&
-    payment.paymentProfileVersion === (selection?.expectedVersion ?? null)
+    paymentsMatchCommand(saved.payments, command.payments)
+  );
+}
+
+/**
+ * The saved parts and the command's parts are compared position by position:
+ * the same parts in another order, or another amount, are another sale.
+ */
+function paymentsMatchCommand(
+  saved: ConfirmedSaleReadModel["payments"],
+  parts: NormalizedConfirmSaleCommand["payments"]
+): boolean {
+  return (
+    saved.length === parts.length &&
+    parts.every(({ payment, paymentProfile }, index) => {
+      const savedPart = saved[index];
+      return (
+        savedPart !== undefined &&
+        savedPart.position === index &&
+        savedPart.method === payment.method &&
+        savedPart.amount === payment.amount &&
+        savedPart.installments === payment.installments &&
+        savedPart.installmentPlan === payment.installmentPlan &&
+        savedPart.anticipationRequested === payment.anticipationRequested &&
+        savedPart.paymentProfileId === (paymentProfile?.id ?? null) &&
+        savedPart.paymentProfileVersion ===
+          (paymentProfile?.expectedVersion ?? null)
+      );
+    })
   );
 }
 
@@ -314,14 +330,29 @@ async function replayExistingSale(
   return { ...saved, replayed: true };
 }
 
-async function loadPaymentProfileForSale(
+/**
+ * The profile of each part, in part order (null for a part without one). Every
+ * profile and every rule of the sale comes from the same two reads, whatever
+ * the number of parts. A part whose profile is missing, archived or at another
+ * version refuses the whole sale, naming that part.
+ */
+async function loadPaymentProfilesForSale(
   transaction: TenantRequestTransaction,
   identity: TenantRequestIdentity,
-  selection: { expectedVersion: number; id: string }
-): Promise<PaymentProfileForSale> {
-  // FOR SHARE keeps the profile from being edited until this sale commits, so
-  // the snapshot matches the version the operator confirmed.
-  const [profile] = await transaction
+  selections: readonly ({ expectedVersion: number; id: string } | null)[]
+): Promise<(PaymentProfileForSale | null)[]> {
+  const ids = [
+    ...new Set(
+      selections.flatMap((selection) => (selection ? [selection.id] : []))
+    ),
+  ];
+  if (ids.length === 0) {
+    return selections.map(() => null);
+  }
+  // FOR SHARE keeps the profiles from being edited until this sale commits, so
+  // the snapshot matches the version the operator confirmed; the id order keeps
+  // two sales that name the same profiles from deadlocking.
+  const profiles = await transaction
     .select({
       archivedAt: paymentProfiles.archivedAt,
       id: paymentProfiles.id,
@@ -331,20 +362,27 @@ async function loadPaymentProfileForSale(
     .from(paymentProfiles)
     .where(
       and(
-        eq(paymentProfiles.id, selection.id),
+        inArray(paymentProfiles.id, ids),
         eq(paymentProfiles.organizationId, identity.organizationId)
       )
     )
-    .limit(1)
+    .orderBy(asc(paymentProfiles.id))
     .for("share");
-  if (!profile) {
-    throw new PaymentProfileNotFoundError();
-  }
-  if (profile.archivedAt !== null) {
-    throw new PaymentProfileLifecycleError();
-  }
-  if (profile.version !== selection.expectedVersion) {
-    throw new PaymentProfileVersionConflictError();
+  const profileById = new Map(profiles.map((profile) => [profile.id, profile]));
+  for (const [part, selection] of selections.entries()) {
+    if (!selection) {
+      continue;
+    }
+    const profile = profileById.get(selection.id);
+    if (!profile) {
+      throw new PaymentProfileNotFoundError(part);
+    }
+    if (profile.archivedAt !== null) {
+      throw new PaymentProfileLifecycleError(part);
+    }
+    if (profile.version !== selection.expectedVersion) {
+      throw new PaymentProfileVersionConflictError(part);
+    }
   }
 
   const rules = await transaction
@@ -353,36 +391,44 @@ async function loadPaymentProfileForSale(
     .where(
       and(
         eq(paymentProfileRules.organizationId, identity.organizationId),
-        eq(paymentProfileRules.paymentProfileId, profile.id),
+        inArray(paymentProfileRules.paymentProfileId, ids),
         isNull(paymentProfileRules.archivedAt)
       )
     );
 
-  return {
-    id: profile.id,
-    name: profile.name,
-    rules: rules.map((rule) => ({
-      anticipationFee: {
-        fixedAmount: rule.anticipationFeeFixedAmount,
-        mode: rule.anticipationFeeMode as PaymentFeeMode,
-        percentage: rule.anticipationFeePercentage,
-      },
-      expectedSettlementDays: rule.expectedSettlementDays,
-      id: rule.id,
-      installmentPlan:
-        rule.installmentPlan === null
-          ? null
-          : (rule.installmentPlan as "merchant" | "issuer"),
-      installments: rule.installments,
-      method: rule.method,
-      processingFee: {
-        fixedAmount: rule.processingFeeFixedAmount,
-        mode: rule.processingFeeMode as PaymentFeeMode,
-        percentage: rule.processingFeePercentage,
-      },
-    })),
-    version: profile.version,
-  };
+  return selections.map((selection) => {
+    const profile = selection ? profileById.get(selection.id) : undefined;
+    if (!profile) {
+      return null;
+    }
+    return {
+      id: profile.id,
+      name: profile.name,
+      rules: rules
+        .filter((rule) => rule.paymentProfileId === profile.id)
+        .map((rule) => ({
+          anticipationFee: {
+            fixedAmount: rule.anticipationFeeFixedAmount,
+            mode: rule.anticipationFeeMode as PaymentFeeMode,
+            percentage: rule.anticipationFeePercentage,
+          },
+          expectedSettlementDays: rule.expectedSettlementDays,
+          id: rule.id,
+          installmentPlan:
+            rule.installmentPlan === null
+              ? null
+              : (rule.installmentPlan as "merchant" | "issuer"),
+          installments: rule.installments,
+          method: rule.method,
+          processingFee: {
+            fixedAmount: rule.processingFeeFixedAmount,
+            mode: rule.processingFeeMode as PaymentFeeMode,
+            percentage: rule.processingFeePercentage,
+          },
+        })),
+      version: profile.version,
+    };
+  });
 }
 
 interface SaleCatalogFacts {
@@ -559,6 +605,7 @@ export async function confirmSale(
       occurredAt: command.occurredAt,
       occurredOn,
       organizationId: identity.organizationId,
+      paymentCount: command.payments.length,
     })
     .onConflictDoNothing({ target: [sales.organizationId, sales.commandId] })
     .returning();
@@ -574,13 +621,11 @@ export async function confirmSale(
     return concurrentReplay;
   }
 
-  const profile = command.paymentProfile
-    ? await loadPaymentProfileForSale(
-        transaction,
-        identity,
-        command.paymentProfile
-      )
-    : null;
+  const profiles = await loadPaymentProfilesForSale(
+    transaction,
+    identity,
+    command.payments.map((part) => part.paymentProfile)
+  );
 
   const catalog = await lockSaleCatalog(
     transaction,
@@ -633,7 +678,7 @@ export async function confirmSale(
       unitCost: unitCostByPosition.get(item.position) ?? null,
     };
   });
-  const composition = composeConfirmedSale(command, resolvedItems, profile);
+  const composition = composeConfirmedSale(command, resolvedItems, profiles);
 
   await transaction.insert(saleItems).values(
     composition.sale.items.map((item) => ({
@@ -663,32 +708,36 @@ export async function confirmSale(
     );
   }
 
-  const { payment, paymentProfile } = composition;
-  await transaction.insert(salePayments).values({
-    amount: payment.amount,
-    anticipationFeeAmountSnapshot: paymentProfile.anticipationFee.amount,
-    anticipationFeeFixedAmountSnapshot:
-      paymentProfile.anticipationFee.fixedAmount,
-    anticipationFeeModeSnapshot: paymentProfile.anticipationFee.mode,
-    anticipationFeePercentageSnapshot:
-      paymentProfile.anticipationFee.percentage,
-    anticipationRequested: payment.anticipationRequested,
-    expectedSettlementDaysSnapshot: paymentProfile.expectedSettlementDays,
-    installmentPlan: payment.installmentPlan,
-    installmentPlanUnknown: payment.installmentPlanUnknown,
-    installments: payment.installments,
-    method: payment.method,
-    organizationId: identity.organizationId,
-    paymentProfileId: paymentProfile.paymentProfileId,
-    paymentProfileNameSnapshot: paymentProfile.paymentProfileName,
-    paymentProfileRuleIdSnapshot: paymentProfile.paymentProfileRuleId,
-    paymentProfileVersionSnapshot: paymentProfile.paymentProfileVersion,
-    processingFeeAmountSnapshot: paymentProfile.processingFee.amount,
-    processingFeeFixedAmountSnapshot: paymentProfile.processingFee.fixedAmount,
-    processingFeeModeSnapshot: paymentProfile.processingFee.mode,
-    processingFeePercentageSnapshot: paymentProfile.processingFee.percentage,
-    saleId: header.id,
-  });
+  // One statement for every part, so a split sale costs what a single one does.
+  await transaction.insert(salePayments).values(
+    composition.payments.map(({ payment, paymentProfile }, position) => ({
+      amount: payment.amount,
+      anticipationFeeAmountSnapshot: paymentProfile.anticipationFee.amount,
+      anticipationFeeFixedAmountSnapshot:
+        paymentProfile.anticipationFee.fixedAmount,
+      anticipationFeeModeSnapshot: paymentProfile.anticipationFee.mode,
+      anticipationFeePercentageSnapshot:
+        paymentProfile.anticipationFee.percentage,
+      anticipationRequested: payment.anticipationRequested,
+      expectedSettlementDaysSnapshot: paymentProfile.expectedSettlementDays,
+      installmentPlan: payment.installmentPlan,
+      installmentPlanUnknown: payment.installmentPlanUnknown,
+      installments: payment.installments,
+      method: payment.method,
+      organizationId: identity.organizationId,
+      paymentProfileId: paymentProfile.paymentProfileId,
+      paymentProfileNameSnapshot: paymentProfile.paymentProfileName,
+      paymentProfileRuleIdSnapshot: paymentProfile.paymentProfileRuleId,
+      paymentProfileVersionSnapshot: paymentProfile.paymentProfileVersion,
+      position,
+      processingFeeAmountSnapshot: paymentProfile.processingFee.amount,
+      processingFeeFixedAmountSnapshot:
+        paymentProfile.processingFee.fixedAmount,
+      processingFeeModeSnapshot: paymentProfile.processingFee.mode,
+      processingFeePercentageSnapshot: paymentProfile.processingFee.percentage,
+      saleId: header.id,
+    }))
+  );
 
   await recordTenantAuditEvent(transaction, identity, {
     entityId: header.id,

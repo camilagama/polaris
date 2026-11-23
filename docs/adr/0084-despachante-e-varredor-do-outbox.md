@@ -4,7 +4,7 @@ status: accepted
 
 # Despachante e varredor do outbox
 
-> O número deste ADR (0084) é o próximo livre na `main` e nos PRs abertos no momento da escrita (o PR do purge usa 0081 e o do teto de custo, 0076); pode mudar se outro entrar antes. A migration é a 0071, a mesma do PR #126: o segundo a entrar renumera a migration e o snapshot.
+> A migration é a 0071, a mesma do PR #126: o segundo a entrar renumera a migration e o snapshot.
 
 > **Emenda ([ADR 0085](0085-dlq-incidente-operacional-e-retry-no-admin.md)):** o evento que chega ao teto de 1000 tentativas passa a ser registrado como incidente operacional e como evento morto pelo cron do despachante (`record_exhausted_outbox_events`), e o Admin pode reenviá-lo (`retry_dead_letter`: tentativas recomeçam e o registro de processamento da chave é apagado). Onde este texto diz "à espera da DLQ" ou "sem DLQ", vale o ADR 0085.
 

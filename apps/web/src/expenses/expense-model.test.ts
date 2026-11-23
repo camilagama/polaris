@@ -1,11 +1,12 @@
-import { EARLIEST_EXPENSE_COMPETENCE } from "@polaris/domain/expenses/expense";
 import type {
   ExpenseCategoryReadModel,
   ExpenseCategoryTotalReadModel,
 } from "@polaris/contracts";
+import { EARLIEST_EXPENSE_COMPETENCE } from "@polaris/domain/expenses/expense";
 import { describe, expect, it } from "vitest";
 import { formatDate } from "@/ui/date-values";
 import {
+  categoryNamesDiffer,
   categoryShareRows,
   EARLIEST_COMPETENCE_REASON,
   EARLIEST_EXPENSE_MONTH,
@@ -15,13 +16,12 @@ import {
   formatMonthLabel,
   groupByExpenseGroup,
   isExpenseDraftChanged,
-  isMonthValue,
   type MoneyInputError,
+  moneyInputMessage,
+  moneyInputText,
   monthBounds,
   monthOfDay,
   moveMonthCursor,
-  moneyInputMessage,
-  moneyInputText,
   parseMoneyInput,
   percentsByLargestRemainder,
   shiftMonth,
@@ -150,15 +150,6 @@ describe("moneyInputText", () => {
 });
 
 describe("months", () => {
-  it("recognizes only YYYY-MM", () => {
-    expect(isMonthValue("2026-10")).toBe(true);
-    expect(isMonthValue("2026-13")).toBe(false);
-    expect(isMonthValue("2026-00")).toBe(false);
-    expect(isMonthValue("2026-1")).toBe(false);
-    expect(isMonthValue("")).toBe(false);
-    expect(isMonthValue("2026-10-01")).toBe(false);
-  });
-
   it("takes the month of a calendar day", () => {
     expect(monthOfDay("2026-10-13")).toBe("2026-10");
   });
@@ -178,6 +169,12 @@ describe("months", () => {
     expect(monthBounds("2000-02")?.to).toBe("2000-02-29");
     expect(monthBounds("2026-12")?.to).toBe("2026-12-31");
     expect(monthBounds("nope")).toBeNull();
+  });
+
+  it("accepts only YYYY-MM", () => {
+    for (const month of ["2026-13", "2026-00", "2026-1", "", "2026-10-01"]) {
+      expect(monthBounds(month)).toBeNull();
+    }
   });
 
   it("moves to the previous and next month across years", () => {
@@ -700,5 +697,47 @@ describe("categoryShareRows", () => {
     );
     expect(rows?.map((row) => row.percent)).toEqual([50, 50]);
     expect(rows?.[0]?.amount).toBe("999999999999999999.99");
+  });
+});
+
+describe("categoryNamesDiffer", () => {
+  const aluguel = CATEGORIES[0] as ExpenseCategoryReadModel;
+
+  function entry(
+    categoryId: string,
+    categoryName?: string
+  ): ExpenseCategoryTotalReadModel {
+    return {
+      categoryId,
+      count: 1,
+      total: "10.00",
+      ...(categoryName === undefined ? {} : { categoryName }),
+    };
+  }
+
+  it("is false when the names are the same", () => {
+    expect(
+      categoryNamesDiffer([entry(aluguel.id, aluguel.name)], CATEGORIES)
+    ).toBe(false);
+  });
+
+  it("is true when the server name of a category read here is another", () => {
+    expect(
+      categoryNamesDiffer([entry(aluguel.id, "Aluguel do galpão")], CATEGORIES)
+    ).toBe(true);
+  });
+
+  it("is false for a category this screen has not read", () => {
+    expect(
+      categoryNamesDiffer(
+        [entry("00000000-0000-4000-8000-00000000ffff", "Outro nome")],
+        CATEGORIES
+      )
+    ).toBe(false);
+  });
+
+  it("is false when the server sent no name, or no split", () => {
+    expect(categoryNamesDiffer([entry(aluguel.id)], CATEGORIES)).toBe(false);
+    expect(categoryNamesDiffer(undefined, CATEGORIES)).toBe(false);
   });
 });

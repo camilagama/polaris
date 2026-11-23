@@ -14,6 +14,7 @@ import {
   normalizeConfirmSaleCommand,
   SaleCommandConflictError,
   SaleOccurredInFutureError,
+  SalePaymentSplitMismatchError,
   SaleProductUnavailableError,
 } from "@polaris/domain/sales/confirm-sale";
 import {
@@ -54,6 +55,7 @@ const SALE_REFUSAL = {
   invalidPayload: "invalid_payload",
   paymentProfileChanged: "payment_profile_changed",
   paymentProfileUnavailable: "payment_profile_unavailable",
+  paymentSplitMismatch: "sale_payment_split_mismatch",
   productUnavailable: "sale_product_unavailable",
   tooOld: "sale_occurred_too_old",
   variantNotFound: "variant_not_found",
@@ -92,6 +94,9 @@ function classify(error: unknown): string | null {
   if (error instanceof SaleCommandConflictError) {
     return SALE_REFUSAL.commandConflict;
   }
+  if (error instanceof SalePaymentSplitMismatchError) {
+    return SALE_REFUSAL.paymentSplitMismatch;
+  }
   if (error instanceof PaymentProfileVersionConflictError) {
     return SALE_REFUSAL.paymentProfileChanged;
   }
@@ -106,6 +111,31 @@ function classify(error: unknown): string | null {
     : null;
 }
 
+/**
+ * The single-payment form keeps its sale-level profile (absent means none); a
+ * split payment carries the profile inside each part and sends no sale-level
+ * one. Every field sent is passed on, so the domain refuses both forms
+ * together behind the contract.
+ */
+function paymentForm(
+  input: OfflineSalePayload
+): Pick<
+  Parameters<typeof confirmSale>[2],
+  "payment" | "paymentProfile" | "payments"
+> {
+  const { payment, paymentProfile, payments } = input;
+  if (payments !== undefined) {
+    return {
+      payments,
+      ...(payment === undefined ? {} : { payment }),
+      ...(paymentProfile === undefined ? {} : { paymentProfile }),
+    };
+  }
+  return payment === undefined
+    ? { paymentProfile: paymentProfile ?? null }
+    : { payment, paymentProfile: paymentProfile ?? null };
+}
+
 function parsePayload(payload: unknown): OfflineSalePayload {
   const parsed = offlineSalePayloadSchema.safeParse(payload);
   if (!parsed.success) {
@@ -118,14 +148,22 @@ function parsePayload(payload: unknown): OfflineSalePayload {
     // of the server clock is its own refusal at execution, `sale_occurred_in_future`.
     normalizeConfirmSaleCommand(
       {
-        ...parsed.data,
+        adjustments: parsed.data.adjustments,
         commandId: placeholderCommandId,
         commandVersion: 1,
-        paymentProfile: parsed.data.paymentProfile ?? null,
+        items: parsed.data.items,
+        occurredAt: parsed.data.occurredAt,
+        recordedAt: parsed.data.recordedAt,
+        ...paymentForm(parsed.data),
       },
       skipClockCheck
     );
   } catch (error) {
+    // Parts that do not add up are a refusal of their own, stored with its code
+    // when the command runs, so the device can tell it apart from a bad shape.
+    if (error instanceof SalePaymentSplitMismatchError) {
+      return parsed.data;
+    }
     if (payloadErrors.some((type) => error instanceof type)) {
       // biome-ignore lint/style/useErrorCause: the cause is passed in the options object.
       throw new InvalidSyncPayloadError({ cause: error });
@@ -154,8 +192,7 @@ export function createSaleConfirmHandler(
             commandVersion: 1,
             items: input.items,
             occurredAt: input.occurredAt,
-            payment: input.payment,
-            paymentProfile: input.paymentProfile ?? null,
+            ...paymentForm(input),
             recordedAt: input.recordedAt,
             requestId: context.commandId,
           }

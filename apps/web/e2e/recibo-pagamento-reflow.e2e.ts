@@ -1,5 +1,5 @@
 /// <reference lib="dom" />
-import type { Page } from "@playwright/test";
+import type { Locator, Page } from "@playwright/test";
 import { expect } from "@playwright/test";
 import {
   DETAIL_SALE_ID,
@@ -32,6 +32,7 @@ const NOW = new Date("2026-10-14T12:00:00-03:00");
 const FEE_NOTICE = "desconhecida — não é zero";
 const SETTLEMENT_NOTICE = "prazo desconhecido — não é zero";
 const UNKNOWN_NOTICES = [FEE_NOTICE, SETTLEMENT_NOTICE];
+const UNKNOWN_ROW_LABELS = ["Taxa de processamento", "Prazo"] as const;
 
 const FONTS = [16, 20] as const;
 
@@ -70,6 +71,24 @@ async function openPaymentBlock(page: Page, fontPixels: number) {
   await expect(block).toBeVisible();
   await expectReflowFont(page, fontPixels);
   return block;
+}
+
+/** Where the label and the value of one line of the payment block sit, so the value can be checked against both. */
+async function rowBox(block: Locator, label: string) {
+  const row = block.locator(":scope > div").filter({
+    has: block.page().locator("dt", { hasText: new RegExp(`^${label}$`) }),
+  });
+  await expect(row).toHaveCount(1);
+  return row.evaluate((line) => {
+    const term = (line.querySelector("dt") as Element).getBoundingClientRect();
+    const value = (line.querySelector("dd") as Element).getBoundingClientRect();
+    return {
+      rowRight: line.getBoundingClientRect().right,
+      termBottom: term.bottom,
+      valueRight: value.right,
+      valueTop: value.top,
+    };
+  });
 }
 
 /** Every word of each notice with the number of lines its box is painted on: more than one is a word cut in the middle. */
@@ -126,35 +145,23 @@ for (const fontPixels of FONTS) {
   );
 
   reflowTest(
-    `a 320 px com letra de ${fontPixels} px o aviso da taxa desce inteiro para baixo do nome, na borda direita da linha`,
+    `a 320 px com letra de ${fontPixels} px o aviso da taxa e o do prazo descem inteiros para baixo do nome, na borda direita da linha`,
     async ({ page }) => {
       const block = await openPaymentBlock(page, fontPixels);
-      const row = block
-        .locator(":scope > div")
-        .filter({ hasText: "Taxa de processamento" });
-      await expect(row).toHaveCount(1);
-      const box = await row.evaluate((line) => {
-        const term = (
-          line.querySelector("dt") as Element
-        ).getBoundingClientRect();
-        const value = (
-          line.querySelector("dd") as Element
-        ).getBoundingClientRect();
-        return {
-          rowRight: line.getBoundingClientRect().right,
-          termBottom: term.bottom,
-          valueRight: value.right,
-          valueTop: value.top,
-        };
+      const boxes = await Promise.all(
+        UNKNOWN_ROW_LABELS.map((label) => rowBox(block, label))
+      );
+      boxes.forEach((box, index) => {
+        const label = UNKNOWN_ROW_LABELS[index];
+        expect(
+          box.valueTop,
+          `o aviso de "${label}" começa abaixo do nome, não ao lado`
+        ).toBeGreaterThanOrEqual(box.termBottom);
+        expect(
+          Math.abs(box.rowRight - box.valueRight),
+          `o aviso de "${label}" termina na borda direita da linha`
+        ).toBeLessThanOrEqual(1);
       });
-      expect(
-        box.valueTop,
-        "o aviso começa abaixo do nome da taxa, não ao lado"
-      ).toBeGreaterThanOrEqual(box.termBottom);
-      expect(
-        Math.abs(box.rowRight - box.valueRight),
-        "o aviso termina na borda direita da linha"
-      ).toBeLessThanOrEqual(1);
     }
   );
 }

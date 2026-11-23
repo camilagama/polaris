@@ -10,6 +10,7 @@ import {
   type ClippedElement,
   expectReflowFont,
   findClipped,
+  HIDDEN_WARNING_DETAIL,
   openReflowViewport,
   skipOutsideChromium,
 } from "./reflow";
@@ -238,10 +239,11 @@ const SETTINGS_LIST: Case = {
     await serve(page);
     await page.goto("/configuracoes");
     await expect(
-      page.getByRole("heading", { exact: true, level: 2, name: "Da loja" })
-    ).toBeVisible();
-    await expect(
-      page.getByRole("heading", { exact: true, level: 2, name: "Da conta" })
+      page.getByRole("heading", {
+        exact: true,
+        level: 1,
+        name: "Configurações da loja",
+      })
     ).toBeVisible();
     await expect(
       page.getByRole("link", { exact: true, name: "Seus dados" })
@@ -325,6 +327,15 @@ const DATA_EXPORT: Case = {
 
 /** The cases of each screen of `screenKeys()` this file measures. */
 const COVERED: Readonly<Record<string, readonly Case[]>> = {
+  "account:aparelhos": states(
+    "aparelhos lista",
+    "aparelhos confirmação aberta"
+  ),
+  "account:senha": states(
+    "trocar senha",
+    "trocar senha atual errada",
+    "trocar senha conta do Google"
+  ),
   customers: states("clientes cliente parecido"),
   "dashboard:metas": states("resultado metas", "resultado nova meta com erro"),
   "dashboard:resultado": states(
@@ -355,10 +366,6 @@ const COVERED: Readonly<Record<string, readonly Case[]>> = {
     "detalhe da venda cliente da venda",
     "detalhe da venda trocar o cliente"
   ),
-  "settings:aparelhos": states(
-    "aparelhos lista",
-    "aparelhos confirmação aberta"
-  ),
   "settings:assinatura": states(
     "assinatura oferta com Pix",
     "assinatura Pix aguardando o banco",
@@ -377,11 +384,6 @@ const COVERED: Readonly<Record<string, readonly Case[]>> = {
     "perfis de pagamento erros nos campos"
   ),
   "settings:lista": [SETTINGS_LIST],
-  "settings:senha": states(
-    "trocar senha",
-    "trocar senha atual errada",
-    "trocar senha conta do Google"
-  ),
   "settings:seus-dados": [DATA_EXPORT],
 };
 
@@ -539,7 +541,10 @@ async function sweep(
     // biome-ignore lint/performance/noAwaitInLoops: one root at a time, the page is shared
     const found = await findClipped(locator, {
       allowScroll: SCROLLS_ON_PURPOSE.map(({ selector }) => selector),
-      skip,
+      skip:
+        skip === undefined
+          ? HIDDEN_WARNING_DETAIL
+          : `${skip},${HIDDEN_WARNING_DETAIL}`,
     });
     measured += found.measured;
     seen.push(

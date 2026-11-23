@@ -37,12 +37,21 @@ test("a chave do runtime offline é a do projeto, e o preview serve o build do p
   await expect(
     page.getByRole("navigation").getByRole("link", { name: "Vender" }).first()
   ).toBeVisible();
-  // Aparelhos is a tab of Configurações, there only with the offline runtime on
-  await page.goto("/configuracoes");
-  const settingsTabs = page.getByRole("tablist", { name: "Configurações" });
-  await expect(settingsTabs).toBeVisible();
+  // Minha conta has Aparelhos only with the offline runtime on, and the password is off here: one tab, no strip; with no tab at all the address opens the Início
+  await page.goto("/conta");
+  const accountHeading = page.getByRole("heading", {
+    level: 1,
+    name: "Minha conta",
+  });
+  await expect(accountHeading).toHaveCount(enabled ? 1 : 0);
+  if (!enabled) {
+    await expect(page).toHaveURL((url) => url.pathname === "/");
+  }
+  await expect(page.getByRole("tablist", { name: "Minha conta" })).toHaveCount(
+    0
+  );
   await expect(
-    settingsTabs.getByRole("tab", { exact: true, name: "Aparelhos" })
+    page.getByRole("heading", { level: 2, name: "Aparelhos" })
   ).toHaveCount(enabled ? 1 : 0);
   expect(await registered).toBe(enabled);
 });

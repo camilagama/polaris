@@ -98,11 +98,6 @@ export function costsKnown(days: readonly StoredDay[]): boolean {
   );
 }
 
-/** True when the period has a day with an unknown cost, as opposed to costs the server never sent. */
-export function hasUnknownCostDay(days: readonly StoredDay[]): boolean {
-  return days.some(isUnknownDay);
-}
-
 /** A day the server could not know the cost of: both fields `null` (AC-8), or either one. */
 function isUnknownDay(day: StoredDay): boolean {
   return day.costs === null || day.operatingResult === null;
@@ -357,6 +352,18 @@ export function bestRowText(series: ResultSeries): string | null {
   return series.grouped
     ? `Melhor mês: ${monthName(best.key)}, ${amount}`
     : `Melhor dia: ${best.label}, ${amount}`;
+}
+
+/** "melhor dia" (or "melhor mês") for the row `bestRow` picks, null for every other row and for a period that sold nothing. */
+export function bestMark(
+  series: Pick<ResultSeries, "grouped" | "rows">,
+  index: number
+): string | null {
+  const best = bestRow(series.rows);
+  if (!best || series.rows[index] !== best) {
+    return null;
+  }
+  return series.grouped ? "melhor mês" : "melhor dia";
 }
 
 /**

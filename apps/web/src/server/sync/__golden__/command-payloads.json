@@ -145,5 +145,43 @@
       "variantId": "0199c2d0-0000-7000-8000-000000000130"
     },
     "type": "product.create"
+  },
+  {
+    "baseVersion": null,
+    "payload": {
+      "adjustments": [],
+      "items": [
+        {
+          "chargedUnitPrice": "50.00",
+          "listedUnitPrice": "50.00",
+          "quantity": 2,
+          "variantId": "0199c2d0-0000-7000-8000-00000000012e"
+        }
+      ],
+      "occurredAt": "2026-10-14T12:30:00.000Z",
+      "payments": [
+        {
+          "amount": "30.00",
+          "anticipationRequested": false,
+          "installmentPlan": null,
+          "installments": null,
+          "method": "pix",
+          "paymentProfile": null
+        },
+        {
+          "amount": "70.00",
+          "anticipationRequested": false,
+          "installmentPlan": "issuer",
+          "installments": 3,
+          "method": "credit_card",
+          "paymentProfile": {
+            "expectedVersion": 3,
+            "id": "0199c2d0-0000-7000-8000-000000000259"
+          }
+        }
+      ],
+      "recordedAt": "2026-10-14T12:30:00.000Z"
+    },
+    "type": "sale.confirm"
   }
 ]

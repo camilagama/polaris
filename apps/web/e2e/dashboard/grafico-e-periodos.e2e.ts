@@ -1,5 +1,6 @@
 /// <reference lib="dom" />
 import { expect, test } from "@playwright/test";
+import { expectAllMono } from "../mono-face";
 import { axeFaults } from "../../e2e-pwa/ui-guardrails/measures";
 import { expectNoTypedDates, touchDay } from "../date-pickers";
 import {
@@ -20,6 +21,7 @@ import {
   expectPreset,
   chooseRange,
   reading,
+  readLastDay,
   METAS_TAB,
   metasTab,
   resultTab,
@@ -134,7 +136,7 @@ test.describe("o gráfico de vendas e custos (AC-4 a AC-12)", () => {
       "A diferença entre as duas linhas é o resultado estimado do dia. Despesas do período entram no dia da competência."
     );
     // the day in focus is the last: it has no sale, and the rent of the month fell on it (AC-11)
-    await expect(reading(page)).toHaveText(
+    await expect(await readLastDay(page)).toHaveText(
       "31/07 · Vendas R$ 0,00 · Custos R$ 18,00 · inclui R$ 18,00 de despesas do período"
     );
     await expect(region.locator("table").locator("tbody tr")).toHaveCount(31);
@@ -201,6 +203,47 @@ test.describe("o gráfico de vendas e custos (AC-4 a AC-12)", () => {
     await expect(first).toContainText("01/09/2026");
     await expect(first.locator("td").nth(1)).toHaveText("sem custo informado");
     await expect(first.locator("td").nth(2)).toHaveText("sem custo informado");
+  });
+
+  test("o dia que é o melhor diz '· melhor dia' na leitura, uma vez só, e os outros dias não; a frase do leitor de tela fica (AC-7.1, AC-7.3)", async ({
+    page,
+  }) => {
+    await openDashboard(page, new FakeReportServer());
+    const region = chartRegion(page);
+    const slider = region.getByRole("slider");
+    await slider.focus();
+    await slider.press("Home");
+    await expect(reading(page)).toContainText("01/10");
+    await expect(reading(page)).toContainText("· melhor dia");
+    const spoken = (await slider.getAttribute("aria-valuetext")) ?? "";
+    expect(spoken.split("melhor dia")).toHaveLength(2);
+    await expect(
+      region.locator("p.sr-only", { hasText: "Melhor dia: 01/10, R$ 130,00" })
+    ).toHaveCount(1);
+
+    await slider.press("End");
+    await expect(reading(page)).not.toContainText("01/10");
+    await expect(reading(page)).not.toContainText("melhor dia");
+    expect(await slider.getAttribute("aria-valuetext")).not.toContain(
+      "melhor dia"
+    );
+  });
+
+  test("a leitura do dia e os totais acima dela ficam na mesma família, Geist Mono (AC-7.2)", async ({
+    page,
+  }) => {
+    await openDashboard(page, new FakeReportServer());
+    const region = chartRegion(page);
+    const lastDay = await readLastDay(page);
+    await expect(lastDay).toBeVisible();
+    await expectAllMono(
+      region.locator("dd > span"),
+      "os totais acima do desenho"
+    );
+    await expectAllMono(
+      lastDay.locator("span.whitespace-nowrap"),
+      "os valores da leitura do dia"
+    );
   });
 
   test("com o pedaço do gráfico bloqueado, ficam os totais, o melhor dia e a tabela, e o texto do Início", async ({
@@ -384,7 +427,9 @@ test.describe("Vendas × custos por dia: só o gráfico, com a ressalva dita uma
     expect(
       await table.locator(".sr-only").allTextContents()
     ).not.toContainEqual(expect.stringMatching(AN_AMOUNT_DIGITS));
-    expect(await reading(page).innerText()).not.toMatch(AN_AMOUNT_DIGITS);
+    expect(await (await readLastDay(page)).innerText()).not.toMatch(
+      AN_AMOUNT_DIGITS
+    );
     await expect(region.getByRole("slider")).not.toHaveAttribute(
       "aria-valuetext",
       AN_AMOUNT_DIGITS
@@ -1013,6 +1058,8 @@ test.describe("Vendas × custos por dia: trocar de período não muda a altura d
 
         await chooseRange(page, empty[0], empty[1]);
         await expect(chartRegion(page)).toContainText("Sem vendas no período.");
+        await expect(chartRegion(page)).not.toContainText("melhor dia");
+        await expect(chartRegion(page)).not.toContainText("Melhor dia");
         expectSamePlaces(await chartPlaces(page), withSales);
 
         await chooseRange(page, data[0], data[1]);

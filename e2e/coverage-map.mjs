@@ -34,7 +34,10 @@ export const SCREEN_ENTRY_POINTS = {
   sale: ["apps/web/src/sales/sale-page.tsx"],
   "sale-detail": ["apps/web/src/sales/sale-detail-page.tsx"],
   "sale-history": ["apps/web/src/sales/sale-history-page.tsx"],
-  settings: ["apps/web/src/settings/settings-screen.tsx"],
+  settings: [
+    "apps/web/src/settings/account-screen.tsx",
+    "apps/web/src/settings/settings-screen.tsx",
+  ],
   "sign-in": [
     "apps/web/src/sign-in/confirm-email-page.tsx",
     "apps/web/src/sign-in/forgot-password-page.tsx",
@@ -68,7 +71,7 @@ export const SCREEN_ROUTES = {
     /\/devices/,
     /\/payment-profiles/,
     /\/public-catalog/,
-    /\/conta\/seguranca/,
+    /\/conta(?:\/seguranca)?(?:["'`?]|$)/,
     /screen=(?:devices|payment-profiles|change-password)/,
   ],
   "sign-in": [
@@ -798,6 +801,7 @@ export const SPEC_SCREENS = {
   "apps/web/e2e-real/pilha/hyperdrive-papeis.e2e.ts": ["home"],
   "apps/web/e2e-real/pilha/isolamento.e2e.ts": ["home"],
   "apps/web/e2e-real/pilha/limite-de-taxa.e2e.ts": ["home"],
+  "apps/web/e2e/account-screen.e2e.ts": ["home", "settings"],
   "apps/web/e2e/app-shell.e2e.ts": "all",
   "apps/web/e2e/bloco-cabecalho-e-kpis.e2e.ts": ["home", "dashboard"],
   "apps/web/e2e/breakpoints-rem.e2e.ts": ["home", "sale", "products"],
@@ -828,6 +832,7 @@ export const SPEC_SCREENS = {
     "expenses",
   ],
   "apps/web/e2e/dashboard/numero-em-mono.e2e.ts": ["home", "dashboard"],
+  "apps/web/e2e/dashboard/padrao-do-inicio.e2e.ts": ["home", "dashboard"],
   "apps/web/e2e/dashboard/periodo-e-controle.e2e.ts": ["home", "dashboard"],
   "apps/web/e2e/dashboard/reflow-320.e2e.ts": [
     "home",

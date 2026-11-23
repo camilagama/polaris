@@ -8,7 +8,8 @@ import { SCREENS, VIEWPORTS } from "./ui-screens";
  * 760 px, on the same line; under it and as wide as the screen on a phone, with no sideways scroll even with the
  * letter at 20 px. The title, the (i) of it and the action come in this order in the tab order, there is one `h1`, and
  * the first thing after the heading block is at the same distance from it as on the screens that already followed the
- * pattern. The Resultado draws the period and "Atualizar" only on the Resultado tab: the Metas have their own.
+ * pattern. The Resultado draws the period and "Atualizar" only on the Resultado tab; on the Metas tab the same line
+ * holds "Atualizar metas" and "Nova meta".
  */
 const SAME_LINE = 2;
 const PHONE_MARGIN = 48;
@@ -17,6 +18,9 @@ const BIG_LETTER = 20;
 const HEADER_GAP = 16;
 const PERIOD_BUTTON = /^Período/;
 const METAS_TAB = /^Metas/;
+const GOALS_REFRESH = /^Atualizar metas/;
+const NEW_GOAL = /^Nova meta$/;
+const TABS_SAME_PLACE = 1;
 
 const ON_THE_LINE = [
   {
@@ -39,6 +43,13 @@ const ON_THE_LINE = [
     hasAbout: false,
     heading: "Histórico de vendas",
     screen: "histórico lista",
+  },
+  {
+    action: /^Atualizar metas/,
+    actionLabel: "Atualizar metas",
+    hasAbout: true,
+    heading: "Resultado",
+    screen: "resultado metas",
   },
 ] as const;
 
@@ -231,34 +242,62 @@ for (const line of ON_THE_LINE) {
   });
 }
 
-test.describe("Resultado · aba Metas", () => {
-  test.use({ hasTouch: false, viewport: VIEWPORTS["1280"] });
+const TAB_JUMP_CONTEXTS = [CONTEXTS[0], CONTEXTS[1]] as const;
 
-  test("sem o período e sem o Atualizar do Resultado na linha do título, que não muda de altura", async ({
-    page,
-  }) => {
-    await screenOf("resultado mês incompleto e gráfico de vendas").open(
+for (const context of TAB_JUMP_CONTEXTS) {
+  test.describe(`Resultado e Metas · as abas não pulam · ${context.name}`, () => {
+    test.use({
+      hasTouch: context.touch,
+      isMobile: context.touch,
+      viewport: context.viewport,
+    });
+
+    test("a linha do título existe nas duas abas, com as ações de cada uma, e as abas ficam no mesmo lugar", async ({
       page,
-      page.context()
-    );
-    const actions = page.locator("[data-title-actions]");
-    await expect(
-      actions.getByRole("button", { name: PERIOD_BUTTON })
-    ).toBeVisible();
-    const tabs = page.getByRole("tab", { exact: true, name: "Resultado" });
-    const before = (await tabs.boundingBox())?.y;
-    await page.getByRole("tab", { name: METAS_TAB }).click();
-    await expect(page.getByRole("tab", { name: METAS_TAB })).toHaveAttribute(
-      "aria-selected",
-      "true"
-    );
-    await expect(actions).toHaveCount(0);
-    await expect(page.getByRole("button", { name: PERIOD_BUTTON })).toHaveCount(
-      0
-    );
-    expect((await tabs.boundingBox())?.y, "as abas não pulam").toBe(before);
+    }) => {
+      await screenOf("resultado mês incompleto e gráfico de vendas").open(
+        page,
+        page.context()
+      );
+      const actions = page.locator("[data-title-actions]");
+      const tabs = page.getByRole("tab", { exact: true, name: "Resultado" });
+      const tabTop = async () =>
+        tabs.evaluate(
+          (tab) => tab.getBoundingClientRect().top + window.scrollY
+        );
+      await expect(
+        actions.getByRole("button", { name: PERIOD_BUTTON })
+      ).toBeVisible();
+      const onResultado = await tabTop();
+      await page.getByRole("tab", { name: METAS_TAB }).click();
+      await expect(page.getByRole("tab", { name: METAS_TAB })).toHaveAttribute(
+        "aria-selected",
+        "true"
+      );
+      await expect(
+        actions.getByRole("button", { name: GOALS_REFRESH })
+      ).toBeVisible();
+      await expect(
+        actions.getByRole("button", { name: NEW_GOAL })
+      ).toBeVisible();
+      await expect(
+        page.getByRole("button", { name: PERIOD_BUTTON })
+      ).toHaveCount(0);
+      expect(
+        Math.abs((await tabTop()) - onResultado),
+        "as abas não pulam ao ir para as Metas"
+      ).toBeLessThanOrEqual(TABS_SAME_PLACE);
+      await page.getByRole("tab", { exact: true, name: "Resultado" }).click();
+      await expect(
+        actions.getByRole("button", { name: PERIOD_BUTTON })
+      ).toBeVisible();
+      expect(
+        Math.abs((await tabTop()) - onResultado),
+        "as abas não pulam ao voltar para o Resultado"
+      ).toBeLessThanOrEqual(TABS_SAME_PLACE);
+    });
   });
-});
+}
 
 for (const context of CONTEXTS.slice(0, 2)) {
   for (const entry of [...ON_THE_LINE, ...REFERENCES]) {

@@ -1,11 +1,12 @@
 import ArrowRightIcon from "lucide-react/dist/esm/icons/arrow-right";
-import { Fragment } from "react";
-import { buttonVariants } from "@/ui/button";
-import { Figure } from "@/ui/figure";
-import { MoneyText } from "@/ui/hidden-values";
+import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import { BlockHeader } from "@/ui/block-header";
+import { buttonVariants } from "@/ui/button";
 import { Card, CardContent, CardHeader } from "@/ui/card";
+import { Figure } from "@/ui/figure";
+import { MoneyText } from "@/ui/hidden-values";
+import { Skeleton } from "@/ui/skeleton";
 import {
   Table,
   TableBody,
@@ -15,8 +16,13 @@ import {
   TableRow,
 } from "@/ui/table";
 import type { StoredPeriodSummary } from "../lib/period-summary-cache";
-import { type ChainRow, chainRows, EMPTY_VALUE } from "./dashboard-model";
-import { PartsBar } from "./parts-bar";
+import {
+  CHAIN_LINES,
+  type ChainRow,
+  chainRows,
+  EMPTY_VALUE,
+} from "./dashboard-model";
+import { PartsBar, PartsBarSkeleton } from "./parts-bar";
 
 const CHAIN_TITLE_ID = "dashboard-chain-title";
 
@@ -55,8 +61,7 @@ const LEADER =
  */
 const STACKED_TABLE = "@max-[19rem]:block @max-[19rem]:[&_tbody]:block";
 const STACKED_ROW = "@max-[19rem]:grid";
-const STACKED_VALUE =
-  "@max-[19rem]:pt-0 @max-[19rem]:pl-4 @max-[19rem]:text-left";
+const STACKED_VALUE = "@max-[19rem]:pt-0 @max-[19rem]:pl-4";
 
 /**
  * Side by side, the value is at least as wide as "R$ 9.999,99" in the Geist Mono of a line (11 characters of 0.6 em at
@@ -67,10 +72,16 @@ const STACKED_VALUE =
  */
 const VALUE_FLOOR = "inline-block min-w-[5.775rem] @max-[19rem]:min-w-0";
 
-const EXPENSES_LINK = cn(
-  buttonVariants({ size: "xs", variant: "ghost" }),
-  "ml-auto text-muted-foreground hover:text-foreground"
-);
+const EXPENSES_LINK = buttonVariants({ size: "sm", variant: "ghost" });
+
+const SKELETON_ROWS: readonly ChainRow[] = CHAIN_LINES.map((line) => ({
+  id: line.id,
+  kind: line.kind,
+  label: line.label,
+  negative: false,
+  note: null,
+  value: EMPTY_VALUE,
+}));
 
 /** "Como chegamos a este resultado": from gross sales to the estimated result, line by line. */
 export function ResultChain({
@@ -81,19 +92,90 @@ export function ResultChain({
   canCreateExpense: boolean;
   summary: StoredPeriodSummary;
 }) {
-  const rows = chainRows(summary.chain, summary.quality);
+  return (
+    <ChainCard
+      canCreateExpense={canCreateExpense}
+      parts={<PartsBar chain={summary.chain} quality={summary.quality} />}
+      rows={chainRows(summary.chain, summary.quality)}
+    />
+  );
+}
+
+/** The card while the figures are read: the same rows and the same footer, with the figures in `Skeleton`, so nothing moves when they come. */
+export function ResultChainSkeleton({
+  canCreateExpense,
+}: {
+  canCreateExpense: boolean;
+}) {
+  return (
+    <ChainCard
+      canCreateExpense={canCreateExpense}
+      loading
+      parts={<PartsBarSkeleton />}
+      rows={SKELETON_ROWS}
+    />
+  );
+}
+
+function ChainValue({ loading, value }: { loading: boolean; value: string }) {
+  if (loading) {
+    return (
+      <span className="flex h-5 items-center">
+        <Skeleton aria-hidden="true" className="h-4 w-full" />
+      </span>
+    );
+  }
+  if (value === EMPTY_VALUE) {
+    return (
+      <>
+        <span aria-hidden="true">{EMPTY_VALUE}</span>
+        <span className="sr-only">sem valor</span>
+      </>
+    );
+  }
+  return <MoneyText text={value} />;
+}
+
+function ChainCard({
+  canCreateExpense = false,
+  loading = false,
+  parts,
+  rows,
+}: {
+  canCreateExpense?: boolean;
+  loading?: boolean;
+  parts: ReactNode;
+  rows: readonly ChainRow[];
+}) {
   return (
     <Card
+      aria-hidden={loading ? "true" : undefined}
       aria-labelledby={CHAIN_TITLE_ID}
       className="@container gap-0 py-0"
       role="region"
     >
       <CardHeader className="border-b py-(--card-spacing)">
         <BlockHeader
-          help={{
-            about: "Como chegamos a este resultado: o que é",
-            text: "Das vendas brutas ao resultado estimado, linha a linha.",
-          }}
+          {...(canCreateExpense
+            ? {
+                action: loading ? (
+                  <Skeleton className="h-8 w-32 rounded-md" />
+                ) : (
+                  <a className={EXPENSES_LINK} href="/expenses">
+                    Ver despesas
+                    <ArrowRightIcon aria-hidden="true" data-icon="inline-end" />
+                  </a>
+                ),
+              }
+            : {})}
+          {...(loading
+            ? {}
+            : {
+                help: {
+                  about: "Como chegamos a este resultado: o que é",
+                  text: "Das vendas brutas ao resultado estimado, linha a linha.",
+                },
+              })}
           id={CHAIN_TITLE_ID}
           title="Como chegamos a este resultado"
         />
@@ -113,71 +195,44 @@ export function ResultChain({
         </TableHeader>
         <TableBody>
           {rows.map((row) => (
-            <Fragment key={row.id}>
-              <TableRow className={rowClass(row)}>
-                <TableHead
-                  className={cn(
-                    "h-auto w-full whitespace-normal pr-0 align-top font-[weight:inherit] text-[length:inherit] text-foreground",
-                    row.kind === "result" ? "pt-4 pb-2.5" : "py-2",
-                    "@max-[19rem]:pr-4 @max-[19rem]:pb-0"
-                  )}
-                  scope="row"
-                >
-                  <span className="flex items-baseline gap-2">
-                    <span>{row.label}</span>
-                    <span aria-hidden="true" className={LEADER} />
-                  </span>
+            <TableRow className={rowClass(row)} key={row.id}>
+              <TableHead
+                className={cn(
+                  "h-auto w-full whitespace-normal pr-0 align-top font-[weight:inherit] text-[length:inherit] text-foreground",
+                  row.kind === "result" ? "pt-4 pb-2.5" : "py-3",
+                  "@max-[19rem]:pr-4 @max-[19rem]:pb-0"
+                )}
+                scope="row"
+              >
+                <span className="flex items-baseline gap-2">
+                  <span>{row.label}</span>
+                  <span aria-hidden="true" className={LEADER} />
+                </span>
 
-                  {row.note ? (
-                    <span className="mt-0.5 block font-normal text-warning text-xs italic">
-                      <MoneyText text={row.note} />
-                    </span>
-                  ) : null}
-                </TableHead>
-                <TableCell
-                  className={cn(
-                    "pl-2 text-right align-top",
-                    STACKED_VALUE,
-                    row.kind === "result" ? "pt-4 pb-2.5" : "py-2",
-                    row.negative && row.kind !== "line" && "text-destructive"
-                  )}
-                >
-                  <Figure className={VALUE_FLOOR}>
-                    {row.value === EMPTY_VALUE ? (
-                      <>
-                        <span aria-hidden="true">{EMPTY_VALUE}</span>
-                        <span className="sr-only">sem valor</span>
-                      </>
-                    ) : (
-                      <MoneyText text={row.value} />
-                    )}
-                  </Figure>
-                </TableCell>
-              </TableRow>
-              {row.id === "operatingExpenses" && canCreateExpense ? (
-                <TableRow className="border-b-0 hover:bg-transparent">
-                  <TableCell
-                    className="pt-0 pb-2 @max-[19rem]:pl-4"
-                    colSpan={2}
-                  >
-                    <div className="flex">
-                      <a className={EXPENSES_LINK} href="/expenses">
-                        Ver despesas
-                        <ArrowRightIcon
-                          aria-hidden="true"
-                          data-icon="inline-end"
-                        />
-                      </a>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ) : null}
-            </Fragment>
+                {row.note ? (
+                  <span className="mt-0.5 block font-normal text-warning text-xs italic">
+                    <MoneyText text={row.note} />
+                  </span>
+                ) : null}
+              </TableHead>
+              <TableCell
+                className={cn(
+                  "pl-2 text-right align-top",
+                  STACKED_VALUE,
+                  row.kind === "result" ? "pt-4 pb-2.5" : "py-3",
+                  row.negative && row.kind !== "line" && "text-destructive"
+                )}
+              >
+                <Figure className={cn(VALUE_FLOOR, loading && "align-top")}>
+                  <ChainValue loading={loading} value={row.value} />
+                </Figure>
+              </TableCell>
+            </TableRow>
           ))}
         </TableBody>
       </Table>
       <CardContent className="grid gap-4 border-t py-(--card-spacing)">
-        <PartsBar chain={summary.chain} quality={summary.quality} />
+        {parts}
         <p className="text-muted-foreground text-support">
           Despesas do período são as que não estão ligadas a uma venda, contadas
           pelo mês de competência. O resultado é uma estimativa operacional, não

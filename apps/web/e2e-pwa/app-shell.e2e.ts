@@ -91,7 +91,7 @@ test("sem rede, o endereço de uma tela que virou aba, e o da aba Despesas que s
     ],
     ["/expenses", "/expenses", "Despesas · Polaris"],
     ["/categories", "/products?aba=categorias", "Categorias · Polaris"],
-    ["/devices", "/configuracoes?aba=aparelhos", "Aparelhos · Polaris"],
+    ["/devices", "/conta?aba=aparelhos", "Aparelhos · Polaris"],
   ] as const) {
     // biome-ignore lint/performance/noAwaitInLoops: one address at a time
     await page.goto(old);
