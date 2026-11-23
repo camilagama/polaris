@@ -18,7 +18,7 @@ export const PLAN_USAGE_WRITES: readonly string[] = [
   "product/update",
 ];
 
-/** Writes of the same groups that never change a count or the plan: a price and a SKU of a variant that exists. */
+/** Writes of the same groups that change neither what the plan limits nor the plan: a price and a SKU of a variant that exists. */
 export const PLAN_USAGE_NEUTRAL_WRITES: readonly string[] = [
   "product/setVariantListPrice",
   "product/setVariantSku",
@@ -31,8 +31,11 @@ export const PLAN_USAGE_NEUTRAL_WRITES: readonly string[] = [
 export const PLAN_USAGE_CONDITIONAL_WRITES: readonly string[] = ["sync/push"];
 
 /**
- * The offline command types that never change a count of the plan. Any other type, one not listed here included, lets go
- * of the reading: a command that changes variants or images must never be missed by a list that did not hear of it.
+ * The offline command types that never change what the plan limits (products, variants, images). They can still change
+ * other figures of `billing/readPlan`: `stock.*` and `sale.confirm` move the balance, so `usage.freeable` (archived
+ * products with no stock); `sale.confirm` also moves `kept.sales` and `kept.historyMonths`. Those wait for the TTL of
+ * the reading. Any other type, one not listed here included, lets go of the reading: a command that changes variants
+ * or images must never be missed by a list that did not hear of it.
  */
 export const PLAN_USAGE_NEUTRAL_COMMAND_TYPES: readonly string[] = [
   "customer.create",
