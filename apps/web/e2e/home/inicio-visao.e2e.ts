@@ -16,6 +16,7 @@ import {
   PRODUCT,
   periodButton,
   periodCalls,
+  placeOf,
   RETURN_REFRESH_MS,
   readsEnded,
   region,
@@ -24,6 +25,7 @@ import {
   SIZES,
   SOLD,
   serve,
+  settled,
   TYPE_DATES,
 } from "./shared";
 
@@ -271,9 +273,9 @@ test.describe("loja com venda", () => {
     await expect(meta.locator("[data-goal-projection]")).toHaveText(
       GOAL_PROJECTION
     );
-    await expect(
-      meta.getByRole("link", { name: "Ver as outras" })
-    ).toHaveAttribute("href", "/dashboard?meta=lista");
+    // two active goals and no foot under 760 px: the card has no second way out
+    await expect(meta.getByRole("link")).toHaveCount(0);
+    await expect(meta).not.toContainText("Ver as outras");
 
     const attention = region(page, "Precisa de ação");
     await expect(attention.getByRole("link")).toHaveText([
@@ -510,6 +512,55 @@ test.describe("loja com venda", () => {
       ).toHaveCount(0);
     });
   }
+
+  test("a Meta tem uma saída só, o pé: Ver as 3 metas com três ativas e Ver as metas com uma, os dois para a aba Metas, e a altura do cartão é a mesma", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 800, width: 1280 });
+    const goals = [
+      goal({}),
+      goal({
+        id: "0199c2d0-0000-7000-8000-000000000c02",
+        name: "Meta do trimestre",
+      }),
+      goal({
+        id: "0199c2d0-0000-7000-8000-000000000c03",
+        name: "Meta do ano",
+      }),
+    ];
+    const server = new FakeServer({ ...SOLD, goals });
+    await openHome(page, server);
+    const meta = region(page, "Meta");
+    await expect(meta.getByRole("img")).toBeVisible();
+    await expect(meta.getByRole("link")).toHaveCount(1);
+    const three = meta.getByRole("link", {
+      exact: true,
+      name: "Ver as 3 metas",
+    });
+    await expect(three).toHaveAttribute("href", "/dashboard?aba=metas");
+    await expect(meta).not.toContainText("Ver as outras");
+    await settled(page);
+    const withThree = (await placeOf(meta)).height;
+
+    server.scenario = { ...SOLD, goals: [goals[0]] };
+    await page.reload();
+    await expect(meta.getByRole("img")).toBeVisible();
+    await expect(meta.getByRole("link")).toHaveCount(1);
+    const one = meta.getByRole("link", { exact: true, name: "Ver as metas" });
+    await expect(one).toHaveAttribute("href", "/dashboard?aba=metas");
+    await settled(page);
+    expect(Math.abs((await placeOf(meta)).height - withThree)).toBeLessThan(1);
+
+    await one.focus();
+    await expect(one).toBeFocused();
+    const outline = await one.evaluate((link) =>
+      Number.parseFloat(getComputedStyle(link).outlineWidth)
+    );
+    const ring = await one.evaluate((link) => getComputedStyle(link).boxShadow);
+    expect(outline > 0 || ring !== "none").toBe(true);
+    await one.click();
+    await expect(page).toHaveURL(DASHBOARD_GOALS_PATH);
+  });
 
   test("Nova venda leva à Venda num toque (AC-2), e a barra mantém Vender a um toque", async ({
     page,

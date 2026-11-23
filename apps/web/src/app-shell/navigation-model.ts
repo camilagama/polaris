@@ -226,7 +226,7 @@ export const SCREEN_TABS: Readonly<Record<TabScreenId, readonly ScreenTab[]>> =
 
 /**
  * The tab an address asks of a screen: its `aba` when it is one of the screen's tabs, else the first. On the
- * Resultado, the two links of the Início to the goals (`meta=nova`, `meta=lista`) ask for Metas and win over `aba`.
+ * Resultado, `meta=nova` (the Início's "Definir meta") and the older `meta=lista` ask for Metas and win over `aba`.
  */
 export function requestedTab(screen: TabScreenId, search: string): ScreenTab {
   const tabs = SCREEN_TABS[screen];

@@ -67,8 +67,8 @@ function StripBody({ children }: { children: React.ReactNode }) {
 /**
  * The panel of the goal in error keeps, from `md`, the height the panel has with a typical active goal (12.5 rem: the
  * title block, the 7 rem ring and the panel padding), so the card does not jump when "Tentar novamente" reads it. With
- * the projection the panel with data still fits in it; a long name (2 or more lines) or "Ver as outras" may leave
- * the panel with data taller than this, and then the card grows when it leaves the error (accepted).
+ * the projection the panel with data still fits in it; a long name (2 or more lines) may leave the panel with data
+ * taller than this, and then the card grows when it leaves the error (accepted).
  */
 const ERROR_PANEL_CLASS = "md:min-h-50";
 
@@ -77,6 +77,12 @@ const GOAL_FOOTER = {
   href: "/dashboard?aba=metas",
   label: "Ver as metas",
 } as const;
+
+/** The one way out of the card: to the Metas tab, saying how many goals are active when there is more than one. */
+const goalFooter = (others: number) =>
+  others > 0
+    ? { ...GOAL_FOOTER, label: `Ver as ${others + 1} metas` }
+    : GOAL_FOOTER;
 
 /**
  * The side of the ring of the goal and the width of its arc (v7 § 3 item 9), in pixels at the default 16 px letter:
@@ -232,14 +238,12 @@ function ProjectionLine({ projection }: { projection: GoalProjection }) {
 function ActiveGoal({
   daysLeft = null,
   goal,
-  others,
   projection = null,
   today = null,
 }: {
   /** "faltam 6 dias", with a connection only. */
   daysLeft?: string | null;
   goal: GoalReadModel;
-  others: number;
   /** The estimate by the rhythm of the last 7 days, with a connection and the daily series only. */
   projection?: GoalProjection | null;
   /** The store's today, for the mark of the pace; null while the figures are not read (no mark, no word). */
@@ -290,12 +294,6 @@ function ActiveGoal({
         </div>
       ) : null}
       {state ? <p className="text-support">{state}</p> : null}
-      {others > 0 ? (
-        <a className={BLOCK_ACTION} href="/dashboard?meta=lista">
-          Ver as outras
-          <ArrowRightIcon aria-hidden="true" data-icon="inline-end" />
-        </a>
-      ) : null}
     </>
   );
 }
@@ -487,7 +485,9 @@ export function GoalBlock({
     <HomeBlock
       {...(strip
         ? { attributes: STRIP_ATTRIBUTES, plain: true }
-        : { footer: GOAL_FOOTER })}
+        : {
+            footer: goalFooter(view.kind === "active" ? view.others : 0),
+          })}
       id="home-goal"
       title={pastMonth ? monthGoalTitle(monthTitle(pastMonth)) : "Meta"}
       {...(helpText ? { help: { about: "Meta", text: helpText } } : {})}
@@ -496,7 +496,6 @@ export function GoalBlock({
         <ActiveGoal
           daysLeft={today ? goalDaysLeftText(view.goal, today) : null}
           goal={view.goal}
-          others={view.others}
           projection={projection}
           today={today}
         />
@@ -524,7 +523,7 @@ export function OfflineGoalBlock({ goal }: { goal: OfflineGoal }) {
       content = goal.ended ? (
         <EndedGoal goal={goal.goal} />
       ) : (
-        <ActiveGoal goal={goal.goal} others={0} />
+        <ActiveGoal goal={goal.goal} />
       );
       break;
     case "settled":

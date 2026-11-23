@@ -794,6 +794,25 @@ test.describe("no celular, o voltar fecha a Nova meta", () => {
   });
 });
 
+for (const address of ["&aba=metas", "&meta=lista"]) {
+  test(`o endereço ${address.slice(1)} abre a aba Metas, e a aba fica no endereço sem o parâmetro antigo`, async ({
+    page,
+  }) => {
+    await openDashboard(page, new FakeGoalServer(), address);
+    await expect(page.getByRole("tab", { name: "Metas" })).toHaveAttribute(
+      "aria-selected",
+      "true"
+    );
+    await expect(
+      page.getByRole("region", { exact: true, name: "Metas" })
+    ).toBeVisible();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    const url = new URL(page.url());
+    expect(url.searchParams.get("aba")).toBe("metas");
+    expect(url.searchParams.get("meta")).toBeNull();
+  });
+}
+
 test("uma meta que chegou ao alvo vira Concluída e continua concluída", async ({
   page,
 }) => {

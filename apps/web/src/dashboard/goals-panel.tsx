@@ -183,7 +183,7 @@ export function GoalsPanel({
 }: GoalsPanelProps) {
   const { busy, cancel, clearFeedback, create, feedback, update } =
     useGoalCommands(organizationId, reload);
-  // the address the Início links to, read once: `?meta=nova` opens the form, `?meta=lista` goes to the goals
+  // the address the Início links to, read once: `?meta=nova` opens the form, the older `?meta=lista` goes to the goals
   const [link] = useState(() => readGoalsLink(window.location.search));
   // the form is a dialog: opened by the button, or by the address the Início links to
   const [creating, setCreating] = useState(link === "new");
