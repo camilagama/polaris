@@ -11,8 +11,8 @@ const EMPTY_FOOT_LIMIT = 24;
 /** The share of the map's height the strip of a store with no goal may take under 960 px of content (92 of 199 px measured). */
 const STRIP_HEIGHT_SHARE = 0.6;
 const NARROW = { viewport: { height: 900, width: 800 } };
-/** The 30 rem the map takes in its pair with the goal. */
-const RHYTHM_WIDTH = 480;
+/** The pair of the goal and the map: 2/5 and 3/5, so the map's card is 1.5 times the goal's. */
+const RHYTHM_OVER_GOAL = 1.5;
 const PRODUCTS = [
   { name: "Camiseta básica", price: "59.90" },
   { name: "Caneca esmaltada", price: "35.00" },
@@ -152,7 +152,7 @@ const before = (a: Card, b: Card) =>
 
 for (const { goal, items } of SCENARIOS) {
   const label = `${items} itens, ${goal ? "com" : "sem"} meta`;
-  test(`início a 1280 (${label}): pares da mesma altura (gráfico e ranking, Meta e Ritmo), nenhum cartão com faixa vazia no pé, o Ritmo com 480 px com a Meta e a ordem do DOM é a da tela`, async ({
+  test(`início a 1280 (${label}): pares da mesma altura (gráfico e ranking, Meta e Ritmo), nenhum cartão com faixa vazia no pé, o Ritmo 3/5 e a Meta 2/5 e a ordem do DOM é a da tela`, async ({
     browser,
   }, testInfo) => {
     const journey = await openJourney(
@@ -240,7 +240,9 @@ for (const { goal, items } of SCENARIOS) {
     expect(chart.width).toBeGreaterThan(top.width * 1.4);
     expect(Math.abs(meta.top - rhythm.top)).toBeLessThanOrEqual(1);
     expect(Math.abs(meta.height - rhythm.height)).toBeLessThanOrEqual(1);
-    expect(Math.abs(rhythm.width - RHYTHM_WIDTH)).toBeLessThanOrEqual(1);
+    expect(
+      Math.abs(rhythm.width - RHYTHM_OVER_GOAL * meta.width)
+    ).toBeLessThanOrEqual(2);
     expect(meta.width + rhythm.width).toBeLessThan(area.width);
     if (!goal) {
       await expect(

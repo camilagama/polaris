@@ -21,7 +21,7 @@ vi.mock("@/ui/charts/on-demand", async (importOriginal) => ({
   useHeatmapFailed: () => heatmap.failed,
 }));
 
-const { RhythmBlock } = await import("./home-rhythm");
+const { mapHeight, mapLayout, RhythmBlock } = await import("./home-rhythm");
 
 // Friday `23/10/2026`: the 26 weeks go from Sunday `26/04` to today, the 181st day shown (index 180)
 const TODAY = "2026-10-23";
@@ -358,5 +358,63 @@ describe("no 'Ver os números' comes back", () => {
       "home/home-rhythm.tsx",
       "ui/charts/area-chart.tsx",
     ]);
+  });
+});
+
+describe("o tamanho do mapa", () => {
+  it("fora do par é 12 + 3 e tantas semanas quantas cabem, de 13 a 26", () => {
+    for (const width of [0, 280, 320, 412, 600, 900]) {
+      const layout = mapLayout(width);
+      expect(layout.cell).toBe(12);
+      expect(layout.gap).toBe(3);
+    }
+    expect(mapLayout(0).weeks).toBe(26);
+    expect(mapLayout(412).weeks).toBe(26);
+    expect(mapLayout(900).weeks).toBe(26);
+    expect(mapLayout(320).weeks).toBe(Math.floor((320 - 22) / 15));
+    expect(mapLayout(100).weeks).toBe(13);
+  });
+
+  it("no par a célula é o maior inteiro de 12 a 16 px com que as 26 semanas cabem, e o vão é um quarto dela", () => {
+    const sizes = new Map<number, { cell: number; gap: number }>();
+    for (let width = 412; width <= 700; width += 1) {
+      const layout = mapLayout(width, true);
+      expect(layout.weeks).toBe(26);
+      expect(Number.isInteger(layout.cell)).toBe(true);
+      expect(layout.cell).toBeGreaterThanOrEqual(12);
+      expect(layout.cell).toBeLessThanOrEqual(16);
+      expect(layout.gap).toBe(Math.round(layout.cell / 4));
+      const taken = 26 * (layout.cell + layout.gap) + 22;
+      expect(taken).toBeLessThanOrEqual(width);
+      if (layout.cell < 16) {
+        expect(
+          26 * (layout.cell + 1 + Math.round((layout.cell + 1) / 4)) + 22
+        ).toBeGreaterThan(width);
+      }
+      sizes.set(layout.cell, layout);
+    }
+    expect([...sizes.keys()]).toEqual([12, 13, 14, 15, 16]);
+    expect(mapLayout(516, true)).toEqual({ cell: 15, gap: 4, weeks: 26 });
+    expect(mapLayout(542, true)).toEqual({ cell: 16, gap: 4, weeks: 26 });
+    expect(mapLayout(700, true)).toEqual({ cell: 16, gap: 4, weeks: 26 });
+  });
+
+  it("no par ocupa pelo menos 85 % da largura do cartão enquanto cabe uma célula a mais (de 412 a 542 px)", () => {
+    for (let width = 412; width <= 542; width += 1) {
+      const layout = mapLayout(width, true);
+      expect(
+        (26 * (layout.cell + layout.gap) + 22) / width
+      ).toBeGreaterThanOrEqual(0.85);
+    }
+  });
+
+  it("no par sem largura medida ou estreito demais cai no 12 + 3", () => {
+    expect(mapLayout(0, true)).toEqual(mapLayout(0));
+    expect(mapLayout(300, true)).toEqual(mapLayout(300));
+  });
+
+  it("a altura é o topo mais sete linhas de célula e vão", () => {
+    expect(mapHeight(mapLayout(0))).toBe(123);
+    expect(mapHeight({ cell: 16, gap: 4 })).toBe(158);
   });
 });

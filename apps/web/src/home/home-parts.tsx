@@ -3,6 +3,7 @@ import TriangleAlertIcon from "lucide-react/dist/esm/icons/triangle-alert";
 import { hasCapabilityForRole } from "@polaris/domain/authorization/capabilities";
 import {
   createContext,
+  type CSSProperties,
   type ReactNode,
   useContext,
   useLayoutEffect,
@@ -160,31 +161,41 @@ export function KeptHeight({
  * the line of the foot), the sentence only for the screen reader. Under 760 px it is the simple card.
  */
 export function BlockSkeleton({
+  children,
   className,
   foot = false,
   label,
   lines = 2,
+  style,
 }: {
+  /** What stands in the panel instead of the bar and the lines (a block that measures its own panel). */
+  children?: ReactNode;
   className?: string;
   foot?: boolean;
   label: string;
   lines?: number;
+  style?: CSSProperties | undefined;
 }) {
   return (
     <CardFrame
       aria-busy="true"
       className={cn("min-w-0", className)}
       role="status"
+      style={style}
     >
       <span className="sr-only">{label}</span>
       <CardFrameHeader>
         <Skeleton aria-hidden="true" className="h-4 w-24" />
       </CardFrameHeader>
       <CardFramePanel>
-        <Skeleton aria-hidden="true" className="h-8 w-40" />
-        {Array.from({ length: lines }, (_, index) => (
-          <Skeleton aria-hidden="true" className="h-4 w-full" key={index} />
-        ))}
+        {children ?? (
+          <>
+            <Skeleton aria-hidden="true" className="h-8 w-40" />
+            {Array.from({ length: lines }, (_, index) => (
+              <Skeleton aria-hidden="true" className="h-4 w-full" key={index} />
+            ))}
+          </>
+        )}
       </CardFramePanel>
       {foot ? (
         <CardFrameFooter>
