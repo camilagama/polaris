@@ -333,7 +333,7 @@ test.describe("Ritmo de vendas (revisão de UI v7, § 3 item 10)", () => {
     { fold: false, height: 900, width: 1536 },
     { fold: true, height: 900, width: 1536 },
   ]) {
-    test(`ao lado da Meta a ${view.width} px, menu ${view.fold ? "recolhido" : "aberto"}: o cartão é 3/5 contra 2/5, o mapa tem as 26 semanas em células de 12 a 20 px, com 85 % ou mais do painel, e o dia lido tem o anel sobre o quadrado certo`, async ({
+    test(`ao lado da Meta a ${view.width} px, menu ${view.fold ? "recolhido" : "aberto"}: o cartão é 3/5 contra 2/5, o mapa tem as 26 semanas em células inteiras até o teto de 20 de lado, com 85 % ou mais do painel, e o dia lido tem o anel sobre o quadrado certo`, async ({
       page,
     }) => {
       await page.setViewportSize({ height: view.height, width: view.width });
