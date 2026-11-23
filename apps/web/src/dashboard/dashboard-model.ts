@@ -266,7 +266,7 @@ interface ChainLine {
 }
 
 /** The chain in the order it is read: each "=" row follows from the rows above it. */
-const CHAIN_LINES: readonly ChainLine[] = [
+export const CHAIN_LINES: readonly ChainLine[] = [
   { id: "grossSales", kind: "line", label: "Vendas brutas" },
   { id: "discounts", kind: "line", label: "(−) Descontos" },
   { id: "returns", kind: "line", label: "(−) Devoluções" },
