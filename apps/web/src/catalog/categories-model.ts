@@ -35,12 +35,6 @@ export const EMPTY_TEXT: Record<CategoryListStatus, string> = {
   deleted: "Não há categorias removidas.",
 };
 
-export function isCategoryListStatus(
-  value: string
-): value is CategoryListStatus {
-  return value === "active" || value === "archived" || value === "deleted";
-}
-
 export function categoryNameIsTooLong(name: string): boolean {
   return categoryNameCodePointLength(name) > MAX_CATEGORY_NAME;
 }

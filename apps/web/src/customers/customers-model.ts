@@ -88,12 +88,6 @@ export function hasCustomerContact(draft: CustomerDraft): boolean {
   return Boolean(draft.phone.trim() || draft.email.trim());
 }
 
-export function isCustomerListStatus(
-  value: string
-): value is CustomerListStatus {
-  return value === "active" || value === "archived";
-}
-
 /** What did not happen, without the sentence about the session: the notice of the shell carries that one. */
 function unauthorizedText(action?: CustomerFailure): string {
   switch (action) {
