@@ -107,13 +107,37 @@ export const hold = (_route: Route) => new Promise<void>(() => undefined);
 
 export async function settle(page: Page) {
   await page.evaluate(() => document.fonts.ready);
-  // the region of the password opens in 220 ms; the alert and the card fade in as long
+  // the region of the password opens in 220 ms; the alert and the card fade in as long. An animation that never
+  // ends (a spinner) is not waited for
   await page.waitForFunction(() =>
     document
       .getAnimations()
-      .every((animation) => animation.playState !== "running")
+      .filter(
+        (animation) =>
+          animation.effect?.getComputedTiming().endTime !==
+          Number.POSITIVE_INFINITY
+      )
+      .every(
+        (animation) => animation.playState !== "running" && !animation.pending
+      )
   );
-  await page.waitForTimeout(260);
+  // the region stops clipping its content on a timer of its own, 40 ms after the 220 ms, which no animation shows;
+  // the caller waits for the signal of its screen first, because with no open region this wait has nothing to hold
+  await page.waitForFunction(() =>
+    [
+      ...document.querySelectorAll('[data-slot="progressive"][data-open]'),
+    ].every(
+      (region) =>
+        region.firstElementChild !== null &&
+        getComputedStyle(region.firstElementChild).overflow === "visible"
+    )
+  );
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+      )
+  );
 }
 
 async function openPage(page: Page, path: string, title: string) {
