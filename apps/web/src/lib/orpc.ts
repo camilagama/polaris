@@ -48,7 +48,7 @@ function createPolarisRpcClient(origin: string): PolarisRpcClient {
       (options) => trackWrite(options.path, () => options.next()),
       // a write that changes what the plan counts, or the plan, lets go of the readings the screens share
       (options) =>
-        writeChangesPlanUsage(options.path)
+        writeChangesPlanUsage(options.path, options.input)
           ? trackPlanUsageWrite(() => options.next())
           : options.next(),
       // The server said, in answer to one of the screen's own calls, that the session is over: the shell

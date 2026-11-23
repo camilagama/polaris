@@ -11,7 +11,7 @@ interface PlanReadOptions {
   /**
    * With `fresh`: the `clearedAt` this caller saw when it made its previous read. A read already on its way is joined
    * only if a `clear()` came after that: `clear()` drops every read on its way, so what is flying began after it, and a
-   * write listed in `PLAN_USAGE_WRITES` clears before the `version` moves. Without `since`, or with no `clear()` since,
+   * write that `writeChangesPlanUsage` accepts clears before the `version` moves. Without `since`, or with no `clear()` since,
    * the ask opens a read of its own (a `version` that moved without a clear may have a write the flying read predates).
    */
   since?: number;
