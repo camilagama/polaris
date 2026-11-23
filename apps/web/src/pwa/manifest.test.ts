@@ -20,7 +20,11 @@ describe("manifest of the installed app", () => {
     expect(manifest.shortcuts).toEqual([
       {
         icons: [
-          { sizes: "192x192", src: "/icons/icon-v2-192.png", type: "image/png" },
+          {
+            sizes: "192x192",
+            src: "/icons/icon-v2-192.png",
+            type: "image/png",
+          },
         ],
         name: "Nova venda",
         short_name: "Vender",
