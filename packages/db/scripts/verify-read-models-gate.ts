@@ -712,6 +712,14 @@ async function run() {
           partIds.length,
           "a sale of two parts is listed once"
         );
+        assert.deepEqual(
+          partIds.map(
+            (saleId) =>
+              listed.sales.find((sale) => sale.id === saleId)?.totalDue
+          ),
+          ["19.90", "39.90", "19.90", "39.80", "39.80"],
+          "the total due of a sale of parts is the sum of its parts"
+        );
         const read: Record<
           string,
           { amount: string; detail: string | null; list: string | null }
