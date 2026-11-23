@@ -218,6 +218,7 @@ test("AC-1, AC-5 e AC-7: a venda montada volta por Vender e por Nova venda, e o 
     "occurredAtLocal",
     "payment",
     "profile",
+    "split",
   ]);
 });
 
