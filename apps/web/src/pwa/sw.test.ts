@@ -270,7 +270,7 @@ describe("the build manifest", () => {
           "assets/index-AAA.js.map",
           "assets/page-BBB.css",
           "manifest.webmanifest",
-          "icons/icon-192.png",
+          "icons/icon-v2-192.png",
           "sw.js",
           "_headers",
           ".assetsignore",
@@ -280,7 +280,7 @@ describe("the build manifest", () => {
       "/",
       "/assets/index-AAA.js",
       "/assets/page-BBB.css",
-      "/icons/icon-192.png",
+      "/icons/icon-v2-192.png",
       "/manifest.webmanifest",
     ]);
   });

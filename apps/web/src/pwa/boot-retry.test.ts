@@ -124,7 +124,7 @@ describe("public/boot-retry.js", () => {
   );
 
   it.each([
-    ["an image", { src: `${ORIGIN}/icons/icon-192.png` }],
+    ["an image", { src: `${ORIGIN}/icons/icon-v2-192.png` }],
     ["a classic script", new FakeScript(`${ORIGIN}/assets/index-abc.js`, "")],
     [
       "a module of another origin",
