@@ -104,7 +104,7 @@ Implementar o comando de confirmação da venda completa. A transação deve val
 4. Cálculo pela biblioteca de domínio existente: preço de tabela e cobrado por item, `calculateSaleAdjustments`, pagamento igual ao total devido e preservação do custo desconhecido.
 5. Entrada explícita para perfil opcional e intenção de antecipação. Consultar regra exata por método/parcelas/modalidade; chamar `snapshotPaymentProfileForSale`; ausência de perfil/regra segue a venda com custo desconhecido.
 6. Persistir no pagamento os snapshots de perfil, versão, regra, prazo, componentes/valores das taxas e estado da antecipação. Mudança futura do perfil não muda venda confirmada.
-7. Exigir modalidade e parcelas válidas em cartão de crédito novo; não aceitar parcelas nos outros métodos; no máximo um pagamento igual ao total devido.
+7. Exigir modalidade e parcelas válidas em cartão de crédito novo; não aceitar parcelas nos outros métodos; um único pagamento igual ao total devido, como era a regra na época (hoje de uma a três partes que somam o total, [ADR 0107](../docs/adr/0107-venda-paga-em-partes.md)).
 8. Erro de estoque, versão, validação, pagamento, movimento ou auditoria não pode deixar venda/item/saldo/ledger parcialmente gravados.
 9. Registrar auditoria na mesma transação usando identidade já validada; não colocar PII, tokens ou payload livre em logs/auditoria.
 10. UI de venda deve tornar clara a seleção do perfil ou opção sem perfil, a marca de antecipação e estados de desconhecido; evitar gravar vários pedaços por mutations independentes.
