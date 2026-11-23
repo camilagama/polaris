@@ -8,6 +8,9 @@
 -- changes: the rows of the sale are as many as the header declares, their positions run from 0 with no gap, their sum is
 -- the total due in exact numeric, and with more than one part each part is above zero (a sale of total zero keeps one
 -- part of zero). Every refusal keeps the constraint name `sales_confirmation_payment_complete`.
+--
+-- A data export holds every column of these tables, so the reader of a closed organization's export gets SELECT on the
+-- two new columns, column by column, as every exported column has (migration 0085).
 SET LOCAL lock_timeout = '10s';--> statement-breakpoint
 ALTER TABLE "sale_payments" ADD COLUMN "position" smallint DEFAULT 0 NOT NULL;--> statement-breakpoint
 ALTER TABLE "sale_payments" ADD CONSTRAINT "sale_payments_position_allowed" CHECK ("sale_payments"."position" BETWEEN 0 AND 2);--> statement-breakpoint
@@ -15,6 +18,8 @@ CREATE UNIQUE INDEX "sale_payments_organization_sale_position_unique" ON "sale_p
 DROP INDEX "sale_payments_organization_sale_unique";--> statement-breakpoint
 ALTER TABLE "sales" ADD COLUMN "payment_count" smallint DEFAULT 1 NOT NULL;--> statement-breakpoint
 ALTER TABLE "sales" ADD CONSTRAINT "sales_payment_count_allowed" CHECK ("sales"."payment_count" BETWEEN 1 AND 3);--> statement-breakpoint
+GRANT SELECT (position) ON TABLE public.sale_payments TO polaris_closed_export_reader;--> statement-breakpoint
+GRANT SELECT (payment_count) ON TABLE public.sales TO polaris_closed_export_reader;--> statement-breakpoint
 CREATE OR REPLACE FUNCTION public.check_sale_confirmation_complete()
 RETURNS trigger
 LANGUAGE plpgsql
