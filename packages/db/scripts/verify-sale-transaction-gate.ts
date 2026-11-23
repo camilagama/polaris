@@ -45,6 +45,7 @@ import {
   rejections,
 } from "./concurrency-support";
 import { runClock, shiftDay, storeDay } from "./gate-clock";
+import { inRolledBackTransaction } from "./gate-roles";
 import {
   createTenantFixture,
   disposableHostPattern,
@@ -101,6 +102,31 @@ async function insertPayments(
     );
   }
 }
+
+/** Every sale whose payment parts break the rule the confirmation trigger checks. */
+const BROKEN_SALES = `SELECT sale.id
+       FROM public.sales AS sale
+       LEFT JOIN LATERAL (
+         SELECT count(*) AS parts, max(payment.position) AS last_position, COALESCE(sum(payment.amount), 0) AS paid,
+                count(*) FILTER (WHERE payment.amount <= 0) AS not_positive
+           FROM public.sale_payments AS payment
+          WHERE payment.organization_id = sale.organization_id AND payment.sale_id = sale.id
+       ) AS payment ON true
+       LEFT JOIN LATERAL (
+         SELECT COALESCE(sum(item.charged_unit_price * item.quantity), 0) AS subtotal
+           FROM public.sale_items AS item
+          WHERE item.organization_id = sale.organization_id AND item.sale_id = sale.id
+       ) AS item ON true
+       LEFT JOIN LATERAL (
+         SELECT COALESCE(sum(adjustment.amount) FILTER (WHERE adjustment.kind = 'discount'), 0) AS discounts,
+                COALESCE(sum(adjustment.amount) FILTER (WHERE adjustment.kind <> 'discount'), 0) AS additions
+           FROM public.sale_adjustments AS adjustment
+          WHERE adjustment.organization_id = sale.organization_id AND adjustment.sale_id = sale.id
+       ) AS adjustment ON true
+      WHERE payment.parts <> sale.payment_count
+         OR payment.last_position IS DISTINCT FROM sale.payment_count - 1
+         OR payment.paid <> item.subtotal - adjustment.discounts + adjustment.additions
+         OR (sale.payment_count > 1 AND payment.not_positive > 0)`;
 
 interface PartsGraph {
   parts?: { amount: string; position: number }[];
@@ -215,7 +241,7 @@ async function assertPaymentParts(
   });
   await refused("a part appended to a confirmed sale of one part", {
     appendTo: { saleId: onePart as string },
-    parts: parts(["1.00", 1]),
+    parts: parts(["0.00", 1]),
   });
   await expectSqlState(
     () =>
@@ -244,33 +270,38 @@ async function assertPaymentParts(
     "sale_payments_organization_sale_position_unique"
   );
 
-  const broken = await admin.query<{ id: string }>(
-    `SELECT sale.id
-       FROM public.sales AS sale
-       LEFT JOIN LATERAL (
-         SELECT count(*) AS parts, max(payment.position) AS last_position, COALESCE(sum(payment.amount), 0) AS paid,
-                count(*) FILTER (WHERE payment.amount <= 0) AS not_positive
-           FROM public.sale_payments AS payment
-          WHERE payment.organization_id = sale.organization_id AND payment.sale_id = sale.id
-       ) AS payment ON true
-       LEFT JOIN LATERAL (
-         SELECT COALESCE(sum(item.charged_unit_price * item.quantity), 0) AS subtotal
-           FROM public.sale_items AS item
-          WHERE item.organization_id = sale.organization_id AND item.sale_id = sale.id
-       ) AS item ON true
-       LEFT JOIN LATERAL (
-         SELECT COALESCE(sum(adjustment.amount) FILTER (WHERE adjustment.kind = 'discount'), 0) AS discounts,
-                COALESCE(sum(adjustment.amount) FILTER (WHERE adjustment.kind <> 'discount'), 0) AS additions
-           FROM public.sale_adjustments AS adjustment
-          WHERE adjustment.organization_id = sale.organization_id AND adjustment.sale_id = sale.id
-       ) AS adjustment ON true
-      WHERE payment.parts <> sale.payment_count
-         OR payment.last_position IS DISTINCT FROM sale.payment_count - 1
-         OR payment.paid <> item.subtotal - adjustment.discounts + adjustment.additions
-         OR (sale.payment_count > 1 AND payment.not_positive > 0)`
+  const sweep = async (reader: { query: typeof admin.query }) =>
+    (await reader.query<{ id: string }>(BROKEN_SALES)).rows.map(
+      (row) => row.id
+    );
+  // the sweep finds a sale that breaks the rule: one planted and never committed (the trigger is deferred)
+  const client = await admin.connect();
+  let discard = true;
+  try {
+    const planted = await inRolledBackTransaction(client, async () => {
+      const header = await client.query<{ id: string }>(
+        "INSERT INTO public.sales (organization_id, command_id, occurred_at, occurred_on, item_count, adjustment_count, payment_count) SELECT organization_id, gen_random_uuid(), occurred_at, occurred_on, 1, 0, 2 FROM public.sales LIMIT 1 RETURNING id"
+      );
+      const id = header.rows[0]?.id;
+      assert.ok(id, "a sale to borrow the organization from");
+      assert.deepEqual(
+        await sweep(client),
+        [id],
+        "the sweep finds the planted sale"
+      );
+      return id;
+    });
+    assert.ok(planted);
+    discard = false;
+  } finally {
+    client.release(discard);
+  }
+  const counted = await admin.query<{ count: number }>(
+    "SELECT count(*)::int AS count FROM public.sales"
   );
+  assert.ok((counted.rows[0]?.count ?? 0) > 0, "the sweep has sales to read");
   assert.deepEqual(
-    broken.rows,
+    await sweep(admin),
     [],
     "every sale in the database keeps the rule"
   );

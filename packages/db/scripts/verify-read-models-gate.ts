@@ -686,11 +686,11 @@ async function run() {
       ]),
     };
     const stored = await admin.pool.query<{ parts: string }>(
-      "SELECT string_agg(payment.position || ':' || payment.method, ',' ORDER BY payment.position) AS parts FROM public.sale_payments AS payment JOIN public.sales AS sale ON sale.organization_id = payment.organization_id AND sale.id = payment.sale_id WHERE payment.sale_id = ANY($1::uuid[]) GROUP BY sale.id, sale.payment_count HAVING count(*) = sale.payment_count ORDER BY 1",
+      "SELECT string_agg(payment.position || ':' || payment.method, ',' ORDER BY payment.position) AS parts FROM public.sale_payments AS payment JOIN public.sales AS sale ON sale.organization_id = payment.organization_id AND sale.id = payment.sale_id WHERE payment.sale_id = ANY($1::uuid[]) GROUP BY sale.id, sale.payment_count HAVING count(*) = sale.payment_count",
       [Object.values(partSales)]
     );
     assert.deepEqual(
-      stored.rows.map((row) => row.parts),
+      stored.rows.map((row) => row.parts).sort(),
       [
         "0:pix",
         "0:pix,1:bank_transfer",
