@@ -212,6 +212,96 @@ for (const width of [320, 360]) {
   );
 }
 
+const TWO_PARTS = [
+  ["pix", "credit_card"],
+  ["bank_transfer", "bank_transfer"],
+  ["pix", "pix"],
+] as const;
+const TWO_PARTS_TEXTS = [
+  "Pix + Crédito",
+  "Transferência + Transferência",
+  "Pix + Pix",
+  "Transferência",
+];
+
+function twoPartsSales() {
+  return [
+    ...TWO_PARTS.map((methods, index) =>
+      entry(index + 1, {
+        customerId: id(500 + index),
+        customerName: SHORT_CUSTOMER,
+        paymentMethod: methods[0],
+        paymentMethods: methods,
+      })
+    ),
+    entry(4, {
+      customerId: id(504),
+      customerName: SHORT_CUSTOMER,
+      paymentMethod: "bank_transfer",
+    }),
+  ];
+}
+
+reflowTest(
+  "a 320 px com letra de 20 px a linha de venda em 2 partes mostra os dois métodos inteiros, sem sobreposição nem reticências",
+  async ({ page }) => {
+    const sales = twoPartsSales();
+    await openHistory(page, sales);
+    const list = page.getByRole("list", { name: "Vendas" });
+    await expect(list.locator("> li")).toHaveCount(sales.length);
+    const rows = await rowGeometry(page);
+    for (const [index, row] of rows.entries()) {
+      const name = `linha ${index + 1}`;
+      expect(row.text, name).toContain(TWO_PARTS_TEXTS[index] ?? "");
+      expect(row.overlaps, `${name}: blocos sobrepostos`).toEqual([]);
+      expect(row.inside, `${name}: tudo dentro da linha`).toBe(true);
+      expect(row.height, `${name}: alvo de toque`).toBeGreaterThanOrEqual(
+        TOUCH
+      );
+    }
+    await assertNothingClipped(list);
+    await assertNoEllipsis(list);
+    await assertNoPageScroll(page);
+  }
+);
+
+reflowTest(
+  'a 320 px com letra de 16 px "Pix + Crédito" deixa ao nome do cliente o mesmo que "Transferência" e nada passa sobre o valor',
+  async ({ page }) => {
+    const sales = twoPartsSales();
+    await openHistory(page, sales, { fontPixels: 16 });
+    const rows = page.getByRole("list", { name: "Vendas" }).locator("> li");
+    await expect(rows).toHaveCount(sales.length);
+    const measures = await rows.evaluateAll((items) =>
+      items.map((item) => {
+        const support = item.querySelector("p.text-support") as HTMLElement;
+        const customer = support.firstElementChild as HTMLElement;
+        const money = item.querySelector("[data-money]") as HTMLElement;
+        return {
+          customerWidth: customer.getBoundingClientRect().width,
+          moneyLeft: money.getBoundingClientRect().left,
+          supportRight: support.getBoundingClientRect().right,
+          text: support.textContent ?? "",
+        };
+      })
+    );
+    for (const [index, measure] of measures.entries()) {
+      expect(measure.text, `linha ${index + 1}`).toContain(
+        TWO_PARTS_TEXTS[index] ?? ""
+      );
+      expect(
+        measure.supportRight,
+        `linha ${index + 1}: o texto de apoio termina antes do valor`
+      ).toBeLessThanOrEqual(measure.moneyLeft + 0.5);
+    }
+    const [pixCredit, , , transfer] = measures;
+    expect(pixCredit?.customerWidth ?? 0).toBeGreaterThanOrEqual(
+      (transfer?.customerWidth ?? 0) - 0.5
+    );
+    await assertNoPageScroll(page);
+  }
+);
+
 reflowTest(
   "a 320 px com letra de 20 px o rodapé tem o valor com as duas casas, dentro do cartão, com 5 dígitos e com há mais",
   async ({ page }) => {
