@@ -43,12 +43,16 @@ A venda guarda quatro datas com papéis distintos. As regras de janela e de tole
 
 ### Confirmar a venda
 
-1. O comando `sale.confirm` chega com `commandId`, itens (variante, quantidade, preço de tabela, preço cobrado), ajustes, pagamento, perfil de pagamento explícito e datas.
-2. Dentro da transação tenant, o servidor procura o `commandId`; se já existe, devolve a venda com `replayed: true` sem novos efeitos e sem checar a janela retroativa.
+1. O comando `sale.confirm` (versão 1) chega com `commandId`, itens (variante, quantidade, preço de tabela, preço cobrado), ajustes, datas e o pagamento numa de duas formas, nunca as duas: `payment` com o perfil explícito da venda (`paymentProfile`, a forma do app de hoje), ou `payments`, de 1 a 2 partes, cada uma com valor em duas casas, método, parcelas, modalidade, antecipação e o seu perfil explícito. O payload offline tem as mesmas duas formas e continua estrito, inclusive dentro de cada parte. O servidor recusa partes que não somam o total devido que ele calcula (`sale_payment_split_mismatch`).
+2. Dentro da transação tenant, o servidor procura o `commandId`; se já existe e as partes conferem posição a posição (método, valor, parcelas, modalidade, antecipação e perfil), devolve a venda com `replayed: true` sem novos efeitos e sem checar a janela retroativa; partes em outra ordem ou com outro valor são conflito.
 3. Valida produto vendável, calcula `occurred_on` e aplica a janela e a tolerância de futuro.
 4. Bloqueia, em ordem estável de produto e depois de saldo, as linhas necessárias, captura o custo médio de cada item (nulo quando desconhecido) e baixa o saldo sem permitir negativo.
-5. Grava cabeçalho, itens, ajustes, pagamento, movimentos `sale`, saldos e a auditoria.
+5. Lê os perfis de todas as partes numa leitura (com `FOR SHARE`, em ordem de id) e as regras deles noutra; um perfil inexistente, arquivado ou de versão diferente em qualquer parte recusa a venda inteira, com a posição da parte. Grava cabeçalho (com `payment_count`), itens, ajustes, as partes do pagamento num único `INSERT` com as posições, movimentos `sale`, saldos e a auditoria. O número de statements da venda não cresce com as partes.
 6. No commit, `check_sale_confirmation_complete` recusa a venda sem os itens e ajustes declarados, sem as partes de pagamento declaradas no cabeçalho (posições de 0 a `payment_count − 1`, cada uma acima de zero quando há mais de uma) somando o total devido, sem o movimento correspondente a cada item, com movimento em data diferente da comercial, ou movimento `sale` sem venda.
+
+### Ler a venda
+
+`sale.get` (e a resposta de `sale.confirm`) devolve `payments[]` na ordem das posições e `payment` igual à parte de posição 0; `sale.list` devolve `paymentMethods[]` na mesma ordem e `paymentMethod` igual ao da posição 0. As duas leituras leem todas as linhas de pagamento da venda, quantas forem, e as ordenam pela posição: uma venda de várias partes aparece uma vez, e o Histórico e o Detalhe concordam.
 
 ### Cancelar a venda (total)
 
