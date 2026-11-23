@@ -277,6 +277,7 @@ for (const { fontPixels, name, width } of FADE_CASES) {
         const tablist = page.getByRole("tablist", { name: item.list });
         await expect(tablist).toBeVisible();
         const scroller = tablist.locator("xpath=..");
+        const frame = scroller.locator("xpath=..");
         await expect
           .poll(() =>
             scroller.evaluate(
@@ -284,13 +285,13 @@ for (const { fontPixels, name, width } of FADE_CASES) {
             )
           )
           .toBeGreaterThan(1);
-        const edge = page.locator(`[data-tabs-edge='${side}']`);
+        const edge = frame.locator(`[data-tabs-edge='${side}']`);
         const scrollTo = (to: "start" | "end") =>
           scroller.evaluate((element, target) => {
             element.scrollLeft = target === "start" ? 0 : element.scrollWidth;
           }, to);
         await scrollTo("end");
-        await expect(page.locator("[data-tabs-edge='start']")).toHaveCount(1);
+        await expect(frame.locator("[data-tabs-edge='start']")).toHaveCount(1);
         if (side === "end") {
           await scrollTo("start");
         }
@@ -303,6 +304,8 @@ for (const { fontPixels, name, width } of FADE_CASES) {
             .getByRole("dialog")
             .evaluate((element) => getComputedStyle(element).backgroundColor),
         ]);
+        expect(fade, "o esmaecido lê a cor de partida").not.toBe("");
+        expect(dialog, "o diálogo lê a cor de fundo").not.toBe("");
         const [fadeRgb, dialogRgb] = await rgbOfColors(page, [fade, dialog]);
         for (const [index, channel] of (fadeRgb as number[]).entries()) {
           expect(
