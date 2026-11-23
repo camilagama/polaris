@@ -23,7 +23,11 @@ interface Options {
   /** Holds the answer of /api/auth-methods until the test releases it. */
   authMethods?: Promise<void>;
   passwordOn?: boolean;
+  /** The address the screen opens at; Configurações da loja by default. */
+  path?: string;
   search?: string;
+  /** False when the screen has one tab only, so there is no strip to wait for. */
+  strip?: boolean;
   /** The strip of tabs is from 760 px; the list of a phone has its own tests (`settings-groups.e2e.ts`). */
   size?: { height: number; width: number };
 }
@@ -33,7 +37,9 @@ async function openSettings(
   {
     authMethods,
     passwordOn = false,
+    path = "/configuracoes",
     search = "aba=formas-de-receber",
+    strip = true,
     size = { height: 800, width: 1280 },
   }: Options = {}
 ) {
@@ -69,16 +75,25 @@ async function openSettings(
     }
     return route.abort("internetdisconnected");
   });
-  await page.goto(`/configuracoes?${search}`);
+  await page.goto(`${path}?${search}`);
+  const account = path === "/conta";
   await expect(
-    page.getByRole("heading", { level: 1, name: "Configurações" })
+    page.getByRole("heading", {
+      level: 1,
+      name: account ? "Minha conta" : "Configurações da loja",
+    })
   ).toBeVisible();
-  if (size.width >= 760) {
+  if (strip && (size.width >= 760 || account)) {
     await expect(
-      page.getByRole("tablist", { name: "Configurações" })
+      page.getByRole("tablist", {
+        name: account ? "Minha conta" : "Configurações da loja",
+      })
     ).toBeVisible();
   }
 }
+
+const openAccount = (page: Page, options: Options) =>
+  openSettings(page, { ...options, path: "/conta" });
 
 const tab = (page: Page, name: string) =>
   page.getByRole("tab", { exact: true, name });
@@ -115,57 +130,47 @@ test("sem nada digitado a aba que fechou não fica desenhada", async ({
   );
 });
 
-test("a aba Senha tem o lugar guardado, desligada, até o servidor responder, e as vizinhas não andam", async ({
-  page,
-}) => {
-  let release: () => void = () => undefined;
-  const answer = new Promise<void>((resolve) => {
-    release = resolve;
+for (const [name, size] of [
+  ["a 1280 px", { height: 800, width: 1280 }],
+  ["a 360 px", { height: 740, width: 360 }],
+] as const) {
+  test(`${name} a aba Senha de Minha conta tem o lugar guardado, desligada, até o servidor responder, e a vizinha não anda`, async ({
+    page,
+  }) => {
+    let release: () => void = () => undefined;
+    const answer = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await openAccount(page, {
+      authMethods: answer,
+      passwordOn: true,
+      search: "aba=aparelhos",
+      size,
+    });
+    const password = tab(page, "Senha");
+    await expect(password).toBeVisible();
+    await expect(password).toBeDisabled();
+    await expect(password).toHaveAttribute("aria-busy", "true");
+    const before = await tab(page, "Aparelhos").boundingBox();
+
+    release();
+    await expect(password).toBeEnabled();
+    await expect(password).not.toHaveAttribute("aria-busy", "true");
+    expect(await tab(page, "Aparelhos").boundingBox()).toEqual(before);
   });
-  await openSettings(page, { authMethods: answer, passwordOn: true });
-  const password = tab(page, "Senha");
-  await expect(password).toBeVisible();
-  await expect(password).toBeDisabled();
-  await expect(password).toHaveAttribute("aria-busy", "true");
-  const before = await tab(page, "Seus dados").boundingBox();
+}
 
-  release();
-  await expect(password).toBeEnabled();
-  await expect(password).not.toHaveAttribute("aria-busy", "true");
-  expect(await tab(page, "Seus dados").boundingBox()).toEqual(before);
-});
-
-test("com a senha desligada a aba Senha sai da lista quando o servidor diz", async ({
+test("com a senha desligada a aba Senha sai de Minha conta quando o servidor diz, e Aparelhos fica sozinha, sem faixa", async ({
   page,
 }) => {
-  await openSettings(page, { passwordOn: false });
-  await expect(tab(page, "Seus dados")).toBeVisible();
+  await openAccount(page, {
+    passwordOn: false,
+    search: "aba=aparelhos",
+    strip: false,
+  });
+  await expect(page.getByRole("tablist")).toHaveCount(0);
   await expect(tab(page, "Senha")).toHaveCount(0);
-});
-
-test("a 360 px a linha da aba Senha tem o lugar guardado, desligada, até o servidor responder, e as vizinhas não andam", async ({
-  page,
-}) => {
-  let release: () => void = () => undefined;
-  const answer = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-  await openSettings(page, {
-    authMethods: answer,
-    passwordOn: true,
-    search: "",
-    size: { height: 740, width: 360 },
-  });
-  const password = page.locator('[aria-busy="true"]');
-  await expect(password).toHaveText("Senha");
-  await expect(password).toHaveAttribute("aria-disabled", "true");
-  const own = page.getByRole("link", { exact: true, name: "Seus dados" });
-  const before = await own.boundingBox();
-
-  release();
   await expect(
-    page.getByRole("link", { exact: true, name: "Senha" })
+    page.getByRole("heading", { level: 1, name: "Minha conta" })
   ).toBeVisible();
-  await expect(page.locator('[aria-busy="true"]')).toHaveCount(0);
-  expect(await own.boundingBox()).toEqual(before);
 });

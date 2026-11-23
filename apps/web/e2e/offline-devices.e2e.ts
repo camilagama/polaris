@@ -5,7 +5,6 @@ import { expect, test } from "@playwright/test";
 import { buildOfflineLeaseClaims } from "@polaris/domain/offline/offline-lease";
 import { signOfflineLease } from "../src/lib/offline-lease-token";
 import { activateByKeyboard, expectFocusRing } from "./focus-ring";
-import { openSettingsTab } from "./settings-nav";
 import { serveHealth, WORKER_MARK } from "./worker-mark";
 
 const ORGANIZATION_ID = "0199c2d0-0000-7000-8000-00000000a001";
@@ -27,6 +26,8 @@ const HOUR = 3_600_000;
 const NOW = new Date("2026-10-14T15:00:00-03:00");
 const hoursAgo = (hours: number) =>
   new Date(NOW.getTime() - hours * HOUR).toISOString();
+const STORE_MENU_NAME = /^Loja, conta e ajuda: /;
+const AT_ACCOUNT = /\/conta(\?aba=aparelhos)?$/;
 const REVOKE_BUTTON = /^Revogar o aparelho/;
 const CONFIRM_ONE = "Sim, revogar este aparelho";
 const CONFIRM_ALL = "Sim, revogar e encerrar as outras sessões";
@@ -379,7 +380,7 @@ test("com a senha ligada, 'Segurança' vem depois da lista, com 'Trocar senha' c
   await expect(list.getByRole("listitem")).toHaveCount(2);
   const section = page.getByRole("region", { name: "Segurança" });
   const link = section.getByRole("link", { name: "Trocar senha" });
-  await expect(link).toHaveAttribute("href", "/configuracoes?aba=senha");
+  await expect(link).toHaveAttribute("href", "/conta");
   const box = await link.boundingBox();
   // the outline button of the interface: 32 px with a mouse (36 with touch), and the 44 px touch area is the
   // guardrails' (check 2); it is still a button, not a link in a paragraph
@@ -820,7 +821,7 @@ test("login antigo sem fila: Entrar de novo sai pela proteção do Sair e vai à
   await confirmButton(page).click();
   await page.getByRole("button", { name: "Entrar de novo" }).click();
   await page.waitForURL(
-    "**/entrar?motivo=recente&voltar=/configuracoes%3Faba%3Daparelhos"
+    "**/entrar?motivo=recente&voltar=/conta%3Faba%3Daparelhos"
   );
   expect(state.signOutCalls).toBe(1);
 });
@@ -899,7 +900,7 @@ test("sessão que acabou durante a ação: painel próprio, sem passar pelo Sair
 
   await panel.getByRole("button", { name: "Entrar de novo" }).click();
   await page.waitForURL(
-    "**/entrar?motivo=sessao&voltar=/configuracoes%3Faba%3Daparelhos"
+    "**/entrar?motivo=sessao&voltar=/conta%3Faba%3Daparelhos"
   );
   expect(state.signOutCalls).toBe(0);
   // leaving drops the lease and the collections too; the queue stays
@@ -1013,7 +1014,7 @@ for (const lookup of ["answers", "unreachable"] as const) {
 
     await panel.getByRole("button", { name: "Entrar de novo" }).click();
     await page.waitForURL(
-      "**/entrar?motivo=sessao&voltar=/configuracoes%3Faba%3Daparelhos"
+      "**/entrar?motivo=sessao&voltar=/conta%3Faba%3Daparelhos"
     );
     expect(state.signOutCalls).toBe(0);
     expect(await queuedOperations(page)).toBe(queuedBefore);
@@ -1080,7 +1081,7 @@ test("este navegador saiu e a pessoa clica em Entrar de novo antes de qualquer e
   expect(await leaseKeys(page)).not.toEqual([]); // nothing dropped it yet
   await panel.getByRole("button", { name: "Entrar de novo" }).click();
   await page.waitForURL(
-    "**/entrar?motivo=sessao&voltar=/configuracoes%3Faba%3Daparelhos"
+    "**/entrar?motivo=sessao&voltar=/conta%3Faba%3Daparelhos"
   );
   expect(await leaseKeys(page)).toEqual([]);
   expect(await queuedOperations(page)).toBe(queuedBefore);
@@ -1294,9 +1295,7 @@ test("o destino de 'Entrar de novo' é a tela de entrada, com a frase do motivo 
   page,
 }) => {
   await serve(page, scenario({ devices: twoDevices() }));
-  await page.goto(
-    "/entrar?motivo=recente&voltar=/configuracoes%3Faba%3Daparelhos"
-  );
+  await page.goto("/entrar?motivo=recente&voltar=/conta%3Faba%3Daparelhos");
   await expect(
     page.getByRole("heading", { name: "Entrar no Polaris" })
   ).toBeVisible();
@@ -1369,19 +1368,21 @@ test("os controles têm a altura de toque de 36 px e nada rola na horizontal, a 
   }
 });
 
-test("Configurações oferece a aba Aparelhos quando o runtime offline está ligado", async ({
+test("Minha conta, no menu do círculo, abre Aparelhos quando o runtime offline está ligado e a senha não", async ({
   page,
 }) => {
   await serve(page, scenario({ devices: twoDevices() }));
   await page.goto("/");
-  // on the phone the rest of the menu is under "Mais"
-  const more = page.getByRole("button", { exact: true, name: "Mais" });
-  if (await more.isVisible()) {
-    await more.click();
-  }
-  await page.getByRole("link", { exact: true, name: "Configurações" }).click();
-  await openSettingsTab(page, "Aparelhos");
+  await page.getByRole("button", { name: STORE_MENU_NAME }).click();
+  await page
+    .getByRole("menuitem", { exact: true, name: "Minha conta" })
+    .click();
+  await expect(page).toHaveURL(AT_ACCOUNT);
+  await expect(
+    page.getByRole("heading", { level: 1, name: "Minha conta" })
+  ).toBeVisible();
   await expect(page.getByRole("list", { name: "Aparelhos" })).toBeVisible();
+  await expect(page.getByRole("tablist")).toHaveCount(0);
 });
 
 test("a 360 px o chip é de uma linha e Mais abre com a frase do estado; no desktop a frase fica no title", async ({

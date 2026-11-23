@@ -45,7 +45,7 @@ import { leaveSessionOver } from "./session-over";
 import { tabHref } from "../../app-shell/navigation-model";
 import { ScreenTitle } from "../../app-shell/screen-title";
 
-const DEVICES_PATH = tabHref("settings", "aparelhos");
+const DEVICES_PATH = tabHref("account", "aparelhos");
 /** The lines of the screen that say why the buttons of the rows are off. */
 const OFFLINE_NOTICE_ID = "devices-offline";
 const RECOGNITION_ID = "devices-recognizing";
@@ -86,7 +86,7 @@ function SecuritySection() {
       </h2>
       <a
         className={buttonVariants({ variant: "outline" })}
-        href={tabHref("settings", "senha")}
+        href={tabHref("account", "senha")}
       >
         Trocar senha
       </a>
