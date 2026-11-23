@@ -381,6 +381,28 @@ describe("the summary with few weeks of sales", () => {
     );
   });
 
+  it("with every sale before the last 13 weeks, says none instead of a zero", () => {
+    const view = rhythmView(
+      daysWith({
+        "2026-05-09": ["300.00", 3],
+        "2026-05-16": ["300.00", 3],
+        "2026-05-23": ["300.00", 3],
+      }),
+      RHYTHM_WEEKS
+    );
+    expect(view.soldDays).toBe(3);
+    expect(view.weekdays.soldDays).toBe(0);
+    const summary = rhythmSummary(view);
+    expect(countOf(summary)).toBe(1);
+    expect(summary).toContain(
+      "26 semanas: 3 dias com venda, nenhum nas últimas 13 semanas. Melhor dia"
+    );
+    expect(summary).not.toContain("sendo 0");
+    expect(rhythmInsightText(view)).toBe(
+      "Poucas semanas de vendas ainda: o mapa enche conforme você vende. Nenhum dia com venda nas últimas 13 semanas."
+    );
+  });
+
   it("a map of 13 weeks has one window, so there is no second count", () => {
     const view = rhythmView(
       daysWith({ "2026-10-20": ["50.00", 1], "2026-10-21": ["20.00", 1] }),

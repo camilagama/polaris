@@ -40,8 +40,8 @@ export class InvalidSalePaymentError extends Error {
   }
 }
 
-function normalizeDueAmount(totalDue: string): Money {
-  const amount = Money.from(totalDue);
+function normalizeDueAmount(amountDue: string): Money {
+  const amount = Money.from(amountDue);
   if (amount.minorUnits < 0n) {
     throw new InvalidSalePaymentError();
   }
@@ -90,10 +90,10 @@ function normalizeInstallmentPlan(
   return value;
 }
 
-/** Snapshots the sale's full amount; this records the method, not settlement evidence. */
+/** Snapshots the amount this method pays (the whole total or one part of it); this records the method, not settlement evidence. */
 export function normalizeSalePayment(
   input: SalePaymentInput,
-  totalDue: string
+  amountDue: string
 ): SalePaymentSnapshot {
   if (
     !input ||
@@ -103,7 +103,7 @@ export function normalizeSalePayment(
     throw new InvalidSalePaymentError();
   }
 
-  const amount = normalizeDueAmount(totalDue);
+  const amount = normalizeDueAmount(amountDue);
   const installments = normalizeInstallments(input.method, input.installments);
   const installmentPlan = normalizeInstallmentPlan(
     input.method,
