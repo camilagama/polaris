@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import { goalPace } from "../dashboard/goal-pace";
 import { helpTipTextProblem } from "../ui/help-tip-text";
 import { GoalBlock, goalHelpText, OfflineGoalBlock } from "./home-goal";
+import { HomeRoleProvider } from "./home-parts";
 
 const october: GoalReadModel = {
   achievedValue: "166619.00",
@@ -335,5 +336,84 @@ describe("o tamanho do percentual no furo do anel", () => {
     const html = renderActive("53.4");
     expect(html).toMatch(RING_BOX);
     expect(html).toContain('style="height:7rem;width:7rem"');
+  });
+});
+
+const FOOTER_LINK =
+  /<a\b[^>]*data-slot="card-frame-link"[^>]*href="([^"]*)"[^>]*>([^<]*)</;
+const LINK = /<a\b/g;
+const BODY_LINK = "w-fit self-end justify-self-end md:hidden";
+const BODY_LINK_RE = /<a\b[^>]*md:hidden[^>]*href="([^"]*)"[^>]*>([^<]*)</;
+
+describe("a saída única do cartão da Meta", () => {
+  const active: GoalReadModel = {
+    ...october,
+    achievedValue: null,
+    endsOn: "2026-11-30",
+    progress: {
+      percent: "30.0",
+      periodEnded: false,
+      reached: false,
+      value: "1500.00",
+    },
+    settledAt: null,
+    startsOn: "2026-11-01",
+    status: "active",
+    target: "5000.00",
+  };
+  const REMOVED_LINK = ["Ver as", "outras"].join(" ");
+
+  const online = (others: number, role = "owner") =>
+    renderToStaticMarkup(
+      <HomeRoleProvider value={role}>
+        <GoalBlock
+          block={{ data: [active], status: "ready" }}
+          onRetry={noRetry}
+          projection={null}
+          today="2026-11-10"
+          view={{ goal: active, kind: "active", others }}
+        />
+      </HomeRoleProvider>
+    );
+
+  it("com uma meta o pé diz Ver as metas, e com três diz Ver as 3 metas, para o mesmo endereço", () => {
+    const one = FOOTER_LINK.exec(online(0));
+    const three = FOOTER_LINK.exec(online(2));
+    expect(one?.[1]).toBe("/dashboard?aba=metas");
+    expect(one?.[2]).toBe("Ver as metas");
+    expect(three?.[1]).toBe("/dashboard?aba=metas");
+    expect(three?.[2]).toBe("Ver as 3 metas");
+  });
+
+  it("com uma meta só o pé leva às metas; com várias o corpo repete o link só abaixo de 760 px", () => {
+    const one = online(0);
+    expect(one.match(LINK)).toHaveLength(1);
+    expect(one).not.toContain(BODY_LINK);
+    for (const others of [1, 2]) {
+      const html = online(others);
+      expect(html.match(LINK)).toHaveLength(2);
+      const body = BODY_LINK_RE.exec(html);
+      expect(body?.[1]).toBe("/dashboard?aba=metas");
+      expect(body?.[2]).toBe(`Ver as ${others + 1} metas`);
+      expect(html).not.toContain(REMOVED_LINK);
+      expect(html).not.toContain("meta=lista");
+    }
+  });
+
+  it("quem não gerencia metas não tem o pé", () => {
+    expect(online(2, "seller")).not.toContain("Ver as");
+    expect(online(2, "seller")).not.toContain("<a");
+  });
+
+  it("sem conexão o pé fica sem link, e o cartão não ganha o das outras", () => {
+    const html = renderToStaticMarkup(
+      <HomeRoleProvider value="owner">
+        <OfflineGoalBlock
+          goal={{ goal: active, kind: "active", ended: false }}
+        />
+      </HomeRoleProvider>
+    );
+    expect(html).not.toContain("<a");
+    expect(html).not.toContain("Ver as");
   });
 });

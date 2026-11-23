@@ -4,7 +4,7 @@ status: accepted
 
 # DLQ, incidente operacional e retry no Admin
 
-> A migration deste PR (0072, `0072_dead_letter_queue.sql`) colide com a `0072_organization_purge.sql` do PR do purge: quem entrar depois renumera a sua migration e regenera o snapshot.
+> A migration é a `0072_dead_letter_queue.sql`.
 
 ## Contexto
 

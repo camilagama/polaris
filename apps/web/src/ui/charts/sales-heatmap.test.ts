@@ -3,7 +3,7 @@ import { resolveTooltipTarget } from "../bklit/charts/tooltip/tooltip-box";
 import {
   panelPlacement,
   READ_RING_WIDTH,
-  RING_OFFSET,
+  ringOffset,
   ringGeometry,
   ringsOf,
   TODAY_RING_WIDTH,
@@ -92,15 +92,19 @@ describe("panelPlacement", () => {
   });
 });
 
-const CELL = 12;
-const GAP = 3;
-const STEP = CELL + GAP;
+const SIZES = [
+  { cell: 12, gap: 3 },
+  { cell: 13, gap: 3 },
+  { cell: 14, gap: 4 },
+  { cell: 15, gap: 4 },
+  { cell: 16, gap: 4 },
+] as const;
 
-const cellAt = (index: number) => ({
-  height: CELL,
-  width: CELL,
-  x: Math.floor(index / 7) * STEP,
-  y: (index % 7) * STEP + GAP,
+const cellAt = (index: number, { cell, gap }: (typeof SIZES)[number]) => ({
+  height: cell,
+  width: cell,
+  x: Math.floor(index / 7) * (cell + gap),
+  y: (index % 7) * (cell + gap) + gap,
 });
 
 describe("ringsOf", () => {
@@ -139,51 +143,67 @@ describe("ringsOf", () => {
 });
 
 describe("ringGeometry", () => {
-  it("is a rectangle 1.5 px out of the cell with a corner of 4", () => {
-    const cell = cellAt(180);
-    expect(ringGeometry(cell, 1).rect).toEqual({
-      height: CELL + 3,
-      rx: 4,
-      width: CELL + 3,
-      x: cell.x - RING_OFFSET,
-      y: cell.y - RING_OFFSET,
-    });
+  it("is a rectangle half the gap out of the cell with a corner of 4, for every size of the map", () => {
+    for (const size of SIZES) {
+      const cell = cellAt(180, size);
+      const offset = size.gap / 2;
+      expect(ringOffset(size.gap)).toBe(offset);
+      expect(ringGeometry(cell, 1, size.gap).rect).toEqual({
+        height: size.cell + 2 * offset,
+        rx: 4,
+        width: size.cell + 2 * offset,
+        x: cell.x - offset,
+        y: cell.y - offset,
+      });
+    }
   });
 
-  it("keeps the stroke 0.5 px or more from every neighboring cell, for each ring and every cell", () => {
+  it("keeps the stroke 0.5 px or more from every neighboring cell, for each ring, every cell and every size", () => {
     const total = 26 * 7;
-    for (const strokeWidth of [TODAY_RING_WIDTH, READ_RING_WIDTH]) {
-      for (let index = 0; index < total; index += 1) {
-        const { outer } = ringGeometry(cellAt(index), strokeWidth);
-        for (const other of [index - 7, index + 7, index - 1, index + 1]) {
-          const acrossColumns = Math.floor(other / 7) !== Math.floor(index / 7);
-          const sideways = Math.abs(other - index) === 7;
-          if (other < 0 || other >= total || (acrossColumns && !sideways)) {
-            continue;
+    for (const size of SIZES) {
+      for (const strokeWidth of [TODAY_RING_WIDTH, READ_RING_WIDTH]) {
+        for (let index = 0; index < total; index += 1) {
+          const { outer } = ringGeometry(
+            cellAt(index, size),
+            strokeWidth,
+            size.gap
+          );
+          for (const other of [index - 7, index + 7, index - 1, index + 1]) {
+            const acrossColumns =
+              Math.floor(other / 7) !== Math.floor(index / 7);
+            const sideways = Math.abs(other - index) === 7;
+            if (other < 0 || other >= total || (acrossColumns && !sideways)) {
+              continue;
+            }
+            const next = cellAt(other, size);
+            const dx = Math.max(
+              next.x - outer.right,
+              outer.left - (next.x + next.width)
+            );
+            const dy = Math.max(
+              next.y - outer.bottom,
+              outer.top - (next.y + next.height)
+            );
+            expect(
+              Math.max(dx, dy),
+              `célula ${index}, vizinha ${other}, traço ${strokeWidth}, célula de ${size.cell} px`
+            ).toBeGreaterThanOrEqual(0.5);
           }
-          const next = cellAt(other);
-          const dx = Math.max(
-            next.x - outer.right,
-            outer.left - (next.x + next.width)
-          );
-          const dy = Math.max(
-            next.y - outer.bottom,
-            outer.top - (next.y + next.height)
-          );
-          expect(
-            Math.max(dx, dy),
-            `célula ${index}, vizinha ${other}, traço ${strokeWidth}`
-          ).toBeGreaterThanOrEqual(0.5);
         }
       }
     }
   });
 
-  it("covers at most 2.25 px outside the cell, inside the gap of 3", () => {
-    const cell = cellAt(0);
-    const { outer } = ringGeometry(cell, READ_RING_WIDTH);
-    expect(cell.x - outer.left).toBeCloseTo(2.25);
-    expect(outer.right - (cell.x + cell.width)).toBeCloseTo(2.25);
-    expect(cell.x - outer.left).toBeLessThan(GAP);
+  it("covers at most 2.25 px outside the cell inside a gap of 3, and 2.75 px inside a gap of 4", () => {
+    for (const [size, reach] of [
+      [SIZES[0], 2.25],
+      [SIZES[4], 2.75],
+    ] as const) {
+      const cell = cellAt(0, size);
+      const { outer } = ringGeometry(cell, READ_RING_WIDTH, size.gap);
+      expect(cell.x - outer.left).toBeCloseTo(reach);
+      expect(outer.right - (cell.x + cell.width)).toBeCloseTo(reach);
+      expect(cell.x - outer.left).toBeLessThan(size.gap);
+    }
   });
 });
