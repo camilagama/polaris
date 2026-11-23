@@ -25,11 +25,6 @@ export const EMPTY_VALUE = "—";
 
 const percentTextPattern = /^(-?)(\d+)(?:\.(\d+))?$/;
 
-/** An exact BRL text ("-12.30") as "-R$ 12,30", or the dash for no value. */
-export function formatMoneyOrDash(value: string | null): string {
-  return value === null ? EMPTY_VALUE : formatBrlAmount(value);
-}
-
 /** A percent text with two places ("72.50") as "72,50%", or the dash for no value. */
 export function formatPercentOrDash(value: string | null): string {
   if (value === null) {

@@ -4,7 +4,6 @@ import {
   chainRows,
   EMPTY_VALUE,
   formatLastConfirmed,
-  formatMoneyOrDash,
   formatPercentOrDash,
   formatUpdatedAt,
   isIncompleteEstimate,
@@ -59,18 +58,6 @@ describe("a month and its days", () => {
   it("moves between months across the year", () => {
     expect(shiftMonth("2026-01", -1)).toBe("2025-12");
     expect(shiftMonth("2026-12", 1)).toBe("2027-01");
-  });
-});
-
-describe("formatMoneyOrDash", () => {
-  it("formats exact BRL texts, negatives included", () => {
-    expect(formatMoneyOrDash("1234.50")).toBe("R$ 1.234,50");
-    expect(formatMoneyOrDash("-12.30")).toBe("-R$ 12,30");
-    expect(formatMoneyOrDash("0.00")).toBe("R$ 0,00");
-  });
-
-  it("shows a dash where there is no value", () => {
-    expect(formatMoneyOrDash(null)).toBe(EMPTY_VALUE);
   });
 });
 

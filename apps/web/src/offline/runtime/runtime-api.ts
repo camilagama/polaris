@@ -4,7 +4,12 @@ import {
   type SessionAnswer,
   type SessionLookup,
 } from "../../lib/session-lookup";
-import type { BootstrapSource } from "../bootstrap";
+import type {
+  BootstrapCollectionName,
+  BootstrapPageRequest,
+  BootstrapSource,
+  LocalRows,
+} from "../bootstrap";
 import {
   type RuntimeApi,
   type SignedInSession,
@@ -14,6 +19,17 @@ import {
 /** 5xx and 429 say nothing about who is signed in: they are a server that could not answer, not a refusal. */
 function isNoAnswer(status: number): boolean {
   return status === 429 || status >= 500;
+}
+
+/**
+ * The server answered another collection than the one asked for. The bootstrap would store those rows
+ * under the asked collection and drop the real ones, so the page is refused before anything is written.
+ */
+export class BootstrapResponseMismatchError extends Error {
+  constructor() {
+    super("bootstrap_response_mismatch");
+    this.name = "BootstrapResponseMismatchError";
+  }
 }
 
 function isDeviceRefusal(error: unknown): boolean {
@@ -112,7 +128,10 @@ export function createRpcRuntimeApi(
       return {
         getCursor: async () =>
           (await client.sync.getCursor({ organizationId }, options)).cursor,
-        page: async (collection, request) => {
+        page: async <K extends BootstrapCollectionName>(
+          collection: K,
+          request: BootstrapPageRequest
+        ) => {
           const page = await client.sync.bootstrapPage(
             {
               afterId: request.afterId ?? null,
@@ -123,7 +142,14 @@ export function createRpcRuntimeApi(
             },
             options
           );
-          return { nextAfterId: page.nextAfterId, rows: page.rows } as never;
+          if (page.collection !== collection) {
+            throw new BootstrapResponseMismatchError();
+          }
+          // the contract's union cannot be tied to the generic K, so the rows are narrowed here, after the check
+          return {
+            nextAfterId: page.nextAfterId,
+            rows: page.rows as unknown as LocalRows[K][],
+          };
         },
         pull: (cursor, limit) =>
           client.sync.pull(

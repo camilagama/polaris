@@ -40,6 +40,13 @@ vi.mock("../ui/bklit/charts/chart-context", async (importOriginal) => ({
 
 // the drawing is lazy and the markup of the server has only its placeholder: the props the screen hands it (the summary
 // for a screen reader and the legend of the hatch) are copied into attributes of an element beside the real one
+const hiddenValues = vi.hoisted(() => ({ hidden: false }));
+
+vi.mock("../lib/hidden-values", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../lib/hidden-values")>()),
+  useHiddenValues: () => [hiddenValues.hidden, () => undefined],
+}));
+
 vi.mock("../ui/charts/on-demand", async (importOriginal) => {
   const original =
     await importOriginal<typeof import("../ui/charts/on-demand")>();
@@ -53,6 +60,9 @@ vi.mock("../ui/charts/on-demand", async (importOriginal) => {
         <i
           data-drawing-label={props.label}
           data-first-note={props.readingNote?.(0) ?? ""}
+          data-notes={props.data
+            .map((_, index) => props.readingNote?.(index) ?? "")
+            .join("|")}
           data-hatch-legend={props.secondary?.unknown?.legend ?? ""}
           data-hatch-text={props.secondary?.unknown?.text ?? ""}
         />
@@ -258,8 +268,62 @@ describe("when only the fee is missing, the chart says the fee and not the cost 
       period: { from: "2025-12-01", to: "2025-12-31" },
     } as StoredPeriodSummary);
     expect(markup).toContain(
-      'data-first-note="dezembro de 2025: 31 de 31 dias sem taxa informada"'
+      'data-first-note="dezembro de 2025: 31 de 31 dias sem taxa informada · melhor mês"'
     );
+  });
+
+  it("names the best day in the reading of that day only, and no day when nothing sold", () => {
+    const notes = (markup: string) =>
+      (markup.match(NOTES_ATTRIBUTE)?.[1] ?? "").split("|");
+    const sold = notes(chart(october([])));
+    expect(sold.filter((note) => note.includes("melhor dia"))).toEqual([
+      "melhor dia",
+    ]);
+    expect(sold[0]).toBe("melhor dia");
+    const quiet = october([]);
+    const nothing = notes(
+      chart({
+        ...quiet,
+        daily: quiet.daily?.map((day) => ({ ...day, netSales: "0.00" })) ?? [],
+      })
+    );
+    expect(nothing.some((note) => note.includes("melhor"))).toBe(false);
+  });
+
+  it("keeps the mark of the best day when the amounts are hidden, and hides the amount of the note", () => {
+    const base = october([]);
+    const withExpense = {
+      ...base,
+      daily: base.daily?.map((day, index) =>
+        index === 0 ? { ...day, operatingExpenses: "18.00" } : day
+      ),
+    } as StoredPeriodSummary;
+    const first = (markup: string) =>
+      markup.match(FIRST_NOTE_ATTRIBUTE)?.[1] ?? "";
+    expect(first(chart(withExpense))).toBe(
+      "inclui R$ 18,00 de despesas do período · melhor dia"
+    );
+    hiddenValues.hidden = true;
+    try {
+      expect(first(chart(withExpense))).toBe(
+        "inclui R$ •••• de despesas do período · melhor dia"
+      );
+    } finally {
+      hiddenValues.hidden = false;
+    }
+  });
+
+  it("marks the best day on a copy that has no costs per day", () => {
+    const base = october([]);
+    const noCosts = {
+      ...base,
+      daily: base.daily?.map(({ costs: _costs, ...day }) => day),
+    } as StoredPeriodSummary;
+    const notes = (markup: string) =>
+      (markup.match(NOTES_ATTRIBUTE)?.[1] ?? "").split("|");
+    const marked = notes(chart(noCosts));
+    expect(marked[0]).toBe("melhor dia");
+    expect(marked.filter((note) => note !== "")).toEqual(["melhor dia"]);
   });
 
   it("names the month in the summary of the drawing of a period by month", () => {
@@ -337,6 +401,8 @@ describe("the chart with unknown days (AC-9, emenda de 25/10)", () => {
 });
 
 const NOTE_LINE = /<div class="[^"]*min-h-5\.5[^"]*"[^>]*>/g;
+const FIRST_NOTE_ATTRIBUTE = /data-first-note="([^"]*)"/;
+const NOTES_ATTRIBUTE = /data-notes="([^"]*)"/;
 const BEST_DAY_FOR_READERS = /<p class="sr-only">[^<]*Melhor dia/;
 const BEST_DAY_LINE = /<p class="[^"]*min-h-\[1\.125rem\]/;
 const TITLE_HEADING = /<h2 class="text-section" id="dashboard-chart-title"/;
@@ -363,7 +429,7 @@ describe("the room the card keeps for its lines (lugar reservado)", () => {
     expect(markup).toContain("data-chart-loading");
     const rows =
       markup.match(
-        /<div aria-hidden="true" class="[^"]*min-h-\[8\.5rem\][^"]*"/g
+        /<div aria-hidden="true" class="[^"]*min-h-\[9\.625rem\][^"]*"/g
       ) ?? [];
     expect(rows).toHaveLength(1);
     expect(markup).not.toContain("min-h-[calc(5*1.125rem)]");

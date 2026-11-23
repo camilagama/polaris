@@ -4,7 +4,7 @@ status: accepted
 
 # Backup lógico diário do banco no R2, cifrado com age, provado primeiro no staging
 
-> O número 0099 estava reservado ao backup na `main` e não é usado por nenhum PR aberto no momento da escrita; pode mudar se outro entrar antes. Este ADR está `accepted` com escopo **staging**: o primeiro backup e o primeiro ensaio de restauração do staging passaram em 15/11/2026 (ver a [emenda](#emenda-de-15112026-primeiro-backup-e-primeiro-ensaio-do-staging)). A produção repete os dois no go-live.
+> Este ADR está `accepted` com escopo **staging**: o primeiro backup e o primeiro ensaio de restauração do staging passaram em 15/11/2026 (ver a [emenda](#emenda-de-15112026-primeiro-backup-e-primeiro-ensaio-do-staging)). A produção repete os dois no go-live.
 
 ## Contexto
 
