@@ -1026,6 +1026,64 @@ const salePaymentInput = z.object({
   method: z.enum(SALE_PAYMENT_METHODS),
 });
 
+/** At most 18 integer digits, so a part stays below the `1e18` the `sale_payments` amount check allows. */
+const salePaymentPartAmount = z
+  .string()
+  .max(21)
+  .regex(/^\d{1,18}\.\d{2}$/);
+
+/**
+ * One part of a split payment: its own amount (two decimal places), method,
+ * plan and payment profile. The server checks that the parts add up to the
+ * total it computes; it never takes a sum from the client. Strict like the
+ * offline payload: a field from a newer build is refused, never dropped.
+ */
+const salePaymentPart = salePaymentInput
+  .extend({
+    amount: salePaymentPartAmount,
+    paymentProfile: salePaymentProfileSelection.nullable(),
+  })
+  .strict();
+
+const MAX_SALE_PAYMENT_PARTS = 2;
+
+/**
+ * Absent at runtime when a sale sends `payments`, but required in the static
+ * type: the app built from this contract still sends a single `payment` and
+ * reads it back from its own requests, until the sale screen moves to parts.
+ * The server never reads it without first checking for `payments`.
+ */
+const legacySalePayment =
+  salePaymentInput.optional() as unknown as typeof salePaymentInput;
+
+/**
+ * A sale is paid by `payment` (one method for the whole total, profile in the
+ * sale's `paymentProfile`) or by `payments` (1 to 2 parts, each with its own
+ * profile), never both and never neither. The sale-level `paymentProfile`
+ * belongs to the first form only.
+ */
+function requireOnePaymentForm(
+  value: { payment?: unknown; paymentProfile?: unknown; payments?: unknown },
+  context: z.RefinementCtx
+): void {
+  const hasPayment = value.payment !== undefined;
+  const hasParts = value.payments !== undefined;
+  if (hasPayment === hasParts) {
+    context.addIssue({
+      code: "custom",
+      message: "exactly one of payment or payments",
+      path: hasPayment ? ["payments"] : ["payment"],
+    });
+  }
+  if (hasParts && value.paymentProfile !== undefined) {
+    context.addIssue({
+      code: "custom",
+      message: "the profile of a split payment goes in each part",
+      path: ["paymentProfile"],
+    });
+  }
+}
+
 /** A device writes `toISOString()` (24 characters); the fraction of a second of an ISO instant takes any number of digits. */
 const offlineSaleInstant = z
   .string()
@@ -1046,11 +1104,17 @@ export const offlineSalePayloadSchema = z
     adjustments: z.array(saleAdjustmentInput).max(20),
     items: z.array(saleItemInput).min(1).max(200),
     occurredAt: offlineSaleInstant,
-    payment: salePaymentInput,
+    payment: legacySalePayment,
     paymentProfile: salePaymentProfileSelection.nullable().optional(),
+    payments: z
+      .array(salePaymentPart)
+      .min(1)
+      .max(MAX_SALE_PAYMENT_PARTS)
+      .exactOptional(),
     recordedAt: offlineSaleInstant,
   })
-  .strict();
+  .strict()
+  .superRefine(requireOnePaymentForm);
 export type OfflineSalePayload = z.infer<typeof offlineSalePayloadSchema>;
 
 const saleFeeSnapshot = z.object({
@@ -1058,6 +1122,21 @@ const saleFeeSnapshot = z.object({
   fixedAmount: z.string().nullable(),
   mode: z.enum([...PAYMENT_FEE_MODES, "not_applicable"]),
   percentage: z.string().nullable(),
+});
+
+const confirmedSalePayment = z.object({
+  amount: z.string(),
+  anticipationFee: saleFeeSnapshot,
+  anticipationRequested: z.boolean(),
+  expectedSettlementDays: z.number().int().nonnegative().nullable(),
+  installmentPlan: z.enum(["merchant", "issuer"]).nullable(),
+  installments: z.number().int().positive().nullable(),
+  method: z.enum(SALE_PAYMENT_METHODS),
+  paymentProfileId: z.string().uuid().nullable(),
+  paymentProfileName: z.string().nullable(),
+  paymentProfileRuleId: z.string().uuid().nullable(),
+  paymentProfileVersion: z.number().int().positive().nullable(),
+  processingFee: saleFeeSnapshot,
 });
 
 const confirmedSale = z.object({
@@ -1082,20 +1161,17 @@ const confirmedSale = z.object({
       variantId: z.string().uuid(),
     })
   ),
-  payment: z.object({
-    amount: z.string(),
-    anticipationFee: saleFeeSnapshot,
-    anticipationRequested: z.boolean(),
-    expectedSettlementDays: z.number().int().nonnegative().nullable(),
-    installmentPlan: z.enum(["merchant", "issuer"]).nullable(),
-    installments: z.number().int().positive().nullable(),
-    method: z.enum(SALE_PAYMENT_METHODS),
-    paymentProfileId: z.string().uuid().nullable(),
-    paymentProfileName: z.string().nullable(),
-    paymentProfileRuleId: z.string().uuid().nullable(),
-    paymentProfileVersion: z.number().int().positive().nullable(),
-    processingFee: saleFeeSnapshot,
-  }),
+  /** The part at position 0, for readers that still handle one payment. */
+  payment: confirmedSalePayment,
+  /**
+   * Every part, by position; one item for a sale paid with one method. The
+   * server always sends it; optional for what a device kept from an older one.
+   */
+  payments: z
+    .array(
+      confirmedSalePayment.extend({ position: z.number().int().nonnegative() })
+    )
+    .optional(),
   replayed: z.boolean(),
   sale: z.object({
     commandId: z.string().uuid(),
@@ -1200,7 +1276,13 @@ const saleListEntry = z.object({
   itemCount: z.number().int().positive(),
   occurredAt: z.string().datetime(),
   occurredOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  /** The method of the part at position 0. */
   paymentMethod: z.enum(SALE_PAYMENT_METHODS).nullable(),
+  /**
+   * The method of each part, by position; its length is the number of parts.
+   * The server always sends it; optional for what a device kept from an older one.
+   */
+  paymentMethods: z.array(z.enum(SALE_PAYMENT_METHODS)).optional(),
   status: z.enum(["confirmed", "cancelled"]),
   totalDue: z.string(),
 });
@@ -2818,20 +2900,43 @@ export const polarisContract = {
       )
       .output(cancelledSaleResult),
     // One command confirms the whole sale. The payment profile is an explicit
-    // choice: an id with the version the operator saw, or null for no profile.
+    // choice: an id with the version the operator saw, or null for no profile;
+    // with `payment` it is the sale's `paymentProfile`, with `payments` each
+    // part carries its own.
     confirm: writeProcedure
       .input(
-        z.object({
-          adjustments: z.array(saleAdjustmentInput).max(20),
-          commandId: z.string().uuid(),
-          commandVersion: z.literal(1),
-          items: z.array(saleItemInput).min(1).max(200),
-          occurredAt: instantInput,
-          organizationId: organizationIdInput,
-          payment: salePaymentInput,
-          paymentProfile: salePaymentProfileSelection.nullable(),
-          recordedAt: instantInput.optional(),
-        })
+        z
+          .object({
+            adjustments: z.array(saleAdjustmentInput).max(20),
+            commandId: z.string().uuid(),
+            commandVersion: z.literal(1),
+            items: z.array(saleItemInput).min(1).max(200),
+            occurredAt: instantInput,
+            organizationId: organizationIdInput,
+            payment: legacySalePayment,
+            paymentProfile: salePaymentProfileSelection
+              .nullable()
+              .exactOptional(),
+            payments: z
+              .array(salePaymentPart)
+              .min(1)
+              .max(MAX_SALE_PAYMENT_PARTS)
+              .exactOptional(),
+            recordedAt: instantInput.optional(),
+          })
+          .superRefine((value, context) => {
+            requireOnePaymentForm(value, context);
+            if (
+              value.payment !== undefined &&
+              value.paymentProfile === undefined
+            ) {
+              context.addIssue({
+                code: "custom",
+                message: "the profile is an explicit choice, even when null",
+                path: ["paymentProfile"],
+              });
+            }
+          })
       )
       .output(confirmedSale),
     get: readProcedure

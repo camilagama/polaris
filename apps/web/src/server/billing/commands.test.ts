@@ -1088,6 +1088,10 @@ describe("startPixCheckout", () => {
         organizationId: "org-2",
         payer: { ...PAYER, name: "payer-2" },
       });
+      await vi.waitFor(() =>
+        expect(store.withPayerLock).toHaveBeenCalledTimes(2)
+      );
+      await vi.waitFor(() => expect(order.length).toBeGreaterThan(0));
       await settle();
       // only one of them is inside; the other waits at the lock with nothing created
       expect(order).toHaveLength(1);
@@ -1096,12 +1100,13 @@ describe("startPixCheckout", () => {
       const loser = winner === "payer-1" ? "payer-2" : "payer-1";
 
       firstGate.release();
-      await settle();
-      expect(order).toEqual([
-        `prepare:${winner}`,
-        `attach:${winner}`,
-        `prepare:${loser}`,
-      ]);
+      await vi.waitFor(() =>
+        expect(order).toEqual([
+          `prepare:${winner}`,
+          `attach:${winner}`,
+          `prepare:${loser}`,
+        ])
+      );
       secondGate.release();
       await Promise.all([first, second]);
 
@@ -1156,9 +1161,9 @@ describe("startPixCheckout", () => {
         organizationId: "org-2",
         payer: { ...PAYER, taxId: OTHER_TAX_ID },
       });
-      await settle();
+      await vi.waitFor(() => expect(order).toHaveLength(2));
 
-      expect(order.sort()).toEqual(
+      expect([...order].sort()).toEqual(
         [`prepare:${PAYER.taxId}`, `prepare:${OTHER_TAX_ID}`].sort()
       );
       gate.release();

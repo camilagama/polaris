@@ -102,9 +102,10 @@ const LONGEST_STATUS = statusText("31/12/2099");
 /**
  * The line under the panel: "Limpar" and, once the first day is marked, the sentence that asks for the last one. The row
  * is always there, with the height of the longest sentence beside "Limpar" in its place, so the panel keeps one height
- * from opening to the last day. The longest sentence is an invisible copy in the same grid cell, drawn by
- * `content: attr()` so no text query finds it twice: it wraps as the real one does at any letter size. The sentence
- * stays in the tree when there is nothing to say, so the screen reader hears it when it fills.
+ * from opening to the last day. The rule above it is transparent while there is neither a sentence nor "Limpar" in
+ * sight, so an empty strip is not drawn under a ruler. The longest sentence is an invisible copy in the same grid cell,
+ * drawn by `content: attr()` so no text query finds it twice: it wraps as the real one does at any letter size. The
+ * sentence stays in the tree when there is nothing to say, so the screen reader hears it when it fills.
  */
 export function DateRangeFooter({
   canClear,
@@ -123,9 +124,14 @@ export function DateRangeFooter({
   today: IsoDate;
 }) {
   const status = half && statusText(startDayText(half, today));
+  const hasContent = Boolean(status) || (clearable && canClear);
   return (
     <div
-      className={cn("shrink-0 border-border border-t pt-2", HOLD_WIDTH)}
+      className={cn(
+        "shrink-0 border-t pt-2",
+        hasContent ? "border-border" : "border-transparent",
+        HOLD_WIDTH
+      )}
       data-range-footer
     >
       <div className="flex min-h-ctl-sm items-center justify-between gap-2">

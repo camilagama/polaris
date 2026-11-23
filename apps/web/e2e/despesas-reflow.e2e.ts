@@ -75,11 +75,15 @@ const answer = (json: unknown) => ({
   headers: { ...WORKER_MARK },
 });
 
+const SPLIT_AMOUNTS = ["1234567.89", "12.30", "1234567.89"];
+const toCents = (amount: string) => Math.round(Number(amount) * 100);
+const fromCents = (cents: number) => (cents / 100).toFixed(2);
+
 const SPLIT_EXPENSES = EXPENSES.map((expense, index) => {
   const target = CATEGORIES[index % 3] as (typeof CATEGORIES)[number];
   return {
     ...expense,
-    amount: "1234567.89",
+    amount: SPLIT_AMOUNTS[index % 3] as string,
     categoryGroup: target.groupKey,
     categoryId: target.id,
     categoryName: target.name,
@@ -94,7 +98,9 @@ function splitTotals() {
     return {
       categoryId: target.id,
       count: own.length,
-      total: (own.length * 1_234_567.89).toFixed(2),
+      total: fromCents(
+        own.reduce((sum, expense) => sum + toCents(expense.amount), 0)
+      ),
     };
   });
 }
@@ -125,7 +131,12 @@ async function openExpenses(
                 count: SPLIT_EXPENSES.length,
                 expenses: SPLIT_EXPENSES,
                 nextCursor: null,
-                total: (SPLIT_EXPENSES.length * 1_234_567.89).toFixed(2),
+                total: fromCents(
+                  SPLIT_EXPENSES.reduce(
+                    (sum, expense) => sum + toCents(expense.amount),
+                    0
+                  )
+                ),
                 totalsByCategory: splitTotals(),
               })
             : answer({
@@ -364,6 +375,19 @@ test.describe("a 320 px com letra de 20 px", () => {
         true,
         true,
       ]);
+      const rightEdges = await lines.evaluateAll((elements) =>
+        elements.map((element) => {
+          const money = [...element.querySelectorAll("[data-money]")].at(-1);
+          return money ? money.getBoundingClientRect().right : Number.NaN;
+        })
+      );
+      const firstEdge = rightEdges[0] ?? Number.NaN;
+      for (const edge of rightEdges) {
+        expect(
+          Math.abs(edge - firstEdge),
+          "the amount right edge differs between lines"
+        ).toBeLessThanOrEqual(1);
+      }
     }
   );
 

@@ -4,7 +4,7 @@ status: accepted
 
 # Framework de jobs agendados
 
-> O número deste ADR (0086) é o próximo livre na `main` e nos PRs abertos no momento da escrita (o ADR 0085, da DLQ, já está na `main`; o PR do purge usa 0081 e o do teto de custo, 0076); pode mudar se outro entrar antes. A migration é a 0073, depois da 0072 da DLQ (PR #131, já na `main`); o PR do purge (#126) ainda usa 0072, e quem entrar depois renumera a migration e o snapshot.
+> A migration é a `0073_scheduled_jobs.sql`.
 
 ## Contexto
 

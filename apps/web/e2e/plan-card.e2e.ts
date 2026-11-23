@@ -729,4 +729,52 @@ test.describe("o cartão do plano Free", () => {
     await expect(card(page)).toContainText(USE_TEXT, { timeout: 15_000 });
     expect(reads.plan).toBe(1);
   });
+  test("um lote da fila só com comando que não muda o uso do plano (cliente) não apaga a frase de uso, e a leitura do plano não se repete", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 800, width: 1280 });
+    const reads = await serveFoot(page, { plan: FREE_PLAN });
+    const pushed: string[] = [];
+    await page.route("**/rpc/sync/push", (route) => {
+      const { commands } = (
+        route.request().postDataJSON() as {
+          json: { commands: { commandId: string; type: string }[] };
+        }
+      ).json;
+      pushed.push(...commands.map((command) => command.type));
+      return route.fulfill(
+        json({
+          results: commands.map((command) => ({
+            code: null,
+            commandId: command.commandId,
+            replayed: false,
+            result: null,
+            status: "accepted",
+          })),
+        })
+      );
+    });
+    await page.goto("/customers");
+    await expect(card(page)).toContainText(USE_TEXT);
+    await expect(page.locator(".sync-status")).toContainText(
+      "Tudo sincronizado",
+      { timeout: 20_000 }
+    );
+    await page.context().setOffline(true);
+    await page.getByRole("button", { name: "Novo cliente" }).click();
+    await page.locator("#customer-name").fill("Cliente da fila");
+    await page.locator("#customer-phone").fill("11900000001");
+    await page.getByRole("button", { name: "Cadastrar cliente" }).click();
+    await expect(page.locator(".sync-status")).toContainText(
+      "1 operação guardada"
+    );
+    await page.context().setOffline(false);
+    await expect.poll(() => pushed).toEqual(["customer.create"]);
+    await expect(page.locator(".sync-status")).toContainText(
+      "Tudo sincronizado",
+      { timeout: 20_000 }
+    );
+    await expect(card(page)).toContainText(USE_TEXT);
+    expect(reads.plan).toBe(1);
+  });
 });

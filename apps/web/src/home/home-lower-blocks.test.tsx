@@ -34,7 +34,7 @@ describe("os blocos sob os cartões do Início", () => {
     expect(html({})).not.toMatch(ORDER_UTILITY);
   });
 
-  it("são duas linhas de par: gráfico (3/5) e ranking (2/5), Meta e mapa", () => {
+  it("são duas linhas de par: gráfico (3/5) e ranking (2/5), Meta (2/5) e mapa (3/5)", () => {
     const [upper, lower] = rows(html({}));
     expect(upper).toContain("data-pair");
     expect(upper).toContain(
@@ -42,7 +42,7 @@ describe("os blocos sob os cartões do Início", () => {
     );
     expect(lower).toContain("data-pair");
     expect(lower).toContain(
-      "@min-[60rem]/home:grid-cols-[minmax(0,1fr)_30rem]"
+      "@min-[60rem]/home:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]"
     );
   });
 
@@ -62,7 +62,7 @@ describe("os blocos sob os cartões do Início", () => {
     expect(order(markup)).toEqual(["chart", "ranking", "goal"]);
     const [, lower] = rows(markup);
     expect(lower).not.toContain("data-pair");
-    expect(lower).not.toContain("_30rem]");
+    expect(lower).not.toContain("grid-cols-[");
   });
 
   it("sem o gráfico o ranking fica sozinho na linha (não é par)", () => {

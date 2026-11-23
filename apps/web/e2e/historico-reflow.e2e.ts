@@ -212,6 +212,108 @@ for (const width of [320, 360]) {
   );
 }
 
+const SEVEN_DIGITS = "1234567.89";
+
+function methodRows() {
+  return [
+    entry(1, {
+      customerId: id(501),
+      customerName: LONG_CUSTOMER,
+      paymentMethod: "credit_card",
+      totalDue: SEVEN_DIGITS,
+    }),
+    entry(2, { paymentMethod: "credit_card", totalDue: SEVEN_DIGITS }),
+    entry(3, { paymentMethod: "bank_transfer", totalDue: SEVEN_DIGITS }),
+    entry(4, { paymentMethod: null, totalDue: SEVEN_DIGITS }),
+    entry(5, {
+      customerId: id(505),
+      customerName: SHORT_CUSTOMER,
+      paymentMethod: "debit_card",
+      totalDue: SEVEN_DIGITS,
+    }),
+  ];
+}
+
+/** Per line: the text an ellipsis is hiding (what the line cuts), and whether the value box is whole and inside the line. */
+function cutTexts(page: Page) {
+  return page.evaluate(() =>
+    [...document.querySelectorAll('ul[aria-label="Vendas"] > li')].map(
+      (item) => {
+        const box = item.getBoundingClientRect();
+        const money = item.querySelector("[data-money]");
+        const moneyBox = money?.getBoundingClientRect();
+        const cut = [...item.querySelectorAll("*")]
+          .filter(
+            (element) =>
+              getComputedStyle(element).textOverflow === "ellipsis" &&
+              element.scrollWidth > element.clientWidth + 1
+          )
+          .map((element) => element.textContent ?? "");
+        const hidden = [...item.querySelectorAll("*")]
+          .filter(
+            (element) =>
+              !element.closest(".sr-only") &&
+              getComputedStyle(element).overflowX === "hidden" &&
+              element.scrollWidth > element.clientWidth + 1
+          )
+          .map((element) => element.textContent ?? "");
+        return {
+          cut,
+          hidden,
+          moneyInside:
+            moneyBox !== undefined &&
+            moneyBox.left >= box.left - 0.5 &&
+            moneyBox.right <= box.right + 0.5 &&
+            (money?.scrollWidth ?? 0) <= (money?.clientWidth ?? 0) + 1,
+          text: item.textContent ?? "",
+        };
+      }
+    )
+  );
+}
+
+for (const { fontPixels, width } of [
+  { fontPixels: 16, width: 320 },
+  { fontPixels: 16, width: 360 },
+  { fontPixels: 16, width: 800 },
+  { fontPixels: 20, width: 320 },
+  { fontPixels: 20, width: 360 },
+]) {
+  reflowTest(
+    `a ${width} px com letra de ${fontPixels} px o valor de 7 dígitos fica inteiro e o método nunca é cortado: só o fim do nome do cliente`,
+    async ({ page }) => {
+      await openHistory(page, methodRows(), { fontPixels, width });
+      const list = page.getByRole("list", { name: "Vendas" });
+      await expect(list.locator("> li")).toHaveCount(5);
+      const rows = await cutTexts(page);
+      const methods = [
+        "Crédito",
+        "Crédito",
+        "Transferência",
+        "Pagamento não informado",
+        "Débito",
+      ];
+      for (const [index, row] of rows.entries()) {
+        const method = methods[index] ?? "";
+        const name = `linha ${index + 1}`;
+        expect(row.text, `${name}: o método`).toContain(method);
+        expect(row.text, `${name}: o valor`).toContain("1.234.567,89");
+        expect(row.moneyInside, `${name}: o valor inteiro e dentro`).toBe(true);
+        expect(
+          row.hidden.filter((text) => !row.cut.includes(text)),
+          `${name}: nada escondido pelo recorte da linha`
+        ).toEqual([]);
+        expect(row.text, `${name}: a hora`).toMatch(TIME);
+        expect(
+          row.cut.filter((text) => index !== 0 || text !== LONG_CUSTOMER),
+          `${name}: só o fim do nome longo leva reticências`
+        ).toEqual([]);
+      }
+      await assertNoPageScroll(page);
+    }
+  );
+}
+
 reflowTest(
   "a 320 px com letra de 20 px o rodapé tem o valor com as duas casas, dentro do cartão, com 5 dígitos e com há mais",
   async ({ page }) => {

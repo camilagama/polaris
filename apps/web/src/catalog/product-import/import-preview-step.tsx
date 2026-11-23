@@ -184,6 +184,7 @@ export function ImportPreviewStep({
         <ScreenTabList
           label="Linhas do arquivo"
           signature={shown.map(([value]) => value).join()}
+          surface="popover"
           value={filter}
         >
           {shown.map(([value, label]) => (

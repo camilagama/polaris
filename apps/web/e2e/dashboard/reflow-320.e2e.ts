@@ -11,6 +11,7 @@ import {
   reflowTest,
   skipOutsideChromium,
 } from "../reflow";
+import { expectAllMono } from "../mono-face";
 import {
   UPDATED_AT,
   UPDATED_NAME,
@@ -409,6 +410,31 @@ test.describe("o passo a passo do Resultado a 320 px com a letra do navegador em
         await assertNothingClipped(chartRegion(page), {
           allowScroll: ["[data-slot=card]"],
         });
+        await assertNoPageScroll(page);
+      }
+    );
+  }
+
+  for (const fontPixels of [24, 20, 16]) {
+    reflowTest(
+      `com a letra em ${fontPixels} px, a leitura do dia do gráfico fica em Geist Mono e cabe no cartão, mesmo no melhor dia`,
+      async ({ page }) => {
+        await openReflowViewport(page, { fontPixels });
+        await openDashboard(page, new FakeReportServer());
+        await expectReflowFont(page, fontPixels);
+        const slider = chartRegion(page).getByRole("slider");
+        await slider.focus();
+        await slider.press("Home");
+        const line = chartRegion(page).locator("[data-chart-reading]");
+        await expect(line).toContainText("· melhor dia");
+        await expectAllMono(
+          line.locator("span.whitespace-nowrap"),
+          "os valores da leitura do dia"
+        );
+        await assertNothingClipped(chartRegion(page), {
+          allowScroll: ["[data-slot=card]"],
+        });
+        await assertAmountsOnOneLine(line);
         await assertNoPageScroll(page);
       }
     );

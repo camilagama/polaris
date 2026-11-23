@@ -101,28 +101,37 @@ export class InvalidPaymentProfileError extends Error {
 
 export class PaymentProfileVersionConflictError extends Error {
   readonly code = "payment_profile_version_conflict";
+  /** Position of the sale's payment part that named the profile; null outside a sale. */
+  readonly part: number | null;
 
-  constructor() {
+  constructor(part: number | null = null) {
     super("payment_profile_version_conflict");
     this.name = "PaymentProfileVersionConflictError";
+    this.part = part;
   }
 }
 
 export class PaymentProfileNotFoundError extends Error {
   readonly code = "payment_profile_not_found";
+  /** Position of the sale's payment part that named the profile; null outside a sale. */
+  readonly part: number | null;
 
-  constructor() {
+  constructor(part: number | null = null) {
     super("payment_profile_not_found");
     this.name = "PaymentProfileNotFoundError";
+    this.part = part;
   }
 }
 
 export class PaymentProfileLifecycleError extends Error {
   readonly code = "payment_profile_lifecycle_conflict";
+  /** Position of the sale's payment part that named the profile; null outside a sale. */
+  readonly part: number | null;
 
-  constructor() {
+  constructor(part: number | null = null) {
     super("payment_profile_lifecycle_conflict");
     this.name = "PaymentProfileLifecycleError";
+    this.part = part;
   }
 }
 

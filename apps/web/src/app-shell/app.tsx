@@ -31,6 +31,11 @@ const TRAILING_SLASHES = /\/+$/;
 
 /** Each area is its own chunk; a screen only loads when it is opened (and each tab of a screen, when it opens). */
 const pages: Readonly<Record<ScreenId, Page>> = {
+  account: lazyScreen(() =>
+    import("../settings/account-screen").then((module) => ({
+      default: module.AccountScreen,
+    }))
+  ),
   attention: lazyScreen(() =>
     import("../offline/runtime/attention-page").then((module) => ({
       default: module.AttentionPage,
