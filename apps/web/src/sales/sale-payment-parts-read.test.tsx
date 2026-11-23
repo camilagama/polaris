@@ -18,8 +18,7 @@ vi.mock("../lib/orpc", () => ({ orpcClient: {} }));
 const { SaleReceipt } = await import("./sale-receipt");
 const { ConfirmedSalePanel } = await import("./sale-confirmed-panel");
 
-const MONO_AMOUNT =
-  /text-right font-mono tabular-nums[^"]*"><span[^>]*>R\$ 100,01</;
+const MONO_AMOUNT = /text-right"><span class="[^"]*font-mono[^"]*">R\$ 100,01</;
 const PART_BLOCKS = /data-payment-part="\d"/g;
 const TOTAL_CELLS = /data-money-number="">300</g;
 const ID = "11111111-1111-4111-8111-111111111111";

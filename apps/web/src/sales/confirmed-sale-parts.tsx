@@ -1,5 +1,6 @@
 import { cn } from "@/lib/utils";
 import { MoneyText } from "@/ui/hidden-values";
+import { Money } from "@/ui/money";
 import type { ConfirmedSaleView } from "./sale-form-model";
 import { FeeValue } from "./sale-summary-panel";
 
@@ -8,6 +9,36 @@ type ConfirmedDetail = ConfirmedSaleView["saleDetails"][number];
 /** Amounts, as opposed to words ("não se aplica"), dates and unknowns: what the receipt sets in Geist Mono. */
 function isAmount(detail: ConfirmedDetail): boolean {
   return detail.tone === "known" || detail.tone === "zero";
+}
+
+/** The lines of a receipt: label at the left, value at the right edge, amounts in mono; shared by the block of one payment and by each part. */
+function ReceiptRows({
+  details,
+}: {
+  details: ConfirmedSaleView["saleDetails"];
+}) {
+  return details.map((detail) => (
+    <div
+      className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5"
+      key={detail.label}
+    >
+      <dt className="min-w-0 text-muted-foreground text-xs [overflow-wrap:break-word]">
+        {detail.label}
+      </dt>
+      <dd
+        className={cn(
+          "ml-auto min-w-0 text-right text-sm [overflow-wrap:break-word]",
+          isAmount(detail) && "font-mono tabular-nums"
+        )}
+      >
+        {detail.tone === "plain" ? (
+          <MoneyText text={detail.value} />
+        ) : (
+          <FeeValue line={{ text: detail.value, tone: detail.tone }} />
+        )}
+      </dd>
+    </div>
+  ));
 }
 
 /**
@@ -35,28 +66,7 @@ export function ConfirmedDetails({
         className="grid gap-2 rounded-lg bg-muted p-4"
         data-receipt-block={block}
       >
-        {details.map((detail) => (
-          <div
-            className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5"
-            key={detail.label}
-          >
-            <dt className="min-w-0 text-muted-foreground text-xs [overflow-wrap:break-word]">
-              {detail.label}
-            </dt>
-            <dd
-              className={cn(
-                "ml-auto min-w-0 text-right text-sm [overflow-wrap:break-word]",
-                isAmount(detail) && "font-mono tabular-nums"
-              )}
-            >
-              {detail.tone === "plain" ? (
-                <MoneyText text={detail.value} />
-              ) : (
-                <FeeValue line={{ text: detail.value, tone: detail.tone }} />
-              )}
-            </dd>
-          </div>
-        ))}
+        <ReceiptRows details={details} />
       </dl>
     );
   }
@@ -152,8 +162,8 @@ export function ConfirmedPaymentParts({
               <span className="sr-only">{`Parte ${index + 1}: `}</span>
               {part.methodText}
             </span>
-            <span className="ml-auto min-w-0 text-right font-mono tabular-nums [overflow-wrap:break-word]">
-              <MoneyText text={part.amountText} />
+            <span className="ml-auto min-w-0 text-right">
+              <Money text={part.amountText} />
             </span>
           </p>
           {part.installmentText ? (
@@ -162,30 +172,7 @@ export function ConfirmedPaymentParts({
             </p>
           ) : null}
           <dl className="grid gap-2">
-            {part.details.map((detail) => (
-              <div
-                className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5"
-                key={detail.label}
-              >
-                <dt className="min-w-0 text-muted-foreground text-xs [overflow-wrap:break-word]">
-                  {detail.label}
-                </dt>
-                <dd
-                  className={cn(
-                    "ml-auto min-w-0 text-right text-sm [overflow-wrap:break-word]",
-                    isAmount(detail) && "font-mono tabular-nums"
-                  )}
-                >
-                  {detail.tone === "plain" ? (
-                    <MoneyText text={detail.value} />
-                  ) : (
-                    <FeeValue
-                      line={{ text: detail.value, tone: detail.tone }}
-                    />
-                  )}
-                </dd>
-              </div>
-            ))}
+            <ReceiptRows details={part.details} />
           </dl>
         </li>
       ))}
