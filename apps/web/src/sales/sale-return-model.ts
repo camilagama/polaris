@@ -36,7 +36,7 @@ export const RETURN_EXPLANATION =
   "Uma devolução é um registro à parte: a venda confirmada não é alterada. O estoque volta apenas nas quantidades de “Volta ao estoque”, pelo custo registrado em cada item. O Polaris não processa reembolsos nem registra valores devolvidos; o valor das devoluções é tratado depois.";
 
 /** Added to the explanation when the sale was paid in more than one part: each part goes back by the way it came in. */
-export const RETURN_PER_PART_HINT =
+const RETURN_PER_PART_HINT =
   "Devolva o dinheiro pelo mesmo meio de cada parte.";
 
 export function returnExplanation(paymentParts: number): string {

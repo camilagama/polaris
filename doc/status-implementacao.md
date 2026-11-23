@@ -3703,3 +3703,11 @@ Origem: achado B do Diego no Pixel 6 (28/10): a venda montada em Vender sumia ao
 | Servidor | Em revisão | `confirmSale` grava `payment_count` e as partes num `INSERT` com `position`; perfis e regras de todas as partes em duas leituras; replay compara a lista por posição; `readConfirmedSale` e `listSales` ordenam pela posição (a regra provisória do maior valor saiu). Recusas: `sale_payment_split_mismatch` (RPC 400 e sync), perfil recusado em qualquer parte recusa a venda inteira, com `data.part` no RPC. |
 | Provas | Em revisão | Gates `sale-transaction` (2 partes gravadas com as taxas de cada perfil sobre o valor da parte, soma errada sem efeito, replay e conflitos, 4 entregas simultâneas, perfil recusado na parte 1, parte sem perfil ou sem regra com taxa desconhecida), `read-models` (lista e Detalhe pela posição), `offline-sale` (sync de venda dividida, soma errada e perfil velho na parte 1) e `web-worker` (`sale/confirm` com 1 e com 2 partes: 28 statements cada). |
 | Fora | Pendente | Tela (S3), leitura nas telas (S4), offline do app (S5). No sync, a recusa de perfil tem o código estável sem o índice da parte (a linha recusada de `sync_commands` não guarda resultado). |
+
+### Pagamento dividido, S4: leitura nas telas (t1665)
+
+| Parte | Estado | O que há |
+| --- | --- | --- |
+| Telas | Em revisão | O recibo do Detalhe e o Resumo logo depois de confirmar trocam o bloco de pagamento por uma lista de nome "Pagamento em 2 partes" (método por extenso e valor de cada parte, "3x · Parcelado pelo lojista" no crédito, perfil, regra, taxas e prazo da parte, sem linha de soma) quando a venda tem 2 partes; a linha do Histórico junta os métodos pela posição ("Pix + Crédito", "Pix + Pix"); a explicação da devolução ganha "Devolva o dinheiro pelo mesmo meio de cada parte." A venda de 1 parte não muda. Sem contrato nem banco novo. |
+| Provas | Em revisão | Vitest do modelo da venda, do recibo, do Resumo, da linha do Histórico e da frase da devolução; e2e a 320 px (letra de 16 e de 20 px) do recibo (soma das partes = total devido, nome acessível, axe) e da linha do Histórico. |
+| Fora | Pendente | Valor da parcela ("3x de R$ …"), que pede uma regra de arredondamento que a venda não guarda; filtro por método (S6); offline do app (S5). |
