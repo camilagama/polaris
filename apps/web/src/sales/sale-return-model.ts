@@ -382,10 +382,6 @@ export function isReturnDraftChanged(state: ReturnState): boolean {
   );
 }
 
-export function closeReturn(state: ReturnState): ReturnState {
-  return isReturnLocked(state) ? state : initialReturnState();
-}
-
 function editable(state: ReturnState): boolean {
   return !isReturnLocked(state) && state.step === "editing";
 }
