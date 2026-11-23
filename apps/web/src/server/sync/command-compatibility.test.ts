@@ -169,10 +169,10 @@ async function currentPayloads() {
 }
 
 /**
- * A sale paid in two parts, each with its own profile choice. The app does not
- * emit it yet (the device builder moves to parts with the offline sale screen);
- * the server takes it from now on, so it is committed here by hand. When the
- * builder emits it, this entry is replaced by the builder's own output.
+ * A sale paid in two parts, each with its own profile choice, written by hand:
+ * the device builder emits only the single-payment form, and the server must
+ * already take this one. It gives way to the builder's own output once the
+ * builder emits parts.
  */
 function splitSalePayload(variantId: string) {
   return {

@@ -226,17 +226,15 @@ type PaymentForm = Pick<
 >;
 
 /**
- * Passes on the payment form the client sent, `payment` (with the sale's
- * profile) or `payments`, as is: the domain refuses a missing profile.
+ * Passes on every payment field the client sent, as is: the domain refuses
+ * both forms together, neither, and a missing profile, behind the contract.
  */
 function paymentForm(input: PaymentForm): PaymentForm {
-  if (input.payments !== undefined) {
-    return { payments: input.payments };
-  }
-  const { payment, paymentProfile } = input;
+  const { payment, paymentProfile, payments } = input;
   return {
     ...(payment === undefined ? {} : { payment }),
     ...(paymentProfile === undefined ? {} : { paymentProfile }),
+    ...(payments === undefined ? {} : { payments }),
   };
 }
 

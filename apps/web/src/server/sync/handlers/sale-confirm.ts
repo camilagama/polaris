@@ -112,8 +112,10 @@ function classify(error: unknown): string | null {
 }
 
 /**
- * The legacy form keeps its sale-level profile (absent means none); a split
- * payment carries the profile inside each part and sends no sale-level one.
+ * The single-payment form keeps its sale-level profile (absent means none); a
+ * split payment carries the profile inside each part and sends no sale-level
+ * one. Every field sent is passed on, so the domain refuses both forms
+ * together behind the contract.
  */
 function paymentForm(
   input: OfflineSalePayload
@@ -121,12 +123,17 @@ function paymentForm(
   Parameters<typeof confirmSale>[2],
   "payment" | "paymentProfile" | "payments"
 > {
-  if (input.payments !== undefined) {
-    return { payments: input.payments };
+  const { payment, paymentProfile, payments } = input;
+  if (payments !== undefined) {
+    return {
+      payments,
+      ...(payment === undefined ? {} : { payment }),
+      ...(paymentProfile === undefined ? {} : { paymentProfile }),
+    };
   }
-  return input.payment === undefined
-    ? { paymentProfile: input.paymentProfile ?? null }
-    : { payment: input.payment, paymentProfile: input.paymentProfile ?? null };
+  return payment === undefined
+    ? { paymentProfile: paymentProfile ?? null }
+    : { payment, paymentProfile: paymentProfile ?? null };
 }
 
 function parsePayload(payload: unknown): OfflineSalePayload {

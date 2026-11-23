@@ -1325,31 +1325,28 @@ describe("the e-mail and password flows of the web worker", () => {
     // a sale confirmed under a payment profile, then the same sale in two parts under two profiles: each call is a
     // new command (a repeated one would replay)
     const profileFor = (method: "cash" | "pix", name: string) =>
-      post<{ id: string; version: number }>(
-        "/rpc/paymentProfile/create",
-        {
-          name,
-          organizationId,
-          rules: [
-            {
-              anticipationFee: {
-                fixedAmount: null,
-                mode: "none",
-                percentage: null,
-              },
-              expectedSettlementDays: 1,
-              installmentPlan: null,
-              installments: null,
-              method,
-              processingFee: {
-                fixedAmount: null,
-                mode: "percentage",
-                percentage: "1.000000",
-              },
+      post<{ id: string; version: number }>("/rpc/paymentProfile/create", {
+        name,
+        organizationId,
+        rules: [
+          {
+            anticipationFee: {
+              fixedAmount: null,
+              mode: "none",
+              percentage: null,
             },
-          ],
-        }
-      );
+            expectedSettlementDays: 1,
+            installmentPlan: null,
+            installments: null,
+            method,
+            processingFee: {
+              fixedAmount: null,
+              mode: "percentage",
+              percentage: "1.000000",
+            },
+          },
+        ],
+      });
     const cashProfile = await profileFor("cash", "Caixa");
     const pixProfile = await profileFor("pix", "Banco");
     const saleBody = (payment: Record<string, unknown>) => () => ({

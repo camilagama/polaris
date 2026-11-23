@@ -1430,8 +1430,51 @@ async function run() {
           `${label}: the whole sale is refused`
         );
       }
+      const bothStale = splitCommand(productA2.variantId, [
+        pixPart("40.00", {
+          expectedVersion: pixSelection.expectedVersion + 1,
+          id: pixProfile.id,
+        }),
+        cardPart("50.00", { expectedVersion: 1, id: randomUUID() }),
+      ]);
+      await assert.rejects(
+        () => confirm(tenantA, bothStale),
+        (error: unknown) => {
+          assert.ok(error instanceof PaymentProfileVersionConflictError);
+          assert.equal(error.part, 0, "the first part that fails is named");
+          return true;
+        }
+      );
+      assert.deepEqual(
+        await effects(tenantA, bothStale.commandId, bothStale.requestId ?? ""),
+        noEffects
+      );
       tests.push(
-        "a profile refused on one part (stale version, unknown, another organization's, one profile at two versions) refuses the whole sale with that part's position and writes nothing"
+        "a profile refused on one part (stale version, unknown, another organization's, one profile at two versions) refuses the whole sale with that part's position and writes nothing; with both parts refused, the first is named"
+      );
+
+      // two parts of the same method under two profiles: each part takes the rule of its own profile
+      const samePixTwoProfiles = await confirm(
+        tenantA,
+        splitCommand(productA2.variantId, [
+          pixPart("40.00"),
+          pixPart("50.00", cardSelection),
+        ])
+      );
+      assert.deepEqual(
+        (await storedParts(samePixTwoProfiles.sale.id)).map((row) => [
+          row.position,
+          row.profile_id,
+          row.processing_fee,
+        ]),
+        [
+          [0, pixProfile.id, "0.90"],
+          [1, profile.id, "0.75"],
+        ],
+        "1% + 0.50 of 40.00 under one profile, 1.5% of 50.00 under the other"
+      );
+      tests.push(
+        "two parts of the same method under two profiles each take the rule of their own profile"
       );
 
       const partWithoutProfile = await confirm(
