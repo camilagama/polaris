@@ -261,7 +261,7 @@ test("um mês parcial mostra o aviso do que faltou e a etiqueta de estimativa in
   await expect(banner).not.toContainText("Dados completos");
 
   // the result carries the tag, and the unknowns are marked on their own lines
-  await expect(card(page, CARD.result)).toContainText("estimativa incompleta");
+  await expect(card(page, CARD.result)).toContainText("Incompleta");
   await expect(card(page, CARD.result)).toContainText("R$ 92,00");
   await expect(chainRow(page, "(CMV)")).toContainText(
     "Não inclui 2 itens sem custo conhecido."
@@ -528,7 +528,7 @@ test("sem conexão, a cópia vale só para o mês já lido, com a estimativa com
   });
   await expect(card(page, CARD.netSales)).toContainText("R$ 100,00");
   await expect(quality(page)).toContainText("Estimativa incompleta");
-  await expect(card(page, CARD.result)).toContainText("estimativa incompleta");
+  await expect(card(page, CARD.result)).toContainText("Incompleta");
   await expect(card(page, CARD.result)).toContainText("R$ 92,00");
   await expect(page.getByRole("alert")).toHaveCount(0);
 });
