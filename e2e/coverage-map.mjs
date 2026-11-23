@@ -906,6 +906,7 @@ export const SPEC_SCREENS = {
     "products",
   ],
   "apps/web/e2e/products-screen.e2e.ts": ["inventory", "products"],
+  "apps/web/e2e/recibo-pagamento-reflow.e2e.ts": ["inventory", "sale-detail"],
   "apps/web/e2e/reflow-helper.e2e.ts": ["inventory"],
   "apps/web/e2e/reflow-rotas.e2e.ts": "all",
   "apps/web/e2e/sale-columns.e2e.ts": ["home", "sale"],
