@@ -230,3 +230,87 @@ for (const item of TABS) {
     });
   });
 }
+
+const DIALOG_TABS = TABS.filter((item) =>
+  ["diálogo do produto", "prévia da importação"].includes(item.name)
+);
+
+const FADE_CASES = [
+  { fontPixels: 20, name: "diálogo do produto", width: 320 },
+  { fontPixels: 16, name: "prévia da importação", width: 320 },
+  { fontPixels: 16, name: "prévia da importação", width: 360 },
+] as const;
+
+const TOLERANCE = 2;
+
+/** The rgb of any CSS color the page can parse (oklch included), read back through a canvas pixel. */
+function rgbOfColors(
+  page: Page,
+  colors: readonly string[]
+): Promise<number[][]> {
+  return page.evaluate((list) => {
+    const context = document.createElement("canvas").getContext("2d", {
+      willReadFrequently: true,
+    }) as CanvasRenderingContext2D;
+    return list.map((color) => {
+      context.clearRect(0, 0, 1, 1);
+      context.fillStyle = color;
+      context.fillRect(0, 0, 1, 1);
+      return [...context.getImageData(0, 0, 1, 1).data].slice(0, 3);
+    });
+  }, colors);
+}
+
+for (const { fontPixels, name, width } of FADE_CASES) {
+  const item = DIALOG_TABS.find(
+    (candidate) => candidate.name === name
+  ) as TabCase;
+  test.describe(`o esmaecido das abas do ${name} a ${width} px, no escuro`, () => {
+    test.use({ colorScheme: "dark", hasTouch: false });
+
+    for (const side of ["start", "end"] as const) {
+      test(`a ponta ${side === "start" ? "da esquerda" : "da direita"} começa na cor do fundo do diálogo`, async ({
+        page,
+      }) => {
+        await openReflowViewport(page, { fontPixels, width });
+        await openScreen(page, item.screen);
+        const tablist = page.getByRole("tablist", { name: item.list });
+        await expect(tablist).toBeVisible();
+        const scroller = tablist.locator("xpath=..");
+        await expect
+          .poll(() =>
+            scroller.evaluate(
+              (element) => element.scrollWidth - element.clientWidth
+            )
+          )
+          .toBeGreaterThan(1);
+        const edge = page.locator(`[data-tabs-edge='${side}']`);
+        const scrollTo = (to: "start" | "end") =>
+          scroller.evaluate((element, target) => {
+            element.scrollLeft = target === "start" ? 0 : element.scrollWidth;
+          }, to);
+        await scrollTo("end");
+        await expect(page.locator("[data-tabs-edge='start']")).toHaveCount(1);
+        if (side === "end") {
+          await scrollTo("start");
+        }
+        await expect(edge).toHaveCount(1);
+        const [fade, dialog] = await Promise.all([
+          edge.evaluate((element) =>
+            getComputedStyle(element).getPropertyValue("--tw-gradient-from")
+          ),
+          page
+            .getByRole("dialog")
+            .evaluate((element) => getComputedStyle(element).backgroundColor),
+        ]);
+        const [fadeRgb, dialogRgb] = await rgbOfColors(page, [fade, dialog]);
+        for (const [index, channel] of (fadeRgb as number[]).entries()) {
+          expect(
+            Math.abs(channel - (dialogRgb as number[])[index]),
+            `canal ${index}: esmaecido ${fadeRgb}, diálogo ${dialogRgb}`
+          ).toBeLessThanOrEqual(TOLERANCE);
+        }
+      });
+    }
+  });
+}
