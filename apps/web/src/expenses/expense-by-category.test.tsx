@@ -101,7 +101,7 @@ describe("ExpenseByCategory", () => {
 
   it("pushes the share and the amount to the right edge so a wrapped group keeps the column of the other lines", () => {
     const html = render();
-    expect(html.match(/<span class="ml-auto flex shrink-0 /g)).toHaveLength(2);
+    expect(html.match(/class="[^"]*\bml-auto\b[^"]*\btabular-nums\b[^"]*"/g)).toHaveLength(2);
   });
 
   it("leaves Outras and Sem categoria as plain lines: there is no category to filter by", () => {
