@@ -2198,7 +2198,7 @@ Plano de 23/10/2026, item 3.1, primeira parte; emenda de 24/10/2026 do [ADR 0103
 
 | Item | Estado | Detalhe |
 | --- | --- | --- |
-| Abas (`Tabs`) | Concluído (PR 290, 16751930) | Produtos, Despesas, Categorias, Clientes e o filtro de saldo do Estoque usam o `Tabs` de `src/ui/tabs.tsx` pela peça `SegmentedFilter` (`ui/segmented-filter.tsx`, a única cópia; as telas a importam como `StatusNav` de `catalog/screen-parts.tsx`). `role="tablist"` com o nome de antes e `role="tab"` com `aria-selected`; as setas escolhem a aba, só a escolhida é parada do Tab e Tab sai do grupo. Saíram `ProductStatusNav`, as abas feitas à mão de Despesas e o `ButtonGroup` do Estoque. O visual passa da linha sob a escolhida para a faixa do componente. |
+| Abas (`Tabs`) | Concluído (PR 290, 16751930) | Produtos, Despesas, Categorias, Clientes e o filtro de saldo do Estoque usam o `Tabs` de `src/ui/tabs.tsx` pela peça `SegmentedFilter` (`ui/segmented-filter.tsx`, a única cópia, que as telas importam direto). `role="tablist"` com o nome de antes e `role="tab"` com `aria-selected`; as setas escolhem a aba, só a escolhida é parada do Tab e Tab sai do grupo. Saíram a navegação de estado de Produtos feita à mão, as abas feitas à mão de Despesas e o `ButtonGroup` do Estoque. O visual passa da linha sob a escolhida para a faixa do componente. |
 | Esqueleto (`Skeleton`) | Concluído (PR 290, 16751930) | Estoque e Detalhe da venda: cartão `role="status"` com a frase só para o leitor de tela e três linhas de `Skeleton`. O Histórico de vendas já era assim. As três cópias do cartão não foram juntadas (a t266 mediu que fica maior). O estado vazio continua um cartão com uma frase. |
 | `/sales/customer` sem `saleId` | Já estava na main | Feito na t255 (sem campo de identificador; leva ao Histórico). A t300 só acrescenta a prova no navegador. |
 | Seletor de aparência | Sem mudança | Fica com botões `aria-pressed`: o `RadioGroup` no shell sobe o primeiro script em 8 187 B gzip (medido). |
@@ -3688,6 +3688,14 @@ Origem: achado B do Diego no Pixel 6 (28/10): a venda montada em Vender sumia ao
 | Endereços | Em revisão | `legacyAddress` leva `/configuracoes?aba=senha|aparelhos` (com o resto da consulta e o `#`), `/devices` e `/conta/seguranca` a `/conta`; `?aba=assinatura&retorno=` e `/?assinatura=` seguem na Assinatura. O "Cancelar" da troca de senha volta a "Minha conta". |
 | Provas | Em revisão | `settings-tabs.test.ts`, `navigation-model.test.ts`, `screen-tabs.test.tsx`, `change-password-cancel.test.tsx`; e2e `account-screen.e2e.ts`, `settings-groups.e2e.ts` e os que citavam as abas movidas. |
 | Fora | Pendente | Baselines do `ui-visual` (`aparelhos-lista`, `assinatura-oferta`, `pagamento-lista`, menu do círculo), refeitas pelo CI. |
+
+### Metas: as ações na linha do título, e as abas não pulam (t1701, C8 do corte de 23/11; sem migration)
+
+| Parte | Estado | O que há |
+| --- | --- | --- |
+| Telas | Em revisão | Na aba Metas, a `action` da linha do título (`TitleLine`) leva "Atualizar metas" e "Nova meta", desenhados pelo `GoalsPanel` por um portal no espaço que `dashboard-page.tsx` reserva (o painel guarda o estado dos comandos); a linha existe nas duas abas e as abas não mudam de lugar ao trocar, a 360 e a 1280 px. O cabeçalho da região Metas fica só com o título e a linha de apoio. |
+| Provas | Em revisão | `e2e-pwa/ui-acoes-na-linha-do-titulo.e2e.ts` (Metas na matriz da linha do título e da ordem do foco; "as abas não pulam" a 1280 e 360 px, até 1 px, nos dois sentidos); `e2e/goals.e2e.ts` com o botão procurado na página, não na região. |
+| Fora | Pendente | Baselines do `ui-visual` das Metas, refeitas pelo CI. |
 
 ### Pagamento dividido, S1: o banco aceita de 1 a 3 partes (t1660; migration 0139, provisória)
 
