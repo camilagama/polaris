@@ -727,7 +727,7 @@ export async function serve(page: Page, server: FakeServer) {
     route.fulfill(json({ device: DEVICE, devices: [DEVICE] }))
   );
   await page.route("**/rpc/offline/issueLease", async (route) => {
-    const issuedAt = new Date();
+    const issuedAt = new Date(server.now);
     const expiresAt = new Date(issuedAt.getTime() + 72 * HOUR);
     const lease = await signOfflineLease(
       buildOfflineLeaseClaims({
