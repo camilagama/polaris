@@ -78,6 +78,15 @@ const KNOWN_FINDINGS: readonly KnownFinding[] = [];
 /** What is cut at 320 px with the font at 24 px and not at 20 px: a report to read, never a promise and never an excuse. */
 const KNOWN_FINDINGS_24: readonly KnownFinding[] = [
   {
+    clientWidth: 276,
+    reason:
+      'no Resultado sem custo conhecido, o cartão "Resultado estimado" tem 276 px e a linha de apoio única (o sinal "Incompleta" e a causa, que não cabe e fica invisível) deixa a frase para o leitor de tela fora da caixa: o conteúdo mede 333 px, 57 px além da borda direita do cartão',
+    screens: ["resultado sem custo conhecido"],
+    scrollWidth: 333,
+    selector:
+      'div[data-slot="tabs"] > div[data-slot="tabs-content"] > div[data-slot="card"]',
+  },
+  {
     clientWidth: 212,
     reason:
       'em Configurações no celular, dentro de uma aba, o título "Configurações" (221 px, uma palavra só) divide a linha com a seta de voltar e passa 9 px da borda direita da coluna',
