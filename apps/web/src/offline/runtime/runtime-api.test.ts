@@ -216,3 +216,109 @@ describe("runtime api deviceIsMine", () => {
     }
   });
 });
+
+describe("the bootstrap source of the runtime", () => {
+  const organizationId = "org-1";
+  const expectedUserId = "user-1";
+
+  function fakeSourceClient() {
+    const bootstrapPage = vi.fn(() =>
+      Promise.resolve({
+        collection: "categories" as const,
+        nextAfterId: "next",
+        rows: [{ id: "category-1" }],
+      })
+    );
+    const getCursor = vi.fn(() => Promise.resolve({ cursor: "12" }));
+    const pull = vi.fn(() =>
+      Promise.resolve({ changes: [], hasMore: false, nextCursor: "13" })
+    );
+    const list = vi.fn(() =>
+      Promise.resolve({ hasMore: false, sales: [{ id: "sale-1" }] })
+    );
+    const client = {
+      sale: { list },
+      sync: { bootstrapPage, getCursor, pull },
+    } as unknown as PolarisRpcClient;
+    const source = (signal?: AbortSignal) =>
+      createRpcRuntimeApi(client).source(organizationId, signal, expectedUserId);
+    return { bootstrapPage, getCursor, list, pull, source };
+  }
+
+  it("reads the cursor of its organization", async () => {
+    const { getCursor, source } = fakeSourceClient();
+    await expect(source().getCursor()).resolves.toBe("12");
+    expect(getCursor).toHaveBeenCalledWith({ organizationId }, undefined);
+  });
+
+  it("asks for pages with the keyset position and page size", async () => {
+    const { bootstrapPage, source } = fakeSourceClient();
+    await expect(
+      source().page("categories", { afterId: "after", limit: 50 })
+    ).resolves.toEqual({ nextAfterId: "next", rows: [{ id: "category-1" }] });
+    expect(bootstrapPage).toHaveBeenCalledWith(
+      {
+        afterId: "after",
+        collection: "categories",
+        ids: null,
+        limit: 50,
+        organizationId,
+      },
+      undefined
+    );
+  });
+
+  it("asks for entities by id without a keyset position, 200 to a page unless told", async () => {
+    const { bootstrapPage, source } = fakeSourceClient();
+    await source().page("categories", { ids: ["a", "b"] });
+    expect(bootstrapPage).toHaveBeenCalledWith(
+      {
+        afterId: null,
+        collection: "categories",
+        ids: ["a", "b"],
+        limit: 200,
+        organizationId,
+      },
+      undefined
+    );
+  });
+
+  it("pulls with the cursor, the limit, the user it expects and its organization", async () => {
+    const { pull, source } = fakeSourceClient();
+    await source().pull("5", 500);
+    expect(pull).toHaveBeenCalledWith(
+      { cursor: "5", expectedUserId, limit: 500, organizationId },
+      undefined
+    );
+  });
+
+  it("reads the latest 100 sales of the sale list", async () => {
+    const { list, source } = fakeSourceClient();
+    await expect(source().recentSales()).resolves.toEqual([{ id: "sale-1" }]);
+    expect(list).toHaveBeenCalledWith({ limit: 100, organizationId }, undefined);
+  });
+
+  it("hands its abort signal to every call, and none when it has none", async () => {
+    const { bootstrapPage, getCursor, list, pull, source } =
+      fakeSourceClient();
+    const { signal } = new AbortController();
+    const aborting = source(signal);
+    await aborting.getCursor();
+    await aborting.page("categories", {});
+    await aborting.pull("5", 500);
+    await aborting.recentSales();
+    for (const call of [getCursor, bootstrapPage, pull, list]) {
+      expect(call.mock.calls).toHaveLength(1);
+      expect((call.mock.calls[0] as unknown[])[1]).toEqual({ signal });
+    }
+    const plain = source();
+    await plain.getCursor();
+    await plain.page("categories", {});
+    await plain.pull("5", 500);
+    await plain.recentSales();
+    for (const call of [getCursor, bootstrapPage, pull, list]) {
+      expect(call.mock.calls).toHaveLength(2);
+      expect((call.mock.calls[1] as unknown[])[1]).toBeUndefined();
+    }
+  });
+});
