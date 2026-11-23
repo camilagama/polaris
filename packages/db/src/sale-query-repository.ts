@@ -11,7 +11,7 @@ import {
   type SQL,
   sql,
 } from "drizzle-orm";
-import { mainPayment, readConfirmedSale } from "./sale-repository";
+import { readConfirmedSale } from "./sale-repository";
 import { customers } from "./schema/customer";
 import type { SaleCancellationRecord } from "./sale-cancellation-repository";
 import { saleAdjustments, saleItems, salePayments, sales } from "./schema/sale";
@@ -55,7 +55,10 @@ export interface SaleListEntry {
   itemCount: number;
   occurredAt: Date;
   occurredOn: string;
+  /** The method of the part at position 0. */
   paymentMethod: string | null;
+  /** The method of each part, by position. */
+  paymentMethods: string[];
   status: "cancelled" | "confirmed";
   totalDue: string;
 }
@@ -209,8 +212,6 @@ export async function listSales(
         ),
       transaction
         .select({
-          amount: salePayments.amount,
-          id: salePayments.id,
           method: salePayments.method,
           saleId: salePayments.saleId,
         })
@@ -220,7 +221,8 @@ export async function listSales(
             eq(salePayments.organizationId, identity.organizationId),
             inArray(salePayments.saleId, ids)
           )
-        ),
+        )
+        .orderBy(asc(salePayments.position), asc(salePayments.id)),
       transaction
         .select({
           cancelledAt: saleCancellations.cancelledAt,
@@ -261,12 +263,7 @@ export async function listSales(
 
   const itemsBySale = groupBy(items, (row) => row.saleId);
   const adjustmentsBySale = groupBy(adjustments, (row) => row.saleId);
-  const paymentBySale = new Map(
-    [...groupBy(payments, (row) => row.saleId)].flatMap(([saleId, rows]) => {
-      const main = mainPayment(rows);
-      return main === undefined ? [] : [[saleId, main.method] as const];
-    })
-  );
+  const paymentsBySale = groupBy(payments, (row) => row.saleId);
   const cancelledAtBySale = new Map(
     cancellations.map((row) => [row.saleId, row.cancelledAt])
   );
@@ -313,7 +310,10 @@ export async function listSales(
         itemCount: header.itemCount,
         occurredAt: header.occurredAt,
         occurredOn: header.occurredOn,
-        paymentMethod: paymentBySale.get(header.id) ?? null,
+        paymentMethod: paymentsBySale.get(header.id)?.[0]?.method ?? null,
+        paymentMethods: (paymentsBySale.get(header.id) ?? []).map(
+          (row) => row.method
+        ),
         status: cancelledAt === null ? "confirmed" : "cancelled",
         totalDue: summarizeConfirmedSaleTotals(
           itemsBySale.get(header.id) ?? [],

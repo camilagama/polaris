@@ -1165,7 +1165,7 @@ test("menu: 'Assinatura' é aba de Configurações, no desktop e no celular; som
     nav.getByRole("link", { exact: true, name: "Configurações" })
   ).toHaveAttribute("aria-current", "page");
   await expect(nav.getByRole("link", { name: "Assinatura" })).toHaveCount(0);
-  const tabs = page.getByRole("tablist", { name: "Configurações" });
+  const tabs = page.getByRole("tablist", { name: "Configurações da loja" });
   await expect(
     tabs.getByRole("tab", { exact: true, name: "Assinatura" })
   ).toHaveAttribute("aria-selected", "true");

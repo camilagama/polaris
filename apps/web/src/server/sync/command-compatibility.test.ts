@@ -158,11 +158,58 @@ async function currentPayloads() {
     newVariantId: () => uuid(304),
   });
   const { commands } = await outbox.snapshot();
-  return commands.map((command) => ({
-    baseVersion: command.baseVersion,
-    payload: command.payload,
-    type: command.type,
-  }));
+  return [
+    ...commands.map((command) => ({
+      baseVersion: command.baseVersion,
+      payload: command.payload,
+      type: command.type,
+    })),
+    splitSalePayload(variantId),
+  ];
+}
+
+/**
+ * A sale paid in two parts, each with its own profile choice, written by hand:
+ * the device builder emits only the single-payment form, and the server must
+ * already take this one. It gives way to the builder's own output once the
+ * builder emits parts.
+ */
+function splitSalePayload(variantId: string) {
+  return {
+    baseVersion: null,
+    payload: {
+      adjustments: [],
+      items: [
+        {
+          chargedUnitPrice: "50.00",
+          listedUnitPrice: "50.00",
+          quantity: 2,
+          variantId,
+        },
+      ],
+      occurredAt: now.toISOString(),
+      payments: [
+        {
+          amount: "30.00",
+          anticipationRequested: false,
+          installmentPlan: null,
+          installments: null,
+          method: "pix",
+          paymentProfile: null,
+        },
+        {
+          amount: "70.00",
+          anticipationRequested: false,
+          installmentPlan: "issuer",
+          installments: 3,
+          method: "credit_card",
+          paymentProfile: { expectedVersion: 3, id: uuid(601) },
+        },
+      ],
+      recordedAt: now.toISOString(),
+    },
+    type: "sale.confirm",
+  };
 }
 
 describe("old app versions", () => {

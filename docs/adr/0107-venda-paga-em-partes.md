@@ -4,7 +4,7 @@ status: accepted
 
 # Venda paga em partes
 
-> Número provisório até o merge (o 0106 é o último na `main` e nenhum PR aberto reserva o 0107; pode mudar se outro ADR entrar antes). A migration citada (0139) também é provisória. Emenda o [ADR 0019](0019-venda-atomica-por-constraint-triggers-deferidos.md) (o gatilho de confirmação deixa de exigir exatamente um pagamento) e segue o [ADR 0096](0096-migrations-compativeis-com-a-versao-anterior-do-worker.md) (expand/contract).
+> Emenda o [ADR 0019](0019-venda-atomica-por-constraint-triggers-deferidos.md) (o gatilho de confirmação deixa de exigir exatamente um pagamento) e segue o [ADR 0096](0096-migrations-compativeis-com-a-versao-anterior-do-worker.md) (expand/contract).
 
 ## Contexto
 

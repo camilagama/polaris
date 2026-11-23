@@ -14,6 +14,7 @@ export type NavId =
 
 /** A screen of the shell: the one component a path opens; a screen with tabs holds several routes. */
 export type ScreenId =
+  | "account"
   | "attention"
   | "customers"
   | "dashboard"
@@ -65,6 +66,14 @@ export interface NavItem {
  */
 export const HELP_HREF = "/ajuda";
 export const HELP_LABEL = "Ajuda e contato";
+
+/**
+ * "Minha conta" holds what belongs to the person and holds in every store (Senha, Aparelhos): it opens from the menu of
+ * the circle, not from the sidebar. Configurações, whose item keeps its name, holds what changes with the store.
+ */
+export const ACCOUNT_HREF = "/conta";
+export const ACCOUNT_LABEL = "Minha conta";
+export const SETTINGS_TITLE = "Configurações da loja";
 
 /**
  * The ten destinations, in the order of the daily workflow, by group of the sidebar (map of navigation, § 1): Vendas
@@ -186,7 +195,7 @@ export function navGroups(
 /** The tab is in the address (`?aba=`): a reload, a saved link and the copy offline open the same tab. */
 const TAB_PARAMETER = "aba";
 
-export type TabScreenId = "dashboard" | "products" | "settings";
+export type TabScreenId = "account" | "dashboard" | "products" | "settings";
 
 export interface ScreenTab {
   label: string;
@@ -198,6 +207,10 @@ export interface ScreenTab {
 /** The tabs of each screen that has them, in order (map § 1). */
 export const SCREEN_TABS: Readonly<Record<TabScreenId, readonly ScreenTab[]>> =
   {
+    account: [
+      { label: "Senha", route: "account-security", value: "senha" },
+      { label: "Aparelhos", route: "devices", value: "aparelhos" },
+    ],
     dashboard: [
       { label: "Resultado", route: "dashboard", value: "resultado" },
       { label: "Metas", route: "dashboard", value: "metas" },
@@ -217,16 +230,14 @@ export const SCREEN_TABS: Readonly<Record<TabScreenId, readonly ScreenTab[]>> =
         route: "public-catalog",
         value: "catalogo-publico",
       },
-      { label: "Aparelhos", route: "devices", value: "aparelhos" },
       { label: "Assinatura", route: "subscription", value: "assinatura" },
-      { label: "Senha", route: "account-security", value: "senha" },
       { label: "Seus dados", route: "data-export", value: "seus-dados" },
     ],
   };
 
 /**
  * The tab an address asks of a screen: its `aba` when it is one of the screen's tabs, else the first. On the
- * Resultado, the two links of the Início to the goals (`meta=nova`, `meta=lista`) ask for Metas and win over `aba`.
+ * Resultado, `meta=nova` (the Início's "Definir meta") and the older `meta=lista` ask for Metas and win over `aba`.
  */
 export function requestedTab(screen: TabScreenId, search: string): ScreenTab {
   const tabs = SCREEN_TABS[screen];
@@ -320,6 +331,7 @@ interface RouteDefinition {
 const ROUTES: Readonly<Record<string, RouteDefinition>> = {
   "/": { navId: "home", screen: "home", title: "Início" },
   "/ajuda": { navId: "help", screen: "help", title: HELP_LABEL },
+  "/conta": { navId: null, screen: "account", title: ACCOUNT_LABEL },
   "/attention": {
     navId: "attention",
     screen: "attention",
@@ -328,7 +340,7 @@ const ROUTES: Readonly<Record<string, RouteDefinition>> = {
   "/configuracoes": {
     navId: "settings",
     screen: "settings",
-    title: "Configurações",
+    title: SETTINGS_TITLE,
   },
   "/customers": { navId: "customers", screen: "customers", title: "Clientes" },
   "/dashboard": { navId: "dashboard", screen: "dashboard", title: "Resultado" },
@@ -356,12 +368,8 @@ const LEGACY_ADDRESSES: Readonly<
   Record<string, { path: string; screen: TabScreenId; tab: string }>
 > = {
   "/categories": { path: "/products", screen: "products", tab: "categorias" },
-  "/conta/seguranca": {
-    path: "/configuracoes",
-    screen: "settings",
-    tab: "senha",
-  },
-  "/devices": { path: "/configuracoes", screen: "settings", tab: "aparelhos" },
+  "/conta/seguranca": { path: ACCOUNT_HREF, screen: "account", tab: "senha" },
+  "/devices": { path: ACCOUNT_HREF, screen: "account", tab: "aparelhos" },
   "/payment-profiles": {
     path: "/configuracoes",
     screen: "settings",
@@ -400,6 +408,26 @@ function expensesTabAddress(
   return `/expenses${query ? `?${query}` : ""}${hash}`;
 }
 
+/** Where Senha and Aparelhos were, as tabs of Configurações: those addresses open Minha conta, with the rest of the query. */
+function accountTabAddress(
+  normalized: string,
+  search: string,
+  hash: string
+): string | null {
+  const named = new URLSearchParams(search).get(TAB_PARAMETER);
+  const tab = SCREEN_TABS.account.find(
+    (candidate) => candidate.value === named
+  );
+  if (normalized !== "/configuracoes" || !tab) {
+    return null;
+  }
+  return addressWithTab(
+    `${ACCOUNT_HREF}${search}${hash}`,
+    "account",
+    tab.value
+  );
+}
+
 /** The address of the tab an old address opens (map § 6), or null for any other address. */
 export function legacyAddress(
   pathname: string,
@@ -408,9 +436,11 @@ export function legacyAddress(
   phone = false
 ): string | null {
   const normalized = pathname.replace(trailingSlashes, "") || "/";
-  const expenses = expensesTabAddress(normalized, search, hash);
-  if (expenses) {
-    return expenses;
+  const moved =
+    expensesTabAddress(normalized, search, hash) ??
+    accountTabAddress(normalized, search, hash);
+  if (moved) {
+    return moved;
   }
   const target = Object.hasOwn(LEGACY_ADDRESSES, normalized)
     ? LEGACY_ADDRESSES[normalized]

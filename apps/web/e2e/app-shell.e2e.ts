@@ -147,6 +147,7 @@ test.describe("desktop (1280 px)", () => {
     ]);
     // one store: nothing to switch to; "Sair" is the last item, with its own separator before it
     await expect(menu.getByRole("menuitem")).toHaveText([
+      "Minha conta",
       "Ajuda e contato",
       "Termos de Uso (abre em outra aba)",
       "Política de Privacidade (abre em outra aba)",
@@ -530,6 +531,7 @@ test.describe("os 10 destinos e as abas (1280 px)", () => {
   });
 
   const tabScreens: {
+    current?: string;
     label: string;
     path: string;
     tabs: [name: string, address: string][];
@@ -554,16 +556,16 @@ test.describe("os 10 destinos e as abas (1280 px)", () => {
       title: "Resultado",
     },
     {
-      label: "Configurações",
+      current: "Configurações",
+      label: "Configurações da loja",
       path: "/configuracoes",
-      // Assinatura without billing:manage and Senha with the password off are not offered (map § 1)
+      // Assinatura without billing:manage is not offered (map § 1); Senha and Aparelhos are Minha conta
       tabs: [
         ["Formas de receber", "/configuracoes"],
         ["Catálogo público", "/configuracoes?aba=catalogo-publico"],
-        ["Aparelhos", "/configuracoes?aba=aparelhos"],
         ["Seus dados", "/configuracoes?aba=seus-dados"],
       ],
-      title: "Configurações",
+      title: "Configurações da loja",
     },
   ];
   for (const screen of tabScreens) {
@@ -587,7 +589,7 @@ test.describe("os 10 destinos e as abas (1280 px)", () => {
         await expect.poll(() => pathOf(page)).toBe(address);
         // the menu keeps the destination current on every tab
         await expect(sidebar(page).locator('[aria-current="page"]')).toHaveText(
-          screen.title
+          screen.current ?? screen.title
         );
         await expect(page.getByRole("tabpanel")).toHaveCount(1);
       }
@@ -631,7 +633,7 @@ test.describe("os 10 destinos e as abas (1280 px)", () => {
     await page.goto("/configuracoes?aba=nenhuma");
     const stepsBefore = await page.evaluate(() => history.length);
     await expect(
-      tabList(page, "Configurações").getByRole("tab", {
+      tabList(page, "Configurações da loja").getByRole("tab", {
         exact: true,
         name: "Formas de receber",
       })
@@ -673,7 +675,7 @@ test.describe("os 10 destinos e as abas (1280 px)", () => {
   }) => {
     await serve(page);
     await page.goto("/configuracoes");
-    const list = tabList(page, "Configurações");
+    const list = tabList(page, "Configurações da loja");
     await list
       .getByRole("tab", { exact: true, name: "Formas de receber" })
       .focus();
@@ -694,7 +696,7 @@ test.describe("os 10 destinos e as abas (1280 px)", () => {
     ).toBeVisible();
     // one h1 a page: the destination
     await expect(page.getByRole("heading", { level: 1 })).toHaveText(
-      "Configurações"
+      "Configurações da loja"
     );
   });
 
@@ -713,33 +715,30 @@ test.describe("os 10 destinos e as abas (1280 px)", () => {
       [
         "/payment-profiles",
         "/configuracoes",
-        "Configurações",
+        "Configurações da loja",
         "Formas de receber",
       ],
       [
         "/public-catalog",
         "/configuracoes?aba=catalogo-publico",
-        "Configurações",
+        "Configurações da loja",
         "Catálogo público",
-      ],
-      [
-        "/devices",
-        "/configuracoes?aba=aparelhos",
-        "Configurações",
-        "Aparelhos",
       ],
       [
         "/subscription",
         "/configuracoes?aba=assinatura",
-        "Configurações",
+        "Configurações da loja",
         "Assinatura",
       ],
+      ["/devices", "/conta?aba=aparelhos", "Minha conta", "Aparelhos"],
+      ["/conta/seguranca", "/conta", "Minha conta", "Senha"],
       [
-        "/conta/seguranca",
-        "/configuracoes?aba=senha",
-        "Configurações",
-        "Senha",
+        "/configuracoes?aba=aparelhos",
+        "/conta?aba=aparelhos",
+        "Minha conta",
+        "Aparelhos",
       ],
+      ["/configuracoes?aba=senha", "/conta", "Minha conta", "Senha"],
     ] as const) {
       // biome-ignore lint/performance/noAwaitInLoops: one address at a time
       await page.goto(old);

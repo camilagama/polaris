@@ -622,20 +622,21 @@ test.describe("the Ações menu of the title", () => {
       // biome-ignore lint/performance/noAwaitInLoops: one item at a time reads clearer than a pile of assertions
       await expect(item).toHaveAttribute("aria-disabled", "true");
       await expect(item).toContainText("Precisa de conexão");
-      const reasonOpacity = await item
-        .getByText("Precisa de conexão")
-        .evaluate((element) => {
-          let product = 1;
-          for (
-            let node: Element | null = element;
-            node !== null;
-            node = node.parentElement
-          ) {
-            product *= Number(getComputedStyle(node).opacity);
-          }
-          return product;
-        });
-      expect(reasonOpacity).toBe(1);
+      await expect
+        .poll(() =>
+          item.getByText("Precisa de conexão").evaluate((element) => {
+            let product = 1;
+            for (
+              let node: Element | null = element;
+              node !== null;
+              node = node.parentElement
+            ) {
+              product *= Number(getComputedStyle(node).opacity);
+            }
+            return product;
+          })
+        )
+        .toBe(1);
     }
     await page
       .getByRole("menuitem", { name: "Registrar devolução" })
