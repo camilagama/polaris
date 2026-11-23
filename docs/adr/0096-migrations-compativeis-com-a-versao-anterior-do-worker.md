@@ -4,8 +4,6 @@ status: accepted
 
 # Migrations compatíveis com a versão anterior do Worker (expand/contract)
 
-> O número deste ADR (0096) é o próximo livre na `main` e nos PRs abertos no momento da escrita (o 0095 é o último na `main`); pode mudar se outro entrar antes.
-
 ## Contexto
 
 O deploy aplica as migrations **antes** de trocar o Worker (o Worker novo sobre banco antigo falha nas funções novas; [checklist de release, item 3](../runbooks/release-checklist.md)). O rollback de produção (PR 136 do [plano](../../doc/plano-inicial.md), ainda sem runbook) volta só o Worker e os Static Assets e **nunca o schema**. Nas duas pontas, o Worker da versão anterior precisa continuar funcionando sobre o banco já migrado:

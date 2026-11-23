@@ -354,6 +354,18 @@ export function bestRowText(series: ResultSeries): string | null {
     : `Melhor dia: ${best.label}, ${amount}`;
 }
 
+/** "melhor dia" (or "melhor mês") for the row `bestRow` picks, null for every other row and for a period that sold nothing. */
+export function bestMark(
+  series: Pick<ResultSeries, "grouped" | "rows">,
+  index: number
+): string | null {
+  const best = bestRow(series.rows);
+  if (!best || series.rows[index] !== best) {
+    return null;
+  }
+  return series.grouped ? "melhor mês" : "melhor dia";
+}
+
 /**
  * The third part of the reading of a day or a month (AC-11): the expenses without a sale that fell on it, and, for a
  * month with days of unknown cost, how many of its days those are, with the month's name (AC-9: never a cost of zero).

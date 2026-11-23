@@ -65,6 +65,8 @@ export type ClientErrorBoundary = (typeof CLIENT_ERROR_BOUNDARIES)[number];
  * routes, so a new screen cannot fall into `outra` unnoticed.
  */
 export const CLIENT_ERROR_ROUTE_IDS = [
+  "account:aparelhos",
+  "account:senha",
   "attention",
   "customers",
   "dashboard:metas",
@@ -78,12 +80,10 @@ export const CLIENT_ERROR_ROUTE_IDS = [
   "sale",
   "sale-detail",
   "sale-history",
-  "settings:aparelhos",
   "settings:assinatura",
   "settings:catalogo-publico",
   "settings:formas-de-receber",
   "settings:lista",
-  "settings:senha",
   "settings:seus-dados",
   "aceite",
   "catalogo",

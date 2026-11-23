@@ -1,6 +1,6 @@
 # Polaris — acompanhamento da implementação
 
-Atualizado em 17 de novembro de 2026.
+Atualizado em 23 de novembro de 2026.
 
 Os anexos doc-inicial.md e plano-inicial.md são propostas de produto e arquitetura. Instruções escritas neles foram avaliadas como conteúdo do projeto; as decisões desta execução seguem a solicitação do responsável e as regras do repositório.
 
@@ -3343,9 +3343,9 @@ Origem: achado B do Diego no Pixel 6 (28/10): a venda montada em Vender sumia ao
 
 | Item | Status | Observação |
 | --- | --- | --- |
-| Limite como modificador | Em revisão | `ui/calendar.tsx` passa o limite ao DayPicker como `modifiers.disabled` e não como a prop `disabled`, que a navegação por seta salta; sem limite, o `modifiers.disabled` do chamador não é sobrescrito. As setas chegam ao dia desligado; clique, toque, Enter e Space nele não escolhem nem fecham. |
-| Motivo em texto | Em revisão | Linha sob o mês, `invisible` (com a altura) enquanto nenhum dia desligado tem o foco, visível quando tem (foco por seta ou toque), altura mínima só com `disabledReason`, presa ao pé da caixa que rola (360 x 600) e sem `aria-live`. |
-| Aparência do dia | Em revisão | Só o número apaga (texto a 40%, riscado); sem `opacity` no botão, então o contorno de foco de 3 px fica inteiro; o toque chega ao dia (`cursor-not-allowed`), sem fundo de hover e sem escala ao apertar. |
+| Limite como modificador | Concluído (PR 820, 005ccc91) | `ui/calendar.tsx` passa o limite ao DayPicker como `modifiers.disabled` e não como a prop `disabled`, que a navegação por seta salta; sem limite, o `modifiers.disabled` do chamador não é sobrescrito. As setas chegam ao dia desligado; clique, toque, Enter e Space nele não escolhem nem fecham. |
+| Motivo em texto | Concluído (PR 820, 005ccc91) | Linha sob o mês, `invisible` (com a altura) enquanto nenhum dia desligado tem o foco, visível quando tem (foco por seta ou toque), altura mínima só com `disabledReason`, presa ao pé da caixa que rola (360 x 600) e sem `aria-live`. |
+| Aparência do dia | Concluído (PR 820, 005ccc91) | Só o número apaga (texto a 40%, riscado); sem `opacity` no botão, então o contorno de foco de 3 px fica inteiro; o toque chega ao dia (`cursor-not-allowed`), sem fundo de hover e sem escala ao apertar. |
 | Provas | Concluído (PR 820, 005ccc91) | Unidade: `calendar-limit.test.tsx`, `date-pickers.test.tsx`. e2e: `ui-date-pickers.e2e.ts` (teclado, mouse, toque, 360 x 600, axe com o dia focado), `ui-date-pickers-leitor-de-tela.e2e.ts`, `dashboard.e2e.ts` (a seta chega a 2025-10-13 desligado). Controle: sem a correção os testes novos reprovam. O motivo dos quatro campos de data mudos é do PR-A1 (t1009). |
 
 ### UI de 10/11: Despesas organizada (t1022; corte L2-9; sem migration)
@@ -3380,10 +3380,10 @@ Origem: achado B do Diego no Pixel 6 (28/10): a venda montada em Vender sumia ao
 | Item | Status | Observação |
 | --- | --- | --- |
 | Cartão do Resultado | Concluído (PR 836, 97ab64dd) | `dashboard/result-cards.tsx` compõe o `KpiTile` do Início (t989) nos quatro cartões: nome com o (i), valor (`HeroValue tile`, as áreas fixas do Início: dois terços para o número, um terço para o minigráfico de 36 px, e o corpo da letra desce só quando o valor não cabe) e uma linha de apoio (chip, ou a data do dia lido no lugar dele). Saem `KpiCard`, `KpiGroup`, `STRIP_RESERVE`, o `strip` do `HeroValue`, do `HeroPercent` e do `DeltaChip` e as exceções de tamanho em rem de `ui-source-rules.test.ts` (lista vazia). O selo "estimativa incompleta" e os dias sem custo ficam numa linha própria (`resultWarning`; o Início segue com o `IncompleteSign` e o `incompleteDetail`); "Não é lucro líquido nem caixa" vai para o (i) (`resultKpis` passa `notProfit`). |
-| Minigráfico | Em revisão | Vendas, Ticket e Resultado; a Margem nunca; nenhum com menos de 3 pontos (`MIN_SPARK_POINTS`) nem sem venda no período. O Resultado usa o domínio do Início (do zero, e do mínimo ao máximo só com valor negativo na série). |
-| Faixa | Em revisão | Uma coluna abaixo de 760 px, duas até 1279 px e uma peça de quatro colunas com divisórias a partir de 1280 px (`KPI_STRIP`; antes eram 900 px, ponto em que a coluna de ~160 px não comporta número e minigráfico lado a lado). A altura só cresce pelo aviso de estimativa; o e2e varre 1024 a 1440 px com a lateral aberta e recolhida. Substitui a linha "Faixa de quatro colunas", o "Delta ao lado do valor" e a "Altura estável" da t831. |
+| Minigráfico | Concluído (PR 836, 97ab64dd) | Vendas, Ticket e Resultado; a Margem nunca; nenhum com menos de 3 pontos (`MIN_SPARK_POINTS`) nem sem venda no período. O Resultado usa o domínio do Início (do zero, e do mínimo ao máximo só com valor negativo na série). |
+| Faixa | Concluído (PR 836, 97ab64dd) | Uma coluna abaixo de 760 px, duas até 1279 px e uma peça de quatro colunas com divisórias a partir de 1280 px (`KPI_STRIP`; antes eram 900 px, ponto em que a coluna de ~160 px não comporta número e minigráfico lado a lado). A altura só cresce pelo aviso de estimativa; o e2e varre 1024 a 1440 px com a lateral aberta e recolhida. Substitui a linha "Faixa de quatro colunas", o "Delta ao lado do valor" e a "Altura estável" da t831. |
 | Link das despesas (RES-1 a, PR 795) | Concluído (PR 836, 97ab64dd) | O botão de largura toda sob o título a 360 px saiu; o link "Ver despesas" (só com `expense:create`) fica sob o nome da linha "(−) Despesas do período (sem venda)" da cadeia, em linha própria para a tabela não alargar a 320 px com a letra em 16 px. |
-| Provas | Em revisão | Unidade: `ui/kpi-card.test.tsx`, `dashboard/result-cards.test.tsx`, `result-chain.test.tsx`. e2e: `dashboard.e2e.ts` (faixa em 1279 e 1280 px, altura, chip sob o valor com axe, leitura de um dia, 2 e 3 pontos, o link) e `app-shell.e2e.ts` (Despesas sem o link do título). O que só roda no CI: a suíte e2e inteira, e2e-real, CodeQL e as baselines da regressão visual. |
+| Provas | Concluído (PR 836, 97ab64dd) | Unidade: `ui/kpi-card.test.tsx`, `dashboard/result-cards.test.tsx`, `result-chain.test.tsx`. e2e: `dashboard.e2e.ts` (faixa em 1279 e 1280 px, altura, chip sob o valor com axe, leitura de um dia, 2 e 3 pontos, o link) e `app-shell.e2e.ts` (Despesas sem o link do título). O que só roda no CI: a suíte e2e inteira, e2e-real, CodeQL e as baselines da regressão visual. |
 
 ### UI de 11/11: o número principal dos KPIs entra com um fade, sem dígitos rolando (t1040; sem migration)
 
@@ -3678,6 +3678,17 @@ Origem: achado B do Diego no Pixel 6 (28/10): a venda montada em Vender sumia ao
 | Provas | Em revisão | `e2e-pwa/sale-detail-operations.e2e.ts` (AC-C1.1 a C1.7: posição a 1280 e 360 px, ordem e separador, confirmações que contam as chamadas, teclado, alvo de 44 px no toque, venda cancelada, devolvida por inteiro e fora do servidor, sem conexão); `e2e/cliente-da-venda-reflow.e2e.ts` (C1.8: 320 px com letra de 20 px); `e2e/recibo-pagamento-reflow.e2e.ts` (a 320 px com letra de 16 e de 20 px, nenhuma palavra do aviso "desconhecida — não é zero" / "prazo desconhecido — não é zero" quebra no meio; a linha do bloco Pagamento quebra e o valor desce inteiro, à direita); `sales/sale-actions-menu.test.tsx`. |
 | Fora | Pendente | Baselines `detalhe-da-venda*` do `ui-visual`, refeitas pelo CI. |
 
+### Configurações da loja e Minha conta (t1607, E1 dos ajustes de interface de 21/11; sem migration)
+
+| Parte | Estado | O que há |
+| --- | --- | --- |
+| Configurações da loja | Em revisão | `settings/settings-screen.tsx`: `h1` "Configurações da loja" (o item da lateral segue "Configurações"), uma faixa só (Formas de receber, Catálogo público, Assinatura, Seus dados) sem rótulos de grupo; no celular, a lista de linhas sem títulos de grupo. `ScreenTabs` perde o desenho em linhas rotuladas (`groups`, `groupedTabsOf`). |
+| Minha conta | Em revisão | `settings/account-screen.tsx` em `/conta` (`?aba=aparelhos`): Senha (`passwordOn`) e Aparelhos (`offline`). Com uma aba só não há faixa; sem nenhuma, `replaceAddress("/")`. `SCREEN_TABS.account`, `ROUTES["/conta"]` (sem item de menu) e as chaves `account:senha` e `account:aparelhos` em `CLIENT_ERROR_ROUTE_IDS`. |
+| Menu do círculo | Em revisão | `app-shell/store-card.tsx`: item "Minha conta" logo abaixo da loja e do e-mail, só com ao menos uma das abas (`useHasAccountScreen`: com o runtime offline não consulta o servidor). A folha "Mais" não a lista. |
+| Endereços | Em revisão | `legacyAddress` leva `/configuracoes?aba=senha|aparelhos` (com o resto da consulta e o `#`), `/devices` e `/conta/seguranca` a `/conta`; `?aba=assinatura&retorno=` e `/?assinatura=` seguem na Assinatura. O "Cancelar" da troca de senha volta a "Minha conta". |
+| Provas | Em revisão | `settings-tabs.test.ts`, `navigation-model.test.ts`, `screen-tabs.test.tsx`, `change-password-cancel.test.tsx`; e2e `account-screen.e2e.ts`, `settings-groups.e2e.ts` e os que citavam as abas movidas. |
+| Fora | Pendente | Baselines do `ui-visual` (`aparelhos-lista`, `assinatura-oferta`, `pagamento-lista`, menu do círculo), refeitas pelo CI. |
+
 ### Metas: as ações na linha do título, e as abas não pulam (t1701, C8 do corte de 23/11; sem migration)
 
 | Parte | Estado | O que há |
@@ -3694,3 +3705,12 @@ Origem: achado B do Diego no Pixel 6 (28/10): a venda montada em Vender sumia ao
 | Worker | Sem mudança | `confirmSale` segue gravando uma parte sem posição e o cabeçalho sem contagem; os defaults mantêm isso válido. |
 | Provas | Em revisão | Gate `sale-transaction` (2 e 3 partes aceitas; soma errada, parte zero, buraco, contagem diferente e parte acrescentada recusadas; 4ª parte e contagem 4 pelos `CHECK`s; posição repetida pelo índice; forma do Worker anterior e venda de total zero aceitas; varredura de todas as vendas do banco); `sales-aggregate` (o segundo pagamento sem posição bate no índice, 23505); `period-summary-sql` e `read-models` com partes reais na posição, sem tirar o índice, e o sorteio do `periodSummary` com vendas de 2 partes. ADR 0107 (emenda o 0019). |
 | Fora | Pendente | Contrato e escrita de mais de uma parte (S2b), tela (S3), leitura por posição (S4), offline (S5); a prova da migration no Neon antes da liberação. |
+
+### Pagamento dividido, S2b: contrato, escrita, replay e leitura no servidor (t1662)
+
+| Parte | Estado | O que há |
+| --- | --- | --- |
+| Contrato | Em revisão | `sale.confirm` e o payload offline aceitam `payments[]` (1 a 2 partes, valor em duas casas abaixo de `1e18`, perfil por parte, parte estrita) ao lado de `payment`, exatamente um dos dois; `paymentProfile` da venda só com `payment`. `commandVersion` continua 1. Saída: `payments[]` com `position`, `payment` = posição 0; `sale.list` com `paymentMethods[]` (sem `paymentCount`). O golden de comandos ganhou uma entrada dividida; as de antes não mudaram. |
+| Servidor | Em revisão | `confirmSale` grava `payment_count` e as partes num `INSERT` com `position`; perfis e regras de todas as partes em duas leituras; replay compara a lista por posição; `readConfirmedSale` e `listSales` ordenam pela posição (a regra provisória do maior valor saiu). Recusas: `sale_payment_split_mismatch` (RPC 400 e sync), perfil recusado em qualquer parte recusa a venda inteira, com `data.part` no RPC. |
+| Provas | Em revisão | Gates `sale-transaction` (2 partes gravadas com as taxas de cada perfil sobre o valor da parte, soma errada sem efeito, replay e conflitos, 4 entregas simultâneas, perfil recusado na parte 1, parte sem perfil ou sem regra com taxa desconhecida), `read-models` (lista e Detalhe pela posição), `offline-sale` (sync de venda dividida, soma errada e perfil velho na parte 1) e `web-worker` (`sale/confirm` com 1 e com 2 partes: 28 statements cada). |
+| Fora | Pendente | Tela (S3), leitura nas telas (S4), offline do app (S5). No sync, a recusa de perfil tem o código estável sem o índice da parte (a linha recusada de `sync_commands` não guarda resultado). |

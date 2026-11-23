@@ -178,7 +178,11 @@ const SETTINGS_LIST: Case = {
     await serveShell(page);
     await page.goto("/configuracoes");
     await expect(
-      page.getByRole("heading", { exact: true, level: 2, name: "Da loja" })
+      page.getByRole("heading", {
+        exact: true,
+        level: 1,
+        name: "Configurações da loja",
+      })
     ).toBeVisible();
     await expect(
       page.getByRole("link", { exact: true, name: "Seus dados" })
@@ -220,6 +224,8 @@ const DATA_EXPORT: Case = {
 
 /** The states swept for each screen of `screenKeys()`: the state of each screen that holds amounts, and the one with the most places for them. */
 const COVERED: Readonly<Record<string, readonly Case[]>> = {
+  "account:aparelhos": states("aparelhos lista"),
+  "account:senha": states("trocar senha"),
   attention: [stateOf("pendências com itens", { hideAfterOpen: true })],
   customers: states("clientes lista"),
   "dashboard:metas": states("resultado metas"),
@@ -255,7 +261,6 @@ const COVERED: Readonly<Record<string, readonly Case[]>> = {
     "detalhe da venda cancelamento revisado"
   ),
   "sale-history": [...states("histórico lista"), HISTORY_PERIOD_TOTAL],
-  "settings:aparelhos": states("aparelhos lista"),
   "settings:assinatura": [
     stateOf("assinatura oferta com Pix", { planPrices: true }),
     stateOf("assinatura Pro ativo", { planPrices: true }),
@@ -263,7 +268,6 @@ const COVERED: Readonly<Record<string, readonly Case[]>> = {
   "settings:catalogo-publico": states("catálogo público no ar"),
   "settings:formas-de-receber": [stateOf("perfis de pagamento lista")],
   "settings:lista": [SETTINGS_LIST],
-  "settings:senha": states("trocar senha"),
   "settings:seus-dados": [DATA_EXPORT],
 };
 

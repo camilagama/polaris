@@ -4,8 +4,6 @@ status: accepted
 
 # Apagamento automático da loja encerrada, sem caso de privacidade
 
-> O número deste ADR (0102) é o próximo livre na `main` e nos PRs abertos no momento da escrita (o 0101 é o último na `main` e o 0099 está reservado ao backup); pode mudar se outro entrar antes. A migration é a 0087 (`0087_apagamento_automatico.sql`), também provisória. A emenda de 20/10/2026 (avisos e reconferência na execução) vem na migration 0088 (`0088_avisos_de_encerramento.sql`), número também provisório.
-
 ## Contexto
 
 O purge da organização encerrada ([ADR 0081](0081-purge-completo-da-organizacao-encerrada.md)) só começava por ato de um operador do Admin, amparado num caso de privacidade de exclusão aceito do dono. O registro de retenção deixava `closed_organization` em `proposta` e nenhum job agendava o purge. O corte do modo somente leitura (decisão L2) e o desenho t107 (§3 e §4, com a consolidação de 19/10/2026 21:25, revisado por Filipe Luís, Rodrigo Caio e Diego Alves) pedem o contrário: o lojista que encerra a loja sabe, pela tela, pelos termos e pelo e-mail, que os dados são apagados **a partir de D**, e isso precisa acontecer sem que alguém se lembre de abrir um caso.
@@ -75,7 +73,7 @@ Desenho t107 (§5 e a consolidação de 19/10/2026 21:25), sugestão 1 da revis�
 
 ### Emenda de 20/10/2026: o e-mail dos avisos e o ato de suporte (PR E)
 
-Migration 0091, só expand (número provisório: pode mudar no merge). Esta emenda fecha os pontos abertos das emendas anteriores (itens 6, 9 e 10 da emenda de 20/10/2026 acima e a pendência de estados sem saída).
+Migration 0091, só expand. Esta emenda fecha os pontos abertos das emendas anteriores (itens 6, 9 e 10 da emenda de 20/10/2026 acima e a pendência de estados sem saída).
 
 1. **O e-mail e a chave.** Com `CLOSURE_NOTICE_EMAIL_ENABLED` ligado, o consumidor de `organization.closure_notice` envia o e-mail pelo Resend, com `RESEND_API_KEY`, `AUTH_EMAIL_FROM`, `BETTER_AUTH_BASE_URL` (para o link) e `AUTH_HYPERDRIVE`. A flag está ligada só em `env.staging` do `wrangler.jsonc` (dados sintéticos) e desligada no topo e em `env.production`. A chave de idempotência do provedor é o ID do aviso (o Resend a guarda 24 horas: um reenvio depois disso pode duplicar o e-mail). A flag só liga com o PR G no ar (a tela da loja encerrada, com a cópia e o desfazer). O G1 pôs o painel `/loja-encerrada`, com a cópia, e o link e o botão do e-mail apontam para ele; o desfazer pelo painel é do G2. Com a flag desligada, o aviso fica não resolvido, como antes.
 2. **O endereço.** Só a função `closure_notice_recipient(notice, organization)` lê o endereço. Ela é executada só pelo `polaris_auth_runtime` e pertence ao papel novo `polaris_notice_recipient_owner`, que tem `SELECT` apenas em `user.id`, `user.email`, `user.email_verified` e nas colunas de `closure_notices` de que precisa, com política só para avisos devidos. Isto substitui a proposta do item 6: o papel de privacidade não ganha leitura de `user`. O nome do usuário nunca é lido. Por desenho, o papel enxerga os donos ativos de todas as lojas (a política de `SELECT` em `memberships` é `role = 'owner' AND status = 'active'`, sem filtro de organização): ele não tem login nem outro acesso, e a função filtra pelo aviso. O mesmo papel é dono de `closure_notice_owner_unverified(notice, organization)`, que só devolve um booleano (o e-mail do dono do aviso devido está sem verificação agora), executada só pelo dono do ato de suporte, para a dispensa do item 7.

@@ -4,8 +4,6 @@ status: accepted
 
 # evlog e um logger tipado no backend
 
-> O número deste ADR (0089) é o próximo livre na `main` e nos PRs abertos no momento da escrita (o 0088 é do PR113); pode mudar se outro entrar antes.
-
 ## Contexto
 
 O backend registra diagnóstico com `console.*` espalhado pelos Workers, sempre com campos escolhidos à mão (o ADR 0086 definiu as linhas `scheduled_job_run` e `scheduled_job_skipped` e deixou "o evlog (PR114) pode ficar por cima"). O plano da Fase 12 manda adicionar o evlog como API de logging do backend e criar um *wrapper* tipado, antes de os eventos largos canônicos (PR115), da redação centralizada (PR116) e do tracing (PR117) precisarem de um ponto único onde ligar.

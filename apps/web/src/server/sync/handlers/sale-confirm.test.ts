@@ -5,6 +5,7 @@ import {
 import {
   SaleCommandConflictError,
   SaleOccurredInFutureError,
+  SalePaymentSplitMismatchError,
   SaleProductUnavailableError,
 } from "@polaris/domain/sales/confirm-sale";
 import {
@@ -48,6 +49,31 @@ const sale = {
     method: "pix",
   },
   recordedAt: "2026-10-14T12:00:05.000Z",
+};
+
+const { payment: _payment, ...saleWithoutPayment } = sale;
+
+/** The same sale (total 39.80) paid in two parts, each with its own profile. */
+const splitSale = {
+  ...saleWithoutPayment,
+  payments: [
+    {
+      amount: "9.80",
+      anticipationRequested: false,
+      installmentPlan: null,
+      installments: null,
+      method: "pix",
+      paymentProfile: null,
+    },
+    {
+      amount: "30.00",
+      anticipationRequested: false,
+      installmentPlan: "issuer",
+      installments: 2,
+      method: "credit_card",
+      paymentProfile: { expectedVersion: 3, id: profileId },
+    },
+  ],
 };
 
 describe("sale.confirm handler", () => {
@@ -94,6 +120,78 @@ describe("sale.confirm handler", () => {
     for (const payload of bad) {
       expect(() => handler.parse(payload)).toThrow(InvalidSyncPayloadError);
     }
+  });
+
+  it("accepts a sale paid in parts and passes the parts on, with no sale-level profile", async () => {
+    const confirmSale = vi.fn(() =>
+      Promise.resolve({
+        sale: {
+          confirmedAt: new Date("2026-10-14T13:00:00.000Z"),
+          id: "sale-1",
+        },
+        totals: { totalDue: "39.80" },
+      })
+    );
+    const handler = createSaleConfirmHandler({
+      confirmSale: confirmSale as never,
+    });
+    expect(handler.parse(splitSale)).toEqual(splitSale);
+    await handler.execute({} as never, identity, handler.parse(splitSale), {
+      baseVersion: null,
+      commandId,
+    });
+    expect(confirmSale).toHaveBeenCalledWith({}, selling, {
+      ...splitSale,
+      commandId,
+      commandVersion: 1,
+      requestId: commandId,
+    });
+  });
+
+  it("refuses a payment form the command does not take as an invalid payload", () => {
+    const handler = createSaleConfirmHandler();
+    const [pix, card] = splitSale.payments;
+    const bad: unknown[] = [
+      // payment and payments together
+      { ...splitSale, payment: sale.payment },
+      // neither
+      saleWithoutPayment,
+      { ...saleWithoutPayment, payments: [] },
+      { ...splitSale, payments: [pix, card, pix] },
+      // the profile of a split payment goes in each part
+      { ...splitSale, paymentProfile: null },
+      { ...splitSale, paymentProfile: { expectedVersion: 3, id: profileId } },
+      // a part must state its profile choice, even when null
+      {
+        ...splitSale,
+        payments: [{ ...pix, paymentProfile: undefined }, card],
+      },
+      { ...splitSale, payments: [{ ...pix, amount: "9.8" }, card] },
+      { ...splitSale, payments: [{ ...pix, amount: "0.00" }, card] },
+      { ...splitSale, payments: [{ ...pix, extra: true }, card] },
+      {
+        ...splitSale,
+        payments: [{ ...pix, amount: "1000000000000000000.00" }],
+      },
+    ];
+    for (const payload of bad) {
+      expect(() => handler.parse(payload), JSON.stringify(payload)).toThrow(
+        InvalidSyncPayloadError
+      );
+    }
+  });
+
+  it("leaves parts that do not add up to the total to their own refusal at execution", () => {
+    const handler = createSaleConfirmHandler();
+    const [pix, card] = splitSale.payments;
+    const short = {
+      ...splitSale,
+      payments: [{ ...pix, amount: "9.79" }, card],
+    };
+    expect(handler.parse(short)).toEqual(short);
+    expect(handler.classify(new SalePaymentSplitMismatchError())).toBe(
+      "sale_payment_split_mismatch"
+    );
   });
 
   it("leaves a sale dated ahead of the server clock to its own refusal at execution", () => {
@@ -228,6 +326,13 @@ describe("sale.confirm handler", () => {
       "payment_profile_unavailable"
     );
     expect(classify(new PaymentProfileNotFoundError())).toBe(
+      "payment_profile_unavailable"
+    );
+    // a profile refused for any part refuses the whole sale with the same code
+    expect(classify(new PaymentProfileVersionConflictError(1))).toBe(
+      "payment_profile_changed"
+    );
+    expect(classify(new PaymentProfileNotFoundError(1))).toBe(
       "payment_profile_unavailable"
     );
   });

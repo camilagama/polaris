@@ -4,7 +4,7 @@ status: accepted
 
 # Onde os alertas operacionais vão rodar
 
-> O número deste ADR (0095) é o próximo livre na `main` e nos PRs abertos no momento da escrita (o 0094 é o do tracing, já na `main`); pode mudar se outro entrar antes. O status é `accepted` com escopo staging: a definição dos sinais (abaixo) está no código, e o lugar onde os alertas rodam no staging é o da [emenda de 18/11/2026](#emenda-18112026-os-monitores-da-cloudflare-são-o-lugar-dos-alertas-no-staging); o cron com Resend, descrito em "Onde rodam", segue como recomendação para depois, e a produção não está coberta.
+> O status é `accepted` com escopo staging: a definição dos sinais (abaixo) está no código, e o lugar onde os alertas rodam no staging é o da [emenda de 18/11/2026](#emenda-18112026-os-monitores-da-cloudflare-são-o-lugar-dos-alertas-no-staging); o cron com Resend, descrito em "Onde rodam", segue como recomendação para depois, e a produção não está coberta.
 
 ## Contexto
 

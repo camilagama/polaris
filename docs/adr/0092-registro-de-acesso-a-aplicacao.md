@@ -4,7 +4,7 @@ status: accepted
 
 # Registro de acesso a aplicação (Marco Civil, art. 15)
 
-> O número deste ADR (0092) é o próximo livre na `main` e nos PRs abertos no momento da escrita (o 0091 é o do esquema canônico de eventos largos, já na `main`); pode mudar se outro entrar antes. A migration é a 0076 (`0076_registro_de_acesso.sql`), depois da 0075 da `main`.
+> A migration é a 0076 (`0076_registro_de_acesso.sql`), depois da 0075 da `main`.
 
 ## Contexto
 

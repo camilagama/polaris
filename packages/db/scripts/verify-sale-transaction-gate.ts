@@ -8,6 +8,7 @@ import {
   InvalidConfirmSaleCommandError,
   SaleCommandConflictError,
   SaleOccurredInFutureError,
+  SalePaymentSplitMismatchError,
   SaleProductUnavailableError,
   UnsupportedConfirmSaleCommandVersionError,
 } from "@polaris/domain/sales/confirm-sale";
@@ -67,6 +68,8 @@ const expectedDatabase = process.env.POLARIS_SALES_GATE_DATABASE ?? "neondb";
 /** A commercial day two days back in the organization's calendar: inside the retroactive window whenever the gate runs. */
 const saleDay = storeDay(runClock, -2);
 const injectedFailureMessage = "pr43 gate injected failure";
+/** A profile id or an amount: neither belongs in a refusal's message. */
+const profileOrAmountPattern = /[0-9a-f]{8}-|\d+\.\d{2}/;
 
 type RuntimeDatabase = ReturnType<typeof createDatabase>;
 
@@ -509,6 +512,22 @@ async function run() {
         requestId: randomUUID(),
         ...overrides,
       };
+    }
+
+    type SalePart = NonNullable<ConfirmSaleRepositoryInput["payments"]>[number];
+
+    /** The same sale as `command`, paid in parts, each with its own profile choice. */
+    function splitCommand(
+      variantId: string,
+      payments: SalePart[],
+      overrides: Partial<ConfirmSaleRepositoryInput> = {}
+    ): ConfirmSaleRepositoryInput {
+      const {
+        payment: _payment,
+        paymentProfile: _paymentProfile,
+        ...base
+      } = command(variantId, overrides);
+      return { ...base, payments };
     }
 
     /** Runs a rejected command and proves nothing of it (or its audit) persisted. */
@@ -1074,6 +1093,436 @@ async function run() {
     tests.push(
       "archived, unknown, and cross-organization profiles are rejected with no partial writes"
     );
+
+    // ------------------------------------------ 4b. a sale paid in two parts
+    // a function of its own keeps run() under the complexity limit
+    async function splitPaymentCases() {
+      const currentProfile = await admin.pool.query<{ version: number }>(
+        "SELECT version FROM public.payment_profiles WHERE id = $1",
+        [profile.id]
+      );
+      const cardSelection = {
+        expectedVersion: Number(currentProfile.rows[0]?.version),
+        id: profile.id,
+      };
+      const pixProfile = await withTenantAs(
+        runtimeDatabase.db,
+        tenantA,
+        "organization:manage",
+        (transaction, identity) =>
+          createPaymentProfile(transaction, identity, {
+            name: "Pix do banco sintético",
+            rules: [
+              {
+                anticipationFee: { mode: "none" },
+                expectedSettlementDays: 0,
+                method: "pix",
+                processingFee: {
+                  fixedAmount: "0.50",
+                  mode: "fixed_and_percentage",
+                  percentage: "1.000000",
+                },
+              },
+            ],
+          })
+      );
+      const pixSelection = {
+        expectedVersion: pixProfile.version,
+        id: pixProfile.id,
+      };
+      const pixPart = (
+        amount: string,
+        paymentProfile: SalePart["paymentProfile"] = pixSelection
+      ): SalePart => ({
+        amount,
+        anticipationRequested: false,
+        installmentPlan: null,
+        installments: null,
+        method: "pix",
+        paymentProfile,
+      });
+      const cardPart = (
+        amount: string,
+        paymentProfile: SalePart["paymentProfile"] = cardSelection
+      ): SalePart => ({
+        amount,
+        anticipationRequested: false,
+        installmentPlan: "issuer",
+        installments: 3,
+        method: "credit_card",
+        paymentProfile,
+      });
+      const storedParts = async (saleId: string) =>
+        (
+          await admin.pool.query<{
+            amount: string;
+            method: string;
+            payment_count: number;
+            position: number;
+            processing_fee: string | null;
+            processing_mode: string;
+            profile_id: string | null;
+            profile_version: number | null;
+          }>(
+            "SELECT payment.position, payment.method, payment.amount::text AS amount, payment.processing_fee_amount_snapshot::text AS processing_fee, payment.processing_fee_mode_snapshot AS processing_mode, payment.payment_profile_id AS profile_id, payment.payment_profile_version_snapshot AS profile_version, sale.payment_count FROM public.sale_payments AS payment JOIN public.sales AS sale ON sale.organization_id = payment.organization_id AND sale.id = payment.sale_id WHERE payment.sale_id = $1 ORDER BY payment.position",
+            [saleId]
+          )
+        ).rows;
+
+      const splitInput = splitCommand(productA2.variantId, [
+        pixPart("40.00"),
+        cardPart("50.00"),
+      ]);
+      const split = await confirm(tenantA, splitInput);
+      assert.equal(split.replayed, false);
+      assert.equal(split.totals.totalDue, "90.00");
+      assert.deepEqual(
+        await storedParts(split.sale.id),
+        [
+          {
+            amount: "40.00",
+            method: "pix",
+            payment_count: 2,
+            position: 0,
+            processing_fee: "0.90",
+            processing_mode: "fixed_and_percentage",
+            profile_id: pixProfile.id,
+            profile_version: pixProfile.version,
+          },
+          {
+            amount: "50.00",
+            method: "credit_card",
+            payment_count: 2,
+            position: 1,
+            processing_fee: "2.60",
+            processing_mode: "fixed_and_percentage",
+            profile_id: profile.id,
+            profile_version: cardSelection.expectedVersion,
+          },
+        ],
+        "two rows at positions 0 and 1, payment_count 2, each part priced by its own profile on its own amount (5% + 0.10 of 50.00 is 2.60; of the 90.00 total it would be 4.60)"
+      );
+      assert.deepEqual(
+        split.payments.map((part) => [part.position, part.method, part.amount]),
+        [
+          [0, "pix", "40.00"],
+          [1, "credit_card", "50.00"],
+        ]
+      );
+      const { position: _splitPosition, ...splitFirst } = split.payments[0] ?? {
+        position: -1,
+      };
+      assert.deepEqual(
+        split.payment,
+        splitFirst,
+        "payment is the part at position 0"
+      );
+      const splitEffects = await effects(
+        tenantA,
+        splitInput.commandId,
+        splitInput.requestId ?? ""
+      );
+      assert.deepEqual(splitEffects, {
+        adjustments: 0,
+        audit: 2,
+        items: 1,
+        movements: 1,
+        payments: 2,
+        sales: 1,
+      });
+      tests.push(
+        "a sale of two parts commits two payment rows at positions 0 and 1 with payment_count 2, adding up to the total, each with the fees of its own profile computed on its own amount; payment is the part at position 0"
+      );
+
+      await expectRejectedWithoutEffects(
+        tenantA,
+        splitCommand(productA2.variantId, [
+          pixPart("40.00"),
+          cardPart("49.99"),
+        ]),
+        SalePaymentSplitMismatchError,
+        "parts adding up to less than the total are refused before anything is written",
+        [productA2.variantId]
+      );
+      await expectRejectedWithoutEffects(
+        tenantA,
+        splitCommand(productA2.variantId, [
+          pixPart("40.00"),
+          cardPart("50.01"),
+        ]),
+        SalePaymentSplitMismatchError,
+        "parts adding up to more than the total are refused before anything is written",
+        [productA2.variantId]
+      );
+      tests.push(
+        "parts that do not add up to the total the server computes are refused with sale_payment_split_mismatch, leaving no header, item, payment, movement, balance change or audit"
+      );
+
+      const splitReplay = await confirm(tenantA, splitInput);
+      assert.equal(splitReplay.replayed, true);
+      assert.equal(splitReplay.sale.id, split.sale.id);
+      assert.deepEqual(
+        await effects(
+          tenantA,
+          splitInput.commandId,
+          splitInput.requestId ?? ""
+        ),
+        splitEffects,
+        "a replay writes nothing"
+      );
+      const splitConflicts: [string, ConfirmSaleRepositoryInput][] = [
+        [
+          "the same parts in the other order",
+          { ...splitInput, payments: [cardPart("50.00"), pixPart("40.00")] },
+        ],
+        [
+          "another split of the same total",
+          { ...splitInput, payments: [pixPart("41.00"), cardPart("49.00")] },
+        ],
+        [
+          "another profile on the second part",
+          {
+            ...splitInput,
+            payments: [pixPart("40.00"), cardPart("50.00", null)],
+          },
+        ],
+        ["one part only", { ...splitInput, payments: [pixPart("90.00")] }],
+        [
+          "the single-payment form",
+          command(productA2.variantId, {
+            commandId: splitInput.commandId,
+            payment: { anticipationRequested: false, method: "pix" },
+            paymentProfile: pixSelection,
+            requestId: splitInput.requestId ?? null,
+          }),
+        ],
+      ];
+      for (const [label, input] of splitConflicts) {
+        // biome-ignore lint/performance/noAwaitInLoops: each conflict is checked against the same stored sale, one at a time
+        await assert.rejects(
+          () => confirm(tenantA, input),
+          SaleCommandConflictError,
+          label
+        );
+      }
+      assert.deepEqual(
+        await effects(
+          tenantA,
+          splitInput.commandId,
+          splitInput.requestId ?? ""
+        ),
+        splitEffects,
+        "a conflict writes nothing"
+      );
+      tests.push(
+        "the same command ID with the same parts replays without a new row; the parts in another order, another split, another profile, fewer parts or the single-payment form are a sale_command_conflict"
+      );
+
+      const racedProduct = await createSellableProduct(
+        tenantA,
+        "partes em corrida",
+        {
+          cost: "2.00",
+          quantity: 10,
+        }
+      );
+      const racedCommand = splitCommand(racedProduct.variantId, [
+        pixPart("30.00"),
+        cardPart("60.00"),
+      ]);
+      const { results: racedResults } = await raceBehindLock({
+        adminUrl,
+        hold: [lockRow("products", "id", racedProduct.productId)],
+        label: "four deliveries of one split sale",
+        racers: Array.from(
+          { length: 4 },
+          () => () => confirm(tenantA, racedCommand, concurrentDatabase)
+        ),
+      });
+      assert.deepEqual(rejections(racedResults), [], "no delivery fails");
+      const raced = fulfilled(racedResults);
+      assert.equal(raced.filter((result) => !result.replayed).length, 1);
+      assert.equal(new Set(raced.map((result) => result.sale.id)).size, 1);
+      assert.deepEqual(
+        await effects(
+          tenantA,
+          racedCommand.commandId,
+          racedCommand.requestId ?? ""
+        ),
+        { ...splitEffects },
+        "one sale, two payment rows, one movement"
+      );
+      assert.equal(
+        (await balanceOf(tenantA, racedProduct.variantId)).quantity,
+        9
+      );
+      tests.push(
+        "four concurrent deliveries of one split sale create one sale with its two parts; the rest replay"
+      );
+
+      const partRefusals: [
+        string,
+        SalePart[],
+        abstract new (...args: never[]) => Error & { part: number | null },
+      ][] = [
+        [
+          "a stale profile version on the second part",
+          [
+            pixPart("40.00"),
+            cardPart("50.00", {
+              expectedVersion: cardSelection.expectedVersion - 1,
+              id: profile.id,
+            }),
+          ],
+          PaymentProfileVersionConflictError,
+        ],
+        [
+          "an unknown profile on the second part",
+          [
+            pixPart("40.00"),
+            cardPart("50.00", { expectedVersion: 1, id: randomUUID() }),
+          ],
+          PaymentProfileNotFoundError,
+        ],
+        [
+          "another organization's profile on the second part",
+          [
+            pixPart("40.00"),
+            cardPart("50.00", {
+              expectedVersion: tenantBProfile.version,
+              id: tenantBProfile.id,
+            }),
+          ],
+          PaymentProfileNotFoundError,
+        ],
+        [
+          "the same profile named at two versions",
+          [
+            pixPart("40.00", pixSelection),
+            pixPart("50.00", {
+              expectedVersion: pixSelection.expectedVersion + 1,
+              id: pixProfile.id,
+            }),
+          ],
+          PaymentProfileVersionConflictError,
+        ],
+      ];
+      for (const [label, payments, refusal] of partRefusals) {
+        const refused = splitCommand(productA2.variantId, payments);
+        // biome-ignore lint/performance/noAwaitInLoops: each refusal is proven without effects before the next one
+        await assert.rejects(
+          () => confirm(tenantA, refused),
+          (error: unknown) => {
+            assert.ok(error instanceof refusal, label);
+            assert.equal(error.part, 1, `${label}: names the second part`);
+            assert.doesNotMatch(
+              error.message,
+              profileOrAmountPattern,
+              `${label}: no profile id and no amount in the message`
+            );
+            return true;
+          },
+          label
+        );
+        assert.deepEqual(
+          await effects(tenantA, refused.commandId, refused.requestId ?? ""),
+          noEffects,
+          `${label}: the whole sale is refused`
+        );
+      }
+      const bothStale = splitCommand(productA2.variantId, [
+        pixPart("40.00", {
+          expectedVersion: pixSelection.expectedVersion + 1,
+          id: pixProfile.id,
+        }),
+        cardPart("50.00", { expectedVersion: 1, id: randomUUID() }),
+      ]);
+      await assert.rejects(
+        () => confirm(tenantA, bothStale),
+        (error: unknown) => {
+          assert.ok(error instanceof PaymentProfileVersionConflictError);
+          assert.equal(error.part, 0, "the first part that fails is named");
+          return true;
+        }
+      );
+      assert.deepEqual(
+        await effects(tenantA, bothStale.commandId, bothStale.requestId ?? ""),
+        noEffects
+      );
+      tests.push(
+        "a profile refused on one part (stale version, unknown, another organization's, one profile at two versions) refuses the whole sale with that part's position and writes nothing; with both parts refused, the first is named"
+      );
+
+      // two parts of the same method under two profiles: each part takes the rule of its own profile
+      const samePixTwoProfiles = await confirm(
+        tenantA,
+        splitCommand(productA2.variantId, [
+          pixPart("40.00"),
+          pixPart("50.00", cardSelection),
+        ])
+      );
+      assert.deepEqual(
+        (await storedParts(samePixTwoProfiles.sale.id)).map((row) => [
+          row.position,
+          row.profile_id,
+          row.processing_fee,
+        ]),
+        [
+          [0, pixProfile.id, "0.90"],
+          [1, profile.id, "0.75"],
+        ],
+        "1% + 0.50 of 40.00 under one profile, 1.5% of 50.00 under the other"
+      );
+      tests.push(
+        "two parts of the same method under two profiles each take the rule of their own profile"
+      );
+
+      const partWithoutProfile = await confirm(
+        tenantA,
+        splitCommand(productA2.variantId, [
+          pixPart("40.00"),
+          cardPart("50.00", null),
+        ])
+      );
+      const partWithoutRule = await confirm(
+        tenantA,
+        splitCommand(productA2.variantId, [
+          pixPart("40.00"),
+          {
+            amount: "50.00",
+            anticipationRequested: false,
+            installmentPlan: null,
+            installments: null,
+            method: "debit_card",
+            paymentProfile: pixSelection,
+          },
+        ])
+      );
+      for (const [label, sale] of [
+        ["a part without a profile", partWithoutProfile],
+        ["a part whose profile has no rule for its method", partWithoutRule],
+      ] as const) {
+        // biome-ignore lint/performance/noAwaitInLoops: two sales, read one after the other
+        const [first, second] = await storedParts(sale.sale.id);
+        assert.equal(
+          first?.processing_fee,
+          "0.90",
+          `${label}: the other part keeps its fees`
+        );
+        assert.equal(
+          second?.processing_fee,
+          null,
+          `${label}: the fee is unknown, never zero`
+        );
+        assert.equal(second?.processing_mode, "unknown", label);
+        assert.equal(sale.payments[1]?.processingFee.amount, null, label);
+        assert.equal(sale.payments[1]?.processingFee.mode, "unknown", label);
+      }
+      tests.push(
+        "a part without a profile, or whose profile has no rule for its method, keeps unknown fees (null, never zero) while the other part keeps its own"
+      );
+    }
+    await splitPaymentCases();
 
     // ------------------------------------------------------- 5. validation
     type ErrorClass = abstract new (...args: never[]) => Error;

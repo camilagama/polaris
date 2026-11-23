@@ -4,7 +4,7 @@ status: accepted
 
 # A referência do provedor em todos os fatos de cobrança
 
-> O número deste ADR (0087) é o próximo livre na `main` e nos PRs abertos no momento da escrita; pode mudar se outro entrar antes. A migration deste PR (0074, `0074_billing_reference_incident.sql`) vem depois da 0073 do agendador; o PR do purge (#126) ainda usa 0072, e quem entrar depois renumera a migration e o snapshot.
+> A migration deste PR (0074, `0074_billing_reference_incident.sql`) vem depois da 0073 do agendador; o PR do purge (#126) ainda usa 0072, e quem entrar depois renumera a migration e o snapshot.
 
 ## Contexto
 

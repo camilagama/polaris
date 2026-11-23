@@ -4,6 +4,7 @@ import type { StoredDay } from "../lib/period-summary-cache";
 import type { PeriodChain, PeriodQuality } from "./dashboard-model";
 import {
   axisMoney,
+  bestMark,
   bestRow,
   bestRowText,
   costParts,
@@ -607,6 +608,37 @@ describe("the best day and the numbers written above the drawing (AC-5)", () => 
   it("is the first day with the highest net sales", () => {
     expect(bestRow(series.rows)?.key).toBe("2026-10-03");
     expect(bestRowText(series)).toBe("Melhor dia: 03/10, R$ 412,50");
+  });
+
+  it("marks the best day and no other, and the best month for the long periods", () => {
+    expect(series.rows.map((_, index) => bestMark(series, index))).toEqual([
+      null,
+      null,
+      "melhor dia",
+      null,
+      null,
+    ]);
+    const long = longSeries(
+      days("2026-01-01", "2026-12-31", (date) =>
+        date.startsWith("2026-05") ? { netSales: "10.00" } : {}
+      ),
+      "2026-12-31"
+    );
+    expect(long.rows.filter((_, i) => bestMark(long, i) !== null)).toHaveLength(
+      1
+    );
+    expect(bestMark(long, 4)).toBe("melhor mês");
+  });
+
+  it("marks no day when nothing sold", () => {
+    const quiet = resultSeries(days("2026-10-01", "2026-10-05"), "2026-10-31");
+    expect(quiet.rows.map((_, index) => bestMark(quiet, index))).toEqual([
+      null,
+      null,
+      null,
+      null,
+      null,
+    ]);
   });
 
   it("is a month for the long periods", () => {
