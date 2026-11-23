@@ -616,7 +616,7 @@ async function run() {
       "sale.list filters by commercial date range, cancelled/confirmed/with-returns status, customer name and product text (case-insensitive, literal wildcards), returns the customer name and the commercial date, and is scoped to the organization"
     );
 
-    // ------------------------ 4. the main part of a sale with more than one part
+    // ------------------------ 4. the parts of a sale with more than one part, by position
     const partsDay = storeDay(runClock, -1);
     const writeParts = (
       parts: { amount: string; id?: string; method: string }[]
@@ -722,18 +722,35 @@ async function run() {
         );
         const read: Record<
           string,
-          { amount: string; detail: string | null; list: string | null }
+          {
+            amount: string;
+            detail: string | null;
+            detailParts: string[];
+            list: string | null;
+            listParts: string[] | null;
+          }
         > = {};
         for (const [name, saleId] of Object.entries(partSales)) {
           // biome-ignore lint/performance/noAwaitInLoops: one transaction, one statement at a time
           const detail = await getSale(transaction, identity, saleId);
+          const entry = listed.sales.find((sale) => sale.id === saleId);
           read[name] = {
             amount: detail.sale.payment.amount,
             detail: detail.sale.payment.method,
-            list:
-              listed.sales.find((sale) => sale.id === saleId)?.paymentMethod ??
-              null,
+            detailParts: detail.sale.payments.map(
+              (part) => `${part.position}:${part.method}:${part.amount}`
+            ),
+            list: entry?.paymentMethod ?? null,
+            listParts: entry?.paymentMethods ?? null,
           };
+          const [first] = detail.sale.payments;
+          assert.ok(first, `${name}: the detail lists its parts`);
+          const { position: _position, ...firstPart } = first;
+          assert.deepEqual(
+            detail.sale.payment,
+            firstPart,
+            `${name}: payment is the part at position 0, every field`
+          );
         }
         return read;
       }
@@ -741,24 +758,48 @@ async function run() {
     assert.deepEqual(
       seen,
       {
-        biggestFirst: { amount: "14.90", detail: "pix", list: "pix" },
-        biggestLast: {
-          amount: "30.00",
-          detail: "credit_card",
-          list: "credit_card",
+        biggestFirst: {
+          amount: "14.90",
+          detail: "pix",
+          detailParts: ["0:pix:14.90", "1:cash:5.00"],
+          list: "pix",
+          listParts: ["pix", "cash"],
         },
-        onlyPart: { amount: "19.90", detail: "pix", list: "pix" },
-        tieHigherIdLast: { amount: "19.90", detail: "pix", list: "pix" },
+        // the biggest amount is at position 1: the part at position 0 still names the sale
+        biggestLast: {
+          amount: "9.90",
+          detail: "pix",
+          detailParts: ["0:pix:9.90", "1:credit_card:30.00"],
+          list: "pix",
+          listParts: ["pix", "credit_card"],
+        },
+        onlyPart: {
+          amount: "19.90",
+          detail: "pix",
+          detailParts: ["0:pix:19.90"],
+          list: "pix",
+          listParts: ["pix"],
+        },
+        tieHigherIdLast: {
+          amount: "19.90",
+          detail: "pix",
+          detailParts: ["0:pix:19.90", "1:bank_transfer:19.90"],
+          list: "pix",
+          listParts: ["pix", "bank_transfer"],
+        },
+        // the part at position 1 has the smaller id: the order is the position, never the id
         tieLowerIdLast: {
           amount: "19.90",
-          detail: "debit_card",
-          list: "debit_card",
+          detail: "pix",
+          detailParts: ["0:pix:19.90", "1:debit_card:19.90"],
+          list: "pix",
+          listParts: ["pix", "debit_card"],
         },
       },
-      "the list and the detail name the main part: the biggest amount, the smaller id on a tie, at whatever position"
+      "the list and the detail agree: payment and paymentMethod are the part at position 0, payments and paymentMethods follow the positions, whatever the amounts and the ids"
     );
     tests.push(
-      "sale.list paymentMethod and sale.get payment.method name the same main part (biggest amount, smaller id on a tie) of a sale committed in two parts, the biggest at position 0 or 1"
+      "sale.list paymentMethod/paymentMethods and sale.get payment/payments agree on a sale committed in two parts: position 0 names the sale and the parts follow the positions, with the biggest amount at position 0 or 1 and the smaller id at position 0 or 1"
     );
 
     console.log(

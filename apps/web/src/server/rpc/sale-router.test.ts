@@ -18,6 +18,7 @@ import {
   InvalidConfirmSaleCommandError,
   SaleCommandConflictError,
   SaleOccurredInFutureError,
+  SalePaymentSplitMismatchError,
   SaleProductUnavailableError,
 } from "@polaris/domain/sales/confirm-sale";
 import {
@@ -99,6 +100,31 @@ const validInput = {
   paymentProfile: { expectedVersion: 2, id: profileId },
 };
 
+const confirmedPayment: ConfirmSaleResult["payment"] = {
+  amount: "161.82",
+  anticipationFee: {
+    amount: null,
+    fixedAmount: null,
+    mode: "unknown",
+    percentage: null,
+  },
+  anticipationRequested: true,
+  expectedSettlementDays: null,
+  installmentPlan: "issuer",
+  installments: 3,
+  method: "credit_card",
+  paymentProfileId: profileId,
+  paymentProfileName: "Maquininha",
+  paymentProfileRuleId: null,
+  paymentProfileVersion: 2,
+  processingFee: {
+    amount: null,
+    fixedAmount: null,
+    mode: "unknown",
+    percentage: null,
+  },
+};
+
 const confirmedResult: ConfirmSaleResult = {
   adjustments: [
     {
@@ -121,30 +147,8 @@ const confirmedResult: ConfirmSaleResult = {
       variantId,
     },
   ],
-  payment: {
-    amount: "161.82",
-    anticipationFee: {
-      amount: null,
-      fixedAmount: null,
-      mode: "unknown",
-      percentage: null,
-    },
-    anticipationRequested: true,
-    expectedSettlementDays: null,
-    installmentPlan: "issuer",
-    installments: 3,
-    method: "credit_card",
-    paymentProfileId: profileId,
-    paymentProfileName: "Maquininha",
-    paymentProfileRuleId: null,
-    paymentProfileVersion: 2,
-    processingFee: {
-      amount: null,
-      fixedAmount: null,
-      mode: "unknown",
-      percentage: null,
-    },
-  },
+  payment: confirmedPayment,
+  payments: [{ ...confirmedPayment, position: 0 }],
   replayed: false,
   sale: {
     commandId,
@@ -164,6 +168,37 @@ const confirmedResult: ConfirmSaleResult = {
     totalDue: "161.82",
   },
 };
+
+function splitPart(
+  method: "pix" | "credit_card",
+  amount: string
+): {
+  amount: string;
+  anticipationRequested: boolean;
+  installmentPlan: "issuer" | null;
+  installments: number | null;
+  method: "pix" | "credit_card";
+} {
+  return method === "credit_card"
+    ? {
+        amount,
+        anticipationRequested: false,
+        installmentPlan: "issuer",
+        installments: 2,
+        method,
+      }
+    : {
+        amount,
+        anticipationRequested: false,
+        installmentPlan: null,
+        installments: null,
+        method,
+      };
+}
+
+function splitPartWithProfile() {
+  return { ...splitPart("pix", "161.82"), paymentProfile: null };
+}
 
 type ConfirmSale = NonNullable<
   NonNullable<Parameters<typeof createRpcRouter>[0]>["confirmSale"]
@@ -307,6 +342,159 @@ describe("sale.confirm RPC", () => {
     ).rejects.toMatchObject({ code: "BAD_REQUEST" });
     expect(confirmSale).not.toHaveBeenCalled();
   });
+
+  it("answers a one-payment sale as before, with the same part in payments", async () => {
+    const confirmSale = vi.fn<ConfirmSale>(async () => confirmedResult);
+    const client = createRpcClient(
+      createRpcRouter({ confirmSale, withTenantRequestContext: tenantStub() })
+    );
+
+    const result = await client.sale.confirm(validInput);
+
+    const { position: _position, ...firstPart } = result.payments?.[0] ?? {
+      position: -1,
+    };
+    expect(result.payments).toHaveLength(1);
+    expect(result.payments?.[0]?.position).toBe(0);
+    expect(firstPart).toEqual(result.payment);
+    expect(result.payment).toEqual({
+      ...confirmedPayment,
+      anticipationFee: { ...confirmedPayment.anticipationFee },
+      processingFee: { ...confirmedPayment.processingFee },
+    });
+    const passed = confirmSale.mock.calls[0]?.[2] as ConfirmSaleRepositoryInput;
+    expect(passed).not.toHaveProperty("payments");
+    expect(passed.payment).toEqual(validInput.payment);
+  });
+
+  it("forwards the parts of a split payment, each with its profile, and no sale-level profile", async () => {
+    const confirmSale = vi.fn<ConfirmSale>(async () => confirmedResult);
+    const client = createRpcClient(
+      createRpcRouter({ confirmSale, withTenantRequestContext: tenantStub() })
+    );
+    const { payment: _payment, paymentProfile: _profile, ...base } = validInput;
+    const payments = [
+      { ...splitPart("pix", "61.82"), paymentProfile: null },
+      {
+        ...splitPart("credit_card", "100.00"),
+        paymentProfile: { expectedVersion: 2, id: profileId },
+      },
+    ];
+
+    await client.sale.confirm({ ...base, payments });
+
+    const passed = confirmSale.mock.calls[0]?.[2] as ConfirmSaleRepositoryInput;
+    expect(passed.payments).toEqual(payments);
+    expect(passed).not.toHaveProperty("payment");
+    expect(passed).not.toHaveProperty("paymentProfile");
+  });
+
+  it.each([
+    [
+      "payment and payments together",
+      { payment: validInput.payment, payments: [splitPartWithProfile()] },
+    ],
+    ["neither payment nor payments", {}],
+    ["an empty payments list", { payments: [] }],
+    [
+      "three parts",
+      {
+        payments: [
+          splitPartWithProfile(),
+          splitPartWithProfile(),
+          splitPartWithProfile(),
+        ],
+      },
+    ],
+    [
+      "a part amount without two decimal places",
+      { payments: [{ ...splitPartWithProfile(), amount: "161.8" }] },
+    ],
+    [
+      "a part amount past the database bound",
+      {
+        payments: [
+          { ...splitPartWithProfile(), amount: "1000000000000000000.00" },
+        ],
+      },
+    ],
+  ])("refuses %s before reaching the repository", async (_label, form) => {
+    const confirmSale = vi.fn<ConfirmSale>();
+    const client = createRpcClient(
+      createRpcRouter({ confirmSale, withTenantRequestContext: tenantStub() })
+    );
+    const { payment: _payment, paymentProfile: _profile, ...base } = validInput;
+
+    await expect(
+      client.sale.confirm({ ...base, ...form })
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    expect(confirmSale).not.toHaveBeenCalled();
+  });
+
+  it("refuses a sale-level profile sent with a split payment", async () => {
+    const confirmSale = vi.fn<ConfirmSale>();
+    const client = createRpcClient(
+      createRpcRouter({ confirmSale, withTenantRequestContext: tenantStub() })
+    );
+    const { payment: _payment, ...base } = validInput;
+
+    await expect(
+      client.sale.confirm({ ...base, payments: [splitPartWithProfile()] })
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    expect(confirmSale).not.toHaveBeenCalled();
+  });
+
+  it("explains parts that do not add up to the total with their own reason", async () => {
+    const client = createRpcClient(
+      createRpcRouter({
+        confirmSale: vi.fn<ConfirmSale>(),
+        withTenantRequestContext: rejectingTenantStub(
+          new SalePaymentSplitMismatchError()
+        ),
+      })
+    );
+    await expect(client.sale.confirm(validInput)).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+      data: { reason: "sale_payment_split_mismatch" },
+    });
+  });
+
+  it.each([
+    [
+      "a changed version",
+      new PaymentProfileVersionConflictError(1),
+      "CONFLICT",
+      "payment_profile_version_conflict",
+    ],
+    [
+      "an archived profile",
+      new PaymentProfileLifecycleError(1),
+      "CONFLICT",
+      "payment_profile_lifecycle_conflict",
+    ],
+    [
+      "an unknown profile",
+      new PaymentProfileNotFoundError(0),
+      "NOT_FOUND",
+      "payment_profile_not_found",
+    ],
+  ])(
+    "names the part whose profile refused the sale (%s), and nothing of the profile",
+    async (_label, error, code, reason) => {
+      const client = createRpcClient(
+        createRpcRouter({
+          confirmSale: vi.fn<ConfirmSale>(),
+          withTenantRequestContext: rejectingTenantStub(error),
+        })
+      );
+      const rejection = client.sale.confirm(validInput);
+      await expect(rejection).rejects.toMatchObject({ code });
+      const data = await rejection.catch(
+        (caught: { data?: unknown }) => caught.data
+      );
+      expect(data).toEqual({ part: error.part, reason });
+    }
+  );
 
   it("counts a refusal for stock by store and origin, with no product and no amount", async () => {
     const info = vi.spyOn(logger, "info").mockImplementation(() => undefined);
