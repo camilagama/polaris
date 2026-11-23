@@ -4,12 +4,11 @@ import { Button } from "@/ui/button";
 import { Card } from "@/ui/card";
 import { HelpTip } from "@/ui/help-tip";
 import { MoneyText } from "@/ui/hidden-values";
-import { SegmentedFilter } from "@/ui/segmented-filter";
 import { Skeleton } from "@/ui/skeleton";
 import { focusLater } from "../lib/focus";
 import { LIST_PAGE_SIZE, type ListPage, listPage } from "./list-page-model";
 
-/* The parts the list screens share (Categorias, Clientes, Produtos, Despesas, Estoque): the state filter, the card that says
+/* The parts the list screens share (Categorias, Clientes, Produtos, Despesas, Estoque): the card that says
    loading, empty or no result, and the date as the lists write it. */
 
 const dateFormatter = new Intl.DateTimeFormat("pt-BR", { dateStyle: "medium" });
@@ -17,9 +16,6 @@ const dateFormatter = new Intl.DateTimeFormat("pt-BR", { dateStyle: "medium" });
 export function formatDate(value: string): string {
   return dateFormatter.format(new Date(value));
 }
-
-/** The state filter of a list (Ativos, Arquivados): the one `SegmentedFilter`, with the name the list screens know it by. */
-export const StatusNav = SegmentedFilter;
 
 /** Loading, empty or no result of a list: a card with a few words, and what to do next when there is one. */
 export function ListNotice({ children }: { children: ReactNode }) {
