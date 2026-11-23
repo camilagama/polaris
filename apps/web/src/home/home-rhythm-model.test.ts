@@ -7,6 +7,7 @@ import {
   type RhythmDay,
   rhythmDays,
   rhythmInsight,
+  rhythmInsightText,
   rhythmPeriod,
   rhythmRangesText,
   rhythmReading,
@@ -348,13 +349,47 @@ describe("the sold-days count names its window", () => {
     expect(view.soldDays).toBe(3);
     expect(view.weekdays.soldDays).toBe(1);
     expect(rhythmSummary(view)).toContain(
-      "Vendas por dia nas últimas 26 semanas: 3 dias com venda."
+      "Vendas por dia nas últimas 26 semanas: 3 dias com venda, sendo 1 nas últimas 13 semanas."
     );
     const insight = rhythmInsight(view);
     expect(insight.kind).toBe("few");
     expect(insight).toMatchObject({
       detail: "1 dia com venda nas últimas 13 semanas.",
     });
+  });
+});
+
+describe("the summary with few weeks of sales", () => {
+  const countOf = (text: string) => text.split("dias com venda").length - 1;
+
+  it("says the days that sold once, with the part inside the last 13 weeks", () => {
+    const view = rhythmView(
+      daysWith({
+        "2026-05-09": ["300.00", 3],
+        "2026-05-16": ["300.00", 3],
+        "2026-10-17": ["50.00", 1],
+      }),
+      RHYTHM_WEEKS
+    );
+    const summary = rhythmSummary(view);
+    expect(countOf(summary)).toBe(1);
+    expect(summary).toContain(
+      "26 semanas: 3 dias com venda, sendo 1 nas últimas 13 semanas. Melhor dia"
+    );
+    expect(rhythmInsightText(view)).toBe(
+      "Poucas semanas de vendas ainda: o mapa enche conforme você vende. 1 dia com venda nas últimas 13 semanas."
+    );
+  });
+
+  it("a map of 13 weeks has one window, so there is no second count", () => {
+    const view = rhythmView(
+      daysWith({ "2026-10-20": ["50.00", 1], "2026-10-21": ["20.00", 1] }),
+      13
+    );
+    const summary = rhythmSummary(view);
+    expect(countOf(summary)).toBe(1);
+    expect(summary).toContain("13 semanas: 2 dias com venda. Melhor dia");
+    expect(summary).not.toContain("sendo");
   });
 });
 
@@ -405,7 +440,7 @@ describe("the reading of a day and the summary", () => {
 
   it("the summary says in words what the map shows; the numbers are in the table", () => {
     expect(rhythmSummary(view)).toBe(
-      "Vendas por dia nas últimas 26 semanas: 3 dias com venda. Melhor dia 17/10, R$ 412,40. Poucas semanas de vendas ainda: o mapa enche conforme você vende. 3 dias com venda nas últimas 13 semanas. Meses anteriores atualizados até ontem. A tabela dia a dia está no fim deste bloco."
+      "Vendas por dia nas últimas 26 semanas: 3 dias com venda, sendo 3 nas últimas 13 semanas. Melhor dia 17/10, R$ 412,40. Poucas semanas de vendas ainda: o mapa enche conforme você vende. Meses anteriores atualizados até ontem. A tabela dia a dia está no fim deste bloco."
     );
     expect(rhythmSummary(rhythmView(daysWith({}), 13))).toBe(
       "Vendas por dia nas últimas 13 semanas: nenhum dia com venda."
