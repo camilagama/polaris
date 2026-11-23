@@ -4,8 +4,6 @@ status: accepted
 
 # Cloudflare Workflows: nenhum por ora; a exportação fica no consumidor da fila
 
-> O número deste ADR (0088) é o próximo livre na `main` (a última é a 0087) e nos PRs abertos no momento da escrita (o PR do purge usa 0081, o do teto de custo 0076 e o #134 emenda a 0067); pode mudar se outro entrar antes.
-
 ## Contexto
 
 O plano (Fase 11, PR113) pede Cloudflare Workflows **somente** para exportações, purge e operações longas necessárias, e proíbe levar o estado canônico de cobrança para um Workflow. Os PRs anteriores já resolveram parte do problema que um Workflow resolveria:
