@@ -317,10 +317,6 @@ const monthNames = [
   "dezembro",
 ] as const;
 
-export function isMonthValue(value: string): boolean {
-  return monthPattern.test(value);
-}
-
 function parseMonth(month: string): { month: number; year: number } | null {
   const match = monthPattern.exec(month);
   if (!match) {
