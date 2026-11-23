@@ -4,8 +4,6 @@ status: accepted
 
 # Sentry no navegador: só erros, sanitizado, com source maps escondidos
 
-> O número deste ADR (0098) é o próximo livre na `main` e nos PRs abertos no momento da escrita (o 0097 é o do staging, já na `main`); pode mudar se outro entrar antes.
-
 ## Contexto
 
 O plano da Fase 12 (PR 118) pede o Sentry só no frontend, com source maps, `environment`, release pelo SHA e sanitização, sem Session Replay. O servidor ainda **não** usa o SDK do Sentry: os erros dele vão para o Workers Logs ([ADR 0089](0089-evlog-e-logger-tipado-no-backend.md), [ADR 0094](0094-tracing-e-amostragem-do-workers-observability.md)) e o [ADR 0095](0095-onde-os-alertas-operacionais-vao-rodar.md) deixa o Sentry fora dos alertas por enquanto. O que o servidor já tem, e este ADR reaproveita, é a **política de redação** (`packages/observability/src/redaction.ts`): chaves que dizem o que guardam perdem o valor, e textos que parecem e-mail, telefone, CPF/CNPJ, cartão, IP, cookie ou token perdem essa parte. O [ADR 0090](0090-headers-de-seguranca-centralizados.md) manteve o `connect-src` do shell só em `'self'` e pediu que quem ligasse o Sentry abrisse o host de ingestão no mesmo PR. O SDK roda no aparelho do usuário, onde há CPF, telefone e e-mail de clientes em telas e formulários: o que sai dali é dado pessoal em potencial ([ADR 0076](0076-teto-de-custo-e-free-tier-primeiro.md) fixa o teto de custo; o Sentry Developer é gratuito).

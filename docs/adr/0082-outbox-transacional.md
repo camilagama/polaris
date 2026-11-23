@@ -4,8 +4,6 @@ status: accepted
 
 # Outbox transacional
 
-> O número deste ADR (0082) é o próximo livre na `main` e nos PRs abertos no momento da escrita (o PR do purge usa 0081); pode mudar se outro entrar antes.
-
 > **Emenda ([ADR 0084](0084-despachante-e-varredor-do-outbox.md)):** o papel do despachante (`polaris_outbox_owner`/`polaris_outbox_runtime`) existe, `event_outbox` ganhou `locked_until` e `dispatched_at`, o papel de privacidade pode devolver a `pending` um `data_export.requested` despachado (re-arm) e a política do tenant limita as chaves do corpo por tipo. O texto abaixo é o da decisão original.
 
 ## Contexto
