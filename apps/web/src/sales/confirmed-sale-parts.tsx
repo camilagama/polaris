@@ -125,7 +125,7 @@ export function ConfirmedItems({
 
 /**
  * The payment of a sale paid in more than one part, in the `Pagamento` block of the receipt and of the summary after
- * the confirmation: one block per part, in the order of the positions. The method is in full, the amount of the part
+ * the confirmation: one block per part, in the order the server sends them (by position). The method is in full, the amount of the part
  * in Geist Mono at the right edge, the installments on the line below, and under them the profile, rule, fees and
  * settlement estimate of that part. There is no line with the sum: the total is written once, at the top of the receipt.
  * The group is named "Pagamento em N partes" so a screen reader announces the block before the parts.

@@ -2355,6 +2355,7 @@ export interface ConfirmedSaleView {
   headline: string;
   items: ConfirmedSaleItemView[];
   note: string;
+  /** The part at position 0; a sale with `paymentParts` is drawn from them instead. */
   paymentDetails: ConfirmedSaleDetail[];
   /** Present only for a sale paid in more than one part. */
   paymentParts?: ConfirmedPaymentPartView[];
@@ -2503,7 +2504,7 @@ function installmentTextOf(
   return parts.length > 0 ? parts.join(" · ") : null;
 }
 
-/** One entry per part by position, only when the sale has more than one: a sale of one part keeps the plain block. */
+/** One entry per part, in the order the server sends them (by position), only when the sale has more than one: a sale of one part keeps the plain block. */
 function paymentPartsField(
   sale: ConfirmedSaleReadModel
 ): { paymentParts: ConfirmedPaymentPartView[] } | Record<string, never> {
