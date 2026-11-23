@@ -2140,6 +2140,20 @@ async function assertProperty(
     0,
     "a sale of two parts without positions 0 and 1"
   );
+  const miscounted = await admin.query(
+    `SELECT sale.id
+       FROM public.sales AS sale
+       JOIN public.sale_payments AS payment ON payment.organization_id = sale.organization_id AND payment.sale_id = sale.id
+      WHERE sale.organization_id = $1
+      GROUP BY sale.id, sale.payment_count
+     HAVING count(*) <> sale.payment_count`,
+    [store.tenant.organizationId]
+  );
+  assert.deepEqual(
+    miscounted.rows,
+    [],
+    "the header of a drawn sale counts the parts written with it, though the triggers were off"
+  );
   for (const [name, value] of Object.entries(drawnSeen)) {
     assert.ok(value, `no drawn case had ${name}`);
   }
