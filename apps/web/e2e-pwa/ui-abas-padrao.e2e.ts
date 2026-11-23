@@ -306,10 +306,14 @@ for (const { fontPixels, name, width } of FADE_CASES) {
         ]);
         expect(fade, "o esmaecido lê a cor de partida").not.toBe("");
         expect(dialog, "o diálogo lê a cor de fundo").not.toBe("");
-        const [fadeRgb, dialogRgb] = await rgbOfColors(page, [fade, dialog]);
-        for (const [index, channel] of (fadeRgb as number[]).entries()) {
+        const [fadeRgb = [], dialogRgb = []] = await rgbOfColors(page, [
+          fade,
+          dialog,
+        ]);
+        expect(fadeRgb).toHaveLength(3);
+        for (const [index, channel] of fadeRgb.entries()) {
           expect(
-            Math.abs(channel - (dialogRgb as number[])[index]),
+            Math.abs(channel - (dialogRgb[index] ?? Number.NaN)),
             `canal ${index}: esmaecido ${fadeRgb}, diálogo ${dialogRgb}`
           ).toBeLessThanOrEqual(TOLERANCE);
         }
