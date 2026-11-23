@@ -432,7 +432,7 @@ const SKELETON_ART_SAMPLES: readonly {
   { caption: "Início com números: página não encontrada.", kind: "home" },
 ];
 
-/** The block of the Início as `HomeBlock` composes it from `CardFrame*`: the reference `Block` is measured against. */
+/** The block of the Início as `HomeBlock` composes it out of the frame pieces: the reference `Block` is measured against. */
 function ReferenceBlock({ id }: { id: string }) {
   return (
     <CardFrame
