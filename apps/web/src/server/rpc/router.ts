@@ -235,6 +235,7 @@ import {
   InvalidConfirmSaleCommandError,
   SaleCommandConflictError,
   SaleOccurredInFutureError,
+  SalePaymentSplitMismatchError,
   SaleProductUnavailableError,
   UnsupportedConfirmSaleCommandVersionError,
 } from "@polaris/domain/sales/confirm-sale";
@@ -675,7 +676,7 @@ function initialOrganizationErrorCode(
 function clientRpcError(
   code: "BAD_REQUEST" | "CONFLICT" | "NOT_FOUND",
   error: unknown
-): ORPCError<typeof code, { reason: string } | undefined> {
+): ORPCError<typeof code, { part?: number; reason: string } | undefined> {
   const reason =
     typeof error === "object" &&
     error !== null &&
@@ -683,9 +684,20 @@ function clientRpcError(
     typeof error.code === "string"
       ? error.code
       : undefined;
+  // a payment profile refused for one part of a sale names that part (its position), never the profile
+  const part =
+    typeof error === "object" &&
+    error !== null &&
+    "part" in error &&
+    typeof error.part === "number"
+      ? error.part
+      : undefined;
   return new ORPCError(code, {
     cause: error,
-    data: reason === undefined ? undefined : { reason },
+    data:
+      reason === undefined
+        ? undefined
+        : { reason, ...(part === undefined ? {} : { part }) },
   });
 }
 
@@ -873,6 +885,7 @@ const badRequestRpcErrors = [
   [
     InvalidConfirmSaleCommandError,
     SaleOccurredInFutureError,
+    SalePaymentSplitMismatchError,
     InvalidSaleCustomerLinkError,
     InvalidSaleCancellationError,
     InvalidSaleReturnError,
