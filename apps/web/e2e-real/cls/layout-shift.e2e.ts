@@ -355,8 +355,7 @@ const SCREENS: Record<Path, (page: Page) => Locator[]> = {
     page.getByRole("region", { name: "Vendas hoje" }).getByText("R$").first(),
   ],
   "/configuracoes": (page) => [
-    page.getByRole("heading", { level: 1, name: "Configurações" }),
-    page.getByRole("heading", { level: 2, name: "Da loja" }),
+    page.getByRole("heading", { level: 1, name: "Configurações da loja" }),
     page.getByRole("link", { exact: true, name: "Formas de receber" }),
   ],
   "/dashboard": (page) => [

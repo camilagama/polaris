@@ -14,7 +14,7 @@ import { serveLabWorker, WORKER_MARK } from "./worker-mark";
  * The filters of the sales history, in the lab of the screens over the real offline runtime, the list answered by the
  * test: the period is the button of the title line, whose picker takes two days (in order, whichever is touched
  * first) or a shortcut and "Limpar" empties it; the other filters are pills of the filter bar of src/ui, the X takes a
- * pill out, "Limpar tudo" takes them all, and what the server is asked for is what the screen shows.
+ * pill out, "Limpar tudo" takes them all and the period, and what the server is asked for is what the screen shows.
  */
 const NOW = "2026-10-14T12:00:00.000Z";
 
@@ -222,14 +222,30 @@ for (const viewport of FORM_VIEWPORTS) {
         .toMatchObject({ customerQuery: "angela", status: "cancelled" });
       await expect(clearAll).toBeVisible();
 
-      // the X of one pill takes only that filter out
+      const shortcuts = await openPeriod(page);
+      await shortcuts
+        .getByRole("group", { name: "Atalhos do período" })
+        .getByRole("button", { exact: true, name: "7 dias" })
+        .click();
+      await expect(shortcuts).toBeHidden();
+      await expect
+        .poll(() => lastAsked(asked))
+        .toMatchObject({ occurredFrom: "2026-10-08", status: "cancelled" });
+
+      // the X of one pill takes only that filter out, the period stays
       await remover(page, "Situação").click();
       await expect(pill(page, "Situação")).toHaveCount(0);
       await expect(pill(page, "Cliente")).toBeVisible();
       await expect.poll(() => askedWithout(asked, "status")).toBe(true);
-      await expect(lastAsked(asked)).toMatchObject({ customerQuery: "angela" });
+      await expect(lastAsked(asked)).toMatchObject({
+        customerQuery: "angela",
+        occurredFrom: "2026-10-08",
+        occurredTo: "2026-10-14",
+      });
+      // the X of the last pill leaves the period alone, and "Limpar tudo" does not show for one pill with a period
+      await expect(clearAll).toHaveCount(0);
 
-      // with two pills again, "Limpar tudo" takes them all and the list is asked for with no filter
+      // with two pills again, "Limpar tudo" takes them all and the period too: the list is asked for with no filter at all
       await addFilter(page, "Situação");
       const confirmed = page.getByRole("dialog", { name: "Situação" });
       await confirmed
@@ -242,12 +258,16 @@ for (const viewport of FORM_VIEWPORTS) {
         0
       );
       await expect(clearAll).toHaveCount(0);
+      await expect(periodButton(page)).toHaveAccessibleName(
+        "Período, Escolher período"
+      );
       await expect
         .poll(
           () =>
             askedWithout(asked, "status") &&
             askedWithout(asked, "customerQuery") &&
-            askedWithout(asked, "occurredFrom")
+            askedWithout(asked, "occurredFrom") &&
+            askedWithout(asked, "occurredTo")
         )
         .toBe(true);
     });

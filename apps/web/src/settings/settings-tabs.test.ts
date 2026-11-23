@@ -1,40 +1,21 @@
 import { describe, expect, it } from "vitest";
 import { SCREEN_TABS } from "../app-shell/navigation-model";
-import { groupedTabsOf } from "../app-shell/screen-tabs";
-import {
-  firstSettingsTab,
-  SETTINGS_GROUPS,
-  settingsTabsShown,
-} from "./settings-tabs";
+import { accountTabsShown, settingsTabsShown } from "./settings-tabs";
 
-const NONE = {
-  billing: false,
-  dataExport: false,
-  offline: false,
-  passwordOn: false,
-};
+const NONE = { billing: false, dataExport: false };
 
-describe("the tabs of Configurações a person has", () => {
+describe("the tabs of Configurações da loja a person has", () => {
   it("always has Formas de receber and Catálogo público, and the others by condition", () => {
     expect(settingsTabsShown(NONE)).toEqual({
-      aparelhos: false,
       assinatura: false,
       "catalogo-publico": true,
       "formas-de-receber": true,
-      senha: false,
       "seus-dados": false,
     });
-    expect(
-      settingsTabsShown({
-        billing: true,
-        dataExport: true,
-        offline: true,
-        passwordOn: true,
-      })
-    ).toMatchObject({
-      aparelhos: true,
+    expect(settingsTabsShown({ billing: true, dataExport: true })).toEqual({
       assinatura: true,
-      senha: true,
+      "catalogo-publico": true,
+      "formas-de-receber": true,
       "seus-dados": true,
     });
   });
@@ -50,35 +31,54 @@ describe("the tabs of Configurações a person has", () => {
     });
   });
 
-  it("goes back to Formas de receber from Senha with the offline runtime off (Aparelhos is not in the menu)", () => {
-    const tab = firstSettingsTab({ ...NONE, passwordOn: true });
-    expect(tab.value).toBe("formas-de-receber");
+  it("has the four tabs of the store, in order, and neither Senha nor Aparelhos", () => {
+    expect(SCREEN_TABS.settings.map((tab) => tab.value)).toEqual([
+      "formas-de-receber",
+      "catalogo-publico",
+      "assinatura",
+      "seus-dados",
+    ]);
+  });
+});
+
+describe("the tabs of Minha conta a person has", () => {
+  it("has Senha with the password on and Aparelhos with the offline runtime, each alone or both", () => {
+    expect(accountTabsShown({ offline: false, passwordOn: false })).toEqual({
+      aparelhos: false,
+      senha: false,
+    });
+    expect(accountTabsShown({ offline: false, passwordOn: true })).toEqual({
+      aparelhos: false,
+      senha: true,
+    });
+    expect(accountTabsShown({ offline: true, passwordOn: false })).toEqual({
+      aparelhos: true,
+      senha: false,
+    });
+    expect(accountTabsShown({ offline: true, passwordOn: true })).toEqual({
+      aparelhos: true,
+      senha: true,
+    });
   });
 
-  it("names the two rows Da loja and Da conta and together they are the tabs of the screen, in order", () => {
-    expect(SETTINGS_GROUPS.map((group) => group.label)).toEqual([
-      "Da loja",
-      "Da conta",
+  it("lists Senha first, then Aparelhos, and together with Configurações they are the six tabs of before", () => {
+    expect(SCREEN_TABS.account.map((tab) => tab.value)).toEqual([
+      "senha",
+      "aparelhos",
     ]);
-    expect(SETTINGS_GROUPS.flatMap((group) => group.values)).toEqual(
-      SCREEN_TABS.settings.map((tab) => tab.value)
+    expect(
+      [...SCREEN_TABS.settings, ...SCREEN_TABS.account]
+        .map((tab) => tab.value)
+        .sort()
+    ).toEqual(
+      [
+        "aparelhos",
+        "assinatura",
+        "catalogo-publico",
+        "formas-de-receber",
+        "senha",
+        "seus-dados",
+      ].sort()
     );
-  });
-
-  it("draws no row, and no name, for a group with no tab this person has", () => {
-    const rows = (conditions: typeof NONE) => {
-      const shown = settingsTabsShown(conditions);
-      return groupedTabsOf(
-        SCREEN_TABS.settings.filter((tab) => shown[tab.value]),
-        SETTINGS_GROUPS
-      ).map((group) => [group.label, group.tabs.map((tab) => tab.value)]);
-    };
-    expect(rows(NONE)).toEqual([
-      ["Da loja", ["formas-de-receber", "catalogo-publico"]],
-    ]);
-    expect(rows({ ...NONE, billing: true })).toEqual([
-      ["Da loja", ["formas-de-receber", "catalogo-publico"]],
-      ["Da conta", ["assinatura"]],
-    ]);
   });
 });

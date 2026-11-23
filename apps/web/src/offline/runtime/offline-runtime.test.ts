@@ -9,6 +9,11 @@ import { MemoryOutboxStorage } from "../outbox/memory-storage";
 import { Outbox } from "../outbox/outbox";
 import { createOfflineProduct } from "../product-create";
 import { FakeCatalogServer, FakeWriter } from "../test-support";
+import {
+  RECOGNIZING_SLOW_TEXT,
+  recognitionState,
+  recognitionText,
+} from "./devices-model";
 import { logoutDependencies } from "./logout-dependencies";
 import {
   type DataChannel,
@@ -22,6 +27,7 @@ import {
   type RuntimeApi,
   type RuntimeDependencies,
   type RuntimeSnapshot,
+  SERVER_START_FAILED_REASON,
   SESSION_RECHECK_MS,
   SessionUnreachableError,
 } from "./offline-runtime";
@@ -597,6 +603,14 @@ describe("starting", () => {
       return { device, w };
     }
 
+    const serverFailureCodes = new Set([
+      "BAD_GATEWAY",
+      "GATEWAY_TIMEOUT",
+      "INTERNAL_SERVER_ERROR",
+      "SERVICE_UNAVAILABLE",
+      "TIMEOUT",
+    ]);
+
     const unanswered: [string, () => Error][] = [
       [
         "a 503 with an oRPC code",
@@ -664,7 +678,11 @@ describe("starting", () => {
         expect(runtime.getSnapshot()).toMatchObject({
           bootstrapped: false,
           phase: "unavailable",
-          reason: error.message,
+          reason: serverFailureCodes.has(
+            (error as { code?: string }).code ?? ""
+          )
+            ? SERVER_START_FAILED_REASON
+            : error.message,
         });
         expect(runtime.context()).toBeNull();
       }
@@ -957,6 +975,24 @@ describe("starting", () => {
     const second = other.make();
     await second.start(organizationId);
     expect(second.getSnapshot().reason).not.toBe(PLAN_REFUSED_REASON);
+  });
+
+  it("a failure of the server at the start is not the browser's: the runtime says so and the device screen does not blame the browser", async () => {
+    const w = world();
+    w.failures.issueLease.push(
+      Object.assign(new Error("boom"), {
+        code: "INTERNAL_SERVER_ERROR",
+        status: 500,
+      })
+    );
+    const runtime = w.make();
+    await runtime.start(organizationId);
+    const { phase, reason } = runtime.getSnapshot();
+    expect(phase).toBe("unavailable");
+    expect(reason).toBe(SERVER_START_FAILED_REASON);
+    const state = recognitionState(false, phase, reason);
+    expect(state).toBe("slow");
+    expect(recognitionText(state, phase, reason)).toBe(RECOGNIZING_SLOW_TEXT);
   });
 
   it("a second user of the same browser gets their own device, lease and namespace, and the first user's work is left alone", async () => {

@@ -29,6 +29,8 @@ import {
   settled,
 } from "./shared";
 
+const TODAY_INDEX = 180;
+
 test.describe("Ritmo de vendas (revisão de UI v7, § 3 item 10)", () => {
   // Friday `23/10`: the 26 weeks go from Sunday `26/04` to Saturday `24/10`; the days that sold are those of SOLD
   // the summary of the map says what only the rhythm knows (the weeks, the best day and the best weekday); the value of a day is in the tooltip over
@@ -52,13 +54,15 @@ test.describe("Ritmo de vendas (revisão de UI v7, § 3 item 10)", () => {
         .filter({ has: page.getByText(label, { exact: true }) })
         .locator("dd")
     ).toHaveText(value);
-  /** Beside the goal, under the chart and the ranking, with the 30 rem the map needs and the height of the pair. */
+  /** Beside the goal, under the chart and the ranking, 3/5 of the row to the goal's 2/5 and the height of the pair. */
   const expectBesideTheGoal = async (page: Page) => {
     const mapBox = await rhythm(page).boundingBox();
     const goalBox = await region(page, "Meta").boundingBox();
     const topBox = await region(page, "Mais vendidos do mês").boundingBox();
     const chartBox = await region(page, "Vendas por dia").boundingBox();
-    expect(mapBox?.width ?? 0).toBeCloseTo(480, 0);
+    expect(
+      Math.abs((mapBox?.width ?? 0) * 2 - (goalBox?.width ?? 0) * 3)
+    ).toBeLessThanOrEqual(4);
     expect(
       Math.abs((mapBox?.height ?? 0) - (goalBox?.height ?? 900))
     ).toBeLessThan(2);
@@ -181,9 +185,11 @@ test.describe("Ritmo de vendas (revisão de UI v7, § 3 item 10)", () => {
     // 3 weeks with a sale: the map says it is filling up in its summary; there is no chart of the mean by weekday
     await expect(map).not.toContainText("Média por dia da semana");
     await expect(map.locator("[data-weekday-bars]")).toHaveCount(0);
-    // the cells are 12 px with a gap of 3
+    // beside the goal the cell is a whole size from 12 to 16 px and the map takes the card
     const first = await dataCells(page).first().boundingBox();
-    expect(first?.width).toBeCloseTo(12, 0);
+    expect(first?.width ?? 0).toBeCloseTo(Math.round(first?.width ?? 0), 1);
+    expect(first?.width ?? 0).toBeGreaterThanOrEqual(12);
+    expect(first?.width ?? 99).toBeLessThanOrEqual(16);
     const mapBox = await map.boundingBox();
     await expectBesideTheGoal(page);
     await expectLegendOnTheTitleLine(page);
@@ -259,16 +265,18 @@ test.describe("Ritmo de vendas (revisão de UI v7, § 3 item 10)", () => {
     expect(await ringsDrawn(page)).toEqual([
       { cell: 180, dash: "none", kind: "today", width: 1 },
     ]);
-    // the cells stay where they were: 12 px, 15 px apart, the last week 25 steps from the first
+    // the cells are on a grid: a whole cell and a gap of a quarter of it, the last week 25 steps from the first
     const cells = dataCells(page);
     const first = await cells.first().boundingBox();
     const last = await cells.nth(181).boundingBox();
     const second = await cells.nth(1).boundingBox();
-    expect(first?.width).toBeCloseTo(12, 1);
-    expect(first?.height).toBeCloseTo(12, 1);
-    expect((second?.y ?? 0) - (first?.y ?? 0)).toBeCloseTo(15, 1);
-    expect((last?.x ?? 0) - (first?.x ?? 0)).toBeCloseTo(25 * 15, 1);
-    expect((last?.y ?? 0) - (first?.y ?? 0)).toBeCloseTo(6 * 15, 1);
+    const cellSide = Math.round(first?.width ?? 0);
+    const step = cellSide + Math.round(cellSide / 4);
+    expect(first?.width).toBeCloseTo(cellSide, 1);
+    expect(first?.height).toBeCloseTo(cellSide, 1);
+    expect((second?.y ?? 0) - (first?.y ?? 0)).toBeCloseTo(step, 1);
+    expect((last?.x ?? 0) - (first?.x ?? 0)).toBeCloseTo(25 * step, 1);
+    expect((last?.y ?? 0) - (first?.y ?? 0)).toBeCloseTo(6 * step, 1);
     // no ring touches a neighbor: its stroke box keeps 0.5 px from every other cell
     await cells.nth(175).hover();
     await expectTooltip(page, "Domingo, 18/10");
@@ -317,6 +325,130 @@ test.describe("Ritmo de vendas (revisão de UI v7, § 3 item 10)", () => {
     expect(await ringsDrawn(page)).toEqual([
       { cell: 180, dash: "none", kind: "read", width: 1.5 },
     ]);
+  });
+
+  for (const view of [
+    { fold: false, height: 800, width: 1280 },
+    { fold: true, height: 800, width: 1280 },
+    { fold: false, height: 900, width: 1536 },
+    { fold: true, height: 900, width: 1536 },
+  ]) {
+    test(`ao lado da Meta a ${view.width} px, menu ${view.fold ? "recolhido" : "aberto"}: o cartão é 3/5 contra 2/5, o mapa tem as 26 semanas em células inteiras até o teto de 20 de lado, com 85 % ou mais do painel, e o dia lido tem o anel sobre o quadrado certo`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ height: view.height, width: view.width });
+      await openHome(page, new FakeServer({ ...SOLD, goals: [goal({})] }));
+      if (view.fold) {
+        await page
+          .getByRole("button", { exact: true, name: "Recolher menu" })
+          .click();
+        await expect(
+          page.getByRole("button", { exact: true, name: "Expandir menu" })
+        ).toBeVisible();
+        await expect
+          .poll(() => page.evaluate(() => document.getAnimations().length))
+          .toBe(0);
+      }
+      await expectAtRest(page);
+      await settled(page);
+      const ritmo = (await rhythm(page).boundingBox())?.width ?? 0;
+      const meta = (await region(page, "Meta").boundingBox())?.width ?? 0;
+      expect(Math.abs(ritmo - 1.5 * meta)).toBeLessThanOrEqual(2);
+      expect(ritmo).toBeGreaterThan(meta);
+      const cells = dataCells(page);
+      await expect(cells).toHaveCount(182);
+      const first = await cells.first().boundingBox();
+      const side = first?.width ?? 0;
+      expect(side).toBeCloseTo(Math.round(side), 1);
+      expect(Math.round(side)).toBeGreaterThanOrEqual(12);
+      expect(Math.round(side)).toBeLessThanOrEqual(20);
+      // the map takes at least 85% of the width the card leaves it, with the menu open and folded, up to 1536 px
+      const usable = await rhythm(page)
+        .getByRole("img")
+        .locator("xpath=../..")
+        .boundingBox();
+      const drawn = await rhythm(page)
+        .getByRole("img")
+        .locator("xpath=..")
+        .boundingBox();
+      expect((drawn?.width ?? 0) / (usable?.width ?? 1)).toBeGreaterThanOrEqual(
+        0.85
+      );
+      expect((drawn?.x ?? 0) + (drawn?.width ?? 0)).toBeLessThanOrEqual(
+        (usable?.x ?? 0) + (usable?.width ?? 0) + 0.5
+      );
+      // the first and the last day read: the ring and the tooltip are on the square under the pointer
+      const expectReadAt = async (index: number, said: string) => {
+        await cells.nth(index).hover();
+        await expectTooltip(page, said);
+        const read = (await ringsDrawn(page)).find(
+          (ring) => ring.kind === "read"
+        );
+        expect(read?.cell).toBe(index);
+      };
+      await expectReadAt(0, "Domingo, 26/04");
+      await expectReadAt(TODAY_INDEX, "Sexta, 23/10");
+      expect(
+        await page.evaluate(
+          () => document.documentElement.scrollWidth <= window.innerWidth
+        )
+      ).toBe(true);
+    });
+  }
+
+  test("a 960 px de conteúdo, o mínimo do par: a Meta a 2/5 com nome longo e anel cabe, quebra o nome em linhas e nada rola de lado", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 900, width: 1250 });
+    await openHome(
+      page,
+      new FakeServer({
+        ...SOLD,
+        goals: [
+          goal({
+            name: "Meta de vendas líquidas do trimestre da loja inteira, com nome bem comprido",
+          }),
+        ],
+      })
+    );
+    const meta = region(page, "Meta");
+    await expect(meta.getByRole("img")).toBeVisible();
+    await expectAtRest(page);
+    await settled(page);
+    const lower = await page.locator("[data-home-lower]").boundingBox();
+    expect(lower?.width ?? 0).toBeGreaterThanOrEqual(960);
+    expect(lower?.width ?? 0).toBeLessThan(1000);
+    const metaBox = await meta.boundingBox();
+    const ritmoBox = await rhythm(page).boundingBox();
+    expect(
+      Math.abs((ritmoBox?.width ?? 0) - 1.5 * (metaBox?.width ?? 0))
+    ).toBeLessThanOrEqual(2);
+    const fit = await meta.evaluate((card) => {
+      const frame = card.getBoundingClientRect();
+      const inside = [...card.querySelectorAll("p, [data-goal-ring]")].every(
+        (element) => {
+          const box = element.getBoundingClientRect();
+          return box.left >= frame.left - 0.5 && box.right <= frame.right + 0.5;
+        }
+      );
+      const name = card.querySelector("p.font-medium") as HTMLElement;
+      return {
+        inside,
+        lines: Math.round(
+          name.getBoundingClientRect().height /
+            Number.parseFloat(getComputedStyle(name).lineHeight)
+        ),
+        overflow: card.scrollWidth - card.clientWidth,
+      };
+    });
+    expect(fit.inside).toBe(true);
+    expect(fit.overflow).toBeLessThanOrEqual(0);
+    expect(fit.lines).toBeGreaterThanOrEqual(2);
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= window.innerWidth
+      )
+    ).toBe(true);
   });
 
   test("pelo teclado: o foco abre o tooltip em hoje, cima e baixo andam um dia, esquerda e direita uma semana, o aria-valuetext diz a leitura", async ({
@@ -506,6 +638,7 @@ test.describe("Ritmo de vendas (revisão de UI v7, § 3 item 10)", () => {
     { height: 740, width: 360 },
     { height: 900, width: 900 },
     { height: 800, width: 1280 },
+    { height: 900, width: 1536 },
   ]) {
     test(`lugar reservado: a caixa do carregando tem a altura do bloco pronto e ler um dia não a muda (${size.width} px)`, async ({
       page,

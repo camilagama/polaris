@@ -452,7 +452,8 @@ describe("the screen of the event", () => {
     ["/products", "?aba=categorias", "products:categorias"],
     ["/products", "?aba=xyz", "products:produtos"],
     ["/sales/detail", "?id=abc", "sale-detail"],
-    ["/configuracoes", "?aba=senha", "settings:senha"],
+    ["/conta", "?aba=aparelhos", "account:aparelhos"],
+    ["/conta", "", "account:senha"],
     ["/vendas/123", "", "outra"],
     ["/termos", "", "outra"],
   ])("names %s%s as %s, never the address", (pathname, search, expected) => {
