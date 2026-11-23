@@ -19,7 +19,7 @@ import {
 import { PageLoading } from "./page-loading";
 import { TabPanelScope, type TitleBack, TitleLine } from "./screen-title";
 
-// biome-ignore lint/performance/noBarrelFile: the list and the tab moved to `ui/section-tabs.tsx`; the screens keep importing them from here
+// biome-ignore lint/performance/noBarrelFile: the screens import the list and the tab from this one path, whatever file holds them
 export { ScreenTabList, ScreenTabTrigger } from "@/ui/section-tabs";
 
 /** The links into a tab: the goals of the Início, a new product or one of them, the return of a checkout, the part of Despesas. */

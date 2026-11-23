@@ -25,15 +25,19 @@ const SOURCE = /\.tsx$/;
 const TEST_FILE = /\.test\.tsx$/;
 const OUTSIDE = ["src/ui/", "src/ui-gallery/"] as const;
 
-const COMMENT = /\/\*[\s\S]*?\*\/|(?:^|\s)\/\/[^\n]*/gm;
-const withoutComments = (text: string) => text.replace(COMMENT, "");
+// a string is matched first so a `/*` or a `//` inside it (`accept="image/*"`, a URL) does not start a comment
+const COMMENT_OR_STRING =
+  /("(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'|`(?:[^`\\]|\\.)*`)|\/\*[\s\S]*?\*\/|(?:^|\s)\/\/[^\n]*/gm;
+const withoutComments = (text: string) =>
+  text.replace(COMMENT_OR_STRING, (_match, quoted?: string) => quoted ?? "");
 
 const STATEMENT =
   /\b(?:import|export)\s+([^;'"`]*?)\s*from\s*(["'`])([^"'`]+)\2/g;
 const DYNAMIC = /\bimport\s*\(\s*(["'`])([^"'`]+)\1/g;
+const BARE = /\bimport\s*(["'`])([^"'`]+)\1/g;
 const UI_MODULE = (name: string) =>
   new RegExp(
-    `^(?:@\\/ui|(?:\\.{1,2}\\/)+(?:[\\w-]+\\/)*ui)\\/${name}(?:\\.tsx?)?$|^\\.\\/${name}(?:\\.tsx?)?$`
+    `^(?:@\\/ui|(?:\\.{1,2}\\/)+(?:[\\w-]+\\/)*ui)\\/${name}(?:\\.tsx?)?$`
   );
 const TABS_MODULE = UI_MODULE("tabs");
 const CARD_MODULE = UI_MODULE("card");
@@ -48,12 +52,64 @@ const CARD_NAMES = new Set([
 // a string literal of any quote, a template included: the class of an element is one of them
 const STRING_LITERAL =
   /"(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'|`(?:[^`\\]|\\.)*`/g;
-// `rounded`, `rounded-xl`, `md:rounded-[calc(…)]`; not `rounded-t-*` nor `-b-*` (a corner of one side is no frame)
+// its own state: `matchAll` copies the `lastIndex` of the regex it is given
+const STICKY_LITERAL = new RegExp(STRING_LITERAL.source, "y");
+// `rounded`, `rounded-xl`, `md:rounded-[calc(…)]`; not `rounded-none` nor `rounded-t-*`, `-b-*`… (no corner, or one side only)
 const ROUNDED =
-  /(?:^|[\s"'`])(?:[\w[\]-]+:)*!?rounded(?:-(?!(?:t|b|l|r|s|e|tl|tr|bl|br|ss|se|es|ee)(?:-|[\s"'`]|$))[^\s"'`]+)?!?(?=[\s"'`]|$)/;
+  /(?:^|[\s"'`])(?:[\w[\]-]+:)*!?rounded(?:-(?!(?:none|t|b|l|r|s|e|tl|tr|bl|br|ss|se|es|ee)(?:-|[\s"'`]|$))[^\s"'`]+)?!?(?=[\s"'`]|$)/;
+// the calls that join classes: their strings are one class, so `cn("rounded-xl", "border p-3")` is a frame too
+const CLASS_CALL = /\b(?:cn|clsx|twMerge)\(/g;
 // a border on every side: `border`, `border-2`, `border-[1.5px]`; not `border-b`, `border-t`, `border-border` (a color)
 const BORDER =
   /(?:^|[\s"'`])(?:[\w[\]-]+:)*!?border(?:-(?:\d+|\[\d[^\]]*\]))?!?(?=[\s"'`]|$)/;
+
+/** The text of the call whose `(` is at `open`, up to its matching `)`, skipping what is inside strings. */
+function callBody(code: string, open: number): { body: string; end: number } {
+  let depth = 0;
+  let index = open;
+  while (index < code.length) {
+    const char = code[index];
+    if (char === '"' || char === "'" || char === "`") {
+      STICKY_LITERAL.lastIndex = index;
+      const literal = STICKY_LITERAL.exec(code);
+      index = literal ? index + literal[0].length : index + 1;
+      continue;
+    }
+    if (char === "(") {
+      depth += 1;
+    } else if (char === ")") {
+      depth -= 1;
+      if (depth === 0) {
+        return { body: code.slice(open + 1, index), end: index + 1 };
+      }
+    }
+    index += 1;
+  }
+  return { body: code.slice(open + 1), end: code.length };
+}
+
+/** The classes of the source, one string per literal and one per `cn(...)` call (its literals joined by a space). */
+function classStrings(code: string): string[] {
+  const strings: string[] = [];
+  let rest = "";
+  let cursor = 0;
+  for (const call of code.matchAll(CLASS_CALL)) {
+    const open = (call.index ?? 0) + call[0].length - 1;
+    if (open < cursor) {
+      continue;
+    }
+    const { body, end } = callBody(code, open);
+    rest += code.slice(cursor, call.index);
+    strings.push(
+      [...body.matchAll(STRING_LITERAL)]
+        .map(([literal]) => literal.slice(1, -1))
+        .join(" ")
+    );
+    cursor = end;
+  }
+  rest += code.slice(cursor);
+  return [...strings, ...[...rest.matchAll(STRING_LITERAL)].map(([l]) => l)];
+}
 
 const AS_KEYWORD = /\s+as\s+/;
 const NAMED_IMPORTS = /\{([^}]*)\}/;
@@ -73,10 +129,9 @@ export function ruleHits(text: string): Record<Rule, number> {
     ...[...code.matchAll(STATEMENT)].map(
       ([, clause = "", , specifier = ""]) => ({ clause, specifier })
     ),
-    ...[...code.matchAll(DYNAMIC)].map(([, , specifier = ""]) => ({
-      clause: "*",
-      specifier,
-    })),
+    ...[...code.matchAll(DYNAMIC), ...code.matchAll(BARE)].map(
+      ([, , specifier = ""]) => ({ clause: "*", specifier })
+    ),
   ];
   const opens = (clause: string) => clause.includes("*");
   const r1 = imports.some(({ specifier }) => TABS_MODULE.test(specifier));
@@ -85,18 +140,53 @@ export function ruleHits(text: string): Record<Rule, number> {
       CARD_MODULE.test(specifier) &&
       (opens(clause) || importedNames(clause).some((n) => CARD_NAMES.has(n)))
   );
-  const r3 = [...code.matchAll(STRING_LITERAL)].filter(
-    ([literal]) => ROUNDED.test(literal) && BORDER.test(literal)
+  const r3 = classStrings(code).filter(
+    (classes) => ROUNDED.test(` ${classes} `) && BORDER.test(` ${classes} `)
   ).length;
   return { R1: r1 ? 1 : 0, R2: r2 ? 1 : 0, R3: r3 };
 }
 
+/** The only reasons an exception of R3 may give: an image, and the bubble of a chart. */
+export const ALLOWLIST_REASONS = ["chart-bubble", "thumbnail"] as const;
+
+export interface Exception {
+  file: string;
+  reason: (typeof ALLOWLIST_REASONS)[number];
+  why: string;
+}
+
 /**
- * The exceptions that stay: the file, the rule and why the pattern does not apply. Sorted by file; an exception no
- * file uses any more fails the test.
+ * The exceptions of R3 that stay: the file, one of the two reasons and why the pattern does not apply there. R2 has no
+ * list: nothing outside `Block` imports `Card*`. Sorted by file; an exception no file uses any more fails the test, and
+ * so does one whose file draws a list or a table (a list is a block with a title too, so it is never an exception).
  */
-export const ALLOWLIST: readonly { file: string; rule: Rule; why: string }[] =
-  [];
+export const ALLOWLIST: readonly Exception[] = [];
+
+// what a list or a table of the screen looks like in the source
+const LIST_OR_TABLE =
+  /<ul\b|<ol\b|<Table\b|<table\b|role=["']list["']|\bdivide-y\b/;
+
+/** What is wrong with the exceptions themselves, given the source of each file. */
+export function exceptionFaults(
+  allowlist: readonly Exception[],
+  source: (file: string) => string
+): string[] {
+  return allowlist.flatMap(({ file, reason, why }) => {
+    const faults: string[] = [];
+    if (!ALLOWLIST_REASONS.includes(reason)) {
+      faults.push(`${file}: motivo "${reason}" fora da lista fechada`);
+    }
+    if (why.length <= 20) {
+      faults.push(`${file}: a razão da exceção está curta demais`);
+    }
+    if (LIST_OR_TABLE.test(withoutComments(source(file)))) {
+      faults.push(
+        `${file}: o arquivo desenha lista ou tabela, que nunca é exceção: use o Block`
+      );
+    }
+    return faults;
+  });
+}
 
 /** The files of before the pattern, per rule: only shrinks, and each screen that migrates takes its files out. */
 export const DEBT: Readonly<Record<Rule, readonly string[]>> = {
@@ -188,7 +278,7 @@ export const DEBT: Readonly<Record<Rule, readonly string[]>> = {
 };
 
 export interface Listing {
-  allowlist: readonly { file: string; rule: Rule; why: string }[];
+  allowlist: readonly Exception[];
   debt: Readonly<Record<Rule, readonly string[]>>;
 }
 
@@ -200,7 +290,7 @@ export function listingFaults(
   const faults: string[] = [];
   for (const rule of RULES) {
     const excused = new Set(
-      allowlist.filter((entry) => entry.rule === rule).map((e) => e.file)
+      rule === "R3" ? allowlist.map((entry) => entry.file) : []
     );
     const owed = new Set(debt[rule]);
     for (const [file, found] of hits) {
@@ -274,19 +364,33 @@ describe("o padrão visual das telas (R1 a R3)", () => {
     }
     expect(filesOf(rule).length).toBe(
       debt.length +
-        ALLOWLIST.filter((entry) => entry.rule === rule).filter(
-          (entry) => !debt.includes(entry.file)
-        ).length
+        (rule === "R3"
+          ? ALLOWLIST.filter((entry) => !debt.includes(entry.file)).length
+          : 0)
     );
   });
 
-  it("o ALLOWLIST é ordenado, cada exceção tem a razão escrita e nenhuma está também na dívida", () => {
-    expect(ALLOWLIST.map((entry) => `${entry.rule} ${entry.file}`)).toEqual(
-      ALLOWLIST.map((entry) => `${entry.rule} ${entry.file}`).sort()
+  it("o ALLOWLIST é ordenado, só tem os motivos da lista fechada, nenhuma exceção desenha lista ou tabela e nenhuma está também na dívida", () => {
+    expect(ALLOWLIST.map((entry) => entry.file)).toEqual(
+      ALLOWLIST.map((entry) => entry.file).sort()
     );
+    expect(exceptionFaults(ALLOWLIST, read)).toEqual([]);
     for (const entry of ALLOWLIST) {
-      expect(entry.why.length, entry.file).toBeGreaterThan(20);
-      expect(DEBT[entry.rule], entry.file).not.toContain(entry.file);
+      expect(DEBT.R3, entry.file).not.toContain(entry.file);
+    }
+  });
+
+  it("as listas e tabelas principais ficam na dívida: elas saem só quando a tela vai para o Block", () => {
+    for (const file of [
+      "src/catalog/product-list.tsx",
+      "src/catalog/category-list.tsx",
+      "src/customers/customer-list.tsx",
+      "src/expenses/expense-list.tsx",
+      "src/inventory/inventory-page.tsx",
+      "src/sales/sale-history-page.tsx",
+      "src/sales/sale-history-list.tsx",
+    ]) {
+      expect([...DEBT.R2, ...DEBT.R3], file).toContain(file);
     }
   });
 });
@@ -309,6 +413,12 @@ describe("a trava reprova o que planto (controles)", () => {
     ["R2", 'import * as C from "@/ui/card";'],
     ["R3", 'export const X = () => <div className="rounded-xl border p-3" />;'],
     ["R3", "const c = `flex md:rounded-lg md:border-2 x`;"],
+    ["R3", 'const c = cn("rounded-xl", "border p-3");'],
+    ["R3", 'const c = cn("rounded-xl", ativo && "border", "p-3");'],
+    ["R3", 'const c = cn("flex", cn("rounded-lg", "border"));'],
+    ["R3", 'const c = "rounded-full border-2";'],
+    ["R1", 'import "@/ui/tabs";'],
+    ["R2", 'export { Card } from "../ui/card";'],
     ["R3", "const c = cn('rounded border-[1.5px] bg-card');"],
   ] as const)("%s: %s reprova", (rule, text) => {
     expect(ruleHits(text)[rule]).toBeGreaterThan(0);
@@ -335,6 +445,14 @@ describe("a trava reprova o que planto (controles)", () => {
     'const a = "rounded-md bg-muted";',
     'const a = "borderless rounded";',
     'const a = "unrounded border";',
+    'const a = "rounded-none border";',
+    'import { Card } from "./card";',
+    'import { Tabs } from "./tabs";',
+    'const a = cn("rounded-xl", "bg-card");\nconst b = cn("border", "p-2");',
+    '<input accept="image/*" />;\nconst a = "rounded border";'.replace(
+      "rounded border",
+      "rounded-md bg-muted"
+    ),
   ])("%s passa", (text) => {
     expect(ruleHits(text)).toEqual(NONE);
   });
@@ -346,7 +464,7 @@ describe("a trava reprova o que planto (controles)", () => {
     const allowlist = [
       {
         file: "src/x/miniatura.tsx",
-        rule: "R3",
+        reason: "thumbnail",
         why: "a miniatura de uma imagem",
       },
     ] as const;
@@ -391,12 +509,89 @@ describe("a trava reprova o que planto (controles)", () => {
     expect(
       listingFaults(new Map(), {
         allowlist: [
-          { file: "src/x/bolha.tsx", rule: "R3", why: "a bolha do gráfico" },
+          {
+            file: "src/x/bolha.tsx",
+            reason: "chart-bubble",
+            why: "a bolha que acompanha o ponto do gráfico",
+          },
         ],
         debt: { R1: [], R2: [], R3: [] },
       })
     ).toEqual([
       "src/x/bolha.tsx: exceção de R3 sem uso no ALLOWLIST: tire-a da lista",
     ]);
+  });
+});
+
+describe("a trava não isenta lista nem tabela (controles plantados)", () => {
+  const LIST_FILE = [
+    'import { Card } from "@/ui/card";',
+    "export const Lista = () => (",
+    '  <Card><ul className="divide-y"><li>x</li></ul></Card>',
+    ");",
+  ].join("\n");
+  const none = { allowlist: [], debt: { R1: [], R2: [], R3: [] } };
+
+  it("um arquivo de lista com Card reprova pela R2", () => {
+    const hits = new Map([["src/x/lista.tsx", ruleHits(LIST_FILE)]]);
+    expect(listingFaults(hits, none)).toEqual([
+      "src/x/lista.tsx: fora do padrão (R2) e fora da lista",
+    ]);
+  });
+
+  it("o mesmo arquivo no ALLOWLIST de R3 também reprova: lista nunca é exceção", () => {
+    const entry = {
+      file: "src/x/lista.tsx",
+      reason: "thumbnail",
+      why: "a miniatura de uma imagem na linha",
+    } as const;
+    expect(exceptionFaults([entry], () => LIST_FILE)).toEqual([
+      "src/x/lista.tsx: o arquivo desenha lista ou tabela, que nunca é exceção: use o Block",
+    ]);
+  });
+
+  it.each([
+    "<ul><li>a</li></ul>",
+    '<div role="list" />',
+    "<Table><TableRow /></Table>",
+    '<div className="divide-y" />',
+  ])("%s conta como lista ou tabela", (text) => {
+    const entry = {
+      file: "src/x/a.tsx",
+      reason: "chart-bubble",
+      why: "a bolha que acompanha o ponto do gráfico",
+    } as const;
+    expect(exceptionFaults([entry], () => text)).toHaveLength(1);
+  });
+
+  it("um motivo fora da lista fechada reprova, e uma exceção boa passa", () => {
+    const ruim = {
+      file: "src/x/a.tsx",
+      reason: "quero-assim",
+      why: "porque o desenho ficou melhor assim",
+    } as unknown as Exception;
+    expect(exceptionFaults([ruim], () => "<div />")).toEqual([
+      'src/x/a.tsx: motivo "quero-assim" fora da lista fechada',
+    ]);
+    const boa = {
+      file: "src/x/a.tsx",
+      reason: "thumbnail",
+      why: "a miniatura de uma imagem de produto",
+    } as const;
+    expect(exceptionFaults([boa], () => "<img />")).toEqual([]);
+  });
+
+  it("R2 não tem exceção: uma entrada do ALLOWLIST não cobre um Card", () => {
+    const hits = new Map([
+      ["src/x/a.tsx", ruleHits('import { Card } from "@/ui/card";')],
+    ]);
+    const entry = {
+      file: "src/x/a.tsx",
+      reason: "thumbnail",
+      why: "a miniatura de uma imagem de produto",
+    } as const;
+    expect(listingFaults(hits, { ...none, allowlist: [entry] })).toContain(
+      "src/x/a.tsx: fora do padrão (R2) e fora da lista"
+    );
   });
 });

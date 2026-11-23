@@ -13,7 +13,9 @@ import {
  * The one frame of a screen's blocks: a named region (`aria-labelledby` points at the heading of `BlockHeader`). From
  * 760 px it is a `--muted` frame holding the title, a panel in `--card` and an optional foot; below it, the plain card.
  */
-function Block({ ...props }: React.ComponentProps<typeof CardFrame>) {
+function Block(
+  props: React.ComponentProps<typeof CardFrame> & { "aria-labelledby": string }
+) {
   return <CardFrame role="region" {...props} />;
 }
 

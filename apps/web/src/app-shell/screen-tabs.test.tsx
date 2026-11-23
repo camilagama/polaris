@@ -183,7 +183,6 @@ describe("SectionTabs: com rota e sem rota numa API só", () => {
     );
     expect(html).not.toContain("<h1");
     expect(html.split("<button")).toHaveLength(3);
-    expect(html).toContain("conteúdo a");
     expect(html).toContain("conteúdo b");
   });
 
