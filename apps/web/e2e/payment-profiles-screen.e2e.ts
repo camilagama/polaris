@@ -829,3 +829,16 @@ test("o valor fixo aparece com vírgula na lista e no campo, e vai ao servidor c
     .poll(() => sent.json?.rules?.[0]?.processingFee?.fixedAmount)
     .toBe("0.50");
 });
+
+test("Regra 1 pesa 500, o peso do rótulo do campo", async ({ page }) => {
+  await openServerScreen(page, { lists: [answer([])] });
+  await page.getByRole("button", { name: "Novo perfil" }).click();
+  const weightOf = (locator: ReturnType<Page["locator"]>) =>
+    locator.evaluate((element) => getComputedStyle(element).fontWeight);
+  const rule = page.getByRole("group", { name: "Regra 1" });
+  await expect(rule).toBeVisible();
+  expect(await weightOf(rule.locator("> legend"))).toBe("500");
+  expect(
+    await weightOf(page.locator("label", { hasText: "Nome do perfil" }))
+  ).toBe("500");
+});

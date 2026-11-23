@@ -2633,3 +2633,25 @@ test("Novo produto a 360 x 740: o formulário em seções cresce só o que valem
     measured.chrome + 1
   );
 });
+
+test("Novo produto: o nome da seção pesa 600 e o rótulo do campo 500", async ({
+  page,
+}) => {
+  await openServerScreen(page, { lists: [answer([])] });
+  await page.getByRole("button", { name: "Novo produto" }).first().click();
+  const form = page.locator("#product-form");
+  await expect(form.getByLabel("Nome do produto")).toBeVisible();
+  const weightOf = (locator: ReturnType<Page["locator"]>) =>
+    locator.evaluate((element) => getComputedStyle(element).fontWeight);
+  const sections = await Promise.all(
+    ["Produto", "Preço e estoque"].map((name) =>
+      weightOf(
+        form.getByRole("group", { exact: true, name }).locator("> legend")
+      )
+    )
+  );
+  expect(sections).toEqual(["600", "600"]);
+  expect(
+    await weightOf(form.locator("label", { hasText: "Nome do produto" }))
+  ).toBe("500");
+});
