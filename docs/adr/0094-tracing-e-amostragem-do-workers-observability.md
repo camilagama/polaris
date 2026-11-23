@@ -4,8 +4,6 @@ status: accepted
 
 # Tracing e amostragem do Workers Observability
 
-> O número deste ADR (0094) é o próximo livre na `main` e nos PRs abertos no momento da escrita (o 0093 é o das funções `SECURITY DEFINER`, já na `main`); pode mudar se outro entrar antes.
-
 ## Contexto
 
 O plano da Fase 12 (PR 117) pede observabilidade ligada, amostragem alta no staging, cerca de 5% na produção e erros sempre registrados. Os três Workers (`polaris-web`, `polaris-admin`, `polaris-catalog`) tinham só `"observability": { "enabled": true }`. O [ADR 0089](0089-evlog-e-logger-tipado-no-backend.md) fez do Workers Logs o destino do logger, e o [ADR 0076](0076-teto-de-custo-e-free-tier-primeiro.md) fixa o teto de US$ 10 por mês e o plano Workers Free.

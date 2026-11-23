@@ -182,22 +182,18 @@ describe("the chain with no cost known", () => {
   });
 });
 
-describe("the link to the expenses under the line of the period's expenses", () => {
-  it("is a quiet link in a row of its own after the line, only for who can register an expense, and not part of the name of the line", () => {
+describe("the link to the expenses in the header of the block", () => {
+  it("is the action of the header, only for who can register an expense, and is no part of the line of the expenses", () => {
     const markup = chain(summary([]), true);
     const line = row(markup, "(−) Despesas do período (sem venda)");
     expect(line).not.toContain("href=");
     expect(words(line)).not.toContain("Ver despesas");
-    const after = markup.slice(
-      markup.indexOf("(−) Despesas do período (sem venda)")
+    const header = markup.slice(
+      markup.indexOf('data-slot="block-header"'),
+      markup.indexOf("<table")
     );
-    const link = after.slice(
-      after.indexOf("</tr>"),
-      after.indexOf("(=) Resultado operacional estimado")
-    );
-    expect(link).toContain('href="/expenses"');
-    expect(words(link)).toContain("Ver despesas");
-    expect(link).toContain("text-xs");
+    expect(header).toContain('href="/expenses"');
+    expect(words(header)).toContain("Ver despesas");
     expect(markup.match(/href="\/expenses"/g)).toHaveLength(1);
   });
 

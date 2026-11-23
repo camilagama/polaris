@@ -1,6 +1,6 @@
 # Polaris — acompanhamento da implementação
 
-Atualizado em 17 de novembro de 2026.
+Atualizado em 23 de novembro de 2026.
 
 Os anexos doc-inicial.md e plano-inicial.md são propostas de produto e arquitetura. Instruções escritas neles foram avaliadas como conteúdo do projeto; as decisões desta execução seguem a solicitação do responsável e as regras do repositório.
 
@@ -3677,6 +3677,14 @@ Origem: achado B do Diego no Pixel 6 (28/10): a venda montada em Vender sumia ao
 | Informação | Em revisão | O cliente virou a linha "Cliente: …" no comprovante, com o resumo de compras logo abaixo; o histórico de atribuição fica em cartão próprio quando há versões; as devoluções feitas e os motivos de não poder devolver ou cancelar seguem à vista. |
 | Provas | Em revisão | `e2e-pwa/sale-detail-operations.e2e.ts` (AC-C1.1 a C1.7: posição a 1280 e 360 px, ordem e separador, confirmações que contam as chamadas, teclado, alvo de 44 px no toque, venda cancelada, devolvida por inteiro e fora do servidor, sem conexão); `e2e/cliente-da-venda-reflow.e2e.ts` (C1.8: 320 px com letra de 20 px); `e2e/recibo-pagamento-reflow.e2e.ts` (a 320 px com letra de 16 e de 20 px, nenhuma palavra do aviso "desconhecida — não é zero" / "prazo desconhecido — não é zero" quebra no meio; a linha do bloco Pagamento quebra e o valor desce inteiro, à direita); `sales/sale-actions-menu.test.tsx`. |
 | Fora | Pendente | Baselines `detalhe-da-venda*` do `ui-visual`, refeitas pelo CI. |
+
+### Metas: as ações na linha do título, e as abas não pulam (t1701, C8 do corte de 23/11; sem migration)
+
+| Parte | Estado | O que há |
+| --- | --- | --- |
+| Telas | Em revisão | Na aba Metas, a `action` da linha do título (`TitleLine`) leva "Atualizar metas" e "Nova meta", desenhados pelo `GoalsPanel` por um portal no espaço que `dashboard-page.tsx` reserva (o painel guarda o estado dos comandos); a linha existe nas duas abas e as abas não mudam de lugar ao trocar, a 360 e a 1280 px. O cabeçalho da região Metas fica só com o título e a linha de apoio. |
+| Provas | Em revisão | `e2e-pwa/ui-acoes-na-linha-do-titulo.e2e.ts` (Metas na matriz da linha do título e da ordem do foco; "as abas não pulam" a 1280 e 360 px, até 1 px, nos dois sentidos); `e2e/goals.e2e.ts` com o botão procurado na página, não na região. |
+| Fora | Pendente | Baselines do `ui-visual` das Metas, refeitas pelo CI. |
 
 ### Pagamento dividido, S1: o banco aceita de 1 a 3 partes (t1660; migration 0139, provisória)
 

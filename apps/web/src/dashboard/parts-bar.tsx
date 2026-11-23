@@ -2,6 +2,7 @@ import { Money } from "@polaris/domain/money/money";
 import { useHiddenValues } from "@/lib/hidden-values";
 import { Figure } from "@/ui/figure";
 import { MoneyText } from "@/ui/hidden-values";
+import { Skeleton } from "@/ui/skeleton";
 import { formatBrlAmount } from "../lib/format";
 import {
   EMPTY_VALUE,
@@ -195,6 +196,37 @@ export function PartsBar({
           Sem o custo das mercadorias, a divisão dos custos não aparece.
         </p>
       ) : null}
+    </div>
+  );
+}
+
+const PART_NAMES: Readonly<Record<CostPartId, string>> = {
+  expenses: "Despesas",
+  fees: "Taxas",
+  goods: "Mercadorias",
+};
+
+/** The block while the figures are read: the same rows, the names written and the figures in `Skeleton`, so it takes the height it will have. */
+export function PartsBarSkeleton() {
+  return (
+    <div aria-hidden="true" className="grid gap-2">
+      <p className="font-medium text-sm">Para onde vão os custos</p>
+      <div className="flex h-2 w-full overflow-hidden rounded-full bg-muted" />
+      <ul className="grid gap-y-1 text-sm sm:flex sm:flex-wrap sm:gap-x-4">
+        {(["goods", "fees", "expenses"] as const).map((id) => (
+          <li
+            className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5"
+            key={id}
+          >
+            <span
+              className={`size-2 shrink-0 rounded-full ${PART_COLORS[id]}`}
+            />
+            <span>{PART_NAMES[id]}</span>
+            <Skeleton className="h-4 w-16" />
+            <Skeleton className="h-4 w-8" />
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }

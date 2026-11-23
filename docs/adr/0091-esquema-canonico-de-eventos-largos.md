@@ -4,8 +4,6 @@ status: accepted
 
 # Esquema canônico de campos e eventos largos
 
-> O número deste ADR (0091) é o próximo livre na `main` e nos PRs abertos no momento da escrita (o 0090 é o dos headers de segurança, já na `main`); pode mudar se outro entrar antes.
-
 ## Contexto
 
 O [ADR 0089](0089-evlog-e-logger-tipado-no-backend.md) deu um ponto único de logging, mas deixou os nomes dos campos a cada ponto de chamada. O levantamento do backend mostrou a mesma coisa com nomes diferentes: a classe do erro era `errorName` no agendador, no `server-log` e nos `console.*` das filas e do billing, e `name` no relatório do Admin e nas causas encadeadas; o código do erro era `errorCode`, `code` e `sqlState` conforme o arquivo; o status HTTP era `status` (e `status` também era o resultado do job, com os valores `completed`, `failed`, `skipped`, que o agendador gravava em `outcome`); o id da mensagem de fila era `messageId` e o do evento `eventId`, mas o tipo do evento era `type`; as tentativas eram `attempt` no consumidor e `attempts` no despachante. Sem um esquema, um alerta ou um filtro do Workers Logs precisa conhecer cada variante, e o plano (PR 115) pede para proibir os aliases inconsistentes.

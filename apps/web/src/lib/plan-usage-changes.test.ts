@@ -3,6 +3,7 @@ import { traverseContractProcedures } from "@orpc/server";
 import { describe, expect, it, vi } from "vitest";
 import {
   notifyPlanUsageChanged,
+  PLAN_USAGE_CONDITIONAL_WRITES,
   PLAN_USAGE_NEUTRAL_WRITES,
   PLAN_USAGE_WRITES,
   subscribePlanUsageChanges,
@@ -26,12 +27,21 @@ describe("as gravações que mudam o uso do plano", () => {
       }
     );
     expect(writes.sort()).toEqual(
-      [
-        ...PLAN_USAGE_WRITES.filter((name) => name !== "sync/push"),
-        ...PLAN_USAGE_NEUTRAL_WRITES,
-      ].sort()
+      [...PLAN_USAGE_WRITES, ...PLAN_USAGE_NEUTRAL_WRITES].sort()
     );
-    expect(PLAN_USAGE_WRITES).toContain("sync/push");
+  });
+
+  it("sync/push é a única escrita condicional e existe no contrato", () => {
+    const names: string[] = [];
+    traverseContractProcedures(
+      { path: [], router: polarisContract },
+      ({ path }) => {
+        names.push(path.join("/"));
+      }
+    );
+    expect(PLAN_USAGE_CONDITIONAL_WRITES).toEqual(["sync/push"]);
+    expect(names).toContain("sync/push");
+    expect(PLAN_USAGE_WRITES).not.toContain("sync/push");
   });
 
   it("só as gravações da lista apagam a memória", () => {
@@ -43,6 +53,40 @@ describe("as gravações que mudam o uso do plano", () => {
     expect(writeChangesPlanUsage(["product", "setVariantSku"])).toBe(false);
     expect(writeChangesPlanUsage(["sale", "confirm"])).toBe(false);
     expect(writeChangesPlanUsage(["billing", "readPlan"])).toBe(false);
+  });
+
+  it("um lote de sync/push só com venda, estoque ou cliente não apaga a memória", () => {
+    const batch = (...types: string[]) => ({
+      commands: types.map((type) => ({ type })),
+    });
+    const push = ["sync", "push"];
+    expect(writeChangesPlanUsage(push, batch("sale.confirm"))).toBe(false);
+    expect(
+      writeChangesPlanUsage(
+        push,
+        batch("stock.receive", "stock.count", "stock.write_off")
+      )
+    ).toBe(false);
+    expect(
+      writeChangesPlanUsage(push, batch("customer.create", "customer.update"))
+    ).toBe(false);
+  });
+
+  it("um lote de sync/push com um comando de produto, ou de tipo desconhecido, apaga a memória", () => {
+    const push = ["sync", "push"];
+    expect(
+      writeChangesPlanUsage(push, {
+        commands: [{ type: "sale.confirm" }, { type: "product.create" }],
+      })
+    ).toBe(true);
+    expect(
+      writeChangesPlanUsage(push, { commands: [{ type: "product.archive" }] })
+    ).toBe(true);
+    expect(writeChangesPlanUsage(push, { commands: [{}] })).toBe(true);
+    expect(writeChangesPlanUsage(push, undefined)).toBe(true);
+    expect(writeChangesPlanUsage(push, { commands: "x" })).toBe(true);
+    expect(writeChangesPlanUsage(push, null)).toBe(true);
+    expect(writeChangesPlanUsage(push, "x")).toBe(true);
   });
 
   it("avisa quando a gravação responde e quando ela falha", async () => {

@@ -11,7 +11,8 @@ import {
 } from "react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/ui/badge";
-import { Card, CardContent } from "@/ui/card";
+import { KPI_STRIP, KpiTileSkeleton } from "@/ui/kpi-card";
+import { Skeleton } from "@/ui/skeleton";
 import { Tabs, TabsContent } from "@/ui/tabs";
 import {
   dropNavigationState,
@@ -21,7 +22,6 @@ import {
   useAddress,
 } from "../app-shell/address";
 import { addressWithTab, requestedTab } from "../app-shell/navigation-model";
-import { SlowReadNote } from "../app-shell/read-wait";
 import { TitleLine } from "../app-shell/screen-title";
 import {
   ScreenTabList,
@@ -43,8 +43,8 @@ import { OfflineCopyNotice } from "./offline-copy-notice";
 import { PeriodPicker } from "./period-picker";
 import { QualityBanner } from "./quality-banner";
 import { ResultCards } from "./result-cards";
-import { ResultChain } from "./result-chain";
-import { ResultChart } from "./result-chart";
+import { ResultChain, ResultChainSkeleton } from "./result-chain";
+import { ResultChart, ResultChartSkeleton } from "./result-chart";
 import {
   addressWithPeriod,
   copyMonthOf,
@@ -72,7 +72,7 @@ import {
 
 const RESULT_TABS = ["resultado", "metas"] as const;
 
-function Heading({ action }: { action?: ReactNode }) {
+function Heading({ action }: { action: ReactNode }) {
   return (
     <header>
       <TitleLine action={action}>
@@ -154,8 +154,8 @@ function updatedText(
 
 /**
  * The controls of the Resultado, on the line of its title: the period and, beside it, the time of the server's read,
- * which is the button that reads again. They are the title's action only on the Resultado tab: the Metas have their
- * own period and their own "Atualizar". Under 760 px, when the two do not fit, the time goes down to the line below; from
+ * which is the button that reads again. They are the title's action only on the Resultado tab: the Metas put their
+ * own "Atualizar metas" and "Nova meta" on the same line, so it exists on both tabs and the tabs do not move. Under 760 px, when the two do not fit, the time goes down to the line below; from
  * there the group does not wrap (it would grow the title line), the button's own text wraps first.
  */
 function ResultActions({
@@ -218,30 +218,25 @@ function ResultStatus({
   );
 }
 
-/** A line of text in a card: the read in progress, or a period with nothing in it. */
-function CardNote({
-  children,
-  description,
-  loading,
-}: {
-  children: string;
-  description?: ReactNode;
-  loading?: boolean;
-}) {
+/**
+ * The result while its first read goes on: the four cards, the chart and the chain as they are with figures, so the
+ * page keeps its height when they come. The read in progress is a status for the screen reader.
+ */
+function ResultSkeleton({ canCreateExpense }: { canCreateExpense: boolean }) {
   return (
-    <Card>
-      <CardContent
-        className="grid gap-1 text-center"
-        role={loading ? "status" : undefined}
-      >
-        <p className={loading ? "text-muted-foreground" : "font-medium"}>
-          {children}
-        </p>
-        {description ? (
-          <p className="text-muted-foreground text-support">{description}</p>
-        ) : null}
-      </CardContent>
-    </Card>
+    <div className="grid gap-4" role="status">
+      <span className="sr-only">Carregando o resultado…</span>
+      <div className={KPI_STRIP} data-kpi-row="">
+        {[0, 1, 2, 3].map((index) => (
+          <KpiTileSkeleton key={index} strip />
+        ))}
+      </div>
+      <div aria-hidden="true" className="flex h-4.5 items-center">
+        <Skeleton className="h-3 w-48" />
+      </div>
+      <ResultChartSkeleton />
+      <ResultChainSkeleton canCreateExpense={canCreateExpense} />
+    </div>
   );
 }
 
@@ -285,17 +280,10 @@ function Content({
   const { summary } = state;
   if (summary === null) {
     return state.isLoading ? (
-      <CardNote
-        description={
-          <SlowReadNote
-            className="block min-h-5"
-            key={`${period.from}/${period.to}`}
-          />
-        }
-        loading
-      >
-        Carregando o resultado…
-      </CardNote>
+      <ResultSkeleton
+        canCreateExpense={canCreateExpense}
+        key={`${period.from}/${period.to}`}
+      />
     ) : null;
   }
   // the label is always the period of the figures, never the one asked for while they are still the older ones
@@ -310,7 +298,7 @@ function Content({
   return (
     <div
       className={cn(
-        "grid gap-5 motion-full:transition-opacity",
+        "grid gap-4 motion-full:transition-opacity",
         stale && "opacity-60"
       )}
       data-stale={stale ? "" : undefined}
@@ -426,6 +414,10 @@ export function DashboardPage() {
   const snapshot = useRuntimeSnapshot();
   const online = useConnectionOnline();
   const goals = useGoals(organizationId);
+  // the Metas draw their buttons into the title line: the panel owns the state they act on, the line owns the place
+  const [goalsActionsHost, setGoalsActionsHost] = useState<HTMLElement | null>(
+    null
+  );
   const [initialTab] = useState(
     () => requestedTab("dashboard", window.location.search).value
   );
@@ -468,7 +460,9 @@ export function DashboardPage() {
               timezone={organization.timezone}
               today={today}
             />
-          ) : undefined
+          ) : (
+            <div className="flex items-start gap-2" ref={setGoalsActionsHost} />
+          )
         }
       />
       <Tabs className="min-w-0 gap-5" onValueChange={handleTab} value={tab}>
@@ -484,7 +478,7 @@ export function DashboardPage() {
             ) : null}
           </ScreenTabTrigger>
         </ScreenTabList>
-        <TabsContent className="grid gap-5" value="resultado">
+        <TabsContent className="grid gap-4" value="resultado">
           <ResultStatus
             period={period}
             state={state}
@@ -508,7 +502,7 @@ export function DashboardPage() {
               onRetry={refresh}
             />
           ) : null}
-          <div aria-busy={state.isLoading} className="grid gap-5">
+          <div aria-busy={state.isLoading} className="grid gap-4">
             <Content
               canCreateExpense={canCreateExpense}
               comparison={comparison}
@@ -526,6 +520,7 @@ export function DashboardPage() {
         {/* kept mounted: a goal being typed is still there when the person comes back from the other tab */}
         <TabsContent keepMounted value="metas">
           <GoalsPanel
+            actionsHost={goalsActionsHost}
             goals={goals}
             month={monthOfDay(today)}
             organizationId={organizationId}
