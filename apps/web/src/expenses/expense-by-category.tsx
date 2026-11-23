@@ -80,7 +80,7 @@ function ShareLineBody({
           {action ? <span className="sr-only">{action}</span> : null}
           {row.name}
         </span>
-        <span className="flex shrink-0 items-baseline gap-2 tabular-nums">
+        <span className="ml-auto flex shrink-0 items-baseline gap-2 tabular-nums">
           <span className="text-muted-foreground text-support">
             {row.percent}%
           </span>
