@@ -1,5 +1,5 @@
 import TriangleAlertIcon from "lucide-react/dist/esm/icons/triangle-alert";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { OnDemandSparkline } from "@/ui/charts/on-demand";
 import {
   DeltaChip,
@@ -91,6 +91,9 @@ function useReading(): [
   return [index, setIndex, clear];
 }
 
+/** Leitor de tela não anuncia texto que muda no mesmo quadro em que a região vira `aria-live`: o texto volta depois desta espera. */
+const LIVE_RESTORE_MS = 100;
+
 function TodayTile({
   figures,
   still,
@@ -107,6 +110,19 @@ function TodayTile({
   );
   const [index, setIndex, clear] = useReading();
   const [keyboard, setKeyboard] = useState(false);
+  const restore = useRef<number | undefined>(undefined);
+  const cancelRestore = useCallback(() => {
+    window.clearTimeout(restore.current);
+    restore.current = undefined;
+  }, []);
+  useEffect(() => cancelRestore, [cancelRestore]);
+  const read = useCallback(
+    (next: number | null) => {
+      cancelRestore();
+      setIndex(next);
+    },
+    [cancelRestore, setIndex]
+  );
   const last = series.length - 1;
   const day = series[index ?? last]?.date ?? figures.today;
   const reading = dayReading(before, month, day, figures.today);
@@ -119,10 +135,14 @@ function TodayTile({
     max: last,
     onBlur: () => {
       setKeyboard(false);
-      clear();
+      cancelRestore();
+      restore.current = window.setTimeout(clear, LIVE_RESTORE_MS);
     },
-    onChange: setIndex,
-    onFocus: () => setKeyboard(true),
+    onChange: read,
+    onFocus: () => {
+      cancelRestore();
+      setKeyboard(true);
+    },
     value: index ?? last,
     valueText: spoken(reading.date || "Hoje", reading, hidden),
   };
@@ -141,7 +161,7 @@ function TodayTile({
           color="var(--chart-sales)"
           domain="zero"
           height={SPARK_HEIGHT}
-          onRead={setIndex}
+          onRead={read}
           readIndex={index}
           still={still}
           values={values}
