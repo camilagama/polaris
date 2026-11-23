@@ -5,7 +5,11 @@ import { Card, CardContent, CardHeader } from "@/ui/card";
 import { MoneyText } from "@/ui/hidden-values";
 import { Separator } from "@/ui/separator";
 import { TextLink } from "@/ui/text-link";
-import { ConfirmedDetails, ConfirmedItems } from "./confirmed-sale-parts";
+import {
+  ConfirmedDetails,
+  ConfirmedItems,
+  ConfirmedPaymentParts,
+} from "./confirmed-sale-parts";
 import { SaleCustomerPanel } from "./sale-customer-panel";
 import type { ConfirmedSaleView } from "./sale-form-model";
 import { saleDetailHref } from "./sale-history-model";
@@ -46,7 +50,11 @@ function ConfirmedReceipt({ sale }: { sale: ConfirmedSaleView }) {
       </CardContent>
       <CardContent className="grid gap-2">
         <h3 className="font-medium">Pagamento</h3>
-        <ConfirmedDetails details={sale.paymentDetails} />
+        {sale.paymentParts ? (
+          <ConfirmedPaymentParts parts={sale.paymentParts} />
+        ) : (
+          <ConfirmedDetails details={sale.paymentDetails} />
+        )}
         <p className="text-muted-foreground text-support">{sale.note}</p>
       </CardContent>
     </>
