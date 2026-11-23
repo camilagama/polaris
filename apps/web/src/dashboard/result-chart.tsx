@@ -22,6 +22,7 @@ import { IncompleteBadge } from "./result-cards";
 import { periodText } from "./result-period";
 import {
   axisMoney,
+  bestMark,
   bestRowText,
   chartNumber,
   costParts,
@@ -144,13 +145,14 @@ function costsNote(fromCopy: boolean): string {
 /**
  * The room the lines of the card keep so the box does not change height between periods: `min-h` of the tallest form the
  * line takes at that width, never `max-h` nor a clamp, so nothing is cut. The row that holds the reading of the day and
- * the legend (side by side from 400 px, stacked below) was measured every 4 px from 320 to 500 px, every 20 up to 820 and every 50 up
- * to 1360, over the month, 30 days, the year and 366 days, whole, with unknown days and with amounts of R$ 999.999,99, and a
- * month with an expense on its last day, with the values shown and hidden; a step is placed at the first width where the tallest form changes.
+ * the legend (side by side from 400 px, stacked below) was measured every 4 px from 256 to 500 px (a 20 px letter on a
+ * 320 px screen is 16 rem), every 20 up to 820 and every 50 up to 1360, with the reading in Geist Mono and the mark
+ * "melhor dia" or "melhor mês" after the note, over the day with every amount at R$ 999.999,99 and an expense, the day with
+ * an unknown cost and the month with its costs known; a step is placed at the first width where the tallest form changes.
  * The row takes `content-start`, so the room goes below the text and not between its fragments.
  */
 const TOP_RESERVE =
-  "min-h-[8.5rem] min-[20.75rem]:min-h-[7.375rem] min-[21.75rem]:min-h-[6.25rem] min-[23.75rem]:min-h-[5rem] min-[25rem]:min-h-[5.5rem] min-[28.25rem]:min-h-[4.5rem] min-[40rem]:min-h-[3.5rem] min-[45rem]:min-h-[2.25rem]";
+  "min-h-[9.625rem] min-[20.5rem]:min-h-[8.5rem] min-[23.75rem]:min-h-[7.25rem] min-[25rem]:min-h-[9rem] min-[25.5rem]:min-h-[7.875rem] min-[26rem]:min-h-[6.75rem] min-[30.75rem]:min-h-[5.625rem] min-[40rem]:min-h-[4.5rem] min-[51.25rem]:min-h-[3.375rem] min-[63.75rem]:min-h-[2.25rem]";
 const NOTE_RESERVE = "min-h-5.5";
 
 interface HeaderProps {
@@ -233,10 +235,8 @@ function Totals({
  * The numbers a drawing is given: the sales, the costs when they are sent (`null` on a day whose cost is unknown:
  * hatched, never a zero) and the note of a day. Memoized, so the layout is not redone.
  */
-function useDrawingData(
-  { costsSent, grouped, missing, rows }: ResultSeries,
-  thisYear: string
-) {
+function useDrawingData(series: ResultSeries, thisYear: string) {
+  const { costsSent, grouped, missing, rows } = series;
   const data = useMemo(
     () =>
       rows.map((row) => ({
@@ -265,19 +265,26 @@ function useDrawingData(
     };
   }, [costsSent, grouped, missing, rows]);
   const [hidden] = useHiddenValues();
+  const noteOf = useCallback(
+    (index: number) =>
+      [readingNote(rows[index], missing, thisYear), bestMark(series, index)]
+        .filter((part): part is string => part !== null)
+        .join(" · ") || null,
+    [missing, rows, series, thisYear]
+  );
   const note = useCallback(
     (index: number) => {
-      const text = readingNote(rows[index], missing, thisYear);
+      const text = noteOf(index);
       return text && hidden ? maskMoney(text) : text;
     },
-    [hidden, missing, rows, thisYear]
+    [hidden, noteOf]
   );
   const spoken = useCallback(
     (index: number) => {
-      const text = readingNote(rows[index], missing, thisYear);
+      const text = noteOf(index);
       return text && hidden ? maskMoney(text, MASKED_SPOKEN) : text;
     },
-    [hidden, missing, rows, thisYear]
+    [hidden, noteOf]
   );
   return { data, note, secondary, spoken };
 }
