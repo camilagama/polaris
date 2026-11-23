@@ -3,6 +3,10 @@ import type { PolarisRpcClient } from "@polaris/contracts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SessionUnreachableError } from "./offline-runtime";
 import { createRpcRuntimeApi } from "./runtime-api";
+import { isConnectionFailure, isPlatformCut } from "../../lib/rpc-error";
+import { bootstrapLocalStore } from "../bootstrap";
+import { FakeWriter } from "../test-support";
+import { BootstrapResponseMismatchError } from "./runtime-api";
 
 let api = createRpcRuntimeApi({} as PolarisRpcClient);
 
@@ -241,7 +245,11 @@ describe("the bootstrap source of the runtime", () => {
       sync: { bootstrapPage, getCursor, pull },
     } as unknown as PolarisRpcClient;
     const source = (signal?: AbortSignal) =>
-      createRpcRuntimeApi(client).source(organizationId, signal, expectedUserId);
+      createRpcRuntimeApi(client).source(
+        organizationId,
+        signal,
+        expectedUserId
+      );
     return { bootstrapPage, getCursor, list, pull, source };
   }
 
@@ -295,12 +303,14 @@ describe("the bootstrap source of the runtime", () => {
   it("reads the latest 100 sales of the sale list", async () => {
     const { list, source } = fakeSourceClient();
     await expect(source().recentSales()).resolves.toEqual([{ id: "sale-1" }]);
-    expect(list).toHaveBeenCalledWith({ limit: 100, organizationId }, undefined);
+    expect(list).toHaveBeenCalledWith(
+      { limit: 100, organizationId },
+      undefined
+    );
   });
 
   it("hands its abort signal to every call, and none when it has none", async () => {
-    const { bootstrapPage, getCursor, list, pull, source } =
-      fakeSourceClient();
+    const { bootstrapPage, getCursor, list, pull, source } = fakeSourceClient();
     const { signal } = new AbortController();
     const aborting = source(signal);
     await aborting.getCursor();
@@ -320,5 +330,67 @@ describe("the bootstrap source of the runtime", () => {
       expect(call.mock.calls).toHaveLength(2);
       expect((call.mock.calls[1] as unknown[])[1]).toBeUndefined();
     }
+  });
+});
+
+describe("the bootstrap source refuses an answer for another collection", () => {
+  const organizationId = "org-1";
+
+  function clientAnswering(collection: string) {
+    const bootstrapPage = vi.fn(() =>
+      Promise.resolve({
+        collection,
+        nextAfterId: null,
+        rows: [{ id: "product-1" }],
+      })
+    );
+    const client = {
+      sale: { list: vi.fn(() => Promise.resolve({ sales: [] })) },
+      sync: {
+        bootstrapPage,
+        getCursor: vi.fn(() => Promise.resolve({ cursor: "12" })),
+        pull: vi.fn(),
+      },
+    } as unknown as PolarisRpcClient;
+    return createRpcRuntimeApi(client).source(organizationId, undefined, "u-1");
+  }
+
+  it("rejects a page by keyset and a read by ids when the collection is not the one asked", async () => {
+    const source = clientAnswering("products");
+    for (const request of [{ afterId: "after", limit: 50 }, { ids: ["a"] }]) {
+      // biome-ignore lint/performance/noAwaitInLoops: each request is verified on its own
+      const failure = await source
+        .page("categories", request)
+        .catch((error: unknown) => error);
+      expect(failure).toBeInstanceOf(BootstrapResponseMismatchError);
+      expect((failure as Error).name).toBe("BootstrapResponseMismatchError");
+      expect((failure as Error).message).toBe("bootstrap_response_mismatch");
+    }
+  });
+
+  it("passes the page of the collection asked for", async () => {
+    await expect(
+      clientAnswering("products").page("products", { limit: 50 })
+    ).resolves.toEqual({ nextAfterId: null, rows: [{ id: "product-1" }] });
+  });
+
+  it("writes and removes nothing, and leaves the store bootstrapping", async () => {
+    const writer = new FakeWriter();
+    writer.data.categories.set("category-1", { id: "category-1" });
+    const upsert = vi.spyOn(writer, "upsert");
+    const remove = vi.spyOn(writer, "remove");
+    await expect(
+      bootstrapLocalStore(clientAnswering("products"), writer)
+    ).rejects.toBeInstanceOf(BootstrapResponseMismatchError);
+    expect(upsert).not.toHaveBeenCalled();
+    expect(remove).not.toHaveBeenCalled();
+    expect([...writer.data.categories.keys()]).toEqual(["category-1"]);
+    expect(writer.meta?.status).toBe("bootstrapping");
+  });
+
+  it("is a failure to show, not an answer that never came", () => {
+    const refusal = new BootstrapResponseMismatchError();
+    expect(isConnectionFailure(refusal)).toBe(false);
+    expect(isPlatformCut(refusal)).toBe(false);
   });
 });
