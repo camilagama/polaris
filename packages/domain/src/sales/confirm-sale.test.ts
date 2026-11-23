@@ -2,11 +2,13 @@ import { describe, expect, it } from "vitest";
 import {
   calendarDateInTimeZone,
   type ConfirmSaleCommandInput,
+  type ConfirmSalePaymentPartInput,
   composeConfirmedSale,
   InvalidConfirmSaleCommandError,
   MAX_FUTURE_CLOCK_SKEW_MS,
   normalizeConfirmSaleCommand,
   SaleOccurredInFutureError,
+  SalePaymentSplitMismatchError,
   summarizeConfirmedSaleTotals,
   UnsupportedConfirmSaleCommandVersionError,
 } from "./confirm-sale";
@@ -633,6 +635,343 @@ describe("composeConfirmedSale", () => {
       productB,
     ]);
     expect(composed.calculation.subtotal).toBe("26.50");
+  });
+});
+
+describe("split payment", () => {
+  const otherProfileId = "0190a9d2-7c4c-7b2f-9c0e-5f4f4f0d6a42";
+  const otherRuleId = "0190a9d2-7c4c-7b2f-9c0e-5f4f4f0d6a52";
+  const item = (price: string) => ({
+    chargedUnitPrice: price,
+    listedUnitPrice: price,
+    quantity: 1,
+    variantId: variantA,
+  });
+  const profileSelection = { expectedVersion: 4, id: profileId };
+  const split = (
+    price: string,
+    parts: readonly ConfirmSalePaymentPartInput[]
+  ): ConfirmSaleCommandInput => {
+    const { payment: _payment, paymentProfile: _profile, ...rest } = command();
+    return { ...rest, items: [item(price)], payments: parts };
+  };
+  const pixPart = (
+    amount: string,
+    paymentProfile: ConfirmSaleCommandInput["paymentProfile"] = null
+  ): ConfirmSalePaymentPartInput => ({
+    amount,
+    method: "pix",
+    paymentProfile: paymentProfile ?? null,
+  });
+  const cashPart = (amount: string): ConfirmSalePaymentPartInput => ({
+    amount,
+    method: "cash",
+    paymentProfile: null,
+  });
+  const feeProfile = (
+    id: string,
+    method: "cash" | "pix",
+    fixedAmount: string,
+    percentage: string
+  ): PaymentProfileForSale => ({
+    id,
+    name: `Perfil ${method}`,
+    rules: [
+      {
+        anticipationFee: { fixedAmount: null, mode: "none", percentage: null },
+        expectedSettlementDays: 1,
+        id: id === profileId ? ruleId : otherRuleId,
+        installmentPlan: null,
+        installments: null,
+        method,
+        processingFee: {
+          fixedAmount,
+          mode: "fixed_and_percentage",
+          percentage,
+        },
+      },
+    ],
+    version: 4,
+  });
+
+  it("keeps the single-payment form as one part of the total", () => {
+    const normalized = normalize(command());
+    expect(normalized.payments).toEqual([
+      { payment: normalized.payment, paymentProfile: null },
+    ]);
+    expect(normalized.payment.amount).toBe("179.80");
+    const composed = composeConfirmedSale(normalized, [resolvedA], null);
+    expect(composed.payments).toEqual([
+      { payment: composed.payment, paymentProfile: composed.paymentProfile },
+    ]);
+  });
+
+  it("accepts a single part in the new form when it equals the total", () => {
+    const normalized = normalize(split("50.00", [pixPart("50.00")]));
+    expect(normalized.payments).toHaveLength(1);
+    expect(normalized.payment.amount).toBe("50.00");
+    expect(() => normalize(split("50.00", [pixPart("49.99")]))).toThrow(
+      SalePaymentSplitMismatchError
+    );
+  });
+
+  it("accepts two parts that add up to the total, in typed order", () => {
+    const normalized = normalize(
+      split("100.00", [pixPart("40.00"), cashPart("60.00")])
+    );
+    expect(normalized.payments.map((part) => part.payment.method)).toEqual([
+      "pix",
+      "cash",
+    ]);
+    expect(normalized.payments.map((part) => part.payment.amount)).toEqual([
+      "40.00",
+      "60.00",
+    ]);
+    expect(normalized.payment).toBe(normalized.payments[0]?.payment);
+    expect(normalized.paymentProfile).toBeNull();
+  });
+
+  it("prices only the part that has a profile, on that part's amount", () => {
+    const normalized = normalize(
+      split("100.00", [pixPart("40.00", profileSelection), cashPart("60.00")])
+    );
+    const composed = composeConfirmedSale(
+      normalized,
+      [resolvedA],
+      [feeProfile(profileId, "pix", "0.00", "1"), null]
+    );
+    expect(
+      composed.payments.map((part) => part.paymentProfile.processingFee.amount)
+    ).toEqual(["0.40", null]);
+  });
+
+  it("refuses a sum below or above the total with a stable code", () => {
+    for (const parts of [
+      [pixPart("40.00"), cashPart("59.99")],
+      [pixPart("40.00"), cashPart("60.01")],
+    ]) {
+      const error = (() => {
+        try {
+          normalize(split("100.00", parts));
+        } catch (caught) {
+          return caught;
+        }
+      })();
+      expect(error).toBeInstanceOf(SalePaymentSplitMismatchError);
+      expect((error as SalePaymentSplitMismatchError).code).toBe(
+        "sale_payment_split_mismatch"
+      );
+      expect((error as Error).message).toBe("sale_payment_split_mismatch");
+    }
+  });
+
+  it("compares in cents: 100.01 is 33.33 + 66.68 and not 33.33 + 66.67", () => {
+    expect(
+      normalize(split("100.01", [pixPart("33.33"), cashPart("66.68")])).payments
+    ).toHaveLength(2);
+    expect(() =>
+      normalize(split("100.01", [pixPart("33.33"), cashPart("66.67")]))
+    ).toThrow(SalePaymentSplitMismatchError);
+  });
+
+  it("refuses a part of zero or less when there is more than one", () => {
+    for (const amount of ["0.00", "0", "-10.00"]) {
+      expect(() =>
+        normalize(split("100.00", [pixPart(amount), cashPart("100.00")]))
+      ).toThrow(InvalidConfirmSaleCommandError);
+    }
+  });
+
+  it("allows a zero single part only for a fully discounted sale", () => {
+    const free = {
+      ...split("10.00", [pixPart("0.00")]),
+      adjustments: [
+        { kind: "discount", value: { amount: "10", type: "fixed" } },
+      ] as ConfirmSaleCommandInput["adjustments"],
+    };
+    expect(normalize(free).payment.amount).toBe("0.00");
+  });
+
+  it("refuses malformed parts, amounts and counts", () => {
+    const bad = (input: ConfirmSaleCommandInput) =>
+      expect(() => normalize(input)).toThrow(InvalidConfirmSaleCommandError);
+    bad(split("100.00", []));
+    bad(
+      split("100.00", [pixPart("30.00"), cashPart("30.00"), cashPart("40.00")])
+    );
+    bad(split("100.00", [{ ...pixPart("100.00"), amount: 100 } as never]));
+    bad(split("100.00", [pixPart("100.001")]));
+    bad(split("100.00", [null as never]));
+  });
+
+  it("requires exactly one of payment or payments", () => {
+    const both = {
+      ...split("100.00", [pixPart("100.00")]),
+      payment: { method: "pix" as const },
+    };
+    expect(() => normalize(both)).toThrow(InvalidConfirmSaleCommandError);
+    const { payment: _payment, ...neither } = command();
+    expect(() => normalize(neither)).toThrow(InvalidConfirmSaleCommandError);
+    expect(() =>
+      normalize({
+        ...split("100.00", [pixPart("100.00")]),
+        paymentProfile: null,
+      })
+    ).toThrow(InvalidConfirmSaleCommandError);
+  });
+
+  it("validates each part's method, plan and profile selection", () => {
+    expect(() =>
+      normalize(
+        split("100.00", [
+          { ...pixPart("50.00"), installments: 2 },
+          cashPart("50.00"),
+        ])
+      )
+    ).toThrow(InvalidSalePaymentError);
+    expect(() =>
+      normalize(
+        split("100.00", [
+          pixPart("50.00", { expectedVersion: 0, id: profileId }),
+          cashPart("50.00"),
+        ])
+      )
+    ).toThrow(InvalidConfirmSaleCommandError);
+    expect(() =>
+      normalize(
+        split("100.00", [
+          { amount: "50.00", method: "pix" } as never,
+          cashPart("50.00"),
+        ])
+      )
+    ).toThrow(InvalidConfirmSaleCommandError);
+  });
+
+  it("allows the same method in both parts", () => {
+    const normalized = normalize(
+      split("100.00", [pixPart("25.00"), pixPart("75.00")])
+    );
+    expect(normalized.payments.map((part) => part.payment.method)).toEqual([
+      "pix",
+      "pix",
+    ]);
+  });
+
+  it("computes each part's fees on the part's amount: fixed fee once per part", () => {
+    const profile = feeProfile(profileId, "pix", "1.99", "2");
+    const normalized = normalize(
+      split("100.00", [
+        pixPart("40.00", profileSelection),
+        pixPart("60.00", profileSelection),
+      ])
+    );
+    const composed = composeConfirmedSale(
+      normalized,
+      [resolvedA],
+      [profile, profile]
+    );
+    // 1.99 + 2% of 40.00 = 2.79; 1.99 + 2% of 60.00 = 3.19
+    expect(
+      composed.payments.map((part) => part.paymentProfile.processingFee.amount)
+    ).toEqual(["2.79", "3.19"]);
+    expect(composed.paymentProfile).toBe(composed.payments[0]?.paymentProfile);
+    expect(composed.payment.amount).toBe("40.00");
+  });
+
+  it("rounds each part half-up on its own", () => {
+    const profile = feeProfile(profileId, "pix", "0.00", "2.5");
+    const normalized = normalize(
+      split("0.30", [
+        pixPart("0.10", profileSelection),
+        pixPart("0.20", profileSelection),
+      ])
+    );
+    const composed = composeConfirmedSale(
+      normalized,
+      [resolvedA],
+      [profile, profile]
+    );
+    // 2.5% of 0.10 = 0.0025 -> 0.00; 2.5% of 0.20 = 0.005 -> 0.01
+    expect(
+      composed.payments.map((part) => part.paymentProfile.processingFee.amount)
+    ).toEqual(["0.00", "0.01"]);
+  });
+
+  it("uses a different profile for each part", () => {
+    const pixProfile = feeProfile(profileId, "pix", "1.00", "1");
+    const cashProfile = feeProfile(otherProfileId, "cash", "0.00", "5");
+    const normalized = normalize(
+      split("100.00", [
+        pixPart("50.00", profileSelection),
+        {
+          ...cashPart("50.00"),
+          paymentProfile: { expectedVersion: 4, id: otherProfileId },
+        },
+      ])
+    );
+    const composed = composeConfirmedSale(
+      normalized,
+      [resolvedA],
+      [pixProfile, cashProfile]
+    );
+    expect(
+      composed.payments.map((part) => part.paymentProfile.paymentProfileId)
+    ).toEqual([profileId, otherProfileId]);
+    expect(
+      composed.payments.map((part) => part.paymentProfile.processingFee.amount)
+    ).toEqual(["1.50", "2.50"]);
+  });
+
+  it("keeps a part without profile unknown while the other is priced", () => {
+    const profile = feeProfile(profileId, "pix", "1.00", "0");
+    const normalized = normalize(
+      split("100.00", [pixPart("50.00", profileSelection), cashPart("50.00")])
+    );
+    const composed = composeConfirmedSale(
+      normalized,
+      [resolvedA],
+      [profile, null]
+    );
+    expect(composed.payments[0]?.paymentProfile.processingFee.amount).toBe(
+      "1.00"
+    );
+    expect(composed.payments[1]?.paymentProfile.processingFee.mode).toBe(
+      "unknown"
+    );
+    expect(composed.payments[1]?.paymentProfile.paymentProfileId).toBeNull();
+  });
+
+  it("needs one profile entry per part", () => {
+    const normalized = normalize(
+      split("100.00", [pixPart("50.00"), cashPart("50.00")])
+    );
+    expect(() => composeConfirmedSale(normalized, [resolvedA], null)).toThrow(
+      InvalidConfirmSaleCommandError
+    );
+    expect(() => composeConfirmedSale(normalized, [resolvedA], [null])).toThrow(
+      InvalidConfirmSaleCommandError
+    );
+    expect(
+      composeConfirmedSale(normalized, [resolvedA], [null, null]).payments
+    ).toHaveLength(2);
+  });
+
+  it("keeps the payment surcharge a sale adjustment, not a per-part one", () => {
+    const normalized = normalize({
+      ...split("100.00", [pixPart("55.00"), cashPart("55.00")]),
+      adjustments: [
+        {
+          kind: "payment_surcharge",
+          value: { amount: "10", type: "fixed" },
+        },
+      ] as ConfirmSaleCommandInput["adjustments"],
+    });
+    expect(normalized.calculation.totalDue).toBe("110.00");
+    expect(
+      normalized.calculation.adjustments.filter(
+        (adjustment) => adjustment.kind === "payment_surcharge"
+      )
+    ).toHaveLength(1);
   });
 });
 
