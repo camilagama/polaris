@@ -343,8 +343,7 @@ const FOOTER_LINK =
   /<a\b[^>]*data-slot="card-frame-link"[^>]*href="([^"]*)"[^>]*>([^<]*)</;
 const LINK = /<a\b/g;
 const BODY_LINK = "w-fit self-end justify-self-end md:hidden";
-const BODY_LINK_RE =
-  /<a\b[^>]*md:hidden[^>]*href="([^"]*)"[^>]*>([^<]*)</;
+const BODY_LINK_RE = /<a\b[^>]*md:hidden[^>]*href="([^"]*)"[^>]*>([^<]*)</;
 
 describe("a saída única do cartão da Meta", () => {
   const active: GoalReadModel = {
