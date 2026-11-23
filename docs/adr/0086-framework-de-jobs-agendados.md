@@ -4,7 +4,7 @@ status: accepted
 
 # Framework de jobs agendados
 
-> A migration é a 0073, depois da 0072 da DLQ (PR #131, já na `main`); o PR do purge (#126) ainda usa 0072, e quem entrar depois renumera a migration e o snapshot.
+> A migration é a 0073 (`0073_scheduled_jobs.sql`), depois da 0072 da DLQ.
 
 ## Contexto
 
