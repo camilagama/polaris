@@ -650,6 +650,7 @@ export const SPEC_SCREENS = {
   "apps/web/e2e-pwa/sale-draft.e2e.ts": ["home", "sale", "inventory"],
   "apps/web/e2e-pwa/show-screen-alone.e2e.ts": "all",
   "apps/web/e2e-pwa/sign-in.e2e.ts": ["home", "sign-in"],
+  "apps/web/e2e-pwa/ui-abas-padrao.e2e.ts": "all",
   "apps/web/e2e-pwa/ui-acao-no-titulo.e2e.ts": "all",
   "apps/web/e2e-pwa/ui-acoes-na-linha-do-titulo.e2e.ts": "all",
   "apps/web/e2e-pwa/ui-botao-atualizar.e2e.ts": "all",

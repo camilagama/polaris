@@ -156,6 +156,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/ui/table";
+import { SegmentedFilter } from "@/ui/segmented-filter";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/ui/tabs";
 import { Textarea } from "@/ui/textarea";
 import { TextLink } from "@/ui/text-link";
@@ -216,6 +217,22 @@ const LONG_LIST = Array.from(
   { length: 40 },
   (_, index) => `Movimento de estoque ${index + 1}`
 );
+
+/** The state filter of a list: the strip of the tabs with no panel; the list below is the screen's. */
+function GallerySegmentedFilter() {
+  const [state, setState] = useState<"active" | "archived">("active");
+  return (
+    <SegmentedFilter
+      label="Estado dos produtos"
+      onSelect={setState}
+      options={[
+        ["active", "Ativos"],
+        ["archived", "Arquivados"],
+      ]}
+      value={state}
+    />
+  );
+}
 
 /** The search box of the lists, with text so that "Limpar busca" shows; it empties and gives the focus back. */
 function GallerySearch() {
@@ -1531,6 +1548,10 @@ export function UiGallery() {
                 Os últimos 30 dias, dados de exemplo.
               </TabsContent>
             </Tabs>
+          </Section>
+
+          <Section title="Filtro segmentado">
+            <GallerySegmentedFilter />
           </Section>
 
           <Section title="Número principal dos cartões">

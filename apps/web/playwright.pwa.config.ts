@@ -25,6 +25,7 @@ const DESKTOP_ONLY = [
   "**/ui-sem-caixa-alta.e2e.ts",
   "**/ui-icones.e2e.ts",
   "**/ui-botao-atualizar.e2e.ts",
+  "**/ui-abas-padrao.e2e.ts",
   "**/ui-acao-no-titulo.e2e.ts",
   "**/ui-acoes-na-linha-do-titulo.e2e.ts",
   "**/ui-vao-contagem.e2e.ts",

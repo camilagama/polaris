@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { act, fireEvent, render } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { StoredPeriodSummary } from "../lib/period-summary-cache";
 import { KpiCards } from "./home-kpi-cards";
 import type { HomeFigures } from "./use-home";
@@ -67,13 +67,19 @@ function todayCard(host: HTMLElement) {
   return { range, title };
 }
 
-/** What a screen reader would say for a change of the title: its text, when the title is a live region at that moment. */
+/** What a screen reader would say for a change of the title: its text, when the title was already a live region before the change (a region that becomes live in the same commit as its text stays mute). */
 function watchAnnouncements(title: HTMLElement) {
   const said: string[] = [];
+  const isLive = () => title.getAttribute("aria-live") === "polite";
+  let liveBefore = isLive();
+  let textBefore = title.textContent;
   const observer = new MutationObserver(() => {
-    if (title.getAttribute("aria-live") === "polite") {
-      said.push(title.textContent ?? "");
+    const text = title.textContent;
+    if (liveBefore && text !== textBefore) {
+      said.push(text ?? "");
     }
+    liveBefore = isLive();
+    textBefore = text;
   });
   observer.observe(title, {
     attributes: true,
@@ -88,6 +94,10 @@ function watchAnnouncements(title: HTMLElement) {
 }
 
 const flush = () => act(async () => undefined);
+
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 describe("Vendas hoje anda pelos dias", () => {
   it("com o controle de dias em foco, a data só aparece no aria-valuetext e o título não a anuncia", async () => {
@@ -129,6 +139,45 @@ describe("Vendas hoje anda pelos dias", () => {
     act(() => range.blur());
     await flush();
     expect(title.getAttribute("aria-live")).toBe("polite");
+    unmount();
+  });
+
+  it("ao sair do controle, a região volta a ser viva antes de o texto voltar a Vendas hoje, e a volta é anunciada", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const { container, unmount } = render(<KpiCards figures={figures()} />);
+    const { range, title } = todayCard(container);
+    act(() => range.focus());
+    fireEvent.change(range, {
+      target: { value: String(Number(range.value) - 1) },
+    });
+    expect(title.textContent).toBe("Vendas em 22/10");
+    const watch = watchAnnouncements(title);
+    act(() => range.blur());
+    await flush();
+    expect(title.getAttribute("aria-live")).toBe("polite");
+    expect(title.textContent).toBe("Vendas em 22/10");
+    expect(watch.said).toEqual([]);
+    await act(() => vi.advanceTimersByTimeAsync(100));
+    expect(title.getAttribute("aria-live")).toBe("polite");
+    expect(title.textContent).toBe("Vendas hoje");
+    expect(watch.said).toContain("Vendas hoje");
+    watch.stop();
+    unmount();
+  });
+
+  it("voltar ao controle antes de o texto voltar cancela a volta e mantém o dia lido", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const { container, unmount } = render(<KpiCards figures={figures()} />);
+    const { range, title } = todayCard(container);
+    act(() => range.focus());
+    fireEvent.change(range, {
+      target: { value: String(Number(range.value) - 1) },
+    });
+    act(() => range.blur());
+    act(() => range.focus());
+    await act(() => vi.advanceTimersByTimeAsync(500));
+    expect(title.textContent).toBe("Vendas em 22/10");
+    expect(title.getAttribute("aria-live")).toBeNull();
     unmount();
   });
 });

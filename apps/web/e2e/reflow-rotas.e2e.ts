@@ -147,9 +147,9 @@ const KNOWN_FINDINGS_24: readonly KnownFinding[] = [
   {
     clientWidth: 320,
     reason:
-      "no diálogo de produto, o conteúdo do corpo mede 366 px em 320 px e passa 46 px: a faixa de abas Dados, Variantes e Imagens vai até 342 px e a aba Imagens termina em 338 px, além da janela",
+      "no diálogo de produto, o conteúdo do corpo mede 342 px em 320 px e passa 22 px: o painel Variantes (as seções de opções e de combinações, com o formulário de cada uma) pede 318 px numa coluna de 272 px; a faixa de abas Dados, Variantes e Imagens rola dentro da própria caixa e já não alarga o corpo",
     screens: ["produtos variantes, opções e combinação"],
-    scrollWidth: 366,
+    scrollWidth: 342,
     selector: 'div[data-slot="dialog-content"] > div[data-slot="dialog-body"]',
   },
   {

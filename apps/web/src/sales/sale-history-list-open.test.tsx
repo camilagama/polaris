@@ -49,12 +49,13 @@ describe("o retorno do Histórico ao abrir uma venda", () => {
     expect(onOpen).toHaveBeenCalledExactlyOnceWith(SALE.id);
   });
 
+  // O clique do meio real chega como `auxclick`, que não passa pelo onClick (um auxclick passa mesmo sem a correção); este caso prova só a guarda de botão do `isPlainClick`.
   it.each([
     ["Ctrl-clique", { ctrlKey: true }],
     ["Cmd-clique", { metaKey: true }],
     ["Shift-clique", { shiftKey: true }],
     ["Alt-clique", { altKey: true }],
-    ["clique do meio", { button: 1 }],
+    ["click com button 1", { button: 1 }],
   ])("%s abre fora desta aba e não grava o retorno", (_name, init) => {
     const onOpen = vi.fn();
     const link = renderList(onOpen);
