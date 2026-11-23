@@ -11,7 +11,7 @@ import {
   type SQL,
   sql,
 } from "drizzle-orm";
-import { readConfirmedSale } from "./sale-repository";
+import { mainPayment, readConfirmedSale } from "./sale-repository";
 import { customers } from "./schema/customer";
 import type { SaleCancellationRecord } from "./sale-cancellation-repository";
 import { saleAdjustments, saleItems, salePayments, sales } from "./schema/sale";
@@ -208,7 +208,12 @@ export async function listSales(
           )
         ),
       transaction
-        .select({ method: salePayments.method, saleId: salePayments.saleId })
+        .select({
+          amount: salePayments.amount,
+          id: salePayments.id,
+          method: salePayments.method,
+          saleId: salePayments.saleId,
+        })
         .from(salePayments)
         .where(
           and(
@@ -257,7 +262,10 @@ export async function listSales(
   const itemsBySale = groupBy(items, (row) => row.saleId);
   const adjustmentsBySale = groupBy(adjustments, (row) => row.saleId);
   const paymentBySale = new Map(
-    payments.map((row) => [row.saleId, row.method])
+    [...groupBy(payments, (row) => row.saleId)].flatMap(([saleId, rows]) => {
+      const main = mainPayment(rows);
+      return main === undefined ? [] : [[saleId, main.method] as const];
+    })
   );
   const cancelledAtBySale = new Map(
     cancellations.map((row) => [row.saleId, row.cancelledAt])
