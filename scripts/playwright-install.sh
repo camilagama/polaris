@@ -6,8 +6,8 @@
 set -euo pipefail
 
 app_dir="${1:?uso: scripts/playwright-install.sh <diretório do app>}"
-attempts="${PLAYWRIGHT_INSTALL_ATTEMPTS:-3}"
-attempt_timeout="${PLAYWRIGHT_INSTALL_ATTEMPT_TIMEOUT:-360}"
+attempts="${PLAYWRIGHT_INSTALL_ATTEMPTS:-2}"
+attempt_timeout="${PLAYWRIGHT_INSTALL_ATTEMPT_TIMEOUT:-450}"
 first_attempt_timeout="${PLAYWRIGHT_INSTALL_FIRST_ATTEMPT_TIMEOUT:-$attempt_timeout}"
 
 if command -v apt-get >/dev/null 2>&1; then
