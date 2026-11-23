@@ -6,6 +6,7 @@ import type {
 import { describe, expect, it } from "vitest";
 import { formatDate } from "@/ui/date-values";
 import {
+  categoryNamesDiffer,
   categoryShareRows,
   EARLIEST_COMPETENCE_REASON,
   EARLIEST_EXPENSE_MONTH,
@@ -700,5 +701,47 @@ describe("categoryShareRows", () => {
     );
     expect(rows?.map((row) => row.percent)).toEqual([50, 50]);
     expect(rows?.[0]?.amount).toBe("999999999999999999.99");
+  });
+});
+
+describe("categoryNamesDiffer", () => {
+  const aluguel = CATEGORIES[0] as ExpenseCategoryReadModel;
+
+  function entry(
+    categoryId: string,
+    categoryName?: string
+  ): ExpenseCategoryTotalReadModel {
+    return {
+      categoryId,
+      count: 1,
+      total: "10.00",
+      ...(categoryName === undefined ? {} : { categoryName }),
+    };
+  }
+
+  it("is false when the names are the same", () => {
+    expect(
+      categoryNamesDiffer([entry(aluguel.id, aluguel.name)], CATEGORIES)
+    ).toBe(false);
+  });
+
+  it("is true when the server name of a category read here is another", () => {
+    expect(
+      categoryNamesDiffer([entry(aluguel.id, "Aluguel do galpão")], CATEGORIES)
+    ).toBe(true);
+  });
+
+  it("is false for a category this screen has not read", () => {
+    expect(
+      categoryNamesDiffer(
+        [entry("00000000-0000-4000-8000-00000000ffff", "Outro nome")],
+        CATEGORIES
+      )
+    ).toBe(false);
+  });
+
+  it("is false when the server sent no name, or no split", () => {
+    expect(categoryNamesDiffer([entry(aluguel.id)], CATEGORIES)).toBe(false);
+    expect(categoryNamesDiffer(undefined, CATEGORIES)).toBe(false);
   });
 });
