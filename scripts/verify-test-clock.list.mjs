@@ -30,7 +30,6 @@ export const TEST_CLOCK_LIST = {
     count: 1,
     reason: BEFORE_THE_RULE,
   },
-  "apps/web/e2e/home/shared.ts": { count: 1, reason: BEFORE_THE_RULE },
   "apps/web/e2e/offline-runtime-api.e2e.ts": {
     count: 1,
     reason: BEFORE_THE_RULE,
