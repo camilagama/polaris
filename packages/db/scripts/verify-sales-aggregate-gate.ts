@@ -1331,10 +1331,10 @@ async function run() {
             await transaction.insert(salePayments).values(validSalePayment)
         ),
       "23505",
-      "a sale has at most one payment in V1"
+      "a second payment written without a position repeats position 0 of the sale and is refused"
     );
     tests.push(
-      "sale payment methods, amounts, installments, and per-sale uniqueness are constrained"
+      "sale payment methods, amounts, installments, and per-sale uniqueness of the position are constrained"
     );
 
     await expectSqlState(
