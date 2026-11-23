@@ -354,6 +354,10 @@ Uma biblioteca de DOM só para testes foi liberada pelo usuário em 17/11 (pedid
 - **Alternativas descartadas:** `jsdom` 31 (17 dependências diretas contra 7 do `happy-dom`, entre elas `undici` e `tough-cookie`, e um fechamento bem maior; não medi o tempo); `@vitest/browser` com Playwright (exige um navegador no teste de unidade, caro na máquina de 2 núcleos); seguir com `renderToStaticMarkup` e mock de hook (não testa clique nem estado).
 - **Primeiro uso:** `result-cards-reading.test.tsx` renderiza `ResultCardsView` com o botão "Esconder valores" de verdade, clica nele e lê o `aria-valuetext` do controle de cada cartão, com as mesmas asserções de antes.
 
+## Emenda: a marca passa do verde ao vermelho, e o foco vira tinta (21/11/2026)
+
+Decisão do usuário. A cor da marca (`--mark`, `--mark-foreground`, `--chart-1`, o ponto do `Logo` e o ícone do app) passa do esmeralda ao vermelho do dgimports: `#e7000b` no claro e `#fb2c36` no escuro, com o texto da marca em `oklch(0.505 0.213 27.518)` e `oklch(0.78 0.13 22)`. O vermelho fica só em marca e posição: o foco do teclado (`--ring`, `--sidebar-ring`) passa a ser a cor do texto, para um campo só focado não se parecer com um campo com erro (`--destructive` tem o mesmo matiz), e os botões seguem em tinta. O verde deixa de ser a marca e fica só como vendas nos gráficos (`--chart-sales`, `--chart-heat-*`) e no chip de variação que sobe (`--chart-sales-foreground`, novo). O passo atual de "Primeiros passos" usa tinta, não o vermelho. Os arquivos do ícone do app levam `v2` no nome para o ícone antigo não ficar no cache do manifesto. A tabela de contraste está em [contraste-v5.1.md](../design/contraste-v5.1.md).
+
 ## Consequências
 
 - Uma base única de componentes acessíveis (Base UI) com identidade nossa; o DESIGN.md passa a descrever tokens no vocabulário do shadcn e deixa de ter duas tabelas de cores (`--category-*` e `--payment-*`) quando a última tela migrar.
