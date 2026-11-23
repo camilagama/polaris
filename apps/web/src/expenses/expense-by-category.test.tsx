@@ -101,8 +101,11 @@ describe("ExpenseByCategory", () => {
 
   it("pushes the share and the amount to the right edge so a wrapped group keeps the column of the other lines", () => {
     const html = render();
+    expect(html.match(/class="(?:[^"]* )?ml-auto[" ]/g)).toHaveLength(2);
     expect(
-      html.match(/class="[^"]*\bml-auto\b[^"]*\btabular-nums\b[^"]*"/g)
+      html.match(
+        /class="(?=(?:[^"]* )?ml-auto[" ])(?=(?:[^"]* )?tabular-nums[" ])[^"]*"/g
+      )
     ).toHaveLength(2);
   });
 
