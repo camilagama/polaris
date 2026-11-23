@@ -10,7 +10,6 @@ import {
   cancelSubmitLabel,
   cancelSucceeded,
   cancelSuccessMessage,
-  closeCancel,
   discardLockedCancel,
   editCancelNote,
   editCancelReason,
@@ -196,13 +195,12 @@ describe("two-step flow", () => {
     expect(visibleCancelErrors(state).note).toContain("500");
   });
 
-  it("moves to the confirmation step, back, and closes by abandoning the draft", () => {
+  it("moves to the confirmation step and back", () => {
     const state = confirming("payment_issue", "estorno");
     expect(state.step).toBe("confirming");
     expect(editCancelNote(state, "mudou")).toBe(state);
     const back = backToCancelEditing(state);
     expect(back.step).toBe("editing");
-    expect(closeCancel(back)).toEqual(initialCancelState());
   });
 });
 
@@ -457,7 +455,6 @@ describe("unknown-outcome lock", () => {
     expect(editCancelNote(state, "x")).toBe(state);
     expect(editCancelReason(state, "other")).toBe(state);
     expect(backToCancelEditing(state)).toBe(state);
-    expect(closeCancel(state)).toBe(state);
     expect(reviewCancel(state)).toBe(state);
   });
 
@@ -508,10 +505,5 @@ describe("isCancelDraftChanged (the sign that the session notice warns about)", 
         editCancelNote(editCancelReason(opened, "other"), "cliente desistiu")
       )
     ).toBe(true);
-  });
-
-  it("does not count what closing threw away", () => {
-    const opened = editCancelReason(openCancel(initialCancelState()), "other");
-    expect(isCancelDraftChanged(closeCancel(opened))).toBe(false);
   });
 });

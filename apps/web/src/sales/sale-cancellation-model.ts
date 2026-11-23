@@ -316,11 +316,6 @@ export function isCancelDraftChanged(state: CancelState): boolean {
   );
 }
 
-/** Closing abandons the draft; it is not possible while locked. */
-export function closeCancel(state: CancelState): CancelState {
-  return isCancelLocked(state) ? state : initialCancelState();
-}
-
 /** Clearing the reason also clears the note, which is not allowed without it. */
 export function editCancelReason(
   state: CancelState,

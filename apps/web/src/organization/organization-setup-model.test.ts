@@ -5,7 +5,6 @@ import {
   BRASILIA_TIMEZONE,
   BRAZIL_TIMEZONES,
   defaultTimezone,
-  firstInvalidField,
   initialTimezone,
   isValidTimezone,
   MAX_ORGANIZATION_NAME_LENGTH,
@@ -51,14 +50,6 @@ describe("validateSetup", () => {
         timezone: "UTC",
       }).input
     ).not.toBeNull();
-  });
-});
-
-describe("firstInvalidField", () => {
-  it("focuses the name before the zone", () => {
-    expect(firstInvalidField({ name: "a", timezone: "b" })).toBe("name");
-    expect(firstInvalidField({ timezone: "b" })).toBe("timezone");
-    expect(firstInvalidField({})).toBeNull();
   });
 });
 
