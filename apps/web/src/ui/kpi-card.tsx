@@ -374,8 +374,7 @@ function CardTitle({
  * The tile of the Início and of the Resultado: about 92 px, three lines (the name with the (i); the number with the sparkline of 36 px to its
  * right; the support line, as wide as the tile). With a day read, its date takes the place of the chip on the support line
  * (the row is always there, so nothing moves). On the Início the warning of an estimate that is not whole is the support
- * line itself: one line, so the tile has the height of the others. On the Resultado the `notice` has a row of its own
- * under the support line, free to wrap, and the tile grows by it. The color of the entity is in the drawing, not in a square. With
+ * line itself: one line, so the tile has the height of the others, on the Resultado as well. The color of the entity is in the drawing, not in a square. With
  * touch the title row and the keyboard control of the sparkline are 44 px: the control starts under the touch area of
  * the (i), so the two never overlap (the tile grows by what it takes), and the title keeps its place.
  */
@@ -450,13 +449,14 @@ export function KpiTile({
   action,
   chip,
   className,
+  cover,
   date,
   entity,
   help,
   hero = false,
   id,
   note,
-  notice,
+  oneLine = false,
   range,
   spark,
   strip = false,
@@ -470,6 +470,8 @@ export function KpiTile({
   action?: ReactNode;
   chip?: ReactNode;
   className?: string;
+  /** The control at the end of the title row whose `::after` covers the whole tile (the (i) and the sparkline stay above it): the tile is the target. */
+  cover?: ReactNode;
   /** The day read on the sparkline ("Até 17/10"), in the place of the chip; none at rest. */
   date?: string | undefined;
   entity: KpiEntity;
@@ -479,8 +481,8 @@ export function KpiTile({
   id: string;
   /** What goes beside the chip: the count. */
   note?: ReactNode;
-  /** A warning on a row of its own under the support line, free to wrap and to make the tile taller: the Resultado's, where the badge and the days do not fit one line at 320 px. */
-  notice?: ReactNode;
+  /** The support line is one line with no warning on it: what `warningDetail` says is shown whole or not at all. */
+  oneLine?: boolean;
   range?: KpiRange;
   spark?: ReactNode;
   /** The tile is a column of `KPI_STRIP`: from 1280 px it gives up its own card. */
@@ -503,6 +505,7 @@ export function KpiTile({
     >
       <div className={cn(TOP_ROW, TILE_TITLE_ROW)}>
         <CardTitle help={help} id={id} live={titleLive} title={title} />
+        {cover}
       </div>
       <div className={hero ? HERO_BODY : TILE_BODY} data-kpi-body="">
         <div className={TILE_FIGURE} data-kpi-headline="">
@@ -513,7 +516,7 @@ export function KpiTile({
         ) : null}
       </div>
       <div
-        className={cn(TILE_SUPPORT, warning && TILE_WARNING)}
+        className={cn(TILE_SUPPORT, (warning || oneLine) && TILE_WARNING)}
         data-kpi-note-row=""
       >
         {warning ? (
@@ -538,16 +541,11 @@ export function KpiTile({
         {action}
         {warningDetail ? <WarningDetail>{warningDetail}</WarningDetail> : null}
       </div>
-      {notice ? (
-        <div className={TILE_SUPPORT} data-kpi-notice="">
-          {notice}
-        </div>
-      ) : null}
     </Card>
   );
 }
 
-/** A tile while its figures are read: the same rows with their heights, in `Skeleton`, so the tile that comes takes the same place (a Result tile with a cost warning adds its line). */
+/** A tile while its figures are read: the same rows with their heights, in `Skeleton`, so the tile that comes takes the same place. */
 export function KpiTileSkeleton({
   hero = false,
   strip = false,
