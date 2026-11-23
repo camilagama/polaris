@@ -18,7 +18,7 @@ import {
 } from "@polaris/domain/sales/payment-profile";
 import { SaleDiscountExceedsSubtotalError } from "@polaris/domain/sales/sale-adjustments";
 import { InvalidSalePaymentError } from "@polaris/domain/sales/sale-payment";
-import { sql } from "drizzle-orm";
+import { type SQL, sql } from "drizzle-orm";
 import { createDatabase } from "../src/client";
 import {
   getInventoryBalance,
@@ -76,6 +76,204 @@ interface Effects {
   movements: number;
   payments: number;
   sales: number;
+}
+
+/** The payment rows of a sale written directly: the parts with their positions, or one payment without a position. */
+async function insertPayments(
+  execute: (query: SQL) => Promise<unknown>,
+  org: string,
+  saleId: string,
+  options: {
+    parts?: { amount: string; position: number }[];
+    payment?: string | null;
+  }
+) {
+  if (options.parts) {
+    for (const part of options.parts) {
+      // biome-ignore lint/performance/noAwaitInLoops: the parts go in one after the other, as a Worker writes them
+      await execute(
+        sql`INSERT INTO public.sale_payments (organization_id, sale_id, method, amount, position) VALUES (${org}, ${saleId}, 'cash', ${part.amount}, ${part.position})`
+      );
+    }
+  } else if (options.payment !== null) {
+    await execute(
+      sql`INSERT INTO public.sale_payments (organization_id, sale_id, method, amount) VALUES (${org}, ${saleId}, 'cash', ${options.payment ?? "10.00"})`
+    );
+  }
+}
+
+interface PartsGraph {
+  parts?: { amount: string; position: number }[];
+  paymentCount?: number;
+  price?: string;
+  appendTo?: { saleId: string };
+}
+
+/**
+ * The payment check of the confirmation trigger with parts. Every case is written directly, outside the sale command,
+ * and committed: what passes stays in the database, what fails is refused when the transaction commits.
+ */
+async function assertPaymentParts(
+  admin: ReturnType<typeof createDatabase>["pool"],
+  write: (options: PartsGraph) => Promise<string | undefined>
+) {
+  const parts = (...amounts: [string, number][]) =>
+    amounts.map(([amount, position]) => ({ amount, position }));
+  const refused = (label: string, options: PartsGraph) =>
+    expectSqlState(
+      () => write(options),
+      "23514",
+      label,
+      "sales_confirmation_payment_complete"
+    );
+  const stored = async (saleId: string | undefined) => {
+    assert.ok(saleId);
+    const rows = await admin.query<{
+      amount: string;
+      payment_count: number;
+      position: number;
+    }>(
+      "SELECT payment.amount::text AS amount, payment.position, sale.payment_count FROM public.sale_payments AS payment JOIN public.sales AS sale ON sale.organization_id = payment.organization_id AND sale.id = payment.sale_id WHERE payment.sale_id = $1 ORDER BY payment.position",
+      [saleId]
+    );
+    return rows.rows;
+  };
+
+  assert.deepEqual(
+    await stored(
+      await write({ parts: parts(["6.00", 0], ["4.00", 1]), paymentCount: 2 })
+    ),
+    [
+      { amount: "6.00", payment_count: 2, position: 0 },
+      { amount: "4.00", payment_count: 2, position: 1 },
+    ],
+    "two parts adding up to the total commit"
+  );
+  const threeParts = await write({
+    parts: parts(["0.01", 2], ["3.33", 0], ["6.66", 1]),
+    paymentCount: 3,
+  });
+  assert.deepEqual(
+    (await stored(threeParts)).map((row) => row.position),
+    [0, 1, 2],
+    "three parts commit, whatever order they were inserted in"
+  );
+  const onePart = await write({});
+  assert.deepEqual(
+    await stored(onePart),
+    [{ amount: "10.00", payment_count: 1, position: 0 }],
+    "the previous Worker's form (no position, no count) commits as one part at position 0"
+  );
+  assert.deepEqual(
+    await stored(
+      await write({ parts: parts(["0.00", 0]), paymentCount: 1, price: "0.00" })
+    ),
+    [{ amount: "0.00", payment_count: 1, position: 0 }],
+    "a sale of total zero commits with one part of zero"
+  );
+
+  await refused("two parts with a wrong sum", {
+    parts: parts(["6.00", 0], ["3.99", 1]),
+    paymentCount: 2,
+  });
+  await refused("two parts above the total", {
+    parts: parts(["6.00", 0], ["4.01", 1]),
+    paymentCount: 2,
+  });
+  await refused("a part of zero beside another part", {
+    parts: parts(["10.00", 0], ["0.00", 1]),
+    paymentCount: 2,
+  });
+  await refused("two parts of zero in a sale of total zero", {
+    parts: parts(["0.00", 0], ["0.00", 1]),
+    paymentCount: 2,
+    price: "0.00",
+  });
+  await refused("a gap in the positions (0 and 2)", {
+    parts: parts(["6.00", 0], ["4.00", 2]),
+    paymentCount: 2,
+  });
+  await refused("positions that do not start at 0 (1 and 2)", {
+    parts: parts(["6.00", 1], ["4.00", 2]),
+    paymentCount: 2,
+  });
+  await refused("a header counting two parts with one written", {
+    parts: parts(["10.00", 0]),
+    paymentCount: 2,
+  });
+  await refused("a header counting one part with two written", {
+    parts: parts(["6.00", 0], ["4.00", 1]),
+    paymentCount: 1,
+  });
+  await refused("a header counting three parts with positions 0 and 2", {
+    parts: parts(["6.00", 0], ["4.00", 2]),
+    paymentCount: 3,
+  });
+  await refused("a header counting three parts with two written", {
+    parts: parts(["6.00", 0], ["4.00", 1]),
+    paymentCount: 3,
+  });
+  await refused("a part appended to a confirmed sale of one part", {
+    appendTo: { saleId: onePart as string },
+    parts: parts(["1.00", 1]),
+  });
+  await expectSqlState(
+    () =>
+      write({
+        parts: parts(["4.00", 0], ["2.00", 1], ["2.00", 2], ["2.00", 3]),
+        paymentCount: 3,
+      }),
+    "23514",
+    "a fourth part (position 3)",
+    "sale_payments_position_allowed"
+  );
+  await expectSqlState(
+    () =>
+      write({
+        parts: parts(["4.00", 0], ["2.00", 1], ["2.00", 2], ["2.00", 3]),
+        paymentCount: 4,
+      }),
+    "23514",
+    "a header counting four parts",
+    "sales_payment_count_allowed"
+  );
+  await expectSqlState(
+    () => write({ parts: parts(["6.00", 0], ["4.00", 0]), paymentCount: 2 }),
+    "23505",
+    "two parts at the same position",
+    "sale_payments_organization_sale_position_unique"
+  );
+
+  const broken = await admin.query<{ id: string }>(
+    `SELECT sale.id
+       FROM public.sales AS sale
+       LEFT JOIN LATERAL (
+         SELECT count(*) AS parts, max(payment.position) AS last_position, COALESCE(sum(payment.amount), 0) AS paid,
+                count(*) FILTER (WHERE payment.amount <= 0) AS not_positive
+           FROM public.sale_payments AS payment
+          WHERE payment.organization_id = sale.organization_id AND payment.sale_id = sale.id
+       ) AS payment ON true
+       LEFT JOIN LATERAL (
+         SELECT COALESCE(sum(item.charged_unit_price * item.quantity), 0) AS subtotal
+           FROM public.sale_items AS item
+          WHERE item.organization_id = sale.organization_id AND item.sale_id = sale.id
+       ) AS item ON true
+       LEFT JOIN LATERAL (
+         SELECT COALESCE(sum(adjustment.amount) FILTER (WHERE adjustment.kind = 'discount'), 0) AS discounts,
+                COALESCE(sum(adjustment.amount) FILTER (WHERE adjustment.kind <> 'discount'), 0) AS additions
+           FROM public.sale_adjustments AS adjustment
+          WHERE adjustment.organization_id = sale.organization_id AND adjustment.sale_id = sale.id
+       ) AS adjustment ON true
+      WHERE payment.parts <> sale.payment_count
+         OR payment.last_position IS DISTINCT FROM sale.payment_count - 1
+         OR payment.paid <> item.subtotal - adjustment.discounts + adjustment.additions
+         OR (sale.payment_count > 1 AND payment.not_positive > 0)`
+  );
+  assert.deepEqual(
+    broken.rows,
+    [],
+    "every sale in the database keeps the rule"
+  );
 }
 
 async function run() {
@@ -1377,6 +1575,11 @@ async function run() {
       movement?: boolean;
       movementOn?: string;
       payment?: string | null;
+      /** The parts written with their positions, in place of the one payment without a position. */
+      parts?: { amount: string; position: number }[];
+      /** The header's `payment_count`; left out, the header is written as before the parts existed. */
+      paymentCount?: number;
+      price?: string;
     }
     const writeGraph = (
       tenant: TenantFixture,
@@ -1392,7 +1595,14 @@ async function run() {
           const commandId = randomUUID();
           if (options.appendTo) {
             const { saleId } = options.appendTo;
-            if (options.appendTo.adjustment) {
+            if (options.parts) {
+              await insertPayments(
+                (query) => transaction.execute(query),
+                org,
+                saleId,
+                options
+              );
+            } else if (options.appendTo.adjustment) {
               await transaction.execute(
                 sql`INSERT INTO public.sale_adjustments (organization_id, sale_id, kind, value_type, amount, position) VALUES (${org}, ${saleId}, 'freight', 'fixed', '1.00', 9)`
               );
@@ -1404,18 +1614,22 @@ async function run() {
             return;
           }
           const header = await transaction.execute<{ id: string }>(
-            sql`INSERT INTO public.sales (organization_id, command_id, occurred_at, occurred_on, item_count, adjustment_count) VALUES (${org}, ${commandId}, now(), '2026-10-13', ${options.itemCount ?? 1}, 0) RETURNING id`
+            options.paymentCount === undefined
+              ? sql`INSERT INTO public.sales (organization_id, command_id, occurred_at, occurred_on, item_count, adjustment_count) VALUES (${org}, ${commandId}, now(), '2026-10-13', ${options.itemCount ?? 1}, 0) RETURNING id`
+              : sql`INSERT INTO public.sales (organization_id, command_id, occurred_at, occurred_on, item_count, adjustment_count, payment_count) VALUES (${org}, ${commandId}, now(), '2026-10-13', ${options.itemCount ?? 1}, 0, ${options.paymentCount}) RETURNING id`
           );
           const saleId = header.rows[0]?.id;
           assert.ok(saleId);
+          const price = options.price ?? "10.00";
           await transaction.execute(
-            sql`INSERT INTO public.sale_items (organization_id, sale_id, position, product_id, variant_id, product_label, quantity, listed_unit_price, charged_unit_price) VALUES (${org}, ${saleId}, 0, ${product.productId}, ${product.variantId}, 'x', 1, '10.00', '10.00')`
+            sql`INSERT INTO public.sale_items (organization_id, sale_id, position, product_id, variant_id, product_label, quantity, listed_unit_price, charged_unit_price) VALUES (${org}, ${saleId}, 0, ${product.productId}, ${product.variantId}, 'x', 1, ${price}, ${price})`
           );
-          if (options.payment !== null) {
-            await transaction.execute(
-              sql`INSERT INTO public.sale_payments (organization_id, sale_id, method, amount) VALUES (${org}, ${saleId}, 'cash', ${options.payment ?? "10.00"})`
-            );
-          }
+          await insertPayments(
+            (query) => transaction.execute(query),
+            org,
+            saleId,
+            options
+          );
           if (options.movement !== false) {
             // the product may hold no stock: a receipt keeps the ledger at the balance
             await transaction.execute(
@@ -1425,6 +1639,7 @@ async function run() {
               sql`INSERT INTO public.stock_movements (organization_id, command_id, command_index, command_version, occurred_on, movement_type, product_id, variant_id, quantity_delta) VALUES (${org}, ${commandId}, 0, 1, ${options.movementOn ?? "2026-10-13"}, 'sale', ${product.productId}, ${product.variantId}, -1)`
             );
           }
+          return saleId;
         }
       );
 
@@ -1514,6 +1729,13 @@ async function run() {
     await writeGraph(tenantA, productA2, {});
     tests.push(
       "PostgreSQL rejects header-only, payment-less, mismatched-total, ledger-less, appended-item, appended-adjustment, and orphan sale-movement commits (deferred completeness triggers)"
+    );
+
+    await assertPaymentParts(admin.pool, (options) =>
+      writeGraph(tenantA, productA2, options)
+    );
+    tests.push(
+      "a sale is paid in one to three parts at positions 0, 1, 2 adding up to the total due, written directly by the runtime and committed: two and three parts are accepted; a wrong sum, a part of zero beside another, a gap in the positions, a header counting more or fewer parts than were written and a part appended to a confirmed sale are refused at commit as sales_confirmation_payment_complete; a fourth part (position 3) or a count of 4 is refused by its CHECK, a repeated position by the unique index; the form of the previous Worker (one payment without a position, a header without a count) and a sale of total zero in one part of zero still commit, and every sale in the database keeps the rule"
     );
 
     await expectSqlState(
