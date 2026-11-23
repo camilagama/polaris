@@ -48,3 +48,4 @@ Não cole segredos, connection strings, tokens nem dados reais de clientes.
 - [ ] Nenhum segredo, connection string ou dado real foi incluído.
 - [ ] Migrations são revisadas e reproduzíveis; `db:generate` não mostra drift.
 - [ ] Migration nova funciona com o Worker da versão anterior (expand/contract, [ADR 0096](../docs/adr/0096-migrations-compativeis-com-a-versao-anterior-do-worker.md)): só adiciona, ou tem o marcador `-- expand-contract: contract|janela <motivo>` e a descrição explica (não se aplica sem migration).
+- [ ] Se o PR exige segredo, variável ou configuração nova num Worker de staging ou de produção que alguém grava à mão (`wrangler secret put`, painel), ela está em **Limites**, só com o nome e o ambiente (nunca o valor), com quem a grava e o runbook que diz como, e o merge só sai depois que quem a grava confirmar no PR (o automerge não lê pré-requisito de operador: peça no PR para segurar o merge; não se aplica se o PR não exige).
