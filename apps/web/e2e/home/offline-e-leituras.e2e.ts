@@ -66,7 +66,7 @@ test.describe("sem conexão (§ 7, AC-28 a AC-31)", () => {
     await expect(region(page, "Vendas por dia")).toBeVisible();
     await expect(region(page, "Meta")).toContainText("Meta de outubro");
     await expect(region(page, "Meta")).toContainText("53,4%");
-    await expect(region(page, "Meta")).not.toContainText("Ver as outras");
+    await expect(region(page, "Meta").getByRole("link")).toHaveCount(0);
     // the stock is not read without a connection, and nothing is said of it under the cards
     await expect(page.getByText("Avisos do estoque")).toHaveCount(0);
     await expect(page.getByText("sem saldo")).toHaveCount(0);
