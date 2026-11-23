@@ -38,8 +38,9 @@ describe("ProgressRing", () => {
     expect(html).toContain('viewBox="0 0 16 16"');
     expect(html).toContain("size-4");
     expect(html).toContain('stroke-width="2"');
-    expect(html).toContain("stroke-muted");
-    expect(html).toContain("stroke-primary");
+    expect(html).toContain("stroke-primary/15");
+    expect(html).not.toContain("stroke-muted");
+    expect(html).toContain('class="stroke-primary motion-full:');
   });
 
   it("moves its arc only where the interface moves, once and in 300 ms", () => {

@@ -109,6 +109,7 @@ const SPECS: Readonly<Record<string, SpecRule>> = {
     coarse: 0,
     why: "the other cases measure the geometry of the receipt at 360 and 1280 px and the arrival of the mono face, not a reflow with the browser font",
   },
+  "recibo-pagamento-reflow.e2e.ts": { bare: 0, coarse: 0, why: "" },
   "sale-item-reflow.e2e.ts": {
     bare: 1,
     coarse: 0,

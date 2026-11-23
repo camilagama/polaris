@@ -12,7 +12,7 @@ export function ringOffset(done: number, total: number): number {
 }
 
 /**
- * A 16 px ring that fills clockwise from the top: the track in `muted`, the arc in ink. It is only a drawing
+ * A 16 px ring that fills clockwise from the top: the track in ink at 15 %, the arc in ink. It is only a drawing
  * (`aria-hidden`): the figure it shows is always written beside it. The arc moves from the old value to the new one
  * only where the interface moves (`motion-full:`, so never on a phone or under reduced motion), and a ring drawn
  * for the first time starts already at its value.
@@ -36,7 +36,7 @@ export function ProgressRing({
       viewBox={`0 0 ${BOX} ${BOX}`}
     >
       <circle
-        className="stroke-muted"
+        className="stroke-primary/15"
         cx={BOX / 2}
         cy={BOX / 2}
         r={RADIUS}
