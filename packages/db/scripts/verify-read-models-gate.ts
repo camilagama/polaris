@@ -706,14 +706,21 @@ async function run() {
       "sale:read",
       async (transaction, identity) => {
         const listed = await listSales(transaction, identity, { limit: 100 });
+        const partIds = Object.values(partSales);
+        assert.equal(
+          listed.sales.filter((sale) => partIds.includes(sale.id)).length,
+          partIds.length,
+          "a sale of two parts is listed once"
+        );
         const read: Record<
           string,
-          { detail: string | null; list: string | null }
+          { amount: string; detail: string | null; list: string | null }
         > = {};
         for (const [name, saleId] of Object.entries(partSales)) {
           // biome-ignore lint/performance/noAwaitInLoops: one transaction, one statement at a time
           const detail = await getSale(transaction, identity, saleId);
           read[name] = {
+            amount: detail.sale.payment.amount,
             detail: detail.sale.payment.method,
             list:
               listed.sales.find((sale) => sale.id === saleId)?.paymentMethod ??
@@ -726,11 +733,19 @@ async function run() {
     assert.deepEqual(
       seen,
       {
-        biggestFirst: { detail: "pix", list: "pix" },
-        biggestLast: { detail: "credit_card", list: "credit_card" },
-        onlyPart: { detail: "pix", list: "pix" },
-        tieHigherIdLast: { detail: "pix", list: "pix" },
-        tieLowerIdLast: { detail: "debit_card", list: "debit_card" },
+        biggestFirst: { amount: "14.90", detail: "pix", list: "pix" },
+        biggestLast: {
+          amount: "30.00",
+          detail: "credit_card",
+          list: "credit_card",
+        },
+        onlyPart: { amount: "19.90", detail: "pix", list: "pix" },
+        tieHigherIdLast: { amount: "19.90", detail: "pix", list: "pix" },
+        tieLowerIdLast: {
+          amount: "19.90",
+          detail: "debit_card",
+          list: "debit_card",
+        },
       },
       "the list and the detail name the main part: the biggest amount, the smaller id on a tie, at whatever position"
     );

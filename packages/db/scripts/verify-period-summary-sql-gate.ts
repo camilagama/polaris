@@ -1755,6 +1755,7 @@ function paymentRows(
   if (sale.secondPart === null || second === 0) {
     return [partOf(store, sale.payment, saleId, subtotal, 0)];
   }
+  assert.ok(subtotal - second >= second, "the first part is the bigger one");
   return [
     partOf(store, sale.payment, saleId, subtotal - second, 0),
     partOf(store, sale.secondPart, saleId, second, 1),
@@ -2117,6 +2118,28 @@ async function assertProperty(
     ...(options.path ? { path: options.path } : {}),
   });
   await assertCommandTriggersOn(admin);
+  const committed = await admin.query<{ parts: number; wrong: number }>(
+    `SELECT count(*)::int AS parts,
+            count(*) FILTER (WHERE positions <> ARRAY[0, 1]::smallint[])::int AS wrong
+       FROM (
+         SELECT array_agg(payment.position ORDER BY payment.position) AS positions
+           FROM public.sales AS sale
+           JOIN public.sale_payments AS payment ON payment.organization_id = sale.organization_id AND payment.sale_id = sale.id
+          WHERE sale.organization_id = $1 AND sale.payment_count = 2
+          GROUP BY sale.id
+       ) AS two`,
+    [store.tenant.organizationId]
+  );
+  const [twoParts] = committed.rows;
+  assert.ok(
+    twoParts && twoParts.parts > 0,
+    "no sale of two parts was committed"
+  );
+  assert.equal(
+    twoParts.wrong,
+    0,
+    "a sale of two parts without positions 0 and 1"
+  );
   for (const [name, value] of Object.entries(drawnSeen)) {
     assert.ok(value, `no drawn case had ${name}`);
   }
@@ -2294,6 +2317,15 @@ async function assertSplitPayments(
   const splitCase = splitRows(store, splitStart, false);
   const wholeCase = splitRows(store, wholeStart, true);
 
+  const countsOf = async () => {
+    const counted = await admin.query<{ payments: number; sales: number }>(
+      `SELECT (SELECT count(*)::int FROM public.sales WHERE organization_id = $1) AS sales,
+              (SELECT count(*)::int FROM public.sale_payments WHERE organization_id = $1) AS payments`,
+      [store.tenant.organizationId]
+    );
+    return counted.rows[0] as { payments: number; sales: number };
+  };
+  const before = await countsOf();
   try {
     await setCommandTriggers(admin, false);
     await writeRows(admin, splitCase);
@@ -2302,6 +2334,28 @@ async function assertSplitPayments(
     await setCommandTriggers(admin, true);
   }
   await assertCommandTriggersOn(admin);
+  const after = await countsOf();
+  assert.equal(after.sales, before.sales + 2 * SPLIT_SALES.length);
+  assert.equal(
+    after.payments,
+    before.payments + splitCase.payments.length + wholeCase.payments.length
+  );
+  const unpaid = await admin.query(
+    `SELECT sale.id
+       FROM public.sales AS sale
+       JOIN public.sale_items AS item ON item.organization_id = sale.organization_id AND item.sale_id = sale.id
+      WHERE sale.organization_id = $1 AND sale.occurred_on >= $2::date
+      GROUP BY sale.id
+     HAVING sum(item.charged_unit_price * item.quantity) <> (
+       SELECT sum(payment.amount) FROM public.sale_payments AS payment
+        WHERE payment.organization_id = sale.organization_id AND payment.sale_id = sale.id)`,
+    [store.tenant.organizationId, splitStart]
+  );
+  assert.deepEqual(
+    unpaid.rows,
+    [],
+    "the parts of each sale of the case add up to its subtotal"
+  );
   const written = await admin.query<{ parts: number[] }>(
     `SELECT array_agg(payment.position ORDER BY payment.position) AS parts
        FROM public.sale_payments AS payment
@@ -2311,6 +2365,19 @@ async function assertSplitPayments(
      HAVING count(*) = sale.payment_count
       ORDER BY count(*), min(sale.occurred_on)`,
     [store.tenant.organizationId, splitStart, shiftDay(splitStart, 9)]
+  );
+  const wholeWritten = await admin.query<{ parts: number[] }>(
+    `SELECT array_agg(payment.position) AS parts
+       FROM public.sale_payments AS payment
+       JOIN public.sales AS sale ON sale.organization_id = payment.organization_id AND sale.id = payment.sale_id
+      WHERE payment.organization_id = $1 AND sale.occurred_on BETWEEN $2::date AND $3::date AND sale.payment_count = 1
+      GROUP BY sale.id`,
+    [store.tenant.organizationId, wholeStart, shiftDay(wholeStart, 9)]
+  );
+  assert.deepEqual(
+    wholeWritten.rows.map((row) => row.parts),
+    SPLIT_SALES.map(() => [0]),
+    "each sale paid whole holds one part at position 0"
   );
   assert.deepEqual(
     written.rows.map((row) => row.parts),
@@ -2353,6 +2420,7 @@ async function assertSplitPayments(
   assert.notEqual(result.returns, "0.00");
   assert.notEqual(result.cogs, "0.00");
   assert.equal(split.daily.length, 10);
+  assert.equal(whole.daily.length, 10);
 }
 
 async function run() {
