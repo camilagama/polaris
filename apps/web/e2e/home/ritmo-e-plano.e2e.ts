@@ -333,7 +333,7 @@ test.describe("Ritmo de vendas (revisão de UI v7, § 3 item 10)", () => {
     { fold: false, height: 900, width: 1536 },
     { fold: true, height: 900, width: 1536 },
   ]) {
-    test(`ao lado da Meta a ${view.width} px, menu ${view.fold ? "recolhido" : "aberto"}: o cartão é 3/5 contra 2/5, o mapa tem as 26 semanas em células de 12 a 16 px e o dia lido tem o anel sobre o quadrado certo`, async ({
+    test(`ao lado da Meta a ${view.width} px, menu ${view.fold ? "recolhido" : "aberto"}: o cartão é 3/5 contra 2/5, o mapa tem as 26 semanas em células de 12 a 20 px, com 85 % ou mais do painel, e o dia lido tem o anel sobre o quadrado certo`, async ({
       page,
     }) => {
       await page.setViewportSize({ height: view.height, width: view.width });
@@ -361,8 +361,8 @@ test.describe("Ritmo de vendas (revisão de UI v7, § 3 item 10)", () => {
       const side = first?.width ?? 0;
       expect(side).toBeCloseTo(Math.round(side), 1);
       expect(Math.round(side)).toBeGreaterThanOrEqual(12);
-      expect(Math.round(side)).toBeLessThanOrEqual(16);
-      // the map takes at least 85% of the width the card leaves it, until the cell is at its largest
+      expect(Math.round(side)).toBeLessThanOrEqual(20);
+      // the map takes at least 85% of the width the card leaves it, with the menu open and folded, up to 1536 px
       const usable = await rhythm(page)
         .getByRole("img")
         .locator("xpath=../..")
@@ -371,13 +371,9 @@ test.describe("Ritmo de vendas (revisão de UI v7, § 3 item 10)", () => {
         .getByRole("img")
         .locator("xpath=..")
         .boundingBox();
-      if (Math.round(side) < 16) {
-        expect(
-          (drawn?.width ?? 0) / (usable?.width ?? 1)
-        ).toBeGreaterThanOrEqual(0.85);
-      } else {
-        expect(drawn?.width ?? 0).toBeCloseTo(26 * 20 + 22, 0);
-      }
+      expect((drawn?.width ?? 0) / (usable?.width ?? 1)).toBeGreaterThanOrEqual(
+        0.85
+      );
       expect((drawn?.x ?? 0) + (drawn?.width ?? 0)).toBeLessThanOrEqual(
         (usable?.x ?? 0) + (usable?.width ?? 0) + 0.5
       );

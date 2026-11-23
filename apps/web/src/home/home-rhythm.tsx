@@ -66,7 +66,7 @@ const MAP_TOP = 18;
 const CELL = 12;
 const GAP = 3;
 /** Beside the goal the cell grows with the card, by whole pixels up to this, and the gap with it (a quarter of the cell, rounded). */
-const CELL_MAX = 16;
+const CELL_MAX = 20;
 /** The width of the content area from which the two lower blocks stand side by side (`@min-[60rem]/home` of `LowerBlocks`). */
 const PAIR_REM = 60;
 
@@ -74,7 +74,7 @@ const gapOf = (cell: number) => Math.round(cell / 4);
 
 /**
  * The cell, the gap and the weeks for a box of `width` pixels. In the pair of the goal and the map the 26 weeks stay and
- * the cell is the largest whole size from 12 to 16 px that lets them fit the box; otherwise it is 12 + 3 and as many
+ * the cell is the largest whole size from 12 to 20 px that lets them fit the box; otherwise it is 12 + 3 and as many
  * weeks as fit.
  */
 export function mapLayout(width: number, pair = false) {

@@ -375,32 +375,33 @@ describe("o tamanho do mapa", () => {
     expect(mapLayout(100).weeks).toBe(13);
   });
 
-  it("no par a célula é o maior inteiro de 12 a 16 px com que as 26 semanas cabem, e o vão é um quarto dela", () => {
+  it("no par a célula é o maior inteiro de 12 a 20 px com que as 26 semanas cabem, e o vão é um quarto dela", () => {
     const sizes = new Map<number, { cell: number; gap: number }>();
-    for (let width = 412; width <= 700; width += 1) {
+    for (let width = 412; width <= 800; width += 1) {
       const layout = mapLayout(width, true);
       expect(layout.weeks).toBe(26);
       expect(Number.isInteger(layout.cell)).toBe(true);
       expect(layout.cell).toBeGreaterThanOrEqual(12);
-      expect(layout.cell).toBeLessThanOrEqual(16);
+      expect(layout.cell).toBeLessThanOrEqual(20);
       expect(layout.gap).toBe(Math.round(layout.cell / 4));
       const taken = 26 * (layout.cell + layout.gap) + 22;
       expect(taken).toBeLessThanOrEqual(width);
-      if (layout.cell < 16) {
+      if (layout.cell < 20) {
         expect(
           26 * (layout.cell + 1 + Math.round((layout.cell + 1) / 4)) + 22
         ).toBeGreaterThan(width);
       }
       sizes.set(layout.cell, layout);
     }
-    expect([...sizes.keys()]).toEqual([12, 13, 14, 15, 16]);
+    expect([...sizes.keys()]).toEqual([12, 13, 14, 15, 16, 17, 18, 19, 20]);
     expect(mapLayout(516, true)).toEqual({ cell: 15, gap: 4, weeks: 26 });
     expect(mapLayout(542, true)).toEqual({ cell: 16, gap: 4, weeks: 26 });
-    expect(mapLayout(700, true)).toEqual({ cell: 16, gap: 4, weeks: 26 });
+    expect(mapLayout(680, true)).toEqual({ cell: 20, gap: 5, weeks: 26 });
+    expect(mapLayout(800, true)).toEqual({ cell: 20, gap: 5, weeks: 26 });
   });
 
-  it("no par ocupa pelo menos 85 % da largura do cartão enquanto cabe uma célula a mais (de 412 a 542 px)", () => {
-    for (let width = 412; width <= 542; width += 1) {
+  it("no par ocupa pelo menos 85 % da largura do cartão enquanto cabe uma célula a mais (de 412 a 672 px)", () => {
+    for (let width = 412; width <= 672; width += 1) {
       const layout = mapLayout(width, true);
       expect(
         (26 * (layout.cell + layout.gap) + 22) / width
@@ -416,5 +417,6 @@ describe("o tamanho do mapa", () => {
   it("a altura é o topo mais sete linhas de célula e vão", () => {
     expect(mapHeight(mapLayout(0))).toBe(123);
     expect(mapHeight({ cell: 16, gap: 4 })).toBe(158);
+    expect(mapHeight({ cell: 20, gap: 5 })).toBe(193);
   });
 });

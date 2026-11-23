@@ -273,8 +273,11 @@ test.describe("loja com venda", () => {
     await expect(meta.locator("[data-goal-projection]")).toHaveText(
       GOAL_PROJECTION
     );
-    // two active goals and no foot under 760 px: the card has no second way out
-    await expect(meta.getByRole("link")).toHaveCount(0);
+    // two active goals and no foot under 760 px: the one way out is the link at the end of the body
+    await expect(meta.getByRole("link")).toHaveCount(1);
+    await expect(
+      meta.getByRole("link", { exact: true, name: "Ver as 2 metas" })
+    ).toHaveAttribute("href", "/dashboard?aba=metas");
     await expect(meta).not.toContainText("Ver as outras");
 
     const attention = region(page, "Precisa de ação");
@@ -533,6 +536,9 @@ test.describe("loja com venda", () => {
     const meta = region(page, "Meta");
     await expect(meta.getByRole("img")).toBeVisible();
     await expect(meta.getByRole("link")).toHaveCount(1);
+    await expect(
+      meta.locator("[data-slot=card-frame-panel]").getByRole("link")
+    ).toHaveCount(0);
     const three = meta.getByRole("link", {
       exact: true,
       name: "Ver as 3 metas",
@@ -559,6 +565,60 @@ test.describe("loja com venda", () => {
     const ring = await one.evaluate((link) => getComputedStyle(link).boxShadow);
     expect(outline > 0 || ring !== "none").toBe(true);
     await one.click();
+    await expect(page).toHaveURL(DASHBOARD_GOALS_PATH);
+  });
+
+  test("a 360 px a Meta com várias metas tem o link no corpo, com área de toque de 44 px, e com uma meta nenhum", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 740, width: 360 });
+    const goals = [
+      goal({}),
+      goal({
+        id: "0199c2d0-0000-7000-8000-000000000c02",
+        name: "Meta do trimestre",
+      }),
+      goal({
+        id: "0199c2d0-0000-7000-8000-000000000c03",
+        name: "Meta do ano",
+      }),
+    ];
+    const server = new FakeServer({ ...SOLD, goals });
+    await openHome(page, server);
+    const meta = region(page, "Meta");
+    await expect(meta.getByRole("img")).toBeVisible();
+    await expect(meta.getByRole("link")).toHaveCount(1);
+    const three = meta.getByRole("link", {
+      exact: true,
+      name: "Ver as 3 metas",
+    });
+    await expect(three).toHaveAttribute("href", "/dashboard?aba=metas");
+    await expect(meta).not.toContainText("Ver as outras");
+    await three.scrollIntoViewIfNeeded();
+    await settled(page);
+    const box = await three.boundingBox();
+    const centre = (box?.y ?? 0) + (box?.height ?? 0) / 2;
+    for (const y of [centre - 21, centre + 21]) {
+      // biome-ignore lint/performance/noAwaitInLoops: two probes of one link
+      const hits = await three.evaluate(
+        (link, point) => {
+          const found = document.elementFromPoint(point.x, point.y);
+          return found !== null && link.contains(found);
+        },
+        { x: (box?.x ?? 0) + (box?.width ?? 0) / 2, y }
+      );
+      expect(hits).toBe(true);
+    }
+
+    server.scenario = { ...SOLD, goals: [goals[0]] };
+    await page.reload();
+    await expect(meta.getByRole("img")).toBeVisible();
+    await expect(meta.getByRole("link")).toHaveCount(0);
+
+    server.scenario = { ...SOLD, goals };
+    await page.reload();
+    await expect(meta.getByRole("img")).toBeVisible();
+    await three.click();
     await expect(page).toHaveURL(DASHBOARD_GOALS_PATH);
   });
 

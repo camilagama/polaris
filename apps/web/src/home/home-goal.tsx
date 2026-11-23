@@ -78,10 +78,13 @@ const GOAL_FOOTER = {
   label: "Ver as metas",
 } as const;
 
-/** The one way out of the card: to the Metas tab, saying how many goals are active when there is more than one. */
+/**
+ * The one way out of the card per width: to the Metas tab, saying how many goals are active when there is more than
+ * one. The foot is not there under 760 px, so with more than one goal the same link ends the body there.
+ */
 const goalFooter = (others: number) =>
   others > 0
-    ? { ...GOAL_FOOTER, label: `Ver as ${others + 1} metas` }
+    ? { ...GOAL_FOOTER, inBody: true, label: `Ver as ${others + 1} metas` }
     : GOAL_FOOTER;
 
 /**

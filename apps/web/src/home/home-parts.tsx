@@ -36,6 +36,8 @@ interface BlockFooter {
   href: string;
   label: string;
   link?: boolean;
+  /** Also a link at the end of the body under 760 px, where the foot is not there (one way out per width). */
+  inBody?: boolean;
 }
 
 /**
@@ -111,7 +113,17 @@ export function HomeBlock({
       {...attributes}
     >
       <CardFrameHeader>{heading}</CardFrameHeader>
-      <CardFramePanel className={panelClassName}>{children}</CardFramePanel>
+      <CardFramePanel className={panelClassName}>
+        {children}
+        {foot?.inBody && foot.link !== false ? (
+          <CardFrameLink
+            className="w-fit self-end justify-self-end md:hidden"
+            href={foot.href}
+          >
+            {foot.label}
+          </CardFrameLink>
+        ) : null}
+      </CardFramePanel>
       {foot ? (
         <CardFrameFooter>
           {foot.link === false ? null : (
