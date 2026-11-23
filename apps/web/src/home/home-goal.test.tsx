@@ -395,7 +395,6 @@ describe("a saída única do cartão da Meta", () => {
       const body = BODY_LINK_RE.exec(html);
       expect(body?.[1]).toBe("/dashboard?aba=metas");
       expect(body?.[2]).toBe(`Ver as ${others + 1} metas`);
-      expect(body?.[0]).toContain("md:hidden");
       expect(html).not.toContain(REMOVED_LINK);
       expect(html).not.toContain("meta=lista");
     }

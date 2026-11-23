@@ -598,7 +598,7 @@ test.describe("loja com venda", () => {
     await settled(page);
     const box = await three.boundingBox();
     const centre = (box?.y ?? 0) + (box?.height ?? 0) / 2;
-    for (const y of [centre - 21, centre + 21]) {
+    for (const y of [centre - 21.9, centre + 21.9]) {
       // biome-ignore lint/performance/noAwaitInLoops: two probes of one link
       const hits = await three.evaluate(
         (link, point) => {
