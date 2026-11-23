@@ -8,7 +8,8 @@ import { SCREENS, VIEWPORTS } from "./ui-screens";
  * 760 px, on the same line; under it and as wide as the screen on a phone, with no sideways scroll even with the
  * letter at 20 px. The title, the (i) of it and the action come in this order in the tab order, there is one `h1`, and
  * the first thing after the heading block is at the same distance from it as on the screens that already followed the
- * pattern. The Resultado draws the period and "Atualizar" only on the Resultado tab: the Metas have their own.
+ * pattern. The Resultado draws the period and "Atualizar" only on the Resultado tab; on the Metas tab the same line
+ * holds "Atualizar metas" and "Nova meta".
  */
 const SAME_LINE = 2;
 const PHONE_MARGIN = 48;
