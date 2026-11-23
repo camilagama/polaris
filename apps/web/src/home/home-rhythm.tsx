@@ -335,7 +335,6 @@ function RhythmMap({ days }: { days: RhythmDay[] }) {
               role="img"
             >
               <OnDemandHeatmap
-                best={view.best}
                 cell={cell}
                 days={heatmapDays}
                 failed={<ChartFailed />}
