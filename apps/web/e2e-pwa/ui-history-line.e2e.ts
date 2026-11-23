@@ -6,7 +6,7 @@ import { historyStates, WORST_CUSTOMER_NAME } from "./ui-history-states";
  * The line of a sale in the history, "cliente · forma de pagamento · itens": with a connection the row is a link
  * that ends in a chevron. On a phone the line wraps instead of cutting: when the method and the item count do not fit
  * beside the customer they go under it, whole, and only the end of a name wider than the line is cut with an
- * ellipsis. Nothing reaches the total. The date and time stay on one line. Without a connection the row is plain
+ * ellipsis. Nothing reaches the total. The time is one piece: it may drop under the date, never split. Without a connection the row is plain
  * text, with no link and no chevron.
  */
 const LONG_NAME =
