@@ -616,6 +616,8 @@ jobs:
       - name: Install Chromium
         timeout-minutes: 16
         run: scripts/playwright-install.sh apps/web
+        env:
+          PLAYWRIGHT_INSTALL_FIRST_ATTEMPT_TIMEOUT: "1"
       # A suite with no file in this shard does not run here: Playwright fails a run with no
       # test, and shard-coverage checks that every listed test ran in some shard.
       - name: Files of the shard
