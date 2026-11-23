@@ -460,8 +460,11 @@ jobs:
             packages/*/node_modules
           key: ${{ steps.node-modules.outputs.cache-primary-key }}
       # the Chromium of the Playwright in bun.lock, the same build as the one in the image of the visual checks
-      - run: bunx playwright install --with-deps chromium
-        working-directory: apps/web
+      - name: Install Chromium
+        # one attempt: the job timeout is shorter than two 450 s attempts; the retry runs only in the offline shards
+        env:
+          PLAYWRIGHT_INSTALL_ATTEMPTS: "1"
+        run: scripts/playwright-install.sh apps/web
       - run: bun run --filter @polaris/web build
       - run: bun run --filter @polaris/web test:lighthouse
       - if: ${{ always() }}
@@ -612,8 +615,9 @@ jobs:
             apps/*/node_modules
             packages/*/node_modules
           key: ${{ steps.node-modules.outputs.cache-primary-key }}
-      - run: bunx playwright install --with-deps chromium
-        working-directory: apps/web
+      - name: Install Chromium
+        timeout-minutes: 16
+        run: scripts/playwright-install.sh apps/web
       # A suite with no file in this shard does not run here: Playwright fails a run with no
       # test, and shard-coverage checks that every listed test ran in some shard.
       - name: Files of the shard
@@ -711,8 +715,11 @@ jobs:
             apps/*/node_modules
             packages/*/node_modules
           key: ${{ steps.node-modules.outputs.cache-primary-key }}
-      - run: bunx playwright install --with-deps chromium
-        working-directory: apps/catalog
+      - name: Install Chromium
+        # one attempt: the job timeout is shorter than two 450 s attempts; the retry runs only in the offline shards
+        env:
+          PLAYWRIGHT_INSTALL_ATTEMPTS: "1"
+        run: scripts/playwright-install.sh apps/catalog
       - run: bun run --filter @polaris/catalog test:e2e
         env:
           POLARIS_CATALOG_E2E: "1"
@@ -839,8 +846,10 @@ jobs:
             packages/*/node_modules
           key: ${{ steps.node-modules.outputs.cache-primary-key }}
       - name: Install Chromium
-        working-directory: apps/web
-        run: npx playwright install --with-deps chromium
+        # one attempt: the job timeout is shorter than two 450 s attempts; the retry runs only in the offline shards
+        env:
+          PLAYWRIGHT_INSTALL_ATTEMPTS: "1"
+        run: scripts/playwright-install.sh apps/web
       - name: e2e journeys (two production builds, a database per run)
         working-directory: apps/web
         run: npx playwright test --config playwright.e2e-real.config.ts
