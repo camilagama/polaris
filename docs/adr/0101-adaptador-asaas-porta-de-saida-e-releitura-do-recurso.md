@@ -4,8 +4,6 @@ status: accepted
 
 # Adaptador Asaas: porta de saída, releitura do recurso e período pelo vencimento original
 
-> O número deste ADR (0101) é o próximo livre na `main` e nos PRs abertos no momento da escrita (o 0100 é o último na `main`, o 0098 está no PR do Sentry no navegador e o 0099 está reservado ao backup); pode mudar se outro entrar antes.
-
 ## Contexto
 
 O núcleo de billing está pronto: oito fatos, caixa de entrada `billing_events`, `attachProvider`, reprocessamento e a rota `POST /webhooks/billing/:provider` ([ADR 0062](0062-ciclo-de-vida-do-billing-e-caixa-de-entrada.md), [ADR 0063](0063-rota-de-webhooks-de-billing.md), [ADR 0087](0087-referencia-do-provedor-em-todos-os-fatos-de-cobranca.md)). Faltavam a porta de saída (criar, cancelar, reembolsar e consultar no provedor) e o primeiro adaptador. O corte da Fase 7 (PR77, PR78 e Gate 7, aprovado em 19/10/2026) começa pelo Asaas, cartão recorrente (decisão D3). O desenho t088 e os spikes t092 no sandbox foram revisados por arquitetura, segurança e QA e consolidados em 19/10/2026; este ADR registra o que vale para o primeiro PR, que não tem migration.
@@ -103,8 +101,6 @@ O procedimento está no [runbook dos provedores de cobrança](../runbooks/billin
 - Os fixtures de teste seguem a **forma** do sandbox (nomes e tipos dos campos), com valores inventados; a comparação com entregas reais é do Gate 7.
 
 ## Emenda de 19/10/2026: teste grátis por pessoa, `sub_` guardado e valor dos fatos (migration 0084)
-
-> O número da migration (0084) é provisório: pode mudar no merge, se outra migration entrar antes.
 
 - **Teste grátis por pessoa.** O teste vale uma vez por pessoa, não só por organização. A tabela `billing_trial_claims` guarda a reserva por usuário (`user_id`, com cascata na exclusão da conta), a organização que a detém e as datas `reserved_at` e `consumed_at`. Só o papel de billing lê e escreve; ninguém apaga, exceto a cascata da conta. O tenant não lê nem escreve.
 - **Reserva.** `startTrial(organizationId, userId, now)` recebe o `userId` da sessão, no servidor, e faz tudo na mesma transação de billing: sem reserva, cria a reserva para a organização; reserva consumida, recusa com `trial_already_used`; reserva de outra organização, move só se essa organização já não está em `trial_setup` (checkout abandonado ou assinatura sem trial), senão recusa com `trial_in_progress`. A linha da reserva é a trava (`FOR UPDATE`): duas organizações da mesma pessoa ao mesmo tempo resultam em uma reserva só. Uma organização que já prepara o teste de outra pessoa (um co-dono) recusa um segundo com `trial_in_progress`: o teste em preparação é de quem reservou por último.
