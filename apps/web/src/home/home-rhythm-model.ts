@@ -357,6 +357,9 @@ function soldDaysCount(count: number): string {
 
 /** The count always names its window: the map and the weekday means do not span the same weeks. */
 function soldDaysText(count: number, weeks: number): string {
+  if (count === 0) {
+    return `Nenhum dia com venda nas últimas ${weeks} semanas`;
+  }
   return `${soldDaysCount(count)} nas últimas ${weeks} semanas`;
 }
 
@@ -377,9 +380,12 @@ export function rhythmSummary(view: RhythmView): string {
     return `${head}: nenhum dia com venda.`;
   }
   const insight = rhythmInsight(view);
+  const windowSold = view.weekdays.soldDays;
+  const windowCount =
+    windowSold === 0 ? "nenhum" : `sendo ${formatQuantity(windowSold)}`;
   const inWeekdayWindow =
     insight.kind === "few" && view.weeks > WEEKDAY_WINDOW_WEEKS
-      ? `, sendo ${formatQuantity(view.weekdays.soldDays)} nas últimas ${WEEKDAY_WINDOW_WEEKS} semanas`
+      ? `, ${windowCount} nas últimas ${WEEKDAY_WINDOW_WEEKS} semanas`
       : "";
   return `${head}: ${soldDaysCount(view.soldDays)}${inWeekdayWindow}. Melhor dia ${shortDate(best.date)}, ${formatBrlAmount(best.netSales)}. ${insight.text} ${PAST_UNTIL_YESTERDAY} A tabela dia a dia está no fim deste bloco.`;
 }

@@ -9,6 +9,7 @@ import {
   numeric,
   pgPolicy,
   pgTable,
+  smallint,
   text,
   timestamp,
   type AnyPgColumn,
@@ -110,6 +111,7 @@ export const sales = pgTable(
     organizationId: text("organization_id")
       .notNull()
       .references(() => organizations.id, { onDelete: "cascade" }),
+    paymentCount: smallint("payment_count").default(1).notNull(),
   },
   (table) => [
     check("sales_currency_brl", sql`${table.currency} = 'BRL'`),
@@ -117,6 +119,10 @@ export const sales = pgTable(
     check(
       "sales_adjustment_count_nonnegative",
       sql`${table.adjustmentCount} >= 0`
+    ),
+    check(
+      "sales_payment_count_allowed",
+      sql`${table.paymentCount} BETWEEN 1 AND 3`
     ),
     uniqueIndex("sales_organization_id_id_unique").on(
       table.organizationId,
@@ -352,9 +358,14 @@ export const salePayments = pgTable(
     processingFeePercentageSnapshot: numeric(
       "processing_fee_percentage_snapshot"
     ),
+    position: smallint("position").default(0).notNull(),
     saleId: uuid("sale_id").notNull(),
   },
   (table) => [
+    check(
+      "sale_payments_position_allowed",
+      sql`${table.position} BETWEEN 0 AND 2`
+    ),
     check(
       "sale_payments_method_allowed",
       sql`${table.method} IN ('pix', 'cash', 'credit_card', 'debit_card', 'bank_transfer', 'other')`
@@ -489,9 +500,10 @@ export const salePayments = pgTable(
       ],
       name: "sale_payments_profile_rule_snapshot_fk",
     }).onDelete("restrict"),
-    uniqueIndex("sale_payments_organization_sale_unique").on(
+    uniqueIndex("sale_payments_organization_sale_position_unique").on(
       table.organizationId,
-      table.saleId
+      table.saleId,
+      table.position
     ),
     pgPolicy("sale_payments_current_tenant_select", {
       for: "select",

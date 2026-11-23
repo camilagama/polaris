@@ -10,6 +10,7 @@ import {
   type ClippedElement,
   expectReflowFont,
   findClipped,
+  HIDDEN_WARNING_DETAIL,
   openReflowViewport,
   skipOutsideChromium,
 } from "./reflow";
@@ -539,7 +540,10 @@ async function sweep(
     // biome-ignore lint/performance/noAwaitInLoops: one root at a time, the page is shared
     const found = await findClipped(locator, {
       allowScroll: SCROLLS_ON_PURPOSE.map(({ selector }) => selector),
-      skip,
+      skip:
+        skip === undefined
+          ? HIDDEN_WARNING_DETAIL
+          : `${skip},${HIDDEN_WARNING_DETAIL}`,
     });
     measured += found.measured;
     seen.push(

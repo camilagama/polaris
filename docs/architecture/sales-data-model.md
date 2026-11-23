@@ -13,10 +13,10 @@ Este documento é a fonte de verdade para **como** a venda, o cancelamento, a de
 
 | Tabela | Papel |
 | --- | --- |
-| `sales` | Cabeçalho da venda confirmada: identificador, `command_id` (único por organização), contagem de itens e de ajustes, moeda e as quatro datas. |
+| `sales` | Cabeçalho da venda confirmada: identificador, `command_id` (único por organização), contagem de itens, de ajustes e de partes do pagamento (`payment_count`, de 1 a 3, padrão 1), moeda e as quatro datas. |
 | `sale_items` | Um item por linha: variante, produto, rótulo do produto, posição, quantidade, preço de tabela, preço cobrado e custo unitário do snapshot (nulo quando desconhecido). |
 | `sale_adjustments` | Descontos, acréscimos, frete e sobretaxa de pagamento, fixos ou percentuais, com posição. |
-| `sale_payments` | Exatamente um pagamento por venda: método, parcelas e modalidade, e o snapshot do perfil de pagamento (perfil, versão, regra, componentes e valores das taxas, prazo esperado e intenção de antecipação). |
+| `sale_payments` | De uma a três partes do pagamento por venda, com `position` de 0 a 2 (padrão 0; única por venda), que somam o total devido ([ADR 0107](../adr/0107-venda-paga-em-partes.md)). Cada parte: método, parcelas e modalidade, e o snapshot do perfil de pagamento (perfil, versão, regra, componentes e valores das taxas, prazo esperado e intenção de antecipação). |
 | `sale_customer_links` | Histórico versionado e somente de acréscimo da atribuição de cliente (`assign`, `reassign`, `unassign`); a atribuição atual é a versão mais alta. |
 | `sale_cancellations` | Registro do cancelamento total: motivo estruturado opcional, usuário e instante do servidor. |
 | `sale_returns` e `sale_return_items` | Registro de cada devolução e suas linhas, com quantidade devolvida e quantidade reposta separadas. |
@@ -48,7 +48,7 @@ A venda guarda quatro datas com papéis distintos. As regras de janela e de tole
 3. Valida produto vendável, calcula `occurred_on` e aplica a janela e a tolerância de futuro.
 4. Bloqueia, em ordem estável de produto e depois de saldo, as linhas necessárias, captura o custo médio de cada item (nulo quando desconhecido) e baixa o saldo sem permitir negativo.
 5. Grava cabeçalho, itens, ajustes, pagamento, movimentos `sale`, saldos e a auditoria.
-6. No commit, `check_sale_confirmation_complete` recusa a venda sem os itens e ajustes declarados, sem exatamente um pagamento igual ao total devido, sem o movimento correspondente a cada item, com movimento em data diferente da comercial, ou movimento `sale` sem venda.
+6. No commit, `check_sale_confirmation_complete` recusa a venda sem os itens e ajustes declarados, sem as partes de pagamento declaradas no cabeçalho (posições de 0 a `payment_count − 1`, cada uma acima de zero quando há mais de uma) somando o total devido, sem o movimento correspondente a cada item, com movimento em data diferente da comercial, ou movimento `sale` sem venda.
 
 ### Cancelar a venda (total)
 

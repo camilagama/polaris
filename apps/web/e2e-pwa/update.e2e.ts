@@ -13,6 +13,7 @@ import {
   fakeQueue,
   markPage,
   openControlled,
+  PUBLISHED,
   queueWith,
   runningVersion,
   setVisibility,
@@ -336,8 +337,9 @@ async function revertedOver2(
   await expect.poll(() => runningVersion(page), { timeout: 20_000 }).toBe("2");
   await markPage(page);
   // a revert is a new commit (another time in the worker): the browser sees another sw.js and installs it; the content
-  // is that of version 1, whose shell this device still keeps, and still it is new to the device
-  buildVersion("1", { publishedAt: Date.now() - HOUR, urgent });
+  // is that of version 1, whose shell this device still keeps, and still it is new to the device; its time is later
+  // than the one version 2 was published at
+  buildVersion("1", { publishedAt: PUBLISHED + HOUR, urgent });
   await checkForUpdate(page);
   await waitForWaiting(page);
 }

@@ -6,6 +6,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { SegmentedFilter } from "@/ui/segmented-filter";
 import { useConnectionOnline } from "../lib/browser-connection";
 import { useCurrentOrganization } from "../lib/current-organization";
 import { orpcClient } from "../lib/orpc";
@@ -22,7 +23,6 @@ import {
 import { CategoryForm } from "./category-form";
 import { CategoryList } from "./category-list";
 import { ActionFeedback, LoadErrorNotice } from "./products-page-parts";
-import { StatusNav } from "./screen-parts";
 import { ScreenTitle } from "../app-shell/screen-title";
 
 /**
@@ -247,7 +247,7 @@ export function CategoriesPage() {
         </p>
       </div>
       <ActionFeedback error={error} notice={notice} regionRef={feedbackRef} />
-      <StatusNav
+      <SegmentedFilter
         disabled={pendingAction !== null}
         label="Estado das categorias"
         onSelect={handleStatus}

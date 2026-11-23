@@ -1,8 +1,8 @@
-import { EARLIEST_EXPENSE_COMPETENCE } from "@polaris/domain/expenses/expense";
 import type {
   ExpenseCategoryReadModel,
   ExpenseCategoryTotalReadModel,
 } from "@polaris/contracts";
+import { EARLIEST_EXPENSE_COMPETENCE } from "@polaris/domain/expenses/expense";
 import { describe, expect, it } from "vitest";
 import { formatDate } from "@/ui/date-values";
 import {
@@ -15,13 +15,12 @@ import {
   formatMonthLabel,
   groupByExpenseGroup,
   isExpenseDraftChanged,
-  isMonthValue,
   type MoneyInputError,
+  moneyInputMessage,
+  moneyInputText,
   monthBounds,
   monthOfDay,
   moveMonthCursor,
-  moneyInputMessage,
-  moneyInputText,
   parseMoneyInput,
   percentsByLargestRemainder,
   shiftMonth,
@@ -150,15 +149,6 @@ describe("moneyInputText", () => {
 });
 
 describe("months", () => {
-  it("recognizes only YYYY-MM", () => {
-    expect(isMonthValue("2026-10")).toBe(true);
-    expect(isMonthValue("2026-13")).toBe(false);
-    expect(isMonthValue("2026-00")).toBe(false);
-    expect(isMonthValue("2026-1")).toBe(false);
-    expect(isMonthValue("")).toBe(false);
-    expect(isMonthValue("2026-10-01")).toBe(false);
-  });
-
   it("takes the month of a calendar day", () => {
     expect(monthOfDay("2026-10-13")).toBe("2026-10");
   });
@@ -178,6 +168,12 @@ describe("months", () => {
     expect(monthBounds("2000-02")?.to).toBe("2000-02-29");
     expect(monthBounds("2026-12")?.to).toBe("2026-12-31");
     expect(monthBounds("nope")).toBeNull();
+  });
+
+  it("accepts only YYYY-MM", () => {
+    for (const month of ["2026-13", "2026-00", "2026-1", "", "2026-10-01"]) {
+      expect(monthBounds(month)).toBeNull();
+    }
   });
 
   it("moves to the previous and next month across years", () => {

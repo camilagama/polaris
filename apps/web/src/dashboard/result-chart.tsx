@@ -29,6 +29,7 @@ import { IncompleteBadge } from "./result-cards";
 import { periodText } from "./result-period";
 import {
   axisMoney,
+  bestMark,
   bestRowText,
   chartNumber,
   costParts,
@@ -360,10 +361,8 @@ function Totals({
  * The numbers a drawing is given: the sales, the costs when they are sent (`null` on a day whose cost is unknown:
  * hatched, never a zero) and the note of a day. Memoized, so the layout is not redone.
  */
-function useDrawingData(
-  { costsSent, grouped, missing, rows }: ResultSeries,
-  thisYear: string
-) {
+function useDrawingData(series: ResultSeries, thisYear: string) {
+  const { costsSent, grouped, missing, rows } = series;
   const data = useMemo(
     () =>
       rows.map((row) => ({
@@ -394,19 +393,26 @@ function useDrawingData(
     };
   }, [costsSent, grouped, missing, rows]);
   const [hidden] = useHiddenValues();
+  const noteOf = useCallback(
+    (index: number) =>
+      [readingNote(rows[index], missing, thisYear), bestMark(series, index)]
+        .filter((part): part is string => part !== null)
+        .join(" · ") || null,
+    [missing, rows, series, thisYear]
+  );
   const note = useCallback(
     (index: number) => {
-      const text = readingNote(rows[index], missing, thisYear);
+      const text = noteOf(index);
       return text && hidden ? maskMoney(text) : text;
     },
-    [hidden, missing, rows, thisYear]
+    [hidden, noteOf]
   );
   const spoken = useCallback(
     (index: number) => {
-      const text = readingNote(rows[index], missing, thisYear);
+      const text = noteOf(index);
       return text && hidden ? maskMoney(text, MASKED_SPOKEN) : text;
     },
-    [hidden, missing, rows, thisYear]
+    [hidden, noteOf]
   );
   return { data, note, secondary, spoken };
 }

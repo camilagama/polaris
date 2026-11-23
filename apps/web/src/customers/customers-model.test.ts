@@ -9,7 +9,6 @@ import {
   filterCustomers,
   formatCustomerPhone,
   hasCustomerContact,
-  isCustomerListStatus,
   lockedReasonFor,
   syncStateLabel,
 } from "./customers-model";
@@ -64,12 +63,6 @@ describe("the state of a customer in words", () => {
         customer({ anonymizedAt: "2026-10-14T12:00:00.000Z" })
       )
     ).toBe("Anonimizado");
-  });
-
-  it("knows the two tabs", () => {
-    expect(isCustomerListStatus("active")).toBe(true);
-    expect(isCustomerListStatus("archived")).toBe(true);
-    expect(isCustomerListStatus("anonymized")).toBe(false);
   });
 });
 

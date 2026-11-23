@@ -8,6 +8,7 @@ import {
   assertNothingClipped,
   expectReflowFont,
   findClipped,
+  HIDDEN_WARNING_DETAIL,
   openReflowViewport,
   type ReflowPointer,
   reflowTest,
@@ -83,6 +84,36 @@ test("o corte dentro de um elemento que rola de propósito ainda reprova, e o pr
       allowScroll: ['[role="tablist"]'],
     })
   ).rejects.toThrow(CUT_TEXT);
+});
+
+test("um texto com visibility:hidden que ninguém pulou reprova, e o detalhe escondido do aviso do KPI só passa pelo skip", async ({
+  page,
+}) => {
+  const box = "display:block;width:60px;overflow:hidden;white-space:nowrap";
+  await show(
+    page,
+    `<div id="root"><span id="stray" style="${box};visibility:hidden">${LONG}</span><span id="detail" data-kpi-warning-detail="" aria-hidden="true" style="${box};visibility:hidden"><span style="display:inline-block">${LONG}</span></span></div>`
+  );
+  const root = page.locator("#root");
+  const all = await findClipped(root);
+  expect(all.offenders.map(({ selector }) => selector)).toEqual([
+    "div#root > span#stray",
+    "div#root > span#detail",
+  ]);
+  const skipped = await findClipped(root, { skip: HIDDEN_WARNING_DETAIL });
+  expect(skipped.offenders.map(({ selector }) => selector)).toEqual([
+    "div#root > span#stray",
+  ]);
+  await expect(
+    assertNothingClipped(root, { skip: HIDDEN_WARNING_DETAIL })
+  ).rejects.toThrow(CUT_TEXT);
+  await page.locator("#stray").evaluate((element) => {
+    element.style.visibility = "visible";
+    element.style.whiteSpace = "normal";
+    element.style.overflowWrap = "anywhere";
+  });
+  await assertNothingClipped(root, { skip: HIDDEN_WARNING_DETAIL });
+  await expect(assertNothingClipped(root)).rejects.toThrow(CUT_TEXT);
 });
 
 test("reticências que escondem texto reprovam, e as que não têm o que esconder passam", async ({

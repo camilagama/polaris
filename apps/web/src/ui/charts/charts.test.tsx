@@ -32,6 +32,7 @@ const READING = /<p[^>]*data-chart-reading=""[^>]*>(.*?)<\/p>/;
 const LEGEND = /<ul[^>]*data-chart-legend[\s\S]*?<\/ul>/;
 const note = (index: number) =>
   index === 6 ? "inclui R$ 100,00 de despesas" : null;
+const bestOnTheLastDay = (index: number) => (index === 6 ? "melhor dia" : null);
 const plain = (value: number) => `R$ ${String(value).replace(".", ",")}`;
 const OKLCH_OR_HEX = /oklch\(|#[0-9a-fA-F]{3,8}\b|rgba?\(|hsla?\(/;
 /** The text of a piece of markup, read tag by tag (not by a regular expression that strips them: it can leave a `<script`). */
@@ -84,6 +85,32 @@ describe("AreaChart", () => {
     const reading = markup.match(READING)?.[0] ?? "";
     expect(text(reading)).toBe("23/10 R$ 520,00");
     expect(reading).not.toContain("aria-live");
+  });
+
+  it("says the note of the day in the reading and to the keyboard control, with no second series", () => {
+    const noted = html(
+      <AreaChart
+        data={WEEK}
+        formatValue={money}
+        label="x"
+        readingNote={bestOnTheLastDay}
+        spokenNote={bestOnTheLastDay}
+      />
+    );
+    expect(text(noted.match(READING)?.[0] ?? "")).toBe(
+      "23/10 R$ 520,00 · melhor dia"
+    );
+    expect(noted.match(RANGE)?.[0]).toContain(
+      'aria-valuetext="23/10: R$ 520,00, melhor dia"'
+    );
+    expect(text(markup.match(READING)?.[0] ?? "")).not.toContain("melhor");
+  });
+
+  it("writes the amounts of the reading in Geist Mono, as the amount component does", () => {
+    const reading = markup.match(READING)?.[0] ?? "";
+    expect(reading).toContain(
+      'class="whitespace-nowrap font-mono tabular-nums"'
+    );
   });
 
   it("names the keyboard control as the caller says", () => {
