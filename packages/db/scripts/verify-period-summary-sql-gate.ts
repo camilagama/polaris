@@ -126,7 +126,7 @@ const COMMAND_TRIGGERS: [string, string][] = [
 type AdminPool = ReturnType<typeof createDatabase>["pool"];
 type RuntimeDb = ReturnType<typeof createDatabase>["db"];
 type Adjustments = Parameters<typeof confirmSale>[2]["adjustments"];
-type Payment = Parameters<typeof confirmSale>[2]["payment"];
+type Payment = NonNullable<Parameters<typeof confirmSale>[2]["payment"]>;
 
 interface Product {
   productId: string;

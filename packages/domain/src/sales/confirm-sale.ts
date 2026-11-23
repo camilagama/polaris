@@ -24,6 +24,8 @@ import {
 
 export const CONFIRM_SALE_COMMAND_VERSION = 1;
 
+const MAX_SALE_PAYMENT_PARTS = 2;
+
 /** Tolerated difference between a device clock and the server clock. */
 export const MAX_FUTURE_CLOCK_SKEW_MS = 5 * 60 * 1000;
 const MIN_INSTANT_YEAR = 1900;
@@ -50,6 +52,12 @@ export interface ConfirmSalePaymentProfileSelection {
   id: string;
 }
 
+/** One part of a split payment: its own amount, method, plan and profile. */
+export interface ConfirmSalePaymentPartInput extends SalePaymentInput {
+  amount: string;
+  paymentProfile: ConfirmSalePaymentProfileSelection | null;
+}
+
 export interface ConfirmSaleCommandInput {
   adjustments: readonly SaleAdjustmentInput[];
   /** Local creation evidence for offline commands; never an authoritative time. */
@@ -59,8 +67,16 @@ export interface ConfirmSaleCommandInput {
   items: readonly ConfirmSaleItemInput[];
   /** Commercial time of the sale, as an instant with offset. */
   occurredAt: string;
-  payment: SalePaymentInput;
-  paymentProfile: ConfirmSalePaymentProfileSelection | null;
+  /**
+   * Exactly one of `payment` or `payments` is present. The first form pays the
+   * whole total with one method and takes its profile from `paymentProfile`;
+   * the second carries the profile inside each part and leaves
+   * `paymentProfile` absent. Repository code extends this interface, which
+   * rules out a discriminated union, so the runtime check is the guard.
+   */
+  payment?: SalePaymentInput;
+  paymentProfile?: ConfirmSalePaymentProfileSelection | null;
+  payments?: readonly ConfirmSalePaymentPartInput[];
 }
 
 export interface NormalizedConfirmSaleItem {
@@ -71,6 +87,11 @@ export interface NormalizedConfirmSaleItem {
   variantId: string;
 }
 
+export interface NormalizedConfirmSalePart {
+  payment: SalePaymentSnapshot;
+  paymentProfile: ConfirmSalePaymentProfileSelection | null;
+}
+
 export interface NormalizedConfirmSaleCommand {
   adjustments: readonly NormalizedSaleAdjustment[];
   calculation: SaleAdjustmentCalculation;
@@ -78,8 +99,11 @@ export interface NormalizedConfirmSaleCommand {
   commandId: string;
   items: readonly NormalizedConfirmSaleItem[];
   occurredAt: Date;
+  /** The first part, kept for readers that still handle a single payment. */
   payment: SalePaymentSnapshot;
   paymentProfile: ConfirmSalePaymentProfileSelection | null;
+  /** Parts in the order the operator typed them; amounts sum to the total due. */
+  payments: readonly NormalizedConfirmSalePart[];
 }
 
 /** Server-resolved facts for each requested item, keyed by position. */
@@ -91,10 +115,17 @@ export interface ResolvedConfirmSaleItem {
   unitCost: string | null;
 }
 
-export interface ConfirmedSaleComposition {
-  calculation: SaleAdjustmentCalculation;
+export interface ConfirmedSalePart {
   payment: SalePaymentSnapshot;
   paymentProfile: SalePaymentProfileSnapshot;
+}
+
+export interface ConfirmedSaleComposition {
+  calculation: SaleAdjustmentCalculation;
+  /** The first part, kept for readers that still handle a single payment. */
+  payment: SalePaymentSnapshot;
+  paymentProfile: SalePaymentProfileSnapshot;
+  payments: readonly ConfirmedSalePart[];
   sale: ConfirmedSaleSnapshot;
 }
 
@@ -114,6 +145,16 @@ export class SaleOccurredInFutureError extends Error {
   constructor() {
     super("sale_occurred_in_future");
     this.name = "SaleOccurredInFutureError";
+  }
+}
+
+/** The parts of a split payment do not add up to the sale's total due. */
+export class SalePaymentSplitMismatchError extends Error {
+  readonly code = "sale_payment_split_mismatch";
+
+  constructor() {
+    super("sale_payment_split_mismatch");
+    this.name = "SalePaymentSplitMismatchError";
   }
 }
 
@@ -215,6 +256,73 @@ function normalizeProfileSelection(
   return { expectedVersion: value.expectedVersion, id: value.id.toLowerCase() };
 }
 
+function normalizePartAmount(value: unknown): Money {
+  if (typeof value !== "string") {
+    throw new InvalidConfirmSaleCommandError();
+  }
+  try {
+    return Money.from(normalizeBrlAmount(value));
+  } catch (cause) {
+    // biome-ignore lint/style/useErrorCause: Biome cannot follow the custom error constructor.
+    throw new InvalidConfirmSaleCommandError({ cause });
+  }
+}
+
+function normalizePaymentParts(
+  input: ConfirmSaleCommandInput,
+  totalDue: string
+): readonly NormalizedConfirmSalePart[] {
+  const hasPayment = input.payment !== undefined;
+  const hasParts = input.payments !== undefined;
+  if (hasPayment === hasParts) {
+    throw new InvalidConfirmSaleCommandError();
+  }
+
+  if (!hasParts) {
+    return [
+      {
+        payment: normalizeSalePayment(
+          input.payment as SalePaymentInput,
+          totalDue
+        ),
+        paymentProfile: normalizeProfileSelection(input.paymentProfile),
+      },
+    ];
+  }
+
+  const parts = input.payments;
+  if (
+    input.paymentProfile !== undefined ||
+    !Array.isArray(parts) ||
+    parts.length < 1 ||
+    parts.length > MAX_SALE_PAYMENT_PARTS
+  ) {
+    throw new InvalidConfirmSaleCommandError();
+  }
+  const amounts = parts.map((part) => {
+    if (!part || typeof part !== "object") {
+      throw new InvalidConfirmSaleCommandError();
+    }
+    const amount = normalizePartAmount(part.amount);
+    if (parts.length > 1 && amount.minorUnits <= 0n) {
+      throw new InvalidConfirmSaleCommandError();
+    }
+    return amount;
+  });
+  const normalized = parts.map((part, index) => ({
+    payment: normalizeSalePayment(part, (amounts[index] as Money).toString()),
+    paymentProfile: normalizeProfileSelection(part.paymentProfile),
+  }));
+  const sum = amounts.reduce(
+    (total, amount) => total.add(amount),
+    Money.fromMinorUnits(0n)
+  );
+  if (sum.minorUnits !== Money.from(totalDue).minorUnits) {
+    throw new SalePaymentSplitMismatchError();
+  }
+  return normalized;
+}
+
 /**
  * Validates and prices the confirmSale command without touching the database.
  * Nothing here is persisted: the repository combines it with server-resolved
@@ -251,13 +359,13 @@ export function normalizeConfirmSaleCommand(
       ? null
       : parseInstant(input.recordedAt);
   const items = input.items.map(normalizeItem);
-  const paymentProfile = normalizeProfileSelection(input.paymentProfile);
 
   const calculation = calculateSaleAdjustments({
     adjustments: input.adjustments,
     items,
   });
-  const payment = normalizeSalePayment(input.payment, calculation.totalDue);
+  const payments = normalizePaymentParts(input, calculation.totalDue);
+  const [firstPart] = payments as [NormalizedConfirmSalePart];
 
   return {
     adjustments: calculation.adjustments,
@@ -266,21 +374,34 @@ export function normalizeConfirmSaleCommand(
     commandId: input.commandId.toLowerCase(),
     items,
     occurredAt,
-    payment,
-    paymentProfile,
+    payment: firstPart.payment,
+    paymentProfile: firstPart.paymentProfile,
+    payments,
   };
 }
 
 /**
  * Combines the priced command with server-resolved facts. A missing profile or
  * a profile without an exact rule keeps fees and settlement time unknown.
+ * `profiles` is the single profile of a one-part sale, or one entry per part,
+ * in the same order as `command.payments`; the fees of each part are computed
+ * on that part's amount, so a fixed fee counts once per part.
  */
 export function composeConfirmedSale(
   command: NormalizedConfirmSaleCommand,
   resolvedItems: readonly ResolvedConfirmSaleItem[],
-  profile: PaymentProfileForSale | null
+  profiles:
+    | PaymentProfileForSale
+    | null
+    | readonly (PaymentProfileForSale | null)[]
 ): ConfirmedSaleComposition {
   if (resolvedItems.length !== command.items.length) {
+    throw new InvalidConfirmSaleCommandError();
+  }
+  const profilesByPart = Array.isArray(profiles)
+    ? (profiles as readonly (PaymentProfileForSale | null)[])
+    : [profiles as PaymentProfileForSale | null];
+  if (profilesByPart.length !== command.payments.length) {
     throw new InvalidConfirmSaleCommandError();
   }
   const resolvedByPosition = new Map(
@@ -304,21 +425,26 @@ export function composeConfirmedSale(
     }),
   });
 
-  const paymentProfile = snapshotPaymentProfileForSale(
-    command.calculation.totalDue,
-    {
-      anticipationRequested: command.payment.anticipationRequested,
-      installmentPlan: command.payment.installmentPlan,
-      installments: command.payment.installments,
-      method: command.payment.method,
-    },
-    profile
-  );
+  const payments = command.payments.map(({ payment }, index) => ({
+    payment,
+    paymentProfile: snapshotPaymentProfileForSale(
+      payment.amount,
+      {
+        anticipationRequested: payment.anticipationRequested,
+        installmentPlan: payment.installmentPlan,
+        installments: payment.installments,
+        method: payment.method,
+      },
+      profilesByPart[index] as PaymentProfileForSale | null
+    ),
+  }));
+  const [firstPart] = payments as [ConfirmedSalePart];
 
   return {
     calculation: command.calculation,
-    payment: command.payment,
-    paymentProfile,
+    payment: firstPart.payment,
+    paymentProfile: firstPart.paymentProfile,
+    payments,
     sale,
   };
 }
