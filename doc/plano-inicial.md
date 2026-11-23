@@ -2246,11 +2246,11 @@ Métodos:
 
 
 
-Um pagamento por venda na V1.
+De uma a três partes de pagamento por venda, que somam o total devido (decisão do usuário de 22/11/2026: até 2 partes na tela e 3 no banco, perfil por parte, também offline; [ADR 0107](../docs/adr/0107-venda-paga-em-partes.md)). A V1 começou com um pagamento por venda.
 
 Critérios V1 confirmados:
 
-- valor do pagamento igual ao total devido, sem parcial ou saldo pendente;
+- soma das partes igual ao total devido, sem parcial ou saldo pendente (com mais de uma parte, cada uma acima de zero);
 - dinheiro registra o valor aplicado à venda; dinheiro entregue/troco não é capturado;
 - cartão de crédito exige parcelas inteiras positivas, sem teto adicional além do `integer` do PostgreSQL; outros métodos não têm parcelas;
 - o método é um registro comercial e não comprova liquidação bancária.
