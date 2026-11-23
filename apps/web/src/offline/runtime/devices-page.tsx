@@ -8,6 +8,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Alert, AlertDescription } from "@/ui/alert";
 import { Button, buttonVariants } from "@/ui/button";
 import { Card } from "@/ui/card";
+import { EmptyState } from "@/ui/empty-state";
 import { orpcClient } from "../../lib/orpc";
 import { signInPath } from "../../lib/sign-in-path";
 import { loadAuthMethods } from "../../sign-in/sign-in-model";
@@ -17,7 +18,8 @@ import {
   type DeviceRow,
   deviceRows,
   devicesLoadError,
-  EMPTY_TEXT,
+  EMPTY_SUPPORT,
+  EMPTY_TITLE,
   LOADING_TEXT,
   OFFLINE_TEXT,
   RECOGNIZING_PATIENCE_MS,
@@ -322,9 +324,7 @@ function ListSection({
         </Alert>
       ) : null}
       {devices && rows.length === 0 && !loadFailed ? (
-        <Card className="items-center px-(--card-spacing) text-center">
-          <p className="text-muted-foreground">{EMPTY_TEXT}</p>
-        </Card>
+        <EmptyState afterRead support={EMPTY_SUPPORT} title={EMPTY_TITLE} />
       ) : null}
       {devices && recognition && !sessionGone ? (
         <RecognitionLine view={recognition} />
