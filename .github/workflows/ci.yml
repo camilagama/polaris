@@ -461,7 +461,7 @@ jobs:
           key: ${{ steps.node-modules.outputs.cache-primary-key }}
       # the Chromium of the Playwright in bun.lock, the same build as the one in the image of the visual checks
       - name: Install Chromium
-        # one attempt: the job timeout is shorter than two 450 s attempts; the retry runs only in the offline shards (t1713-r3)
+        # one attempt: the job timeout is shorter than two 450 s attempts; the retry runs only in the offline shards
         env:
           PLAYWRIGHT_INSTALL_ATTEMPTS: "1"
         run: scripts/playwright-install.sh apps/web
@@ -716,7 +716,7 @@ jobs:
             packages/*/node_modules
           key: ${{ steps.node-modules.outputs.cache-primary-key }}
       - name: Install Chromium
-        # one attempt: the job timeout is shorter than two 450 s attempts; the retry runs only in the offline shards (t1713-r3)
+        # one attempt: the job timeout is shorter than two 450 s attempts; the retry runs only in the offline shards
         env:
           PLAYWRIGHT_INSTALL_ATTEMPTS: "1"
         run: scripts/playwright-install.sh apps/catalog
@@ -846,7 +846,7 @@ jobs:
             packages/*/node_modules
           key: ${{ steps.node-modules.outputs.cache-primary-key }}
       - name: Install Chromium
-        # one attempt: the job timeout is shorter than two 450 s attempts; the retry runs only in the offline shards (t1713-r3)
+        # one attempt: the job timeout is shorter than two 450 s attempts; the retry runs only in the offline shards
         env:
           PLAYWRIGHT_INSTALL_ATTEMPTS: "1"
         run: scripts/playwright-install.sh apps/web
