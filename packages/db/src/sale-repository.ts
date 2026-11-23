@@ -23,7 +23,7 @@ import {
   assertSaleOccurredWithinWindow,
   retroactiveLimitDaysForRole,
 } from "@polaris/domain/sales/sale-dates";
-import { and, asc, eq, inArray, isNull } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull } from "drizzle-orm";
 import { recordSaleStockMovement } from "./inventory-repository";
 import { assertVariantsOperational } from "./operational-selection-repository";
 import { organizations } from "./schema/organization";
@@ -122,6 +122,28 @@ function samePercentage(left: string | null, right: string | null): boolean {
     : Percentage.from(left).toString() === Percentage.from(right).toString();
 }
 
+/**
+ * Main part of a sale: highest amount, ties broken by the smaller id (UUIDv7,
+ * so the part that entered first). Independent of the order of the rows.
+ */
+export function mainPayment<Row extends { amount: string; id: string }>(
+  rows: readonly Row[]
+): Row | undefined {
+  let main: Row | undefined;
+  for (const row of rows) {
+    if (main === undefined) {
+      main = row;
+      continue;
+    }
+    const rowUnits = Money.from(row.amount).minorUnits;
+    const mainUnits = Money.from(main.amount).minorUnits;
+    if (rowUnits > mainUnits || (rowUnits === mainUnits && row.id < main.id)) {
+      main = row;
+    }
+  }
+  return main;
+}
+
 export async function readConfirmedSale(
   transaction: TenantRequestTransaction,
   identity: TenantRequestIdentity,
@@ -147,7 +169,7 @@ export async function readConfirmedSale(
       )
     )
     .orderBy(asc(saleAdjustments.position));
-  const [payment] = await transaction
+  const paymentRows = await transaction
     .select()
     .from(salePayments)
     .where(
@@ -156,7 +178,8 @@ export async function readConfirmedSale(
         eq(salePayments.saleId, header.id)
       )
     )
-    .limit(1);
+    .orderBy(desc(salePayments.amount), asc(salePayments.id));
+  const payment = mainPayment(paymentRows);
   if (!payment) {
     throw new Error("confirmed_sale_payment_missing");
   }

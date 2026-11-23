@@ -1,5 +1,5 @@
 import TriangleAlertIcon from "lucide-react/dist/esm/icons/triangle-alert";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { OnDemandSparkline } from "@/ui/charts/on-demand";
 import {
   DeltaChip,
@@ -91,6 +91,9 @@ function useReading(): [
   return [index, setIndex, clear];
 }
 
+/** Leitor de tela não anuncia texto que muda no mesmo quadro em que a região vira `aria-live`: o texto volta depois desta espera. */
+const LIVE_RESTORE_MS = 100;
+
 function TodayTile({
   figures,
   still,
@@ -107,6 +110,19 @@ function TodayTile({
   );
   const [index, setIndex, clear] = useReading();
   const [keyboard, setKeyboard] = useState(false);
+  const restore = useRef<number | undefined>(undefined);
+  const cancelRestore = useCallback(() => {
+    window.clearTimeout(restore.current);
+    restore.current = undefined;
+  }, []);
+  useEffect(() => cancelRestore, [cancelRestore]);
+  const read = useCallback(
+    (next: number | null) => {
+      cancelRestore();
+      setIndex(next);
+    },
+    [cancelRestore, setIndex]
+  );
   const last = series.length - 1;
   const day = series[index ?? last]?.date ?? figures.today;
   const reading = dayReading(before, month, day, figures.today);
@@ -119,10 +135,14 @@ function TodayTile({
     max: last,
     onBlur: () => {
       setKeyboard(false);
-      clear();
+      cancelRestore();
+      restore.current = window.setTimeout(clear, LIVE_RESTORE_MS);
     },
-    onChange: setIndex,
-    onFocus: () => setKeyboard(true),
+    onChange: read,
+    onFocus: () => {
+      cancelRestore();
+      setKeyboard(true);
+    },
     value: index ?? last,
     valueText: spoken(reading.date || "Hoje", reading, hidden),
   };
@@ -141,7 +161,7 @@ function TodayTile({
           color="var(--chart-sales)"
           domain="zero"
           height={SPARK_HEIGHT}
-          onRead={setIndex}
+          onRead={read}
           readIndex={index}
           still={still}
           values={values}
@@ -157,7 +177,7 @@ function TodayTile({
 }
 
 /** The sign of an estimate that is not whole, always in sight on the support line of the Resultado. */
-function IncompleteSign() {
+export function IncompleteSign() {
   return (
     <span
       className="inline-flex items-center gap-1 font-medium text-warning"
@@ -170,7 +190,7 @@ function IncompleteSign() {
 }
 
 /** What the sign adds, after the rest of the line: the cause when no cost is known, else the days with no cost, when they fit the words. */
-function incompleteDetail({
+export function incompleteDetail({
   missing,
   noCost,
 }: {
@@ -559,8 +579,7 @@ export const NO_CONNECTION_NOTE = "Sem conexão";
 
 /**
  * The four tiles without a connection and without a copy on the device (§ 7.4): in their places and with the height
- * of a tile without the cost warning, each with its name, "—" (an unknown value is never a zero) and "Sem conexão". Only the
- * Result tile grows, by the line of its cost warning, when the figures come.
+ * of a tile without the cost warning, each with its name, "—" (an unknown value is never a zero) and "Sem conexão".
  */
 export function NoFiguresCards({ today }: { today: string }) {
   const name = monthTitle(today).toLowerCase();
@@ -605,7 +624,7 @@ export function NoFiguresCards({ today }: { today: string }) {
 
 /**
  * The four tiles while the figures are read: the shape of `KpiCards`, each with the rows it has with figures, so the
- * tiles that come take the same places (the Result tile, with a cost warning, adds its line).
+ * tiles that come take the same places.
  */
 export function KpiCardsSkeleton() {
   return (

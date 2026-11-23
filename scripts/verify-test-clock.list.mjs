@@ -7,11 +7,6 @@ const BEFORE_THE_RULE =
   "anterior à checagem; ao mexer neste teste, fixe o relógio e derive as datas dele";
 
 export const TEST_CLOCK_LIST = {
-  "apps/web/e2e-pwa/support.ts": { count: 1, reason: BEFORE_THE_RULE },
-  "apps/web/e2e-pwa/update-moments.e2e.ts": {
-    count: 1,
-    reason: BEFORE_THE_RULE,
-  },
   "apps/web/e2e-pwa/update.e2e.ts": { count: 1, reason: BEFORE_THE_RULE },
   "apps/web/e2e-real/global-setup.ts": { count: 1, reason: BEFORE_THE_RULE },
   "apps/web/e2e-real/harness/relogio.e2e.ts": {
@@ -35,7 +30,6 @@ export const TEST_CLOCK_LIST = {
     count: 1,
     reason: BEFORE_THE_RULE,
   },
-  "apps/web/e2e/home/shared.ts": { count: 1, reason: BEFORE_THE_RULE },
   "apps/web/e2e/offline-runtime-api.e2e.ts": {
     count: 1,
     reason: BEFORE_THE_RULE,

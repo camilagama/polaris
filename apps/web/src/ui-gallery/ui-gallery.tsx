@@ -95,6 +95,7 @@ import {
 } from "@/ui/field";
 import { Figure } from "@/ui/figure";
 import { FilterBar, type FilterField, type FilterRule } from "@/ui/filter-bar";
+import { BlockHeader } from "@/ui/block-header";
 import { HelpTip } from "@/ui/help-tip";
 import { HideValuesButton, MoneyText } from "@/ui/hidden-values";
 import { Input } from "@/ui/input";
@@ -155,6 +156,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/ui/table";
+import { SegmentedFilter } from "@/ui/segmented-filter";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/ui/tabs";
 import { Textarea } from "@/ui/textarea";
 import { TextLink } from "@/ui/text-link";
@@ -215,6 +217,22 @@ const LONG_LIST = Array.from(
   { length: 40 },
   (_, index) => `Movimento de estoque ${index + 1}`
 );
+
+/** The state filter of a list: the strip of the tabs with no panel; the list below is the screen's. */
+function GallerySegmentedFilter() {
+  const [state, setState] = useState<"active" | "archived">("active");
+  return (
+    <SegmentedFilter
+      label="Estado dos produtos"
+      onSelect={setState}
+      options={[
+        ["active", "Ativos"],
+        ["archived", "Arquivados"],
+      ]}
+      value={state}
+    />
+  );
+}
 
 /** The search box of the lists, with text so that "Limpar busca" shows; it empties and gives the focus back. */
 function GallerySearch() {
@@ -1532,6 +1550,10 @@ export function UiGallery() {
             </Tabs>
           </Section>
 
+          <Section title="Filtro segmentado">
+            <GallerySegmentedFilter />
+          </Section>
+
           <Section title="Número principal dos cartões">
             <p className="text-support">
               O valor do cartão aparece pronto e, quando muda (outro período,
@@ -1566,27 +1588,31 @@ export function UiGallery() {
                   role="region"
                 >
                   <CardFrameHeader>
-                    <div className="flex min-w-0 items-center gap-1">
-                      <h3
-                        className="flex items-center gap-2 text-section"
-                        id={`gallery-frame-${icon}-${foot}`}
-                      >
-                        {icon ? (
-                          <ChartColumnIcon
-                            aria-hidden="true"
-                            className="size-4 shrink-0"
-                          />
-                        ) : null}
-                        {foot ? "Com pé" : "Sem pé"}
-                        {icon ? ", com ícone" : ", sem ícone"}
-                      </h3>
-                      <HelpTip about="Cartão com moldura">
-                        O (i) fica ao lado do título, na moldura.
-                      </HelpTip>
-                    </div>
-                    <p className="text-muted-foreground text-support">
-                      Ação de cabeçalho
-                    </p>
+                    <BlockHeader
+                      aside={
+                        <p className="text-muted-foreground text-support">
+                          Ação de cabeçalho
+                        </p>
+                      }
+                      help={{
+                        about: "Cartão com moldura",
+                        text: "O (i) fica ao lado do título, na moldura.",
+                      }}
+                      id={`gallery-frame-${icon}-${foot}`}
+                      level={3}
+                      title={
+                        <span className="flex items-center gap-2">
+                          {icon ? (
+                            <ChartColumnIcon
+                              aria-hidden="true"
+                              className="size-4 shrink-0"
+                            />
+                          ) : null}
+                          {foot ? "Com pé" : "Sem pé"}
+                          {icon ? ", com ícone" : ", sem ícone"}
+                        </span>
+                      }
+                    />
                   </CardFrameHeader>
                   <CardFramePanel>
                     <p className="font-semibold text-value-lg tabular-nums tracking-[-0.035em]">
