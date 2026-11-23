@@ -19,6 +19,10 @@ Registro retroativo das decisões do PR38 e do PR43, confirmadas na revisão do 
 - **Erros estáveis.** Erros 400, 404 e 409 carregam o código de domínio em `data.reason`; erros de autorização e inesperados não expõem motivo.
 - **Sem outbox no servidor nesta etapa.** A confirmação não cria intents de outbox; o outbox transacional pertence à Fase 11.
 
+## Emenda de 22/11/2026: venda paga em partes
+
+O [ADR 0107](0107-venda-paga-em-partes.md) troca, no gatilho `check_sale_confirmation_complete`, a exigência de exatamente um pagamento igual ao total devido pela de uma a três partes declaradas no cabeçalho (`sales.payment_count`), nas posições 0 a `payment_count − 1`, que somam o total devido e, com mais de uma parte, valem cada uma mais que zero. A recusa continua com o nome `sales_confirmation_payment_complete`, e uma parte acrescentada depois do commit continua recusada. O resto desta decisão não muda.
+
 ## Consequências
 
 - A venda parcial é impossível mesmo com permissão de `INSERT`, e a prova está nos gates PostgreSQL (falha injetada em cada ponto, corridas do mesmo `commandId`).
