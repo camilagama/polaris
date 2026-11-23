@@ -88,75 +88,31 @@ describe("the screen of a tab knows whether its tab is the open one", () => {
   });
 });
 
-const NAME_OF_ROW = /<span[^>]*data-tabs-group="Da loja"[^>]*>/;
-const ID_ATTRIBUTE = /id="([^"]+)"/;
-
-describe("the tabs in named rows", () => {
-  const GROUPS = [
-    { label: "Da loja", values: ["produtos"] },
-    { label: "Da conta", values: ["outra"] },
-  ];
-
-  function rows(groups: typeof GROUPS) {
+describe("the strip of tabs", () => {
+  function draw(panels: typeof PANELS) {
     address.search = "";
     return renderToStaticMarkup(
       <ScreenTabs
-        groups={groups}
         label="Abas"
-        panels={PANELS}
+        panels={panels}
         screen="products"
         title="Produtos"
       />
     );
   }
 
-  it("writes the name of each row that has a tab, and none for a row with none", () => {
-    const html = rows(GROUPS);
-    expect(html).toContain('data-tabs-group="Da loja"');
-    expect(html).not.toContain('data-tabs-group="Da conta"');
-    expect(html.split("data-tabs-group=")).toHaveLength(2);
-  });
-
-  it("leaves the name of a row readable and points each tab of the row at it", () => {
-    const html = rows([
-      { label: "Da loja", values: ["produtos"] },
-      { label: "Da conta", values: ["categorias"] },
-    ]);
-    const name = html.match(NAME_OF_ROW)?.[0] ?? "";
-    expect(name).not.toContain("aria-hidden");
-    expect(html).toContain('role="none"');
-    expect(html).not.toContain('role="group"');
-    expect(html).not.toContain("<h2");
-    const nameId = name.match(ID_ATTRIBUTE)?.[1] ?? "";
-    expect(nameId).not.toBe("");
-    const describedBy = (tabName: string) =>
-      html.match(
-        new RegExp(`<button[^>]*aria-describedby="([^"]+)"[^>]*>${tabName}<`)
-      )?.[1];
-    expect(describedBy("Produtos")).toBe(nameId);
-    const other = describedBy("Categorias") ?? "";
-    expect(other).not.toBe("");
-    expect(other).not.toBe(nameId);
-    expect(html).toContain(`id="${other}"`);
-    expect(html.indexOf('data-tabs-group="Da loja"')).toBeLessThan(
-      html.indexOf(">Produtos</button>")
-    );
-    expect(html.indexOf(">Produtos</button>")).toBeLessThan(
-      html.indexOf('data-tabs-group="Da conta"')
-    );
-  });
-
-  it("gives the tabs of a single strip no description", () => {
-    address.search = "";
-    const html = renderToStaticMarkup(
-      <ScreenTabs
-        label="Abas"
-        panels={PANELS}
-        screen="products"
-        title="Produtos"
-      />
-    );
+  it("draws one strip, with no name of a row and no description on its tabs", () => {
+    const html = draw(PANELS);
+    expect(html.split("<button")).toHaveLength(3);
+    expect(html).not.toContain("data-tabs-group");
     expect(html).not.toContain("aria-describedby");
+  });
+
+  it("draws no strip, and the title once, for a screen with one tab", () => {
+    const html = draw(PANELS.slice(0, 1));
+    expect(html).not.toContain("<button");
+    expect(html.split("<h1")).toHaveLength(2);
+    expect(stateOf(html, "produtos")).toBe("active");
   });
 });
 

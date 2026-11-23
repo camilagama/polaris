@@ -1,4 +1,3 @@
-import { hasCapabilityForRole } from "@polaris/domain/authorization/capabilities";
 import KeyRoundIcon from "lucide-react/dist/esm/icons/key-round";
 import {
   type FormEvent,
@@ -13,18 +12,17 @@ import { cn } from "@/lib/utils";
 import { Button, buttonVariants } from "@/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/ui/card";
 import { Separator } from "@/ui/separator";
-import { addressWithTab, tabHref } from "../app-shell/navigation-model";
+import {
+  ACCOUNT_HREF,
+  ACCOUNT_LABEL,
+  tabHref,
+} from "../app-shell/navigation-model";
 import { NotFoundPage } from "../app-shell/not-found-page";
 import { ScreenTitle, useInTab } from "../app-shell/screen-title";
 import { SessionEndedNotice } from "../app-shell/session-ended-notice";
-import { canManageBilling } from "../lib/billing-access";
-import { useCurrentOrganization } from "../lib/current-organization";
 import { signInPath } from "../lib/sign-in-path";
-import { useIsMobile } from "../lib/use-mobile";
 import { LogoutDialog } from "../offline/logout-dialog";
-import { OFFLINE_RUNTIME_ENABLED } from "../offline/runtime/enabled";
 import { useLogout } from "../offline/runtime/logout-control";
-import { firstSettingsTab } from "../settings/settings-tabs";
 import { useEntryMethods } from "./entry-methods";
 import {
   EntryAlert,
@@ -65,7 +63,7 @@ import {
   PASSWORD_REQUIRED,
 } from "./password-texts";
 
-const ACCOUNT_SECURITY_PATH = tabHref("settings", "senha");
+const ACCOUNT_SECURITY_PATH = tabHref("account", "senha");
 /** A live but old login: "Sair" (the queue protected first), then back here, as the Aparelhos tab does. */
 const SIGN_IN_AGAIN = signInPath({
   reason: "recente",
@@ -94,38 +92,16 @@ function UiBlock({ children }: { children: ReactNode }) {
   );
 }
 
-/**
- * "Cancelar": back to the first tab of Configurações this person has (the same list the screen draws, so never to one
- * the menu does not offer, Aparelhos, which exists only with the offline runtime), without saving. A link in the look of an
- * outline button. On a phone the address without a tab is the list of Configurações, so the first tab is named.
- */
+/** "Cancelar": back to Minha conta, without saving. A link in the look of an outline button. */
 export function CancelLink() {
-  const { billingSelfService, organization } = useCurrentOrganization();
-  const phone = useIsMobile();
-  const tab = firstSettingsTab({
-    billing: canManageBilling(billingSelfService, organization.role),
-    dataExport: hasCapabilityForRole(organization.role, "organization:export"),
-    offline: OFFLINE_RUNTIME_ENABLED,
-    // this page is the Senha tab: it exists only with the password on
-    passwordOn: true,
-  });
   return (
     <a
-      aria-label={changeCancelLabel(tab.label)}
+      aria-label={changeCancelLabel(ACCOUNT_LABEL)}
       className={cn(
         buttonVariants({ size: "lg", variant: "outline" }),
         "w-full sm:w-fit"
       )}
-      href={
-        phone
-          ? addressWithTab(
-              tabHref("settings", tab.value),
-              "settings",
-              tab.value,
-              true
-            )
-          : tabHref("settings", tab.value)
-      }
+      href={ACCOUNT_HREF}
     >
       {CHANGE_CANCEL}
     </a>
@@ -390,7 +366,7 @@ function ChangePasswordForm() {
 export function ChangePasswordPage() {
   const { methods, retry } = useEntryMethods(undefined, false);
   const headingRef = useRef<HTMLHeadingElement>(null);
-  // alone, the page takes the focus to its title; as a tab of Configurações the focus stays on the tab
+  // alone, the page takes the focus to its title; as a tab of Minha conta the focus stays on the tab
   const inTab = useInTab();
   useEffect(() => {
     if (!inTab) {

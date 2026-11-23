@@ -56,7 +56,7 @@ const TABS: readonly TabCase[] = [
 ];
 
 const SETTINGS: TabCase = {
-  list: "Configurações",
+  list: "Configurações da loja",
   name: "Configurações",
   screen: "assinatura oferta com Pix",
 };

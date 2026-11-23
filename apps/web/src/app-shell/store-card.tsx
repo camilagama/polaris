@@ -2,6 +2,7 @@ import { LEGAL_PATHS } from "@polaris/domain/legal/legal-documents";
 import ArrowUpRightIcon from "lucide-react/dist/esm/icons/arrow-up-right";
 import ChevronDownIcon from "lucide-react/dist/esm/icons/chevron-down";
 import CircleHelpIcon from "lucide-react/dist/esm/icons/circle-help";
+import CircleUserIcon from "lucide-react/dist/esm/icons/circle-user";
 import LogOutIcon from "lucide-react/dist/esm/icons/log-out";
 import { type RefObject, useCallback, useId } from "react";
 import { parseTheme, THEMES, type Theme } from "@/lib/theme";
@@ -26,7 +27,13 @@ import {
   PRIVACY_LINK,
   TERMS_LINK,
 } from "../sign-in/sign-in-texts";
-import { HELP_HREF, HELP_LABEL } from "./navigation-model";
+import { useHasAccountScreen } from "../settings/settings-tabs";
+import {
+  ACCOUNT_HREF,
+  ACCOUNT_LABEL,
+  HELP_HREF,
+  HELP_LABEL,
+} from "./navigation-model";
 import { storeInitials } from "./store-initials";
 
 const THEME_LABEL: Record<Theme, string> = {
@@ -59,9 +66,20 @@ function LegalItem({ href, label }: { href: string; label: string }) {
   );
 }
 
+/** Minha conta, only for a person with a tab there. It lives inside the popup, which draws on open, so the page asks the server nothing for it until the menu opens. */
+function AccountItem() {
+  const hasAccount = useHasAccountScreen();
+  return hasAccount ? (
+    <DropdownMenuLinkItem closeOnClick href={ACCOUNT_HREF}>
+      <CircleUserIcon aria-hidden="true" />
+      {ACCOUNT_LABEL}
+    </DropdownMenuLinkItem>
+  ) : null;
+}
+
 /**
  * The menu of the store and of the account, at the right of the header: the initials of the store (and its name, from
- * 760 px) open the store and the e-mail in full, the other stores, the appearance, Ajuda e contato, the two legal pages
+ * 760 px) open the store and the e-mail in full, Minha conta (when the person has a tab there), the other stores, the appearance, Ajuda e contato, the two legal pages
  * and, last and apart, "Sair". It opens in a portal under the button, so it never pushes the page; the answer of "Sair"
  * (the queue, a failure) is drawn by the shell under the header, because this menu closes on the click.
  */
@@ -144,6 +162,7 @@ export function StoreMenu({
             </p>
           ) : null}
         </div>
+        <AccountItem />
         {organization && stores.length > 1 ? (
           <>
             <DropdownMenuSeparator />

@@ -4,7 +4,6 @@ import type { Page, Request, Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 import { runClockFor } from "./run-clock-for";
 import { OFFLINE_POC_ORIGIN } from "./run-settings";
-import { onPhone } from "./settings-nav";
 import { WORKER_MARK } from "./worker-mark";
 
 /**
@@ -33,8 +32,8 @@ const SHELL_POLICY = /\n\/\*\n {2}Content-Security-Policy: (.*)\n/;
 const AT_SIGN_IN = /\/entrar$/;
 const LOGIN_TOKEN = /^tt-login-\d+$/;
 const VERIFICATION_TOKEN = /^tt-verification_email-/;
-// `/devices` is the tab Aparelhos of Configurações now (map of navigation, § 6)
-const AT_DEVICES = /\/configuracoes\?aba=aparelhos$/;
+// `/devices` is the tab Aparelhos of Minha conta now (map of navigation, § 6)
+const AT_DEVICES = /\/conta\?aba=aparelhos$/;
 const TERMS = /Termos de Uso/;
 const NOOPENER = /noopener/;
 const SIGNUP_TOKEN = /^tt-signup-/;
@@ -1141,7 +1140,7 @@ test.describe("trocar senha dentro do app (AC-57, V8)", () => {
       }
       return route.abort("internetdisconnected");
     });
-    await page.goto("/conta/seguranca");
+    await page.goto("/conta");
   }
 
   test("o campo da nova senha com a força e os requisitos, sem mover nada ao digitar (AC-47)", async ({
@@ -1254,12 +1253,9 @@ test.describe("trocar senha dentro do app (AC-57, V8)", () => {
     ).toHaveCount(0);
     await expect(
       page.getByRole("link", {
-        name: "Cancelar e voltar para Formas de receber",
+        name: "Cancelar e voltar para Minha conta",
       })
-    ).toHaveAttribute(
-      "href",
-      onPhone(page) ? "/configuracoes?aba=formas-de-receber" : "/configuracoes"
-    );
+    ).toHaveAttribute("href", "/conta");
     await shot(page, "trocar-senha-conta-google");
   });
 

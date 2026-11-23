@@ -3678,6 +3678,17 @@ Origem: achado B do Diego no Pixel 6 (28/10): a venda montada em Vender sumia ao
 | Provas | Em revisão | `e2e-pwa/sale-detail-operations.e2e.ts` (AC-C1.1 a C1.7: posição a 1280 e 360 px, ordem e separador, confirmações que contam as chamadas, teclado, alvo de 44 px no toque, venda cancelada, devolvida por inteiro e fora do servidor, sem conexão); `e2e/cliente-da-venda-reflow.e2e.ts` (C1.8: 320 px com letra de 20 px); `e2e/recibo-pagamento-reflow.e2e.ts` (a 320 px com letra de 16 e de 20 px, nenhuma palavra do aviso "desconhecida — não é zero" / "prazo desconhecido — não é zero" quebra no meio; a linha do bloco Pagamento quebra e o valor desce inteiro, à direita); `sales/sale-actions-menu.test.tsx`. |
 | Fora | Pendente | Baselines `detalhe-da-venda*` do `ui-visual`, refeitas pelo CI. |
 
+### Configurações da loja e Minha conta (t1607, E1 dos ajustes de interface de 21/11; sem migration)
+
+| Parte | Estado | O que há |
+| --- | --- | --- |
+| Configurações da loja | Em revisão | `settings/settings-screen.tsx`: `h1` "Configurações da loja" (o item da lateral segue "Configurações"), uma faixa só (Formas de receber, Catálogo público, Assinatura, Seus dados) sem rótulos de grupo; no celular, a lista de linhas sem títulos de grupo. `ScreenTabs` perde o desenho em linhas rotuladas (`groups`, `groupedTabsOf`). |
+| Minha conta | Em revisão | `settings/account-screen.tsx` em `/conta` (`?aba=aparelhos`): Senha (`passwordOn`) e Aparelhos (`offline`). Com uma aba só não há faixa; sem nenhuma, `replaceAddress("/")`. `SCREEN_TABS.account`, `ROUTES["/conta"]` (sem item de menu) e as chaves `account:senha` e `account:aparelhos` em `CLIENT_ERROR_ROUTE_IDS`. |
+| Menu do círculo | Em revisão | `app-shell/store-card.tsx`: item "Minha conta" logo abaixo da loja e do e-mail, só com ao menos uma das abas (`useHasAccountScreen`: com o runtime offline não consulta o servidor). A folha "Mais" não a lista. |
+| Endereços | Em revisão | `legacyAddress` leva `/configuracoes?aba=senha|aparelhos` (com o resto da consulta e o `#`), `/devices` e `/conta/seguranca` a `/conta`; `?aba=assinatura&retorno=` e `/?assinatura=` seguem na Assinatura. O "Cancelar" da troca de senha volta a "Minha conta". |
+| Provas | Em revisão | `settings-tabs.test.ts`, `navigation-model.test.ts`, `screen-tabs.test.tsx`, `change-password-cancel.test.tsx`; e2e `account-screen.e2e.ts`, `settings-groups.e2e.ts` e os que citavam as abas movidas. |
+| Fora | Pendente | Baselines do `ui-visual` (`aparelhos-lista`, `assinatura-oferta`, `pagamento-lista`, menu do círculo), refeitas pelo CI. |
+
 ### Metas: as ações na linha do título, e as abas não pulam (t1701, C8 do corte de 23/11; sem migration)
 
 | Parte | Estado | O que há |
