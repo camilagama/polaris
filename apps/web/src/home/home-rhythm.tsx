@@ -4,11 +4,13 @@ import {
   useCallback,
   useEffect,
   useId,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
 } from "react";
 import { cn } from "@/lib/utils";
+import { Skeleton } from "@/ui/skeleton";
 import { ChartDataTable } from "@/ui/charts/chart-data-table";
 import {
   type HeatmapDay,
@@ -60,11 +62,30 @@ import type { Block, HomeFigures } from "./use-home";
 const MAP_SIDES = 22;
 const MAP_TOP = 18;
 
-/** The cell and its gap: 12 + 3 on every width, and as many weeks as fit (a phone shows about 15 to 20). */
+/** The cell and its gap: 12 + 3 with the blocks one under the other, and as many weeks as fit (a phone shows about 15 to 20). */
 const CELL = 12;
 const GAP = 3;
+/** Beside the goal the cell grows with the card, by whole pixels up to this, and the gap with it (a quarter of the cell, rounded). */
+const CELL_MAX = 20;
+/** The width of the content area from which the two lower blocks stand side by side (`@min-[60rem]/home` of `LowerBlocks`). */
+const PAIR_REM = 60;
 
-function mapLayout(width: number) {
+const gapOf = (cell: number) => Math.round(cell / 4);
+
+/**
+ * The cell, the gap and the weeks for a box of `width` pixels. In the pair of the goal and the map the 26 weeks stay and
+ * the cell is the largest whole size from 12 to 20 px that lets them fit the box; otherwise it is 12 + 3 and as many
+ * weeks as fit.
+ */
+export function mapLayout(width: number, pair = false) {
+  if (pair && width > 0) {
+    for (let cell = CELL_MAX; cell > CELL; cell -= 1) {
+      const gap = gapOf(cell);
+      if (RHYTHM_WEEKS * (cell + gap) + MAP_SIDES <= width) {
+        return { cell, gap, weeks: RHYTHM_WEEKS };
+      }
+    }
+  }
   const fit =
     width > 0 ? Math.floor((width - MAP_SIDES) / (CELL + GAP)) : RHYTHM_WEEKS;
   return {
@@ -74,31 +95,59 @@ function mapLayout(width: number) {
   };
 }
 
+type MapLayout = ReturnType<typeof mapLayout>;
+
 /** The width the map takes: its weeks of cells plus the sides. */
-function mapWidth(layout: ReturnType<typeof mapLayout>) {
+function mapWidth(layout: MapLayout) {
   return layout.weeks * (layout.cell + layout.gap) + MAP_SIDES;
 }
 
-/** The width of the box the map is drawn in, followed as the window changes. */
-function useWidth() {
+/** The height the map takes: the months above it and its seven rows. */
+export function mapHeight(layout: Pick<MapLayout, "cell" | "gap">) {
+  return MAP_TOP + 7 * (layout.cell + layout.gap);
+}
+
+/**
+ * The width of the box the map is drawn in and whether the block stands beside the goal, both followed as the window
+ * and the side menu change them. The pair is the container of the lower blocks with 60 rem or more and a row of two.
+ */
+function useMapBox() {
   const ref = useRef<HTMLDivElement>(null);
-  const [width, setWidth] = useState(0);
-  useEffect(() => {
+  const [box, setBox] = useState({ pair: false, width: 0 });
+  // before the first paint, so the map is never drawn once at 12 + 3 and then jumps to the cell the card allows
+  useLayoutEffect(() => {
     const element = ref.current;
     if (!element) {
       return;
     }
-    setWidth(element.getBoundingClientRect().width);
+    const row = element.closest("[data-pair]");
+    const lower = element.closest("[data-home-lower]");
+    const measure = () => {
+      const rem =
+        Number.parseFloat(
+          getComputedStyle(document.documentElement).fontSize
+        ) || 16;
+      const pair =
+        row !== null &&
+        lower !== null &&
+        lower.getBoundingClientRect().width >= PAIR_REM * rem;
+      const { width } = element.getBoundingClientRect();
+      setBox((now) =>
+        now.pair === pair && now.width === width ? now : { pair, width }
+      );
+    };
+    measure();
     if (typeof ResizeObserver === "undefined") {
       return;
     }
-    const observer = new ResizeObserver(([entry]) =>
-      setWidth(entry?.contentRect.width ?? 0)
-    );
+    const observer = new ResizeObserver(measure);
     observer.observe(element);
+    if (lower) {
+      observer.observe(lower);
+    }
     return () => observer.disconnect();
   }, []);
-  return { ref, width };
+  return { ...box, ref };
 }
 
 /* transparent, with no track and no thumb (the map shows the day read) and deaf to the pointer (the map under it reads
@@ -205,8 +254,8 @@ function RhythmNumbers({
 /** The map, its tooltip, its keyboard, its legend and its numbers, for the days read. */
 function RhythmMap({ days }: { days: RhythmDay[] }) {
   const phone = useIsMobile();
-  const { ref, width } = useWidth();
-  const { cell, gap, weeks } = mapLayout(width);
+  const { pair, ref, width } = useMapBox();
+  const { cell, gap, weeks } = mapLayout(width, pair);
   const view = useMemo(() => rhythmView(days, weeks), [days, weeks]);
   const [hidden] = useHiddenValues();
   const [hovered, setHovered] = useState<number | null>(null);
@@ -292,7 +341,7 @@ function RhythmMap({ days }: { days: RhythmDay[] }) {
   const onBlur = useCallback(() => setKeyed(null), []);
   const onFocus = useCallback(() => setKeyed((day) => day ?? rest), [rest]);
   const summary = rhythmSummary(view);
-  const height = MAP_TOP + 7 * (cell + gap);
+  const height = mapHeight({ cell, gap });
   const focus = hovered ?? keyed;
   const tip = useMemo<HeatmapTip | null>(() => {
     const focused = focus === null ? null : rhythmReading(view, focus);
@@ -381,6 +430,34 @@ export type RhythmSource =
   | { data: DailySeries | null; status: "copy" };
 
 /**
+ * The block while the series is read, as tall as the block with the map: at the default letter 199 px (203 px from 768
+ * px) with the map of 12 + 3, which is 123 px tall; beside the goal the map is as tall as its cell makes it, so the
+ * minimum height is the block's own (12.6875 rem) with the map's height in pixels in place of the 123. The bar sits in a
+ * box of the panel's width, the one the map is measured in, so the cell is the one the map will have.
+ */
+function RhythmSkeleton() {
+  const { pair, ref, width } = useMapBox();
+  const layout = mapLayout(width, pair);
+  return (
+    <BlockSkeleton
+      className="min-h-[12.4375rem] md:min-h-[12.6875rem]"
+      label="Carregando o ritmo de vendas…"
+      style={
+        pair
+          ? {
+              minHeight: `calc(12.6875rem - ${mapHeight(mapLayout(0))}px + ${mapHeight(layout)}px)`,
+            }
+          : undefined
+      }
+    >
+      <div className="min-w-0" ref={ref}>
+        <Skeleton aria-hidden="true" className="h-8 w-40" />
+      </div>
+    </BlockSkeleton>
+  );
+}
+
+/**
  * The block of the map, beside the figures it composes with: loading, the error with "Tentar novamente", "O mapa abre
  * com internet." without a connection and without a copy, or the map. A day it does not know is never drawn as a zero:
  * without every day of the 26 weeks the block waits (or says it opens with a connection).
@@ -420,12 +497,7 @@ export function RhythmBlock({
         <p className="text-muted-foreground">O mapa abre com internet.</p>
       </HomeBlock>
     ) : (
-      // the height of the block read at the default letter (199 px, 203 px from 768 px), so the blocks under it stay
-      <BlockSkeleton
-        className="min-h-[12.4375rem] md:min-h-[12.6875rem]"
-        label="Carregando o ritmo de vendas…"
-        lines={0}
-      />
+      <RhythmSkeleton />
     );
   }
   return <RhythmMap days={days} />;

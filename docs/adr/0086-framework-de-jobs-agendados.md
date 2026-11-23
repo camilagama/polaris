@@ -4,7 +4,7 @@ status: accepted
 
 # Framework de jobs agendados
 
-> A migration é a 0073 (`0073_scheduled_jobs.sql`), depois da 0072 da DLQ.
+> A migration é a `0073_scheduled_jobs.sql`.
 
 ## Contexto
 

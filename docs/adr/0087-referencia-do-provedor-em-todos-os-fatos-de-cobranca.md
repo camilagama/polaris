@@ -4,7 +4,7 @@ status: accepted
 
 # A referência do provedor em todos os fatos de cobrança
 
-> A migration é a 0074 (`0074_billing_reference_incident.sql`), depois da 0073 do agendador.
+> A migration é a `0074_billing_reference_incident.sql`.
 
 ## Contexto
 

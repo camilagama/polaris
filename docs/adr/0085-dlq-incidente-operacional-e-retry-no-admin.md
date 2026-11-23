@@ -4,7 +4,7 @@ status: accepted
 
 # DLQ, incidente operacional e retry no Admin
 
-> A migration é a 0072 (`0072_dead_letter_queue.sql`).
+> A migration é a `0072_dead_letter_queue.sql`.
 
 ## Contexto
 
