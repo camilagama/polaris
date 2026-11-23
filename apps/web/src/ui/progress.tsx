@@ -3,8 +3,8 @@
 import { Progress as ProgressPrimitive } from "@base-ui/react/progress";
 import { cn } from "@/lib/utils";
 
-/* Polaris v5.1: a 4 px track in the muted color and the indicator in ink (`primary`): the emerald is for
-   the exceptional. The width changes without a transition (opacity is the only movement). */
+/* Polaris v5.1: a 4 px track in the muted color and the indicator in ink (`primary`): the brand red is for
+   the mark and the current place. The width changes without a transition (opacity is the only movement). */
 function Progress({
   className,
   children,
