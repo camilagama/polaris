@@ -805,19 +805,28 @@ describe("split payment", () => {
   });
 
   it("requires exactly one of payment or payments", () => {
-    const both = {
+    const refused = (input: object) =>
+      expect(() => normalize(input as ConfirmSaleCommandInput)).toThrow(
+        InvalidConfirmSaleCommandError
+      );
+    refused({
       ...split("100.00", [pixPart("100.00")]),
-      payment: { method: "pix" as const },
-    };
-    expect(() => normalize(both)).toThrow(InvalidConfirmSaleCommandError);
+      payment: { method: "pix" },
+    });
     const { payment: _payment, ...neither } = command();
-    expect(() => normalize(neither)).toThrow(InvalidConfirmSaleCommandError);
-    expect(() =>
-      normalize({
-        ...split("100.00", [pixPart("100.00")]),
-        paymentProfile: null,
-      })
-    ).toThrow(InvalidConfirmSaleCommandError);
+    refused(neither);
+    refused({
+      ...split("100.00", [pixPart("100.00")]),
+      paymentProfile: null,
+    });
+    const { paymentProfile: _profile, ...noChoice } = command();
+    refused(noChoice);
+  });
+
+  it("refuses a zero single part when the total is not zero", () => {
+    expect(() => normalize(split("10.00", [pixPart("0.00")]))).toThrow(
+      SalePaymentSplitMismatchError
+    );
   });
 
   it("validates each part's method, plan and profile selection", () => {

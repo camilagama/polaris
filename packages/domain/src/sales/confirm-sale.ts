@@ -71,7 +71,8 @@ export interface ConfirmSaleCommandInput {
    * Exactly one of `payment` or `payments` is present. The first form pays the
    * whole total with one method and takes its profile from `paymentProfile`;
    * the second carries the profile inside each part and leaves
-   * `paymentProfile` absent.
+   * `paymentProfile` absent. Repository code extends this interface, which
+   * rules out a discriminated union, so the runtime check is the guard.
    */
   payment?: SalePaymentInput;
   paymentProfile?: ConfirmSalePaymentProfileSelection | null;
