@@ -72,12 +72,6 @@ export function isValidTimezone(timezone: string): boolean {
   }
 }
 
-/** The first field with an error is the one to focus. */
-const SETUP_FIELD_ORDER: ReadonlyArray<keyof SetupErrors> = [
-  "name",
-  "timezone",
-];
-
 export function validateSetup(draft: SetupDraft): {
   errors: SetupErrors;
   input: { name: string; timezone: string } | null;
@@ -101,12 +95,6 @@ export function validateSetup(draft: SetupDraft): {
     errors,
     input: errors.name || errors.timezone ? null : { name, timezone },
   };
-}
-
-export function firstInvalidField(
-  errors: SetupErrors
-): keyof SetupErrors | null {
-  return SETUP_FIELD_ORDER.find((field) => errors[field] !== undefined) ?? null;
 }
 
 /** Opening an organization is idempotent, so any failure can be retried. */
