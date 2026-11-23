@@ -87,7 +87,9 @@ const UUID = /^[0-9a-f-]{36}$/;
  * routes send today, not a goal: a route that sends one more fails here, and the one that sends fewer lowers its number
  * in the same change. The rows with a plain name are the fixed cost of a call on a store with no products, sales or
  * goals (what a row adds is not counted); the ones that say so are the same route with a sale, with an active goal
- * and with a customer who bought.
+ * and with a customer who bought. `sale/confirm` is a new sale of one item paid with one method under a payment
+ * profile; `sale/confirm with two parts` is the same sale paid in two parts under two different profiles, and must
+ * cost the same: the parts go in one INSERT and every profile and rule comes from the same two reads.
  * `billing/readPlan` is measured with BILLING_SELF_SERVICE_ENABLED on (off, it answers 404 before any statement);
  * `offline/issueLease` with a lease secret; the other routes run with the bindings as the wrangler file has them.
  */
@@ -111,6 +113,8 @@ const STATEMENT_COUNTS: Record<string, number> = {
   "product/list": 5,
   "report/dailySales": 5,
   "report/periodSummary": 5,
+  "sale/confirm": 28,
+  "sale/confirm with two parts": 28,
   "sale/list": 5,
   "sale/list with one sale": 11,
   "sync/pull": 5,
@@ -141,6 +145,8 @@ const FIRST_CALL_STATEMENT_COUNTS: Record<string, number> = {
   "product/list": 5,
   "report/dailySales": 5,
   "report/periodSummary": 5,
+  "sale/confirm": 28,
+  "sale/confirm with two parts": 28,
   "sale/list": 5,
   "sale/list with one sale": 11,
   "sync/pull": 5,
@@ -1056,6 +1062,7 @@ describe("the e-mail and password flows of the web worker", () => {
     const period = { from: "2026-10-01", organizationId, to: "2026-10-31" };
     interface Route {
       bindings?: Bindings;
+      /** A function when each call needs a body of its own (a new command ID). */
       body?: unknown;
       method?: string;
       name: string;
@@ -1159,8 +1166,10 @@ describe("the e-mail and password flows of the web worker", () => {
     const measure = async (route: Route) => {
       const recorder = recordStatements();
       try {
+        const body =
+          typeof route.body === "function" ? route.body() : route.body;
         const response = await call(route.path, {
-          ...(route.body === undefined ? {} : { body: route.body }),
+          ...(body === undefined ? {} : { body }),
           ...(route.bindings ? { bindings: route.bindings } : {}),
           cookie,
           ip,
@@ -1239,7 +1248,7 @@ describe("the e-mail and password flows of the web worker", () => {
     await post("/rpc/product/create", {
       initialStock: {
         commandId: crypto.randomUUID(),
-        quantity: 5,
+        quantity: 10,
         unitCost: "4.00",
       },
       listPrice: "10.00",
@@ -1313,6 +1322,95 @@ describe("the e-mail and password flows of the web worker", () => {
       },
     ]);
 
+    // a sale confirmed under a payment profile, then the same sale in two parts under two profiles: each call is a
+    // new command (a repeated one would replay)
+    const profileFor = (method: "cash" | "pix", name: string) =>
+      post<{ id: string; version: number }>(
+        "/rpc/paymentProfile/create",
+        {
+          name,
+          organizationId,
+          rules: [
+            {
+              anticipationFee: {
+                fixedAmount: null,
+                mode: "none",
+                percentage: null,
+              },
+              expectedSettlementDays: 1,
+              installmentPlan: null,
+              installments: null,
+              method,
+              processingFee: {
+                fixedAmount: null,
+                mode: "percentage",
+                percentage: "1.000000",
+              },
+            },
+          ],
+        }
+      );
+    const cashProfile = await profileFor("cash", "Caixa");
+    const pixProfile = await profileFor("pix", "Banco");
+    const saleBody = (payment: Record<string, unknown>) => () => ({
+      json: {
+        adjustments: [],
+        commandId: crypto.randomUUID(),
+        commandVersion: 1,
+        items: [
+          {
+            chargedUnitPrice: "10.00",
+            listedUnitPrice: "10.00",
+            quantity: 1,
+            variantId,
+          },
+        ],
+        occurredAt: rows[0]?.now as string,
+        organizationId,
+        ...payment,
+      },
+    });
+    const part = (
+      method: "cash" | "pix",
+      amount: string,
+      profile: { id: string; version: number }
+    ) => ({
+      amount,
+      anticipationRequested: false,
+      installmentPlan: null,
+      installments: null,
+      method,
+      paymentProfile: { expectedVersion: profile.version, id: profile.id },
+    });
+    await measureAll([
+      {
+        body: saleBody({
+          payment: {
+            anticipationRequested: false,
+            installmentPlan: null,
+            installments: null,
+            method: "cash",
+          },
+          paymentProfile: {
+            expectedVersion: cashProfile.version,
+            id: cashProfile.id,
+          },
+        }),
+        name: "sale/confirm",
+        path: "/rpc/sale/confirm",
+      },
+      {
+        body: saleBody({
+          payments: [
+            part("cash", "4.00", cashProfile),
+            part("pix", "6.00", pixProfile),
+          ],
+        }),
+        name: "sale/confirm with two parts",
+        path: "/rpc/sale/confirm",
+      },
+    ]);
+
     // a lease is for Pro only (Free answers 409): the billing role writes the record a paid charge would write
     await upgradeToPro(env.BILLING_HYPERDRIVE.connectionString, organizationId);
     await measureAll([
@@ -1330,6 +1428,10 @@ describe("the e-mail and password flows of the web worker", () => {
       Object.keys(STATEMENT_COUNTS).sort()
     );
     expect(second, advice).toEqual(STATEMENT_COUNTS);
+    expect(
+      second["sale/confirm with two parts"],
+      "a sale in two parts sends what a sale of one part does"
+    ).toBe(second["sale/confirm"]);
     expect(first, advice).toEqual(FIRST_CALL_STATEMENT_COUNTS);
     expect(enforced, advice).toEqual(ENFORCED_STATEMENT_COUNTS);
     expect(network.strangers).toEqual([]);
