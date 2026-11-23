@@ -2482,7 +2482,7 @@ function confirmedPaymentDetails(
  * them, and the profile, rule, fees and settlement estimate of that part. The installment value is not written: the
  * sale stores the number of installments and the amount, not what each installment is.
  */
-export interface ConfirmedPaymentPartView {
+interface ConfirmedPaymentPartView {
   amountText: string;
   details: ConfirmedSaleDetail[];
   /** "3x · Parcelado pelo lojista" for a card with installments; null otherwise. */
