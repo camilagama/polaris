@@ -4,8 +4,10 @@ import CloudOffIcon from "lucide-react/dist/esm/icons/cloud-off";
 import InfoIcon from "lucide-react/dist/esm/icons/info";
 import MinusIcon from "lucide-react/dist/esm/icons/minus";
 import PlusIcon from "lucide-react/dist/esm/icons/plus";
-import SparklesIcon from "lucide-react/dist/esm/icons/sparkles";
 import ShoppingBagIcon from "lucide-react/dist/esm/icons/shopping-bag";
+import SparklesIcon from "lucide-react/dist/esm/icons/sparkles";
+import StoreIcon from "lucide-react/dist/esm/icons/store";
+import TagIcon from "lucide-react/dist/esm/icons/tag";
 import TriangleAlertIcon from "lucide-react/dist/esm/icons/triangle-alert";
 import UsersIcon from "lucide-react/dist/esm/icons/users";
 import WalletIcon from "lucide-react/dist/esm/icons/wallet";
@@ -16,11 +18,21 @@ import {
   useRef,
   useState,
 } from "react";
+import { cn } from "@/lib/utils";
 import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
 import { AnimatedFigure } from "@/ui/animated-figure";
 import { Badge } from "@/ui/badge";
+import {
+  Block,
+  BlockFooter,
+  BlockLink,
+  BlockPanel,
+  BlockHeader as FramedBlockHeader,
+} from "@/ui/block";
+import { BlockHeader } from "@/ui/block-header";
 import { Button } from "@/ui/button";
 import { ButtonGroup } from "@/ui/button-group";
+import { OnDemandCalendar } from "@/ui/calendar-on-demand";
 import {
   Card,
   CardContent,
@@ -33,8 +45,8 @@ import {
   CardHeader,
   CardTitle,
 } from "@/ui/card";
-import { OnDemandCalendar } from "@/ui/calendar-on-demand";
 import { OnDemandRingChart, OnDemandSparkline } from "@/ui/charts/on-demand";
+import { CheckableOption } from "@/ui/checkable-option";
 import { Checkbox } from "@/ui/checkbox";
 import {
   Collapsible,
@@ -99,16 +111,9 @@ import {
   FieldSet,
   FieldTitle,
 } from "@/ui/field";
+import { FieldGroup } from "@/ui/field-group";
 import { Figure } from "@/ui/figure";
 import { FilterBar, type FilterField, type FilterRule } from "@/ui/filter-bar";
-import {
-  Block,
-  BlockFooter,
-  BlockHeader as FramedBlockHeader,
-  BlockLink,
-  BlockPanel,
-} from "@/ui/block";
-import { BlockHeader } from "@/ui/block-header";
 import { HelpTip } from "@/ui/help-tip";
 import { HideValuesButton, MoneyText } from "@/ui/hidden-values";
 import { Input } from "@/ui/input";
@@ -118,10 +123,15 @@ import {
   InputGroupInput,
   InputGroupTextarea,
 } from "@/ui/input-group";
+import { InsetBlock } from "@/ui/inset-block";
 import { DeltaChip, HeroPercent, HeroValue, KpiTile } from "@/ui/kpi-card";
 import { Label } from "@/ui/label";
+import { ListBlock } from "@/ui/list-block";
+import { ListNotice } from "@/ui/list-notice";
+import { ListTotalFooter } from "@/ui/list-total-footer";
 import { Logo } from "@/ui/logo";
 import { Money } from "@/ui/money";
+import { PaceLine, type PaceState } from "@/ui/pace-line";
 import { PlanCard } from "@/ui/plan-card";
 import {
   Popover,
@@ -131,13 +141,15 @@ import {
   PopoverTitle,
   PopoverTrigger,
 } from "@/ui/popover";
-import { PaceLine, type PaceState } from "@/ui/pace-line";
 import { Progress, ProgressLabel, ProgressValue } from "@/ui/progress";
 import { ProgressRing } from "@/ui/progress-ring";
 import { RadioGroup, RadioGroupItem } from "@/ui/radio-group";
 import { RefreshButton } from "@/ui/refresh-button";
+import { RowTile } from "@/ui/row-tile";
 import { ScrollArea } from "@/ui/scroll-area";
 import { SearchField } from "@/ui/search-field";
+import { SectionTabs } from "@/ui/section-tabs";
+import { SegmentedFilter } from "@/ui/segmented-filter";
 import {
   Select,
   SelectContent,
@@ -158,6 +170,7 @@ import {
 } from "@/ui/sidebar";
 import { Skeleton } from "@/ui/skeleton";
 import { SkeletonArt, type SkeletonArtKind } from "@/ui/skeleton-art";
+import { StepTile } from "@/ui/step-tile";
 import { Switch } from "@/ui/switch";
 import {
   Table,
@@ -169,11 +182,9 @@ import {
   TableHeader,
   TableRow,
 } from "@/ui/table";
-import { SegmentedFilter } from "@/ui/segmented-filter";
-import { SectionTabs } from "@/ui/section-tabs";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/ui/tabs";
-import { Textarea } from "@/ui/textarea";
 import { TextLink } from "@/ui/text-link";
+import { Textarea } from "@/ui/textarea";
 import { ThemeSegmented } from "@/ui/theme-segmented";
 import { ThemeSwitch } from "@/ui/theme-switch";
 import { Thumbnail, type ThumbnailSize } from "@/ui/thumbnail";
@@ -474,6 +485,212 @@ function BlockExample({ id }: { id: string }) {
         <BlockLink href="/dashboard">Ver o resultado</BlockLink>
       </BlockFooter>
     </Block>
+  );
+}
+
+const LIST_ROWS = [
+  { name: "Camiseta lisa", support: "12 em estoque", value: "R$ 59,90" },
+  { name: "Boné de aba reta", support: "4 em estoque", value: "R$ 39,90" },
+  { name: "Meia esportiva", support: "30 em estoque", value: "R$ 12,00" },
+] as const;
+
+const WIDE_ROW = "min-w-[40rem]";
+
+function ListRowShape({ wide }: { wide: boolean }) {
+  return (
+    <div className={cn("flex items-center gap-3", wide && WIDE_ROW)}>
+      <Skeleton className="size-9 shrink-0 rounded-md" />
+      <div className="grid flex-1 gap-1.5">
+        <Skeleton className="h-4 w-2/3" />
+        <Skeleton className="h-3.5 w-1/3" />
+      </div>
+      <Skeleton className="h-4 w-16 shrink-0" />
+    </div>
+  );
+}
+
+const LIST_COUNTS = {
+  "filtered-empty": "0 produtos",
+  loading: "",
+  rows: "3 produtos",
+} as const;
+
+/** One `ListBlock` of the gallery: a state, with or without the total, and the wide table that scrolls inside the panel. */
+function ListBlockExample({
+  state,
+  title,
+  total,
+  wide = false,
+}: {
+  state: "rows" | "loading" | "filtered-empty";
+  title: string;
+  total: boolean;
+  wide?: boolean;
+}) {
+  const sized = wide ? WIDE_ROW : undefined;
+  return (
+    <ListBlock
+      action={
+        <Button size="sm" variant="outline">
+          Exportar
+        </Button>
+      }
+      className={wide ? "lg:col-span-2" : undefined}
+      count={LIST_COUNTS[state]}
+      emptyNotice={<p>Nenhum produto com essa busca.</p>}
+      skeleton={<ListRowShape wide={wide} />}
+      state={state}
+      title={title}
+    >
+      <ListBlock.Header className={sized}>
+        <span className="min-w-0 flex-1">Produto</span>
+        <span className="shrink-0">Preço</span>
+      </ListBlock.Header>
+      {LIST_ROWS.map((row) => (
+        <ListBlock.Row
+          className={sized}
+          key={row.name}
+          tile={<ShoppingBagIcon />}
+        >
+          <div className="grid min-w-0 flex-1 gap-0.5">
+            <p className="font-medium">{row.name}</p>
+            <p className="text-muted-foreground text-support">{row.support}</p>
+          </div>
+          <p className="shrink-0 font-semibold">
+            <MoneyText text={row.value} />
+          </p>
+          {wide ? (
+            <Button size="sm" variant="ghost">
+              Editar
+            </Button>
+          ) : null}
+        </ListBlock.Row>
+      ))}
+      {total ? (
+        <ListBlock.Total
+          className={sized}
+          count={LIST_COUNTS[state] || "Lendo…"}
+          value={state === "rows" ? "R$ 111,80" : "R$ 0,00"}
+          valueLoading={state === "loading"}
+        />
+      ) : null}
+    </ListBlock>
+  );
+}
+
+const LONG_OPTION =
+  "Uma combinação com um nome bem comprido, para provar que o texto quebra dentro da borda e não passa dela";
+
+const OPTION_NAMES = [
+  "Azul / P",
+  "Azul / M",
+  "Vermelho / M",
+  LONG_OPTION,
+] as const;
+
+/** The options of the image of a product, as the tab "Imagens" lists them: each one on its own, one of them off. */
+function CheckableOptionExamples() {
+  const [marked, setMarked] = useState<string[]>(["Azul / M"]);
+  const toggle = useCallback(
+    (name: string) =>
+      setMarked((current) =>
+        current.includes(name)
+          ? current.filter((item) => item !== name)
+          : [...current, name]
+      ),
+    []
+  );
+  return (
+    <div className="grid gap-2">
+      {OPTION_NAMES.map((name) => (
+        <GalleryOption
+          checked={marked.includes(name)}
+          key={name}
+          name={name}
+          onToggle={toggle}
+        />
+      ))}
+      <GalleryOption
+        checked={false}
+        disabled
+        name="Desligada, sem imagem para enviar"
+      />
+    </div>
+  );
+}
+
+function GalleryOption({
+  checked,
+  disabled,
+  name,
+  onToggle,
+}: {
+  checked: boolean;
+  disabled?: boolean;
+  name: string;
+  onToggle?: (name: string) => void;
+}) {
+  const handleChange = useCallback(() => onToggle?.(name), [name, onToggle]);
+  return (
+    <CheckableOption
+      checked={checked}
+      disabled={disabled}
+      onCheckedChange={handleChange}
+    >
+      {name}
+    </CheckableOption>
+  );
+}
+
+const STEP_EXAMPLES = [
+  { Icon: StoreIcon, label: "Loja criada", state: "done" },
+  { Icon: TagIcon, label: "Cadastrar o 1º produto", state: "current" },
+  { Icon: ShoppingBagIcon, label: "Fazer a 1ª venda", state: "todo" },
+] as const;
+
+function StepTileExamples() {
+  return (
+    <ol className="grid gap-2">
+      {STEP_EXAMPLES.map(({ Icon, label, state }) => (
+        <li
+          aria-current={state === "current" ? "step" : undefined}
+          className="flex items-center gap-2.5"
+          key={state}
+        >
+          <StepTile state={state}>
+            <Icon />
+          </StepTile>
+          <span>
+            {label}
+            {state === "done" ? (
+              <span className="sr-only"> (feito)</span>
+            ) : null}
+          </span>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+function PlainBlockExamples() {
+  return (
+    <div className="grid gap-4 md:grid-cols-2">
+      <Block
+        action={
+          <Button size="sm" variant="outline">
+            Imprimir
+          </Button>
+        }
+        description="Pago em 2 vezes, no cartão."
+        title="Comprovante"
+        variant="plain"
+      >
+        <p className="text-muted-foreground">O corpo do bloco.</p>
+      </Block>
+      <Block variant="plain">
+        <p className="text-muted-foreground">O mesmo bloco sem título.</p>
+      </Block>
+    </div>
   );
 }
 
@@ -1662,6 +1879,22 @@ export function UiGallery() {
             </Tabs>
           </Section>
 
+          <Section title="Aba de tela em linha">
+            <Tabs defaultValue="resultado">
+              <TabsList aria-label="Seção em linha" variant="line">
+                <TabsTrigger value="resultado">Resultado</TabsTrigger>
+                <TabsTrigger value="metas">Metas</TabsTrigger>
+              </TabsList>
+              <TabsContent className="text-muted-foreground" value="resultado">
+                A aba de tela em linha: o traço de 2 px em tinta, dados de
+                exemplo.
+              </TabsContent>
+              <TabsContent className="text-muted-foreground" value="metas">
+                Painel da aba Metas, dados de exemplo.
+              </TabsContent>
+            </Tabs>
+          </Section>
+
           <Section title="SectionTabs: com e sem rota">
             <p className="max-w-prose text-muted-foreground text-support">
               Uma peça só, com rota (a aba aberta vai para o endereço) e sem
@@ -1771,6 +2004,116 @@ export function UiGallery() {
               <ReferenceBlock id="gallery-block-reference" />
               <BlockExample id="gallery-block-piece" />
             </div>
+          </Section>
+
+          <Section title="ListBlock">
+            <p className="max-w-prose text-muted-foreground text-support">
+              Lista e tabela na moldura do Início: o título e a contagem na
+              moldura, o painel sem respiro com as linhas de borda a borda, e o
+              total sempre por último. Os três estados, com e sem total, e a
+              tabela larga, que rola por dentro do painel.
+            </p>
+            <div className="grid items-start gap-4 lg:grid-cols-2">
+              <ListBlockExample state="rows" title="Produtos com total" total />
+              <ListBlockExample
+                state="rows"
+                title="Produtos sem total"
+                total={false}
+              />
+              <ListBlockExample
+                state="loading"
+                title="Carregando com total"
+                total
+              />
+              <ListBlockExample
+                state="loading"
+                title="Carregando sem total"
+                total={false}
+              />
+              <ListBlockExample
+                state="filtered-empty"
+                title="Busca com total"
+                total
+              />
+              <ListBlockExample
+                state="filtered-empty"
+                title="Busca sem total"
+                total={false}
+              />
+              <ListBlockExample state="rows" title="Tabela larga" total wide />
+            </div>
+          </Section>
+
+          <Section title="Peças soltas da lista">
+            <p className="max-w-prose text-muted-foreground text-support">
+              O aviso, o quadro do ícone e o total que o <code>ListBlock</code>{" "}
+              compõe. As telas que ainda não migraram os usam soltos, e a trava
+              (R4) não deixa entrar tela nova com eles.
+            </p>
+            <div className="grid items-start gap-4 md:grid-cols-2">
+              <ListNotice>
+                <p>Nenhum cliente com essa busca.</p>
+              </ListNotice>
+              <div className="grid gap-4">
+                <RowTile>
+                  <UsersIcon />
+                </RowTile>
+                <ListTotalFooter count="3 vendas" value="R$ 111,80" />
+              </div>
+            </div>
+          </Section>
+
+          <Section title="Painéis internos">
+            <p className="max-w-prose text-muted-foreground text-support">
+              Os dois únicos painéis dentro de um bloco, de um cartão ou de um
+              diálogo. O bloco rebaixado (<code>InsetBlock</code>) é o cinza
+              cheio, sem borda, para o dado que se lê; o grupo de campos (
+              <code>FieldGroup</code>) é o <code>fieldset</code> com borda de 1
+              px e sem fundo, para os campos de um formulário.
+            </p>
+            <div className="grid items-start gap-4 md:grid-cols-2">
+              <InsetBlock data-gallery-panel="inset">
+                <dl className="grid gap-1 text-sm">
+                  <dt className="text-muted-foreground">Pagamento</dt>
+                  <dd>Pix, R$ 111,80</dd>
+                </dl>
+              </InsetBlock>
+              <FieldGroup data-gallery-panel="group">
+                <FieldLegend>Contato</FieldLegend>
+                <Field>
+                  <FieldLabel htmlFor="gallery-group-email">E-mail</FieldLabel>
+                  <Input id="gallery-group-email" type="email" />
+                </Field>
+                <Field>
+                  <FieldLabel htmlFor="gallery-group-phone">
+                    Telefone
+                  </FieldLabel>
+                  <Input id="gallery-group-phone" type="tel" />
+                </Field>
+              </FieldGroup>
+            </div>
+          </Section>
+
+          <Section title="Opção marcável e caixa do passo">
+            <p className="max-w-prose text-muted-foreground text-support">
+              A opção marcável (<code>CheckableOption</code>) é uma linha com
+              borda e uma caixa de marcar, para escolher várias entre poucas. A
+              caixa do passo (<code>StepTile</code>) é o quadro de 28 px do
+              ícone de cada passo de uma lista de tarefas, igual nos três
+              estados.
+            </p>
+            <div className="grid items-start gap-4 md:grid-cols-2">
+              <CheckableOptionExamples />
+              <StepTileExamples />
+            </div>
+          </Section>
+
+          <Section title="Block sem moldura">
+            <p className="max-w-prose text-muted-foreground text-support">
+              <code>Block variant="plain"</code>: o mesmo cabeçalho e o mesmo
+              ritmo, sem a moldura de fora. O título é o único que se omite.
+            </p>
+            <PlainBlockExamples />
           </Section>
 
           <Section title="Cartão de KPI e Esconder valores">

@@ -453,6 +453,40 @@ export const saleStates = {
     await showSaleScreenAlone(page);
   },
 
+  /** Paid in two parts: Pix with no profile, then credit with installments and a profile, closing the total. */
+  async split(page: Page) {
+    await openSaleLab(page);
+    await twoItems(page);
+    await payPix(page);
+    await page
+      .getByRole("button", { exact: true, name: "Dividir pagamento" })
+      .click();
+    const first = page.getByRole("group", { exact: true, name: "Parte 1" });
+    const second = page.getByRole("group", { exact: true, name: "Parte 2" });
+    await first.getByLabel("Valor").fill("100,00");
+    await chooseOption(
+      page,
+      second.getByRole("combobox", { exact: true, name: "Método" }),
+      page.getByRole("option", { exact: true, name: "Crédito" })
+    );
+    await second.getByLabel("Número de parcelas").fill("3");
+    await chooseOption(
+      page,
+      second.getByRole("combobox", { exact: true, name: "Quem parcela" }),
+      page.getByRole("option", { exact: true, name: "Lojista (eu)" })
+    );
+    await chooseOption(
+      page,
+      second.getByRole("combobox", {
+        exact: true,
+        name: "Perfil de pagamento",
+      }),
+      page.getByRole("option", { name: PROFILE_OPTION })
+    );
+    await page.locator('[data-split-balance="closed"]').waitFor();
+    await showSaleScreenAlone(page);
+  },
+
   /** The items chosen and the method paid in Pix. */
   async withItems(page: Page) {
     await openSaleLab(page);

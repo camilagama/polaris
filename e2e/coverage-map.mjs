@@ -796,6 +796,7 @@ export const SPEC_SCREENS = {
     "sale",
     "inventory",
   ],
+  "apps/web/e2e-real/jornadas/venda-dividida.e2e.ts": ["home", "sale"],
   "apps/web/e2e-real/jornadas/venda.e2e.ts": ["home", "sale"],
   "apps/web/e2e-real/pilha/fumaca.e2e.ts": ["home", "dashboard"],
   "apps/web/e2e-real/pilha/hyperdrive-papeis.e2e.ts": ["home"],
@@ -861,6 +862,7 @@ export const SPEC_SCREENS = {
   ],
   "apps/web/e2e/home/numero-em-mono.e2e.ts": ["home", "inventory"],
   "apps/web/e2e/home/meta-anel-largura.e2e.ts": ["home", "inventory"],
+  "apps/web/e2e/home/meta-carrossel.e2e.ts": ["home", "inventory"],
   "apps/web/e2e/home/meta-ritmo.e2e.ts": ["home", "inventory"],
   "apps/web/e2e/home/offline-e-leituras.e2e.ts": ["home", "sale"],
   "apps/web/e2e/home/ritmo-e-plano.e2e.ts": ["home", "settings"],
@@ -926,6 +928,7 @@ export const SPEC_SCREENS = {
   "apps/web/e2e/sale-item-reflow.e2e.ts": ["sale", "inventory"],
   "apps/web/e2e/sale-receipt-mono.e2e.ts": ["sale", "sale-detail", "inventory"],
   "apps/web/e2e/sale-screen.e2e.ts": ["sale"],
+  "apps/web/e2e/sale-split-payment.e2e.ts": ["sale"],
   "apps/web/e2e/session-ended-screens.e2e.ts": [
     "sale",
     "products",
@@ -945,6 +948,7 @@ export const SPEC_SCREENS = {
   "apps/web/e2e/turnstile-real.e2e.ts": ["sign-in"],
   "apps/web/e2e/usabilidade-formularios.e2e.ts": ["settings"],
   "apps/web/e2e/usabilidade-lote-1.e2e.ts": ["home", "settings", "sign-in"],
+  "apps/web/e2e/venda-dividida-reflow.e2e.ts": ["sale", "inventory"],
   "apps/web/e2e/venda-trocar-preco.e2e.ts": ["sale"],
 };
 

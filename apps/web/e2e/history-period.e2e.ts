@@ -76,6 +76,17 @@ const askedWithout = (asked: ListRequest[], key: keyof ListRequest) => {
   return last !== undefined && !(key in last);
 };
 
+const FILTER_KEYS = [
+  "customerQuery",
+  "occurredFrom",
+  "occurredTo",
+  "status",
+] as const satisfies readonly (keyof ListRequest)[];
+const filtersAsked = (asked: ListRequest[]) => {
+  const last = lastAsked(asked);
+  return FILTER_KEYS.filter((key) => last !== undefined && key in last);
+};
+
 async function openHistory(page: Page) {
   const asked: ListRequest[] = [];
   await page.clock.setFixedTime(new Date(NOW));
@@ -242,8 +253,36 @@ for (const viewport of FORM_VIEWPORTS) {
         occurredFrom: "2026-10-08",
         occurredTo: "2026-10-14",
       });
-      // the X of the last pill leaves the period alone, and "Limpar tudo" does not show for one pill with a period
+      // "Limpar tudo" does not show for one pill with a period
       await expect(clearAll).toHaveCount(0);
+
+      // the X of the last pill (Cliente) takes only that filter out: no pill is left, the period stays and the list is asked for with the period alone
+      await remover(page, "Cliente").click();
+      await expect(bar(page).locator('[data-slot="filter-pill"]')).toHaveCount(
+        0
+      );
+      await expect(periodButton(page)).toHaveAccessibleName(
+        "Período: 08/10 a 14/10, editar"
+      );
+      await expect.poll(() => askedWithout(asked, "customerQuery")).toBe(true);
+      expect(lastAsked(asked)).toMatchObject({
+        occurredFrom: "2026-10-08",
+        occurredTo: "2026-10-14",
+      });
+      expect(filtersAsked(asked)).toEqual(["occurredFrom", "occurredTo"]);
+
+      // Cliente back, so the phase with two pills below starts as before
+      const customerAgain = await addFilter(page, "Cliente");
+      await customerAgain
+        .getByRole("textbox", { name: "Cliente" })
+        .fill("angela");
+      await customerAgain
+        .getByRole("button", { name: onPhone(page) ? "Aplicar" : "Pronto" })
+        .click();
+      await expect(customerAgain).toBeHidden();
+      await expect
+        .poll(() => lastAsked(asked))
+        .toMatchObject({ customerQuery: "angela" });
 
       // with two pills again, "Limpar tudo" takes them all and the period too: the list is asked for with no filter at all
       await addFilter(page, "Situação");
