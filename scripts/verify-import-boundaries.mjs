@@ -259,6 +259,13 @@ const stripJsonc = (text) =>
 
 const restrictedImportOptions = (override) =>
   override?.linter?.rules?.style?.noRestrictedImports?.options ?? {};
+const restrictedImportLevel = (override) =>
+  override?.linter?.rules?.style?.noRestrictedImports?.level;
+
+// `on` is the rule's own default severity, which Biome does not promise to be an error, so it ranks
+// below `error`; a level this table does not know ranks below everything.
+const levelStrength = { error: 4, on: 3, warn: 2, info: 1, off: 0 };
+const strengthOf = (level) => levelStrength[level] ?? -1;
 
 /** What the copy of one browser pattern group lacks in the ui/ override, or adds that would undo it. */
 function missingFromGroup(pattern, uiPatterns) {
@@ -295,7 +302,8 @@ function missingFromGroup(pattern, uiPatterns) {
  * override restricts (paths, and every entry of each pattern group, in the same order because a `!`
  * entry only undoes what came before it) must be there too, or ui/ is left uncovered without a sound.
  * Entries that only ui/ has (app-shell, the screens) may be extra, as separate groups, but an exception
- * (`!`) added to the copied group would undo a restriction, so it is refused.
+ * (`!`) added to the copied group would undo a restriction, so it is refused. The `level` of the rule
+ * must not be weaker either: with `off` or `warn` in ui/ the whole copied group would stop failing.
  */
 function missingFromUiOverride(config) {
   const overrides = config.overrides ?? [];
@@ -313,6 +321,13 @@ function missingFromUiOverride(config) {
   const browserOptions = restrictedImportOptions(browser);
   const uiOptions = restrictedImportOptions(ui);
   const missing = [];
+  const browserLevel = restrictedImportLevel(browser);
+  const uiLevel = restrictedImportLevel(ui);
+  if (strengthOf(uiLevel) < strengthOf(browserLevel)) {
+    missing.push(
+      `level ${JSON.stringify(uiLevel)} of noRestrictedImports, weaker than the ${JSON.stringify(browserLevel)} of the browser override`
+    );
+  }
   for (const [name, value] of Object.entries(browserOptions.paths ?? {})) {
     if (JSON.stringify(uiOptions.paths?.[name]) !== JSON.stringify(value)) {
       missing.push(`path "${name}"`);
@@ -399,6 +414,27 @@ const plantedMissing = [
     'path "plantedPackage"',
     ({ browserOptions }) => {
       browserOptions.paths = { plantedPackage: "planted" };
+    },
+  ],
+  [
+    "an error level (it is off)",
+    'level "off" of noRestrictedImports, weaker than the "error"',
+    ({ override }) => {
+      override.linter.rules.style.noRestrictedImports.level = "off";
+    },
+  ],
+  [
+    "an error level (it is warn)",
+    'level "warn" of noRestrictedImports, weaker than the "error"',
+    ({ override }) => {
+      override.linter.rules.style.noRestrictedImports.level = "warn";
+    },
+  ],
+  [
+    "a level at all",
+    'level undefined of noRestrictedImports, weaker than the "error"',
+    ({ override }) => {
+      override.linter.rules.style.noRestrictedImports.level = undefined;
     },
   ],
   [
