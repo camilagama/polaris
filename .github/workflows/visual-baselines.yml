@@ -1,0 +1,102 @@
+# Gera e commita no ramo de um PR as capturas do ui-visual que mudaram (desenho do Filipe, arquitetura-2026-11-24.md).
+# Só por disparo manual, nunca na main, nunca em fork; o revisor confere a lista de PNGs e o artefato de diffs.
+name: Visual baselines
+run-name: "Baselines do ui-visual PR #${{ inputs.pr }}"
+on:
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: "Número do PR (o ramo do PR é o --ref do disparo)"
+        required: true
+        type: number
+permissions: {}
+concurrency:
+  group: visual-baselines-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  baselines:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    permissions:
+      contents: write       # push só no ramo do PR (conferido abaixo)
+      actions: write        # disparar o ci.yml no head novo
+      pull-requests: read   # conferir o PR
+    steps:
+      - name: Recusa main e ramo que não é o head de um PR aberto deste repositório
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ inputs.pr }}
+          REF: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          [ "$GITHUB_REF_TYPE" = branch ] || { echo "só ramo"; exit 1; }
+          [ "$REF" != "main" ] || { echo "nunca na main"; exit 1; }
+          info=$(gh pr view "$PR" --repo "$GITHUB_REPOSITORY" --json state,headRefName,isCrossRepository,headRefOid)
+          [ "$(jq -r .state <<<"$info")" = OPEN ] || { echo "PR fechado"; exit 1; }
+          [ "$(jq -r .isCrossRepository <<<"$info")" = false ] || { echo "PR de fork"; exit 1; }
+          [ "$(jq -r .headRefName <<<"$info")" = "$REF" ] || { echo "ref não é o head do PR"; exit 1; }
+          [ "$(jq -r .headRefOid <<<"$info")" = "$GITHUB_SHA" ] || { echo "o head mudou desde o disparo"; exit 1; }
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.ref_name }}
+          persist-credentials: true
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: .bun-version
+      - id: node-modules
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: |
+            node_modules
+            apps/*/node_modules
+            packages/*/node_modules
+          key: node-modules-${{ runner.os }}-${{ runner.arch }}-bun${{ hashFiles('.bun-version') }}-${{ hashFiles('bun.lock', 'bunfig.toml', 'package.json', 'apps/*/package.json', 'packages/*/package.json') }}
+      - env:
+          NODE_MODULES_HIT: ${{ steps.node-modules.outputs.cache-hit }}
+        run: |
+          if [ "$NODE_MODULES_HIT" != "true" ]; then
+            bun install --frozen-lockfile
+          fi
+      - name: Install Chromium
+        timeout-minutes: 16
+        run: scripts/playwright-install.sh apps/web
+      - name: Gera só as capturas que mudaram (imagem fixada do ui-visual)
+        working-directory: apps/web
+        run: bun run test:visual:update
+      - name: Só PNGs do ui-visual podem mudar
+        run: |
+          set -euo pipefail
+          changed=$(git status --porcelain --untracked-files=all)
+          [ -n "$changed" ] || { echo "nenhuma captura mudou"; exit 0; }
+          if grep -v -E '^.. apps/web/e2e-pwa/ui-visual\.e2e\.ts-snapshots/[^/]+\.png$' <<<"$changed"; then
+            echo "arquivo fora das capturas mudou: recuso"; exit 1
+          fi
+          { echo "### Capturas regravadas"; echo; sed 's/^.. /- /' <<<"$changed"; } >> "$GITHUB_STEP_SUMMARY"
+      - name: Diffs para o revisor
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: visual-baselines-pr-${{ inputs.pr }}
+          path: |
+            apps/web/test-results/
+            apps/web/e2e-pwa/ui-visual.e2e.ts-snapshots/
+          if-no-files-found: ignore
+      - name: Commit e push no ramo do PR
+        env:
+          RUN: ${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          git diff --quiet && git diff --cached --quiet && [ -z "$(git ls-files --others --exclude-standard)" ] && exit 0
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add apps/web/e2e-pwa/ui-visual.e2e.ts-snapshots/
+          git commit -m "test(visual): capturas do ui-visual geradas no CI (run $RUN)"
+          git push origin "HEAD:refs/heads/${GITHUB_REF_NAME}"
+      - name: CI completo no head novo (push com GITHUB_TOKEN não dispara o CI)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ inputs.pr }}
+        run: gh workflow run ci.yml --repo "$GITHUB_REPOSITORY" --ref "$GITHUB_REF_NAME" -f full=true -f pr="$PR"
