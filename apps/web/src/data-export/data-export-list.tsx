@@ -3,7 +3,7 @@ import { cn } from "@/lib/utils";
 import { Alert, AlertDescription } from "@/ui/alert";
 import { Skeleton } from "@/ui/skeleton";
 import { Button, buttonVariants } from "@/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/ui/card";
+import { Block, BlockHeader, BlockPanel } from "@/ui/block";
 import { connectionControlProps } from "../app-shell/connection-required-notice";
 import {
   type DataExportItem,
@@ -98,23 +98,25 @@ export function DataExportList({
     }
   }, [online, onRefresh, refreshing]);
   return (
-    <Card aria-labelledby={TITLE_ID} role="region">
-      <CardHeader className="flex flex-wrap items-center justify-between gap-3">
-        <CardTitle aria-level={3} id={TITLE_ID} role="heading">
-          Suas cópias
-        </CardTitle>
-        <Button
-          aria-busy={refreshing}
-          disabled={refreshing}
-          onClick={handleRefresh}
-          size="sm"
-          variant="outline"
-          {...connectionControlProps(online)}
-        >
-          Atualizar
-        </Button>
-      </CardHeader>
-      <CardContent className="grid min-w-0 gap-3">
+    <Block aria-labelledby={TITLE_ID}>
+      <BlockHeader
+        action={
+          <Button
+            aria-busy={refreshing}
+            disabled={refreshing}
+            onClick={handleRefresh}
+            size="sm"
+            variant="outline"
+            {...connectionControlProps(online)}
+          >
+            Atualizar
+          </Button>
+        }
+        id={TITLE_ID}
+        level={3}
+        title="Suas cópias"
+      />
+      <BlockPanel className="gap-3">
         {loadError ? (
           <Alert role="alert" variant="destructive">
             <AlertDescription>{loadError}</AlertDescription>
@@ -141,7 +143,7 @@ export function DataExportList({
             ))}
           </ul>
         ) : null}
-      </CardContent>
-    </Card>
+      </BlockPanel>
+    </Block>
   );
 }

@@ -97,6 +97,32 @@ describe("Block variant plain", () => {
     expect(html).toContain("Copiar");
   });
 
+  it("título vazio é sem título: nenhuma região nem h2 vazio, e o conteúdo fica", () => {
+    const html = renderToStaticMarkup(
+      <Block
+        action={<button type="button">Copiar</button>}
+        title=""
+        variant="plain"
+      >
+        resumo
+      </Block>
+    );
+    expect(html).not.toContain('role="region"');
+    expect(html).not.toContain("aria-labelledby");
+    expect(html).not.toContain("<h2");
+    expect(html).toContain("Copiar");
+    expect(html).toContain("resumo");
+  });
+
+  it("título vazio com descrição: sem região nem h2, e a descrição fica", () => {
+    const html = renderToStaticMarkup(
+      <Block description="Pago em 2 vezes." title="" variant="plain" />
+    );
+    expect(html).not.toContain('role="region"');
+    expect(html).not.toContain("<h2");
+    expect(html).toContain("Pago em 2 vezes.");
+  });
+
   it("sem título nem nada além do conteúdo não desenha a linha do cabeçalho", () => {
     const html = renderToStaticMarkup(<Block variant="plain">só isto</Block>);
     expect(html).not.toContain('data-slot="card-header"');
@@ -142,5 +168,27 @@ describe("Block variant plain", () => {
     const stray = <Block aria-labelledby="titulo" title="Vendas" />;
     const plain = <Block variant="plain">sem título</Block>;
     expect([named, unnamed, stray, plain]).toHaveLength(4);
+  });
+});
+
+describe("BlockHeader: o grupo da direita no celular", () => {
+  const GROUP = "max-md:grow max-md:justify-end";
+  const heading = (props: Record<string, unknown>) =>
+    renderToStaticMarkup(<BlockHeader id="t" title="Vendas" {...props} />);
+
+  it("com contagem e ação, o grupo ocupa o resto da linha e a ação encosta à direita", () => {
+    expect(
+      heading({
+        action: <button type="button">Exportar</button>,
+        aside: <p>2 vendas</p>,
+      })
+    ).toContain(GROUP);
+  });
+
+  it("sem ação, ou só com ação, o grupo não muda de desenho", () => {
+    expect(heading({ aside: <p>2 vendas</p> })).not.toContain(GROUP);
+    expect(
+      heading({ action: <button type="button">Exportar</button> })
+    ).not.toContain(GROUP);
   });
 });

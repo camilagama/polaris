@@ -313,8 +313,6 @@ export const DEBT: Readonly<Record<Rule, readonly string[]>> = {
     // customers
     "src/customers/customer-list.tsx",
     // data-export
-    "src/data-export/data-export-cards.tsx",
-    "src/data-export/data-export-list.tsx",
     // expenses
     "src/expenses/expense-by-category.tsx",
     "src/expenses/expense-categories-panel.tsx",
@@ -348,11 +346,6 @@ export const DEBT: Readonly<Record<Rule, readonly string[]>> = {
     "src/sign-in/change-password-page.tsx",
     "src/sign-in/entry-ui.tsx",
     // subscription
-    "src/subscription/subscription-commands.tsx",
-    "src/subscription/subscription-offer.tsx",
-    "src/subscription/subscription-page.tsx",
-    "src/subscription/subscription-parts.tsx",
-    "src/subscription/subscription-waiting.tsx",
   ],
   R3: [
     // app-shell
@@ -384,7 +377,6 @@ export const DEBT: Readonly<Record<Rule, readonly string[]>> = {
     "src/sales/sale-payment-section.tsx",
     "src/sales/sale-summary-panel.tsx",
     // subscription
-    "src/subscription/subscription-commands.tsx",
   ],
   R4: [
     // catalog
