@@ -267,17 +267,20 @@ function SplitPaymentDetails({ split }: { split: SplitEvaluation }) {
         const ordinal = index + 1;
         return (
           <div className="grid gap-1.5" key={ordinal}>
+            {/* wraps instead of a leader: a long method beside a large amount does not fit 320 px with a big font */}
             <dl className="grid">
-              <LeaderRow
-                label={`Parte ${ordinal} · ${part.methodText}`}
-                value={
-                  part.amountText === null ? (
+              <div className="flex flex-wrap items-baseline justify-between gap-x-3">
+                <dt className="min-w-0 font-medium">
+                  Parte {ordinal} · {part.methodText}
+                </dt>
+                <dd className="ms-auto text-right font-medium tabular-nums">
+                  {part.amountText === null ? (
                     "—"
                   ) : (
                     <MoneyText text={part.amountText} />
-                  )
-                }
-              />
+                  )}
+                </dd>
+              </div>
             </dl>
             {preview ? (
               <dl className="grid gap-1 text-support">
@@ -311,8 +314,8 @@ function SplitPaymentDetails({ split }: { split: SplitEvaluation }) {
         );
       })}
       {split.feesTotal === null ? null : (
-        <dl className="grid">
-          <LeaderRow
+        <dl className="grid text-support">
+          <DetailRow
             label="Taxas das duas partes"
             value={<FeeValue line={split.feesTotal} />}
           />
@@ -662,38 +665,46 @@ export function SubmitBar({
 }: SubmitBarProps) {
   return (
     <div
-      className="sticky bottom-[var(--app-bottom-bar,0rem)] z-10 flex @[44rem]/sale:hidden items-center justify-between gap-3 border-border border-t bg-background py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]"
+      className="sticky bottom-[var(--app-bottom-bar,0rem)] z-10 grid @[44rem]/sale:hidden gap-1 border-border border-t bg-background py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]"
       data-submit-bar=""
     >
-      <div className="grid min-w-0 shrink-0">
-        <span className="text-muted-foreground text-xs">Total devido</span>
-        {summary ? (
-          <Money
-            className="font-semibold text-value-md"
-            text={summary.rows.find((row) => row.tone === "total")?.value ?? ""}
-          />
-        ) : (
-          <span className="text-muted-foreground text-support">—</span>
-        )}
-        {balance === null || balance.kind === "closed" ? null : (
-          <span
-            className="flex items-center gap-1 font-medium text-support text-warning"
-            data-split-bar-balance=""
-          >
-            <CircleAlertIcon aria-hidden="true" className="size-3.5 shrink-0" />
-            {balance.text}
-          </span>
-        )}
+      <div className="flex items-center justify-between gap-3">
+        <div className="grid min-w-0 shrink-0">
+          <span className="text-muted-foreground text-xs">Total devido</span>
+          {summary ? (
+            <Money
+              className="font-semibold text-value-md"
+              text={
+                summary.rows.find((row) => row.tone === "total")?.value ?? ""
+              }
+            />
+          ) : (
+            <span className="text-muted-foreground text-support">—</span>
+          )}
+        </div>
+        <Button
+          aria-busy={isSubmitting(submission) || undefined}
+          className="h-auto min-h-ctl-xl min-w-0 shrink whitespace-normal py-1.5"
+          disabled={isSubmitting(submission)}
+          size="xl"
+          type="submit"
+        >
+          {submitButtonLabel(submission, offline)}
+        </Button>
       </div>
-      <Button
-        aria-busy={isSubmitting(submission) || undefined}
-        className="h-auto min-h-ctl-xl min-w-0 shrink whitespace-normal py-1.5"
-        disabled={isSubmitting(submission)}
-        size="xl"
-        type="submit"
-      >
-        {submitButtonLabel(submission, offline)}
-      </Button>
+      {/* a line of its own: a long difference wraps instead of widening the bar */}
+      {balance === null || balance.kind === "closed" ? null : (
+        <p
+          className="flex min-w-0 items-start gap-1 font-medium text-support text-warning"
+          data-split-bar-balance=""
+        >
+          <CircleAlertIcon
+            aria-hidden="true"
+            className="mt-0.5 size-3.5 shrink-0"
+          />
+          <span className="[overflow-wrap:anywhere]">{balance.text}</span>
+        </p>
+      )}
     </div>
   );
 }

@@ -5,6 +5,7 @@ import Trash2Icon from "lucide-react/dist/esm/icons/trash-2";
 import TriangleAlertIcon from "lucide-react/dist/esm/icons/triangle-alert";
 import {
   type KeyboardEvent,
+  type ReactNode,
   useCallback,
   useEffect,
   useId,
@@ -387,7 +388,12 @@ interface SplitStartProps {
  * "Dividir pagamento": a text button in the closed line, so a sale paid in one go gains no field. Off, it stays
  * focusable and says why (aria-disabled with the reason as its description).
  */
-function SplitStart({ blocker, onStart, reasonVisible }: SplitStartProps) {
+function SplitStart({
+  blocker,
+  children,
+  onStart,
+  reasonVisible,
+}: SplitStartProps & { children: ReactNode }) {
   const reasonId = useId();
   const [reasonShown, setReasonShown] = useState(false);
   useEffect(() => {
@@ -405,18 +411,21 @@ function SplitStart({ blocker, onStart, reasonVisible }: SplitStartProps) {
   const shown = reasonVisible || reasonShown;
   return (
     <>
-      <Button
-        aria-describedby={blocker === null ? undefined : reasonId}
-        aria-disabled={blocker === null ? undefined : true}
-        className="shrink-0 aria-disabled:opacity-50"
-        id="sale-split-start"
-        onClick={handleClick}
-        size="sm"
-        type="button"
-        variant="link"
-      >
-        {SPLIT_START_LABEL}
-      </Button>
+      <ExtrasActions>
+        <Button
+          aria-describedby={blocker === null ? undefined : reasonId}
+          aria-disabled={blocker === null ? undefined : true}
+          className="shrink-0 aria-disabled:opacity-50"
+          id="sale-split-start"
+          onClick={handleClick}
+          size="sm"
+          type="button"
+          variant="link"
+        >
+          {SPLIT_START_LABEL}
+        </Button>
+        {children}
+      </ExtrasActions>
       {blocker === null ? null : (
         <span
           className={
@@ -429,6 +438,18 @@ function SplitStart({ blocker, onStart, reasonVisible }: SplitStartProps) {
         </span>
       )}
     </>
+  );
+}
+
+/**
+ * "Dividir pagamento" and "Alterar" wrap together, under the summary, never one per line: their touch areas would
+ * overlap. The vertical gap keeps them apart if they ever wrap between themselves.
+ */
+function ExtrasActions({ children }: { children: ReactNode }) {
+  return (
+    <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-3">
+      {children}
+    </div>
   );
 }
 
@@ -456,6 +477,17 @@ function SaleExtras({
   );
   const handleOpenChange = useCallback((next: boolean) => setOpen(next), []);
   const expanded = open || hasError;
+  const trigger = hasError ? null : (
+    <CollapsibleTrigger
+      aria-describedby="sale-extras-summary"
+      render={
+        <Button className="shrink-0" size="sm" type="button" variant="link" />
+      }
+    >
+      {expanded ? "Fechar" : "Alterar"}
+      <span className="sr-only"> data e ajustes</span>
+    </CollapsibleTrigger>
+  );
   return (
     <Collapsible onOpenChange={handleOpenChange} open={expanded}>
       <div className="flex flex-wrap items-center justify-end gap-x-3">
@@ -465,22 +497,10 @@ function SaleExtras({
         >
           {summary}
         </p>
-        {split === null ? null : <SplitStart {...split} />}
-        {hasError ? null : (
-          <CollapsibleTrigger
-            aria-describedby="sale-extras-summary"
-            render={
-              <Button
-                className="shrink-0"
-                size="sm"
-                type="button"
-                variant="link"
-              />
-            }
-          >
-            {expanded ? "Fechar" : "Alterar"}
-            <span className="sr-only"> data e ajustes</span>
-          </CollapsibleTrigger>
+        {split === null ? (
+          <ExtrasActions>{trigger}</ExtrasActions>
+        ) : (
+          <SplitStart {...split}>{trigger}</SplitStart>
         )}
       </div>
       <CollapsiblePanel className="grid gap-5 pt-4">
