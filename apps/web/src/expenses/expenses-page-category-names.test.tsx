@@ -160,6 +160,47 @@ describe("a category renamed in another tab", () => {
     expect(listCategories).toHaveBeenCalledTimes(2);
   });
 
+  it("reads the categories once when another tab archived one, and the chip says so", async () => {
+    const user = userEvent.setup();
+    list.mockImplementation(() => {
+      const answer = serverAnswer();
+      return Promise.resolve({
+        ...answer,
+        totalsByCategory: answer.totalsByCategory.map((entry) =>
+          entry.categoryId === ALUGUEL
+            ? { ...entry, categoryArchived: true }
+            : entry
+        ),
+      });
+    });
+    localCategories = [category(FRETE, "Frete"), category(ALUGUEL, RENAMED)];
+    listCategories
+      .mockImplementationOnce(() =>
+        Promise.resolve({ categories: localCategories })
+      )
+      .mockImplementation(() =>
+        Promise.resolve({
+          categories: [
+            category(FRETE, "Frete"),
+            { ...category(ALUGUEL, RENAMED), status: "archived" as const },
+          ],
+        })
+      );
+    renderPage();
+    const block = await screen.findByRole("region", { name: "Por categoria" });
+    await within(block).findByText(`${RENAMED} (arquivada)`);
+    await waitFor(() => expect(listCategories).toHaveBeenCalledTimes(2));
+    await user.click(
+      await screen.findByRole("button", {
+        name: new RegExp(`^Filtrar por ${RENAMED} \\(arquivada\\)`),
+      })
+    );
+    const bar = await screen.findByLabelText("Filtrar despesas");
+    expect(within(bar).getByText(`${RENAMED} (arquivada)`)).toBeTruthy();
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(listCategories).toHaveBeenCalledTimes(2);
+  });
+
   it("does not read the categories when the names agree", async () => {
     localCategories = [category(FRETE, "Frete"), category(ALUGUEL, RENAMED)];
     renderPage();
