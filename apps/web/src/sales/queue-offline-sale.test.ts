@@ -244,4 +244,29 @@ describe("a sale with a payment profile", () => {
     ).rejects.toThrow("device_sale_not_carriable");
     expect((await outbox.snapshot()).commands).toHaveLength(0);
   });
+
+  it("is refused when it is paid in two parts, which the device command does not carry: payments never vanish in the queue", async () => {
+    const { outbox, stores } = await setup();
+    const split = prepared();
+    const { payment, paymentProfile: _profile, ...rest } = split.request;
+    if (payment === undefined) {
+      throw new Error("the fixture pays in one go");
+    }
+    const request = {
+      ...rest,
+      payments: [
+        { ...payment, amount: "40.00", paymentProfile: null },
+        {
+          ...payment,
+          amount: "50.00",
+          method: "cash" as const,
+          paymentProfile: null,
+        },
+      ],
+    };
+    await expect(queueOfflineSale({ labels, request, stores })).rejects.toThrow(
+      "device_sale_not_carriable"
+    );
+    expect((await outbox.snapshot()).commands).toHaveLength(0);
+  });
 });
