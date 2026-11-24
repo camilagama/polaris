@@ -83,11 +83,15 @@ export function writeLastPayment(
 
 /**
  * What a sale the device just recorded leaves to remember, from the form it was sent with; null when the form had
- * no method or profile settled (it never reaches here, the evaluation refuses it first).
+ * no method or profile settled (it never reaches here, the evaluation refuses it first). A sale paid in two parts
+ * leaves nothing: what is remembered is a single method and profile, and the next sale never opens split.
  */
 export function paymentOfSentForm(
   form: SaleFormState
 ): RememberedPayment | null {
+  if (form.split !== null) {
+    return null;
+  }
   const { method } = form.payment;
   const { choice, seenVersion } = form.profile;
   if (method === "" || choice === "") {

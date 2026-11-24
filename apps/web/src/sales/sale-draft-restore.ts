@@ -10,6 +10,7 @@ import {
   quantityUnits,
   type SaleFormState,
 } from "./sale-form-model";
+import { SPLIT_TOTAL_CHANGED_MESSAGE } from "./sale-split-model";
 import { itemChangesForEntry } from "./sale-variant-picker-model";
 
 interface RepricedLine {
@@ -154,8 +155,12 @@ function repricedText(line: RepricedLine): string {
     : `${listed}; o preço cobrado não mudou.`;
 }
 
-/** What the screen says after the cart was read again, or null when nothing changed. */
+/**
+ * What the screen says after the cart was read again, or null when nothing changed. A cart paid in two parts with an
+ * amount typed in the last one also says that the total moved: only the rest follows the total by itself.
+ */
 export function refreshedDraftMessage({
+  form,
   removed,
   repriced,
 }: RefreshedDraft): string | null {
@@ -163,7 +168,13 @@ export function refreshedDraftMessage({
     ...(removed.length > 0 ? [removedText(removed)] : []),
     ...repriced.map(repricedText),
   ];
-  return parts.length > 0 ? parts.join(" ") : null;
+  if (parts.length === 0) {
+    return null;
+  }
+  const typedParts = form.split !== null && form.split.second.amount !== null;
+  return (typedParts ? [...parts, SPLIT_TOTAL_CHANGED_MESSAGE] : parts).join(
+    " "
+  );
 }
 
 /** The lines of the cart with a variant chosen and the units they add up to: what "Limpar venda" takes out. */

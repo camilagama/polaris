@@ -15,7 +15,7 @@ import { WORKER_MARK } from "./worker-mark";
  */
 const SHIRT_OPTION = /Camiseta do teste/;
 const PROFILE_OPTION = /Maquininha do balcão/;
-const DRAFT_KEY = `polaris.sale.draft.v1:${ORGANIZATION.id}`;
+const DRAFT_KEY = `polaris.sale.draft.v2:${ORGANIZATION.id}`;
 const ATTEMPT_KEY = `polaris.sale.attempt.v1:${ORGANIZATION.id}`;
 const CONFIRMED_REGION = /Venda confirmada/;
 const SUBMIT_NAME = /Confirmar venda|Tentar novamente/;
@@ -218,6 +218,7 @@ test("AC-1, AC-5 e AC-7: a venda montada volta por Vender e por Nova venda, e o 
     "occurredAtLocal",
     "payment",
     "profile",
+    "split",
   ]);
 });
 
@@ -618,6 +619,7 @@ const SEEDED_DRAFT = {
       method: "",
     },
     profile: { choice: "", reviewNotice: null, seenVersion: null },
+    split: null,
   },
   startedAt: SEEDED_STARTED_AT,
   updatedAt: SEEDED_UPDATED_AT,
