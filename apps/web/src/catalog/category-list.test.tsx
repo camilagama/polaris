@@ -1,4 +1,5 @@
 import type { CategoryReadModel } from "@polaris/contracts";
+import TagIcon from "lucide-react/dist/esm/icons/tag";
 import type { ComponentProps } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
@@ -50,6 +51,7 @@ const base: Props = {
 const render = (overrides: Partial<Props> = {}) =>
   renderToStaticMarkup(<CategoryList {...base} {...overrides} />);
 
+const ICON_SQUARE = /<div([^>]*data-slot="empty-icon"[^>]*)>(.*?)<\/div>/;
 const OFF = ' disabled=""';
 // the id is in an attribute, for the tests; the text of a row never shows it (it was the first eight characters)
 const ID_AS_TEXT = />s*0199c2d0/;
@@ -138,6 +140,18 @@ describe("the list of categories", () => {
     expect(deleted).toContain('role="status"');
     expect(deleted).toContain("Não há categorias removidas.");
   });
+
+  it.each(["active", "archived", "deleted"] as const)(
+    "draws the tag icon in the media square of the %s empty state, out of the accessible name",
+    (status) => {
+      const html = render({ categories: [], status });
+      const square = ICON_SQUARE.exec(html);
+      expect(square?.[1]).toContain('aria-hidden="true"');
+      expect(square?.[2]).toBe(
+        renderToStaticMarkup(<TagIcon aria-hidden="true" />)
+      );
+    }
+  );
 
   it.each(Object.entries(EMPTY_TEXT))(
     "keeps the %s empty state inside the limits of the component",
