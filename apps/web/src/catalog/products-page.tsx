@@ -44,7 +44,11 @@ import {
   productErrorMessage,
 } from "./product-errors";
 import { emptyDraft, type ProductDraft } from "./product-form";
-import { ProductList, type ProductListStatus } from "./product-list";
+import {
+  PRODUCT_LIST_TITLE_ID,
+  ProductList,
+  type ProductListStatus,
+} from "./product-list";
 import { validateOpening } from "./product-opening-model";
 import { filterByName } from "./product-search-model";
 import type { VariantConfigurationDraft } from "./product-variants-model";
@@ -63,8 +67,8 @@ import {
   ProductsHeader,
   ProductsImportFooter,
 } from "./products-page-parts";
-import { countLineShown, shownListCount } from "./list-page-model";
-import { ListCountLine, LoadMoreButton, useListPage } from "./screen-parts";
+import { shownListCount } from "./list-page-model";
+import { LoadMoreButton, useListPage } from "./screen-parts";
 import { useProductDelete } from "./use-product-delete";
 import { useProductsData } from "./use-products-data";
 import { useProductsLink } from "./use-products-link";
@@ -141,6 +145,16 @@ async function createFromDraft(
 }
 
 const PRODUCT_NOUN = ["produto", "produtos"] as const;
+
+/** The count beside the title of the list: empty while it loads, fails or finds nothing. */
+function countText(
+  listIsShown: boolean,
+  found: number,
+  total: number,
+  query: string
+): string {
+  return shownListCount(listIsShown, found, total, query, PRODUCT_NOUN) ?? "";
+}
 
 /**
  * An action's error comes first; the failed read of the address's product is said only once the list is shown, so
@@ -966,29 +980,28 @@ export function ProductsPage() {
               open={importOpen}
             />
 
-            <ProductSearch onChange={setQuery} value={query} />
-            <SegmentedFilter
-              label="Estado dos produtos"
-              onSelect={handleStatus}
-              options={PRODUCT_STATUS_OPTIONS}
-              value={status}
-            />
-            <ListCountLine
-              shown={countLineShown(isLoading, listIsShown, products.length)}
-              text={shownListCount(
-                listIsShown,
-                visibleProducts.length,
-                products.length,
-                query,
-                PRODUCT_NOUN
-              )}
-            />
-
+            <div className="grid gap-4 min-[47.5rem]:flex min-[47.5rem]:items-center min-[47.5rem]:justify-between">
+              <div className="min-w-0 min-[47.5rem]:flex-1">
+                <ProductSearch onChange={setQuery} value={query} />
+              </div>
+              <SegmentedFilter
+                label="Estado dos produtos"
+                onSelect={handleStatus}
+                options={PRODUCT_STATUS_OPTIONS}
+                value={status}
+              />
+            </div>
             {loadError ? (
               <LoadErrorNotice message={loadError} onRetry={handleRetryList} />
             ) : (
               <ProductList
                 categories={categories}
+                count={countText(
+                  listIsShown,
+                  visibleProducts.length,
+                  products.length,
+                  query
+                )}
                 isLoading={isLoading}
                 isOffline={isOffline}
                 onArchive={handleArchiveProduct}
@@ -1008,7 +1021,7 @@ export function ProductsPage() {
             )}
             {listIsShown && page.hasMore ? (
               <LoadMoreButton
-                listLabel="Produtos"
+                listHeadingId={PRODUCT_LIST_TITLE_ID}
                 onClick={page.loadMore}
                 shown={page.items.length}
               />

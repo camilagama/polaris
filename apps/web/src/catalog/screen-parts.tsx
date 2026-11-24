@@ -63,8 +63,10 @@ export function ListCountLine({
 }
 
 interface LoadMoreButtonProps {
-  /** The `aria-label` of the list the button feeds: the focus goes to the first new row in it. */
-  listLabel: string;
+  /** The id of the title of the `ListBlock` the button feeds: the focus goes to the first new row in its list. */
+  listHeadingId?: string;
+  /** The `aria-label` of a list that has no `ListBlock`: used when there is no `listHeadingId`. */
+  listLabel?: string;
   onClick: () => void;
   /** How many rows are drawn before the click: the index of the first new one. */
   shown: number;
@@ -76,6 +78,7 @@ interface LoadMoreButtonProps {
  * on the last page, when the button leaves the page, the focus does not fall to the body.
  */
 export function LoadMoreButton({
+  listHeadingId,
   listLabel,
   onClick,
   shown,
@@ -83,12 +86,14 @@ export function LoadMoreButton({
   const handleClick = useCallback(() => {
     onClick();
     focusLater(() => {
-      const rows = document.querySelectorAll(
-        `ul[aria-label="${listLabel}"] > li`
-      );
+      const list =
+        listHeadingId === undefined
+          ? `ul[aria-label="${listLabel}"]`
+          : `ul[aria-labelledby="${listHeadingId}"]`;
+      const rows = document.querySelectorAll(`${list} > li`);
       rows[shown]?.querySelector<HTMLElement>("button, a[href]")?.focus();
     });
-  }, [listLabel, onClick, shown]);
+  }, [listHeadingId, listLabel, onClick, shown]);
   return (
     <Button
       className="justify-self-start"

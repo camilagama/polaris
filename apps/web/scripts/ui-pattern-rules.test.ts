@@ -306,9 +306,6 @@ export const DEBT: Readonly<Record<Rule, readonly string[]>> = {
     // app-shell
     "src/app-shell/state-panel.tsx",
     // catalog
-    "src/catalog/category-form.tsx",
-    "src/catalog/category-list.tsx",
-    "src/catalog/product-list.tsx",
     "src/catalog/public-catalog-panels.tsx",
     // customers
     "src/customers/customer-list.tsx",
@@ -368,7 +365,6 @@ export const DEBT: Readonly<Record<Rule, readonly string[]>> = {
     // catalog
     "src/catalog/product-form.tsx",
     "src/catalog/product-media-crop.tsx",
-    "src/catalog/product-media-list.tsx",
     "src/catalog/product-media-panel.tsx",
     "src/catalog/product-variants-form.tsx",
     // customers
@@ -397,8 +393,6 @@ export const DEBT: Readonly<Record<Rule, readonly string[]>> = {
   ],
   R4: [
     // catalog
-    "src/catalog/category-list.tsx",
-    "src/catalog/product-list.tsx",
     "src/catalog/public-catalog-page.tsx",
     "src/catalog/screen-parts.tsx",
     // customers
@@ -528,8 +522,6 @@ describe("o padrão visual das telas (R1 a R3)", () => {
 
   it("as listas e tabelas principais ficam na dívida: elas saem só quando a tela vai para o Block", () => {
     for (const file of [
-      "src/catalog/product-list.tsx",
-      "src/catalog/category-list.tsx",
       "src/customers/customer-list.tsx",
       "src/expenses/expense-list.tsx",
       "src/inventory/inventory-page.tsx",
@@ -791,10 +783,8 @@ describe("R4: as peças soltas da lista só vivem em ui/ (controles)", () => {
     ]);
   });
 
-  it("os arquivos da dívida de R4 são os de hoje: as 7 telas que ainda importam e o screen-parts que reexporta", () => {
+  it("os arquivos da dívida de R4 são os de hoje: as 5 telas que ainda importam e o screen-parts que reexporta", () => {
     expect(DEBT.R4).toEqual([
-      "src/catalog/category-list.tsx",
-      "src/catalog/product-list.tsx",
       "src/catalog/public-catalog-page.tsx",
       "src/catalog/screen-parts.tsx",
       "src/customers/customer-list.tsx",
