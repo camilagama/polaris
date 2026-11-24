@@ -56,7 +56,7 @@ describe("periodSummaryMayUseCopy", () => {
     expect(periodSummaryMayUseCopy({ code: "GATEWAY_TIMEOUT" })).toBe(true);
   });
 
-  it("keeps TIMEOUT out of the copy, as before the shared list", () => {
+  it("does not use the copy on TIMEOUT", () => {
     expect(periodSummaryMayUseCopy({ code: "TIMEOUT" })).toBe(false);
   });
 

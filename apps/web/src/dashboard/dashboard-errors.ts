@@ -46,7 +46,8 @@ export function periodSummaryErrorMessage(
  * True when the server could not answer (no network, or an outage), so the
  * device's copy of the month may stand in for it. A server that answered
  * (unauthorized, forbidden, invalid request, not found...) said something the
- * copy must never contradict.
+ * copy must never contradict. TIMEOUT is not an outage here, unlike for the
+ * other readers of the shared list.
  */
 export function periodSummaryMayUseCopy(error: unknown): boolean {
   const code = rpcErrorCode(error);
