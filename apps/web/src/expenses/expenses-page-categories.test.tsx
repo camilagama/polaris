@@ -146,7 +146,13 @@ beforeEach(() => {
   list.mockImplementation((input: ListInput) => Promise.resolve(answer(input)));
   listCategories.mockImplementation(() =>
     Promise.resolve({
-      categories: [category(FRETE, "Frete"), category(ALUGUEL, "Aluguel")],
+      categories: [FRETE, ALUGUEL].map((id) =>
+        category(
+          id,
+          names[id]?.name ?? "",
+          names[id]?.archived ? "archived" : "active"
+        )
+      ),
     })
   );
 });

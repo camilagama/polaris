@@ -49,7 +49,8 @@ Os 9 do menu, na ordem do menu (os cinco primeiros com receitas mais fundas):
 - [Clientes](clientes.md) `/customers`: Dialog "Novo cliente".
 - [Resultado](resultado.md) `/dashboard`: abas Resultado e Metas.
 - [Despesas](despesas.md) `/expenses`: Lançamentos, Recorrentes e Categorias.
-- [Configurações](configuracoes.md) `/configuracoes`: Formas de receber, Catálogo público, Aparelhos, Assinatura, Senha.
+- [Configurações](configuracoes.md) `/configuracoes`: Formas de receber, Catálogo público, Assinatura, Seus dados.
+- [Minha conta](conta.md) `/conta`: Senha e Aparelhos, pelo menu do círculo.
 - [Ajuda e contato](ajuda.md) `/ajuda`: o e-mail do suporte e o do encarregado, estática.
 
 Fora do menu: [outros endereços](outros-enderecos.md) (Pendências, entrada, páginas legais, aceite, 404 e endereços antigos).

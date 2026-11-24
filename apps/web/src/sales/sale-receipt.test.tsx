@@ -319,14 +319,11 @@ describe("the history list", () => {
     const markup = renderToStaticMarkup(
       <SaleHistoryList offline={false} rows={[row()]} />
     );
+    expect(markup).toContain('<span class="truncate">Ana Souza</span>');
+    expect(markup).toContain('<span class="shrink-0 whitespace-pre"> ·</span>');
     expect(markup).toContain(
-      '<span class="min-w-[5ch] truncate">Ana Souza</span>'
+      '<span class="min-w-0 max-w-full"> Pix · 2 itens</span>'
     );
-    expect(markup).toContain(
-      '<span class="overflow-hidden text-ellipsis"> · Pix</span>'
-    );
-    expect(markup).toContain('<span class="shrink-0"> · 2 itens</span>');
-    expect(markup).toContain("shrink-0 whitespace-pre");
     expect(markup).toContain("min-w-0 flex-1");
     expect(markup).toContain("overflow-hidden");
     expect(markup).not.toContain("line-clamp");
@@ -343,11 +340,8 @@ describe("the history list", () => {
         ]}
       />
     );
-    expect(none).toContain(
-      '<span class="min-w-[5ch] truncate">Sem cliente</span>'
-    );
-    expect(none).toContain(" · Dinheiro</span>");
-    expect(none).toContain('<span class="shrink-0"> · 1 item</span>');
+    expect(none).toContain('<span class="truncate">Sem cliente</span>');
+    expect(none).toContain(" Dinheiro · 1 item</span>");
   });
 
   it("ends the row in a chevron with a connection and has none without one", () => {

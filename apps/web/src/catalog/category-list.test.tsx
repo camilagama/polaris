@@ -2,6 +2,8 @@ import type { CategoryReadModel } from "@polaris/contracts";
 import type { ComponentProps } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
+import { EMPTY_SUPPORT_MAX, EMPTY_TITLE_MAX } from "@/ui/empty-state";
+import { EMPTY_TEXT } from "./categories-model";
 import { CategoryList } from "./category-list";
 
 /**
@@ -123,17 +125,29 @@ describe("the list of categories", () => {
     expect(html).not.toContain("Camisetas");
   });
 
-  it("tells each tab what an empty list means", () => {
-    expect(render({ categories: [] })).toContain(
-      "Nenhuma categoria ativa. Adicione a primeira do catálogo."
-    );
-    expect(render({ categories: [], status: "archived" })).toContain(
-      "Não há categorias arquivadas."
-    );
-    expect(render({ categories: [], status: "deleted" })).toContain(
-      "Não há categorias removidas."
-    );
+  it("tells each tab what an empty list means, as an empty state read after the load", () => {
+    const active = render({ categories: [] });
+    expect(active).toContain('role="status"');
+    expect(active).toContain("Nenhuma categoria ativa.");
+    expect(active).toContain("Adicione a primeira do catálogo.");
+    expect(active).not.toContain("<button");
+    const archived = render({ categories: [], status: "archived" });
+    expect(archived).toContain('role="status"');
+    expect(archived).toContain("Não há categorias arquivadas.");
+    const deleted = render({ categories: [], status: "deleted" });
+    expect(deleted).toContain('role="status"');
+    expect(deleted).toContain("Não há categorias removidas.");
   });
+
+  it.each(Object.entries(EMPTY_TEXT))(
+    "keeps the %s empty state inside the limits of the component",
+    (_status, text) => {
+      expect(text.title.length).toBeLessThanOrEqual(EMPTY_TITLE_MAX);
+      expect((text.support ?? "").length).toBeLessThanOrEqual(
+        EMPTY_SUPPORT_MAX
+      );
+    }
+  );
 
   it("draws a row with the state in words, the date, and a menu named after the category, with no code", () => {
     const html = render();

@@ -75,7 +75,7 @@ const SHELL_ROUTES = [
   "/dashboard",
   "/expenses",
   "/configuracoes",
-  "/configuracoes?aba=aparelhos",
+  "/conta?aba=aparelhos",
   "/attention",
   "/ajuda",
   "/uma-pagina-que-nao-existe",
@@ -530,6 +530,7 @@ async function expectTwoTaps(page: Page, width: number, label: string) {
   const menu = page.getByRole("menu");
   const items = menu.getByRole("menuitem");
   await expect(items, label).toHaveText([
+    "Minha conta",
     "Ajuda e contato",
     "Termos de Uso (abre em outra aba)",
     "Política de Privacidade (abre em outra aba)",
@@ -783,7 +784,9 @@ test.describe("AC-2.3: teclado, foco e alvos", () => {
     await page.keyboard.press("Enter");
     const menu = page.getByRole("menu");
     await expect(menu).toBeVisible();
-    await expect(menu.getByRole("menuitemradio").first()).toBeFocused();
+    await expect(
+      menu.getByRole("menuitem", { name: "Minha conta" })
+    ).toBeFocused();
     await settled(page);
     for (const item of await menu
       .locator('[role="menuitem"], [role="menuitemradio"]')

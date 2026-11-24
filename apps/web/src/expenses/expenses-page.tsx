@@ -3,7 +3,14 @@ import type {
   ExpenseReadModel,
 } from "@polaris/contracts";
 import PlusIcon from "lucide-react/dist/esm/icons/plus";
-import { type MouseEvent, useCallback, useMemo, useRef, useState } from "react";
+import {
+  type MouseEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { Button } from "@/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/ui/card";
 import { Dialog, DialogContent } from "@/ui/dialog";
@@ -33,6 +40,7 @@ import { ExpenseForm } from "./expense-form";
 import { ExpenseFiltersBar, focusFilterAfterClear } from "./expense-filters";
 import { ExpenseList, ExpenseSummary } from "./expense-list";
 import {
+  categoryNamesDiffer,
   type ExpenseDraft,
   type ExpenseInput,
   formatMonthLabel,
@@ -174,6 +182,30 @@ export function ExpensesPage() {
     filters
   );
   const reloadCategories = categories.reload;
+  const checkedTotals = useRef<unknown>(null);
+  const { categories: knownCategories, isLoading: categoriesLoading } =
+    categories.state;
+  const { totalsByCategory } = state;
+  // a rename in another tab leaves the local names behind the ones in the split: read the categories once per answer
+  useEffect(() => {
+    if (
+      !online ||
+      categoriesLoading ||
+      totalsByCategory === undefined ||
+      checkedTotals.current === totalsByCategory ||
+      !categoryNamesDiffer(totalsByCategory, knownCategories)
+    ) {
+      return;
+    }
+    checkedTotals.current = totalsByCategory;
+    reloadCategories();
+  }, [
+    categoriesLoading,
+    knownCategories,
+    online,
+    reloadCategories,
+    totalsByCategory,
+  ]);
   const form = useFormDialog<ExpenseReadModel, ExpenseDraft>({
     busy: busy !== null,
     onOpen: clearFeedback,
