@@ -210,23 +210,21 @@ export function SettledGoalCard({
   const handleHistory = useCallback(() => setHistoryOpen((open) => !open), []);
   return (
     <Block className="bg-muted/30 shadow-none" variant="plain">
-      <div className="grid gap-3">
-        <GoalHeader goal={goal} today={today} />
-        <SettledResult goal={goal} timezone={timezone} />
-        <div className={ACTIONS}>
-          <GoalHistoryToggle
-            goal={goal}
-            onToggle={handleHistory}
-            open={historyOpen}
-          />
-        </div>
-        <GoalHistoryBody
+      <GoalHeader goal={goal} today={today} />
+      <SettledResult goal={goal} timezone={timezone} />
+      <div className={ACTIONS}>
+        <GoalHistoryToggle
           goal={goal}
+          onToggle={handleHistory}
           open={historyOpen}
-          organizationId={organizationId}
-          timezone={timezone}
         />
       </div>
+      <GoalHistoryBody
+        goal={goal}
+        open={historyOpen}
+        organizationId={organizationId}
+        timezone={timezone}
+      />
     </Block>
   );
 }
@@ -404,42 +402,40 @@ export function ActiveGoalCard({
 
   return (
     <Block variant="plain">
-      <div className="grid gap-3">
-        <GoalHeader goal={goal} today={today} />
-        <GoalProgress goal={goal} pausedHelp={pausedHelp} today={today} />
-        {mode === "edit" ? (
-          <GoalEditForm
-            disabled={busyKey !== null}
-            goal={goal}
-            key={goal.version}
-            onCancel={handleCloseEdit}
-            onSave={handleSave}
-            saving={busyKey === `update:${goal.id}`}
-          />
-        ) : null}
-        <ActiveActions
-          busyKey={busyKey}
+      <GoalHeader goal={goal} today={today} />
+      <GoalProgress goal={goal} pausedHelp={pausedHelp} today={today} />
+      {mode === "edit" ? (
+        <GoalEditForm
+          disabled={busyKey !== null}
           goal={goal}
-          historyOpen={historyOpen}
-          mode={mode}
-          onAskCancel={handleAskCancel}
-          onEdit={handleEdit}
-          onHistory={handleHistory}
+          key={goal.version}
+          onCancel={handleCloseEdit}
+          onSave={handleSave}
+          saving={busyKey === `update:${goal.id}`}
         />
-        <GoalHistoryBody
-          goal={goal}
-          open={historyOpen}
-          organizationId={organizationId}
-          timezone={timezone}
-        />
-        <CancelDialog
-          busyKey={busyKey}
-          goal={goal}
-          onConfirm={handleCancelConfirm}
-          onOpenChange={handleDialog}
-          open={mode === "cancel"}
-        />
-      </div>
+      ) : null}
+      <ActiveActions
+        busyKey={busyKey}
+        goal={goal}
+        historyOpen={historyOpen}
+        mode={mode}
+        onAskCancel={handleAskCancel}
+        onEdit={handleEdit}
+        onHistory={handleHistory}
+      />
+      <GoalHistoryBody
+        goal={goal}
+        open={historyOpen}
+        organizationId={organizationId}
+        timezone={timezone}
+      />
+      <CancelDialog
+        busyKey={busyKey}
+        goal={goal}
+        onConfirm={handleCancelConfirm}
+        onOpenChange={handleDialog}
+        open={mode === "cancel"}
+      />
     </Block>
   );
 }
