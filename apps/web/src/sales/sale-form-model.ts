@@ -72,6 +72,9 @@ export type SaleCommandBody = Omit<
   "recordedAt" | "commandId" | "occurredAt" | "organizationId"
 >;
 
+/** One payment: the whole sale paid in one go, or the method of a part. */
+type SalePayment = NonNullable<SaleCommandBody["payment"]>;
+
 export const MAX_SALE_ITEMS = 200;
 export const MAX_SALE_ADJUSTMENTS = 20;
 const MAX_QUANTITY = 2_147_483_647;
@@ -1227,7 +1230,7 @@ type ProfileSelection =
 
 function buildFeePreview(
   totalDue: string,
-  payment: SaleCommandBody["payment"],
+  payment: SalePayment,
   selection: ProfileSelection
 ): FeePreview | null {
   try {
@@ -1640,7 +1643,7 @@ function parsePayment(
   issues: Issue[],
   keys: PartKeys,
   messages: PartMessages
-): SaleCommandBody["payment"] | null {
+): SalePayment | null {
   if (draft.method === "") {
     pushIssue(issues, keys.method, messages.methodEmpty, true);
     return null;
@@ -2016,7 +2019,7 @@ type SalePaymentProfileSelection = NonNullable<
 function buildBody(
   items: readonly ParsedItem[],
   adjustments: SaleCommandBody["adjustments"],
-  payment: SaleCommandBody["payment"],
+  payment: SalePayment,
   resolution: ProfileResolution
 ): SaleCommandBody | null {
   if (resolution.kind === "blocked") {
@@ -2042,14 +2045,11 @@ function bodyItems(items: readonly ParsedItem[]): SaleCommandBody["items"] {
 
 interface ResolvedPart {
   amount: string;
-  payment: SaleCommandBody["payment"];
+  payment: SalePayment;
   resolution: ProfileResolution;
 }
 
-/**
- * The body of a sale in two parts. The contract still types `payment` as required (the sale screen was the last to move
- * to parts), though at runtime exactly one of `payment` and `payments` travels and the profile goes inside each part.
- */
+/** The body of a sale in two parts: `payments` instead of `payment`, the profile inside each part. */
 function buildSplitBody(
   items: readonly ParsedItem[],
   adjustments: SaleCommandBody["adjustments"],
@@ -2064,11 +2064,11 @@ function buildSplitBody(
       amount,
       paymentProfile: profileSelectionOfResolution(resolution),
     })),
-  } as SaleCommandBody;
+  };
 }
 
 interface EvaluatedPart {
-  payment: SaleCommandBody["payment"] | null;
+  payment: SalePayment | null;
   resolution: ProfileResolution;
 }
 

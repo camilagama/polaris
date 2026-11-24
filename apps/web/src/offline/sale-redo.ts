@@ -117,6 +117,11 @@ export function buildRedoDraft(
     return { kind: "unreadable" };
   }
   const sale = parsed.data;
+  const payment = sale.payment;
+  if (payment === undefined) {
+    // a sale paid in parts never reaches the device's queue yet, so its redo is not built here
+    return { kind: "unreadable" };
+  }
   const byVariant = new Map(entries.map((entry) => [entry.variantId, entry]));
   const problems = problemsOf(sale.items, byVariant);
   if (problems.length > 0) {
@@ -144,13 +149,11 @@ export function buildRedoDraft(
       items,
       occurredAtLocal: "",
       payment: {
-        anticipationRequested: sale.payment.anticipationRequested,
-        installmentPlan: sale.payment.installmentPlan ?? "",
+        anticipationRequested: payment.anticipationRequested,
+        installmentPlan: payment.installmentPlan ?? "",
         installments:
-          sale.payment.installments === null
-            ? ""
-            : String(sale.payment.installments),
-        method: sale.payment.method,
+          payment.installments === null ? "" : String(payment.installments),
+        method: payment.method,
       },
       profile: sale.paymentProfile
         ? {
