@@ -128,7 +128,7 @@ function attentionCountText(count: number): string {
   return count === 1 ? "1 registro recusado" : `${count} registros recusados`;
 }
 
-/** A destination of the menu: the current one has `aria-current="page"` and the emerald dot, Pendências its count. */
+/** A destination of the menu: the current one has `aria-current="page"` and the brand dot, Pendências its count. */
 function NavLink({
   count,
   current,

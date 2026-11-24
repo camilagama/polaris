@@ -31,8 +31,8 @@
   --destructive: oklch(0.47 0.17 27);
   --border: oklch(0.915 0.005 85);
   --input: oklch(0.64 0.005 85);
-  --ring: oklch(0.585 0.115 165);
-  --chart-1: oklch(0.6 0.125 165);
+  --ring: oklch(0.2 0.005 85);
+  --chart-1: oklch(0.577 0.245 27.325);
   --chart-2: oklch(0.62 0.005 85);
   --chart-3: oklch(0.47 0.005 85);
   --chart-4: oklch(0.33 0.005 85);
@@ -40,6 +40,8 @@
   /* one color per entity in the charts (v7, 25/10/2026): sales green, result indigo, ticket orchid; the grey of a
      comparison series; the four steps of the heat map (sequential, one hue). Contrast in docs/design/contraste-v5.1.md */
   --chart-sales: oklch(0.6 0.13 162);
+  /* the text of the chip of a rise in sales, over the tint of --chart-sales: the brand is red, sales stay green */
+  --chart-sales-foreground: oklch(0.42 0.088 165);
   --chart-result: oklch(0.52 0.19 277);
   --chart-ticket: oklch(0.6 0.19 340);
   --chart-context: oklch(0.64 0.005 85);
@@ -57,12 +59,12 @@
   --sidebar-hover: oklch(0.945 0.006 85);
   --sidebar-accent-foreground: oklch(0.2 0.005 85);
   --sidebar-border: oklch(0.925 0.005 85);
-  --sidebar-ring: oklch(0.585 0.115 165);
+  --sidebar-ring: oklch(0.2 0.005 85);
   /* Polaris extensions, in the shadcn pattern: --x and --x-foreground */
   --warning: oklch(0.45 0.094 75);
   --warning-foreground: oklch(1 0 0);
-  --mark: oklch(0.6 0.125 165);
-  --mark-foreground: oklch(0.42 0.088 165);
+  --mark: oklch(0.577 0.245 27.325);
+  --mark-foreground: oklch(0.505 0.213 27.518);
   --overlay: oklch(0.16 0.004 85 / 0.42);
   --shadow-l: 0.28;
   --shadow-c: 0.012;
@@ -106,13 +108,14 @@
   --destructive: oklch(0.77 0.13 25);
   --border: oklch(1 0 0 / 0.06);
   --input: oklch(0.58 0.0035 85);
-  --ring: oklch(0.64 0.134 165);
-  --chart-1: oklch(0.74 0.14 165);
+  --ring: oklch(0.945 0.005 85);
+  --chart-1: oklch(0.637 0.237 25.331);
   --chart-2: oklch(0.6 0.0035 85);
   --chart-3: oklch(0.72 0.0035 85);
   --chart-4: oklch(0.83 0.004 85);
   --chart-5: oklch(0.945 0.005 85);
   --chart-sales: oklch(0.66 0.14 162);
+  --chart-sales-foreground: oklch(0.82 0.14 165);
   --chart-result: oklch(0.62 0.17 277);
   --chart-ticket: oklch(0.66 0.18 340);
   --chart-context: oklch(0.55 0.0035 85);
@@ -129,12 +132,12 @@
   --sidebar-hover: oklch(0.21 0.0035 85);
   --sidebar-accent-foreground: oklch(0.945 0.005 85);
   --sidebar-border: oklch(1 0 0 / 0.06);
-  --sidebar-ring: oklch(0.64 0.134 165);
+  --sidebar-ring: oklch(0.945 0.005 85);
   /* Polaris extensions, in the shadcn pattern: --x and --x-foreground */
   --warning: oklch(0.81 0.11 80);
   --warning-foreground: oklch(0.2 0.0035 85);
-  --mark: oklch(0.74 0.14 165);
-  --mark-foreground: oklch(0.82 0.14 165);
+  --mark: oklch(0.637 0.237 25.331);
+  --mark-foreground: oklch(0.78 0.13 22);
   --overlay: oklch(0.08 0.004 85 / 0.66);
   --shadow-l: 0;
   --shadow-c: 0;
@@ -203,6 +206,7 @@
   --color-chart-4: var(--chart-4);
   --color-chart-5: var(--chart-5);
   --color-chart-sales: var(--chart-sales);
+  --color-chart-sales-foreground: var(--chart-sales-foreground);
   --color-chart-result: var(--chart-result);
   --color-chart-ticket: var(--chart-ticket);
   --color-chart-context: var(--chart-context);
@@ -432,7 +436,7 @@
     text-wrap: balance;
   }
   ::selection {
-    background: color-mix(in oklch, var(--mark) 24%, transparent);
+    background: color-mix(in oklch, var(--ring) 24%, transparent);
   }
   /* Below the `full` level of motion (a phone, or no attribute) the charts do not move (t386): the blocks of the Bklit
      write some transitions inline, with no prop to turn them off (the labels of the y axis sliding to the new scale in
