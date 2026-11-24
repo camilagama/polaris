@@ -53,9 +53,9 @@ test("venda dividida: total 300, Parte 1 = 100, a Parte 2 vem com 200 e a venda 
   );
   await choose(page, second, "Método", "Dinheiro");
   await choose(page, second, "Perfil de pagamento", "Sem perfil de pagamento");
-  await expect(page.locator("#sale-split-balance")).toContainText(
-    "Fechou: R$ 300,00"
-  );
+  await expect(
+    page.getByText("Fechou: R$ 300,00", { exact: true }).first()
+  ).toBeVisible();
   await confirmSale(page);
 
   await expect

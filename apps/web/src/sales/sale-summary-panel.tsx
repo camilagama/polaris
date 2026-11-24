@@ -273,7 +273,7 @@ function SplitPaymentDetails({ split }: { split: SplitEvaluation }) {
                 <dt className="min-w-0 font-medium">
                   Parte {ordinal} · {part.methodText}
                 </dt>
-                <dd className="ms-auto text-right font-medium tabular-nums">
+                <dd className="ms-auto text-right font-medium">
                   {part.amountText === null ? (
                     "—"
                   ) : (
@@ -700,7 +700,7 @@ export function SubmitBar({
         >
           <CircleAlertIcon
             aria-hidden="true"
-            className="mt-0.5 size-3.5 shrink-0"
+            className="mt-0.5 size-4 shrink-0"
           />
           <span className="[overflow-wrap:anywhere]">{balance.text}</span>
         </p>

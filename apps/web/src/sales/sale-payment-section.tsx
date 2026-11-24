@@ -757,7 +757,7 @@ function SplitStatus({
   }, [balance, onAction, onCashAdjust]);
   return (
     <div
-      className="grid min-w-0 gap-2 rounded-lg outline-none empty:hidden focus-visible:ring-[3px] focus-visible:ring-ring/30"
+      className="grid min-w-0 gap-2 focus-ring rounded-lg empty:hidden"
       data-split-balance={balance?.kind}
       id="sale-split-balance"
       tabIndex={-1}
