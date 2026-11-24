@@ -578,7 +578,15 @@ function ListBlockExample({
   );
 }
 
-const OPTION_NAMES = ["Azul / P", "Azul / M", "Vermelho / M"] as const;
+const LONG_OPTION =
+  "Uma combinação com um nome bem comprido, para provar que o texto quebra dentro da borda e não passa dela";
+
+const OPTION_NAMES = [
+  "Azul / P",
+  "Azul / M",
+  "Vermelho / M",
+  LONG_OPTION,
+] as const;
 
 /** The options of the image of a product, as the tab "Imagens" lists them: each one on its own, one of them off. */
 function CheckableOptionExamples() {
@@ -606,10 +614,6 @@ function CheckableOptionExamples() {
         checked={false}
         disabled
         name="Desligada, sem imagem para enviar"
-      />
-      <GalleryOption
-        checked
-        name="Uma combinação com um nome bem comprido, para provar que o texto quebra dentro da borda e não passa dela"
       />
     </div>
   );
@@ -648,11 +652,20 @@ function StepTileExamples() {
   return (
     <ol className="grid gap-2">
       {STEP_EXAMPLES.map(({ Icon, label, state }) => (
-        <li className="flex items-center gap-2.5" key={state}>
+        <li
+          aria-current={state === "current" ? "step" : undefined}
+          className="flex items-center gap-2.5"
+          key={state}
+        >
           <StepTile state={state}>
             <Icon />
           </StepTile>
-          <span>{label}</span>
+          <span>
+            {label}
+            {state === "done" ? (
+              <span className="sr-only"> (feito)</span>
+            ) : null}
+          </span>
         </li>
       ))}
     </ol>

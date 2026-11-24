@@ -706,6 +706,13 @@ test("os painéis internos, a opção marcável e a caixa do passo: medidas e cl
   await expect(
     page.getByRole("checkbox", { name: "Desligada, sem imagem para enviar" })
   ).toBeDisabled();
+  const long = page.locator('[data-slot="checkable-option"]', {
+    hasText: "bem comprido",
+  });
+  await page.setViewportSize({ height: 740, width: 320 });
+  expect(await long.evaluate((row) => row.scrollWidth <= row.clientWidth)).toBe(
+    true
+  );
 });
 
 test("controle: o axe desta página acusa uma imagem sem texto alternativo", async ({

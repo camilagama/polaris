@@ -11,9 +11,9 @@ const STATE: Record<StepState, string> = {
 };
 
 /**
- * The 28 px box of a step's icon in a checklist, the family of `RowTile`: the same size in the three states, so the
- * state moves nothing. `done` shows a check in place of the icon. Only decoration: the name of the step and its
- * state are written beside it.
+ * The 28 px box of a step's icon in a checklist, like `RowTile` a box of icon and nothing else: the same size in the
+ * three states, so the state moves nothing. `done` shows a check in place of the icon. The name of the step and its
+ * state are written beside it (`aria-current="step"` on the item, "(feito)" for the screen reader).
  */
 function StepTile({
   children,

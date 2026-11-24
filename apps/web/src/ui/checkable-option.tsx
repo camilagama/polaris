@@ -35,7 +35,7 @@ function CheckableOption({
         disabled={disabled ?? false}
         onCheckedChange={onCheckedChange}
       />
-      <span className="min-w-0 [overflow-wrap:anywhere]">{children}</span>
+      <span className="[overflow-wrap:anywhere]">{children}</span>
     </Label>
   );
 }
