@@ -661,7 +661,7 @@ export async function touchFaults(
 // ---- 6. focus -------------------------------------------------------------------------------------------
 
 /** In page: what the keyboard focus draws on the focused element, or on the group that holds it. */
-async function describeFocus() {
+async function describeFocus(within?: string) {
   // the ring fades in (140 ms): measure it after the transitions of the stop have ended
   await Promise.all(
     document
@@ -703,14 +703,16 @@ async function describeFocus() {
     guard: active.hasAttribute("data-base-ui-focus-guard"),
     key: keyOf(active),
     label: labelOf(active),
+    outside: within ? active.closest(within) === null : false,
   };
 }
 
-/** In page: the controls the page keeps in the tab order. */
-function tabbable(selector: string) {
+/** In page: the controls the page keeps in the tab order, inside `within` when it is given. */
+function tabbable(selector: string, within?: string) {
   return [...document.querySelectorAll<HTMLElement>(selector)]
     .filter(
       (element) =>
+        (!within || element.closest(within) !== null) &&
         element.tabIndex >= 0 &&
         !element.matches(":disabled") &&
         isShown(element)
@@ -723,14 +725,16 @@ function tabbable(selector: string) {
 
 /**
  * 6. Focus: Tab through the whole screen with the real keyboard; each stop draws the 3 px ring, and every
- * control the page keeps in the tab order is reached.
+ * control the page keeps in the tab order is reached. `within` is a selector for one element (with no modal open): the
+ * walk starts right before it and ends when the focus leaves it, so it costs one Tab per control inside instead of one
+ * per control of the screen (each stop waits for the ring to fade in).
  */
-export async function focusFaults(page: Page) {
-  await page.evaluate(() => {
+export async function focusFaults(page: Page, within?: string) {
+  await page.evaluate((scope) => {
     // an open modal has the focus inside it, and Tab goes round its controls: the walk starts at the popup
-    const popup = document.querySelector<HTMLElement>(
-      "[role=dialog][data-open]"
-    );
+    const popup = scope
+      ? null
+      : document.querySelector<HTMLElement>("[role=dialog][data-open]");
     if (popup) {
       popup.focus();
       return;
@@ -739,13 +743,19 @@ export async function focusFaults(page: Page) {
     // Tab starts where the last click or focus was: a screen the test has filled in would skip what is above
     // that point. An element focused at the top of the page and then removed leaves the starting point there,
     // as for a person who just arrived.
-    window.scrollTo(0, 0);
+    const root = scope ? document.querySelector(scope) : null;
+    if (scope && !root) {
+      throw new Error(`focusFaults: nothing matches "${scope}"`);
+    }
+    if (!scope) {
+      window.scrollTo(0, 0);
+    }
     const anchor = document.createElement("span");
     anchor.tabIndex = -1;
-    document.body.prepend(anchor);
+    (root ?? document.body).prepend(anchor);
     anchor.focus();
     anchor.remove();
-  });
+  }, within);
   const reached = new Set<number>();
   const faults: string[] = [];
   let ended = false;
@@ -753,9 +763,13 @@ export async function focusFaults(page: Page) {
   for (let step = 0; step < MAX_TAB_STOPS && !ended; step += 1) {
     // biome-ignore lint/performance/noAwaitInLoops: the real keyboard moves one stop at a time
     await page.keyboard.press("Tab");
-    const stop = await inPage(page, describeFocus);
+    const stop = await inPage(page, describeFocus, within);
     if (stop?.guard) {
       continue;
+    }
+    if (stop?.outside) {
+      ended = true;
+      break;
     }
     // the same element twice in a row is a control of several parts (the fields of a `datetime-local`): the
     // browser has not left it yet; the same element after others is the loop closing
@@ -774,7 +788,12 @@ export async function focusFaults(page: Page) {
       `a tela tem mais de ${MAX_TAB_STOPS} paradas de Tab: suba MAX_TAB_STOPS ou divida a tela`
     );
   }
-  for (const { key, label } of await inPage(page, tabbable, POINTER_CONTROLS)) {
+  for (const { key, label } of await inPage(
+    page,
+    tabbable,
+    POINTER_CONTROLS,
+    within
+  )) {
     if (!reached.has(key)) {
       faults.push(`${label} está na ordem de Tab e o teclado não chega nele`);
     }
