@@ -270,9 +270,9 @@ test.describe("loja com venda", () => {
       "true"
     );
     await expect(meta).toContainText("R$ 2.670,60de R$ 5.000,00");
-    await expect(meta.locator("[data-goal-projection]")).toHaveText(
-      GOAL_PROJECTION
-    );
+    await expect(
+      meta.locator('[data-goal-slide="open"] [data-goal-projection]')
+    ).toHaveText(GOAL_PROJECTION);
     // two active goals and no foot under 760 px: the one way out is the link at the end of the body
     await expect(meta.getByRole("link")).toHaveCount(1);
     await expect(
