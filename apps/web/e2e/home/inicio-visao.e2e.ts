@@ -270,9 +270,9 @@ test.describe("loja com venda", () => {
       "true"
     );
     await expect(meta).toContainText("R$ 2.670,60de R$ 5.000,00");
-    await expect(meta.locator("[data-goal-projection]")).toHaveText(
-      GOAL_PROJECTION
-    );
+    await expect(
+      meta.locator('[data-goal-slide="open"] [data-goal-projection]')
+    ).toHaveText(GOAL_PROJECTION);
     // two active goals and no foot under 760 px: the one way out is the link at the end of the body
     await expect(meta.getByRole("link")).toHaveCount(1);
     await expect(
@@ -1256,6 +1256,27 @@ test.describe("loja sem venda: o checklist (AC-22, AC-23)", () => {
     await page.route("**/rpc/product/create", (route) => {
       registered = true;
       return route.fulfill(json(created));
+    });
+    // with the offline copy ready the product is queued and announced only once the send is accepted: without an
+    // answer here the foot stays at 1 of 3, and whether the copy is ready by the click depends on the machine's speed
+    await page.route("**/rpc/sync/push", (route) => {
+      const { commands } = (
+        route.request().postDataJSON() as {
+          json: { commands: { commandId: string; type: string }[] };
+        }
+      ).json;
+      registered ||= commands.some(({ type }) => type === "product.create");
+      return route.fulfill(
+        json({
+          results: commands.map(({ commandId }) => ({
+            code: null,
+            commandId,
+            replayed: false,
+            result: null,
+            status: "accepted",
+          })),
+        })
+      );
     });
     const server = new FakeServer(
       empty({ all: 0, unknownCost: 0, withoutStock: 0, withStock: 0 })

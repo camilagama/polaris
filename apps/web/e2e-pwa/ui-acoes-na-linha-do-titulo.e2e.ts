@@ -22,7 +22,14 @@ const GOALS_REFRESH = /^Atualizar metas/;
 const NEW_GOAL = /^Nova meta$/;
 const TABS_SAME_PLACE = 1;
 
-const ON_THE_LINE = [
+const ON_THE_LINE: readonly {
+  action: RegExp;
+  actionLabel: string;
+  hasAbout: boolean;
+  heading: string;
+  screen: string;
+  thenAction?: RegExp;
+}[] = [
   {
     action: /^Atualizar$/,
     actionLabel: "Atualizar",
@@ -50,8 +57,9 @@ const ON_THE_LINE = [
     hasAbout: true,
     heading: "Resultado",
     screen: "resultado metas",
+    thenAction: NEW_GOAL,
   },
-] as const;
+];
 
 const REFERENCES = [
   { heading: "Produtos", screen: "produtos lista" },
@@ -238,6 +246,66 @@ for (const line of ON_THE_LINE) {
         ),
         "a ação está na linha do título"
       ).toBe(true);
+      if (line.thenAction) {
+        await page.keyboard.press("Tab");
+        await expect(
+          page.locator(":focus"),
+          `a segunda ação "${line.thenAction}"`
+        ).toHaveAccessibleName(line.thenAction);
+        expect(
+          await page.evaluate(
+            () =>
+              document.activeElement?.closest("[data-title-actions]") !== null
+          ),
+          "a segunda ação está na linha do título"
+        ).toBe(true);
+        await page.keyboard.press("Tab");
+        const content = page.locator(":focus");
+        await expect(
+          content,
+          "o conteúdo: a aba aberta, Metas"
+        ).toHaveAttribute("role", "tab");
+        await expect(content).toHaveAccessibleName(METAS_TAB);
+        expect(
+          await page.evaluate(
+            () =>
+              document.activeElement?.closest("[data-title-actions]") ?? null
+          ),
+          "o conteúdo vem depois da linha do título"
+        ).toBeNull();
+      }
+    });
+  });
+}
+
+const FORM_CLOSERS = [
+  { close: "o botão Fechar", name: "Fechar" },
+  { close: "o Esc", name: null },
+] as const;
+
+for (const closer of FORM_CLOSERS) {
+  test.describe(`resultado metas · o foco volta a "Nova meta" ao fechar o formulário com ${closer.close} · ${CONTEXTS[1].name}`, () => {
+    test.use({
+      hasTouch: CONTEXTS[1].touch,
+      isMobile: CONTEXTS[1].touch,
+      viewport: CONTEXTS[1].viewport,
+    });
+
+    test("o foco não cai no body", async ({ page }) => {
+      await screenOf("resultado metas").open(page, page.context());
+      const newGoal = page
+        .locator("[data-title-actions]")
+        .getByRole("button", { name: NEW_GOAL });
+      await newGoal.tap();
+      const dialog = page.getByRole("dialog", { name: "Nova meta" });
+      await expect(dialog).toBeVisible();
+      if (closer.name) {
+        await dialog.getByRole("button", { name: closer.name }).tap();
+      } else {
+        await page.keyboard.press("Escape");
+      }
+      await expect(dialog).toBeHidden();
+      await expect(newGoal, "o botão que abriu o formulário").toBeFocused();
     });
   });
 }
