@@ -54,6 +54,8 @@ import {
   stockCoverIds,
   stockListView,
   stockMoreView,
+  STOCK_NO_VARIANTS_SUPPORT,
+  STOCK_NO_VARIANTS_TITLE,
 } from "./stock-list-model";
 import { RowActions, triggerId } from "./stock-row-actions";
 import { type StockTarget, stockTarget } from "./stock-target";
@@ -498,8 +500,8 @@ export function InventoryPage() {
         <EmptyState
           afterRead
           icon={PackageIcon}
-          support="Cadastre um produto para controlar o estoque dele."
-          title="Nenhuma variante cadastrada."
+          support={STOCK_NO_VARIANTS_SUPPORT}
+          title={STOCK_NO_VARIANTS_TITLE}
         >
           <a
             className={buttonVariants({ variant: "outline" })}
@@ -520,11 +522,7 @@ export function InventoryPage() {
       {view.kind === "empty" && !view.showCatalogLink ? (
         <ListBlock
           count={countText ?? ""}
-          emptyNotice={
-            <p className="text-muted-foreground" role="status">
-              {view.message}
-            </p>
-          }
+          emptyNotice={<p className="text-muted-foreground">{view.message}</p>}
           state="filtered-empty"
           title={LIST_TITLE}
         />

@@ -400,6 +400,10 @@ function unknownCostUnanswerable(
   return filters.unknownCost && costUnavailable;
 }
 
+export const STOCK_NO_VARIANTS_TITLE = "Nenhuma variante cadastrada.";
+export const STOCK_NO_VARIANTS_SUPPORT =
+  "Cadastre um produto para controlar o estoque dele.";
+
 export function stockEmptyMessage(
   filters: StockFilters,
   costUnavailable = false
@@ -422,7 +426,7 @@ export function stockEmptyMessage(
   if (filters.stock === "without_stock") {
     return "Todas as variantes têm saldo.";
   }
-  return "Nenhuma variante cadastrada. Cadastre um produto para controlar o estoque dele.";
+  return `${STOCK_NO_VARIANTS_TITLE} ${STOCK_NO_VARIANTS_SUPPORT}`;
 }
 
 export type StockListView =
