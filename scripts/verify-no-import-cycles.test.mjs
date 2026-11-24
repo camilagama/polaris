@@ -15,6 +15,7 @@ const GUARD = fileURLToPath(
   new URL("./verify-no-import-cycles.mjs", import.meta.url)
 );
 const HEADER = "Circular runtime imports found:";
+const SOURCE_SUFFIX = /\.tsx?$/;
 
 const created = [];
 
@@ -168,25 +169,72 @@ describe("verify-no-import-cycles", () => {
     );
   });
 
-  it("leaves .test.ts and .d.ts files out of the graph", () => {
-    const result = runGuard({
-      "packages/lib/src/a.test.ts":
-        'import { b } from "./b.test";\nimport { real } from "./real";\nexport const t = [b, real];\n',
-      "packages/lib/src/b.test.ts":
-        'import { t } from "./a.test";\nexport const b = t;\n',
-      "packages/lib/src/c.d.ts":
-        'import { d } from "./d";\nexport declare const c: typeof d;\n',
-      "packages/lib/src/d.d.ts":
-        'import { c } from "./c";\nexport declare const d: typeof c;\n',
-      "packages/lib/src/real.ts":
-        'import { t } from "./a.test";\nexport const real = t;\n',
-    });
+  // Each exclusion gets a cycle that exists only through the excluded file
+  // (real.ts -> excluded -> real.ts), so the guard passes only while the
+  // exclusion holds; the control plants the same loop under a name the guard
+  // does read and must fail, proving the planted tree is a real cycle.
+  function exclusionCycle(excludedFile, specifier) {
+    return {
+      "packages/lib/src/real.ts": `import { other } from "${specifier}";\nexport const real = other;\n`,
+      [excludedFile]:
+        'import { real } from "../real";\nexport const other = real;\n',
+    };
+  }
 
-    expect(result.status).toBe(0);
-    expect(result.stdout).toContain(
-      "No circular runtime imports across 1 source files."
-    );
-  });
+  const EXCLUDED_SUFFIXES = [
+    { control: "ex.spec.ts", suffix: ".test.ts" },
+    { control: "ex.spec.tsx", suffix: ".test.tsx" },
+    { control: "ex.spec.ts", suffix: ".d.ts" },
+    { control: "ex.spec.ts", suffix: ".gen.ts" },
+  ];
+
+  it.each(EXCLUDED_SUFFIXES)(
+    "leaves a $suffix file out of the graph",
+    ({ control, suffix }) => {
+      const excluded = `ex${suffix}`;
+      const tree = (name) =>
+        exclusionCycle(
+          `packages/lib/src/dir/${name}`,
+          `./dir/${name.replace(SOURCE_SUFFIX, "")}`
+        );
+
+      const passed = runGuard(tree(excluded));
+      expect(passed.status, `${suffix} must stay excluded`).toBe(0);
+      expect(passed.stdout).toContain(
+        "No circular runtime imports across 1 source files."
+      );
+
+      const failed = runGuard(tree(control));
+      expect(failed.status, `control ${control} must form a cycle`).toBe(1);
+      expect(failed.stderr).toContain(HEADER);
+    }
+  );
+
+  const EXCLUDED_FOLDERS = [
+    "node_modules",
+    "dist",
+    ".wrangler",
+    "drizzle",
+    "e2e",
+  ];
+
+  it.each(EXCLUDED_FOLDERS)(
+    "leaves the %s folder out of the graph",
+    (folder) => {
+      const tree = (name) =>
+        exclusionCycle(`packages/lib/src/${name}/ex.ts`, `./${name}/ex`);
+
+      const passed = runGuard(tree(folder));
+      expect(passed.status, `${folder} must stay excluded`).toBe(0);
+      expect(passed.stdout).toContain(
+        "No circular runtime imports across 1 source files."
+      );
+
+      const failed = runGuard(tree("pasta"));
+      expect(failed.status, "control folder must form a cycle").toBe(1);
+      expect(failed.stderr).toContain(HEADER);
+    }
+  );
 
   // Known blind spots, not an approval: the guard only walks `src`, `worker`
   // and `poc` of each package and skips any `scripts` folder below them
