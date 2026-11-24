@@ -221,9 +221,11 @@ function ProfileRow(props: ProfileRowProps) {
         </div>
         <ul className="grid gap-2">
           {profile.rules.map((rule) => (
-            <li key={rule.id}>
+            <li className="min-w-0" key={rule.id}>
               <InsetBlock className="grid gap-2 p-3">
-                <p className="font-medium">{ruleTitle(rule)}</p>
+                <p className="font-medium [overflow-wrap:anywhere]">
+                  {ruleTitle(rule)}
+                </p>
                 <dl className="grid gap-x-3 gap-y-2 text-support min-[30rem]:grid-cols-3">
                   <Figure label="Recebimento">
                     {settlementText(rule.expectedSettlementDays)}
