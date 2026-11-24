@@ -190,12 +190,7 @@ export function exceptionFaults(
 
 /** The files of before the pattern, per rule: only shrinks, and each screen that migrates takes its files out. */
 export const DEBT: Readonly<Record<Rule, readonly string[]>> = {
-  R1: [
-    "src/catalog/product-dialog.tsx",
-    "src/catalog/product-import/import-preview-step.tsx",
-    "src/dashboard/dashboard-page.tsx",
-    "src/expenses/expenses-page.tsx",
-  ],
+  R1: ["src/catalog/product-import/import-preview-step.tsx"],
   R2: [
     "src/app-shell/state-panel.tsx",
     "src/catalog/category-form.tsx",
