@@ -97,7 +97,7 @@ function escapeRegExp(text: string) {
 
 /** Where the label and the value of one line of the payment block sit, so the value can be checked against both. */
 async function rowBox(block: Locator, label: string) {
-  const row = block.locator(":scope > div").filter({
+  const row = block.locator(":scope > dl > div").filter({
     has: block
       .page()
       .locator("dt", { hasText: new RegExp(`^${escapeRegExp(label)}$`) }),

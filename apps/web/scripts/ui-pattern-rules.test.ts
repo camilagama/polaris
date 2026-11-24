@@ -338,17 +338,11 @@ export const DEBT: Readonly<Record<Rule, readonly string[]>> = {
     // organization
     // payment-profiles
     // sales
-    "src/sales/offline-sale-panels.tsx",
-    "src/sales/sale-confirmed-panel.tsx",
-    "src/sales/sale-customer-panel.tsx",
-    "src/sales/sale-detail-page.tsx",
     "src/sales/sale-id-missing.tsx",
     "src/sales/sale-item-editor.tsx",
     "src/sales/sale-page.tsx",
     "src/sales/sale-payment-section.tsx",
-    "src/sales/sale-receipt.tsx",
     "src/sales/sale-summary-panel.tsx",
-    "src/sales/sale-timeline.tsx",
     // settings
     // sign-in
     "src/sign-in/change-password-page.tsx",
@@ -388,7 +382,6 @@ export const DEBT: Readonly<Record<Rule, readonly string[]>> = {
     "src/offline/runtime/sync-status.tsx",
     // payment-profiles
     // sales
-    "src/sales/offline-sale-panels.tsx",
     "src/sales/sale-payment-section.tsx",
     "src/sales/sale-summary-panel.tsx",
     // subscription

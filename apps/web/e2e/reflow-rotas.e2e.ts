@@ -163,7 +163,7 @@ const KNOWN_FINDINGS_24: readonly KnownFinding[] = [
       "detalhe da venda trocar o cliente",
     ],
     scrollWidth: 274,
-    selector: 'main > section > div[data-slot="card"]',
+    selector: 'main > div[data-slot="card-frame"]',
   },
   {
     clientWidth: 272,

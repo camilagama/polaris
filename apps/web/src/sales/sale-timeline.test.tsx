@@ -223,10 +223,12 @@ describe("the timeline inside the detail", () => {
   const top = (view: SaleDetailReadModel) =>
     renderToStaticMarkup(<ReadyDetailTop detail={view} refreshing={false} />);
   const section = (html: string) => {
-    const start = html.indexOf(
-      '<section aria-labelledby="sale-timeline-title"'
+    const start = html.lastIndexOf(
+      "<div",
+      html.indexOf('aria-labelledby="sale-timeline-title"')
     );
-    return html.slice(start, html.indexOf("</section>", start));
+    const next = html.indexOf('aria-labelledby="sale-returns-title"', start);
+    return html.slice(start, next === -1 ? undefined : next);
   };
   const twoReturns = detail({
     returns: [
@@ -238,7 +240,7 @@ describe("the timeline inside the detail", () => {
 
   it("sits under the receipt and before the returns", () => {
     const html = top(twoReturns);
-    const receipt = html.indexOf('id="sale-detail-title"');
+    const receipt = html.indexOf(">Venda</h2>");
     const timeline = html.indexOf('id="sale-timeline-title"');
     const returns = html.indexOf('id="sale-returns-title"');
     expect(receipt).toBeGreaterThan(-1);
