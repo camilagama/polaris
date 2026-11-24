@@ -201,6 +201,100 @@ describe("a category renamed in another tab", () => {
     expect(listCategories).toHaveBeenCalledTimes(2);
   });
 
+  it("lists the new name in the Categoria menu after the read", async () => {
+    const user = userEvent.setup();
+    listCategories
+      .mockImplementationOnce(() =>
+        Promise.resolve({ categories: localCategories })
+      )
+      .mockImplementation(() =>
+        Promise.resolve({
+          categories: [category(FRETE, "Frete"), category(ALUGUEL, RENAMED)],
+        })
+      );
+    renderPage();
+    const block = await screen.findByRole("region", { name: "Por categoria" });
+    await within(block).findByText(RENAMED);
+    await waitFor(() => expect(listCategories).toHaveBeenCalledTimes(2));
+
+    await user.click(screen.getByRole("button", { name: "Filtrar" }));
+    await user.click(
+      await screen.findByRole("menuitem", { name: "Categoria" })
+    );
+    const choices = await screen.findByRole("group", { name: "Categoria" });
+    await within(choices).findByRole("button", { name: RENAMED });
+    await waitFor(() =>
+      expect(
+        within(choices).queryByRole("button", { name: "Aluguel" })
+      ).toBeNull()
+    );
+  });
+
+  it("lists the archived category as such in the Categoria menu after the read", async () => {
+    const user = userEvent.setup();
+    list.mockImplementation(() => {
+      const answer = serverAnswer();
+      return Promise.resolve({
+        ...answer,
+        totalsByCategory: answer.totalsByCategory.map((entry) =>
+          entry.categoryId === ALUGUEL
+            ? { ...entry, categoryArchived: true }
+            : entry
+        ),
+      });
+    });
+    localCategories = [category(FRETE, "Frete"), category(ALUGUEL, RENAMED)];
+    listCategories
+      .mockImplementationOnce(() =>
+        Promise.resolve({ categories: localCategories })
+      )
+      .mockImplementation(() =>
+        Promise.resolve({
+          categories: [
+            category(FRETE, "Frete"),
+            { ...category(ALUGUEL, RENAMED), status: "archived" as const },
+          ],
+        })
+      );
+    renderPage();
+    const block = await screen.findByRole("region", { name: "Por categoria" });
+    await within(block).findByText(`${RENAMED} (arquivada)`);
+    await waitFor(() => expect(listCategories).toHaveBeenCalledTimes(2));
+
+    await user.click(screen.getByRole("button", { name: "Filtrar" }));
+    await user.click(
+      await screen.findByRole("menuitem", { name: "Categoria" })
+    );
+    const choices = await screen.findByRole("group", { name: "Categoria" });
+    await within(choices).findByRole("button", {
+      name: `${RENAMED} (arquivada)`,
+    });
+  });
+
+  it("does not read again in a loop when the server still disagrees with the list read", async () => {
+    list.mockImplementation(() => {
+      const answer = serverAnswer();
+      return Promise.resolve({
+        ...answer,
+        totalsByCategory: answer.totalsByCategory.map((entry) =>
+          entry.categoryId === ALUGUEL
+            ? { ...entry, categoryArchived: true }
+            : entry
+        ),
+      });
+    });
+    listCategories.mockImplementation(() =>
+      Promise.resolve({
+        categories: [category(FRETE, "Frete"), category(ALUGUEL, RENAMED)],
+      })
+    );
+    renderPage();
+    await waitFor(() => expect(listCategories).toHaveBeenCalledTimes(2));
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(listCategories).toHaveBeenCalledTimes(2);
+    expect(list).toHaveBeenCalledTimes(1);
+  });
+
   it("does not read the categories when the names agree", async () => {
     localCategories = [category(FRETE, "Frete"), category(ALUGUEL, RENAMED)];
     renderPage();
