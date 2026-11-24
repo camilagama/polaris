@@ -62,5 +62,5 @@ Workflows **existe no Free** ("included in both the Free and Paid Workers plans"
 
 - **Workflow para a exportação no Free:** 10 ms de CPU por step não montam um ZIP; partir a montagem mudaria o formato e o pipeline e gastaria a cota de 3.000 steps por dia da conta.
 - **Workflow para a exportação no pago:** exige contratar o Workers Paid (decisão de custo do responsável) para ter o mesmo CPU que a fila já dá no Free, e duplica o estado do andamento.
-- **Workflow para o purge agora:** o purge está em revisão, ainda não na `main`, e esta tarefa não o toca; e o desenho dele já retoma pelo banco.
+- **Workflow para o purge agora:** o purge já está feito (migration 0075, na `main`) e retoma pelo banco; um Workflow o duplicaria.
 - **Declarar o binding sem uso, "para depois":** um binding sem decisão é configuração morta e convida a usar sem medir; o teste impede.
