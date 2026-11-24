@@ -483,7 +483,7 @@ export const saleStates = {
       }),
       page.getByRole("option", { name: PROFILE_OPTION })
     );
-    await page.locator("[data-split-balance=\"closed\"]").waitFor();
+    await page.locator('[data-split-balance="closed"]').waitFor();
     await showSaleScreenAlone(page);
   },
 

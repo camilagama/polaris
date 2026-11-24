@@ -149,9 +149,7 @@ describe("the state of the parts", () => {
       total: brl("100", "00"),
     });
     expect(balance.text).toBe("Passou R$ 50,00");
-    expect(balance.hint).toBe(
-      "Se for troco, a parte em dinheiro é R$ 60,00."
-    );
+    expect(balance.hint).toBe("Se for troco, a parte em dinheiro é R$ 60,00.");
     expect(balance.cashAdjust).toEqual({
       amount: brl("60", "00"),
       change: brl("50", "00"),
@@ -167,9 +165,7 @@ describe("the state of the parts", () => {
       second: brl("100", "00"),
       total: brl("300", "00"),
     });
-    expect(balance.hint).toBe(
-      "Se for troco, a parte em dinheiro é R$ 200,00."
-    );
+    expect(balance.hint).toBe("Se for troco, a parte em dinheiro é R$ 200,00.");
     expect(balance.cashAdjust).toEqual({
       amount: brl("200", "00"),
       change: brl("50", "00"),

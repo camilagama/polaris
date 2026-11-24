@@ -298,7 +298,9 @@ describe("the form of a refused sale", () => {
         ],
       },
     };
-    expect(buildRedoDraft(split, [entry({ variantId: MUG })], createId)).toEqual({
+    expect(
+      buildRedoDraft(split, [entry({ variantId: MUG })], createId)
+    ).toEqual({
       kind: "unreadable",
     });
   });

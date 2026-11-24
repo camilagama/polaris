@@ -264,9 +264,9 @@ describe("a sale with a payment profile", () => {
         },
       ],
     };
-    await expect(
-      queueOfflineSale({ labels, request, stores })
-    ).rejects.toThrow("device_sale_not_carriable");
+    await expect(queueOfflineSale({ labels, request, stores })).rejects.toThrow(
+      "device_sale_not_carriable"
+    );
     expect((await outbox.snapshot()).commands).toHaveLength(0);
   });
 });
