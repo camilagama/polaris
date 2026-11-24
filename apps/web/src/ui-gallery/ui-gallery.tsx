@@ -9,7 +9,13 @@ import ShoppingBagIcon from "lucide-react/dist/esm/icons/shopping-bag";
 import TriangleAlertIcon from "lucide-react/dist/esm/icons/triangle-alert";
 import UsersIcon from "lucide-react/dist/esm/icons/users";
 import WalletIcon from "lucide-react/dist/esm/icons/wallet";
-import { type ChangeEvent, useEffect, useRef, useState } from "react";
+import {
+  type ChangeEvent,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
 import { AnimatedFigure } from "@/ui/animated-figure";
 import { Badge } from "@/ui/badge";
@@ -95,6 +101,13 @@ import {
 } from "@/ui/field";
 import { Figure } from "@/ui/figure";
 import { FilterBar, type FilterField, type FilterRule } from "@/ui/filter-bar";
+import {
+  Block,
+  BlockFooter,
+  BlockHeader as FramedBlockHeader,
+  BlockLink,
+  BlockPanel,
+} from "@/ui/block";
 import { BlockHeader } from "@/ui/block-header";
 import { HelpTip } from "@/ui/help-tip";
 import { HideValuesButton, MoneyText } from "@/ui/hidden-values";
@@ -157,6 +170,7 @@ import {
   TableRow,
 } from "@/ui/table";
 import { SegmentedFilter } from "@/ui/segmented-filter";
+import { SectionTabs } from "@/ui/section-tabs";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/ui/tabs";
 import { Textarea } from "@/ui/textarea";
 import { TextLink } from "@/ui/text-link";
@@ -417,6 +431,104 @@ const SKELETON_ART_SAMPLES: readonly {
   },
   { caption: "Início com números: página não encontrada.", kind: "home" },
 ];
+
+/** The block of the Início as `HomeBlock` composes it out of the frame pieces: the reference `Block` is measured against. */
+function ReferenceBlock({ id }: { id: string }) {
+  return (
+    <CardFrame
+      aria-labelledby={id}
+      className="min-w-0"
+      data-gallery-block="reference"
+      role="region"
+    >
+      <CardFrameHeader>
+        <BlockHeader
+          action={<p className="text-support">Ação</p>}
+          className="md:flex-nowrap"
+          id={id}
+          title="Bloco do Início"
+        />
+      </CardFrameHeader>
+      <CardFramePanel>
+        <p className="text-muted-foreground">O painel guarda o conteúdo.</p>
+      </CardFramePanel>
+      <CardFrameFooter>
+        <CardFrameLink href="/dashboard">Ver o resultado</CardFrameLink>
+      </CardFrameFooter>
+    </CardFrame>
+  );
+}
+
+function BlockExample({ id }: { id: string }) {
+  return (
+    <Block aria-labelledby={id} className="min-w-0" data-gallery-block="block">
+      <FramedBlockHeader
+        action={<p className="text-support">Ação</p>}
+        id={id}
+        title="Bloco do Início"
+      />
+      <BlockPanel>
+        <p className="text-muted-foreground">O painel guarda o conteúdo.</p>
+      </BlockPanel>
+      <BlockFooter>
+        <BlockLink href="/dashboard">Ver o resultado</BlockLink>
+      </BlockFooter>
+    </Block>
+  );
+}
+
+const LOCAL_TABS = [
+  {
+    content: <p className="text-muted-foreground">Painel da aba Dados.</p>,
+    label: "Dados",
+    value: "dados",
+  },
+  {
+    content: <p className="text-muted-foreground">Painel da aba Ajustes.</p>,
+    label: "Ajustes",
+    value: "ajustes",
+  },
+] as const;
+
+const ROUTED_TABS = [
+  { label: "Resultado", value: "resultado" },
+  { label: "Metas", value: "metas" },
+] as const;
+
+const ROUTED_PARAMETER = "aba-galeria";
+
+/** The open tab in the address (`?aba-galeria=`), as a screen keeps its own: the tab belongs to the caller. */
+function RoutedSectionTabsExample() {
+  const [value, setValue] = useState(() => {
+    const named = new URLSearchParams(window.location.search).get(
+      ROUTED_PARAMETER
+    );
+    return ROUTED_TABS.some((tab) => tab.value === named)
+      ? (named as string)
+      : "resultado";
+  });
+  const select = useCallback((next: string) => {
+    const url = new URL(window.location.href);
+    url.searchParams.set(ROUTED_PARAMETER, next);
+    window.history.replaceState(window.history.state, "", url);
+    setValue(next);
+  }, []);
+  return (
+    <SectionTabs
+      label="Abas com rota"
+      onValueChange={select}
+      tabs={ROUTED_TABS}
+      value={value}
+    >
+      <TabsContent className="text-muted-foreground" value="resultado">
+        Painel da aba Resultado.
+      </TabsContent>
+      <TabsContent className="text-muted-foreground" value="metas">
+        Painel da aba Metas.
+      </TabsContent>
+    </SectionTabs>
+  );
+}
 
 function Section({
   children,
@@ -1550,6 +1662,21 @@ export function UiGallery() {
             </Tabs>
           </Section>
 
+          <Section title="SectionTabs: com e sem rota">
+            <p className="max-w-prose text-muted-foreground text-support">
+              Uma peça só, com rota (a aba aberta vai para o endereço) e sem
+              rota (a aba é local, no diálogo ou no bloco).
+            </p>
+            <div className="grid gap-4 md:grid-cols-2">
+              <div data-gallery-tabs="routed">
+                <RoutedSectionTabsExample />
+              </div>
+              <div data-gallery-tabs="local">
+                <SectionTabs label="Abas sem rota" tabs={LOCAL_TABS} />
+              </div>
+            </div>
+          </Section>
+
           <Section title="Filtro segmentado">
             <GallerySegmentedFilter />
           </Section>
@@ -1632,6 +1759,17 @@ export function UiGallery() {
                   ) : null}
                 </CardFrame>
               ))}
+            </div>
+          </Section>
+
+          <Section title="Block">
+            <p className="max-w-prose text-muted-foreground text-support">
+              O <code>Block</code> desenha como o bloco do Início: à esquerda a
+              composição de hoje, à direita a peça, nas mesmas medidas.
+            </p>
+            <div className="grid gap-4 md:grid-cols-2">
+              <ReferenceBlock id="gallery-block-reference" />
+              <BlockExample id="gallery-block-piece" />
             </div>
           </Section>
 
