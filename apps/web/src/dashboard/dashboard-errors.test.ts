@@ -56,6 +56,10 @@ describe("periodSummaryMayUseCopy", () => {
     expect(periodSummaryMayUseCopy({ code: "GATEWAY_TIMEOUT" })).toBe(true);
   });
 
+  it("does not use the copy on TIMEOUT", () => {
+    expect(periodSummaryMayUseCopy({ code: "TIMEOUT" })).toBe(false);
+  });
+
   it("never lets the copy contradict an answer of the server", () => {
     for (const code of [
       "UNAUTHORIZED",

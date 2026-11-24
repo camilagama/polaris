@@ -1,31 +1,20 @@
 import { type ReactNode, useCallback, useState } from "react";
-import { cn } from "@/lib/utils";
 import { Button } from "@/ui/button";
-import { Card } from "@/ui/card";
-import { HelpTip } from "@/ui/help-tip";
-import { MoneyText } from "@/ui/hidden-values";
-import { Skeleton } from "@/ui/skeleton";
 import { focusLater } from "../lib/focus";
 import { LIST_PAGE_SIZE, type ListPage, listPage } from "./list-page-model";
 
-/* The parts the list screens share (Categorias, Clientes, Produtos, Despesas, Estoque): the card that says
-   loading, empty or no result, and the date as the lists write it. */
+// biome-ignore lint/performance/noBarrelFile: the screens still import the list parts from this path; each folder moves to the `ListBlock` and drops its import
+export { ListNotice } from "@/ui/list-notice";
+export { ListTotalFooter } from "@/ui/list-total-footer";
+export { RowTile } from "@/ui/row-tile";
+
+/* The parts the list screens share (Categorias, Clientes, Produtos, Despesas, Estoque): the date as the lists write
+   it, the rows drawn so far and the buttons of a row. */
 
 const dateFormatter = new Intl.DateTimeFormat("pt-BR", { dateStyle: "medium" });
 
 export function formatDate(value: string): string {
   return dateFormatter.format(new Date(value));
-}
-
-/** Loading, empty or no result of a list: a card with a few words, and what to do next when there is one. */
-export function ListNotice({ children }: { children: ReactNode }) {
-  return (
-    <Card className="py-6">
-      <div className="grid justify-items-center gap-3 px-4 text-center">
-        {children}
-      </div>
-    </Card>
-  );
 }
 
 /**
@@ -157,22 +146,6 @@ export function RowOpenButton({
 }
 
 /**
- * The 36 px square of a configuration row (Aparelhos, Formas de receber): the 16 px icon of what the row is, only
- * decoration, since the name already says it. A person is a circle of initials instead (Clientes).
- */
-export function RowTile({ children }: { children: ReactNode }) {
-  return (
-    <span
-      aria-hidden="true"
-      className="grid size-9 shrink-0 place-items-center self-start rounded-md bg-muted text-muted-foreground [&>svg]:size-4"
-      data-row-tile=""
-    >
-      {children}
-    </span>
-  );
-}
-
-/**
  * Name, support line and state of a configuration row. The state badge is the last child: from 40rem it sits at the
  * right end of the row; below that (a phone, or a large letter, since the breakpoint is in rem) it drops under the
  * text, at the left of the text column. The breakpoint, not the wrapping of the line, decides: a short badge such as
@@ -186,131 +159,3 @@ export const ROW_TEXT_CLASS =
 /** A row that opens by a `RowOpenButton`: the hover of the whole row while the button under the pointer opens. */
 export const OPENABLE_ROW_CLASS =
   "has-[[data-row-open]:not([aria-disabled]):hover]:bg-muted/50";
-
-interface ListTotalFooterProps {
-  className?: string | undefined;
-  /** "14 vendas": what the total counts. Empty while it is unknown. */
-  count: string;
-  help?: { about: string; text: string } | undefined;
-  label?: string | undefined;
-  /** Empty keeps the line in the DOM, so the height does not move. */
-  note?: string;
-  notice?: string | undefined;
-  /** "R$ 1.454,41", or a dash or an ellipsis while it is unknown; masked with the other values. */
-  value: string | null;
-  valueLoading?: boolean | undefined;
-}
-
-function FooterNotes({
-  note,
-  notice,
-}: {
-  note: string | undefined;
-  notice: string | undefined;
-}) {
-  if (notice === undefined) {
-    return note === undefined ? null : (
-      <p
-        className="min-h-5 text-muted-foreground text-support"
-        data-list-total-note=""
-      >
-        {note}
-      </p>
-    );
-  }
-  // With `notice` a string (empty included) the status region stays mounted:
-  // a live region that is already in the tree is what makes the screen reader
-  // announce the money warning when it arrives. The warning takes the note
-  // line while that line is empty and fits on one line; with a note it is
-  // one extra line above it.
-  return (
-    <div
-      className="grid min-h-5 text-muted-foreground text-support"
-      data-list-total-note=""
-    >
-      <p role="status">{notice}</p>
-      {note === undefined ? null : <p>{note}</p>}
-    </div>
-  );
-}
-
-/** Holds the last word and the (i) together, so a broken label never leaves the (i) alone on a line. */
-function FooterLabel({
-  help,
-  label,
-}: {
-  help: ListTotalFooterProps["help"];
-  label: string;
-}) {
-  if (help === undefined) {
-    return label;
-  }
-  const cut = label.lastIndexOf(" ");
-  return (
-    <>
-      {cut < 0 ? "" : `${label.slice(0, cut)} `}
-      <span className="whitespace-nowrap">
-        {cut < 0 ? label : label.slice(cut + 1)}
-        <HelpTip about={help.about} className="ml-1 align-middle">
-          {help.text}
-        </HelpTip>
-      </span>
-    </>
-  );
-}
-
-/**
- * The foot of a list: the total of what is on the screen, the figures right-aligned in tabular numerals so the
- * column of the rows above reads straight down to it. The box has the same height with and without rows (the lines
- * keep a minimum), so a filter that empties the list does not move what comes after. Narrower than 19 rem (the width
- * the list gives the foot: a 320 px window at the default font, and wider ones as the browser font grows) the count
- * and the total stack, the total under the count and as wide as the box, instead of one cutting the other. The width
- * is measured on a wrapper with no padding, so the foot with a padding on the right (under the figures of the rows)
- * and the one without it, the same list with and without rows, stack at the same width; the wrapper also makes the
- * foot take the width the list gives it, not the one its contents ask for.
- */
-export function ListTotalFooter({
-  className,
-  count,
-  help,
-  label = "Total na tela",
-  note,
-  notice,
-  value,
-  valueLoading = false,
-}: ListTotalFooterProps) {
-  return (
-    <div className="@container">
-      <div
-        className={cn(
-          "grid gap-0.5 bg-muted/30 px-2.5 py-3 md:px-4",
-          className
-        )}
-        data-list-total=""
-      >
-        <div className="flex @max-[18.999rem]:grid @max-[18.999rem]:grid-cols-[minmax(0,1fr)] items-end justify-between gap-x-4 @max-[18.999rem]:gap-y-1">
-          <div className="grid min-w-0 gap-0.5">
-            <p className="font-medium text-muted-foreground text-support">
-              <FooterLabel help={help} label={label} />
-            </p>
-            <p className="min-h-5 @max-[18.999rem]:whitespace-normal whitespace-nowrap text-muted-foreground text-support">
-              {count}
-            </p>
-          </div>
-          <div className="@max-[18.999rem]:whitespace-normal whitespace-nowrap text-right font-semibold text-value-md tabular-nums @max-[18.999rem]:[overflow-wrap:anywhere]">
-            {valueLoading ? <span className="sr-only">Lendo…</span> : null}
-            {valueLoading ? (
-              <Skeleton
-                aria-hidden="true"
-                className="ml-auto h-6 w-28 max-w-full"
-                data-list-total-skeleton=""
-              />
-            ) : null}
-            {value === null || valueLoading ? null : <MoneyText text={value} />}
-          </div>
-        </div>
-        <FooterNotes note={note} notice={notice} />
-      </div>
-    </div>
-  );
-}

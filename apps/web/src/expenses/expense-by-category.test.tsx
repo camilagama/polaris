@@ -7,6 +7,8 @@ import { describe, expect, it } from "vitest";
 import { ExpenseByCategory, showsCategoryBlock } from "./expense-by-category";
 import type { ExpenseFilters, ExpenseListState } from "./use-expense-list";
 
+const CLASS_ATTRIBUTE = /class="[^"]*"/g;
+const WHITESPACE = /\s+/;
 const noop = () => undefined;
 const ids = {
   aluguel: "0199c2d0-0000-7000-8000-00000000c001",
@@ -101,12 +103,14 @@ describe("ExpenseByCategory", () => {
 
   it("pushes the share and the amount to the right edge so a wrapped group keeps the column of the other lines", () => {
     const html = render();
-    expect(html.match(/class="(?:[^"]* )?ml-auto[" ]/g)).toHaveLength(2);
-    expect(
-      html.match(
-        /class="(?=(?:[^"]* )?ml-auto[" ])(?=(?:[^"]* )?tabular-nums[" ])[^"]*"/g
-      )
-    ).toHaveLength(2);
+    const classLists = (html.match(CLASS_ATTRIBUTE) ?? []).map((attribute) =>
+      attribute.slice(7, -1).split(WHITESPACE)
+    );
+    const groups = classLists.filter((classes) => classes.includes("ml-auto"));
+    expect(groups).toHaveLength(2);
+    for (const classes of groups) {
+      expect(classes).toContain("tabular-nums");
+    }
   });
 
   it("leaves Outras and Sem categoria as plain lines: there is no category to filter by", () => {
