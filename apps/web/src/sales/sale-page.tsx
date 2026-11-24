@@ -89,19 +89,23 @@ import {
 import {
   type AdjustmentDraft,
   acknowledgeProfileReview,
+  acknowledgeSecondProfileReview,
   addAdjustment,
   addItem,
   applySalePreset,
+  applySplitAction,
   type CatalogView,
   type ChoiceOption,
   cancelDiscard,
   canKeepLockedSaleOnDevice,
   canStartSubmission,
   createBlankSaleForm,
+  describePartRefusal,
   describeStockRefusal,
   discardLockedSale,
   editSaleDate,
   editSaleForm,
+  endSplit,
   evaluateSaleForm,
   formForOfflineSale,
   type ItemDraft,
@@ -126,14 +130,21 @@ import {
   saleModeIsOffline,
   selectPaymentMethod,
   selectProfileChoice,
+  selectSecondPaymentMethod,
+  selectSecondProfileChoice,
+  setFirstPartAmount,
+  setSecondPartAmount,
+  startSplit,
   startSubmission,
   updateAdjustment,
   updateItem,
   updatePayment,
+  updateSecondPayment,
   withdrawSalePreset,
 } from "./sale-form-model";
 import { AddItemButton, ItemEditor, ItemsCount } from "./sale-item-editor";
-import { PaymentSection } from "./sale-payment-section";
+import { PaymentSection, type SplitHandlers } from "./sale-payment-section";
+import { SPLIT_OFFLINE_REFUSAL, splitStartBlocker } from "./sale-split-model";
 import { SubmitBar, SummaryPanel } from "./sale-summary-panel";
 import {
   coversOfStock,
@@ -183,9 +194,17 @@ function methodHint(
   return same ? "Igual à última venda neste aparelho." : "";
 }
 
-/** Focuses the first invalid control; a group of choice cards gives the focus to its first card. */
-function focusFirstInvalidField() {
+/**
+ * Focuses the first invalid control (a group of choice cards gives the focus to its first card), or the state line of
+ * the parts when the only thing wrong is that they do not close the total: the line says how far they are and has the
+ * button that closes them.
+ */
+function focusFirstInvalidField(splitMismatchFirst = false) {
   window.requestAnimationFrame(() => {
+    if (splitMismatchFirst) {
+      document.getElementById("sale-split-balance")?.focus();
+      return;
+    }
     const invalid = document.querySelector<HTMLElement>(
       '[data-sale-form] [aria-invalid="true"]'
     );
@@ -744,6 +763,63 @@ export function SalePage() {
     [activeProfiles, editByPerson]
   );
 
+  const { totalDue } = evaluation;
+  const splitHandlers = useMemo<SplitHandlers>(
+    () => ({
+      onAcknowledgeSecondReview: () =>
+        editByPerson((current) =>
+          acknowledgeSecondProfileReview(current, activeProfiles)
+        ),
+      onAction: (cents) =>
+        editByPerson((current) =>
+          applySplitAction(current, { amount: cents }, totalDue)
+        ),
+      onEnd: () => {
+        editByPerson((current) => endSplit(current));
+        focusLater(() =>
+          document
+            .querySelector<HTMLElement>('#sale-method [role="radio"]')
+            ?.focus()
+        );
+      },
+      onFirstAmountChange: (value) =>
+        editByPerson((current) => setFirstPartAmount(current, value, totalDue)),
+      onSecondAmountChange: (value) =>
+        editByPerson((current) =>
+          setSecondPartAmount(current, value, totalDue)
+        ),
+      onSecondAnticipationChange: (checked) =>
+        editByPerson((current) =>
+          updateSecondPayment(current, { anticipationRequested: checked })
+        ),
+      onSecondInstallmentPlanChange: (value) =>
+        editByPerson((current) =>
+          updateSecondPayment(current, {
+            installmentPlan: value as "" | "issuer" | "merchant",
+          })
+        ),
+      onSecondInstallmentsChange: (value) =>
+        editByPerson((current) =>
+          updateSecondPayment(current, { installments: value })
+        ),
+      onSecondMethodChange: (value) =>
+        editByPerson((current) =>
+          selectSecondPaymentMethod(current, value as SaleMethod | "")
+        ),
+      onSecondProfileChange: (value) =>
+        editByPerson((current) =>
+          selectSecondProfileChoice(current, value, activeProfiles)
+        ),
+      onStart: () => {
+        editByPerson((current) => startSplit(current));
+        focusLater(() =>
+          document.getElementById("sale-part-1-amount")?.focus()
+        );
+      },
+    }),
+    [activeProfiles, editByPerson, totalDue]
+  );
+
   /** What the page does once a confirmation settled, on the server or on the device. */
   const applyOutcome = useCallback(
     (
@@ -828,12 +904,15 @@ export function SalePage() {
       applyOutcome(
         {
           ...outcome,
-          submission: describeStockRefusal(outcome.submission, {
-            canAdjustStock,
-            items: prepared.request.items,
-            labels: itemLabels(form.items),
-            stock: catalog.stock,
-          }),
+          submission: describePartRefusal(
+            describeStockRefusal(outcome.submission, {
+              canAdjustStock,
+              items: prepared.request.items,
+              labels: itemLabels(form.items),
+              stock: catalog.stock,
+            }),
+            prepared.request.payments?.length ?? 1
+          ),
         },
         null
       );
@@ -857,7 +936,15 @@ export function SalePage() {
       );
       const { body } = fresh;
       if (body === null || !canStartSubmission(submission, fresh)) {
-        focusFirstInvalidField();
+        const mismatchKey = fresh.split?.mismatchKey ?? null;
+        focusFirstInvalidField(
+          mismatchKey !== null && mismatchKey === fresh.firstIssueKey
+        );
+        return;
+      }
+      if (body.payments !== undefined && offlineWorkspace !== null) {
+        // the device keeps one payment per sale: the parts stay on the screen
+        setSubmission(rejectSubmission(SPLIT_OFFLINE_REFUSAL));
         return;
       }
       const prepared = prepareConfirmation({
@@ -887,6 +974,7 @@ export function SalePage() {
       attemptUnsettled,
       catalog.stock,
       form,
+      offlineWorkspace,
       organizationId,
       rememberAttempt,
       settleConfirmation,
@@ -1144,6 +1232,11 @@ export function SalePage() {
             profileOptions={profileOptions}
             profilesView={profilesState}
             singlePaymentText={methodHint(lastPayment, form, preset)}
+            split={{
+              blocker: splitStartBlocker(offline, totalDue),
+              evaluation: evaluation.split,
+              handlers: splitHandlers,
+            }}
             timezone={organization.timezone}
           />
         </div>
@@ -1161,6 +1254,7 @@ export function SalePage() {
           summary={summary}
         />
         <SubmitBar
+          balance={evaluation.split?.balance ?? null}
           offline={offline}
           submission={submission}
           summary={summary}

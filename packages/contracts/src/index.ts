@@ -1048,13 +1048,11 @@ const salePaymentPart = salePaymentInput
 const MAX_SALE_PAYMENT_PARTS = 2;
 
 /**
- * Absent at runtime when a sale sends `payments`, but required in the static
- * type: the app built from this contract still sends a single `payment` and
- * reads it back from its own requests, until the sale screen moves to parts.
- * The server never reads it without first checking for `payments`.
+ * The single payment of a sale paid in one go; absent when the sale sends
+ * `payments`. Optional in the static type too, so every reader of a request
+ * has to handle the sale paid in parts.
  */
-const legacySalePayment =
-  salePaymentInput.optional() as unknown as typeof salePaymentInput;
+const legacySalePayment = salePaymentInput.exactOptional();
 
 /**
  * A sale is paid by `payment` (one method for the whole total, profile in the
