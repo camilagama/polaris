@@ -238,27 +238,30 @@ const TWO_PARTS = [
   ["pix", "credit_card"],
   ["bank_transfer", "bank_transfer"],
   ["pix", "pix"],
+  ["bank_transfer", "other"],
 ] as const;
 const TWO_PARTS_TEXTS = [
   "Pix + Crédito",
   "Transferência + Transferência",
   "Pix + Pix",
+  "Transferência + Outro",
   "Transferência",
 ];
+const MEDIUM_CUSTOMER = "Ângela Souza Albuquerque";
 
-function twoPartsSales() {
+function twoPartsSales(customer = SHORT_CUSTOMER) {
   return [
     ...TWO_PARTS.map((methods, index) =>
       entry(index + 1, {
         customerId: id(500 + index),
-        customerName: SHORT_CUSTOMER,
+        customerName: customer,
         paymentMethod: methods[0],
         paymentMethods: methods,
       })
     ),
-    entry(4, {
+    entry(5, {
       customerId: id(504),
-      customerName: SHORT_CUSTOMER,
+      customerName: customer,
       paymentMethod: "bank_transfer",
     }),
   ];
@@ -287,36 +290,137 @@ reflowTest(
   }
 );
 
-reflowTest(
-  "a 320 px com letra de 16 px os dois métodos da venda em 2 partes ficam inteiros e nada passa sobre o valor",
-  async ({ page }) => {
-    const sales = twoPartsSales();
-    await openHistory(page, sales, { fontPixels: 16 });
-    const rows = page.getByRole("list", { name: "Vendas" }).locator("> li");
-    await expect(rows).toHaveCount(sales.length);
-    const measures = await rows.evaluateAll((items) =>
-      items.map((item) => {
+/**
+ * Per line, for the methods and the count (the last piece of the line under the date): the boxes up to the line that
+ * hide part of it (a box that scrolls, or one the text goes past: what the eye loses, not only what the DOM holds),
+ * whether it stays inside the line and clear of the value, and whether it starts under the end of the name.
+ */
+function visibleMethods(page: Page) {
+  return page.evaluate(() =>
+    [...document.querySelectorAll('ul[aria-label="Vendas"] > li')].map(
+      (item) => {
         const support = item.querySelector("p.text-support") as HTMLElement;
-        const money = item.querySelector("[data-money]") as HTMLElement;
+        const name = support.firstElementChild as HTMLElement;
+        const method = support.lastElementChild as HTMLElement;
+        const box = item.getBoundingClientRect();
+        const money = (
+          item.querySelector("[data-money]") as HTMLElement
+        ).getBoundingClientRect();
+        const textRects = (element: HTMLElement) => {
+          const range = document.createRange();
+          range.selectNodeContents(element);
+          return [...range.getClientRects()].filter((rect) => rect.width > 0);
+        };
+        const rects = textRects(method);
+        const nameBottom = Math.max(...textRects(name).map((r) => r.bottom));
+        const clippers: string[] = [];
+        for (
+          let node: HTMLElement | null = method;
+          node !== null && node !== item;
+          node = node.parentElement
+        ) {
+          if (getComputedStyle(node).overflowX === "visible") {
+            continue;
+          }
+          const clip = node.getBoundingClientRect();
+          const past = rects.some(
+            (rect) =>
+              rect.right > clip.right + 0.5 || rect.left < clip.left - 0.5
+          );
+          if (past || node.scrollWidth > node.clientWidth + 1) {
+            clippers.push(node.tagName.toLowerCase());
+          }
+        }
         return {
-          moneyLeft: money.getBoundingClientRect().left,
-          supportRight: support.getBoundingClientRect().right,
+          belowName:
+            Math.min(...rects.map((rect) => rect.top)) >= nameBottom - 1,
+          clippers,
+          insideRow: rects.every(
+            (rect) =>
+              rect.left >= box.left - 0.5 && rect.right <= box.right + 0.5
+          ),
+          overMoney: rects.some(
+            (rect) =>
+              rect.right > money.left + 0.5 &&
+              rect.bottom > money.top &&
+              rect.top < money.bottom
+          ),
           text: support.textContent ?? "",
         };
-      })
-    );
-    for (const [index, measure] of measures.entries()) {
-      expect(measure.text, `linha ${index + 1}`).toContain(
-        TWO_PARTS_TEXTS[index] ?? ""
-      );
-      expect(
-        measure.supportRight,
-        `linha ${index + 1}: o texto de apoio termina antes do valor`
-      ).toBeLessThanOrEqual(measure.moneyLeft + 0.5);
+      }
+    )
+  );
+}
+
+for (const { fontPixels, width } of [
+  { fontPixels: 16, width: 320 },
+  { fontPixels: 16, width: 360 },
+  { fontPixels: 16, width: 800 },
+  { fontPixels: 20, width: 320 },
+  { fontPixels: 20, width: 360 },
+]) {
+  reflowTest(
+    `a ${width} px com letra de ${fontPixels} px os dois métodos da venda em 2 partes ficam inteiros, sem reticências, e nada passa sobre o valor`,
+    async ({ page }) => {
+      const sales = twoPartsSales();
+      await openHistory(page, sales, { fontPixels, width });
+      const list = page.getByRole("list", { name: "Vendas" });
+      await expect(list.locator("> li")).toHaveCount(sales.length);
+      const measures = await visibleMethods(page);
+      for (const [index, measure] of measures.entries()) {
+        const name = `linha ${index + 1}`;
+        expect(measure.text, name).toContain(TWO_PARTS_TEXTS[index] ?? "");
+        expect(
+          measure.clippers,
+          `${name}: o método e a contagem inteiros`
+        ).toEqual([]);
+        expect(measure.insideRow, `${name}: dentro da linha`).toBe(true);
+        expect(measure.overMoney, `${name}: nada sobre o valor`).toBe(false);
+        if (measure.text.includes(" + ")) {
+          expect(
+            measure.belowName,
+            `${name}: os métodos na linha de baixo do nome`
+          ).toBe(true);
+        }
+      }
+      await assertNoEllipsis(list);
+      await assertNoPageScroll(page);
     }
-    await assertNoPageScroll(page);
-  }
-);
+  );
+
+  reflowTest(
+    `a ${width} px com letra de ${fontPixels} px o nome médio da venda em 2 partes leva as reticências e os dois métodos ficam inteiros`,
+    async ({ page }) => {
+      const sales = twoPartsSales(MEDIUM_CUSTOMER);
+      await openHistory(page, sales, { fontPixels, width });
+      const list = page.getByRole("list", { name: "Vendas" });
+      await expect(list.locator("> li")).toHaveCount(sales.length);
+      const measures = await visibleMethods(page);
+      const cuts = await cutTexts(page);
+      for (const [index, measure] of measures.entries()) {
+        const name = `linha ${index + 1}`;
+        expect(measure.text, name).toContain(TWO_PARTS_TEXTS[index] ?? "");
+        expect(
+          measure.clippers,
+          `${name}: o método e a contagem inteiros`
+        ).toEqual([]);
+        expect(measure.insideRow, `${name}: dentro da linha`).toBe(true);
+        expect(measure.overMoney, `${name}: nada sobre o valor`).toBe(false);
+        if (measure.text.includes(" + ")) {
+          expect(
+            measure.belowName,
+            `${name}: os métodos na linha de baixo do nome`
+          ).toBe(true);
+        }
+        expect(
+          cuts[index]?.cut.filter((text) => text !== MEDIUM_CUSTOMER),
+          `${name}: só o fim do nome leva reticências`
+        ).toEqual([]);
+      }
+      await assertNoPageScroll(page);
+    }
+  );
+}
 
 /** Per line: the text an ellipsis is hiding (what the line cuts), and whether the value box is whole and inside the line. */
 function cutTexts(page: Page) {

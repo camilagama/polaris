@@ -49,12 +49,17 @@ export function SaleStatusBadges({
  * own (`@container` on the `li`) and in `rem`, so a bigger browser font reaches it on a wider window. A 320 px window
  * at the default font is 18 rem of row and keeps the layout beside the value; at 20 px the same window is about 14 rem
  * and wraps. From 20.5 rem (360 px, default font) up the avatar column fits.
+ *
+ * A sale paid in two parts always puts the methods and the count on the line under the name, with no "·" after the
+ * name: both methods ("Pix + Crédito") are what tells it from a sale of one part, so they are never left to share a
+ * line with a name that can cut them.
  */
 const ROW =
   "flex items-center gap-2 px-2.5 py-2.5 md:gap-3 md:px-4 @max-[17.9rem]:flex-wrap";
 const WRAPPED_DATA = "@max-[17.9rem]:basis-full @max-[17.9rem]:flex-none";
 const WRAPPED_LINE =
   "@max-[17.9rem]:block @max-[17.9rem]:[&>span]:inline @max-[17.9rem]:[&_span]:overflow-visible @max-[17.9rem]:[&_span]:whitespace-normal @max-[17.9rem]:[&_span]:[overflow-wrap:anywhere]";
+const SPLIT_METHODS_LINE = "@max-[17.9rem]:[&>span:last-child]:block";
 
 function RowBody({ chevron, row }: { chevron: boolean; row: HistoryRow }) {
   return (
@@ -89,13 +94,21 @@ function RowBody({ chevron, row }: { chevron: boolean; row: HistoryRow }) {
           />
         </div>
         <p
-          className={`flex min-w-0 flex-wrap gap-x-1 text-muted-foreground text-support ${WRAPPED_LINE}`}
+          className={`flex min-w-0 flex-wrap gap-x-1 text-muted-foreground text-support ${row.splitPayment ? `${WRAPPED_LINE} ${SPLIT_METHODS_LINE}` : WRAPPED_LINE}`}
         >
           <span className="flex min-w-0 max-w-full">
             <span className="truncate">{row.customerText}</span>
-            <span className="shrink-0 whitespace-pre">{" ·"}</span>
+            {row.splitPayment ? null : (
+              <span className="shrink-0 whitespace-pre">{" ·"}</span>
+            )}
           </span>
-          <span className="min-w-0 max-w-full">{` ${row.methodText} · ${row.itemCountText}`}</span>
+          <span
+            className={
+              row.splitPayment
+                ? "min-w-0 max-w-full basis-full"
+                : "min-w-0 max-w-full"
+            }
+          >{`${row.splitPayment ? "" : " "}${row.methodText} · ${row.itemCountText}`}</span>
         </p>
       </div>
       <Money
