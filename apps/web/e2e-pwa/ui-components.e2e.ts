@@ -379,6 +379,285 @@ test("o grupo de rádios marcado como inválido mostra o anel no grupo e a borda
   expect(invalid.cardBorder).toBe(valid.cardBorder);
 });
 
+/** The boxes of a frame of the gallery: the frame, its title row and its panel, in pixels. */
+async function blockBoxes(page: Page, which: "block" | "reference") {
+  return await page
+    .locator(`[data-gallery-block="${which}"]`)
+    .evaluate((frame) => {
+      const box = (element: Element | null) => {
+        const { height, width, x, y } = (
+          element as Element
+        ).getBoundingClientRect();
+        return { height, width, x, y };
+      };
+      const origin = frame.getBoundingClientRect();
+      const relative = (element: Element | null) => {
+        const found = box(element);
+        if (found.width === 0 && found.height === 0) {
+          // the foot is `display: none` below 760 px: no box, and the same for both
+          return found;
+        }
+        return {
+          height: found.height,
+          width: found.width,
+          x: found.x - origin.x,
+          y: found.y - origin.y,
+        };
+      };
+      return {
+        footer: relative(
+          frame.querySelector('[data-slot="card-frame-footer"]')
+        ),
+        frame: { height: origin.height, width: origin.width },
+        header: relative(
+          frame.querySelector('[data-slot="card-frame-header"]')
+        ),
+        panel: relative(frame.querySelector('[data-slot="card-frame-panel"]')),
+      };
+    });
+}
+
+for (const size of [
+  { height: 800, width: 1280 },
+  { height: 740, width: 360 },
+]) {
+  test(`o Block desenha como o bloco do Início a ${size.width} px: a moldura, o cabeçalho e o painel medem o mesmo`, async ({
+    page,
+  }) => {
+    await page.setViewportSize(size);
+    await openGallery(page, null);
+    const reference = await blockBoxes(page, "reference");
+    const block = await blockBoxes(page, "block");
+    expect(block).toEqual(reference);
+    expect(block.panel.height).toBeGreaterThan(0);
+    // both are the same frame, so they would also agree on a wrong one: the gap of the panel is pinned too (4 px of
+    // frame from 760 px, `md:p-(--frame-gap)`; the 12 px of the plain card below it)
+    expect(block.panel.x).toBe(size.width >= 760 ? 4 : 12);
+    expect(block.header.x).toBe(size.width >= 760 ? 4 : 12);
+  });
+}
+
+/** The boxes that tell where a `ListBlock` of the gallery put its parts, in pixels. */
+async function listBoxes(page: Page, name: string) {
+  return await page
+    .getByRole("region", { exact: true, name })
+    .evaluate((region) => {
+      const rect = (element: Element | null) => {
+        const { bottom, height, left, right, top, width } = (
+          element as Element
+        ).getBoundingClientRect();
+        return { bottom, height, left, right, top, width };
+      };
+      const all = (selector: string) =>
+        [...region.querySelectorAll(selector)].map(rect);
+      const one = (selector: string) => {
+        const found = region.querySelector(selector);
+        return found ? rect(found) : null;
+      };
+      const scroll = region.querySelector("[data-list-block-scroll]");
+      return {
+        columnHeader: one("[data-list-block-header]"),
+        count: one("[data-list-count]"),
+        frame: rect(region),
+        header: one('[data-slot="card-frame-header"]'),
+        headingTag: region.querySelector("h2")?.tagName ?? null,
+        panel: rect(scroll),
+        rows: all("[data-list-block-row]"),
+        scrollable:
+          scroll !== null && scroll.scrollWidth > scroll.clientWidth + 1,
+        skeletons: region.querySelectorAll(
+          "[aria-hidden='true'] .animate-pulse"
+        ).length,
+        total: one("[data-list-total]"),
+      };
+    });
+}
+
+const LIST_EXAMPLES = [
+  { name: "Produtos com total", state: "rows", total: true },
+  { name: "Produtos sem total", state: "rows", total: false },
+  { name: "Carregando com total", state: "loading", total: true },
+  { name: "Carregando sem total", state: "loading", total: false },
+  { name: "Busca com total", state: "filtered-empty", total: true },
+  { name: "Busca sem total", state: "filtered-empty", total: false },
+] as const;
+
+const ANY_VALUE = /.*/;
+
+const LIST_SIZES = [
+  { height: 800, width: 1280 },
+  { height: 740, width: 360 },
+] as const;
+
+for (const size of LIST_SIZES) {
+  for (const example of LIST_EXAMPLES) {
+    test(`o ListBlock "${example.name}" a ${size.width} px: cabeçalho de coluna primeiro, linhas de borda a borda, total por último`, async ({
+      page,
+    }) => {
+      await page.setViewportSize(size);
+      await openGallery(page, null);
+      const boxes = await listBoxes(page, example.name);
+      const label = `${example.name} a ${size.width} px`;
+      expect(boxes.headingTag, label).toBe("H2");
+      expect(boxes.columnHeader, label).not.toBeNull();
+      // the column header is the first line of the panel
+      expect(boxes.columnHeader?.top, label).toBeCloseTo(boxes.panel.top, 0);
+      expect(boxes.columnHeader?.left, label).toBeCloseTo(boxes.panel.left, 0);
+      expect(boxes.columnHeader?.width, label).toBeCloseTo(
+        boxes.panel.width,
+        0
+      );
+      if (example.state === "rows") {
+        expect(boxes.rows, label).toHaveLength(3);
+        for (const row of boxes.rows) {
+          expect(row.left, label).toBeCloseTo(boxes.panel.left, 0);
+          expect(row.width, label).toBeCloseTo(boxes.panel.width, 0);
+          expect(row.top, label).toBeGreaterThanOrEqual(
+            (boxes.columnHeader?.bottom ?? 0) - 0.5
+          );
+        }
+      } else {
+        expect(boxes.rows, label).toHaveLength(0);
+      }
+      if (example.state === "loading") {
+        expect(boxes.skeletons, label).toBeGreaterThan(0);
+      }
+      if (!example.total) {
+        expect(boxes.total, label).toBeNull();
+        return;
+      }
+      // the total is the last line: it ends where the panel ends and nothing of the list is below it
+      expect(boxes.total, label).not.toBeNull();
+      expect(boxes.total?.bottom, label).toBeCloseTo(boxes.panel.bottom, 0);
+      expect(boxes.total?.width, label).toBeCloseTo(boxes.panel.width, 0);
+      for (const row of boxes.rows) {
+        expect(row.bottom, label).toBeLessThanOrEqual(
+          (boxes.total?.top ?? 0) + 0.5
+        );
+      }
+      const lastLine = await page
+        .getByRole("region", { exact: true, name: example.name })
+        .evaluate(
+          (region) =>
+            region.querySelector("[data-list-total]")?.parentElement
+              ?.nextElementSibling === null
+        );
+      expect(lastLine, label).toBe(true);
+    });
+  }
+}
+
+for (const size of LIST_SIZES) {
+  test(`o ListBlock a ${size.width} px: carregando mantém a altura do cabeçalho e a busca sem resultado diz a frase`, async ({
+    page,
+  }) => {
+    await page.setViewportSize(size);
+    await openGallery(page, null);
+    const rows = await listBoxes(page, "Produtos com total");
+    const loading = await listBoxes(page, "Carregando com total");
+    const search = await listBoxes(page, "Busca com total");
+    expect(loading.header?.height).toBeCloseTo(rows.header?.height ?? 0, 0);
+    expect(loading.count?.height).toBeCloseTo(rows.count?.height ?? 0, 0);
+    expect(search.header?.height).toBeCloseTo(rows.header?.height ?? 0, 0);
+    const region = page.getByRole("region", {
+      exact: true,
+      name: "Busca com total",
+    });
+    await expect(
+      region.getByText("Nenhum produto com essa busca.")
+    ).toBeVisible();
+    await expect(region.locator("[data-list-count]")).toHaveText("0 produtos");
+    await expect(
+      page
+        .getByRole("region", { exact: true, name: "Carregando com total" })
+        .getByRole("status")
+    ).toHaveText("Carregando…");
+    await expect(
+      page
+        .getByRole("region", { exact: true, name: "Produtos com total" })
+        .locator("[data-list-count]")
+    ).toHaveAttribute("aria-live", "polite");
+  });
+
+  test(`o ListBlock a ${size.width} px: a tabela larga rola por dentro e a moldura e o título ficam parados`, async ({
+    page,
+  }) => {
+    await page.setViewportSize(size);
+    await openGallery(page, null);
+    const name = "Tabela larga";
+    const before = await listBoxes(page, name);
+    expect(before.frame.right).toBeLessThanOrEqual(size.width + 0.5);
+    const wide = before.scrollable;
+    if (size.width >= 760) {
+      // the 40 rem table fits the 1280 px column: nothing to scroll, and nothing cut
+      expect(wide).toBe(false);
+      await expect(
+        page
+          .getByRole("region", { exact: true, name })
+          .locator("[data-list-block-scroll]")
+      ).not.toHaveAttribute("tabindex", ANY_VALUE);
+      return;
+    }
+    expect(wide).toBe(true);
+    // wider than the screen, the box is a stop of the keyboard, named by the title, so it scrolls without a pointer
+    await expect(
+      page
+        .getByRole("region", { exact: true, name })
+        .getByRole("group", { name })
+    ).toHaveAttribute("tabindex", "0");
+    await page
+      .getByRole("region", { exact: true, name })
+      .locator("[data-list-block-scroll]")
+      .evaluate((scroll) => {
+        scroll.scrollLeft = 120;
+      });
+    const after = await listBoxes(page, name);
+    expect(after.frame.left).toBeCloseTo(before.frame.left, 0);
+    expect(after.frame.width).toBeCloseTo(before.frame.width, 0);
+    expect(after.header?.left).toBeCloseTo(before.header?.left ?? 0, 0);
+    expect(after.columnHeader?.left).toBeCloseTo(
+      (before.columnHeader?.left ?? 0) - 120,
+      0
+    );
+  });
+}
+
+test("o ListBlock: o título é o único h2 da lista, a contagem não é título e axe não acusa a página", async ({
+  page,
+}) => {
+  await openGallery(page, null);
+  const region = page.getByRole("region", {
+    exact: true,
+    name: "Produtos com total",
+  });
+  await expect(region.getByRole("heading")).toHaveCount(1);
+  await expect(
+    region.getByRole("heading", { level: 2, name: "Produtos com total" })
+  ).toBeVisible();
+  await expect(
+    region.getByRole("list", { name: "Produtos com total" })
+  ).toBeVisible();
+  expect(await axeViolations(page)).toEqual([]);
+});
+
+/** The frame and the first line of a `Block variant="plain"` of the gallery. */
+test("o Block plain: sem a moldura de fora, com o mesmo cabeçalho do Block", async ({
+  page,
+}) => {
+  await openGallery(page, null);
+  const plain = page.getByRole("region", { exact: true, name: "Comprovante" });
+  await expect(
+    plain.getByRole("heading", { level: 2, name: "Comprovante" })
+  ).toBeVisible();
+  await expect(plain.locator('[data-slot="card-frame"]')).toHaveCount(0);
+  await expect(plain.locator('[data-slot="block-header"]')).toBeVisible();
+  const header = await plain
+    .locator('[data-slot="block-header"]')
+    .evaluate((row) => row.getBoundingClientRect().height);
+  expect(header).toBeGreaterThanOrEqual(32);
+  await expect(page.getByText("O mesmo bloco sem título.")).toBeVisible();
+});
+
 test("controle: o axe desta página acusa uma imagem sem texto alternativo", async ({
   page,
 }) => {

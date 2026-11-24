@@ -6,6 +6,7 @@ import {
   isLegalAcceptanceRefusal,
   isOrganizationClosedRefusal,
   isPlatformCut,
+  isServerFailureCode,
   isSessionChangedRefusal,
   isTransientReadFailure,
   rpcErrorCode,
@@ -499,14 +500,6 @@ export const ACCOUNT_UNAVAILABLE_REASONS: ReadonlySet<string> = new Set([
 /** The `unavailable` reason when the server answered the start with a failure of its own: the browser is fine. */
 export const SERVER_START_FAILED_REASON = "start_server_failed";
 
-const SERVER_FAILURE_CODES: ReadonlySet<string> = new Set([
-  "BAD_GATEWAY",
-  "GATEWAY_TIMEOUT",
-  "INTERNAL_SERVER_ERROR",
-  "SERVICE_UNAVAILABLE",
-  "TIMEOUT",
-]);
-
 /**
  * Matched by name: `runtime-api.ts` imports this module, so the class cannot be imported here without a cycle.
  */
@@ -518,7 +511,7 @@ function isServerStartFailure(error: unknown): boolean {
     return true;
   }
   const code = rpcErrorCode(error);
-  return code !== undefined && SERVER_FAILURE_CODES.has(code);
+  return isServerFailureCode(code);
 }
 
 /** Whether an `unavailable` reason blames the browser: anything that is not the plan, the account/store or a server that did not answer or failed. */

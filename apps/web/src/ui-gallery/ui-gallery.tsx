@@ -4,17 +4,33 @@ import CloudOffIcon from "lucide-react/dist/esm/icons/cloud-off";
 import InfoIcon from "lucide-react/dist/esm/icons/info";
 import MinusIcon from "lucide-react/dist/esm/icons/minus";
 import PlusIcon from "lucide-react/dist/esm/icons/plus";
-import SparklesIcon from "lucide-react/dist/esm/icons/sparkles";
 import ShoppingBagIcon from "lucide-react/dist/esm/icons/shopping-bag";
+import SparklesIcon from "lucide-react/dist/esm/icons/sparkles";
 import TriangleAlertIcon from "lucide-react/dist/esm/icons/triangle-alert";
 import UsersIcon from "lucide-react/dist/esm/icons/users";
 import WalletIcon from "lucide-react/dist/esm/icons/wallet";
-import { type ChangeEvent, useEffect, useRef, useState } from "react";
+import {
+  type ChangeEvent,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
+import { cn } from "@/lib/utils";
 import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
 import { AnimatedFigure } from "@/ui/animated-figure";
 import { Badge } from "@/ui/badge";
+import {
+  Block,
+  BlockFooter,
+  BlockLink,
+  BlockPanel,
+  BlockHeader as FramedBlockHeader,
+} from "@/ui/block";
+import { BlockHeader } from "@/ui/block-header";
 import { Button } from "@/ui/button";
 import { ButtonGroup } from "@/ui/button-group";
+import { OnDemandCalendar } from "@/ui/calendar-on-demand";
 import {
   Card,
   CardContent,
@@ -27,7 +43,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@/ui/card";
-import { OnDemandCalendar } from "@/ui/calendar-on-demand";
 import { OnDemandRingChart, OnDemandSparkline } from "@/ui/charts/on-demand";
 import { Checkbox } from "@/ui/checkbox";
 import {
@@ -95,7 +110,6 @@ import {
 } from "@/ui/field";
 import { Figure } from "@/ui/figure";
 import { FilterBar, type FilterField, type FilterRule } from "@/ui/filter-bar";
-import { BlockHeader } from "@/ui/block-header";
 import { HelpTip } from "@/ui/help-tip";
 import { HideValuesButton, MoneyText } from "@/ui/hidden-values";
 import { Input } from "@/ui/input";
@@ -107,8 +121,12 @@ import {
 } from "@/ui/input-group";
 import { DeltaChip, HeroPercent, HeroValue, KpiTile } from "@/ui/kpi-card";
 import { Label } from "@/ui/label";
+import { ListBlock } from "@/ui/list-block";
+import { ListNotice } from "@/ui/list-notice";
+import { ListTotalFooter } from "@/ui/list-total-footer";
 import { Logo } from "@/ui/logo";
 import { Money } from "@/ui/money";
+import { PaceLine, type PaceState } from "@/ui/pace-line";
 import { PlanCard } from "@/ui/plan-card";
 import {
   Popover,
@@ -118,13 +136,15 @@ import {
   PopoverTitle,
   PopoverTrigger,
 } from "@/ui/popover";
-import { PaceLine, type PaceState } from "@/ui/pace-line";
 import { Progress, ProgressLabel, ProgressValue } from "@/ui/progress";
+import { RowTile } from "@/ui/row-tile";
 import { ProgressRing } from "@/ui/progress-ring";
 import { RadioGroup, RadioGroupItem } from "@/ui/radio-group";
 import { RefreshButton } from "@/ui/refresh-button";
 import { ScrollArea } from "@/ui/scroll-area";
 import { SearchField } from "@/ui/search-field";
+import { SectionTabs } from "@/ui/section-tabs";
+import { SegmentedFilter } from "@/ui/segmented-filter";
 import {
   Select,
   SelectContent,
@@ -156,10 +176,9 @@ import {
   TableHeader,
   TableRow,
 } from "@/ui/table";
-import { SegmentedFilter } from "@/ui/segmented-filter";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/ui/tabs";
-import { Textarea } from "@/ui/textarea";
 import { TextLink } from "@/ui/text-link";
+import { Textarea } from "@/ui/textarea";
 import { ThemeSegmented } from "@/ui/theme-segmented";
 import { ThemeSwitch } from "@/ui/theme-switch";
 import { Thumbnail, type ThumbnailSize } from "@/ui/thumbnail";
@@ -417,6 +436,216 @@ const SKELETON_ART_SAMPLES: readonly {
   },
   { caption: "Início com números: página não encontrada.", kind: "home" },
 ];
+
+/** The block of the Início as `HomeBlock` composes it out of the frame pieces: the reference `Block` is measured against. */
+function ReferenceBlock({ id }: { id: string }) {
+  return (
+    <CardFrame
+      aria-labelledby={id}
+      className="min-w-0"
+      data-gallery-block="reference"
+      role="region"
+    >
+      <CardFrameHeader>
+        <BlockHeader
+          action={<p className="text-support">Ação</p>}
+          className="md:flex-nowrap"
+          id={id}
+          title="Bloco do Início"
+        />
+      </CardFrameHeader>
+      <CardFramePanel>
+        <p className="text-muted-foreground">O painel guarda o conteúdo.</p>
+      </CardFramePanel>
+      <CardFrameFooter>
+        <CardFrameLink href="/dashboard">Ver o resultado</CardFrameLink>
+      </CardFrameFooter>
+    </CardFrame>
+  );
+}
+
+function BlockExample({ id }: { id: string }) {
+  return (
+    <Block aria-labelledby={id} className="min-w-0" data-gallery-block="block">
+      <FramedBlockHeader
+        action={<p className="text-support">Ação</p>}
+        id={id}
+        title="Bloco do Início"
+      />
+      <BlockPanel>
+        <p className="text-muted-foreground">O painel guarda o conteúdo.</p>
+      </BlockPanel>
+      <BlockFooter>
+        <BlockLink href="/dashboard">Ver o resultado</BlockLink>
+      </BlockFooter>
+    </Block>
+  );
+}
+
+const LIST_ROWS = [
+  { name: "Camiseta lisa", support: "12 em estoque", value: "R$ 59,90" },
+  { name: "Boné de aba reta", support: "4 em estoque", value: "R$ 39,90" },
+  { name: "Meia esportiva", support: "30 em estoque", value: "R$ 12,00" },
+] as const;
+
+const WIDE_ROW = "min-w-[40rem]";
+
+function ListRowShape({ wide }: { wide: boolean }) {
+  return (
+    <div className={cn("flex items-center gap-3", wide && WIDE_ROW)}>
+      <Skeleton className="size-9 shrink-0 rounded-md" />
+      <div className="grid flex-1 gap-1.5">
+        <Skeleton className="h-4 w-2/3" />
+        <Skeleton className="h-3.5 w-1/3" />
+      </div>
+      <Skeleton className="h-4 w-16 shrink-0" />
+    </div>
+  );
+}
+
+const LIST_COUNTS = {
+  "filtered-empty": "0 produtos",
+  loading: "",
+  rows: "3 produtos",
+} as const;
+
+/** One `ListBlock` of the gallery: a state, with or without the total, and the wide table that scrolls inside the panel. */
+function ListBlockExample({
+  state,
+  title,
+  total,
+  wide = false,
+}: {
+  state: "rows" | "loading" | "filtered-empty";
+  title: string;
+  total: boolean;
+  wide?: boolean;
+}) {
+  const sized = wide ? WIDE_ROW : undefined;
+  return (
+    <ListBlock
+      action={
+        <Button size="sm" variant="outline">
+          Exportar
+        </Button>
+      }
+      className={wide ? "lg:col-span-2" : undefined}
+      count={LIST_COUNTS[state]}
+      emptyNotice={<p>Nenhum produto com essa busca.</p>}
+      skeleton={<ListRowShape wide={wide} />}
+      state={state}
+      title={title}
+    >
+      <ListBlock.Header className={sized}>
+        <span className="min-w-0 flex-1">Produto</span>
+        <span className="shrink-0">Preço</span>
+      </ListBlock.Header>
+      {LIST_ROWS.map((row) => (
+        <ListBlock.Row
+          className={sized}
+          key={row.name}
+          tile={<ShoppingBagIcon />}
+        >
+          <div className="grid min-w-0 flex-1 gap-0.5">
+            <p className="font-medium">{row.name}</p>
+            <p className="text-muted-foreground text-support">{row.support}</p>
+          </div>
+          <p className="shrink-0 font-semibold">
+            <MoneyText text={row.value} />
+          </p>
+          {wide ? (
+            <Button size="sm" variant="ghost">
+              Editar
+            </Button>
+          ) : null}
+        </ListBlock.Row>
+      ))}
+      {total ? (
+        <ListBlock.Total
+          className={sized}
+          count={LIST_COUNTS[state] || "Lendo…"}
+          value={state === "rows" ? "R$ 111,80" : "R$ 0,00"}
+          valueLoading={state === "loading"}
+        />
+      ) : null}
+    </ListBlock>
+  );
+}
+
+function PlainBlockExamples() {
+  return (
+    <div className="grid gap-4 md:grid-cols-2">
+      <Block
+        action={
+          <Button size="sm" variant="outline">
+            Imprimir
+          </Button>
+        }
+        description="Pago em 2 vezes, no cartão."
+        title="Comprovante"
+        variant="plain"
+      >
+        <p className="text-muted-foreground">O corpo do bloco.</p>
+      </Block>
+      <Block variant="plain">
+        <p className="text-muted-foreground">O mesmo bloco sem título.</p>
+      </Block>
+    </div>
+  );
+}
+
+const LOCAL_TABS = [
+  {
+    content: <p className="text-muted-foreground">Painel da aba Dados.</p>,
+    label: "Dados",
+    value: "dados",
+  },
+  {
+    content: <p className="text-muted-foreground">Painel da aba Ajustes.</p>,
+    label: "Ajustes",
+    value: "ajustes",
+  },
+] as const;
+
+const ROUTED_TABS = [
+  { label: "Resultado", value: "resultado" },
+  { label: "Metas", value: "metas" },
+] as const;
+
+const ROUTED_PARAMETER = "aba-galeria";
+
+/** The open tab in the address (`?aba-galeria=`), as a screen keeps its own: the tab belongs to the caller. */
+function RoutedSectionTabsExample() {
+  const [value, setValue] = useState(() => {
+    const named = new URLSearchParams(window.location.search).get(
+      ROUTED_PARAMETER
+    );
+    return ROUTED_TABS.some((tab) => tab.value === named)
+      ? (named as string)
+      : "resultado";
+  });
+  const select = useCallback((next: string) => {
+    const url = new URL(window.location.href);
+    url.searchParams.set(ROUTED_PARAMETER, next);
+    window.history.replaceState(window.history.state, "", url);
+    setValue(next);
+  }, []);
+  return (
+    <SectionTabs
+      label="Abas com rota"
+      onValueChange={select}
+      tabs={ROUTED_TABS}
+      value={value}
+    >
+      <TabsContent className="text-muted-foreground" value="resultado">
+        Painel da aba Resultado.
+      </TabsContent>
+      <TabsContent className="text-muted-foreground" value="metas">
+        Painel da aba Metas.
+      </TabsContent>
+    </SectionTabs>
+  );
+}
 
 function Section({
   children,
@@ -1550,6 +1779,21 @@ export function UiGallery() {
             </Tabs>
           </Section>
 
+          <Section title="SectionTabs: com e sem rota">
+            <p className="max-w-prose text-muted-foreground text-support">
+              Uma peça só, com rota (a aba aberta vai para o endereço) e sem
+              rota (a aba é local, no diálogo ou no bloco).
+            </p>
+            <div className="grid gap-4 md:grid-cols-2">
+              <div data-gallery-tabs="routed">
+                <RoutedSectionTabsExample />
+              </div>
+              <div data-gallery-tabs="local">
+                <SectionTabs label="Abas sem rota" tabs={LOCAL_TABS} />
+              </div>
+            </div>
+          </Section>
+
           <Section title="Filtro segmentado">
             <GallerySegmentedFilter />
           </Section>
@@ -1633,6 +1877,82 @@ export function UiGallery() {
                 </CardFrame>
               ))}
             </div>
+          </Section>
+
+          <Section title="Block">
+            <p className="max-w-prose text-muted-foreground text-support">
+              O <code>Block</code> desenha como o bloco do Início: à esquerda a
+              composição de hoje, à direita a peça, nas mesmas medidas.
+            </p>
+            <div className="grid gap-4 md:grid-cols-2">
+              <ReferenceBlock id="gallery-block-reference" />
+              <BlockExample id="gallery-block-piece" />
+            </div>
+          </Section>
+
+          <Section title="ListBlock">
+            <p className="max-w-prose text-muted-foreground text-support">
+              Lista e tabela na moldura do Início: o título e a contagem na
+              moldura, o painel sem respiro com as linhas de borda a borda, e o
+              total sempre por último. Os três estados, com e sem total, e a
+              tabela larga, que rola por dentro do painel.
+            </p>
+            <div className="grid items-start gap-4 lg:grid-cols-2">
+              <ListBlockExample state="rows" title="Produtos com total" total />
+              <ListBlockExample
+                state="rows"
+                title="Produtos sem total"
+                total={false}
+              />
+              <ListBlockExample
+                state="loading"
+                title="Carregando com total"
+                total
+              />
+              <ListBlockExample
+                state="loading"
+                title="Carregando sem total"
+                total={false}
+              />
+              <ListBlockExample
+                state="filtered-empty"
+                title="Busca com total"
+                total
+              />
+              <ListBlockExample
+                state="filtered-empty"
+                title="Busca sem total"
+                total={false}
+              />
+              <ListBlockExample state="rows" title="Tabela larga" total wide />
+            </div>
+          </Section>
+
+          <Section title="Peças soltas da lista">
+            <p className="max-w-prose text-muted-foreground text-support">
+              O aviso, o quadro do ícone e o total que o <code>ListBlock</code>{" "}
+              compõe. As telas que ainda não migraram os usam soltos, e a trava
+              (R4) não deixa entrar tela nova com eles.
+            </p>
+            <div className="grid items-start gap-4 md:grid-cols-2">
+              <ListNotice>
+                <p>Nenhum cliente com essa busca.</p>
+              </ListNotice>
+              <div className="grid gap-4">
+                <RowTile>
+                  <UsersIcon />
+                </RowTile>
+                <ListTotalFooter count="3 vendas" value="R$ 111,80" />
+              </div>
+            </div>
+          </Section>
+
+          <Section title="Block sem moldura">
+            <p className="max-w-prose text-muted-foreground text-support">
+              <code>Block variant="plain"</code>: o mesmo cabeçalho e o mesmo
+              ritmo, sem a moldura de fora. O título é o único que se omite.
+            </p>
+            <PlainBlockExamples />
           </Section>
 
           <Section title="Cartão de KPI e Esconder valores">
