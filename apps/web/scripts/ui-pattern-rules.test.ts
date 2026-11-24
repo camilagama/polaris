@@ -324,8 +324,6 @@ export const DEBT: Readonly<Record<Rule, readonly string[]>> = {
     "src/expenses/expense-categories-panel.tsx",
     "src/expenses/expense-rules-panel.tsx",
     "src/expenses/expenses-page.tsx",
-    // help
-    "src/help/help-page.tsx",
     // home
     "src/home/home-goal.tsx",
     "src/home/home-parts.tsx",
@@ -351,9 +349,6 @@ export const DEBT: Readonly<Record<Rule, readonly string[]>> = {
     // settings
     "src/settings/email-preference-card.tsx",
     "src/settings/settings-screen.tsx",
-    // sign-in
-    "src/sign-in/change-password-page.tsx",
-    "src/sign-in/entry-ui.tsx",
     // subscription
     "src/subscription/subscription-commands.tsx",
     "src/subscription/subscription-offer.tsx",
