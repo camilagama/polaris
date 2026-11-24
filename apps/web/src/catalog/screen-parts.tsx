@@ -62,15 +62,23 @@ export function ListCountLine({
   );
 }
 
-interface LoadMoreButtonProps {
-  /** The id of the title of the `ListBlock` the button feeds: the focus goes to the first new row in its list. */
-  listHeadingId?: string;
-  /** The `aria-label` of a list that has no `ListBlock`: used when there is no `listHeadingId`. */
-  listLabel?: string;
+type LoadMoreListProps =
+  | {
+      /** The id of the title of the `ListBlock` the button feeds: the focus goes to the first new row in its list. */
+      listHeadingId: string;
+      listLabel?: never;
+    }
+  | {
+      listHeadingId?: never;
+      /** The `aria-label` of a list that has no `ListBlock`. */
+      listLabel: string;
+    };
+
+type LoadMoreButtonProps = LoadMoreListProps & {
   onClick: () => void;
   /** How many rows are drawn before the click: the index of the first new one. */
   shown: number;
-}
+};
 
 /**
  * Below a list with more rows than drawn: the same button as the Estoque, here with no wait (the rows are on hand).
