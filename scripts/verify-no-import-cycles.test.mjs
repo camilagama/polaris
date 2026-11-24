@@ -15,7 +15,7 @@ const GUARD = fileURLToPath(
   new URL("./verify-no-import-cycles.mjs", import.meta.url)
 );
 const HEADER = "Circular runtime imports found:";
-const SOURCE_SUFFIX = /\.tsx?$/;
+const SOURCE_SUFFIX = /\.(?:tsx?|mjs|js)$/;
 
 const created = [];
 
@@ -186,6 +186,8 @@ describe("verify-no-import-cycles", () => {
     { control: "ex.spec.tsx", suffix: ".test.tsx" },
     { control: "ex.spec.ts", suffix: ".d.ts" },
     { control: "ex.spec.ts", suffix: ".gen.ts" },
+    { control: "ex.spec.mjs", suffix: ".test.mjs" },
+    { control: "ex.spec.js", suffix: ".test.js" },
   ];
 
   it.each(EXCLUDED_SUFFIXES)(
@@ -277,6 +279,36 @@ describe("verify-no-import-cycles", () => {
       "packages/a/src/ok.ts": "export const ok = 1;\n",
       "packages/a/scripts/gate.ts":
         'import { ok } from "../src/ok";\nexport const gate = ok;\n',
+    });
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain(
+      "No circular runtime imports across 2 source files."
+    );
+  });
+
+  // A `.ts` file may import a `.mjs`/`.js` module by its extension (apps/web/scripts does), and that
+  // module may import the `.ts` back; a graph with only `.ts` nodes cannot see the loop.
+  const MIXED_FOLDER = "apps/web/scripts";
+
+  it.each([".mjs", ".js"])("fails a .ts -> %s -> .ts cycle", (extension) => {
+    const result = runGuard({
+      [`${MIXED_FOLDER}/one.ts`]: `import { two } from "./two${extension}";\nexport const one = two;\n`,
+      [`${MIXED_FOLDER}/two${extension}`]:
+        'import { one } from "./one";\nexport const two = one;\n',
+    });
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain(HEADER);
+    expect(result.stderr).toContain(path.join(MIXED_FOLDER, "one.ts"));
+    expect(result.stderr).toContain(path.join(MIXED_FOLDER, `two${extension}`));
+  });
+
+  it("passes a .ts -> .mjs chain that does not come back and counts the .mjs", () => {
+    const result = runGuard({
+      [`${MIXED_FOLDER}/one.ts`]:
+        'import { two } from "./two.mjs";\nexport const one = two;\n',
+      [`${MIXED_FOLDER}/two.mjs`]: "export const two = 1;\n",
     });
 
     expect(result.status).toBe(0);
