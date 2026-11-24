@@ -1,9 +1,10 @@
 import CloudOffIcon from "lucide-react/dist/esm/icons/cloud-off";
 import TriangleAlertIcon from "lucide-react/dist/esm/icons/triangle-alert";
-import { type RefObject, useEffect, useState } from "react";
+import { type RefObject, useCallback, useEffect, useState } from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
 import { Badge } from "@/ui/badge";
-import { Card, CardContent, CardHeader } from "@/ui/card";
+import { Block, BlockHeader, BlockPanel } from "@/ui/block";
+import { InsetBlock } from "@/ui/inset-block";
 import { TextLink } from "@/ui/text-link";
 import { formatBrlAmount } from "../lib/format";
 import type { LocalWorkspace } from "../offline/runtime/use-local-workspace";
@@ -97,9 +98,8 @@ export function savedSaleLines(
   return [first, ...others];
 }
 
-/** The sale kept just now has the border and the ring of a chosen card (DESIGN.md), so it reads as the one to look at. */
-const ROW_JUST_SAVED =
-  "border-foreground/70 bg-secondary ring-1 ring-foreground/10";
+/** The sale kept just now carries a ring on its `InsetBlock`, so it reads as the one to look at. */
+const ROW_JUST_SAVED = "ring-1 ring-foreground/70";
 
 /** "lines-and-units" on the sale screen; "items" (the lines alone, as before) in the history. */
 export type SavedSaleCountStyle = "items" | "lines-and-units";
@@ -151,54 +151,56 @@ export function SavedSaleRow({
   const attention =
     line.state === "needs_attention" || line.state === "rejected";
   return (
-    <li
-      className={`grid gap-1.5 rounded-lg border p-3 ${line.justSaved ? ROW_JUST_SAVED : "border-border"}`}
-    >
-      {line.justSaved ? (
-        // a status with its text in the tree: it is what the screen reader says when the sale is kept
-        <p role="status">
-          <strong>Venda guardada neste aparelho.</strong> O formulário abaixo
-          foi reiniciado para uma nova venda.
-        </p>
-      ) : null}
-      <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
-        <SavedSaleWhen countStyle={countStyle} line={line} />
-        {line.totalText === null ? (
-          <span className="text-muted-foreground text-support">
-            valor indisponível
-          </span>
-        ) : (
-          <Money className="font-medium" text={line.totalText} />
-        )}
-      </div>
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-        <Badge variant={attention ? "destructive" : "outline"}>
-          {pendingStateLabels[line.state]}
-        </Badge>
-        {attention ? (
-          <TextLink className="text-support" href="/attention">
-            Resolver em Pendências
-          </TextLink>
+    <li>
+      <InsetBlock
+        className={`grid gap-1.5 p-3 ${line.justSaved ? ROW_JUST_SAVED : ""}`}
+      >
+        {line.justSaved ? (
+          // a status with its text in the tree: it is what the screen reader says when the sale is kept
+          <p role="status">
+            <strong>Venda guardada neste aparelho.</strong> O formulário abaixo
+            foi reiniciado para uma nova venda.
+          </p>
         ) : null}
-      </div>
-      {line.stockWarnings.length > 0 ? (
-        <Alert role="note" variant="warning">
-          <TriangleAlertIcon aria-hidden="true" />
-          <AlertDescription className="[&_p]:mb-1!">
-            <p>
-              O estoque do aparelho parece não cobrir{" "}
-              {line.stockWarnings.length === 1 ? "este item" : "estes itens"}. A
-              venda foi guardada mesmo assim; o servidor confere e pode
-              recusá-la.
-            </p>
-            <ul className="list-disc pl-4">
-              {line.stockWarnings.map((warning) => (
-                <li key={warning}>{warning}</li>
-              ))}
-            </ul>
-          </AlertDescription>
-        </Alert>
-      ) : null}
+        <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
+          <SavedSaleWhen countStyle={countStyle} line={line} />
+          {line.totalText === null ? (
+            <span className="text-muted-foreground text-support">
+              valor indisponível
+            </span>
+          ) : (
+            <Money className="font-medium" text={line.totalText} />
+          )}
+        </div>
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+          <Badge variant={attention ? "destructive" : "outline"}>
+            {pendingStateLabels[line.state]}
+          </Badge>
+          {attention ? (
+            <TextLink className="text-support" href="/attention">
+              Resolver em Pendências
+            </TextLink>
+          ) : null}
+        </div>
+        {line.stockWarnings.length > 0 ? (
+          <Alert role="note" variant="warning">
+            <TriangleAlertIcon aria-hidden="true" />
+            <AlertDescription className="[&_p]:mb-1!">
+              <p>
+                O estoque do aparelho parece não cobrir{" "}
+                {line.stockWarnings.length === 1 ? "este item" : "estes itens"}.
+                A venda foi guardada mesmo assim; o servidor confere e pode
+                recusá-la.
+              </p>
+              <ul className="list-disc pl-4">
+                {line.stockWarnings.map((warning) => (
+                  <li key={warning}>{warning}</li>
+                ))}
+              </ul>
+            </AlertDescription>
+          </Alert>
+        ) : null}
+      </InsetBlock>
     </li>
   );
 }
@@ -222,6 +224,14 @@ export function SavedSalesCard({
   workspace: LocalWorkspace | null;
 }) {
   const sales = usePendingSales(workspace);
+  const focusTarget = useCallback(
+    (node: HTMLDivElement | null) => {
+      if (panelRef) {
+        panelRef.current = node;
+      }
+    },
+    [panelRef]
+  );
   // The sale kept just now leaves the card once the server took it: the queue had it and no longer does. Before the
   // first read of the queue (or while it is read again) it is shown from what the form knew.
   const [seenInQueue, setSeenInQueue] = useState<string | null>(null);
@@ -240,35 +250,32 @@ export function SavedSalesCard({
     return null;
   }
   return (
-    <section
+    <Block
       aria-labelledby="sale-saved-title"
-      className="focus-ring rounded-xl"
-      ref={panelRef}
+      className="focus-ring"
+      ref={focusTarget}
       tabIndex={-1}
     >
-      <Card>
-        <CardHeader>
-          <h2 className="text-section" id="sale-saved-title">
-            Vendas guardadas neste aparelho
-          </h2>
-        </CardHeader>
-        <CardContent className="grid justify-items-start gap-3">
-          <ul className="grid w-full gap-2">
-            {lines.map((line) => (
-              <SavedSaleRow
-                countStyle={countStyle}
-                key={line.commandId}
-                line={line}
-              />
-            ))}
-          </ul>
-          <p className="text-muted-foreground text-support">
-            Só viram vendas confirmadas quando o servidor aceitar, assim que
-            houver conexão.
-          </p>
-          <TextLink href="/attention">Acompanhar em Pendências</TextLink>
-        </CardContent>
-      </Card>
-    </section>
+      <BlockHeader
+        id="sale-saved-title"
+        title="Vendas guardadas neste aparelho"
+      />
+      <BlockPanel className="items-start">
+        <ul className="grid w-full gap-2">
+          {lines.map((line) => (
+            <SavedSaleRow
+              countStyle={countStyle}
+              key={line.commandId}
+              line={line}
+            />
+          ))}
+        </ul>
+        <p className="text-muted-foreground text-support">
+          Só viram vendas confirmadas quando o servidor aceitar, assim que
+          houver conexão.
+        </p>
+        <TextLink href="/attention">Acompanhar em Pendências</TextLink>
+      </BlockPanel>
+    </Block>
   );
 }
