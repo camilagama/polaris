@@ -389,7 +389,7 @@ for (const { fontPixels, width } of [
   );
 
   reflowTest(
-    `a ${width} px com letra de ${fontPixels} px o nome médio da venda em 2 partes leva as reticências e os dois métodos ficam inteiros`,
+    `a ${width} px com letra de ${fontPixels} px com o nome médio a venda em 2 partes só corta o fim do nome e os dois métodos ficam inteiros`,
     async ({ page }) => {
       const sales = twoPartsSales(MEDIUM_CUSTOMER);
       await openHistory(page, sales, { fontPixels, width });

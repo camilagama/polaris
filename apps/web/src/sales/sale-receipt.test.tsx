@@ -307,7 +307,7 @@ describe("the history list", () => {
     expect(markup).toContain('<span class="truncate">Ana Souza</span>');
     expect(markup).not.toContain("whitespace-pre");
     expect(markup).toContain(
-      '<span class="min-w-0 max-w-full basis-full">Pix + Crédito · 2 itens</span>'
+      '<span class="min-w-0 max-w-full basis-full"> Pix + Crédito · 2 itens</span>'
     );
   });
 

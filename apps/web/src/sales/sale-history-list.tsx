@@ -108,7 +108,7 @@ function RowBody({ chevron, row }: { chevron: boolean; row: HistoryRow }) {
                 ? "min-w-0 max-w-full basis-full"
                 : "min-w-0 max-w-full"
             }
-          >{`${row.splitPayment ? "" : " "}${row.methodText} · ${row.itemCountText}`}</span>
+          >{` ${row.methodText} · ${row.itemCountText}`}</span>
         </p>
       </div>
       <Money
