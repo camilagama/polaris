@@ -8,7 +8,8 @@ import { cn } from "@/lib/utils";
    `h-ctl-md` (32 px with a mouse, 36 px with touch), each tab has a 44 px touch area (`touch-hit`) and the keyboard
    focus is the 3 px outline (`focus-ring`). Horizontal only, in two styles: the segmented list on the muted strip (a
    filter of a list) and the `line` (the tab of a screen: text, a 1 px rule across the list and a 2 px stroke in ink
-   under the open tab, never in the brand color). The tab reads the style from its own list, so a segmented filter
+   under the open tab, never in the brand color; the list keeps 6 px at each end, so the 5 px of the focus outline of the first and last
+   tab is not cut by the scroll box). The tab reads the style from its own list, so a segmented filter
    inside the panel of a line tab stays a strip. The vertical layout of the registry comes back with the first screen
    that needs it. A tab does not point at its panel (`aria-controls`): the panel is already named by its tab
    (`aria-labelledby`), and a reader that follows the pointer says that name again after the tab's.
@@ -29,15 +30,16 @@ type TabsVariant = "segmented" | "line";
 
 const ListVariant = createContext<TabsVariant>("segmented");
 
+// below 360 px the gap closes so three words of 20 px stay on the strip and the page does not widen
 const LIST_STYLE: Record<TabsVariant, string> = {
   segmented: "w-fit justify-center rounded-lg bg-muted p-0.75",
-  line: "w-max min-w-full justify-start gap-1 border-border border-b",
+  line: "w-max min-w-full justify-start gap-4 border-border border-b px-1.5 max-[22.5rem]:gap-1",
 };
 
 const TRIGGER_STYLE: Record<TabsVariant, string> = {
   segmented:
     "flex-1 rounded-md border border-transparent px-2.5 motion-full:transition-[background-color,color,box-shadow] data-active:bg-card data-active:text-foreground data-active:shadow-xs dark:data-active:bg-secondary",
-  line: "rounded-sm px-3 motion-full:transition-colors after:absolute after:inset-x-0 after:-bottom-px after:h-0.5 after:bg-foreground forced-colors:after:bg-[CanvasText] after:opacity-0 motion-full:after:transition-opacity data-active:text-foreground data-active:after:opacity-100",
+  line: "rounded-sm px-1.5 motion-full:transition-colors after:absolute after:inset-x-0 after:-bottom-px after:h-0.5 after:bg-foreground forced-colors:after:bg-[CanvasText] after:opacity-0 motion-full:after:transition-opacity data-active:text-foreground data-active:after:opacity-100",
 };
 
 function TabsList({
