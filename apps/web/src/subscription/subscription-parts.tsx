@@ -152,7 +152,7 @@ export function PlanLoading() {
         id="subscription-plan-loading"
         title={
           <>
-            <span className="sr-only">Carregando a assinatura…</span>
+            <span className="sr-only">Carregando…</span>
             <Skeleton aria-hidden="true" className="h-5 w-32" />
           </>
         }
