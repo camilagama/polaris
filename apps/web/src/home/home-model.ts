@@ -1,7 +1,11 @@
 import type { GoalReadModel, PeriodSummaryReadModel } from "@polaris/contracts";
 import { hasCapabilityForRole } from "@polaris/domain/authorization/capabilities";
 import { Money } from "@polaris/domain/money/money";
-import { formatGoalValue, groupGoals } from "../dashboard/goal-model";
+import {
+  formatGoalValue,
+  goalPercentTenths,
+  groupGoals,
+} from "../dashboard/goal-model";
 import { calendarDayInTimezone, clockPartsInTimezone } from "../lib/dates";
 import { formatBrlAmount, formatQuantity } from "../lib/format";
 
@@ -205,12 +209,35 @@ export type GoalView =
   | { goal: GoalReadModel; kind: "settled" }
   | { kind: "none" };
 
+/**
+ * The active goals in the order the card walks them: the ones not reached first, by the percent of the target
+ * (highest first, so the nearest to being reached opens), the ones already reached last; a tie ends the sooner first.
+ * A goal the plan paused is not measured, so it comes after the measured ones that are not reached, and before the
+ * reached ones. The server does not say when an active goal was reached, so among the reached ones the same rule
+ * applies: the higher percent first, then the sooner end.
+ */
+export function orderGoalsByProximity(
+  goals: readonly GoalReadModel[]
+): GoalReadModel[] {
+  const reached = (goal: GoalReadModel) => goal.progress?.reached === true;
+  return [...goals].sort(
+    (a, b) =>
+      Number(reached(a)) - Number(reached(b)) ||
+      Number(a.paused) - Number(b.paused) ||
+      goalPercentTenths(b.progress?.percent ?? null) -
+        goalPercentTenths(a.progress?.percent ?? null) ||
+      a.endsOn.localeCompare(b.endsOn) ||
+      a.startsOn.localeCompare(b.startsOn) ||
+      a.id.localeCompare(b.id)
+  );
+}
+
 /** How many days back a goal that settled is still shown when no other is active (§ 5.3). */
 const SETTLED_SHOWN_DAYS = 7;
 
 /**
- * The goal of the card (AC-10, AC-11, § 5.3): the active one that ends first, with how many others there are; with
- * none active, the last one that settled (reached or missed, never a cancelled one) in the last 7 days of the store;
+ * The goal of the card (AC-10, AC-11, § 5.3): the active one nearest to being reached (`orderGoalsByProximity`), with
+ * how many others there are; with none active, the last one that settled (reached or missed, never a cancelled one) in the last 7 days of the store;
  * otherwise none ("Definir meta"). Reading the goals settles them, so the read is of every status.
  */
 export function pickGoal(
@@ -219,7 +246,7 @@ export function pickGoal(
   timezone: string | null
 ): GoalView {
   const { active, settled } = groupGoals(goals);
-  const [first] = active;
+  const [first] = orderGoalsByProximity(active);
   if (first) {
     return { goal: first, kind: "active", others: active.length - 1 };
   }

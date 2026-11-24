@@ -53,3 +53,64 @@ describe("Block", () => {
     expect(html).toMatch(HIDDEN_FOOT);
   });
 });
+
+const PLAIN_HEADING = /<h2[^>]*>Comprovante<\/h2>/;
+const PLAIN_REGION = /<div[^>]*aria-labelledby="([^"]+)"[^>]*role="region"/;
+
+describe("Block variant plain", () => {
+  it("com título é uma região nomeada pelo h2, sem a moldura de fora", () => {
+    const html = renderToStaticMarkup(
+      <Block
+        action={<button type="button">Imprimir</button>}
+        description="Pago em 2 vezes."
+        title="Comprovante"
+        variant="plain"
+      >
+        corpo
+      </Block>
+    );
+    const labelled = PLAIN_REGION.exec(html)?.[1];
+    expect(labelled).toBeDefined();
+    expect(html).toContain(`id="${labelled}"`);
+    expect(html).toMatch(PLAIN_HEADING);
+    expect(html).toContain('data-slot="block-header"');
+    expect(html).toContain("Pago em 2 vezes.");
+    expect(html).toContain("Imprimir");
+    expect(html).toContain("corpo");
+    expect(html).toContain('data-slot="card"');
+    expect(html).not.toContain('data-slot="card-frame"');
+    expect(html).not.toContain("md:bg-muted");
+  });
+
+  it("sem título não há região nem h2, e o conteúdo e a ação continuam", () => {
+    const html = renderToStaticMarkup(
+      <Block action={<button type="button">Copiar</button>} variant="plain">
+        resumo
+      </Block>
+    );
+    expect(html).not.toContain('role="region"');
+    expect(html).not.toContain("<h2");
+    expect(html).toContain("resumo");
+    expect(html).toContain("Copiar");
+  });
+
+  it("sem título nem nada além do conteúdo não desenha a linha do cabeçalho", () => {
+    const html = renderToStaticMarkup(<Block variant="plain">só isto</Block>);
+    expect(html).not.toContain('data-slot="card-header"');
+    expect(html).toContain("só isto");
+  });
+
+  it("o título só se omite no plain: sem ele e sem o nome da região, não compila", () => {
+    const named = (
+      <Block aria-labelledby="titulo">
+        <BlockHeader id="titulo" title="Vendas" />
+      </Block>
+    );
+    // @ts-expect-error a framed block is a named region: it needs `aria-labelledby`, the title is only left out by `variant="plain"`
+    const unnamed = <Block>sem título</Block>;
+    // @ts-expect-error the framed block has no header props of its own: `title` is a prop of `variant="plain"`
+    const stray = <Block aria-labelledby="titulo" title="Vendas" />;
+    const plain = <Block variant="plain">sem título</Block>;
+    expect([named, unnamed, stray, plain]).toHaveLength(4);
+  });
+});
