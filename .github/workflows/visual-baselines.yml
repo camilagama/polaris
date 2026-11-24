@@ -1,6 +1,6 @@
-# Gera e commita no ramo de um PR as capturas do ui-visual que mudaram (desenho do Filipe, arquitetura-2026-11-24.md).
+# Gera e commita no ramo de um PR as capturas do ui-visual que mudaram.
 # Só por disparo manual, nunca na main, nunca em fork; o revisor confere a lista de PNGs e o artefato de diffs.
-# Dois jobs (Rodrigo, seguranca/2026-11-24.md 00:32): "gerar" roda o código do ramo só com leitura;
+# Dois jobs: "gerar" roda o código do ramo só com leitura;
 # "publicar" tem escrita e não roda nada do ramo, só confere os PNGs do artefato e faz o push.
 name: Visual baselines
 run-name: "Baselines do ui-visual PR #${{ inputs.pr }}"
