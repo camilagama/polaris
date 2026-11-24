@@ -91,10 +91,10 @@ function run(env = {}) {
     encoding: "utf8",
     env: {
       PATH: `${path.join(sandbox, "bin")}:/usr/bin:/bin`,
+      PLAYWRIGHT_BROWSERS_PATH: path.join(sandbox, "browsers"),
       PLAYWRIGHT_INSTALL_RETRY_PAUSE: "0",
       STUB_APT_FAILURES: "0",
       STUB_APT_STALLS: "0",
-      PLAYWRIGHT_BROWSERS_PATH: path.join(sandbox, "browsers"),
       STUB_DOWNLOAD_FAILURES: "0",
       STUB_DOWNLOAD_STALLS: "0",
       STUB_LOG: path.join(sandbox, "calls.log"),
@@ -207,8 +207,8 @@ describe("scripts/playwright-install.sh", () => {
 
   it("retries a stalled apt after waiting for the leftover apt-get", () => {
     const { calls, output, status } = run({
-      PLAYWRIGHT_INSTALL_ATTEMPT_TIMEOUT: "2",
       PLAYWRIGHT_INSTALL_APT_ORPHAN_GRACE: "0",
+      PLAYWRIGHT_INSTALL_ATTEMPT_TIMEOUT: "2",
       STUB_APT_STALLS: "1",
       STUB_MISSING_LIBRARY: "libnss3.so",
       STUB_PGREP_RUNNING: "2",
