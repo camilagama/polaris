@@ -21,7 +21,7 @@ Registro retroativo das decisões do PR38 e do PR43, confirmadas na revisão do 
 
 ## Emenda de 22/11/2026: venda paga em partes
 
-O [ADR 0107](0107-venda-paga-em-partes.md) troca, no gatilho `check_sale_confirmation_complete`, a exigência de exatamente um pagamento igual ao total devido pela de uma a três partes declaradas no cabeçalho (`sales.payment_count`), nas posições 0 a `payment_count − 1`, que somam o total devido e, com mais de uma parte, valem cada uma mais que zero. A recusa continua com o nome `sales_confirmation_payment_complete`, e uma parte acrescentada depois do commit continua recusada. O resto desta decisão não muda.
+O [ADR 0107](0107-venda-paga-em-partes.md) troca, no gatilho `check_sale_confirmation_complete`, a exigência de exatamente um pagamento igual ao total devido pela de uma a três partes declaradas no cabeçalho (`sales.payment_count`), nas posições 0 a `payment_count − 1`, que somam o total devido e, com mais de uma parte, valem cada uma mais que zero. A recusa do gatilho continua com o nome `sales_confirmation_payment_complete`, e uma parte acrescentada depois do commit continua recusada. O resto desta decisão não muda.
 
 ## Consequências
 
