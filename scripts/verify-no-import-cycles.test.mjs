@@ -247,17 +247,17 @@ describe("verify-no-import-cycles", () => {
       'import { one } from "./one";\nexport const two = one;\n',
   });
 
-  it.each([
-    "packages/a/scripts",
-    "apps/web/scripts",
-  ])("fails a cycle in the %s folder", (folder) => {
-    const result = runGuard(SCRIPTS_CYCLE(folder));
+  it.each(["packages/a/scripts", "apps/web/scripts"])(
+    "fails a cycle in the %s folder",
+    (folder) => {
+      const result = runGuard(SCRIPTS_CYCLE(folder));
 
-    expect(result.status).toBe(1);
-    expect(result.stderr).toContain(HEADER);
-    expect(result.stderr).toContain(path.join(folder, "one.ts"));
-    expect(result.stderr).toContain(path.join(folder, "two.ts"));
-  });
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain(HEADER);
+      expect(result.stderr).toContain(path.join(folder, "one.ts"));
+      expect(result.stderr).toContain(path.join(folder, "two.ts"));
+    }
+  );
 
   it("fails a cycle in a src/scripts/ folder", () => {
     const result = runGuard(SCRIPTS_CYCLE("packages/a/src/scripts"));
