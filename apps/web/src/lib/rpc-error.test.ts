@@ -9,10 +9,12 @@ import {
   isLegalAcceptanceRefusal,
   isOrganizationClosedRefusal,
   isPlatformCut,
+  isServerFailureCode,
   isTransientReadFailure,
   readErrorMessage,
   rpcErrorCode,
   rpcErrorReason,
+  SERVER_FAILURE_CODES,
   serverCutWriteMessage,
   unconfirmedWriteFaultMessage,
 } from "./rpc-error";
@@ -325,5 +327,41 @@ describe("a call the platform killed (the regime of the Free plan)", () => {
     ]) {
       expect(unconfirmedWriteFaultMessage(error)).toBeUndefined();
     }
+  });
+});
+
+describe("isServerFailureCode", () => {
+  it.each([
+    "BAD_GATEWAY",
+    "GATEWAY_TIMEOUT",
+    "INTERNAL_SERVER_ERROR",
+    "SERVICE_UNAVAILABLE",
+    "TIMEOUT",
+  ])("%s is a server failure", (code) => {
+    expect(isServerFailureCode(code)).toBe(true);
+    expect(SERVER_FAILURE_CODES.has(code)).toBe(true);
+  });
+
+  it.each([
+    "UNAUTHORIZED",
+    "FORBIDDEN",
+    "CONFLICT",
+    "NOT_FOUND",
+    "BAD_REQUEST",
+    "TOO_MANY_REQUESTS",
+    "",
+    undefined,
+  ])("%s is an answer or no code, not a server failure", (code) => {
+    expect(isServerFailureCode(code)).toBe(false);
+  });
+
+  it("lists exactly five codes", () => {
+    expect([...SERVER_FAILURE_CODES].sort()).toEqual([
+      "BAD_GATEWAY",
+      "GATEWAY_TIMEOUT",
+      "INTERNAL_SERVER_ERROR",
+      "SERVICE_UNAVAILABLE",
+      "TIMEOUT",
+    ]);
   });
 });

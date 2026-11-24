@@ -19,6 +19,7 @@ import {
   type DataChannel,
   DEVICE_CHECK_BACK_ONLINE_MS,
   DEVICE_CHECK_RETRY_STEPS_MS,
+  isBrowserFailure,
   type KeyValueStore,
   NoSessionForDiscardError,
   OfflineRuntime,
@@ -3535,6 +3536,28 @@ describe("the offline access that expired (emenda do ADR 0047)", () => {
     await runtime.syncNow();
     expect(runtime.getSnapshot().phase).toBe("ready");
     expect(w.server.products.size).toBe(1);
+  });
+
+  it("a renewal whose stores do not open even for the queue ends unavailable with the local message, after one renewal and nothing more asked", async () => {
+    const { runtime: first, w } = await queuedOffline();
+    await first.stop();
+    w.advance(73);
+    const runtime = w.make();
+    await runtime.start(organizationId);
+
+    w.network.online = true;
+    w.gates.openStoresFailures = 2;
+    const asked = w.calls.issueLease;
+    await runtime.syncNow();
+
+    const snapshot = runtime.getSnapshot();
+    expect(snapshot).toMatchObject({
+      phase: "unavailable",
+      reason: "opfs_failed",
+      syncing: false,
+    });
+    expect(isBrowserFailure(snapshot.reason)).toBe(true);
+    expect(w.calls.issueLease).toBe(asked + 1);
   });
 
   it("a renewal that fails after the stores opened closes them before going back to the expired state", async () => {
