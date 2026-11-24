@@ -6,6 +6,8 @@ import MinusIcon from "lucide-react/dist/esm/icons/minus";
 import PlusIcon from "lucide-react/dist/esm/icons/plus";
 import ShoppingBagIcon from "lucide-react/dist/esm/icons/shopping-bag";
 import SparklesIcon from "lucide-react/dist/esm/icons/sparkles";
+import StoreIcon from "lucide-react/dist/esm/icons/store";
+import TagIcon from "lucide-react/dist/esm/icons/tag";
 import TriangleAlertIcon from "lucide-react/dist/esm/icons/triangle-alert";
 import UsersIcon from "lucide-react/dist/esm/icons/users";
 import WalletIcon from "lucide-react/dist/esm/icons/wallet";
@@ -44,6 +46,7 @@ import {
   CardTitle,
 } from "@/ui/card";
 import { OnDemandRingChart, OnDemandSparkline } from "@/ui/charts/on-demand";
+import { CheckableOption } from "@/ui/checkable-option";
 import { Checkbox } from "@/ui/checkbox";
 import {
   Collapsible,
@@ -108,6 +111,7 @@ import {
   FieldSet,
   FieldTitle,
 } from "@/ui/field";
+import { FieldGroup } from "@/ui/field-group";
 import { Figure } from "@/ui/figure";
 import { FilterBar, type FilterField, type FilterRule } from "@/ui/filter-bar";
 import { HelpTip } from "@/ui/help-tip";
@@ -119,6 +123,7 @@ import {
   InputGroupInput,
   InputGroupTextarea,
 } from "@/ui/input-group";
+import { InsetBlock } from "@/ui/inset-block";
 import { DeltaChip, HeroPercent, HeroValue, KpiTile } from "@/ui/kpi-card";
 import { Label } from "@/ui/label";
 import { ListBlock } from "@/ui/list-block";
@@ -137,10 +142,10 @@ import {
   PopoverTrigger,
 } from "@/ui/popover";
 import { Progress, ProgressLabel, ProgressValue } from "@/ui/progress";
-import { RowTile } from "@/ui/row-tile";
 import { ProgressRing } from "@/ui/progress-ring";
 import { RadioGroup, RadioGroupItem } from "@/ui/radio-group";
 import { RefreshButton } from "@/ui/refresh-button";
+import { RowTile } from "@/ui/row-tile";
 import { ScrollArea } from "@/ui/scroll-area";
 import { SearchField } from "@/ui/search-field";
 import { SectionTabs } from "@/ui/section-tabs";
@@ -165,6 +170,7 @@ import {
 } from "@/ui/sidebar";
 import { Skeleton } from "@/ui/skeleton";
 import { SkeletonArt, type SkeletonArtKind } from "@/ui/skeleton-art";
+import { StepTile } from "@/ui/step-tile";
 import { Switch } from "@/ui/switch";
 import {
   Table,
@@ -569,6 +575,87 @@ function ListBlockExample({
         />
       ) : null}
     </ListBlock>
+  );
+}
+
+const OPTION_NAMES = ["Azul / P", "Azul / M", "Vermelho / M"] as const;
+
+/** The options of the image of a product, as the tab "Imagens" lists them: each one on its own, one of them off. */
+function CheckableOptionExamples() {
+  const [marked, setMarked] = useState<string[]>(["Azul / M"]);
+  const toggle = useCallback(
+    (name: string) =>
+      setMarked((current) =>
+        current.includes(name)
+          ? current.filter((item) => item !== name)
+          : [...current, name]
+      ),
+    []
+  );
+  return (
+    <div className="grid gap-2">
+      {OPTION_NAMES.map((name) => (
+        <GalleryOption
+          checked={marked.includes(name)}
+          key={name}
+          name={name}
+          onToggle={toggle}
+        />
+      ))}
+      <GalleryOption
+        checked={false}
+        disabled
+        name="Desligada, sem imagem para enviar"
+      />
+      <GalleryOption
+        checked
+        name="Uma combinação com um nome bem comprido, para provar que o texto quebra dentro da borda e não passa dela"
+      />
+    </div>
+  );
+}
+
+function GalleryOption({
+  checked,
+  disabled,
+  name,
+  onToggle,
+}: {
+  checked: boolean;
+  disabled?: boolean;
+  name: string;
+  onToggle?: (name: string) => void;
+}) {
+  const handleChange = useCallback(() => onToggle?.(name), [name, onToggle]);
+  return (
+    <CheckableOption
+      checked={checked}
+      disabled={disabled}
+      onCheckedChange={handleChange}
+    >
+      {name}
+    </CheckableOption>
+  );
+}
+
+const STEP_EXAMPLES = [
+  { Icon: StoreIcon, label: "Loja criada", state: "done" },
+  { Icon: TagIcon, label: "Cadastrar o 1º produto", state: "current" },
+  { Icon: ShoppingBagIcon, label: "Fazer a 1ª venda", state: "todo" },
+] as const;
+
+function StepTileExamples() {
+  return (
+    <ol className="grid gap-2">
+      {STEP_EXAMPLES.map(({ Icon, label, state }) => (
+        <li className="flex items-center gap-2.5" key={state}>
+          <StepTile state={state}>
+            <Icon />
+          </StepTile>
+          <span>{label}</span>
+        </li>
+      ))}
+    </ol>
   );
 }
 
@@ -1944,6 +2031,51 @@ export function UiGallery() {
                 </RowTile>
                 <ListTotalFooter count="3 vendas" value="R$ 111,80" />
               </div>
+            </div>
+          </Section>
+
+          <Section title="Painéis internos">
+            <p className="max-w-prose text-muted-foreground text-support">
+              Os dois únicos painéis dentro de um bloco, de um cartão ou de um
+              diálogo. O bloco rebaixado (<code>InsetBlock</code>) é o cinza
+              cheio, sem borda, para o dado que se lê; o grupo de campos (
+              <code>FieldGroup</code>) é o <code>fieldset</code> com borda de 1
+              px e sem fundo, para os campos de um formulário.
+            </p>
+            <div className="grid items-start gap-4 md:grid-cols-2">
+              <InsetBlock data-gallery-panel="inset">
+                <dl className="grid gap-1 text-sm">
+                  <dt className="text-muted-foreground">Pagamento</dt>
+                  <dd>Pix, R$ 111,80</dd>
+                </dl>
+              </InsetBlock>
+              <FieldGroup data-gallery-panel="group">
+                <FieldLegend>Contato</FieldLegend>
+                <Field>
+                  <FieldLabel htmlFor="gallery-group-email">E-mail</FieldLabel>
+                  <Input id="gallery-group-email" type="email" />
+                </Field>
+                <Field>
+                  <FieldLabel htmlFor="gallery-group-phone">
+                    Telefone
+                  </FieldLabel>
+                  <Input id="gallery-group-phone" type="tel" />
+                </Field>
+              </FieldGroup>
+            </div>
+          </Section>
+
+          <Section title="Opção marcável e caixa do passo">
+            <p className="max-w-prose text-muted-foreground text-support">
+              A opção marcável (<code>CheckableOption</code>) é uma linha com
+              borda e uma caixa de marcar, para escolher várias entre poucas. A
+              caixa do passo (<code>StepTile</code>) é o quadro de 28 px do
+              ícone de cada passo de uma lista de tarefas, igual nos três
+              estados.
+            </p>
+            <div className="grid items-start gap-4 md:grid-cols-2">
+              <CheckableOptionExamples />
+              <StepTileExamples />
             </div>
           </Section>
 
