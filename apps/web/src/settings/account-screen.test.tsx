@@ -96,6 +96,10 @@ describe("Minha conta enquanto o servidor não disse se a senha está ligada", (
 
   it("uma aba que o endereço não conhece espera como a ausência de aba", () => {
     open("?aba=nenhuma");
+    expect(
+      screen.getByRole("heading", { level: 1, name: "Minha conta" })
+    ).toBeTruthy();
+    expect(screen.getByRole("status")).toBeTruthy();
     expect(screen.queryAllByRole("tab")).toHaveLength(0);
     expect(screen.queryByText(CHANGE_PASSWORD)).toBeNull();
   });
