@@ -481,7 +481,7 @@ jobs:
           key: ${{ steps.node-modules.outputs.cache-primary-key }}
       # the Chromium of the Playwright in bun.lock, the same build as the one in the image of the visual checks
       - name: Chromium (cache da main, sem apt)
-        # 24/11: o navegador vem do cache da main ou da CDN do Playwright; o apt só entra se faltar biblioteca
+        # o navegador vem do cache da main ou da CDN do Playwright; o apt só entra se faltar biblioteca
         timeout-minutes: 5
         uses: ./.github/actions/chromium
         with:
@@ -637,7 +637,7 @@ jobs:
             packages/*/node_modules
           key: ${{ steps.node-modules.outputs.cache-primary-key }}
       - name: Chromium (cache da main, sem apt)
-        # 24/11: sem apt no caminho normal (o espelho lento derrubou 4 lotes)
+        # sem apt no caminho normal (o espelho lento derrubou 4 lotes)
         timeout-minutes: 5
         uses: ./.github/actions/chromium
         with:
@@ -740,7 +740,7 @@ jobs:
             packages/*/node_modules
           key: ${{ steps.node-modules.outputs.cache-primary-key }}
       - name: Chromium (cache da main, sem apt)
-        # 24/11: sem apt no caminho normal
+        # sem apt no caminho normal
         timeout-minutes: 5
         uses: ./.github/actions/chromium
         with:
@@ -871,7 +871,7 @@ jobs:
             packages/*/node_modules
           key: ${{ steps.node-modules.outputs.cache-primary-key }}
       - name: Chromium (cache da main, sem apt)
-        # 24/11: sem apt no caminho normal
+        # sem apt no caminho normal
         timeout-minutes: 5
         uses: ./.github/actions/chromium
         with:
