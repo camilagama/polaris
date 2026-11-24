@@ -6,7 +6,7 @@ import { EARLIEST_EXPENSE_COMPETENCE } from "@polaris/domain/expenses/expense";
 import { describe, expect, it } from "vitest";
 import { formatDate } from "@/ui/date-values";
 import {
-  categoryNamesDiffer,
+  categoryFieldsDiffer,
   categoryShareRows,
   EARLIEST_COMPETENCE_REASON,
   EARLIEST_EXPENSE_MONTH,
@@ -700,7 +700,7 @@ describe("categoryShareRows", () => {
   });
 });
 
-describe("categoryNamesDiffer", () => {
+describe("categoryFieldsDiffer", () => {
   const aluguel = CATEGORIES[0] as ExpenseCategoryReadModel;
 
   function entry(
@@ -719,25 +719,25 @@ describe("categoryNamesDiffer", () => {
 
   it("is false when the names are the same", () => {
     expect(
-      categoryNamesDiffer([entry(aluguel.id, aluguel.name)], CATEGORIES)
+      categoryFieldsDiffer([entry(aluguel.id, aluguel.name)], CATEGORIES)
     ).toBe(false);
   });
 
   it("is true when the server name of a category read here is another", () => {
     expect(
-      categoryNamesDiffer([entry(aluguel.id, "Aluguel do galpão")], CATEGORIES)
+      categoryFieldsDiffer([entry(aluguel.id, "Aluguel do galpão")], CATEGORIES)
     ).toBe(true);
   });
 
   it("is true when the server archived flag of a category read here is another", () => {
     expect(
-      categoryNamesDiffer(
+      categoryFieldsDiffer(
         [entry(aluguel.id, aluguel.name, true)],
         [{ ...aluguel, status: "active" }]
       )
     ).toBe(true);
     expect(
-      categoryNamesDiffer(
+      categoryFieldsDiffer(
         [entry(aluguel.id, aluguel.name, false)],
         [{ ...aluguel, status: "archived" }]
       )
@@ -746,19 +746,19 @@ describe("categoryNamesDiffer", () => {
 
   it("is false when the archived flag agrees or the server sent none", () => {
     expect(
-      categoryNamesDiffer(
+      categoryFieldsDiffer(
         [entry(aluguel.id, aluguel.name, true)],
         [{ ...aluguel, status: "archived" }]
       )
     ).toBe(false);
     expect(
-      categoryNamesDiffer(
+      categoryFieldsDiffer(
         [entry(aluguel.id, aluguel.name, false)],
         [{ ...aluguel, status: "active" }]
       )
     ).toBe(false);
     expect(
-      categoryNamesDiffer(
+      categoryFieldsDiffer(
         [entry(aluguel.id, aluguel.name)],
         [{ ...aluguel, status: "archived" }]
       )
@@ -767,7 +767,7 @@ describe("categoryNamesDiffer", () => {
 
   it("is false for a category this screen has not read", () => {
     expect(
-      categoryNamesDiffer(
+      categoryFieldsDiffer(
         [entry("00000000-0000-4000-8000-00000000ffff", "Outro nome")],
         CATEGORIES
       )
@@ -775,7 +775,7 @@ describe("categoryNamesDiffer", () => {
   });
 
   it("is false when the server sent no name, or no split", () => {
-    expect(categoryNamesDiffer([entry(aluguel.id)], CATEGORIES)).toBe(false);
-    expect(categoryNamesDiffer(undefined, CATEGORIES)).toBe(false);
+    expect(categoryFieldsDiffer([entry(aluguel.id)], CATEGORIES)).toBe(false);
+    expect(categoryFieldsDiffer(undefined, CATEGORIES)).toBe(false);
   });
 });
