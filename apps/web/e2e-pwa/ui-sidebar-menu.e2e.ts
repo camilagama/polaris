@@ -6,7 +6,7 @@ import { COLOR_SCHEME, SCREENS, VIEWPORTS } from "./ui-screens";
 /**
  * The item of the side menu: the current one is a gray step above the column (`--sidebar-accent`), the one under the
  * pointer is a step below it (`--sidebar-hover`), and "where you are" is still told by the `aria-current`, the weight
- * and the emerald dot, never by the fill. The colors are read computed, from the browser, and compared with the token
+ * and the brand dot, never by the fill. The colors are read computed, from the browser, and compared with the token
  * painted on a probe, so the test follows theme.css instead of repeating its numbers.
  */
 const home = SCREENS.find((screen) => screen.name === "início com vendas");

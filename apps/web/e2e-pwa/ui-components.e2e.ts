@@ -379,13 +379,71 @@ test("o grupo de rádios marcado como inválido mostra o anel no grupo e a borda
   expect(invalid.cardBorder).toBe(valid.cardBorder);
 });
 
+/** The boxes of a frame of the gallery: the frame, its title row and its panel, in pixels. */
+async function blockBoxes(page: Page, which: "block" | "reference") {
+  return await page
+    .locator(`[data-gallery-block="${which}"]`)
+    .evaluate((frame) => {
+      const box = (element: Element | null) => {
+        const { height, width, x, y } = (
+          element as Element
+        ).getBoundingClientRect();
+        return { height, width, x, y };
+      };
+      const origin = frame.getBoundingClientRect();
+      const relative = (element: Element | null) => {
+        const found = box(element);
+        if (found.width === 0 && found.height === 0) {
+          // the foot is `display: none` below 760 px: no box, and the same for both
+          return found;
+        }
+        return {
+          height: found.height,
+          width: found.width,
+          x: found.x - origin.x,
+          y: found.y - origin.y,
+        };
+      };
+      return {
+        footer: relative(
+          frame.querySelector('[data-slot="card-frame-footer"]')
+        ),
+        frame: { height: origin.height, width: origin.width },
+        header: relative(
+          frame.querySelector('[data-slot="card-frame-header"]')
+        ),
+        panel: relative(frame.querySelector('[data-slot="card-frame-panel"]')),
+      };
+    });
+}
+
+for (const size of [
+  { height: 800, width: 1280 },
+  { height: 740, width: 360 },
+]) {
+  test(`o Block desenha como o bloco do Início a ${size.width} px: a moldura, o cabeçalho e o painel medem o mesmo`, async ({
+    page,
+  }) => {
+    await page.setViewportSize(size);
+    await openGallery(page, null);
+    const reference = await blockBoxes(page, "reference");
+    const block = await blockBoxes(page, "block");
+    expect(block).toEqual(reference);
+    expect(block.panel.height).toBeGreaterThan(0);
+    // both are the same frame, so they would also agree on a wrong one: the gap of the panel is pinned too (4 px of
+    // frame from 760 px, `md:p-(--frame-gap)`; the 12 px of the plain card below it)
+    expect(block.panel.x).toBe(size.width >= 760 ? 4 : 12);
+    expect(block.header.x).toBe(size.width >= 760 ? 4 : 12);
+  });
+}
+
 test("controle: o axe desta página acusa uma imagem sem texto alternativo", async ({
   page,
 }) => {
   await openGallery(page, null);
   await page.evaluate(() => {
     const image = document.createElement("img");
-    image.src = "/icons/icon-192.png";
+    image.src = "/icons/icon-v2-192.png";
     document.querySelector("main")?.append(image);
   });
   const violations = await axeViolations(page);

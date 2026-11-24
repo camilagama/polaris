@@ -174,7 +174,7 @@ describe("src/ui/charts/ and src/ui/bklit/ (t285, t336)", () => {
     );
   });
 
-  it("a series is the ink unless its entity has a color; the best day is marked by its shape, not by the emerald (v7)", () => {
+  it("a series is the ink unless its entity has a color; the best day is marked by its shape, not by the brand color (v7)", () => {
     expect(read("src/ui/charts/area-chart.tsx")).toContain(
       'const INK: ChartColor = "var(--chart-5)"'
     );

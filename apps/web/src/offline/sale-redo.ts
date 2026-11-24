@@ -159,6 +159,7 @@ export function buildRedoDraft(
             seenVersion: sale.paymentProfile.expectedVersion,
           }
         : { choice: NO_PROFILE_CHOICE, reviewNotice: null, seenVersion: null },
+      split: null,
     },
     kind: "ready",
   };

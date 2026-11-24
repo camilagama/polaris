@@ -1257,6 +1257,27 @@ test.describe("loja sem venda: o checklist (AC-22, AC-23)", () => {
       registered = true;
       return route.fulfill(json(created));
     });
+    // with the offline copy ready the product is queued and announced only once the send is accepted: without an
+    // answer here the foot stays at 1 of 3, and whether the copy is ready by the click depends on the machine's speed
+    await page.route("**/rpc/sync/push", (route) => {
+      const { commands } = (
+        route.request().postDataJSON() as {
+          json: { commands: { commandId: string; type: string }[] };
+        }
+      ).json;
+      registered ||= commands.some(({ type }) => type === "product.create");
+      return route.fulfill(
+        json({
+          results: commands.map(({ commandId }) => ({
+            code: null,
+            commandId,
+            replayed: false,
+            result: null,
+            status: "accepted",
+          })),
+        })
+      );
+    });
     const server = new FakeServer(
       empty({ all: 0, unknownCost: 0, withoutStock: 0, withStock: 0 })
     );
@@ -1562,9 +1583,9 @@ test.describe("loja sem venda: o checklist (AC-22, AC-23)", () => {
           item.removeAttribute("aria-current");
           const circle = item.querySelector("[aria-hidden='true']");
           circle?.classList.remove(
-            "border-mark",
-            "bg-mark/10",
-            "text-mark-foreground"
+            "border-primary",
+            "bg-primary/10",
+            "text-primary"
           );
         });
         const plain = await heights();

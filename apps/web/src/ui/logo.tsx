@@ -1,4 +1,4 @@
-/** The provisional mark (v5.1): an "i" whose dot is emerald, one of the few uses of the color. */
+/** The provisional mark (v5.1): an "i" whose dot is the brand red, one of the few uses of the color. */
 export function Logo({ className = "size-6" }: { className?: string }) {
   return (
     <svg aria-hidden="true" className={className} viewBox="0 0 24 24">

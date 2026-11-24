@@ -383,6 +383,90 @@ describe("when only the fee is missing, the chart says the fee and not the cost 
   });
 });
 
+describe("the chart without the series of costs (costsSent false)", () => {
+  const withoutCosts = () => {
+    const base = october([]);
+    return {
+      ...base,
+      daily: base.daily?.map(
+        ({ costs: _costs, operatingResult: _result, ...day }) => day
+      ),
+    } as StoredPeriodSummary;
+  };
+
+  it("says the costs per day are not available, in place of the cost line", () => {
+    const markup = text(chart(withoutCosts()));
+    expect(markup).toContain("Os custos por dia não estão disponíveis agora.");
+    expect(markup).not.toContain("Esta cópia guardada");
+  });
+
+  it("says the copy has no costs per day when the read comes from the cache", () => {
+    const markup = text(
+      renderToStaticMarkup(
+        <ResultChart source="cache" summary={withoutCosts()} timezone={ZONE} />
+      )
+    );
+    expect(markup).toContain("Esta cópia guardada não tem os custos por dia.");
+    expect(markup).not.toContain("não estão disponíveis agora");
+  });
+
+  it("writes no note when every day sends its cost", () => {
+    const markup = text(chart(october([])));
+    expect(markup).not.toContain("Os custos por dia não estão disponíveis");
+    expect(markup).not.toContain("Esta cópia guardada");
+  });
+
+  describe("a series that sends the cost on some days only", () => {
+    const partial = () => {
+      const base = october([]);
+      return {
+        ...base,
+        daily: base.daily?.map((day, index) => {
+          if (index >= 10) {
+            return day;
+          }
+          const { costs: _costs, operatingResult: _result, ...rest } = day;
+          return rest;
+        }),
+      } as StoredPeriodSummary;
+    };
+
+    it("is not a series of costs: the note stands in for the line, as for a copy with none", () => {
+      const markup = chart(partial());
+      expect(text(markup)).toContain(
+        "Os custos por dia não estão disponíveis agora."
+      );
+      expect(markup).toContain('data-hatch-legend=""');
+      expect(markup).not.toContain('data-chart-legend=""');
+      expect(markup).not.toMatch(COSTS_TOTAL);
+      expect(markup).not.toContain("estimativa incompleta");
+      expect(drawingLabel(markup)).not.toContain("e custos");
+      expect(markup).not.toContain("Resultado do dia");
+    });
+
+    it("says the copy has no costs per day when the read comes from the cache", () => {
+      const markup = text(
+        renderToStaticMarkup(
+          <ResultChart source="cache" summary={partial()} timezone={ZONE} />
+        )
+      );
+      expect(markup).toContain(
+        "Esta cópia guardada não tem os custos por dia."
+      );
+    });
+
+    it("differs from days the server sent as unknown (null): those keep the line, the hatch and no note", () => {
+      const markup = chart(october([3, 12]));
+      expect(text(markup)).not.toContain(
+        "Os custos por dia não estão disponíveis"
+      );
+      expect(markup).toContain('data-chart-legend=""');
+      expect(markup).toContain('data-chart-legend-unknown=""');
+      expect(markup).toContain('data-hatch-legend="dia sem custo informado"');
+    });
+  });
+});
+
 describe("the chart with unknown days (AC-9, emenda de 25/10)", () => {
   it("keeps the badge and writes no total of the costs: never a partial sum", () => {
     const markup = chart(october([3, 12, 21]));
@@ -406,7 +490,10 @@ const NOTES_ATTRIBUTE = /data-notes="([^"]*)"/;
 const BEST_DAY_FOR_READERS = /<p class="sr-only">[^<]*Melhor dia/;
 const BEST_DAY_LINE = /<p class="[^"]*min-h-\[1\.125rem\]/;
 const TITLE_HEADING = /<h2 class="text-section" id="dashboard-chart-title"/;
-const ANY_HEIGHT_RESERVE = /min-h-\[/;
+const ANY_HEIGHT_RESERVE = /min-h-/;
+const NOTE_RESERVE_TOKEN = /(?<![\w:-])min-h-5\.5(?![\w.])/;
+const BADGE = /<span[^>]*data-slot="badge"[^>]*>.*?<\/span>/s;
+const ANY_BRACKET_RESERVE = /min-h-\[/;
 
 describe("the room the card keeps for its lines (lugar reservado)", () => {
   it("keeps the line of the note in the box, whatever the state, and writes the best day only for the screen reader", () => {
@@ -428,7 +515,14 @@ describe("the room the card keeps for its lines (lugar reservado)", () => {
   it("keeps no row above the drawing: the legend sits in the header and the box that stands in for the drawing is the plot's", () => {
     const markup = chart(october([3]));
     expect(markup).toContain("data-chart-loading");
-    expect(markup.slice(0, markup.indexOf("data-chart-loading"))).not.toMatch(
+    const drawingAt = markup.indexOf("data-chart-loading");
+    const panelAt = markup.indexOf('data-slot="card-frame-panel"');
+    expect(markup.slice(0, panelAt)).not.toMatch(ANY_BRACKET_RESERVE);
+    const panelAbove = markup.slice(panelAt, drawingAt).replace(BADGE, "");
+    expect(panelAbove.match(new RegExp(NOTE_RESERVE_TOKEN, "g"))).toHaveLength(
+      1
+    );
+    expect(panelAbove.replace(NOTE_RESERVE_TOKEN, "")).not.toMatch(
       ANY_HEIGHT_RESERVE
     );
     expect(markup).toContain("height:240px");
