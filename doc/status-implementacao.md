@@ -324,7 +324,7 @@ A branch Neon descartável pr13-better-auth-gate expira em 2026-10-08 às 09:29 
 | Modelo e implementação | Concluídos | Schema, migration 0018, RLS/grants, projeção lazy e primitivo interno de movimento+saldo+audit em transação tenant-scoped; sem UI/RPC nem command genérico. Os commands `receiveStock`, `writeOffStock` e `inventoryCount` seguem para PR29–31; custo médio e rounding para PR29. |
 | Verificação local | Concluída | `bun run check`: 122 testes, lint, formato, typecheck, boundaries e Knip passaram; `bun run build`: oito workspaces passaram. |
 | Gate Neon PostgreSQL 18 | Concluído | Migration aplicada e gate passou em PostgreSQL 18.6 na branch descartável `pr28-inventory-gate`; verificou RLS/grants, rollback atômico, concorrência, saldo não negativo, isolamento, ledger append-only e bloqueio da variante padrão mesmo após saldo voltar a zero. A branch expira automaticamente em 2026-10-10 18:47 BRT; as fixtures são sintéticas e ficam nela até expirar. |
-| Purge físico com histórico | Adiado | ON DELETE RESTRICT e ledger append-only bloqueiam purge físico de organização com movimentos. PR107 precisa definir e validar um caminho privilegiado compatível com retenção/deletion ledger antes do go-live. |
+| Purge físico com histórico | Concluído (PR107) | ON DELETE RESTRICT e ledger append-only bloqueiam purge físico de organização com movimentos; o caminho privilegiado compatível com o deletion ledger é o purge completo do [ADR 0081](../docs/adr/0081-purge-completo-da-organizacao-encerrada.md) (migration 0075, `0075_organization_purge.sql`; job de `privacy.maintenance`), descrito na [Fase 10G](#fase-10g--privacidade-purge-completo-da-organização-encerrada-pr107-adr-0081). |
 | Revisão independente | Concluída | Revisor independente sem achados; confirmou as transações, RLS, grants, proteção de histórico, gate PostgreSQL 18 e a dependência de purge registrada para PR107. |
 | Draft PR e CI remoto | Concluídos | [PR #27](https://github.com/camilagama/polaris/pull/27), draft empilhado sobre PR #26; CI remoto 6/6 passou no commit `5043a51`; sem merge. |
 | Revisão do usuário | Pendente | PR #27 aguarda revisão; não será mergeado sem autorização. |
@@ -1658,7 +1658,7 @@ Sexto passo da Fase 10 ([ADR 0080](../docs/adr/0080-ledger-minimo-de-exclusoes.m
 
 ### Fase 10G — Privacidade: purge completo da organização encerrada (PR107; ADR 0081)
 
-Sétimo passo da Fase 10 ([ADR 0081](../docs/adr/0081-purge-completo-da-organizacao-encerrada.md), proposto). Um ato administrativo agenda o purge de uma organização encerrada; o job horário apaga o armazenamento, depois as linhas do tenant, e deixa a organização como tombstone `purged`.
+Sétimo passo da Fase 10 ([ADR 0081](../docs/adr/0081-purge-completo-da-organizacao-encerrada.md), `status: accepted`). Um ato administrativo agenda o purge de uma organização encerrada; o job horário apaga o armazenamento, depois as linhas do tenant, e deixa a organização como tombstone `purged`.
 
 | Subetapa | Status | Evidência / dependência |
 | --- | --- | --- |
@@ -1864,7 +1864,7 @@ Sétimo passo da Fase 12 ([ADR 0098](../docs/adr/0098-sentry-no-navegador-so-err
 
 ### Fase 10H — a auditoria do tenant sobrevive ao purge, imutável, com retenção por classe (t062; emenda de 19/10/2026 do ADR 0081; implementação local concluída)
 
-Decisão do Arrascaeta de 19/10/2026, delegada pelo usuário, com o desenho aprovado pelo arquiteto e pela segurança: nenhuma linha da auditoria do tenant sai no purge. O número da migration (0080) e o do ADR podem mudar até o merge. Como na [10E-2](#fase-10e-2--privacidade-prazos-de-retenção-aprovados-pelo-usuário-em-19102026-revisão-de-advogado-recomendada-pol-80-verificações-locais-concluídas-gates-no-postgresql-18-local), os prazos de retenção estão **aprovados pelo usuário desde 19/10/2026** (revisão de advogado recomendada, sem bloquear); as classes da auditoria seguem `proposta`, sem job.
+Decisão do Arrascaeta de 19/10/2026, delegada pelo usuário, com o desenho aprovado pelo arquiteto e pela segurança: nenhuma linha da auditoria do tenant sai no purge. A migration é a 0080 (`0080_auditoria_sobrevive_ao_purge.sql`) e a decisão é emenda do ADR 0081 (`status: accepted`), sem ADR novo. Como na [10E-2](#fase-10e-2--privacidade-prazos-de-retenção-aprovados-pelo-usuário-em-19102026-revisão-de-advogado-recomendada-pol-80-verificações-locais-concluídas-gates-no-postgresql-18-local), os prazos de retenção estão **aprovados pelo usuário desde 19/10/2026** (revisão de advogado recomendada, sem bloquear); as classes da auditoria seguem `proposta`, sem job.
 
 | Subetapa | Status | Evidência / dependência |
 | --- | --- | --- |
@@ -1978,7 +1978,7 @@ Primeiro passo da Fase 14 ([ADR 0097](../docs/adr/0097-staging-fixo-e-producao-e
 
 ### Tela de entrada: e-mail e senha atrás de flag, bloqueio de conta e aceite legal (POL-85; P0, ADR 0100; só documentação)
 
-Decisões do usuário E1 a E4 e desenho (t085) aprovados em 19/10/2026, revisados por arquitetura, segurança e UX e consolidados pelo Arrascaeta. Os números do ADR (0100) e das migrations podem mudar até o merge. A tela de entrada (`/entrar`) é pré-requisito para ligar a flag do modo offline e para o checklist do [Gate 5](../docs/runbooks/gate-5-offline.md); ela também deve fechar os critérios de entrada do corte de aparelhos e sessões quando o P3 for mesclado (nada disso está pronto neste PR).
+Decisões do usuário E1 a E4 e desenho (t085) aprovados em 19/10/2026, revisados por arquitetura, segurança e UX e consolidados pelo Arrascaeta. O ADR é o 0100 (`status: accepted`) e as migrations da entrada que já estão na `main` incluem a 0082, 0083, 0092, 0093 e 0094. A tela de entrada (`/entrar`) é pré-requisito para ligar a flag do modo offline e para o checklist do [Gate 5](../docs/runbooks/gate-5-offline.md); ela também deve fechar os critérios de entrada do corte de aparelhos e sessões quando o P3 for mesclado (nada disso está pronto neste PR).
 
 | Subetapa | Status | Evidência / dependência |
 | --- | --- | --- |
