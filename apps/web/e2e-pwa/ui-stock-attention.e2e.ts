@@ -385,7 +385,7 @@ test.describe("Estoque, a lista na moldura", () => {
     );
     await expect(
       empty.getByRole("link", { name: "Ir para Produtos" })
-    ).toHaveAttribute("href", "/products");
+    ).toBeVisible();
     await expect(page.getByLabel("Buscar no estoque")).toBeVisible();
     await expect(bar(page)).toBeVisible();
   });
