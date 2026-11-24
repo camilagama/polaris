@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { readdir, unlink, writeFile } from "node:fs/promises";
+import { readdir, readFile, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -25,6 +25,7 @@ const uiMessage =
   "packages/ui must stay framework-free: the Admin page has no React, and the dash's components live in apps/web/src/ui.";
 const browserMessage =
   "Browser code must not import the database, the server layer or server-only libraries.";
+const uiPieceMessage = "A piece of ui/ imports neither a screen nor app-shell";
 
 // Biome's category for each kind of case: the run checks the rule and the message of every
 // diagnostic, so a different rule that happens to print the same text cannot satisfy a fixture.
@@ -89,6 +90,21 @@ const cases = [
     ["apps", "web", "src", "lib"],
     browserMessage,
   ],
+  ["@/app-shell/screen-tabs", ["apps", "web", "src", "ui"], uiPieceMessage],
+  ["../app-shell/screen-tabs", ["apps", "web", "src", "ui"], uiPieceMessage],
+  ["@/sales/sale-page", ["apps", "web", "src", "ui"], uiPieceMessage],
+  ["../sales/sale-page", ["apps", "web", "src", "ui"], uiPieceMessage],
+  [
+    "../../sales/sale-page",
+    ["apps", "web", "src", "ui", "charts"],
+    uiPieceMessage,
+  ],
+  [
+    "../../app-shell/screen-tabs",
+    ["apps", "web", "src", "ui", "charts"],
+    uiPieceMessage,
+  ],
+  ["@polaris/db/client", ["apps", "web", "src", "ui"], browserMessage],
   ["@polaris/db/client", ["apps", "catalog", "src"], catalogMessage],
   [
     "@polaris/db/tenant-transaction",
@@ -195,8 +211,22 @@ const importControls = [
   controlImport(["packages", "db", "src"], dbMessage),
   controlImport(["packages", "ui", "src"], uiMessage),
   controlImport(["apps", "web", "src", "lib"], browserMessage),
+  controlImport(["apps", "web", "src", "ui"], uiPieceMessage),
   controlImport(["apps", "catalog", "src"], catalogMessage),
   controlImport(["apps", "admin", "src"], adminMessage),
+  ...[
+    ["@/lib/utils", ["apps", "web", "src", "ui"]],
+    ["@/ui/block", ["apps", "web", "src", "ui"]],
+    ["../money", ["apps", "web", "src", "ui", "charts"]],
+    ["../../lib/utils", ["apps", "web", "src", "ui", "charts"]],
+  ].map(([specifier, workspace]) => ({
+    allowed: true,
+    expected: uiPieceMessage,
+    rule: importRule,
+    source: forbiddenImport(specifier),
+    specifier,
+    workspace,
+  })),
   // the one door the Admin has to billing must stay open, or the rejections above would only mean "all of billing"
   {
     allowed: true,
@@ -214,6 +244,184 @@ cases.push(
   ...evlogRejected,
   evlogCase(["packages", "observability", "src"], true)
 );
+
+const browserIncludes = "apps/web/src/**";
+const uiIncludes = "apps/web/src/ui/**";
+
+const jsoncComments = /("(?:[^"\\]|\\.)*")|\/\/[^\n]*|\/\*[\s\S]*?\*\//g;
+const jsoncTrailingCommas = /("(?:[^"\\]|\\.)*")|,(?=\s*[}\]])/g;
+
+/** Biome config text without JSONC comments and trailing commas; string contents stay untouched. */
+const stripJsonc = (text) =>
+  text
+    .replace(jsoncComments, (_match, string) => string ?? "")
+    .replace(jsoncTrailingCommas, (_match, string) => string ?? "");
+
+const restrictedImportOptions = (override) =>
+  override?.linter?.rules?.style?.noRestrictedImports?.options ?? {};
+
+/** What the copy of one browser pattern group lacks in the ui/ override, or adds that would undo it. */
+function missingFromGroup(pattern, uiPatterns) {
+  const copies = uiPatterns.filter(
+    (candidate) => candidate.message === pattern.message
+  );
+  if (!pattern.message || copies.length !== 1) {
+    return [
+      `exactly one copy of the pattern group "${pattern.message}" (it needs a message of its own)`,
+    ];
+  }
+  const [{ group }] = copies;
+  const missing = group
+    .filter((entry) => entry.startsWith("!") && !pattern.group.includes(entry))
+    .map(
+      (entry) =>
+        `no extra exception: "${entry}" in the group "${pattern.message}" would reopen what the browser override restricts`
+    );
+  let from = 0;
+  for (const entry of pattern.group) {
+    const found = group.indexOf(entry, from);
+    if (found === -1) {
+      missing.push(`"${entry}" of the group "${pattern.message}"`);
+    } else {
+      from = found + 1;
+    }
+  }
+  return missing;
+}
+
+/**
+ * Biome replaces the options of `noRestrictedImports` in the override of `apps/web/src/ui/**` instead of
+ * merging them with the browser override, so ui/ repeats the browser group. Everything the browser
+ * override restricts (paths, and every entry of each pattern group, in the same order because a `!`
+ * entry only undoes what came before it) must be there too, or ui/ is left uncovered without a sound.
+ * Entries that only ui/ has (app-shell, the screens) may be extra, as separate groups, but an exception
+ * (`!`) added to the copied group would undo a restriction, so it is refused.
+ */
+function missingFromUiOverride(config) {
+  const overrides = config.overrides ?? [];
+  const browser = overrides.find((override) =>
+    override.includes?.includes(browserIncludes)
+  );
+  const ui = overrides.find((override) =>
+    override.includes?.includes(uiIncludes)
+  );
+  if (!(browser && ui)) {
+    return [
+      `biome.jsonc must keep the override of ${browserIncludes} and the one of ${uiIncludes}`,
+    ];
+  }
+  const browserOptions = restrictedImportOptions(browser);
+  const uiOptions = restrictedImportOptions(ui);
+  const missing = [];
+  for (const [name, value] of Object.entries(browserOptions.paths ?? {})) {
+    if (JSON.stringify(uiOptions.paths?.[name]) !== JSON.stringify(value)) {
+      missing.push(`path "${name}"`);
+    }
+  }
+  for (const pattern of browserOptions.patterns ?? []) {
+    missing.push(...missingFromGroup(pattern, uiOptions.patterns ?? []));
+  }
+  return missing;
+}
+
+function assertUiRepeatsBrowserGroup(config, where) {
+  const missing = missingFromUiOverride(config);
+  if (missing.length > 0) {
+    throw new Error(
+      `${where}: the override of ${uiIncludes} must repeat what the browser override of ${browserIncludes} restricts (Biome replaces the options, it does not merge them). Missing: ${missing.join("; ")}.`
+    );
+  }
+}
+
+const biomeConfig = JSON.parse(
+  stripJsonc(await readFile(path.join(root, "biome.jsonc"), "utf8"))
+);
+assertUiRepeatsBrowserGroup(biomeConfig, "biome.jsonc");
+
+const overrideOf = (config, includes) =>
+  config.overrides.find((override) => override.includes?.includes(includes));
+const plantedConfig = (mutate) => {
+  const copy = structuredClone(biomeConfig);
+  const uiOverride = overrideOf(copy, uiIncludes);
+  const options = restrictedImportOptions(uiOverride);
+  mutate({
+    browserOptions: restrictedImportOptions(overrideOf(copy, browserIncludes)),
+    group: options.patterns.find(
+      (pattern) => pattern.message === browserMessage
+    ).group,
+    options,
+    override: uiOverride,
+  });
+  return copy;
+};
+const plantedMissing = [
+  [
+    "a library of the browser group",
+    '"evlog/**"',
+    ({ group }) => {
+      group.splice(group.indexOf("evlog/**"), 1);
+    },
+  ],
+  [
+    "the exception of the browser group",
+    '"!@polaris/observability/redaction"',
+    ({ group }) => {
+      group.splice(group.indexOf("!@polaris/observability/redaction"), 1);
+    },
+  ],
+  [
+    "the exception of the browser group in its place",
+    '"!@polaris/observability/redaction"',
+    ({ group }) => {
+      const exception = "!@polaris/observability/redaction";
+      group.splice(group.indexOf(exception), 1);
+      group.unshift(exception);
+    },
+  ],
+  [
+    "an exception added to the copied group",
+    '"!evlog/**"',
+    ({ group }) => {
+      group.splice(group.indexOf("evlog/**") + 1, 0, "!evlog/**");
+    },
+  ],
+  [
+    "the whole browser group",
+    "Browser code must not import",
+    ({ options }) => {
+      options.patterns = options.patterns.filter(
+        (pattern) => !pattern.message.startsWith("Browser code")
+      );
+    },
+  ],
+  [
+    "a path the browser override restricts",
+    'path "plantedPackage"',
+    ({ browserOptions }) => {
+      browserOptions.paths = { plantedPackage: "planted" };
+    },
+  ],
+  [
+    "the whole override",
+    "must keep the override",
+    ({ override }) => {
+      override.includes = ["apps/web/src/never/**"];
+    },
+  ],
+];
+for (const [what, expected, mutate] of plantedMissing) {
+  let message = "";
+  try {
+    assertUiRepeatsBrowserGroup(plantedConfig(mutate), "planted config");
+  } catch (error) {
+    ({ message } = error);
+  }
+  if (!message.includes(expected)) {
+    throw new Error(
+      `A copy of biome.jsonc without ${what} in the ui/ override must fail naming "${expected}", and it ${message ? `failed with: ${message}` : "passed"}.`
+    );
+  }
+}
 
 const fixturePrefix = "__boundary_fixture_";
 

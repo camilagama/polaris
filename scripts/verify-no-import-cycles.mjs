@@ -17,7 +17,6 @@ const ignoredFolders = new Set([
   "dist",
   ".wrangler",
   "drizzle",
-  "scripts",
   "e2e",
 ]);
 const workspaceSpecifier = /^(@polaris\/[^/]+)(?:\/(.+))?$/;
@@ -75,7 +74,7 @@ for (const folder of workspaceRoots) {
 
 const files = [];
 for (const folder of workspaceRoots) {
-  for (const sub of ["src", "worker", "poc"]) {
+  for (const sub of ["src", "worker", "poc", "scripts"]) {
     const candidate = path.join(folder, sub);
     try {
       if (statSync(candidate).isDirectory()) {

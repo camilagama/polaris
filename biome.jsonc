@@ -188,6 +188,62 @@
       }
     },
     {
+      // A piece of ui/ is used by the screens and the shell, so it never imports them back. This override replaces the
+      // options of the browser override above for these files, hence the browser group is repeated here.
+      "includes": ["apps/web/src/ui/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "patterns": [
+                  {
+                    "group": [
+                      "@polaris/db",
+                      "@polaris/db/**",
+                      "drizzle-orm",
+                      "drizzle-orm/**",
+                      "pg",
+                      "pg/**",
+                      "better-auth",
+                      "better-auth/**",
+                      "evlog",
+                      "evlog/**",
+                      "@polaris/observability",
+                      "@polaris/observability/**",
+                      "!@polaris/observability/redaction",
+                      "../**/observability/src/**",
+                      "../server/**",
+                      "../../server/**",
+                      "../../../server/**"
+                    ],
+                    "message": "Browser code must not import the database, the server layer or server-only libraries."
+                  },
+                  {
+                    "group": [
+                      "@/**",
+                      "!@/ui/**",
+                      "!@/lib/**",
+                      "../**/app-shell/**",
+                      "../*/**",
+                      "!../bklit/**",
+                      "!../lib/**",
+                      "!../ui/**",
+                      "../../**",
+                      "!../../lib/**",
+                      "!../../ui/**"
+                    ],
+                    "message": "A piece of ui/ imports neither a screen nor app-shell: whoever uses it imports from ui/. If the piece lives there, move it to ui/ and leave a re-export."
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
       // The public catalog reads only through the four public functions (ADR 0069). Its Workers test with a database
       // (T-121b) may name the driver to prove the role of the binding; the Worker's own files may not.
       "includes": [
