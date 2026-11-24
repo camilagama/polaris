@@ -11,11 +11,13 @@ Mapa de contraste do desenho v5.1 (Petković, 20/10/2026), trazido para o reposi
 | Par (texto sobre fundo) | Onde é usado | Componente | Razão | Meta | |
 |---|---|---|---|---|---|
 | `foreground` / `background` | texto, preço, total | body | **17.34** | 7 | ✓ |
+| `foreground` / `background` | traço de 2 px sob a aba de tela aberta (elemento gráfico, 3:1; a forma distingue a aba, não só a cor) | Tabs `line` | **17.34** | 3 | ✓ |
 | `card-foreground` / `card` | texto em cartão, diálogo, tabela | Card | **18.09** | 7 | ✓ |
 | `popover-foreground` / `popover` | texto em menu, select, tooltip invertido | Popover, Select | **18.09** | 7 | ✓ |
 | `primary-foreground` / `primary` | rótulo do botão principal | Button default | **18.09** | 7 | ✓ |
 | `secondary-foreground` / `secondary` | rótulo do botão secundário | Button secondary | **16.19** | 7 | ✓ |
 | `muted-foreground` / `background` | texto de apoio sobre o fundo | descrições, placeholder | **7.72** | 7 | ✓ |
+| `muted-foreground` / `background` | texto da aba de tela fechada (14 px, peso 500) | Tabs `line` | **7.72** | 4.5 | ✓ |
 | `muted-foreground` / `card` | texto de apoio em cartão (CardDescription, FieldDescription) | Card, Field | **8.06** | 7 | ✓ |
 | `muted-foreground` / `muted` | texto de apoio sobre faixa neutra (Kbd, Avatar, cabeçalho) | Kbd, Avatar | **7.22** | 4.5 | ✓ |
 | `muted-foreground` / `accent` | texto de apoio sobre item em foco de menu | menu | **6.85** | 4.5 | ✓ |
@@ -107,11 +109,13 @@ Mapa de contraste do desenho v5.1 (Petković, 20/10/2026), trazido para o reposi
 | Par (texto sobre fundo) | Onde é usado | Componente | Razão | Meta | |
 |---|---|---|---|---|---|
 | `foreground` / `background` | texto, preço, total | body | **15.44** | 7 | ✓ |
+| `foreground` / `background` | traço de 2 px sob a aba de tela aberta (elemento gráfico, 3:1; a forma distingue a aba, não só a cor) | Tabs `line` | **15.44** | 3 | ✓ |
 | `card-foreground` / `card` | texto em cartão, diálogo, tabela | Card | **14.22** | 7 | ✓ |
 | `popover-foreground` / `popover` | texto em menu, select, tooltip invertido | Popover, Select | **13.24** | 7 | ✓ |
 | `primary-foreground` / `primary` | rótulo do botão principal | Button default | **14.75** | 7 | ✓ |
 | `secondary-foreground` / `secondary` | rótulo do botão secundário | Button secondary | **11.58** | 7 | ✓ |
 | `muted-foreground` / `background` | texto de apoio sobre o fundo | descrições, placeholder | **9.35** | 7 | ✓ |
+| `muted-foreground` / `background` | texto da aba de tela fechada (14 px, peso 500) | Tabs `line` | **9.35** | 4.5 | ✓ |
 | `muted-foreground` / `card` | texto de apoio em cartão (CardDescription, FieldDescription) | Card, Field | **8.61** | 7 | ✓ |
 | `muted-foreground` / `muted` | texto de apoio sobre faixa neutra (Kbd, Avatar, cabeçalho) | Kbd, Avatar | **7.01** | 4.5 | ✓ |
 | `muted-foreground` / `accent` | texto de apoio sobre item em foco de menu | menu | **6.33** | 4.5 | ✓ |

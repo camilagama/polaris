@@ -94,7 +94,7 @@ export function ScreenTabList({
         onScroll={measure}
         ref={scroller}
       >
-        <TabsList aria-label={label} className="justify-start">
+        <TabsList aria-label={label} variant="line">
           {children}
         </TabsList>
       </div>

@@ -88,6 +88,7 @@ const openScreen = async (page: Page, name: string) => {
 interface TabLook {
   active: Record<string, string>;
   height: number;
+  listHeight: number;
   inactive: Record<string, string>;
   list: Record<string, string>;
   tab: Record<string, string>;
@@ -104,6 +105,7 @@ const TAB_PROPERTIES = [
   "paddingLeft",
   "paddingRight",
 ];
+const TRANSPARENT = /^rgba\(0, 0, 0, 0\)$|^transparent$/;
 const ACTIVE_PROPERTIES = ["backgroundColor", "boxShadow", "color"];
 
 function lookOf(list: Locator): Promise<TabLook> {
@@ -129,6 +131,11 @@ function lookOf(list: Locator): Promise<TabLook> {
         active: pick(active, activeProps as string[]),
         height: Math.round(active.getBoundingClientRect().height * 100) / 100,
         inactive: { color: String(getComputedStyle(inactive).color) },
+        listHeight:
+          Math.round(
+            (active.parentElement as Element).getBoundingClientRect().height *
+              100
+          ) / 100,
         list: pick(active.parentElement as Element, listProps as string[]),
         tab: pick(active, tabProps as string[]),
       };
@@ -169,18 +176,82 @@ test.describe("o mesmo desenho a 1280 px com mouse", () => {
     });
   }
 
-  test("a aba de tela e o filtro de lista têm a mesma altura, fonte e faixa", async ({
+  test("a aba de tela e o filtro de lista têm a lista da mesma altura e a mesma fonte, e só o filtro tem a faixa", async ({
     page,
   }) => {
     const tab = await lookAt(page, TABS[0] as TabCase);
     const filter = await lookAt(page, FILTERS[0] as TabCase);
-    expect(filter.height).toBe(tab.height);
-    expect(filter.list).toEqual(tab.list);
-    expect(filter.active).toEqual(tab.active);
+    expect(filter.listHeight, "a lista tem a altura do controle").toBe(
+      tab.listHeight
+    );
     expect(filter.tab.fontSize).toBe(tab.tab.fontSize);
     expect(filter.tab.fontWeight).toBe(tab.tab.fontWeight);
     expect(filter.tab.fontFamily).toBe(tab.tab.fontFamily);
+    expect(filter.list.backgroundColor, "o filtro é a faixa").not.toBe(
+      tab.list.backgroundColor
+    );
+    expect(
+      filter.active.backgroundColor,
+      "o filtro enche a aba aberta"
+    ).not.toBe(tab.active.backgroundColor);
+    expect(tab.list.backgroundColor, "a aba de tela não tem faixa").toMatch(
+      TRANSPARENT
+    );
+    expect(tab.active.backgroundColor).toMatch(TRANSPARENT);
+    expect(tab.active.boxShadow).toBe("none");
   });
+
+  for (const item of [...TABS, SETTINGS]) {
+    test(`a aba aberta de ${item.name} tem o traço de 2 px em tinta sobre o fio de 1 px, e as fechadas não`, async ({
+      page,
+    }) => {
+      await openScreen(page, item.screen);
+      const tablist = page.getByRole("tablist", { name: item.list });
+      await expect(tablist).toBeVisible();
+      const line = await tablist.evaluate((list) => {
+        const stroke = (tab: Element) => {
+          const style = getComputedStyle(tab, "::after");
+          return {
+            background: style.backgroundColor,
+            height: style.height,
+            opacity: style.opacity,
+          };
+        };
+        const tabs = [...list.querySelectorAll('[role="tab"]')];
+        const active = tabs.find(
+          (tab) => tab.getAttribute("aria-selected") === "true"
+        ) as Element;
+        const closed = tabs.filter((tab) => tab !== active);
+        const ink = getComputedStyle(document.body).color;
+        const parent = (
+          list.parentElement as HTMLElement
+        ).getBoundingClientRect();
+        return {
+          activeColor: getComputedStyle(active).color,
+          activeStroke: stroke(active),
+          closedColors: closed.map((tab) => getComputedStyle(tab).color),
+          closedStrokes: closed.map(stroke),
+          ink,
+          rule: getComputedStyle(list).borderBottomWidth,
+          ruleReaches: list.getBoundingClientRect().width >= parent.width - 1,
+        };
+      });
+      expect(line.rule, "o fio sob a lista").toBe("1px");
+      expect(line.ruleReaches, "o fio vai até o fim da caixa").toBe(true);
+      expect(line.activeStroke.height).toBe("2px");
+      expect(line.activeStroke.opacity, "a aba aberta tem o traço").toBe("1");
+      expect(line.activeStroke.background, "o traço é a tinta").toBe(line.ink);
+      expect(line.activeColor, "a aba aberta lê em tinta").toBe(line.ink);
+      for (const stroke of line.closedStrokes) {
+        expect(stroke.opacity, "a aba fechada não tem o traço").toBe("0");
+      }
+      for (const color of line.closedColors) {
+        expect(color, "a aba fechada lê em muted-foreground").not.toBe(
+          line.ink
+        );
+      }
+    });
+  }
 
   for (const item of [...TABS, SETTINGS]) {
     test(`teclado em ${item.name}: setas movem o foco, Home e End vão às pontas, Enter e Espaço abrem`, async ({
