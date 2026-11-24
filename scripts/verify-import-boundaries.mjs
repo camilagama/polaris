@@ -259,6 +259,13 @@ const stripJsonc = (text) =>
 
 const restrictedImportOptions = (override) =>
   override?.linter?.rules?.style?.noRestrictedImports?.options ?? {};
+const restrictedImportLevel = (override) =>
+  override?.linter?.rules?.style?.noRestrictedImports?.level;
+
+// `on` is the rule's own default severity, which Biome does not promise to be an error, so it ranks
+// below `error`; a level this table does not know ranks below everything.
+const levelStrength = { error: 4, on: 3, warn: 2, info: 1, off: 0 };
+const strengthOf = (level) => levelStrength[level] ?? -1;
 
 /** What the copy of one browser pattern group lacks in the ui/ override, or adds that would undo it. */
 function missingFromGroup(pattern, uiPatterns) {
@@ -295,7 +302,8 @@ function missingFromGroup(pattern, uiPatterns) {
  * override restricts (paths, and every entry of each pattern group, in the same order because a `!`
  * entry only undoes what came before it) must be there too, or ui/ is left uncovered without a sound.
  * Entries that only ui/ has (app-shell, the screens) may be extra, as separate groups, but an exception
- * (`!`) added to the copied group would undo a restriction, so it is refused.
+ * (`!`) added to the copied group would undo a restriction, so it is refused. The `level` of the rule
+ * must not be weaker either: with `off` or `warn` in ui/ the whole copied group would stop failing.
  */
 function missingFromUiOverride(config) {
   const overrides = config.overrides ?? [];
@@ -313,6 +321,16 @@ function missingFromUiOverride(config) {
   const browserOptions = restrictedImportOptions(browser);
   const uiOptions = restrictedImportOptions(ui);
   const missing = [];
+  const browserLevel = restrictedImportLevel(browser);
+  const uiLevel = restrictedImportLevel(ui);
+  if (
+    strengthOf(uiLevel) < 0 ||
+    strengthOf(uiLevel) < strengthOf(browserLevel)
+  ) {
+    missing.push(
+      `level ${JSON.stringify(uiLevel)} of noRestrictedImports, weaker than the ${JSON.stringify(browserLevel)} of the browser override (or not a level Biome knows)`
+    );
+  }
   for (const [name, value] of Object.entries(browserOptions.paths ?? {})) {
     if (JSON.stringify(uiOptions.paths?.[name]) !== JSON.stringify(value)) {
       missing.push(`path "${name}"`);
@@ -402,6 +420,48 @@ const plantedMissing = [
     },
   ],
   [
+    "an error level (it is off)",
+    'level "off" of noRestrictedImports, weaker than the "error"',
+    ({ override }) => {
+      override.linter.rules.style.noRestrictedImports.level = "off";
+    },
+  ],
+  [
+    "an error level (it is warn)",
+    'level "warn" of noRestrictedImports, weaker than the "error"',
+    ({ override }) => {
+      override.linter.rules.style.noRestrictedImports.level = "warn";
+    },
+  ],
+  [
+    "an error level (it is info)",
+    'level "info" of noRestrictedImports, weaker than the "error"',
+    ({ override }) => {
+      override.linter.rules.style.noRestrictedImports.level = "info";
+    },
+  ],
+  [
+    "an error level (it is on)",
+    'level "on" of noRestrictedImports, weaker than the "error"',
+    ({ override }) => {
+      override.linter.rules.style.noRestrictedImports.level = "on";
+    },
+  ],
+  [
+    "an error level (it is Error)",
+    'level "Error" of noRestrictedImports, weaker than the "error"',
+    ({ override }) => {
+      override.linter.rules.style.noRestrictedImports.level = "Error";
+    },
+  ],
+  [
+    "a level at all",
+    'level undefined of noRestrictedImports, weaker than the "error"',
+    ({ override }) => {
+      override.linter.rules.style.noRestrictedImports.level = undefined;
+    },
+  ],
+  [
     "the whole override",
     "must keep the override",
     ({ override }) => {
@@ -421,6 +481,24 @@ for (const [what, expected, mutate] of plantedMissing) {
       `A copy of biome.jsonc without ${what} in the ui/ override must fail naming "${expected}", and it ${message ? `failed with: ${message}` : "passed"}.`
     );
   }
+}
+
+// Controls for the level: a ui/ level as strong as the browser one passes, whatever that level is, so
+// the rejections above mean "weaker" and not "anything but error".
+for (const [browserLevel, uiLevel] of [
+  ["error", "error"],
+  ["warn", "warn"],
+  ["warn", "error"],
+  ["on", "on"],
+]) {
+  const copy = plantedConfig(() => undefined);
+  overrideOf(
+    copy,
+    browserIncludes
+  ).linter.rules.style.noRestrictedImports.level = browserLevel;
+  overrideOf(copy, uiIncludes).linter.rules.style.noRestrictedImports.level =
+    uiLevel;
+  assertUiRepeatsBrowserGroup(copy, `level ${uiLevel} under ${browserLevel}`);
 }
 
 const fixturePrefix = "__boundary_fixture_";
