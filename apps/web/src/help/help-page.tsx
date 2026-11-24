@@ -20,7 +20,7 @@ function AddressLink({ address, label }: { address: string; label: string }) {
   return (
     <TextLink
       aria-label={`${label}: ${address}`}
-      className="w-fit select-text break-words font-medium text-base"
+      className="w-fit max-w-full select-text font-medium text-base [overflow-wrap:anywhere]"
       href={mailtoHref(address)}
     >
       {address}

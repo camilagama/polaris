@@ -122,22 +122,6 @@ const KNOWN_FINDINGS_24: readonly KnownFinding[] = [
       'div[data-slot="tabs"] > div[data-slot="tabs-content"] > div[data-slot="card"]',
   },
   {
-    clientWidth: 272,
-    reason:
-      "na Ajuda, um dos dois cartões, Suporte ou Dados pessoais, tem 272 px e o conteúdo (título, texto e e-mail) mede 290 px: passa 18 px da borda direita",
-    screens: ["ajuda"],
-    scrollWidth: 290,
-    selector: 'main#conteudo > div[data-slot="card"]',
-  },
-  {
-    clientWidth: 272,
-    reason:
-      "na Ajuda, um dos dois cartões, Suporte ou Dados pessoais, tem 272 px e o conteúdo (título, texto e e-mail) mede 290 px: passa 18 px da borda direita",
-    screens: ["ajuda"],
-    scrollWidth: 290,
-    selector: 'main#conteudo > div[data-slot="card"]',
-  },
-  {
     clientWidth: 320,
     reason:
       "a página de Categorias rola 35 px para o lado; na medida, a faixa de abas Ativas, Arquivadas e Removidas mede 331 px e o título e o texto de apoio vão até 355 px; as abas têm de caber em 272 px ou rolar dentro da faixa",
