@@ -207,8 +207,8 @@ function Choice<T extends number | string>({
           key={option.value}
         >
           <Field orientation="horizontal">
-            <FieldContent>
-              <FieldTitle>
+            <FieldContent className="min-w-0">
+              <FieldTitle className="flex-wrap">
                 {option.title}
                 {option.badge ? (
                   <Badge variant="secondary">{option.badge}</Badge>
