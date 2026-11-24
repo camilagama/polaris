@@ -403,6 +403,31 @@ test.describe("Estoque, a lista na moldura", () => {
     await expect(frame.getByRole("list")).toHaveCount(0);
   });
 
+  test("a contagem é o mesmo nó entre a lista e a busca sem resultado, para o leitor de tela ouvir a mudança", async ({
+    page,
+  }) => {
+    await stockStates.noResult(page);
+    const count = page.locator("[data-list-count]");
+    await expect(count).toHaveText("0 variantes");
+    await expect(count).toHaveAttribute("aria-live", "polite");
+    await count.evaluate((node) => {
+      node.setAttribute("data-kept", "");
+    });
+
+    await page.getByLabel("Buscar no estoque").fill("");
+    await expect(page.locator(`${FRAME} [data-list-block-row]`)).toHaveCount(4);
+    await expect(count).toHaveText("4 variantes");
+    await expect(count).toHaveAttribute("data-kept", "");
+
+    await page.getByLabel("Buscar no estoque").fill("zzz");
+    await expect(page.locator(FRAME)).toHaveAttribute(
+      "data-state",
+      "filtered-empty"
+    );
+    await expect(count).toHaveText("0 variantes");
+    await expect(page.locator("[data-list-count][data-kept]")).toHaveCount(1);
+  });
+
   test("erro ao ler: sem moldura, o aviso com Tentar novamente", async ({
     page,
   }) => {

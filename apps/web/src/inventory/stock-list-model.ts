@@ -123,6 +123,8 @@ export interface StockListState {
   /** A failed "load more" while a list is already showing. */
   moreError: string | null;
   nextCursor: string | null;
+  /** The filters the rows on screen were read for, while the inputs may already show others (the search waits to pause); `null` when the caller did not say. */
+  readFilters: StockFilters | null;
   /** The first page being read again under a list that is already showing, or that read having failed for the same filter. */
   refresh: "failed" | "idle" | "loading";
   status: "error" | "loading" | "ready";
@@ -136,6 +138,7 @@ export function initialStockListState(): StockListState {
     loadingMore: false,
     moreError: null,
     nextCursor: null,
+    readFilters: null,
     refresh: "idle",
     status: "loading",
   };
@@ -153,7 +156,8 @@ export function stockLoading(state: StockListState): StockListState {
 export function stockLoaded(
   state: StockListState,
   page: StockPage,
-  listKey: string
+  listKey: string,
+  readFilters: StockFilters | null
 ): StockListState {
   return {
     ...state,
@@ -163,6 +167,7 @@ export function stockLoaded(
     loadingMore: false,
     moreError: null,
     nextCursor: page.nextCursor,
+    readFilters,
     refresh: "idle",
     status: "ready",
   };
@@ -450,17 +455,38 @@ export function stockListView(
     };
   }
   if (state.entries.length === 0) {
+    const readFor = state.readFilters ?? filters;
     const unfiltered =
-      filters.query.trim() === "" &&
-      filters.stock === "all" &&
-      !filters.unknownCost;
+      readFor.query.trim() === "" &&
+      readFor.stock === "all" &&
+      !readFor.unknownCost;
     return {
       kind: "empty",
-      message: stockEmptyMessage(filters, costUnavailable),
+      message: stockEmptyMessage(readFor, costUnavailable),
       showCatalogLink: unfiltered,
     };
   }
   return { kind: "ready", rows: stockRows(state.entries, costUnavailable) };
+}
+
+/**
+ * The state of the one framed list, or null when the screen draws no frame (the read failed, or there is no variant
+ * at all and the empty state takes its place). One frame for every state keeps the count's live region mounted, so a
+ * screen reader hears it change between the list and a search with no result.
+ */
+export function framedListState(
+  view: StockListView
+): "filtered-empty" | "loading" | "rows" | null {
+  switch (view.kind) {
+    case "loading":
+      return "loading";
+    case "ready":
+      return "rows";
+    case "empty":
+      return view.showCatalogLink ? null : "filtered-empty";
+    default:
+      return null;
+  }
 }
 
 export interface StockMoreView {

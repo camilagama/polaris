@@ -101,7 +101,12 @@ export function useStockList(
                 stock: effective.stock,
               });
           setState((current) =>
-            stockLoaded(current, { entries, nextCursor: null }, listKey)
+            stockLoaded(
+              current,
+              { entries, nextCursor: null },
+              listKey,
+              effective
+            )
           );
         })
         .catch((error: unknown) => {
@@ -122,7 +127,7 @@ export function useStockList(
     )
       .then((page) => {
         if (request === latest.current) {
-          setState((current) => stockLoaded(current, page, listKey));
+          setState((current) => stockLoaded(current, page, listKey, effective));
         }
       })
       .catch((error: unknown) => {

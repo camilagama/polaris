@@ -45,10 +45,12 @@ import { isStockAction, type StockAction } from "./stock-command-model";
 import { StockCommandPanel } from "./stock-command-panel";
 import { StockFiltersBar } from "./stock-filters";
 import {
+  framedListState,
   readStockLinkFilters,
   readStockLinkSearch,
   type StockAttentionLink,
   type StockMoreView,
+  type StockListView,
   type StockRow,
   stockCountText,
   stockCoverIds,
@@ -233,6 +235,13 @@ function StockItem({
 
 const LIST_TITLE = "Saldos em estoque";
 
+/** The sentence of a search or filter with no result, in the panel of the frame; nothing for the other states. */
+function frameNotice(view: StockListView) {
+  return view.kind === "empty" ? (
+    <p className="text-muted-foreground">{view.message}</p>
+  ) : null;
+}
+
 /** The shape of a row while the list is read: the name and the variant, as the two lines a row has. */
 const ROW_SKELETON = (
   <div className="grid gap-1.5">
@@ -393,6 +402,8 @@ export function InventoryPage() {
     [setFilters]
   );
 
+  const framedState = framedListState(view);
+
   const panelMounted = isPanelMounted(
     open,
     view.kind === "ready" ? view.rows : null
@@ -511,58 +522,51 @@ export function InventoryPage() {
           </a>
         </EmptyState>
       ) : null}
-      {view.kind === "loading" ? (
-        <ListBlock
-          count=""
-          skeleton={ROW_SKELETON}
-          state="loading"
-          title={LIST_TITLE}
-        />
-      ) : null}
-      {view.kind === "empty" && !view.showCatalogLink ? (
+      {framedState === null ? null : (
         <ListBlock
           count={countText ?? ""}
-          emptyNotice={<p className="text-muted-foreground">{view.message}</p>}
-          state="filtered-empty"
+          emptyNotice={frameNotice(view)}
+          skeleton={ROW_SKELETON}
+          state={framedState}
           title={LIST_TITLE}
-        />
-      ) : null}
-      {view.kind === "ready" ? (
-        <ListBlock count={countText ?? ""} state="rows" title={LIST_TITLE}>
-          {view.rows.map((row) => (
-            <StockItem
-              canOpenProduct={canOpenProduct}
-              key={row.id}
-              onOpen={handleOpen}
-              otherPanelOpen={
-                panelMounted &&
-                open !== null &&
-                (open.standalone || open.target.variantId !== row.id)
-              }
-              panelOpen={
-                open?.standalone === false && open.target.variantId === row.id
-              }
-              row={row}
-            >
-              {open?.standalone === false &&
-              open.target.variantId === row.id ? (
-                <StockCommandPanel
-                  action={open.action}
-                  key={`${open.target.variantId}-${open.action}`}
-                  local={offlineWorkspace ?? undefined}
-                  onBalance={applyBalance}
-                  onClose={handleClose}
-                  onInformCost={handleInformCost}
-                  onReloadList={reload}
-                  organizationId={organizationId}
-                  target={open.target}
-                  today={today}
-                />
-              ) : null}
-            </StockItem>
-          ))}
+        >
+          {view.kind === "ready"
+            ? view.rows.map((row) => (
+                <StockItem
+                  canOpenProduct={canOpenProduct}
+                  key={row.id}
+                  onOpen={handleOpen}
+                  otherPanelOpen={
+                    panelMounted &&
+                    open !== null &&
+                    (open.standalone || open.target.variantId !== row.id)
+                  }
+                  panelOpen={
+                    open?.standalone === false &&
+                    open.target.variantId === row.id
+                  }
+                  row={row}
+                >
+                  {open?.standalone === false &&
+                  open.target.variantId === row.id ? (
+                    <StockCommandPanel
+                      action={open.action}
+                      key={`${open.target.variantId}-${open.action}`}
+                      local={offlineWorkspace ?? undefined}
+                      onBalance={applyBalance}
+                      onClose={handleClose}
+                      onInformCost={handleInformCost}
+                      onReloadList={reload}
+                      organizationId={organizationId}
+                      target={open.target}
+                      today={today}
+                    />
+                  ) : null}
+                </StockItem>
+              ))
+            : null}
         </ListBlock>
-      ) : null}
+      )}
 
       {more.error ? (
         <Alert variant="destructive">
