@@ -273,6 +273,7 @@ const row = (overrides: Partial<HistoryRow> = {}): HistoryRow => ({
   itemCountText: "2 itens",
   methodText: "Pix",
   returnsBadge: null,
+  splitPayment: false,
   statusLabel: "Confirmada",
   statusTone: "confirmed",
   timeText: "09:30",
@@ -294,6 +295,20 @@ describe("the history list", () => {
     );
     expect(markup).not.toContain("<a ");
     expect(markup).toContain("14/10/2026");
+  });
+
+  it("puts the methods of a sale in two parts on a line of their own, with no dot after the name", () => {
+    const markup = renderToStaticMarkup(
+      <SaleHistoryList
+        offline={false}
+        rows={[row({ methodText: "Pix + Crédito", splitPayment: true })]}
+      />
+    );
+    expect(markup).toContain('<span class="truncate">Ana Souza</span>');
+    expect(markup).not.toContain("whitespace-pre");
+    expect(markup).toContain(
+      '<span class="min-w-0 max-w-full basis-full"> Pix + Crédito · 2 itens</span>'
+    );
   });
 
   it("shows the states of the sale as badges", () => {

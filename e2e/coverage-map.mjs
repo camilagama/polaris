@@ -862,6 +862,7 @@ export const SPEC_SCREENS = {
   ],
   "apps/web/e2e/home/numero-em-mono.e2e.ts": ["home", "inventory"],
   "apps/web/e2e/home/meta-anel-largura.e2e.ts": ["home", "inventory"],
+  "apps/web/e2e/home/meta-carrossel.e2e.ts": ["home", "inventory"],
   "apps/web/e2e/home/meta-ritmo.e2e.ts": ["home", "inventory"],
   "apps/web/e2e/home/offline-e-leituras.e2e.ts": ["home", "sale"],
   "apps/web/e2e/home/ritmo-e-plano.e2e.ts": ["home", "settings"],

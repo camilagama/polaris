@@ -46,7 +46,7 @@ As decisões acima não ligavam purge automático: o purge era só manual (agend
 
 ## Emenda de 19/10/2026: a auditoria do tenant sobrevive ao purge (decisão 1)
 
-> Decisão do Arrascaeta de 19/10/2026, delegada pelo usuário, com o desenho aprovado pelo arquiteto (Filipe Luís) e pela segurança (Rodrigo Caio). O número da migration (0080) e deste ADR podem mudar até o merge. Tarefa t062.
+> Decisão do Arrascaeta de 19/10/2026, delegada pelo usuário, com o desenho aprovado pelo arquiteto (Filipe Luís) e pela segurança (Rodrigo Caio). A migration é a 0080 (`0080_auditoria_sobrevive_ao_purge.sql`), na `main`. Tarefa t062.
 
 **Decisão.** Nenhuma linha da auditoria do tenant sai no purge da organização. A decisão 1 de 18/10/2026 continua valendo para todo o resto do tenant; a auditoria é a exceção. O motivo: a auditoria é o registro de quem fez o quê numa organização cujo dono pediu a exclusão, e uma apuração futura (fraude, disputa de cobrança, ordem judicial, pedido da própria ANPD) precisa dela depois que o tenant deixou de existir. Ela só tem IDs opacos (a organização, o ID interno do ator, o tipo do evento, a entidade e o ID da requisição), sem o nome, o e-mail ou o telefone de ninguém. O ID do ator é um **pseudônimo**, não um dado anônimo: liga a linha a uma pessoa enquanto a conta existir, e a conta sobrevive ao purge. A base para guardar depois do pedido de exclusão é a do próprio Polaris (segurança e prevenção a fraude, defesa em processo, cumprimento de ordem, LGPD art. 7º e 16), a confirmar na revisão jurídica; a exclusão de usuário **não pode ser ligada** antes do desenho do HMAC, porque o gatilho recusa todo `UPDATE` e um pedido de titular (art. 18) exigiria nova migration. A auditoria sai por prazo, não por purge.
 

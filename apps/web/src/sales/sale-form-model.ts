@@ -38,6 +38,7 @@ import {
 } from "../lib/format";
 import {
   isLegalAcceptanceRefusal,
+  isServerFailureCode,
   legalAcceptanceMessage,
   rpcErrorCode,
   rpcErrorReason,
@@ -2885,14 +2886,6 @@ const reasonOutcomes = new Map<string, ReasonOutcome>([
   ],
 ]);
 
-const serverErrorCodes = new Set([
-  "BAD_GATEWAY",
-  "GATEWAY_TIMEOUT",
-  "INTERNAL_SERVER_ERROR",
-  "SERVICE_UNAVAILABLE",
-  "TIMEOUT",
-]);
-
 const lockHint =
   "A venda foi bloqueada para edição. Use “Tentar novamente (seguro)”: o mesmo pedido é reenviado e o servidor não duplica a venda se ela já tiver sido registrada.";
 
@@ -3025,7 +3018,7 @@ export function mapSaleSubmitError(
       `Sem conexão com o servidor: não sabemos se a venda foi registrada. ${lockHint}`
     );
   }
-  if (code !== undefined && serverErrorCodes.has(code)) {
+  if (isServerFailureCode(code)) {
     return failure(
       "server",
       `O servidor não conseguiu concluir a venda agora e não sabemos se ela foi registrada. ${lockHint}`
