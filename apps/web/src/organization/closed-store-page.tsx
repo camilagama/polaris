@@ -9,8 +9,8 @@ import {
 } from "react";
 import { cn } from "@/lib/utils";
 import { Alert, AlertDescription } from "@/ui/alert";
+import { Block } from "@/ui/block";
 import { Button, buttonVariants } from "@/ui/button";
-import { Card, CardContent } from "@/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -47,8 +47,8 @@ import { ClosedQueueSection } from "./closed-queue-section";
 import {
   OFFLINE_ID,
   offlineOff,
-  refreshButtonProps,
   RefreshFailedNotice,
+  refreshButtonProps,
 } from "./closed-refresh-notice";
 import {
   type ClosedStore,
@@ -217,43 +217,41 @@ export function StatusCard({
     }
   }, [online, onUndo]);
   return (
-    <Card>
-      <CardContent className="grid gap-4">
-        <div className="grid gap-2">
-          {phaseLines(store, now).map((line) => (
-            <p key={line}>{line}</p>
-          ))}
-        </div>
-        <PanelDates now={now} store={store} />
-        <div className="flex flex-wrap gap-3">
-          {store.phase === "purged" ? null : (
-            <a
-              className={cn(buttonVariants(), "max-sm:w-full")}
-              href={`#${COPY_SECTION_ID}`}
-            >
-              {DOWNLOAD_BUTTON}
-            </a>
-          )}
-          {undo ? (
-            <Button
-              className="max-sm:w-full"
-              onClick={handleUndo}
-              variant="outline"
-              {...offlineOff(online)}
-            >
-              {UNDO_BUTTON}
-            </Button>
-          ) : null}
+    <Block variant="plain">
+      <div className="grid gap-2">
+        {phaseLines(store, now).map((line) => (
+          <p key={line}>{line}</p>
+        ))}
+      </div>
+      <PanelDates now={now} store={store} />
+      <div className="flex flex-wrap gap-3">
+        {store.phase === "purged" ? null : (
+          <a
+            className={cn(buttonVariants(), "max-sm:w-full")}
+            href={`#${COPY_SECTION_ID}`}
+          >
+            {DOWNLOAD_BUTTON}
+          </a>
+        )}
+        {undo ? (
           <Button
             className="max-sm:w-full"
+            onClick={handleUndo}
             variant="outline"
-            {...refreshButtonProps(online, reading, onRefresh)}
+            {...offlineOff(online)}
           >
-            {reading ? PANEL_REFRESHING : "Atualizar"}
+            {UNDO_BUTTON}
           </Button>
-        </div>
-      </CardContent>
-    </Card>
+        ) : null}
+        <Button
+          className="max-sm:w-full"
+          variant="outline"
+          {...refreshButtonProps(online, reading, onRefresh)}
+        >
+          {reading ? PANEL_REFRESHING : "Atualizar"}
+        </Button>
+      </div>
+    </Block>
   );
 }
 
