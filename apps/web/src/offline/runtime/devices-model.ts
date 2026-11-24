@@ -202,8 +202,9 @@ export function confirmLabel(endOtherSessions: boolean): string {
 }
 
 export const LOADING_TEXT = "Carregando seus aparelhos…";
-export const EMPTY_TEXT =
-  "Nenhum aparelho registrado nesta conta. Um aparelho aparece aqui depois que você abre o Polaris nele com internet.";
+export const EMPTY_TITLE = "Nenhum aparelho registrado nesta conta.";
+export const EMPTY_SUPPORT =
+  "Um aparelho aparece aqui depois que você abre o Polaris nele com internet.";
 export const OFFLINE_TEXT =
   "Sem conexão. Para revogar um aparelho ou encerrar sessões, conecte-se à internet. Nada fica guardado para depois.";
 const UNCERTAIN_TEXT =

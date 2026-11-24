@@ -128,7 +128,7 @@ function useCellBox() {
 }
 
 /** How far the ring's centerline sits from the cell: half the gap, so the stroke never reaches the next cell. */
-export const RING_OFFSET = 1.5;
+export const ringOffset = (gap: number) => gap / 2;
 export const TODAY_RING_WIDTH = 1;
 export const READ_RING_WIDTH = 1.5;
 
@@ -159,14 +159,17 @@ export function ringsOf({
 }
 
 /**
- * The rectangle of a ring around a cell, and the box the stroke covers: one geometry for every ring, centered
- * `RING_OFFSET` from the cell, so the stroke (at most 2.25 px out) stays inside the gap between two cells.
+ * The rectangle of a ring around a cell, and the box the stroke covers: one geometry for every ring, centered half the
+ * gap from the cell, so the stroke stays inside the gap between two cells (at most 2.25 px out with a gap of 3 px, 2.75
+ * px with 4 px).
  */
 export function ringGeometry(
   cell: { height: number; width: number; x: number; y: number },
-  strokeWidth: number
+  strokeWidth: number,
+  gap: number
 ) {
-  const reach = RING_OFFSET + strokeWidth / 2;
+  const offset = ringOffset(gap);
+  const reach = offset + strokeWidth / 2;
   return {
     outer: {
       bottom: cell.y + cell.height + reach,
@@ -175,11 +178,11 @@ export function ringGeometry(
       top: cell.y - reach,
     },
     rect: {
-      height: cell.height + 2 * RING_OFFSET,
+      height: cell.height + 2 * offset,
       rx: 4,
-      width: cell.width + 2 * RING_OFFSET,
-      x: cell.x - RING_OFFSET,
-      y: cell.y - RING_OFFSET,
+      width: cell.width + 2 * offset,
+      x: cell.x - offset,
+      y: cell.y - offset,
     },
   };
 }
@@ -200,6 +203,7 @@ function Marks({
   today,
 }: Pick<SalesHeatmapProps, "days" | "focus" | "today">) {
   const box = useCellBox();
+  const { gap } = useHeatmap();
   return (
     <g data-heatmap-marks="" pointerEvents="none">
       {days.map((day, index) => {
@@ -222,7 +226,7 @@ function Marks({
         );
       })}
       {ringsOf({ focus, today }).map((ring) => {
-        const { rect } = ringGeometry(box(ring.index), ring.strokeWidth);
+        const { rect } = ringGeometry(box(ring.index), ring.strokeWidth, gap);
         return (
           <rect
             className={cn("fill-none", RING_CLASS[ring.kind])}

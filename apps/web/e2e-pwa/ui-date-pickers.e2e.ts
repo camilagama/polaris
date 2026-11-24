@@ -2,7 +2,12 @@
 import type { Locator, Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 import { watchCspViolations } from "../e2e/csp-fixture";
-import { expectNoTypedDates, panelHeight, touchDay } from "../e2e/date-pickers";
+import {
+  expectNoTypedDates,
+  footerRuleAlpha,
+  panelHeight,
+  touchDay,
+} from "../e2e/date-pickers";
 import { expectMotionLevel } from "./motion-expect";
 import { axeFaults } from "./ui-guardrails/measures";
 
@@ -599,6 +604,9 @@ for (const viewport of VIEWPORTS) {
         const clear = popup.locator("button", { hasText: "Limpar" });
         if (state === "sem período") {
           await expect(clear).toBeHidden();
+          expect(await footerRuleAlpha(popup)).toBe(0);
+        } else {
+          expect(await footerRuleAlpha(popup)).toBeGreaterThan(0);
         }
 
         await day(popup, "2026-10-10").click();
@@ -611,6 +619,7 @@ for (const viewport of VIEWPORTS) {
         expect(after?.width).toBeCloseTo(before?.width ?? 0, 0);
         expect(await panelHeight(popup)).toBeCloseTo(heightBefore, 1);
         await expect(clear).toBeVisible();
+        expect(await footerRuleAlpha(popup)).toBeGreaterThan(0);
       });
     }
 

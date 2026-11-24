@@ -496,19 +496,46 @@ export const ACCOUNT_UNAVAILABLE_REASONS: ReadonlySet<string> = new Set([
   "session_refused",
 ]);
 
-/** Whether an `unavailable` reason blames the browser: anything that is not the plan, the account/store or a server that did not answer. */
+/** The `unavailable` reason when the server answered the start with a failure of its own: the browser is fine. */
+export const SERVER_START_FAILED_REASON = "start_server_failed";
+
+const SERVER_FAILURE_CODES: ReadonlySet<string> = new Set([
+  "BAD_GATEWAY",
+  "GATEWAY_TIMEOUT",
+  "INTERNAL_SERVER_ERROR",
+  "SERVICE_UNAVAILABLE",
+  "TIMEOUT",
+]);
+
+/**
+ * Matched by name: `runtime-api.ts` imports this module, so the class cannot be imported here without a cycle.
+ */
+const BOOTSTRAP_MISMATCH_ERROR_NAME = "BootstrapResponseMismatchError";
+
+/** The server answered the start and failed (a 5xx code, or a bootstrap page of another collection); a refusal (4xx) or a local error is not that. */
+function isServerStartFailure(error: unknown): boolean {
+  if (error instanceof Error && error.name === BOOTSTRAP_MISMATCH_ERROR_NAME) {
+    return true;
+  }
+  const code = rpcErrorCode(error);
+  return code !== undefined && SERVER_FAILURE_CODES.has(code);
+}
+
+/** Whether an `unavailable` reason blames the browser: anything that is not the plan, the account/store or a server that did not answer or failed. */
 export function isBrowserFailure(reason: string | null): boolean {
   return (
     reason === null ||
     !(
       reason === PLAN_REFUSED_REASON ||
       reason === DEVICE_CHECK_UNAVAILABLE_REASON ||
+      reason === SERVER_START_FAILED_REASON ||
       ACCOUNT_UNAVAILABLE_REASONS.has(reason)
     )
   );
 }
 
-function startFailureReason(
+/** Sorted by the kind of the error before its message: legal, plan, server failure, then the message (no answer and local errors blame the browser as before). */
+export function startFailureReason(
   error: unknown,
   legal: boolean,
   failure: string
@@ -516,7 +543,10 @@ function startFailureReason(
   if (legal) {
     return LEGAL_ACCEPTANCE_REASON;
   }
-  return isPlanRefusal(error) ? PLAN_REFUSED_REASON : failure;
+  if (isPlanRefusal(error)) {
+    return PLAN_REFUSED_REASON;
+  }
+  return isServerStartFailure(error) ? SERVER_START_FAILED_REASON : failure;
 }
 
 export class OfflineRuntime {

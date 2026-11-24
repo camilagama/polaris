@@ -17,7 +17,7 @@ const ORGANIZATION = {
 };
 const PRODUCT_ID = "0199c2d0-0000-7000-8000-0000000000f1";
 const VARIANT_ID = "0199c2d0-0000-7000-8000-0000000000b1";
-const DRAFT_KEY = `polaris.sale.draft.v1:${ORGANIZATION.id}`;
+const DRAFT_KEY = `polaris.sale.draft.v2:${ORGANIZATION.id}`;
 const SHIRT_OPTION = /Camiseta do teste · Azul/;
 const REOPENED_URL = /reaberta=1/;
 const NOW = new Date("2026-10-14T12:00:00-03:00");
