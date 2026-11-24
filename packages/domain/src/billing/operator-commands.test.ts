@@ -52,8 +52,15 @@ describe("normalizeOperatorReason", () => {
     ["tabulação", "a\tb"],
     ["DEL", "a\u007fb"],
     ["NUL na ponta, que o trim não tira", "\u0000abc"],
+    ["U+001F, o último controle antes do espaço", "a\u001fb"],
+    ["U+001F na ponta, que o trim não tira", "\u001fabc"],
   ])("caractere de controle no meio (%s) vira null", (_label, text) => {
     expect(normalizeOperatorReason(text)).toBeNull();
+  });
+
+  it("aceita o espaço U+0020 no meio, o primeiro caractere acima dos controles", () => {
+    expect(normalizeOperatorReason("a b")).toBe("a b");
+    expect(normalizeOperatorReason("a!b")).toBe("a!b");
   });
 });
 

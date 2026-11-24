@@ -42,6 +42,20 @@ import {
   rpcErrorCode,
   rpcErrorReason,
 } from "../lib/rpc-error";
+import {
+  centsOfMoney,
+  fieldTextOfCents,
+  moneyOfCents,
+  type PartMessages,
+  partMessages,
+  restOfTotal,
+  type SecondPartDraft,
+  type SplitBalance,
+  type SplitDraft,
+  splitBalance,
+  splitFieldKeys,
+  splitTotalChangedNotice,
+} from "./sale-split-model";
 
 /* -------------------------------------------------------------------------- */
 /* Types and constants                                                        */
@@ -125,7 +139,7 @@ export interface PaymentDraft {
   method: SaleMethod | "";
 }
 
-interface ProfileSelectionDraft {
+export interface ProfileSelectionDraft {
   /** "" = not chosen yet, NO_PROFILE_CHOICE = no profile, otherwise a profile id. */
   choice: string;
   /** Set when the loaded profile changed after the operator chose it. */
@@ -141,6 +155,8 @@ export interface SaleFormState {
   occurredAtLocal: string;
   payment: PaymentDraft;
   profile: ProfileSelectionDraft;
+  /** Part 2 and the amount of part 1; null while the sale is paid in one go (the screen never opens split). */
+  split: SplitDraft | null;
 }
 
 export type Loadable<T> =
@@ -301,6 +317,7 @@ export function createBlankSaleForm(createId: () => string): SaleFormState {
       method: "",
     },
     profile: { choice: "", reviewNotice: null, seenVersion: null },
+    split: null,
   };
 }
 
@@ -407,6 +424,7 @@ export function isSaleFormDirty(
     form.items.some(itemChanged) ||
     form.adjustments.length > 0 ||
     form.occurredAtLocal !== "" ||
+    form.split !== null ||
     (form.payment.method !== preset.method && form.payment.method !== "") ||
     form.payment.installmentPlan !== "" ||
     form.payment.installments !== "" ||
@@ -522,23 +540,27 @@ export function updateAdjustment(
   };
 }
 
+function paymentWithMethod(
+  payment: PaymentDraft,
+  method: SaleMethod | ""
+): PaymentDraft {
+  if (method === "credit_card") {
+    return { ...payment, method };
+  }
+  return {
+    anticipationRequested: false,
+    installmentPlan: "",
+    installments: "",
+    method,
+  };
+}
+
 /** Switching away from credit card drops every card-only choice. */
 export function selectPaymentMethod(
   form: SaleFormState,
   method: SaleMethod | ""
 ): SaleFormState {
-  if (method === "credit_card") {
-    return { ...form, payment: { ...form.payment, method } };
-  }
-  return {
-    ...form,
-    payment: {
-      anticipationRequested: false,
-      installmentPlan: "",
-      installments: "",
-      method,
-    },
-  };
+  return { ...form, payment: paymentWithMethod(form.payment, method) };
 }
 
 export function updatePayment(
@@ -548,63 +570,106 @@ export function updatePayment(
   return { ...form, payment: { ...form.payment, ...changes } };
 }
 
+function profileSelectionOf(
+  choice: string,
+  profiles: readonly PaymentProfileReadModel[]
+): ProfileSelectionDraft {
+  const profile = profiles.find((candidate) => candidate.id === choice);
+  return { choice, reviewNotice: null, seenVersion: profile?.version ?? null };
+}
+
 export function selectProfileChoice(
   form: SaleFormState,
   choice: string,
   profiles: readonly PaymentProfileReadModel[]
 ): SaleFormState {
+  return { ...form, profile: profileSelectionOf(choice, profiles) };
+}
+
+function reconciledSelection(
+  selection: ProfileSelectionDraft,
+  profiles: readonly PaymentProfileReadModel[],
+  outcomeUnknown: boolean,
+  messages: PartMessages
+): ProfileSelectionDraft {
+  const { choice, seenVersion } = selection;
+  if (choice === "" || choice === NO_PROFILE_CHOICE) {
+    return selection;
+  }
   const profile = profiles.find((candidate) => candidate.id === choice);
+  if (!profile) {
+    return outcomeUnknown
+      ? selection
+      : {
+          choice: "",
+          reviewNotice: messages.profileGone,
+          seenVersion: null,
+        };
+  }
+  if (seenVersion === null || profile.version === seenVersion) {
+    return selection;
+  }
   return {
-    ...form,
-    profile: {
-      choice,
-      reviewNotice: null,
-      seenVersion: profile?.version ?? null,
-    },
+    choice,
+    reviewNotice: messages.profileChanged(profile.name),
+    seenVersion,
   };
 }
 
 /**
- * Reconciles the chosen profile with a fresh list of active profiles. A profile
+ * Reconciles the chosen profile of each part with a fresh list of active profiles. A profile
  * that changed (or disappeared) forces the operator to review the fee preview
  * again before the sale can be confirmed. With an attempt whose outcome is unknown, a profile that left the list does
  * not clear the choice: the evaluation already refuses it, and clearing it would let the next choice send another body
- * under a new command ID, for a sale the server may have recorded.
+ * under a new command ID, for a sale the server may have recorded. The parts stay as they were: a part's change never
+ * touches the other.
  */
 export function reconcileProfileReload(
   form: SaleFormState,
   profiles: readonly PaymentProfileReadModel[],
   outcomeUnknown = false
 ): SaleFormState {
-  const { choice, seenVersion } = form.profile;
-  if (choice === "" || choice === NO_PROFILE_CHOICE) {
-    return form;
-  }
-  const profile = profiles.find((candidate) => candidate.id === choice);
-  if (!profile) {
-    if (outcomeUnknown) {
-      return form;
-    }
-    return {
-      ...form,
-      profile: {
-        choice: "",
-        reviewNotice:
-          "O perfil de pagamento escolhido não está mais ativo. Escolha outro perfil ou “Sem perfil” para continuar.",
-        seenVersion: null,
-      },
-    };
-  }
-  if (seenVersion === null || profile.version === seenVersion) {
+  const first = reconciledSelection(
+    form.profile,
+    profiles,
+    outcomeUnknown,
+    partMessages(form.split === null ? null : 1)
+  );
+  const second = form.split
+    ? reconciledSelection(
+        form.split.second.profile,
+        profiles,
+        outcomeUnknown,
+        partMessages(2)
+      )
+    : null;
+  if (
+    first === form.profile &&
+    second === (form.split?.second.profile ?? null)
+  ) {
     return form;
   }
   return {
     ...form,
-    profile: {
-      choice,
-      reviewNotice: `O perfil “${profile.name}” mudou desde a última venda. Revise a prévia de taxas e prazo e confirme para continuar.`,
-      seenVersion,
-    },
+    profile: first,
+    split:
+      form.split && second
+        ? { ...form.split, second: { ...form.split.second, profile: second } }
+        : form.split,
+  };
+}
+
+function acknowledgedSelection(
+  selection: ProfileSelectionDraft,
+  profiles: readonly PaymentProfileReadModel[]
+): ProfileSelectionDraft {
+  const profile = profiles.find(
+    (candidate) => candidate.id === selection.choice
+  );
+  return {
+    ...selection,
+    reviewNotice: null,
+    seenVersion: profile?.version ?? selection.seenVersion,
   };
 }
 
@@ -612,17 +677,133 @@ export function acknowledgeProfileReview(
   form: SaleFormState,
   profiles: readonly PaymentProfileReadModel[]
 ): SaleFormState {
-  const profile = profiles.find(
-    (candidate) => candidate.id === form.profile.choice
-  );
+  return { ...form, profile: acknowledgedSelection(form.profile, profiles) };
+}
+
+/* -------------------------------------------------------------------------- */
+/* Split payment: the second part                                             */
+/* -------------------------------------------------------------------------- */
+
+function withSecond(
+  form: SaleFormState,
+  change: (second: SecondPartDraft) => SecondPartDraft
+): SaleFormState {
+  return form.split === null
+    ? form
+    : { ...form, split: { ...form.split, second: change(form.split.second) } };
+}
+
+/**
+ * Pays the sale in two parts. Part 1 keeps what the form has; part 2 starts with the rest of the total and with neither
+ * method nor profile, which the person has to choose. A form already split stays as it is.
+ */
+export function startSplit(form: SaleFormState): SaleFormState {
+  if (form.split !== null) {
+    return form;
+  }
   return {
     ...form,
-    profile: {
-      ...form.profile,
-      reviewNotice: null,
-      seenVersion: profile?.version ?? form.profile.seenVersion,
+    split: {
+      firstAmount: "",
+      second: {
+        amount: null,
+        payment: paymentWithMethod(form.payment, ""),
+        profile: { choice: "", reviewNotice: null, seenVersion: null },
+      },
+      totalSeen: null,
     },
   };
+}
+
+/** Back to one payment: part 1 is the whole sale again, with the method and the profile it had. */
+export function endSplit(form: SaleFormState): SaleFormState {
+  return form.split === null ? form : { ...form, split: null };
+}
+
+/** `total` is the total due now (`null` when it cannot be computed): what the typed parts are checked against. */
+export function setFirstPartAmount(
+  form: SaleFormState,
+  text: string,
+  total: string | null
+): SaleFormState {
+  return form.split === null
+    ? form
+    : {
+        ...form,
+        split: {
+          ...form.split,
+          firstAmount: text,
+          totalSeen: total ?? form.split.totalSeen,
+        },
+      };
+}
+
+/** Typing in the last part ends its following the rest, for good: clearing the field leaves it typed and empty. */
+export function setSecondPartAmount(
+  form: SaleFormState,
+  text: string,
+  total: string | null
+): SaleFormState {
+  return form.split === null
+    ? form
+    : {
+        ...form,
+        split: {
+          ...form.split,
+          second: { ...form.split.second, amount: text },
+          totalSeen: total ?? form.split.totalSeen,
+        },
+      };
+}
+
+/** Moves the difference into part 2: "Pôr na parte 2" and "Tirar da parte 2". */
+export function applySplitAction(
+  form: SaleFormState,
+  action: { amount: bigint },
+  total: string | null
+): SaleFormState {
+  return setSecondPartAmount(form, fieldTextOfCents(action.amount), total);
+}
+
+export function selectSecondPaymentMethod(
+  form: SaleFormState,
+  method: SaleMethod | ""
+): SaleFormState {
+  return withSecond(form, (second) => ({
+    ...second,
+    payment: paymentWithMethod(second.payment, method),
+  }));
+}
+
+export function updateSecondPayment(
+  form: SaleFormState,
+  changes: Partial<Omit<PaymentDraft, "method">>
+): SaleFormState {
+  return withSecond(form, (second) => ({
+    ...second,
+    payment: { ...second.payment, ...changes },
+  }));
+}
+
+export function selectSecondProfileChoice(
+  form: SaleFormState,
+  choice: string,
+  profiles: readonly PaymentProfileReadModel[]
+): SaleFormState {
+  return withSecond(form, (second) => ({
+    ...second,
+    profile: profileSelectionOf(choice, profiles),
+  }));
+}
+
+export function acknowledgeSecondProfileReview(
+  form: SaleFormState,
+  profiles: readonly PaymentProfileReadModel[]
+): SaleFormState {
+  return withSecond(form, (second) => ({
+    ...second,
+    profile: acknowledgedSelection(second.profile, profiles),
+  }));
 }
 
 /* -------------------------------------------------------------------------- */
@@ -1245,6 +1426,7 @@ export const formFieldKeys = {
   occurredAt: "occurredAt",
   profile: "profile",
   totals: "totals",
+  ...splitFieldKeys,
 } as const;
 
 interface ParsedItem {
@@ -1429,17 +1611,38 @@ function parseAdjustments(
   return complete.length === adjustments.length ? complete : null;
 }
 
+interface PartKeys {
+  amount: string;
+  installmentPlan: string;
+  installments: string;
+  method: string;
+  profile: string;
+}
+
+const FIRST_PART_KEYS: PartKeys = {
+  amount: formFieldKeys.firstAmount,
+  installmentPlan: formFieldKeys.installmentPlan,
+  installments: formFieldKeys.installments,
+  method: formFieldKeys.method,
+  profile: formFieldKeys.profile,
+};
+
+const SECOND_PART_KEYS: PartKeys = {
+  amount: formFieldKeys.secondAmount,
+  installmentPlan: formFieldKeys.secondInstallmentPlan,
+  installments: formFieldKeys.secondInstallments,
+  method: formFieldKeys.secondMethod,
+  profile: formFieldKeys.secondProfile,
+};
+
 function parsePayment(
   draft: PaymentDraft,
-  issues: Issue[]
+  issues: Issue[],
+  keys: PartKeys,
+  messages: PartMessages
 ): SaleCommandBody["payment"] | null {
   if (draft.method === "") {
-    pushIssue(
-      issues,
-      formFieldKeys.method,
-      "Escolha o método de pagamento.",
-      true
-    );
+    pushIssue(issues, keys.method, messages.methodEmpty, true);
     return null;
   }
   if (draft.method !== "credit_card") {
@@ -1454,20 +1657,15 @@ function parsePayment(
   if (installments.kind !== "ok") {
     pushIssue(
       issues,
-      formFieldKeys.installments,
+      keys.installments,
       installments.kind === "empty"
-        ? "Informe o número de parcelas."
-        : "Use um número inteiro de 1 a 2.147.483.647.",
+        ? messages.installmentsEmpty
+        : messages.installmentsInvalid,
       installments.kind === "empty"
     );
   }
   if (draft.installmentPlan === "") {
-    pushIssue(
-      issues,
-      formFieldKeys.installmentPlan,
-      "Escolha quem parcela.",
-      true
-    );
+    pushIssue(issues, keys.installmentPlan, messages.planEmpty, true);
   }
   if (installments.kind !== "ok" || draft.installmentPlan === "") {
     return null;
@@ -1488,15 +1686,12 @@ type ProfileResolution =
 function resolveProfile(
   selection: ProfileSelectionDraft,
   profiles: readonly PaymentProfileReadModel[],
-  issues: Issue[]
+  issues: Issue[],
+  key: string,
+  messages: PartMessages
 ): ProfileResolution {
   if (selection.choice === "") {
-    pushIssue(
-      issues,
-      formFieldKeys.profile,
-      "Escolha um perfil de pagamento ou “Sem perfil”.",
-      true
-    );
+    pushIssue(issues, key, messages.profileEmpty, true);
     return { kind: "blocked" };
   }
   if (selection.choice === NO_PROFILE_CHOICE) {
@@ -1506,21 +1701,11 @@ function resolveProfile(
     (candidate) => candidate.id === selection.choice
   );
   if (!profile) {
-    pushIssue(
-      issues,
-      formFieldKeys.profile,
-      "O perfil escolhido não está na lista de perfis ativos. Escolha novamente.",
-      false
-    );
+    pushIssue(issues, key, messages.profileInactive, false);
     return { kind: "blocked" };
   }
   if (selection.reviewNotice !== null) {
-    pushIssue(
-      issues,
-      formFieldKeys.profile,
-      "Confirme a revisão da prévia do perfil atualizado antes de continuar.",
-      false
-    );
+    pushIssue(issues, key, messages.profileReview, false);
     return { kind: "blocked" };
   }
   return { kind: "profile", profile };
@@ -1733,6 +1918,15 @@ export interface EvaluationContext {
   stock: Readonly<Record<string, Loadable<InventoryBalanceReadModel>>>;
 }
 
+interface SplitEvaluation {
+  /** The state of the parts against the total; null while the total or an amount cannot be read yet. */
+  balance: SplitBalance | null;
+  /** The fee preview of each part, by position; null where the part is not complete. */
+  partPreviews: readonly [FeePreview | null, FeePreview | null];
+  /** "O total mudou. Confira as partes." while typed parts no longer match the total they were checked against. */
+  totalChangedNotice: string | null;
+}
+
 export interface SaleEvaluation {
   /** Command body, present only when the whole form is valid. */
   body: SaleCommandBody | null;
@@ -1741,6 +1935,8 @@ export interface SaleEvaluation {
   /** Visible field errors keyed by field. Required-but-empty only after submit. */
   errors: Record<string, string>;
   feePreview: FeePreview | null;
+  /** The field of the first problem, in the order of the screen; null when the form is valid. */
+  firstIssueKey: string | null;
   /** Every problem, including fields that are just not filled in yet. */
   issueCount: number;
   /** Whether a method is chosen: the summary shows only what is. */
@@ -1751,6 +1947,8 @@ export interface SaleEvaluation {
   /** Whether a profile (or "Sem perfil") is chosen. */
   profileChosen: boolean;
   profileText: string;
+  /** Present only while the sale is paid in two parts. */
+  split: SplitEvaluation | null;
   stockWarnings: Record<string, string>;
   summary: SaleSummary | null;
 }
@@ -1800,6 +1998,21 @@ function visibleErrors(
   return errors;
 }
 
+function profileSelectionOfResolution(
+  resolution: ProfileResolution
+): SalePaymentProfileSelection | null {
+  return resolution.kind === "profile"
+    ? {
+        expectedVersion: resolution.profile.version,
+        id: resolution.profile.id,
+      }
+    : null;
+}
+
+type SalePaymentProfileSelection = NonNullable<
+  SaleCommandBody["paymentProfile"]
+>;
+
 function buildBody(
   items: readonly ParsedItem[],
   adjustments: SaleCommandBody["adjustments"],
@@ -1812,27 +2025,261 @@ function buildBody(
   return {
     adjustments,
     commandVersion: CONFIRM_SALE_COMMAND_VERSION,
-    items: items.map((item) => ({
-      chargedUnitPrice: item.chargedUnitPrice,
-      listedUnitPrice: item.listedUnitPrice,
-      quantity: item.quantity,
-      variantId: item.variantId,
-    })),
+    items: bodyItems(items),
     payment,
-    paymentProfile:
-      resolution.kind === "profile"
-        ? {
-            expectedVersion: resolution.profile.version,
-            id: resolution.profile.id,
-          }
-        : null,
+    paymentProfile: profileSelectionOfResolution(resolution),
   };
+}
+
+function bodyItems(items: readonly ParsedItem[]): SaleCommandBody["items"] {
+  return items.map((item) => ({
+    chargedUnitPrice: item.chargedUnitPrice,
+    listedUnitPrice: item.listedUnitPrice,
+    quantity: item.quantity,
+    variantId: item.variantId,
+  }));
+}
+
+interface ResolvedPart {
+  amount: string;
+  payment: SaleCommandBody["payment"];
+  resolution: ProfileResolution;
+}
+
+/**
+ * The body of a sale in two parts. The contract still types `payment` as required (the sale screen was the last to move
+ * to parts), though at runtime exactly one of `payment` and `payments` travels and the profile goes inside each part.
+ */
+function buildSplitBody(
+  items: readonly ParsedItem[],
+  adjustments: SaleCommandBody["adjustments"],
+  parts: readonly ResolvedPart[]
+): SaleCommandBody {
+  return {
+    adjustments,
+    commandVersion: CONFIRM_SALE_COMMAND_VERSION,
+    items: bodyItems(items),
+    payments: parts.map(({ amount, payment, resolution }) => ({
+      ...payment,
+      amount,
+      paymentProfile: profileSelectionOfResolution(resolution),
+    })),
+  } as SaleCommandBody;
+}
+
+interface EvaluatedPart {
+  payment: SaleCommandBody["payment"] | null;
+  resolution: ProfileResolution;
+}
+
+function evaluatePart(
+  draft: { payment: PaymentDraft; profile: ProfileSelectionDraft },
+  context: EvaluationContext,
+  issues: Issue[],
+  keys: PartKeys,
+  messages: PartMessages
+): EvaluatedPart {
+  const payment = parsePayment(draft.payment, issues, keys, messages);
+  return {
+    payment,
+    resolution: resolveProfile(
+      draft.profile,
+      context.profiles,
+      issues,
+      keys.profile,
+      messages
+    ),
+  };
+}
+
+type PartAmount =
+  | { kind: "invalid" }
+  | { cents: bigint; kind: "ok"; text: string };
+
+function parsePartAmount(
+  text: string,
+  issues: Issue[],
+  key: string,
+  messages: PartMessages
+): PartAmount {
+  const parse = parseMoneyText(text);
+  const issue = moneyIssue(parse, messages.amountEmpty);
+  if (issue) {
+    pushIssue(issues, key, issue.message, issue.empty);
+    return { kind: "invalid" };
+  }
+  if (parse.kind !== "ok") {
+    return { kind: "invalid" };
+  }
+  const cents = centsOfMoney(parse.value);
+  if (cents <= 0n) {
+    pushIssue(issues, key, messages.amountNotPositive, false);
+    return { kind: "invalid" };
+  }
+  return { cents, kind: "ok", text: parse.value };
+}
+
+interface SplitResult {
+  body: SaleCommandBody | null;
+  evaluation: SplitEvaluation;
+  first: EvaluatedPart;
+  second: EvaluatedPart;
+}
+
+/**
+ * The two parts against the total due. Part 2 that nobody typed in takes the rest; any difference after that is
+ * "Falta"/"Passou", and the body is not built until the parts close the total to the cent.
+ */
+function evaluateSplit(
+  split: SplitDraft,
+  form: SaleFormState,
+  context: EvaluationContext,
+  parsed: {
+    adjustments: SaleCommandBody["adjustments"] | null;
+    calculation: SaleAdjustmentCalculation | null;
+    items: readonly ParsedItem[] | null;
+  },
+  issues: Issue[]
+): SplitResult {
+  const firstMessages = partMessages(1);
+  const secondMessages = partMessages(2);
+  const first = evaluatePart(
+    form,
+    context,
+    issues,
+    FIRST_PART_KEYS,
+    firstMessages
+  );
+  const firstAmount = parsePartAmount(
+    split.firstAmount,
+    issues,
+    FIRST_PART_KEYS.amount,
+    firstMessages
+  );
+  const secondDraft = split.second;
+  const second = evaluatePart(
+    secondDraft,
+    context,
+    issues,
+    SECOND_PART_KEYS,
+    secondMessages
+  );
+  const total = parsed.calculation?.totalDue ?? null;
+  const totalCents = total === null ? null : centsOfMoney(total);
+  const rest =
+    firstAmount.kind === "ok" && totalCents !== null
+      ? restOfTotal(totalCents, firstAmount.cents)
+      : null;
+  const secondAmount: PartAmount =
+    secondDraft.amount === null
+      ? secondAmountOfRest(rest)
+      : parsePartAmount(
+          secondDraft.amount,
+          issues,
+          SECOND_PART_KEYS.amount,
+          secondMessages
+        );
+  const previews = [
+    partPreview(first, firstAmount),
+    partPreview(second, secondAmount),
+  ] as const;
+  const balance =
+    totalCents !== null &&
+    firstAmount.kind === "ok" &&
+    secondAmount.kind === "ok"
+      ? splitBalance({
+          first: firstAmount.cents,
+          methods: [form.payment.method, secondDraft.payment.method],
+          second: secondDraft.amount === null ? null : secondAmount.cents,
+          total: totalCents,
+        })
+      : null;
+  const totalChangedNotice = splitTotalChangedNotice(split, total);
+  if (balance !== null && balance.kind !== "closed") {
+    pushIssue(
+      issues,
+      balance.kind === "over" && secondDraft.amount === null
+        ? FIRST_PART_KEYS.amount
+        : SECOND_PART_KEYS.amount,
+      totalChangedNotice === null
+        ? balance.text
+        : `${balance.text}. ${totalChangedNotice}`,
+      false
+    );
+  } else if (
+    balance !== null &&
+    secondAmount.kind === "ok" &&
+    secondAmount.cents <= 0n
+  ) {
+    pushIssue(
+      issues,
+      SECOND_PART_KEYS.amount,
+      secondMessages.amountNotPositive,
+      false
+    );
+  }
+  const body =
+    issues.length === 0 &&
+    balance?.kind === "closed" &&
+    parsed.items &&
+    parsed.adjustments &&
+    first.payment &&
+    second.payment &&
+    firstAmount.kind === "ok" &&
+    secondAmount.kind === "ok" &&
+    first.resolution.kind !== "blocked" &&
+    second.resolution.kind !== "blocked"
+      ? buildSplitBody(parsed.items, parsed.adjustments, [
+          {
+            amount: firstAmount.text,
+            payment: first.payment,
+            resolution: first.resolution,
+          },
+          {
+            amount: secondAmount.text,
+            payment: second.payment,
+            resolution: second.resolution,
+          },
+        ])
+      : null;
+  return {
+    body,
+    evaluation: {
+      balance,
+      partPreviews: previews,
+      totalChangedNotice,
+    },
+    first,
+    second,
+  };
+}
+
+function secondAmountOfRest(rest: bigint | null): PartAmount {
+  return rest === null
+    ? { kind: "invalid" }
+    : { cents: rest, kind: "ok", text: moneyOfCents(rest) };
+}
+
+function partPreview(
+  part: EvaluatedPart,
+  amount: PartAmount
+): FeePreview | null {
+  if (
+    part.payment === null ||
+    part.resolution.kind === "blocked" ||
+    amount.kind !== "ok" ||
+    amount.cents <= 0n
+  ) {
+    return null;
+  }
+  return buildFeePreview(amount.text, part.payment, part.resolution);
 }
 
 /**
  * Validates the whole form, computes the exact totals with the domain
  * calculation, previews the payment fees and builds the command body. Nothing
- * here touches the network.
+ * here touches the network. A sale paid in one go builds `payment`, as it
+ * always did; one paid in two parts builds `payments`.
  */
 export function evaluateSaleForm(
   form: SaleFormState,
@@ -1849,20 +2296,37 @@ export function evaluateSaleForm(
   }
   const items = parseItems(form.items, issues);
   const adjustments = parseAdjustments(form.adjustments, issues);
-  const payment = parsePayment(form.payment, issues);
-  const resolution = resolveProfile(form.profile, context.profiles, issues);
+  const totalsIssues: Issue[] = [];
   const calculation =
-    items && adjustments ? calculateTotals(items, adjustments, issues) : null;
+    items && adjustments
+      ? calculateTotals(items, adjustments, totalsIssues)
+      : null;
+  const split =
+    form.split === null
+      ? null
+      : evaluateSplit(
+          form.split,
+          form,
+          context,
+          { adjustments, calculation, items },
+          issues
+        );
+  const single =
+    split === null
+      ? evaluatePart(form, context, issues, FIRST_PART_KEYS, partMessages(null))
+      : null;
+  issues.push(...totalsIssues);
+  const first = single ?? (split as SplitResult).first;
   const summary =
     items && calculation ? buildSummary(items, calculation) : null;
   const feePreview =
-    calculation && payment && resolution.kind !== "blocked"
-      ? buildFeePreview(calculation.totalDue, payment, resolution)
+    calculation && single?.payment && single.resolution.kind !== "blocked"
+      ? buildFeePreview(calculation.totalDue, single.payment, single.resolution)
       : null;
   const body =
-    issues.length === 0 && items && adjustments && payment
-      ? buildBody(items, adjustments, payment, resolution)
-      : null;
+    split === null
+      ? singleBody(items, adjustments, single, issues)
+      : split.body;
   return {
     body,
     dateText:
@@ -1871,15 +2335,57 @@ export function evaluateSaleForm(
         : formatInstant(date.occurredAt),
     errors: visibleErrors(issues, options.showRequired),
     feePreview,
+    firstIssueKey: issues[0]?.key ?? null,
     issueCount: issues.length,
-    methodChosen: form.payment.method !== "",
-    methodText: methodSummary(form.payment),
+    methodChosen: partsChosen(form, (draft) => draft.payment.method !== ""),
+    methodText: joinParts(form, (draft) => methodSummary(draft.payment)),
     occurredAtOverride: date.occurredAt,
-    profileChosen: form.profile.choice !== "",
-    profileText: profileSummary(form.profile, resolution),
+    profileChosen: partsChosen(form, (draft) => draft.profile.choice !== ""),
+    profileText:
+      split === null || form.split === null
+        ? profileSummary(form.profile, first.resolution)
+        : [
+            profileSummary(form.profile, first.resolution),
+            profileSummary(form.split.second.profile, split.second.resolution),
+          ].join(" + "),
+    split: split?.evaluation ?? null,
     stockWarnings: items ? stockWarnings(items, context.stock) : {},
     summary,
   };
+}
+
+function singleBody(
+  items: readonly ParsedItem[] | null,
+  adjustments: SaleCommandBody["adjustments"] | null,
+  single: EvaluatedPart | null,
+  issues: readonly Issue[]
+): SaleCommandBody | null {
+  return issues.length === 0 && items && adjustments && single?.payment
+    ? buildBody(items, adjustments, single.payment, single.resolution)
+    : null;
+}
+
+interface PartDraft {
+  payment: PaymentDraft;
+  profile: ProfileSelectionDraft;
+}
+
+function partDrafts(form: SaleFormState): PartDraft[] {
+  return form.split === null ? [form] : [form, form.split.second];
+}
+
+function partsChosen(
+  form: SaleFormState,
+  chosen: (draft: PartDraft) => boolean
+): boolean {
+  return partDrafts(form).every(chosen);
+}
+
+function joinParts(
+  form: SaleFormState,
+  text: (draft: PartDraft) => string
+): string {
+  return partDrafts(form).map(text).join(" + ");
 }
 
 /* -------------------------------------------------------------------------- */
@@ -1891,6 +2397,8 @@ export interface SaleAttempt {
   occurredAt: string;
   /** The profile and version the body was sent with, for a resend whose first answer was lost. Absent in older attempts. */
   paymentProfile?: SaleCommandBody["paymentProfile"] | undefined;
+  /** The same for a sale in two parts: the profile each part was sent with, by position. */
+  paymentProfiles?: readonly (SalePaymentProfileSelection | null)[] | undefined;
   /** Device clock when the attempt started; local evidence only. */
   recordedAt: string;
   signature: string;
@@ -1926,6 +2434,11 @@ export function resolveSaleAttempt(
     commandId: createId(),
     occurredAt: occurredAtOverride ?? now.toISOString(),
     paymentProfile: body.paymentProfile,
+    ...(body.payments
+      ? {
+          paymentProfiles: body.payments.map((part) => part.paymentProfile),
+        }
+      : {}),
     recordedAt: now.toISOString(),
     signature,
   };
@@ -1943,26 +2456,62 @@ function bodyOfUnsettledAttempt(
   organizationId: string,
   occurredAtOverride: string | null
 ): SaleCommandBody {
+  const sentBody =
+    body.payments === undefined
+      ? withSentProfile(previous, body)
+      : withSentProfiles(previous, body, body.payments);
+  return sentBody !== body &&
+    bodySignature(sentBody, organizationId, occurredAtOverride) ===
+      previous?.signature
+    ? sentBody
+    : body;
+}
+
+function withSentProfile(
+  previous: SaleAttempt | null,
+  body: SaleCommandBody
+): SaleCommandBody {
   const sent = previous?.paymentProfile;
   if (
-    previous === null ||
     !sent ||
     body.paymentProfile?.id !== sent.id ||
     body.paymentProfile.expectedVersion === sent.expectedVersion
   ) {
     return body;
   }
-  const sentBody = {
+  return {
     ...body,
     paymentProfile: {
       ...body.paymentProfile,
       expectedVersion: sent.expectedVersion,
     },
   };
-  return bodySignature(sentBody, organizationId, occurredAtOverride) ===
-    previous.signature
-    ? sentBody
-    : body;
+}
+
+function withSentProfiles(
+  previous: SaleAttempt | null,
+  body: SaleCommandBody,
+  parts: NonNullable<SaleCommandBody["payments"]>
+): SaleCommandBody {
+  const sent = previous?.paymentProfiles;
+  if (!sent || sent.length !== parts.length) {
+    return body;
+  }
+  const payments = parts.map((part, index) => {
+    const was = sent[index];
+    return was &&
+      part.paymentProfile?.id === was.id &&
+      part.paymentProfile.expectedVersion !== was.expectedVersion
+      ? {
+          ...part,
+          paymentProfile: {
+            ...part.paymentProfile,
+            expectedVersion: was.expectedVersion,
+          },
+        }
+      : part;
+  });
+  return { ...body, payments };
 }
 
 export type PreparedConfirmation =
@@ -2355,7 +2904,10 @@ export interface ConfirmedSaleView {
   headline: string;
   items: ConfirmedSaleItemView[];
   note: string;
+  /** The part at position 0; a sale with `paymentParts` is drawn from them instead. */
   paymentDetails: ConfirmedSaleDetail[];
+  /** Present only for a sale paid in more than one part. */
+  paymentParts?: ConfirmedPaymentPartView[];
   replayed: boolean;
   saleDetails: ConfirmedSaleDetail[];
   saleId: string;
@@ -2418,10 +2970,9 @@ function confirmedTotals(sale: ConfirmedSaleReadModel): SummaryRow[] {
   ];
 }
 
-function confirmedPaymentDetails(
-  sale: ConfirmedSaleReadModel
+function paymentFeeDetails(
+  payment: ConfirmedSaleReadModel["payment"]
 ): ConfirmedSaleDetail[] {
-  const { payment } = sale;
   const processing = describeFee(payment.processingFee);
   const anticipation = describeFee(payment.anticipationFee);
   const profile =
@@ -2433,20 +2984,6 @@ function confirmedPaymentDetails(
       ? "Nenhuma regra exata aplicada"
       : `Regra exata: ${describeRule(payment.method, payment.installments, payment.installmentPlan)}`;
   return [
-    {
-      label: "Método",
-      tone: "plain",
-      value: describeRule(
-        payment.method,
-        payment.installments,
-        payment.installmentPlan
-      ),
-    },
-    {
-      label: "Valor do pagamento",
-      tone: "known",
-      value: formatBrlAmount(payment.amount),
-    },
     { label: "Perfil de pagamento", tone: "plain", value: profile },
     { label: "Regra", tone: "plain", value: rule },
     {
@@ -2465,6 +3002,73 @@ function confirmedPaymentDetails(
       value: describeSettlementDays(payment.expectedSettlementDays),
     },
   ];
+}
+
+function confirmedPaymentDetails(
+  sale: ConfirmedSaleReadModel
+): ConfirmedSaleDetail[] {
+  const { payment } = sale;
+  return [
+    {
+      label: "Método",
+      tone: "plain",
+      value: describeRule(
+        payment.method,
+        payment.installments,
+        payment.installmentPlan
+      ),
+    },
+    {
+      label: "Valor do pagamento",
+      tone: "known",
+      value: formatBrlAmount(payment.amount),
+    },
+    ...paymentFeeDetails(payment),
+  ];
+}
+
+/**
+ * One part of a sale paid in more than one: the method in full and the amount of the part, the installments under
+ * them, and the profile, rule, fees and settlement estimate of that part. The installment value is not written: the
+ * sale stores the number of installments and the amount, not what each installment is.
+ */
+interface ConfirmedPaymentPartView {
+  amountText: string;
+  details: ConfirmedSaleDetail[];
+  /** "3x · Parcelado pelo lojista" for a card with installments; null otherwise. */
+  installmentText: string | null;
+  methodText: string;
+  position: number;
+}
+
+function installmentTextOf(
+  payment: ConfirmedSaleReadModel["payment"]
+): string | null {
+  const parts = [
+    payment.installments === null ? null : `${payment.installments}x`,
+    payment.installmentPlan === null
+      ? null
+      : (planLabels[payment.installmentPlan] ?? payment.installmentPlan),
+  ].filter((part): part is string => part !== null);
+  return parts.length > 0 ? parts.join(" · ") : null;
+}
+
+/** One entry per part, in the order the server sends them (by position), only when the sale has more than one: a sale of one part keeps the plain block. */
+function paymentPartsField(
+  sale: ConfirmedSaleReadModel
+): { paymentParts: ConfirmedPaymentPartView[] } | Record<string, never> {
+  const parts = sale.payments ?? [];
+  if (parts.length < 2) {
+    return {};
+  }
+  const views = parts.map((part) => ({
+    amountText: formatBrlAmount(part.amount),
+    details: paymentFeeDetails(part),
+    installmentText: installmentTextOf(part),
+    methodText: methodLabels.get(part.method) ?? part.method,
+    position: part.position,
+  }));
+  return { paymentParts: views };
 }
 
 const timeFormatter = new Intl.DateTimeFormat("pt-BR", { timeStyle: "short" });
@@ -2534,6 +3138,7 @@ export function confirmedSaleView(
     items: confirmedItems(sale),
     note: "O método de pagamento registrado não comprova liquidação, e taxas e prazo são estimativas do perfil escolhido.",
     paymentDetails: confirmedPaymentDetails(sale),
+    ...paymentPartsField(sale),
     replayed: sale.replayed,
     saleDetails: [
       { label: "Venda", tone: "plain", value: sale.sale.id },

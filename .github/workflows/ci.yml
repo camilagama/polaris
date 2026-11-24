@@ -419,7 +419,7 @@ jobs:
     # the same condition as the browser gate, so a failed detection runs it anyway
     if: ${{ !cancelled() && github.event_name != 'push' && (needs.changes.result != 'success' || needs.changes.outputs.browser == 'true') }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 5
+    timeout-minutes: 10
     continue-on-error: true
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -461,7 +461,7 @@ jobs:
           key: ${{ steps.node-modules.outputs.cache-primary-key }}
       # the Chromium of the Playwright in bun.lock, the same build as the one in the image of the visual checks
       - name: Install Chromium
-        # one attempt: the job timeout is shorter than two 450 s attempts; the retry runs only in the offline shards
+        # one attempt of up to 450 s fits the 10 min job limit (setup and tests come on top); two would not, so the retry runs only in the offline shards
         env:
           PLAYWRIGHT_INSTALL_ATTEMPTS: "1"
         run: scripts/playwright-install.sh apps/web
@@ -676,7 +676,7 @@ jobs:
     needs: changes
     if: ${{ !cancelled() && github.event_name != 'push' && (needs.changes.result != 'success' || needs.changes.outputs.browser == 'true') }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 3
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -716,7 +716,7 @@ jobs:
             packages/*/node_modules
           key: ${{ steps.node-modules.outputs.cache-primary-key }}
       - name: Install Chromium
-        # one attempt: the job timeout is shorter than two 450 s attempts; the retry runs only in the offline shards
+        # one attempt of up to 450 s fits the 10 min job limit (setup and tests come on top); two would not, so the retry runs only in the offline shards
         env:
           PLAYWRIGHT_INSTALL_ATTEMPTS: "1"
         run: scripts/playwright-install.sh apps/catalog

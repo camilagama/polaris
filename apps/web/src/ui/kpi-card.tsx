@@ -233,7 +233,7 @@ function chipText(delta: KpiDelta, named: boolean, hidden: boolean): ReactNode {
 }
 
 const CHIP_UP =
-  "bg-[color-mix(in_oklab,var(--chart-sales)_12%,var(--card))] text-mark-foreground";
+  "bg-[color-mix(in_oklab,var(--chart-sales)_12%,var(--card))] text-chart-sales-foreground";
 
 export function DeltaChip({ delta }: { delta: KpiDelta }) {
   const [hidden] = useHiddenValues();

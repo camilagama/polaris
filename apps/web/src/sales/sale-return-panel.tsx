@@ -37,11 +37,11 @@ import {
   mapReturnError,
   openReturn,
   prepareReturnSubmission,
-  RETURN_EXPLANATION,
   RETURN_REASONS,
   type ReturnReview,
   type ReturnTableRow,
   requestDiscardReturn,
+  returnExplanation,
   returnFailed,
   returnNoteCounterText,
   returnReview,
@@ -96,6 +96,8 @@ interface ReturnPanelProps {
   onSaleChanged: (notice: SaleNotice) => void;
   open: boolean;
   organizationId: string;
+  /** How many parts the sale was paid in; the explanation adds a line when there is more than one. */
+  paymentParts: number;
   rows: readonly ReturnTableRow[];
   saleId: string;
 }
@@ -116,6 +118,7 @@ export function SaleReturnPanel({
   onSaleChanged,
   open,
   organizationId,
+  paymentParts,
   rows,
   saleId,
 }: ReturnPanelProps) {
@@ -271,7 +274,9 @@ export function SaleReturnPanel({
         <DialogForm onSubmit={handleSubmit}>
           <DialogHeader>
             <DialogTitle>Registrar devolução</DialogTitle>
-            <DialogDescription>{RETURN_EXPLANATION}</DialogDescription>
+            <DialogDescription>
+              {returnExplanation(paymentParts)}
+            </DialogDescription>
           </DialogHeader>
           <DialogBody ref={sectionRef}>
             <ReturnTable

@@ -68,7 +68,7 @@ Pedido do usuário de 28/10: a atualização entra sem pedir intervenção. Dese
 
 ## Emenda (28/10/2026): a venda em andamento fora da tela não segura a troca
 
-A venda montada e não confirmada passou a ficar guardada na aba (`sessionStorage`, chave `polaris.sale.draft.v1:<loja>`, `sales/sale-draft-storage.ts`) e volta ao abrir Vender de novo, depois de outra tela, de uma recarga ou de uma troca de build. Corte do Everton (AC-1 a AC-10), desenho do Filipe (opção 2) e decisão do Arrascaeta.
+A venda montada e não confirmada passou a ficar guardada na aba (`sessionStorage`, chave `polaris.sale.draft.v1:<loja>`, hoje `v2` por causa do pagamento dividido; um rascunho `v1` ainda volta, como uma parte; `sales/sale-draft-storage.ts`) e volta ao abrir Vender de novo, depois de outra tela, de uma recarga ou de uma troca de build. Corte do Everton (AC-1 a AC-10), desenho do Filipe (opção 2) e decisão do Arrascaeta.
 
 - **Com a venda na tela, nada muda:** a `SalePage` declara `useHoldSwap` enquanto o carrinho tem mudança, e a troca espera como antes.
 - **Com a venda fora da tela, ela não segura a troca.** A recarga da troca a devolve pela aba, então trocar não passa por cima de trabalho, que é a regra deste ADR. Segurar a troca por um carrinho esquecido prenderia a build indefinidamente.

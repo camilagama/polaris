@@ -93,7 +93,13 @@ interface HiddenEdges {
 /** The room kept between the open tab and the edge of the list, so it is not under the fade that warns of more tabs. */
 const EDGE_ROOM = 32;
 const EDGE_FADE =
-  "pointer-events-none absolute inset-y-1.5 z-10 w-6 from-background to-transparent";
+  "pointer-events-none absolute inset-y-1.5 z-10 w-6 to-transparent";
+
+/** The fade has to start in the color of what the list sits on, or it reads as a darker band at the edge. */
+const EDGE_FADE_FROM = {
+  page: "from-background",
+  popover: "from-popover",
+} as const;
 
 /**
  * The list of tabs of a screen, on one line: on a narrow phone it scrolls sideways, with room
@@ -105,12 +111,15 @@ export function ScreenTabList({
   children,
   label,
   signature = "",
+  surface = "page",
   value,
 }: {
   children: ReactNode;
   label: string;
   /** Changes when the tabs of the list change (one more, one less): the open tab is placed again. */
   signature?: string;
+  /** What the list sits on: the page, or a dialog (`bg-popover`); the fade at the edges takes its color. */
+  surface?: keyof typeof EDGE_FADE_FROM;
   value: string;
 }) {
   const scroller = useRef<HTMLDivElement>(null);
@@ -169,14 +178,14 @@ export function ScreenTabList({
       {hidden.start ? (
         <span
           aria-hidden="true"
-          className={`${EDGE_FADE} left-0 bg-linear-to-r`}
+          className={`${EDGE_FADE} ${EDGE_FADE_FROM[surface]} left-0 bg-linear-to-r`}
           data-tabs-edge="start"
         />
       ) : null}
       {hidden.end ? (
         <span
           aria-hidden="true"
-          className={`${EDGE_FADE} right-0 bg-linear-to-l`}
+          className={`${EDGE_FADE} ${EDGE_FADE_FROM[surface]} right-0 bg-linear-to-l`}
           data-tabs-edge="end"
         />
       ) : null}

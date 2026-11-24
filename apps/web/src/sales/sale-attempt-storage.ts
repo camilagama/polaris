@@ -56,6 +56,18 @@ function sentProfileOf(value: unknown): SaleAttempt["paymentProfile"] {
     : undefined;
 }
 
+function sentProfilesOf(value: unknown): SaleAttempt["paymentProfiles"] {
+  if (!Array.isArray(value) || value.length < 1 || value.length > 2) {
+    return undefined;
+  }
+  const parts = value.map((part) =>
+    part === null ? null : sentProfileOf(part)
+  );
+  return parts.every((part) => part !== undefined)
+    ? (parts as NonNullable<SaleAttempt["paymentProfiles"]>)
+    : undefined;
+}
+
 export interface SaleAttemptRead {
   attempt: SaleAttempt;
   /**
@@ -105,6 +117,7 @@ export function readSaleAttemptState(
     }
     const { commandId, occurredAt, signature } = parsed;
     const paymentProfile = sentProfileOf(parsed.paymentProfile);
+    const paymentProfiles = sentProfilesOf(parsed.paymentProfiles);
     return {
       attempt: {
         commandId,
@@ -112,6 +125,7 @@ export function readSaleAttemptState(
         recordedAt: parsed.recordedAt,
         signature,
         ...(paymentProfile ? { paymentProfile } : {}),
+        ...(paymentProfiles ? { paymentProfiles } : {}),
       },
       outcomeUnknown: ofThisCart,
       unsettled: parsed.unsettled === true,

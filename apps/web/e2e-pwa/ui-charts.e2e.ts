@@ -430,7 +430,7 @@ test("a miniatura sai da leitura: escondida, sem texto e sem controle", async ({
 });
 
 for (const theme of THEMES) {
-  test(`tema ${theme.name}: as cores vêm dos tokens: a tinta na série e no anel do melhor dia, nunca o esmeralda (v7)`, async ({
+  test(`tema ${theme.name}: as cores vêm dos tokens: a tinta na série e no anel do melhor dia, nunca a cor da marca (v7)`, async ({
     browser,
   }) => {
     const context = await browser.newContext({
@@ -439,7 +439,7 @@ for (const theme of THEMES) {
     const page = await context.newPage();
     const areas = await openGalleryWithCharts(page, theme.stored);
     const ink = await resolveToken(page, "--chart-5");
-    const emerald = await resolveToken(page, "--chart-1");
+    const brand = await resolveToken(page, "--chart-1");
     const week = areas.getByRole("img", { name: WEEK_LABEL });
     // the ring of the best day and the line come in with the reveal
     await expect(week.locator("circle")).toHaveCount(1);
@@ -456,14 +456,14 @@ for (const theme of THEMES) {
         strokes,
       };
     });
-    // the line of the series is the ink; the grid and the tooltip are the border and the card, never the emerald
+    // the line of the series is the ink; the grid and the tooltip are the border and the card, never the brand color
     expect(colors.strokes).toContain(ink);
-    expect(colors.strokes).not.toContain(emerald);
-    // since v7 the best day is marked by its shape (a larger ring in the color of the series), not by the emerald
+    expect(colors.strokes).not.toContain(brand);
+    // since v7 the best day is marked by its shape (a larger ring in the color of the series), not by the brand color
     expect(colors.best).toContain(ink);
-    expect(colors.best).not.toContain(emerald);
-    // the ink and the emerald are never the same color, in either theme
-    expect(ink).not.toBe(emerald);
+    expect(colors.best).not.toContain(brand);
+    // the ink and the brand color are never the same color, in either theme
+    expect(ink).not.toBe(brand);
     // a sparkline is the ink too
     const spark = page
       .getByRole("region", { name: "Miniaturas" })

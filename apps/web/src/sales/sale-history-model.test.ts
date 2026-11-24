@@ -289,6 +289,40 @@ describe("rows", () => {
     ]);
   });
 
+  it("joins the methods of a sale paid in two parts by position, equal methods included", () => {
+    const rows = historyRows(
+      loaded([
+        entry(1, {
+          paymentMethod: "pix",
+          paymentMethods: ["pix", "credit_card"],
+        }),
+        entry(2, {
+          paymentMethod: "pix",
+          paymentMethods: ["pix", "pix"],
+        }),
+        entry(3, {
+          paymentMethod: "bank_transfer",
+          paymentMethods: ["bank_transfer", "other"],
+        }),
+      ])
+    );
+    expect(rows.map((row) => row.methodText)).toEqual([
+      "Pix + Crédito",
+      "Pix + Pix",
+      "Transferência + Outro",
+    ]);
+  });
+
+  it("keeps the method alone for a sale of one part, with or without the list of methods", () => {
+    const rows = historyRows(
+      loaded([
+        entry(1, { paymentMethod: "cash", paymentMethods: ["cash"] }),
+        entry(2, { paymentMethod: "cash" }),
+      ])
+    );
+    expect(rows.map((row) => row.methodText)).toEqual(["Dinheiro", "Dinheiro"]);
+  });
+
   it("badges a sale that has returns, keeping its status", () => {
     const [plain, withReturns, cancelled] = historyRows(
       loaded([

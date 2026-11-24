@@ -383,6 +383,40 @@ describe("when only the fee is missing, the chart says the fee and not the cost 
   });
 });
 
+describe("the chart without the series of costs (costsSent false)", () => {
+  const withoutCosts = () => {
+    const base = october([]);
+    return {
+      ...base,
+      daily: base.daily?.map(
+        ({ costs: _costs, operatingResult: _result, ...day }) => day
+      ),
+    } as StoredPeriodSummary;
+  };
+
+  it("says the costs per day are not available, in place of the cost line", () => {
+    const markup = text(chart(withoutCosts()));
+    expect(markup).toContain("Os custos por dia não estão disponíveis agora.");
+    expect(markup).not.toContain("Esta cópia guardada");
+  });
+
+  it("says the copy has no costs per day when the read comes from the cache", () => {
+    const markup = text(
+      renderToStaticMarkup(
+        <ResultChart source="cache" summary={withoutCosts()} timezone={ZONE} />
+      )
+    );
+    expect(markup).toContain("Esta cópia guardada não tem os custos por dia.");
+    expect(markup).not.toContain("não estão disponíveis agora");
+  });
+
+  it("writes no note when every day sends its cost", () => {
+    const markup = text(chart(october([])));
+    expect(markup).not.toContain("Os custos por dia não estão disponíveis");
+    expect(markup).not.toContain("Esta cópia guardada");
+  });
+});
+
 describe("the chart with unknown days (AC-9, emenda de 25/10)", () => {
   it("keeps the badge and writes no total of the costs: never a partial sum", () => {
     const markup = chart(october([3, 12, 21]));
@@ -406,6 +440,7 @@ const NOTES_ATTRIBUTE = /data-notes="([^"]*)"/;
 const BEST_DAY_FOR_READERS = /<p class="sr-only">[^<]*Melhor dia/;
 const BEST_DAY_LINE = /<p class="[^"]*min-h-\[1\.125rem\]/;
 const TITLE_HEADING = /<h2 class="text-section" id="dashboard-chart-title"/;
+const ANY_HEIGHT_RESERVE = /min-h-\[/;
 
 describe("the room the card keeps for its lines (lugar reservado)", () => {
   it("keeps the line of the note in the box, whatever the state, and writes the best day only for the screen reader", () => {
@@ -427,7 +462,9 @@ describe("the room the card keeps for its lines (lugar reservado)", () => {
   it("keeps no row above the drawing: the legend sits in the header and the box that stands in for the drawing is the plot's", () => {
     const markup = chart(october([3]));
     expect(markup).toContain("data-chart-loading");
-    expect(markup).not.toContain("min-h-[8.5rem]");
+    expect(markup.slice(0, markup.indexOf("data-chart-loading"))).not.toMatch(
+      ANY_HEIGHT_RESERVE
+    );
     expect(markup).toContain("height:240px");
     const header = markup.slice(
       markup.indexOf('data-slot="block-header"'),

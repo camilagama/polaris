@@ -248,6 +248,9 @@ const STATUS_LINE = /<p[^>]*aria-live="polite"[^>]*sr-only/;
 const FOOTER_SENTENCE = />(Início [^<]*)<\/p>/;
 const STATUS_LINE_WITH_TEXT = /<p[^>]*aria-live="polite"[^>]*>Início /;
 
+const RULE_SHOWN = /<div[^>]*border-border[^>]*data-range-footer/;
+const RULE_HIDDEN = /<div[^>]*border-transparent[^>]*data-range-footer/;
+
 const PRESET_OFF = /data-preset="[^"]*"[^>]*aria-disabled/;
 
 describe("DateRangePanel", () => {
@@ -271,10 +274,15 @@ describe("DateRangePanel", () => {
 
   it("sem Limpar a linha do rodapé fica (régua e altura da frase mais longa), e a frase vazia segue só para o leitor de tela", () => {
     const markup = panel({ clearable: false });
-    expect(markup).toContain("border-border border-t");
+    expect(markup).toMatch(RULE_HIDDEN);
     expect(markup).not.toContain("Limpar");
     expect(markup).toMatch(STATUS_LINE);
     expect(markup).toMatch(INVISIBLE_COPY);
+  });
+
+  it("a régua do rodapé só ganha cor com Limpar à vista: com período sim, sem período não", () => {
+    expect(panel()).toMatch(RULE_SHOWN);
+    expect(panel({ value: null })).toMatch(RULE_HIDDEN);
   });
 
   it("com Limpar a linha do rodapé volta, e sem período o botão guarda o lugar, invisível", () => {
@@ -313,7 +321,7 @@ describe("DateRangePanel", () => {
       only: { reason: "Sem conexão.", shortcuts: ["este-mes"] },
     });
     expect(markup).not.toContain("Limpar");
-    expect(markup).not.toContain("border-border border-t");
+    expect(markup).not.toContain("data-range-footer");
   });
 
   it("sem `only` nenhum atalho fica apagado", () => {
@@ -365,6 +373,22 @@ describe("DateRangeFooter, a frase do 1º dia escolhido", () => {
 
   it("a frase segue numa região de status anunciada com educação", () => {
     expect(footer("2026-10-10")).toMatch(STATUS_LINE_WITH_TEXT);
+  });
+
+  it("a régua só tem cor com a frase: sem o 1º dia fica transparente e a linha segue no lugar", () => {
+    expect(footer("2026-10-10")).toMatch(RULE_SHOWN);
+    const empty = html(
+      <DateRangeFooter
+        canClear={false}
+        clearable={false}
+        half={undefined}
+        onClear={noop}
+        statusId="status"
+        today={today}
+      />
+    );
+    expect(empty).toMatch(RULE_HIDDEN);
+    expect(empty).toContain("min-h-ctl-sm");
   });
 });
 

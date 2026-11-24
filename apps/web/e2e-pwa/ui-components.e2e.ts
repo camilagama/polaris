@@ -385,7 +385,7 @@ test("controle: o axe desta página acusa uma imagem sem texto alternativo", asy
   await openGallery(page, null);
   await page.evaluate(() => {
     const image = document.createElement("img");
-    image.src = "/icons/icon-192.png";
+    image.src = "/icons/icon-v2-192.png";
     document.querySelector("main")?.append(image);
   });
   const violations = await axeViolations(page);
