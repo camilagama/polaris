@@ -5,6 +5,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
 import { Badge } from "@/ui/badge";
 import { Block, BlockHeader, BlockPanel } from "@/ui/block";
 import { Button } from "@/ui/button";
+import { CardFrame, CardFrameHeader, CardFramePanel } from "@/ui/card";
 import { Progress } from "@/ui/progress";
 import { Skeleton } from "@/ui/skeleton";
 import {
@@ -144,28 +145,23 @@ export function PlanCard({
   );
 }
 
-/** The plan while it loads: the shapes of the block, and the name the screen reader reads. */
+/** The plan while it loads: the shapes of the block, and a line the screen reader reads. */
 export function PlanLoading() {
   return (
-    <Block aria-busy="true" aria-labelledby="subscription-plan-loading">
-      <BlockHeader
-        id="subscription-plan-loading"
-        title={
-          <>
-            <span className="sr-only">Carregando…</span>
-            <Skeleton aria-hidden="true" className="h-5 w-32" />
-          </>
-        }
-      />
-      <BlockPanel>
-        <Skeleton className="h-4 w-56" />
+    <CardFrame aria-busy="true" className="min-w-0" role="status">
+      <span className="sr-only">Carregando a assinatura…</span>
+      <CardFrameHeader>
+        <Skeleton aria-hidden="true" className="h-5 w-32" />
+      </CardFrameHeader>
+      <CardFramePanel>
+        <Skeleton aria-hidden="true" className="h-4 w-56" />
         <div className="grid gap-3">
-          <Skeleton className="h-7.5 sm:h-5" />
-          <Skeleton className="h-7.5 sm:h-5" />
-          <Skeleton className="h-7.5 sm:h-5" />
+          <Skeleton aria-hidden="true" className="h-7.5 sm:h-5" />
+          <Skeleton aria-hidden="true" className="h-7.5 sm:h-5" />
+          <Skeleton aria-hidden="true" className="h-7.5 sm:h-5" />
         </div>
-      </BlockPanel>
-    </Block>
+      </CardFramePanel>
+    </CardFrame>
   );
 }
 
