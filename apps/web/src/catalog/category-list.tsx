@@ -1,5 +1,6 @@
 import type { CategoryReadModel } from "@polaris/contracts";
 import MoreHorizontalIcon from "lucide-react/dist/esm/icons/ellipsis";
+import TagIcon from "lucide-react/dist/esm/icons/tag";
 import {
   type ChangeEvent,
   type FormEvent,
@@ -17,6 +18,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/ui/dropdown-menu";
+import { EmptyState } from "@/ui/empty-state";
 import { Field, FieldDescription, FieldError, FieldLabel } from "@/ui/field";
 import { InputGroup, InputGroupInput } from "@/ui/input-group";
 import { connectionControlProps } from "../app-shell/connection-required-notice";
@@ -405,11 +407,7 @@ export function CategoryList({
     );
   }
   if (categories.length === 0) {
-    return (
-      <ListNotice>
-        <p className="text-muted-foreground">{EMPTY_TEXT[status]}</p>
-      </ListNotice>
-    );
+    return <EmptyState afterRead icon={TagIcon} {...EMPTY_TEXT[status]} />;
   }
   const modeOf = (id: string): RowMode => {
     if (renamingCategoryId === id) {
