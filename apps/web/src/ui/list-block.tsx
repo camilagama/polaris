@@ -19,7 +19,8 @@ type SingleNode = Exclude<ReactNode, Iterable<ReactNode>>;
 
 /**
  * What the panel shows. A list with nothing at all and a list that failed to load are not states of this piece: the
- * screen draws the `EmptyState` or the unframed warning in its place.
+ * screen draws the `EmptyState` or the unframed warning in its place. A screen whose total must stay on screen with no
+ * rows (the sales history, "R$ 0,00") says it with `filtered-empty`.
  */
 type ListBlockStateProps =
   | { emptyNotice?: ReactNode; skeleton?: ReactNode; state: "rows" }

@@ -64,6 +64,7 @@ test("Histórico de vendas: carregando é a moldura com o título, a frase só p
   const status = block.getByRole("status").filter({ hasText: "Carregando…" });
   await expect(status).toHaveCount(1);
   await expect(status).toHaveClass(SCREEN_READER_ONLY);
+  await expect(status).toHaveText("Carregando…");
   const drawn = block.locator(
     '[data-list-block-scroll] [data-slot="skeleton"]'
   );

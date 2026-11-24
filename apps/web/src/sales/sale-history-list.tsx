@@ -228,7 +228,7 @@ export function SaleHistoryList({
   rows,
 }: {
   count?: string;
-  footer?: ReactNode;
+  footer?: ReactElement | undefined;
   offline: boolean;
   onOpen?: ((saleId: string) => void) | undefined;
   rows: readonly HistoryRow[];
