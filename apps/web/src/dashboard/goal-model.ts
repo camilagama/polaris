@@ -110,6 +110,11 @@ const FULL_BAR_TENTHS = 1000;
  * than the target is a full bar. Read as tenths of a percent, never as money.
  */
 export function goalProgressWidth(percent: string | null): number {
+  return Math.min(goalPercentTenths(percent), FULL_BAR_TENTHS) / 10;
+}
+
+/** The server's percent text in tenths of a percent, with no ceiling (to order goals); none or negative is 0. */
+export function goalPercentTenths(percent: string | null): number {
   if (percent === null) {
     return 0;
   }
@@ -117,8 +122,7 @@ export function goalProgressWidth(percent: string | null): number {
   if (!match || match[1] === "-") {
     return 0;
   }
-  const tenths = Number(match[2]) * 10 + Number(match[3] ?? "0");
-  return Math.min(tenths, FULL_BAR_TENTHS) / 10;
+  return Number(match[2]) * 10 + Number(match[3] ?? "0");
 }
 
 /** "37,5%" for "37.5"; a progress that is not positive reads "0%". */

@@ -417,3 +417,94 @@ describe("a saída única do cartão da Meta", () => {
     expect(html).not.toContain("Ver as");
   });
 });
+
+const PREVIOUS_DISABLED = /aria-disabled="true"[^>]*aria-label="Meta anterior"/;
+const NEXT_BUTTON = /aria-label="Próxima meta"/;
+const NEXT_DISABLED = /aria-disabled="true"[^>]*aria-label="Próxima meta"/;
+const EMPTY_ANNOUNCEMENT = /data-goal-announcement=""[^>]*><\/p>/;
+const POSITION = /\d de \d/;
+
+describe("o carrossel da Meta (AC-C2.1, AC-C2.3, AC-C2.5)", () => {
+  const base: GoalReadModel = {
+    ...october,
+    achievedValue: null,
+    endsOn: "2026-11-30",
+    progress: null,
+    settledAt: null,
+    status: "active",
+    target: "5000.00",
+  };
+  const withPercent = (n: number, name: string, percent: string) => ({
+    ...base,
+    id: `0199c2d0-0000-7000-8000-00000000020${n}`,
+    name,
+    progress: {
+      percent,
+      periodEnded: false,
+      reached: false,
+      value: "1500.00",
+    },
+  });
+  const goals = [
+    withPercent(1, "Vendas de novembro", "20.0"),
+    withPercent(2, "Meta da loja", "85.0"),
+    withPercent(3, "Pedidos", "60.0"),
+  ];
+  const html = (list: GoalReadModel[]) =>
+    renderToStaticMarkup(
+      <HomeRoleProvider value="owner">
+        <GoalBlock
+          block={{ data: list, status: "ready" }}
+          onRetry={noRetry}
+          projection={null}
+          today="2026-11-10"
+          view={{
+            goal: list[1] ?? base,
+            kind: "active",
+            others: list.length - 1,
+          }}
+        />
+      </HomeRoleProvider>
+    );
+  const SLIDE = /data-goal-slide="(open|closed)"/g;
+  const NAMES =
+    /data-goal-slide="(?:open|closed)"[\s\S]*?<p class="[^"]*font-medium[^"]*">([^<]*)</g;
+
+  it("com três metas, uma abre e as outras ficam fora da leitura e do Tab, na ordem do percentual", () => {
+    const out = html(goals);
+    expect([...out.matchAll(SLIDE)].map((match) => match[1])).toEqual([
+      "open",
+      "closed",
+      "closed",
+    ]);
+    expect([...out.matchAll(NAMES)].map((match) => match[1])).toEqual([
+      "Meta da loja",
+      "Pedidos",
+      "Vendas de novembro",
+    ]);
+    expect(out.match(/inert=""/g)).toHaveLength(2);
+  });
+
+  it("o cabeçalho tem o contador e as duas setas com nome, a anterior desligada na primeira", () => {
+    const out = html(goals);
+    expect(text(out)).toContain("1 de 3");
+    expect(out).toMatch(PREVIOUS_DISABLED);
+    expect(out).toMatch(NEXT_BUTTON);
+    expect(out).not.toMatch(NEXT_DISABLED);
+  });
+
+  it("abrir a tela não anuncia nada, e o pé segue sendo a única saída, com a contagem", () => {
+    const out = html(goals);
+    expect(out).toMatch(EMPTY_ANNOUNCEMENT);
+    expect(FOOTER_LINK.exec(out)?.[2]).toBe("Ver as 3 metas");
+    expect(out).not.toContain("Ver as outras");
+  });
+
+  it("com uma meta só não há setas, contador nem leitura marcada", () => {
+    const out = html([withPercent(1, "Meta da loja", "85.0")]);
+    expect(out).not.toContain("data-goal-stepper");
+    expect(out).not.toContain("data-goal-slides");
+    expect(out).not.toContain("Meta anterior");
+    expect(out).not.toMatch(POSITION);
+  });
+});
