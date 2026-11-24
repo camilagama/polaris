@@ -22,6 +22,23 @@ import { pickerView, storeHasNothingToSell } from "./sale-variant-picker-model";
 vi.mock("../lib/orpc", () => ({ orpcClient: {} }));
 
 const noop = () => undefined;
+const NO_SPLIT = {
+  blocker: null,
+  evaluation: null,
+  handlers: {
+    onAcknowledgeSecondReview: noop,
+    onAction: noop,
+    onEnd: noop,
+    onFirstAmountChange: noop,
+    onSecondAmountChange: noop,
+    onSecondAnticipationChange: noop,
+    onSecondInstallmentPlanChange: noop,
+    onSecondInstallmentsChange: noop,
+    onSecondMethodChange: noop,
+    onSecondProfileChange: noop,
+    onStart: noop,
+  },
+};
 const EMPTY_COUNT_LINE = /data-slot="card-description">\u00a0<\/div>/;
 const variantId = "22222222-2222-4222-8222-222222222222";
 const NOW = new Date(2026, 10, 3, 14, 5);
@@ -361,6 +378,7 @@ describe("Data e ajustes numa linha fechada", () => {
           message: "Nenhum perfil de pagamento ativo.",
         }}
         singlePaymentText="Um pagamento só."
+        split={NO_SPLIT}
         timezone="America/Sao_Paulo"
       />
     );

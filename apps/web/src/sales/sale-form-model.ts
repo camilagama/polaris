@@ -1970,7 +1970,12 @@ export interface EvaluationContext {
   stock: Readonly<Record<string, Loadable<InventoryBalanceReadModel>>>;
 }
 
-interface SplitEvaluation {
+export interface SplitPartSummary {
+  amountText: string | null;
+  methodText: string;
+}
+
+export interface SplitEvaluation {
   /** The state of the parts against the total; null while the total or an amount cannot be read yet. */
   balance: SplitBalance | null;
   /** The fees of both parts added up; unknown when either part's is, null until both previews exist. */
@@ -1979,6 +1984,8 @@ interface SplitEvaluation {
   mismatchKey: string | null;
   /** The fee preview of each part, by position; null where the part is not complete. */
   partPreviews: readonly [FeePreview | null, FeePreview | null];
+  /** What the summary says of each part, by position: the method and the amount (null until it can be read). */
+  parts: readonly [SplitPartSummary, SplitPartSummary];
   /** "O total mudou. Confira as partes." while typed parts no longer match the total they were checked against. */
   totalChangedNotice: string | null;
 }
@@ -2005,6 +2012,8 @@ export interface SaleEvaluation {
   profileText: string;
   /** Present only while the sale is paid in two parts. */
   split: SplitEvaluation | null;
+  /** The total due as the API writes it (`123.45`); null while items or adjustments cannot be read. */
+  totalDue: string | null;
   stockWarnings: Record<string, string>;
   summary: SaleSummary | null;
 }
@@ -2312,10 +2321,24 @@ function evaluateSplit(
       feesTotal: feesTotalOf(previews),
       mismatchKey,
       partPreviews: previews,
+      parts: [
+        partSummary(form.payment, firstAmount),
+        partSummary(secondDraft.payment, secondAmount),
+      ],
       totalChangedNotice,
     },
     first,
     second,
+  };
+}
+
+function partSummary(
+  payment: PaymentDraft,
+  amount: PartAmount
+): SplitPartSummary {
+  return {
+    amountText: amount.kind === "ok" ? formatBrlAmount(amount.text) : null,
+    methodText: methodSummary(payment),
   };
 }
 
@@ -2455,6 +2478,7 @@ export function evaluateSaleForm(
     split: split?.evaluation ?? null,
     stockWarnings: items ? stockWarnings(items, context.stock) : {},
     summary,
+    totalDue: calculation?.totalDue ?? null,
   };
 }
 
@@ -2708,6 +2732,8 @@ export interface SaleSubmitFailure {
   entry: { label: string; missing: number; variantId: string } | null;
   kind: SaleFailureKind;
   message: string;
+  /** The position of the payment part the server named (`error.data.part`, from 0), when it named one. */
+  part?: number;
   /** Stable domain code from `error.data.reason`, when the server sent one. */
   reason: string | null;
   /** The server rejected the sale on current data: reload catalog and profiles. */
@@ -2793,6 +2819,13 @@ const reasonOutcomes = new Map<string, ReasonOutcome>([
     },
   ],
   [
+    "sale_payment_split_mismatch",
+    {
+      message:
+        "A soma das partes não fecha o total da venda. Confira o valor de cada parte e confirme de novo.",
+    },
+  ],
+  [
     "sale_command_conflict",
     {
       discardAttempt: true,
@@ -2868,6 +2901,7 @@ function failure(
   message: string,
   options: {
     discardAttempt?: boolean;
+    part?: number | null;
     reason?: string | null;
     refreshData?: boolean;
   } = {}
@@ -2877,6 +2911,9 @@ function failure(
     entry: null,
     kind,
     message,
+    ...(options.part === undefined || options.part === null
+      ? {}
+      : { part: options.part }),
     reason: options.reason ?? null,
     refreshData: options.refreshData ?? false,
     unknownOutcome:
@@ -2921,6 +2958,20 @@ export function isDefiniteRejection(error: unknown): boolean {
   return definiteFailure(rpcErrorCode(error)) !== null;
 }
 
+function rpcErrorPart(error: unknown): number | null {
+  const data =
+    typeof error === "object" && error !== null && "data" in error
+      ? (error as { data?: unknown }).data
+      : null;
+  const part =
+    typeof data === "object" && data !== null && "part" in data
+      ? (data as { part?: unknown }).part
+      : null;
+  return typeof part === "number" && Number.isInteger(part) && part >= 0
+    ? part
+    : null;
+}
+
 /** The server does not say why it refused an adjustment: the cap is known from what was sent. */
 function refusalMessage(
   reason: string | null,
@@ -2963,6 +3014,7 @@ export function mapSaleSubmitError(
     const message = refusalMessage(reason, outcome.message, sentAdjustments);
     return failure(byCode.kind, message, {
       discardAttempt: outcome.discardAttempt ?? false,
+      part: rpcErrorPart(error),
       reason,
       refreshData: outcome.refreshData ?? false,
     });
@@ -3489,6 +3541,31 @@ export function describeStockRefusal(
     sent.canAdjustStock
   );
   return { ...state, failure: { ...state.failure, ...notice } };
+}
+
+/**
+ * A refusal that names a payment part, for a sale sent in parts: the message starts with the part ("Parte 2: …"), so
+ * the person knows which profile to review. A sale paid in one go keeps the message of always.
+ */
+export function describePartRefusal(
+  state: SubmissionState,
+  partsSent: number
+): SubmissionState {
+  if (
+    state.phase !== "failed" ||
+    state.failure.part === undefined ||
+    partsSent < 2 ||
+    state.failure.part >= partsSent
+  ) {
+    return state;
+  }
+  return {
+    ...state,
+    failure: {
+      ...state.failure,
+      message: `Parte ${state.failure.part + 1}: ${state.failure.message}`,
+    },
+  };
 }
 
 /** The final domain validation rejected the form before any request. */

@@ -12,8 +12,10 @@ import {
   applySalePreset,
   applySplitAction,
   createBlankSaleForm,
+  describePartRefusal,
   endSplit,
   evaluateSaleForm,
+  failSubmission,
   isSaleFormDirty,
   NO_PROFILE_CHOICE,
   prepareConfirmation,
@@ -42,6 +44,7 @@ const ruleCardId = "55555555-5555-4555-8555-555555555555";
 const noFee = { fixedAmount: null, mode: "none", percentage: null } as const;
 const NOW = new Date("2026-11-02T15:00:00.000Z");
 const TOTAL_MOVED_ENDING = / O total mudou\. Confira as partes\.$/;
+const PART_2_PREFIX = /^Parte 2: O perfil de pagamento foi editado/;
 
 function sequentialIds(): () => string {
   let next = 0;
@@ -492,7 +495,9 @@ describe("the profile of each part", () => {
       expect(acknowledged.profile).toEqual(reviewed);
       expect(acknowledged.split?.second.profile).toEqual(reviewed);
       expect(sharedProfileReview(acknowledged)).toBe(false);
-      expect(evaluate(acknowledged, [profile(4)]).errors.profile).toBeUndefined();
+      expect(
+        evaluate(acknowledged, [profile(4)]).errors.profile
+      ).toBeUndefined();
     }
   });
 
@@ -648,5 +653,35 @@ describe("what a split sale leaves behind", () => {
     expect(
       isSaleFormDirty(startSplit(createBlankSaleForm(sequentialIds())))
     ).toBe(true);
+  });
+});
+
+describe("a refusal of a sale sent in parts", () => {
+  const refusal = (reason: string, code: string, part?: number) =>
+    failSubmission(
+      Object.assign(new Error(reason), {
+        code,
+        data: part === undefined ? { reason } : { part, reason },
+      }),
+      []
+    );
+
+  it("says the parts do not close the total, and keeps the form editable", () => {
+    const state = refusal("sale_payment_split_mismatch", "BAD_REQUEST");
+    expect(state.phase).toBe("failed");
+    expect(state.phase === "failed" && state.failure.message).toBe(
+      "A soma das partes não fecha o total da venda. Confira o valor de cada parte e confirme de novo."
+    );
+  });
+
+  it("names the part whose profile refused the sale, only for a sale sent in parts", () => {
+    const state = refusal("payment_profile_version_conflict", "CONFLICT", 1);
+    const split = describePartRefusal(state, 2);
+    expect(split.phase === "failed" && split.failure.message).toMatch(
+      PART_2_PREFIX
+    );
+    expect(describePartRefusal(state, 1)).toBe(state);
+    const unnamed = refusal("payment_profile_version_conflict", "CONFLICT");
+    expect(describePartRefusal(unnamed, 2)).toBe(unnamed);
   });
 });

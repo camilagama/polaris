@@ -281,3 +281,41 @@ export const splitFieldKeys = {
   secondMethod: "payment2:method",
   secondProfile: "profile2",
 } as const;
+
+/* -------------------------------------------------------------------------- */
+/* The screen                                                                 */
+/* -------------------------------------------------------------------------- */
+
+export const SPLIT_START_LABEL = "Dividir pagamento";
+export const SPLIT_END_LABEL = "Voltar a um pagamento só";
+
+/** What the (i) of "Pagamento" says while the sale is paid in one go. */
+export const SINGLE_PAYMENT_HELP =
+  "Um pagamento no valor total. Para receber de dois jeitos, use Dividir pagamento. O método não comprova o recebimento.";
+
+/** What the (i) of "Pagamento" says while the sale is paid in two parts. */
+export const SPLIT_PAYMENT_HELP =
+  "Cada parte tem método, valor e perfil. As duas somam o total. O método não comprova o recebimento.";
+
+export const SPLIT_OFFLINE_REASON = "Dividir precisa de internet";
+export const SPLIT_EMPTY_REASON = "Adicione um item para dividir o pagamento.";
+
+/** Said when a sale in parts meets a dropped connection at the confirmation: the device keeps one payment per sale. */
+export const SPLIT_OFFLINE_REFUSAL =
+  "Dividir precisa de internet. Confirme quando a conexão voltar ou volte a um pagamento só.";
+
+/**
+ * Why "Dividir pagamento" is off, or null when it is on. Without a connection the device could not keep the sale (it
+ * carries one payment); with no total there is nothing to split.
+ */
+export function splitStartBlocker(
+  offline: boolean,
+  total: string | null
+): string | null {
+  if (offline) {
+    return SPLIT_OFFLINE_REASON;
+  }
+  return total === null || total.startsWith("-") || centsOfMoney(total) <= 0n
+    ? SPLIT_EMPTY_REASON
+    : null;
+}
