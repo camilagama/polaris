@@ -215,7 +215,9 @@ function ProfileRow(props: ProfileRowProps) {
               {active ? "Ativo" : "Arquivado"}
             </Badge>
           </div>
-          {active ? <ProfileMenu {...props} /> : <RestoreButton {...props} />}
+          <div className="flex shrink-0 justify-end min-[40rem]:w-24">
+            {active ? <ProfileMenu {...props} /> : <RestoreButton {...props} />}
+          </div>
         </div>
         <ul className="grid gap-2">
           {profile.rules.map((rule) => (
