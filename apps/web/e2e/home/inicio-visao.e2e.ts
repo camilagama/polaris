@@ -1368,7 +1368,7 @@ test.describe("loja sem venda: o checklist (AC-22, AC-23)", () => {
     const server = emptyStore();
     await openHome(page, server);
     // the runtime of the next page load starts by asking the device check: held, it cannot be ready at the click
-    let releaseCopy = () => undefined;
+    let releaseCopy: () => void = () => undefined;
     const copyHeld = new Promise<void>((resolve) => {
       releaseCopy = resolve;
     });
