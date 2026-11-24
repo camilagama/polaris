@@ -389,7 +389,6 @@ const NUMBER_FONT_ELSEWHERE: readonly {
     tokens: 1,
     why: SLICE_REASON,
   },
-  { file: "src/catalog/screen-parts.tsx", tokens: 1, why: SLICE_REASON },
   {
     file: "src/expenses/expense-by-category.tsx",
     tokens: 1,
@@ -433,6 +432,7 @@ const NUMBER_FONT_ELSEWHERE: readonly {
   { file: "src/ui/date-picker.tsx", tokens: 1, why: DATE_REASON },
   { file: "src/ui/date-range-picker.tsx", tokens: 1, why: DATE_REASON },
   { file: "src/ui/kpi-card.tsx", tokens: 7, why: SLICE_REASON },
+  { file: "src/ui/list-total-footer.tsx", tokens: 1, why: SLICE_REASON },
   { file: "src/ui/progress.tsx", tokens: 1, why: SLICE_REASON },
 ];
 
