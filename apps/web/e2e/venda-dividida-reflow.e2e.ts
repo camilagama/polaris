@@ -41,9 +41,16 @@ const rpc = (json: unknown) => ({
   headers: { ...WORKER_MARK },
 });
 
+/** A closed Select popup stays in the page with no size; the option is looked up in the list this trigger opened. */
 async function choose(scope: Locator, label: string, option: string) {
-  await scope.getByRole("combobox", { exact: true, name: label }).click();
-  await scope.page().getByRole("option", { exact: true, name: option }).click();
+  const trigger = scope.getByRole("combobox", { exact: true, name: label });
+  await trigger.click();
+  await expect(trigger).toHaveAttribute("aria-controls", /.+/);
+  const list = scope
+    .page()
+    .locator(`[id="${await trigger.getAttribute("aria-controls")}"]`);
+  await list.getByRole("option", { exact: true, name: option }).click();
+  await expect(trigger).toHaveAttribute("aria-expanded", "false");
 }
 
 async function openSplitSale(page: Page) {

@@ -100,15 +100,21 @@ const splitButton = (page: Page) =>
 const part = (page: Page, ordinal: 1 | 2) =>
   page.getByRole("group", { exact: true, name: `Parte ${ordinal}` });
 
+/**
+ * A closed Select popup stays in the page, transparent and with no size, and answers the same role and name as the
+ * one that opens next. The option is looked up inside the list this trigger opened (its aria-controls).
+ */
 async function choose(scope: Locator, label: string, option: RegExp | string) {
-  await scope.getByRole("combobox", { exact: true, name: label }).click();
-  await scope
+  const trigger = scope.getByRole("combobox", { exact: true, name: label });
+  await trigger.click();
+  await expect(trigger).toHaveAttribute("aria-controls", /.+/);
+  const list = scope
     .page()
-    .getByRole("option", {
-      exact: typeof option === "string",
-      name: option,
-    })
+    .locator(`[id="${await trigger.getAttribute("aria-controls")}"]`);
+  await list
+    .getByRole("option", { exact: typeof option === "string", name: option })
     .click();
+  await expect(trigger).toHaveAttribute("aria-expanded", "false");
 }
 
 /** Total 300, part 1 Pix 100 with no profile, part 2 cash with no profile. */
