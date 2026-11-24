@@ -362,3 +362,38 @@ describe.each([
     }
   });
 });
+
+/**
+ * The tab of a screen in the `line` variant (src/ui/tabs.tsx) over the page: the 2 px stroke under the open tab is ink
+ * (a graphic element, 3:1, WCAG 1.4.11) and the words of a closed tab are `muted-foreground` (text, 4.5:1). Both pairs
+ * are rows of the tables above, so the stroke and the closed tab cannot leave the map; the stroke is never the brand
+ * color.
+ */
+describe.each([
+  ["Tema claro", tokens(block(":root"))],
+  [
+    "Tema escuro",
+    new Map([...tokens(block(":root")), ...tokens(block(".dark"))]),
+  ],
+])("contraste da aba de tela em linha, %s", (section, palette) => {
+  const rows = pairs(section);
+
+  it.each([
+    ["`foreground`", "traço de 2 px sob a aba de tela aberta", 3],
+    ["`muted-foreground`", "texto da aba de tela fechada", 4.5],
+  ] as const)(
+    "%s (%s) reaches %d:1 and is in the map",
+    (foreground, use, bar) => {
+      const row = rows.find(
+        (item) =>
+          item.foreground === foreground &&
+          item.background === "`background`" &&
+          item.use.startsWith(use)
+      );
+      expect(row, `${use} is not in "${section}"`).toBeDefined();
+      expect(
+        ratio(color(foreground, palette), color("`background`", palette))
+      ).toBeGreaterThanOrEqual(bar);
+    }
+  );
+});
