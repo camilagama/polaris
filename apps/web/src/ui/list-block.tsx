@@ -192,8 +192,10 @@ function ListBlockRoot({
           <p
             aria-live="polite"
             className={cn(
-              "min-h-5 text-muted-foreground text-support max-md:grow md:min-w-28 md:text-right",
-              loading && "max-md:min-w-28"
+              "min-h-5 text-muted-foreground text-support md:text-right",
+              action
+                ? ["max-md:grow", loading ? "min-w-28" : "md:min-w-28"]
+                : "min-w-28"
             )}
             data-list-count=""
           >

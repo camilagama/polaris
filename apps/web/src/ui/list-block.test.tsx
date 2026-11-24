@@ -74,7 +74,7 @@ describe("ListBlock: o título e a contagem na árvore de acessibilidade", () =>
     }
   });
 
-  it("abaixo de 760 px a contagem ocupa o resto da linha, e a reserva de largura só vale de 760 px quando as linhas estão na tela", () => {
+  it("com ação, abaixo de 760 px a contagem ocupa o resto da linha, e a reserva de largura só vale de 760 px quando as linhas estão na tela", () => {
     const html = draw(
       { action: <button type="button">Exportar</button> },
       rows
@@ -83,17 +83,24 @@ describe("ListBlock: o título e a contagem na árvore de acessibilidade", () =>
     expect(count).toContain("max-md:grow");
     expect(count).toContain("md:min-w-28");
     expect(count).not.toContain("min-w-28");
-    expect(count).not.toContain("max-md:min-w-28");
   });
 
-  it("em loading a reserva vale no celular também: o cabeçalho quebra igual quando o texto chega", () => {
+  it("com ação, em loading a reserva vale no celular também: o cabeçalho quebra igual quando o texto chega", () => {
     const html = draw(
       { action: <button type="button">Exportar</button>, state: "loading" },
       rows
     );
-    expect(COUNT_CLASS.exec(html)?.[1]?.split(" ")).toContain(
-      "max-md:min-w-28"
-    );
+    const count = COUNT_CLASS.exec(html)?.[1]?.split(" ");
+    expect(count).toContain("min-w-28");
+    expect(count).toContain("max-md:grow");
+  });
+
+  it("sem ação nada muda: a reserva de largura vale em todas as larguras e a contagem não cresce", () => {
+    for (const state of ["rows", "loading"] as const) {
+      const count = COUNT_CLASS.exec(draw({ state }, rows))?.[1]?.split(" ");
+      expect(count).toContain("min-w-28");
+      expect(count).not.toContain("max-md:grow");
+    }
   });
 
   it("com ação, o grupo da direita ocupa a linha e encosta à direita; sem ação, não", () => {
