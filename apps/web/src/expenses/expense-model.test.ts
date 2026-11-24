@@ -705,13 +705,15 @@ describe("categoryNamesDiffer", () => {
 
   function entry(
     categoryId: string,
-    categoryName?: string
+    categoryName?: string,
+    categoryArchived?: boolean
   ): ExpenseCategoryTotalReadModel {
     return {
       categoryId,
       count: 1,
       total: "10.00",
       ...(categoryName === undefined ? {} : { categoryName }),
+      ...(categoryArchived === undefined ? {} : { categoryArchived }),
     };
   }
 
@@ -725,6 +727,42 @@ describe("categoryNamesDiffer", () => {
     expect(
       categoryNamesDiffer([entry(aluguel.id, "Aluguel do galpão")], CATEGORIES)
     ).toBe(true);
+  });
+
+  it("is true when the server archived flag of a category read here is another", () => {
+    expect(
+      categoryNamesDiffer(
+        [entry(aluguel.id, aluguel.name, true)],
+        [{ ...aluguel, status: "active" }]
+      )
+    ).toBe(true);
+    expect(
+      categoryNamesDiffer(
+        [entry(aluguel.id, aluguel.name, false)],
+        [{ ...aluguel, status: "archived" }]
+      )
+    ).toBe(true);
+  });
+
+  it("is false when the archived flag agrees or the server sent none", () => {
+    expect(
+      categoryNamesDiffer(
+        [entry(aluguel.id, aluguel.name, true)],
+        [{ ...aluguel, status: "archived" }]
+      )
+    ).toBe(false);
+    expect(
+      categoryNamesDiffer(
+        [entry(aluguel.id, aluguel.name, false)],
+        [{ ...aluguel, status: "active" }]
+      )
+    ).toBe(false);
+    expect(
+      categoryNamesDiffer(
+        [entry(aluguel.id, aluguel.name)],
+        [{ ...aluguel, status: "archived" }]
+      )
+    ).toBe(false);
   });
 
   it("is false for a category this screen has not read", () => {
