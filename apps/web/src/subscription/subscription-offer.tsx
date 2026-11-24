@@ -14,8 +14,8 @@ import {
 } from "react";
 import { Alert, AlertDescription } from "@/ui/alert";
 import { Badge } from "@/ui/badge";
+import { Block, BlockHeader, BlockPanel } from "@/ui/block";
 import { Button } from "@/ui/button";
-import { Card, CardContent, CardDescription, CardHeader } from "@/ui/card";
 import {
   Field,
   FieldContent,
@@ -25,6 +25,7 @@ import {
   FieldTitle,
 } from "@/ui/field";
 import { Input } from "@/ui/input";
+import { InsetBlock } from "@/ui/inset-block";
 import { RadioGroup, RadioGroupItem } from "@/ui/radio-group";
 import { connectionControlProps } from "../app-shell/connection-required-notice";
 import { useHoldSwap } from "../lib/unsent-work";
@@ -41,7 +42,7 @@ import {
   type Refusal,
   taxIdDigits,
 } from "./subscription-model";
-import { SectionTitle, WRAPS_XL } from "./subscription-parts";
+import { WRAPS_XL } from "./subscription-parts";
 
 /** What the offer asks the server to start: the payer only for Pix Automático (the card sends nothing of it). */
 export type CheckoutRequest =
@@ -385,13 +386,15 @@ export function OfferCard({
     trialAvailable: plan.trialAvailable,
   });
   return (
-    <Card aria-labelledby="subscription-offer-title" role="region">
-      <CardHeader>
-        <SectionTitle id="subscription-offer-title">Plano Pro</SectionTitle>
-        <CardDescription>{PRO_PITCH}</CardDescription>
-      </CardHeader>
-      <CardContent className="border-t pt-(--card-spacing)">
-        <form className="grid gap-4" noValidate onSubmit={handleSubmit}>
+    <Block aria-labelledby="subscription-offer-title">
+      <BlockHeader id="subscription-offer-title" title="Plano Pro" />
+      <BlockPanel>
+        <p className="m-0 text-muted-foreground text-support">{PRO_PITCH}</p>
+        <form
+          className="grid gap-4 border-t pt-(--card-spacing)"
+          noValidate
+          onSubmit={handleSubmit}
+        >
           <Choice
             disabled={pending}
             label="Ciclo"
@@ -430,8 +433,8 @@ export function OfferCard({
               problems={problems}
             />
           ) : null}
-          <div
-            className="grid gap-1 rounded-lg bg-muted/60 px-3 py-2.5"
+          <InsetBlock
+            className="grid gap-1 p-3"
             data-testid="subscription-terms"
           >
             <p className="m-0">
@@ -445,7 +448,7 @@ export function OfferCard({
                 dias e receber o valor de volta.
               </p>
             ) : null}
-          </div>
+          </InsetBlock>
           {refusal ? (
             <Alert variant="destructive">
               <CircleAlertIcon aria-hidden="true" />
@@ -477,7 +480,7 @@ export function OfferCard({
             </Button>
           </div>
         </form>
-      </CardContent>
-    </Card>
+      </BlockPanel>
+    </Block>
   );
 }
