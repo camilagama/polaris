@@ -169,26 +169,6 @@ describe("verify-no-import-cycles", () => {
     );
   });
 
-  it("leaves .test.ts and .d.ts files out of the graph", () => {
-    const result = runGuard({
-      "packages/lib/src/a.test.ts":
-        'import { b } from "./b.test";\nimport { real } from "./real";\nexport const t = [b, real];\n',
-      "packages/lib/src/b.test.ts":
-        'import { t } from "./a.test";\nexport const b = t;\n',
-      "packages/lib/src/c.d.ts":
-        'import { d } from "./d";\nexport declare const c: typeof d;\n',
-      "packages/lib/src/d.d.ts":
-        'import { c } from "./c";\nexport declare const d: typeof c;\n',
-      "packages/lib/src/real.ts":
-        'import { t } from "./a.test";\nexport const real = t;\n',
-    });
-
-    expect(result.status).toBe(0);
-    expect(result.stdout).toContain(
-      "No circular runtime imports across 1 source files."
-    );
-  });
-
   // Each exclusion gets a cycle that exists only through the excluded file
   // (real.ts -> excluded -> real.ts), so the guard passes only while the
   // exclusion holds; the control plants the same loop under a name the guard
