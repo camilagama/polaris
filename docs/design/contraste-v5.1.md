@@ -41,7 +41,6 @@ Mapa de contraste do desenho v5.1 (Petković, 20/10/2026), trazido para o reposi
 | `mark` / `card` | marcador de menu, aba e barra em destaque, sobre cartão | composição | **4.76** | 3 | ✓ |
 | `mark` / `background` | marcador sobre o fundo | composição | **4.56** | 3 | ✓ |
 | `mark` / `accent` | marcador sobre item atual | composição | **4.06** | 3 | ✓ |
-| `mark-foreground` / `card` | texto da marca (vermelho) | composição | **6.42** | 4.5 | ✓ |
 | `primary` / `sidebar` | arco do anel de Primeiros passos no menu (16 px) | ProgressRing | **16.36** | 3 | ✓ |
 | `primary` / `card` | arco do anel de Primeiros passos no bloco do Início | ProgressRing | **18.1** | 3 | ✓ |
 | `primary` / `primary/10 sobre card` | visto do passo feito, no quadro de 28 px | Primeiros passos | **14.73** | 3 | ✓ |
@@ -136,7 +135,6 @@ Mapa de contraste do desenho v5.1 (Petković, 20/10/2026), trazido para o reposi
 | `mark` / `card` | marcador de menu, aba e barra em destaque, sobre cartão | composição | **4.36** | 3 | ✓ |
 | `mark` / `background` | marcador sobre o fundo | composição | **4.74** | 3 | ✓ |
 | `mark` / `accent` | marcador sobre item atual | composição | **3.20** | 3 | ✓ |
-| `mark-foreground` / `card` | texto da marca (vermelho) | composição | **7.87** | 7 | ✓ |
 | `primary` / `sidebar` | arco do anel de Primeiros passos no menu (16 px) | ProgressRing | **15.43** | 3 | ✓ |
 | `primary` / `card` | arco do anel de Primeiros passos no bloco do Início | ProgressRing | **13.57** | 3 | ✓ |
 | `primary` / `primary/10 sobre card` | visto do passo feito, no quadro de 28 px | Primeiros passos | **10.41** | 3 | ✓ |
@@ -210,7 +208,7 @@ Notas:
 
 - `--border` (1,28:1 sobre o cartão e 1,23:1 sobre o fundo, no claro) é **decorativo**; nenhum controle depende dele. Campo, seletor e escolha usam `--input` (≥ 3:1) ou `--foreground`.
 - O foco do teclado é `--ring` cheio, na cor do texto (tinta; 10,4 a 18,1:1 contra fundo, cartão, menu e hover nos dois temas): é o que conta, o halo dos campos é só reforço. Tinta e não vermelho, para um campo só focado não se parecer com um campo com erro (`--destructive`, mesmo matiz da marca).
-- A marca é o vermelho do dgimports (matiz 27): `--mark` é `#e7000b` no claro (4,06 a 4,76:1) e `#fb2c36` no escuro (3,20 a 4,74:1), acima dos 3:1 de elemento gráfico, e `--mark-foreground` é o texto da marca (6,42:1 no claro, 4,5 de meta; 7,87:1 no escuro). O vermelho fica só em marca e posição (ponto do logo, indicador do menu, ícone do app), nunca em botão nem em frase; o erro leva ícone e texto. O verde das vendas (`--chart-sales`, `--chart-heat-*`, `--chart-sales-foreground`) não é a marca.
+- A marca é o vermelho do dgimports (matiz 27): `--mark` é `#e7000b` no claro (4,06 a 4,76:1) e `#fb2c36` no escuro (3,20 a 4,74:1), acima dos 3:1 de elemento gráfico, e o texto da marca, `--mark-foreground` (6,42:1 no claro, 4,5 de meta; 7,87:1 no escuro; token removido em 23/11/2026, t1747, por não ter uso: as duas linhas dele saíram das tabelas, que o teste lê). O vermelho fica só em marca e posição (ponto do logo, indicador do menu, ícone do app), nunca em botão nem em frase; o erro leva ícone e texto. O verde das vendas (`--chart-sales`, `--chart-heat-*`, `--chart-sales-foreground`) não é a marca.
 - Estados com transparência estão na lista; nenhum cai abaixo da meta.
 - A moldura (lateral e cabeçalho em `--sidebar`) e o painel do conteúdo (`--background`) são superfícies decorativas: a diferença de cor entre as duas não é a marca do limite, que é o anel de 1 px (`--card-ring`) nas bordas esquerda e superior do painel. O chip do cabeçalho sincronizado ou enviando tem fundo próprio (`--card`), medido em `foreground` / `card`.
 - Rampa do mapa de calor (`--chart-heat-1` a `-4`, v7, ainda sem tela): monótona, um matiz, passos de 1,42 / 1,55 / 1,86 (claro) e 1,69 / 1,74 / 1,76 (escuro) entre níveis vizinhos. O nível 1 tem 1,39:1 sobre o cartão no claro: a escala é sequencial e o tom mais claro recua para o fundo de propósito; o dia sem venda não depende dele, porque é outra forma (quadrado vazio com contorno). Fica fora da tabela testada por isso.
