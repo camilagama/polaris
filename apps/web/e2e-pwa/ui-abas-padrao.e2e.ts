@@ -144,11 +144,20 @@ function lookOf(list: Locator): Promise<TabLook> {
   );
 }
 
+interface Stroke {
+  background: string;
+  bottom: string;
+  height: string;
+  opacity: string;
+  position: string;
+  width: string;
+}
+
 interface LineLook {
   activeColor: string;
-  activeStroke: Record<string, string>;
+  activeStroke: Stroke;
   closedColors: string[];
-  closedStrokes: Record<string, string>[];
+  closedStrokes: Stroke[];
   ink: string;
   listBottom: number;
   rule: string;
