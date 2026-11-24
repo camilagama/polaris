@@ -40,6 +40,26 @@ concurrency:
 # can change its result.
 jobs:
   # Decides, in about a minute, which of the expensive jobs below are needed.
+  chromium-cache:
+    name: Chromium cache (main)
+    if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+      - run: npm i -g "playwright@$(grep -m1 -oE '"playwright-core@[0-9.]+"' bun.lock | grep -oE '[0-9.]+')"
+      - uses: ./.github/actions/chromium
+        with:
+          app: .
+          save: "true"
+
   changes:
     name: Changed areas
     runs-on: ubuntu-24.04
@@ -460,11 +480,12 @@ jobs:
             packages/*/node_modules
           key: ${{ steps.node-modules.outputs.cache-primary-key }}
       # the Chromium of the Playwright in bun.lock, the same build as the one in the image of the visual checks
-      - name: Install Chromium
-        # one attempt of up to 450 s fits the 10 min job limit (setup and tests come on top); two would not, so the retry runs only in the offline shards
-        env:
-          PLAYWRIGHT_INSTALL_ATTEMPTS: "1"
-        run: scripts/playwright-install.sh apps/web
+      - name: Chromium (cache da main, sem apt)
+        # 24/11: o navegador vem do cache da main ou da CDN do Playwright; o apt só entra se faltar biblioteca
+        timeout-minutes: 5
+        uses: ./.github/actions/chromium
+        with:
+          app: apps/web
       - run: bun run --filter @polaris/web build
       - run: bun run --filter @polaris/web test:lighthouse
       - if: ${{ always() }}
@@ -615,9 +636,12 @@ jobs:
             apps/*/node_modules
             packages/*/node_modules
           key: ${{ steps.node-modules.outputs.cache-primary-key }}
-      - name: Install Chromium
-        timeout-minutes: 16
-        run: scripts/playwright-install.sh apps/web
+      - name: Chromium (cache da main, sem apt)
+        # 24/11: sem apt no caminho normal (o espelho lento derrubou 4 lotes)
+        timeout-minutes: 5
+        uses: ./.github/actions/chromium
+        with:
+          app: apps/web
       # A suite with no file in this shard does not run here: Playwright fails a run with no
       # test, and shard-coverage checks that every listed test ran in some shard.
       - name: Files of the shard
@@ -715,11 +739,12 @@ jobs:
             apps/*/node_modules
             packages/*/node_modules
           key: ${{ steps.node-modules.outputs.cache-primary-key }}
-      - name: Install Chromium
-        # one attempt of up to 450 s fits the 10 min job limit (setup and tests come on top); two would not, so the retry runs only in the offline shards
-        env:
-          PLAYWRIGHT_INSTALL_ATTEMPTS: "1"
-        run: scripts/playwright-install.sh apps/catalog
+      - name: Chromium (cache da main, sem apt)
+        # 24/11: sem apt no caminho normal
+        timeout-minutes: 5
+        uses: ./.github/actions/chromium
+        with:
+          app: apps/catalog
       - run: bun run --filter @polaris/catalog test:e2e
         env:
           POLARIS_CATALOG_E2E: "1"
@@ -845,11 +870,12 @@ jobs:
             apps/*/node_modules
             packages/*/node_modules
           key: ${{ steps.node-modules.outputs.cache-primary-key }}
-      - name: Install Chromium
-        # one attempt: the job timeout is shorter than two 450 s attempts; the retry runs only in the offline shards
-        env:
-          PLAYWRIGHT_INSTALL_ATTEMPTS: "1"
-        run: scripts/playwright-install.sh apps/web
+      - name: Chromium (cache da main, sem apt)
+        # 24/11: sem apt no caminho normal
+        timeout-minutes: 5
+        uses: ./.github/actions/chromium
+        with:
+          app: apps/web
       - name: e2e journeys (two production builds, a database per run)
         working-directory: apps/web
         run: npx playwright test --config playwright.e2e-real.config.ts
