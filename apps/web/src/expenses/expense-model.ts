@@ -510,7 +510,7 @@ function nameOf(
  * from the local one: a rename or an archive elsewhere, which the filter chip and the menu (built from the local
  * list) would not show.
  */
-export function categoryNamesDiffer(
+export function categoryFieldsDiffer(
   entries: readonly ExpenseCategoryTotalReadModel[] | undefined,
   categories: readonly ExpenseCategoryReadModel[]
 ): boolean {

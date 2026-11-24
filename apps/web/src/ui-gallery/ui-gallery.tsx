@@ -1879,6 +1879,22 @@ export function UiGallery() {
             </Tabs>
           </Section>
 
+          <Section title="Aba de tela em linha">
+            <Tabs defaultValue="resultado">
+              <TabsList aria-label="Seção em linha" variant="line">
+                <TabsTrigger value="resultado">Resultado</TabsTrigger>
+                <TabsTrigger value="metas">Metas</TabsTrigger>
+              </TabsList>
+              <TabsContent className="text-muted-foreground" value="resultado">
+                A aba de tela em linha: o traço de 2 px em tinta, dados de
+                exemplo.
+              </TabsContent>
+              <TabsContent className="text-muted-foreground" value="metas">
+                Painel da aba Metas, dados de exemplo.
+              </TabsContent>
+            </Tabs>
+          </Section>
+
           <Section title="SectionTabs: com e sem rota">
             <p className="max-w-prose text-muted-foreground text-support">
               Uma peça só, com rota (a aba aberta vai para o endereço) e sem

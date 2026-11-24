@@ -94,7 +94,7 @@ export function ScreenTabList({
         onScroll={measure}
         ref={scroller}
       >
-        <TabsList aria-label={label} className="justify-start">
+        <TabsList aria-label={label} variant="line">
           {children}
         </TabsList>
       </div>
@@ -131,9 +131,7 @@ export function ScreenTabTrigger({
 }) {
   return (
     <TabsTrigger
-      // below 360 px a narrower padding keeps three words of 20 px on the strip, so it does not widen the page
       aria-busy={reserved || undefined}
-      className="flex-none max-[22.5rem]:px-1.5"
       data-value={value}
       disabled={reserved}
       value={value}

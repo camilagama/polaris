@@ -39,7 +39,7 @@ import { ExpenseForm } from "./expense-form";
 import { ExpenseFiltersBar, focusFilterAfterClear } from "./expense-filters";
 import { ExpenseList, ExpenseSummary } from "./expense-list";
 import {
-  categoryNamesDiffer,
+  categoryFieldsDiffer,
   type ExpenseDraft,
   type ExpenseInput,
   formatMonthLabel,
@@ -192,7 +192,7 @@ export function ExpensesPage() {
       categoriesLoading ||
       totalsByCategory === undefined ||
       checkedTotals.current === totalsByCategory ||
-      !categoryNamesDiffer(totalsByCategory, knownCategories)
+      !categoryFieldsDiffer(totalsByCategory, knownCategories)
     ) {
       return;
     }
