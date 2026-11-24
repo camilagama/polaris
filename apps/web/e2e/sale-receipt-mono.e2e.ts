@@ -526,7 +526,7 @@ reflowTest(
     expect(lines).toBeGreaterThan(1);
     const outside = await receipt.evaluate((root, source) => {
       const card = root
-        .querySelector('[data-slot="card"]')
+        .closest('[data-slot="card"]')
         ?.getBoundingClientRect();
       if (!card) {
         throw new Error("no card");
