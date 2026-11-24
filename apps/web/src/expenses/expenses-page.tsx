@@ -185,7 +185,7 @@ export function ExpensesPage() {
   const { categories: knownCategories, isLoading: categoriesLoading } =
     categories.state;
   const { totalsByCategory } = state;
-  // a rename in another tab leaves the local names behind the ones in the split: read the categories once per answer
+  // a rename or archive in another tab leaves the local categories behind the split: read them once per answer
   useEffect(() => {
     if (
       !online ||
