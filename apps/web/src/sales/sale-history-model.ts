@@ -484,6 +484,7 @@ export type HistoryView =
       href: string | null;
       kind: "empty";
       message: string;
+      support: string | null;
     }
   | { kind: "ready"; rows: HistoryRow[] };
 
@@ -507,16 +508,30 @@ export function historyView(
           href: null,
           kind: "empty",
           message: "Nenhuma venda encontrada com estes filtros.",
+          support: null,
         }
       : {
           clearFilters: false,
           href: "/sales",
           kind: "empty",
-          message:
-            "Nenhuma venda ainda. Registre a primeira venda para vê-la aqui.",
+          message: "Nenhuma venda ainda.",
+          support: "Registre a primeira venda para vê-la aqui.",
         };
   }
   return { kind: "ready", rows: historyRows(state) };
+}
+
+/**
+ * The count beside the title of the list: the rows on the screen, never the figure the total sums (the cancelled ones
+ * are rows and are not summed, and the period's figure from the server counts rows not loaded yet). Empty while the
+ * list loads or failed, "0 vendas" for a list with no result.
+ */
+export function historyListCount(view: HistoryView, hasMore: boolean): string {
+  if (view.kind === "loading" || view.kind === "error") {
+    return "";
+  }
+  const rows = view.kind === "ready" ? view.rows.length : 0;
+  return `${rows} ${rows === 1 ? "venda" : "vendas"}${hasMore && rows > 0 ? " · há mais" : ""}`;
 }
 
 export interface LoadMoreView {
