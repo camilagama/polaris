@@ -1,5 +1,9 @@
 import { isNoAnswer } from "../lib/connection";
-import { legalAcceptanceMessage, rpcErrorCode } from "../lib/rpc-error";
+import {
+  isServerFailureCode,
+  legalAcceptanceMessage,
+  rpcErrorCode,
+} from "../lib/rpc-error";
 
 /** What the screen says for a period that has no copy on the device and cannot be read without a connection (AC-16). */
 const NO_INTERNET_NO_COPY =
@@ -38,14 +42,6 @@ export function periodSummaryErrorMessage(
   return "Não foi possível carregar o resultado. Tente novamente.";
 }
 
-/** Codes of a server that is down or not answering in time (not one that answered "no"). */
-const OUTAGE_CODES = new Set([
-  "BAD_GATEWAY",
-  "GATEWAY_TIMEOUT",
-  "INTERNAL_SERVER_ERROR",
-  "SERVICE_UNAVAILABLE",
-]);
-
 /**
  * True when the server could not answer (no network, or an outage), so the
  * device's copy of the month may stand in for it. A server that answered
@@ -54,5 +50,7 @@ const OUTAGE_CODES = new Set([
  */
 export function periodSummaryMayUseCopy(error: unknown): boolean {
   const code = rpcErrorCode(error);
-  return code === undefined || OUTAGE_CODES.has(code);
+  return (
+    code === undefined || (code !== "TIMEOUT" && isServerFailureCode(code))
+  );
 }

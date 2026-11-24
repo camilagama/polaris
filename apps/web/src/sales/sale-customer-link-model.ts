@@ -3,6 +3,7 @@ import type {
   SaleCustomerLinkReadModel,
 } from "@polaris/contracts";
 import {
+  isServerFailureCode,
   legalAcceptanceMessage,
   rpcErrorCode,
   rpcErrorReason,
@@ -543,14 +544,6 @@ const reasonFailures = new Map<string, Omit<LinkFailure, "reason">>([
   ],
 ]);
 
-const serverErrorCodes = new Set([
-  "BAD_GATEWAY",
-  "GATEWAY_TIMEOUT",
-  "INTERNAL_SERVER_ERROR",
-  "SERVICE_UNAVAILABLE",
-  "TIMEOUT",
-]);
-
 function codeFailure(code: string | undefined): Omit<LinkFailure, "reason"> {
   const plain = {
     message: "",
@@ -625,10 +618,9 @@ export function mapLinkError(error: unknown): LinkFailure {
   if (refined) {
     return { ...refined, reason };
   }
-  const base =
-    code !== undefined && serverErrorCodes.has(code)
-      ? codeFailure(undefined)
-      : codeFailure(code);
+  const base = isServerFailureCode(code)
+    ? codeFailure(undefined)
+    : codeFailure(code);
   return { ...base, reason: refinable ? reason : null };
 }
 
