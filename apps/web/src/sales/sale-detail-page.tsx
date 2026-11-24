@@ -11,7 +11,7 @@ import {
 
 import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
 import { Button } from "@/ui/button";
-import { Card, CardContent } from "@/ui/card";
+import { Block, BlockHeader, BlockPanel } from "@/ui/block";
 import { HelpTip } from "@/ui/help-tip";
 import { Skeleton } from "@/ui/skeleton";
 import { type TitleBack, TitleLine } from "../app-shell/screen-title";
@@ -40,7 +40,7 @@ import {
 } from "./sale-customer-link-model";
 import {
   CustomerDialogs,
-  CustomerHistory,
+  CustomerHistoryRows,
   CustomerSaveError,
   type SaleCustomerLink,
   useSaleCustomerLink,
@@ -82,9 +82,9 @@ function historyBack(saleId: string | null): TitleBack {
 
 function StateCard({ children }: { children: ReactNode }) {
   return (
-    <Card className="items-center px-(--card-spacing) text-center">
+    <Block className="items-center text-center" variant="plain">
       <p className="text-muted-foreground">{children}</p>
-    </Card>
+    </Block>
   );
 }
 
@@ -93,7 +93,7 @@ const LOADING_ROWS = [0, 1, 2];
 /** Loading: three rows of skeleton in the card, and the line that says it for the screen reader. */
 function LoadingCard({ message }: { message: string }) {
   return (
-    <Card aria-busy="true" className="gap-3 px-(--card-spacing)" role="status">
+    <Block aria-busy="true" role="status" variant="plain">
       <p className="sr-only">{message}</p>
       {LOADING_ROWS.map((row) => (
         <div aria-hidden="true" className="grid gap-1.5" key={row}>
@@ -101,7 +101,7 @@ function LoadingCard({ message }: { message: string }) {
           <Skeleton className="h-3 w-1/3" />
         </div>
       ))}
-    </Card>
+    </Block>
   );
 }
 
@@ -389,13 +389,20 @@ function SaleDetailContent({
             refreshing={refreshing}
           />
           {link.history.length > 0 ? (
-            <section aria-label="Histórico de atribuição do cliente">
-              <Card className="gap-0 py-0">
-                <CardContent className="py-(--card-spacing)">
-                  <CustomerHistory level={2} link={link} />
-                </CardContent>
-              </Card>
-            </section>
+            <Block aria-labelledby="sale-attribution-title">
+              <BlockHeader
+                id="sale-attribution-title"
+                title={
+                  <>
+                    Histórico de atribuição
+                    <span className="sr-only"> do cliente</span>
+                  </>
+                }
+              />
+              <BlockPanel>
+                <CustomerHistoryRows link={link} />
+              </BlockPanel>
+            </Block>
           ) : null}
           <ReadyDetailDialogs
             detail={detail}
@@ -419,38 +426,34 @@ function ReturnsHistory({ view }: { view: SaleDetailView }) {
     return null;
   }
   return (
-    <section aria-labelledby="sale-returns-title">
-      <Card className="gap-0 py-0">
-        <CardContent className="grid gap-3 py-(--card-spacing)">
-          <h2 className="text-section" id="sale-returns-title">
-            Devoluções
-          </h2>
-          <ul className="grid gap-3">
-            {view.returnsHistory.map((entry) => (
-              <li
-                className="grid gap-1 border-border border-t pt-3 first:border-t-0 first:pt-0"
-                key={entry.id}
-              >
-                <p className="[overflow-wrap:anywhere]">
-                  <strong className="font-medium">{entry.dateText}</strong> ·{" "}
-                  {entry.reasonText}
+    <Block aria-labelledby="sale-returns-title">
+      <BlockHeader id="sale-returns-title" title="Devoluções" />
+      <BlockPanel>
+        <ul className="grid gap-3">
+          {view.returnsHistory.map((entry) => (
+            <li
+              className="grid gap-1 border-border border-t pt-3 first:border-t-0 first:pt-0"
+              key={entry.id}
+            >
+              <p className="[overflow-wrap:anywhere]">
+                <strong className="font-medium">{entry.dateText}</strong> ·{" "}
+                {entry.reasonText}
+              </p>
+              {entry.noteText ? (
+                <p className="text-muted-foreground text-support [overflow-wrap:anywhere]">
+                  Observação: {entry.noteText}
                 </p>
-                {entry.noteText ? (
-                  <p className="text-muted-foreground text-support [overflow-wrap:anywhere]">
-                    Observação: {entry.noteText}
-                  </p>
-                ) : null}
-                <ul className="grid gap-0.5 text-support">
-                  {entry.lines.map((line) => (
-                    <li key={line.key}>{line.text}</li>
-                  ))}
-                </ul>
-              </li>
-            ))}
-          </ul>
-        </CardContent>
-      </Card>
-    </section>
+              ) : null}
+              <ul className="grid gap-0.5 text-support">
+                {entry.lines.map((line) => (
+                  <li key={line.key}>{line.text}</li>
+                ))}
+              </ul>
+            </li>
+          ))}
+        </ul>
+      </BlockPanel>
+    </Block>
   );
 }
 

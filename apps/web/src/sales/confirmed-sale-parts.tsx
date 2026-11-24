@@ -1,5 +1,6 @@
 import { cn } from "@/lib/utils";
 import { MoneyText } from "@/ui/hidden-values";
+import { InsetBlock } from "@/ui/inset-block";
 import { Money } from "@/ui/money";
 import type { ConfirmedSaleView } from "./sale-form-model";
 import { FeeValue } from "./sale-summary-panel";
@@ -42,8 +43,7 @@ function ReceiptRows({
 }
 
 /**
- * The dates or the payment of a confirmed sale: label above, value below, in a block set back into the card (the
- * muted fill, no border: a ring inside the card's ring reads as a box in a box). Two columns from 760 px, one on touch.
+ * The dates or the payment of a confirmed sale: label above, value below, in an `InsetBlock`. Two columns from 760 px, one on touch.
  * `receipt` writes it as the lines of a receipt instead: label at the left, value at the right edge, amounts in mono.
  * A line wraps when label and value do not fit together: the value goes whole to the line below, still at the right
  * edge, instead of being squeezed into what the label leaves and cut inside a word.
@@ -62,32 +62,30 @@ export function ConfirmedDetails({
   }
   if (receipt) {
     return (
-      <dl
-        className="grid gap-2 rounded-lg bg-muted p-4"
-        data-receipt-block={block}
-      >
-        <ReceiptRows details={details} />
-      </dl>
+      <InsetBlock data-receipt-block={block}>
+        <dl className="grid gap-2">
+          <ReceiptRows details={details} />
+        </dl>
+      </InsetBlock>
     );
   }
   return (
-    <dl
-      className="grid gap-3 rounded-lg bg-muted p-4 md:grid-cols-2"
-      data-receipt-block={block}
-    >
-      {details.map((detail) => (
-        <div className="grid gap-0.5" key={detail.label}>
-          <dt className="text-muted-foreground text-xs">{detail.label}</dt>
-          <dd className="text-sm [overflow-wrap:anywhere]">
-            {detail.tone === "plain" ? (
-              <MoneyText text={detail.value} />
-            ) : (
-              <FeeValue line={{ text: detail.value, tone: detail.tone }} />
-            )}
-          </dd>
-        </div>
-      ))}
-    </dl>
+    <InsetBlock data-receipt-block={block}>
+      <dl className="grid gap-3 md:grid-cols-2">
+        {details.map((detail) => (
+          <div className="grid gap-0.5" key={detail.label}>
+            <dt className="text-muted-foreground text-xs">{detail.label}</dt>
+            <dd className="text-sm [overflow-wrap:anywhere]">
+              {detail.tone === "plain" ? (
+                <MoneyText text={detail.value} />
+              ) : (
+                <FeeValue line={{ text: detail.value, tone: detail.tone }} />
+              )}
+            </dd>
+          </div>
+        ))}
+      </dl>
+    </InsetBlock>
   );
 }
 
@@ -152,28 +150,26 @@ export function ConfirmedPaymentParts({
       data-receipt-block="payment-parts"
     >
       {parts.map((part, index) => (
-        <li
-          className="grid gap-2 rounded-lg bg-muted p-4"
-          data-payment-part={index + 1}
-          key={part.position}
-        >
-          <p className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
-            <span className="min-w-0 font-medium [overflow-wrap:break-word]">
-              <span className="sr-only">{`Parte ${index + 1}: `}</span>
-              {part.methodText}
-            </span>
-            <span className="ml-auto min-w-0 text-right">
-              <Money text={part.amountText} />
-            </span>
-          </p>
-          {part.installmentText ? (
-            <p className="text-muted-foreground text-xs">
-              {part.installmentText}
+        <li data-payment-part={index + 1} key={part.position}>
+          <InsetBlock className="grid gap-2">
+            <p className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
+              <span className="min-w-0 font-medium [overflow-wrap:break-word]">
+                <span className="sr-only">{`Parte ${index + 1}: `}</span>
+                {part.methodText}
+              </span>
+              <span className="ml-auto min-w-0 text-right">
+                <Money text={part.amountText} />
+              </span>
             </p>
-          ) : null}
-          <dl className="grid gap-2">
-            <ReceiptRows details={part.details} />
-          </dl>
+            {part.installmentText ? (
+              <p className="text-muted-foreground text-xs">
+                {part.installmentText}
+              </p>
+            ) : null}
+            <dl className="grid gap-2">
+              <ReceiptRows details={part.details} />
+            </dl>
+          </InsetBlock>
         </li>
       ))}
     </ol>

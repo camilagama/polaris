@@ -6,8 +6,8 @@ import type { ConfirmedSaleView } from "./sale-form-model";
 
 vi.mock("../lib/orpc", () => ({ orpcClient: {} }));
 
-const MUTED_BLOCK = /<dl class="[^"]*bg-muted[^"]*"/g;
-const BORDERED_BLOCK = /<dl class="[^"]*border/;
+const MUTED_BLOCK = /<div class="[^"]*bg-muted[^"]*" data-slot="inset-block"/g;
+const BORDERED_BLOCK = /<div class="[^"]*border[^"]*" data-slot="inset-block"/;
 const HOME_LINK = /<a [^>]*aria-label="Ver o Início"[^>]*>Início<\/a>/;
 const RESULT_LINK = /<a [^>]*aria-label="Ver o Resultado"[^>]*>Resultado<\/a>/;
 const SALE_ID = "77777777-7777-4777-8777-777777777777";
