@@ -13,6 +13,8 @@ const DESKTOP_ONLY = "teclas e linha única só no desktop";
 const FALTA_50 = /Falta R\$\s50,00/;
 const SUM_RULE =
   /A soma das partes precisa ser R\$\s300,00\. Falta R\$\s50,00\./;
+const REVIEW_BUTTON = /^Revisei a prévia da parte/;
+const OWN_DATE_REFUSAL = /tem data própria/;
 const PART_2_PROFILE = /^Parte 2: O perfil de pagamento foi editado/;
 const SPLIT_MISMATCH =
   "A soma das partes não fecha o total da venda. Confira o valor de cada parte e confirme de novo.";
@@ -453,9 +455,9 @@ for (const edited of [1, 2] as const) {
     await expect(
       page.getByRole("alert").filter({ hasText: "Revise a prévia das duas" })
     ).toHaveCount(0);
-    await expect(
-      page.getByRole("button", { name: /^Revisei a prévia da parte/ })
-    ).toHaveCount(1);
+    await expect(page.getByRole("button", { name: REVIEW_BUTTON })).toHaveCount(
+      1
+    );
     await notice
       .getByRole("button", {
         exact: true,
@@ -483,6 +485,7 @@ test("o leitor de tela ouve a linha de estado uma vez por mudança, ao sair do c
   const before = (await live.textContent()) ?? "";
   await page.keyboard.press("ControlOrMeta+a");
   for (const key of ["1", "2", "0"]) {
+    // biome-ignore lint/performance/noAwaitInLoops: one key after the other, as a person types
     await page.keyboard.press(key);
     await expect(amount).toBeFocused();
     await expect(live).toHaveText(before);
@@ -512,7 +515,7 @@ test("a rede cai com a venda já dividida: Guardar neste aparelho diz que Dividi
     )
   ).toBeVisible();
   expect(calls.bodies).toHaveLength(0);
-  await expect(page.getByText(/tem data própria/)).toHaveCount(0);
+  await expect(page.getByText(OWN_DATE_REFUSAL)).toHaveCount(0);
   await expect(part(page, 1).getByLabel("Valor")).toHaveValue("100,00");
   await expect(part(page, 2).getByLabel("Valor")).toHaveValue("200,00");
   await expect(
