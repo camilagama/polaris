@@ -311,6 +311,7 @@ describe("rows", () => {
       "Pix + Pix",
       "Transferência + Outro",
     ]);
+    expect(rows.map((row) => row.splitPayment)).toEqual([true, true, true]);
   });
 
   it("keeps the method alone for a sale of one part, with or without the list of methods", () => {
@@ -321,6 +322,7 @@ describe("rows", () => {
       ])
     );
     expect(rows.map((row) => row.methodText)).toEqual(["Dinheiro", "Dinheiro"]);
+    expect(rows.map((row) => row.splitPayment)).toEqual([false, false]);
   });
 
   it("badges a sale that has returns, keeping its status", () => {

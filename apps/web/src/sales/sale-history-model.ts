@@ -278,6 +278,8 @@ export interface HistoryRow {
   itemCountText: string;
   methodText: string;
   returnsBadge: string | null;
+  /** The sale was paid in two or more parts: the list gives the methods a line of their own under the customer. */
+  splitPayment: boolean;
   statusLabel: string;
   statusTone: "cancelled" | "confirmed";
   /** Local time of the sale on this device, or empty when unreadable. */
@@ -333,6 +335,7 @@ export function historyRows(state: HistoryState): HistoryRow[] {
     itemCountText: `${sale.itemCount} ${sale.itemCount === 1 ? "item" : "itens"}`,
     methodText: rowMethodText(sale),
     returnsBadge: sale.hasReturns ? RETURNS_BADGE : null,
+    splitPayment: (sale.paymentMethods?.length ?? 0) > 1,
     statusLabel: sale.status === "cancelled" ? "Cancelada" : "Confirmada",
     statusTone: sale.status,
     timeText: timeOf(sale.occurredAt),
