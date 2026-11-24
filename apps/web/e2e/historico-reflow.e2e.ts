@@ -212,6 +212,192 @@ for (const width of [320, 360]) {
   );
 }
 
+const SEVEN_DIGITS = "1234567.89";
+
+function methodRows() {
+  return [
+    entry(1, {
+      customerId: id(501),
+      customerName: LONG_CUSTOMER,
+      paymentMethod: "credit_card",
+      totalDue: SEVEN_DIGITS,
+    }),
+    entry(2, { paymentMethod: "credit_card", totalDue: SEVEN_DIGITS }),
+    entry(3, { paymentMethod: "bank_transfer", totalDue: SEVEN_DIGITS }),
+    entry(4, { paymentMethod: null, totalDue: SEVEN_DIGITS }),
+    entry(5, {
+      customerId: id(505),
+      customerName: SHORT_CUSTOMER,
+      paymentMethod: "debit_card",
+      totalDue: SEVEN_DIGITS,
+    }),
+  ];
+}
+
+const TWO_PARTS = [
+  ["pix", "credit_card"],
+  ["bank_transfer", "bank_transfer"],
+  ["pix", "pix"],
+] as const;
+const TWO_PARTS_TEXTS = [
+  "Pix + Crédito",
+  "Transferência + Transferência",
+  "Pix + Pix",
+  "Transferência",
+];
+
+function twoPartsSales() {
+  return [
+    ...TWO_PARTS.map((methods, index) =>
+      entry(index + 1, {
+        customerId: id(500 + index),
+        customerName: SHORT_CUSTOMER,
+        paymentMethod: methods[0],
+        paymentMethods: methods,
+      })
+    ),
+    entry(4, {
+      customerId: id(504),
+      customerName: SHORT_CUSTOMER,
+      paymentMethod: "bank_transfer",
+    }),
+  ];
+}
+
+reflowTest(
+  "a 320 px com letra de 20 px a linha de venda em 2 partes mostra os dois métodos inteiros, sem sobreposição nem reticências",
+  async ({ page }) => {
+    const sales = twoPartsSales();
+    await openHistory(page, sales);
+    const list = page.getByRole("list", { name: "Vendas" });
+    await expect(list.locator("> li")).toHaveCount(sales.length);
+    const rows = await rowGeometry(page);
+    for (const [index, row] of rows.entries()) {
+      const name = `linha ${index + 1}`;
+      expect(row.text, name).toContain(TWO_PARTS_TEXTS[index] ?? "");
+      expect(row.overlaps, `${name}: blocos sobrepostos`).toEqual([]);
+      expect(row.inside, `${name}: tudo dentro da linha`).toBe(true);
+      expect(row.height, `${name}: alvo de toque`).toBeGreaterThanOrEqual(
+        TOUCH
+      );
+    }
+    await assertNothingClipped(list);
+    await assertNoEllipsis(list);
+    await assertNoPageScroll(page);
+  }
+);
+
+reflowTest(
+  "a 320 px com letra de 16 px os dois métodos da venda em 2 partes ficam inteiros e nada passa sobre o valor",
+  async ({ page }) => {
+    const sales = twoPartsSales();
+    await openHistory(page, sales, { fontPixels: 16 });
+    const rows = page.getByRole("list", { name: "Vendas" }).locator("> li");
+    await expect(rows).toHaveCount(sales.length);
+    const measures = await rows.evaluateAll((items) =>
+      items.map((item) => {
+        const support = item.querySelector("p.text-support") as HTMLElement;
+        const money = item.querySelector("[data-money]") as HTMLElement;
+        return {
+          moneyLeft: money.getBoundingClientRect().left,
+          supportRight: support.getBoundingClientRect().right,
+          text: support.textContent ?? "",
+        };
+      })
+    );
+    for (const [index, measure] of measures.entries()) {
+      expect(measure.text, `linha ${index + 1}`).toContain(
+        TWO_PARTS_TEXTS[index] ?? ""
+      );
+      expect(
+        measure.supportRight,
+        `linha ${index + 1}: o texto de apoio termina antes do valor`
+      ).toBeLessThanOrEqual(measure.moneyLeft + 0.5);
+    }
+    await assertNoPageScroll(page);
+  }
+);
+
+/** Per line: the text an ellipsis is hiding (what the line cuts), and whether the value box is whole and inside the line. */
+function cutTexts(page: Page) {
+  return page.evaluate(() =>
+    [...document.querySelectorAll('ul[aria-label="Vendas"] > li')].map(
+      (item) => {
+        const box = item.getBoundingClientRect();
+        const money = item.querySelector("[data-money]");
+        const moneyBox = money?.getBoundingClientRect();
+        const cut = [...item.querySelectorAll("*")]
+          .filter(
+            (element) =>
+              getComputedStyle(element).textOverflow === "ellipsis" &&
+              element.scrollWidth > element.clientWidth + 1
+          )
+          .map((element) => element.textContent ?? "");
+        const hidden = [...item.querySelectorAll("*")]
+          .filter(
+            (element) =>
+              !element.closest(".sr-only") &&
+              getComputedStyle(element).overflowX === "hidden" &&
+              element.scrollWidth > element.clientWidth + 1
+          )
+          .map((element) => element.textContent ?? "");
+        return {
+          cut,
+          hidden,
+          moneyInside:
+            moneyBox !== undefined &&
+            moneyBox.left >= box.left - 0.5 &&
+            moneyBox.right <= box.right + 0.5 &&
+            (money?.scrollWidth ?? 0) <= (money?.clientWidth ?? 0) + 1,
+          text: item.textContent ?? "",
+        };
+      }
+    )
+  );
+}
+
+for (const { fontPixels, width } of [
+  { fontPixels: 16, width: 320 },
+  { fontPixels: 16, width: 360 },
+  { fontPixels: 16, width: 800 },
+  { fontPixels: 20, width: 320 },
+  { fontPixels: 20, width: 360 },
+]) {
+  reflowTest(
+    `a ${width} px com letra de ${fontPixels} px o valor de 7 dígitos fica inteiro e o método nunca é cortado: só o fim do nome do cliente`,
+    async ({ page }) => {
+      await openHistory(page, methodRows(), { fontPixels, width });
+      const list = page.getByRole("list", { name: "Vendas" });
+      await expect(list.locator("> li")).toHaveCount(5);
+      const rows = await cutTexts(page);
+      const methods = [
+        "Crédito",
+        "Crédito",
+        "Transferência",
+        "Pagamento não informado",
+        "Débito",
+      ];
+      for (const [index, row] of rows.entries()) {
+        const method = methods[index] ?? "";
+        const name = `linha ${index + 1}`;
+        expect(row.text, `${name}: o método`).toContain(method);
+        expect(row.text, `${name}: o valor`).toContain("1.234.567,89");
+        expect(row.moneyInside, `${name}: o valor inteiro e dentro`).toBe(true);
+        expect(
+          row.hidden.filter((text) => !row.cut.includes(text)),
+          `${name}: nada escondido pelo recorte da linha`
+        ).toEqual([]);
+        expect(row.text, `${name}: a hora`).toMatch(TIME);
+        expect(
+          row.cut.filter((text) => index !== 0 || text !== LONG_CUSTOMER),
+          `${name}: só o fim do nome longo leva reticências`
+        ).toEqual([]);
+      }
+      await assertNoPageScroll(page);
+    }
+  );
+}
+
 reflowTest(
   "a 320 px com letra de 20 px o rodapé tem o valor com as duas casas, dentro do cartão, com 5 dígitos e com há mais",
   async ({ page }) => {

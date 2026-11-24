@@ -1,0 +1,221 @@
+import { spawnSync } from "node:child_process";
+import {
+  copyFileSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { afterEach, describe, expect, it } from "vitest";
+
+const GUARD = fileURLToPath(
+  new URL("./verify-no-import-cycles.mjs", import.meta.url)
+);
+const HEADER = "Circular runtime imports found:";
+
+const created = [];
+
+afterEach(() => {
+  for (const folder of created.splice(0)) {
+    rmSync(folder, { force: true, recursive: true });
+  }
+});
+
+/**
+ * The guard derives the repository root from its own location, so each case
+ * copies it to `<tmp>/scripts/`, plants the tree under `<tmp>/packages` and
+ * `<tmp>/apps` (both must exist) and runs it there.
+ */
+function runGuard(files) {
+  const root = mkdtempSync(path.join(tmpdir(), "polaris-import-cycles-"));
+  created.push(root);
+  mkdirSync(path.join(root, "scripts"));
+  mkdirSync(path.join(root, "packages"));
+  mkdirSync(path.join(root, "apps"));
+  copyFileSync(GUARD, path.join(root, "scripts", "guard.mjs"));
+  for (const [relative, content] of Object.entries(files)) {
+    const target = path.join(root, relative);
+    mkdirSync(path.dirname(target), { recursive: true });
+    writeFileSync(target, content);
+  }
+  const result = spawnSync(process.execPath, ["scripts/guard.mjs"], {
+    cwd: root,
+    encoding: "utf8",
+    timeout: 30_000,
+  });
+  return {
+    status: result.status,
+    stderr: result.stderr,
+    stdout: result.stdout,
+  };
+}
+
+function workspacePackage(name, exports) {
+  return JSON.stringify({ exports, name: `@polaris/${name}` });
+}
+
+const ONE = "packages/lib/src/one.ts";
+const TWO = "packages/lib/src/two.ts";
+
+describe("verify-no-import-cycles", () => {
+  it("passes a tree without a cycle and counts the source files", () => {
+    const result = runGuard({
+      [ONE]: 'import { two } from "./two";\nexport const one = two;\n',
+      [TWO]: "export const two = 1;\n",
+    });
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain(
+      "No circular runtime imports across 2 source files."
+    );
+    expect(result.stderr).toBe("");
+  });
+
+  it("fails a relative cycle and names both files", () => {
+    const result = runGuard({
+      [ONE]: 'import { two } from "./two";\nexport const one = two;\n',
+      [TWO]: 'import { one } from "./one";\nexport const two = one;\n',
+    });
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain(HEADER);
+    expect(result.stderr).toContain(
+      path.join("packages", "lib", "src", "one.ts")
+    );
+    expect(result.stderr).toContain(
+      path.join("packages", "lib", "src", "two.ts")
+    );
+    expect(result.stdout).toBe("");
+  });
+
+  it("fails a cycle closed through a @polaris/<package>/<subpath> specifier", () => {
+    const result = runGuard({
+      "packages/a/package.json": workspacePackage("a", { "./x": "./src/x.ts" }),
+      "packages/a/src/x.ts":
+        'import { y } from "@polaris/b/y";\nexport const x = y;\n',
+      "packages/b/package.json": workspacePackage("b", {
+        "./y": { default: "./src/y.ts" },
+      }),
+      "packages/b/src/y.ts":
+        'import { x } from "@polaris/a/x";\nexport const y = x;\n',
+    });
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain(HEADER);
+    expect(result.stderr).toContain(path.join("packages", "a", "src", "x.ts"));
+    expect(result.stderr).toContain(path.join("packages", "b", "src", "y.ts"));
+  });
+
+  it("does not follow a workspace specifier that the exports map does not list", () => {
+    const result = runGuard({
+      "packages/a/package.json": workspacePackage("a", { "./x": "./src/x.ts" }),
+      "packages/a/src/x.ts":
+        'import { y } from "@polaris/b/nao-exportado";\nexport const x = y;\n',
+      "packages/b/package.json": workspacePackage("b", { "./y": "./src/y.ts" }),
+      "packages/b/src/y.ts":
+        'import { x } from "@polaris/a/x";\nexport const y = x;\n',
+    });
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain("across 2 source files.");
+  });
+
+  it("ignores an import type on one side of the loop", () => {
+    const result = runGuard({
+      [ONE]: 'import type { Two } from "./two";\nexport type One = Two;\n',
+      [TWO]:
+        'import { one } from "./one";\nexport const two = one;\nexport type Two = number;\n',
+    });
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain("No circular runtime imports");
+  });
+
+  it("counts `export * from` as an edge", () => {
+    const result = runGuard({
+      [ONE]: 'export * from "./two";\n',
+      [TWO]: 'import { one } from "./one";\nexport const two = one;\n',
+    });
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain(HEADER);
+  });
+
+  it("counts a dynamic import() as an edge", () => {
+    const result = runGuard({
+      [ONE]: 'export const load = () => import("./two");\n',
+      [TWO]: 'import { load } from "./one";\nexport const two = load;\n',
+    });
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain(HEADER);
+  });
+
+  it("resolves a folder import to its index.ts", () => {
+    const result = runGuard({
+      [ONE]: 'import { two } from "./pasta";\nexport const one = two;\n',
+      "packages/lib/src/pasta/index.ts":
+        'import { one } from "../one";\nexport const two = one;\n',
+    });
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain(HEADER);
+    expect(result.stderr).toContain(
+      path.join("packages", "lib", "src", "pasta", "index.ts")
+    );
+  });
+
+  it("leaves .test.ts and .d.ts files out of the graph", () => {
+    const result = runGuard({
+      "packages/lib/src/a.test.ts":
+        'import { b } from "./b.test";\nimport { real } from "./real";\nexport const t = [b, real];\n',
+      "packages/lib/src/b.test.ts":
+        'import { t } from "./a.test";\nexport const b = t;\n',
+      "packages/lib/src/c.d.ts":
+        'import { d } from "./d";\nexport declare const c: typeof d;\n',
+      "packages/lib/src/d.d.ts":
+        'import { c } from "./c";\nexport declare const d: typeof c;\n',
+      "packages/lib/src/real.ts":
+        'import { t } from "./a.test";\nexport const real = t;\n',
+    });
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain(
+      "No circular runtime imports across 1 source files."
+    );
+  });
+
+  // Known blind spots, not an approval: the guard only walks `src`, `worker`
+  // and `poc` of each package and skips any `scripts` folder below them
+  // (`ignoredFolders`), so a cycle in a package's own `scripts/` folder, or in
+  // a `src/scripts/` one, passes. If the guard starts reading those folders,
+  // these cases fail on purpose: turn them into the failing form.
+  const SCRIPTS_CYCLE = (folder) => ({
+    "packages/a/src/ok.ts": "export const ok = 1;\n",
+    [`${folder}/one.ts`]:
+      'import { two } from "./two";\nexport const one = two;\n',
+    [`${folder}/two.ts`]:
+      'import { one } from "./one";\nexport const two = one;\n',
+  });
+
+  it("does not see a cycle in a package's own scripts/ folder (outside the walked folders)", () => {
+    const result = runGuard(SCRIPTS_CYCLE("packages/a/scripts"));
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain(
+      "No circular runtime imports across 1 source files."
+    );
+  });
+
+  it("does not see a cycle in a src/scripts/ folder (ignoredFolders)", () => {
+    const result = runGuard(SCRIPTS_CYCLE("packages/a/src/scripts"));
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain(
+      "No circular runtime imports across 1 source files."
+    );
+  });
+});

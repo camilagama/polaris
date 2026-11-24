@@ -223,7 +223,7 @@ const STEP_ICONS = [StoreIcon, TagIcon, ShoppingBagIcon] as const;
 const STEP_BOX = "grid size-7 shrink-0 place-items-center rounded-md border";
 
 const STEP_BOX_STATE = {
-  current: "border-mark bg-mark/10 text-mark-foreground dark:bg-mark/15",
+  current: "border-primary bg-primary/10 text-primary",
   done: "border-transparent bg-primary/10 text-primary",
   todo: "text-muted-foreground",
 } as const;

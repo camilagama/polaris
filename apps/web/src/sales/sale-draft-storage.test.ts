@@ -16,6 +16,7 @@ import {
   createBlankSaleForm,
   type SaleFormState,
   selectPaymentMethod,
+  startSplit,
   updateItem,
 } from "./sale-form-model";
 
@@ -313,27 +314,38 @@ describe("the sale draft of the tab", () => {
  * shape fails here until the key and this list are updated side by side.
  */
 describe("the shape of the draft and the version of its key", () => {
-  it("v1 holds exactly these fields, the ones the blank form has", () => {
+  it("v2 holds exactly these fields, the ones the blank form has", () => {
     const blank = createBlankSaleForm(ids());
     const keys = (value: object) => Object.keys(value).sort();
-    expect(SALE_DRAFT_KEY_PREFIX).toBe("polaris.sale.draft.v1:");
+    expect(SALE_DRAFT_KEY_PREFIX).toBe("polaris.sale.draft.v2:");
     expect({
       form: keys(blank),
       item: keys(blank.items[0] ?? {}),
       payment: keys(blank.payment),
       profile: keys(blank.profile),
+      second: keys(startSplit(blank).split?.second ?? {}),
+      split: keys(startSplit(blank).split ?? {}),
     }).toEqual({
       form: [...SALE_DRAFT_SHAPE.form],
       item: [...SALE_DRAFT_SHAPE.item],
       payment: [...SALE_DRAFT_SHAPE.payment],
       profile: [...SALE_DRAFT_SHAPE.profile],
+      second: [...SALE_DRAFT_SHAPE.second],
+      split: [...SALE_DRAFT_SHAPE.split],
     });
     expect(keys(addAdjustment(blank, "a").adjustments[0] ?? {})).toEqual([
       ...SALE_DRAFT_SHAPE.adjustment,
     ]);
     expect(SALE_DRAFT_SHAPE).toEqual({
       adjustment: ["draftId", "kind", "value", "valueType"],
-      form: ["adjustments", "items", "occurredAtLocal", "payment", "profile"],
+      form: [
+        "adjustments",
+        "items",
+        "occurredAtLocal",
+        "payment",
+        "profile",
+        "split",
+      ],
       item: [
         "chargedUnitPrice",
         "draftId",
@@ -350,6 +362,8 @@ describe("the shape of the draft and the version of its key", () => {
         "method",
       ],
       profile: ["choice", "reviewNotice", "seenVersion"],
+      second: ["amount", "payment", "profile"],
+      split: ["firstAmount", "second", "totalSeen"],
     });
   });
 });
@@ -365,5 +379,136 @@ describe("a sale settled while another Vender of the page shows its cart", () =>
     announceSaleSettled(ORG, "command-2");
 
     expect(heard).toEqual([`${ORG}:command-1`]);
+  });
+});
+
+const LEGACY_KEY = `polaris.sale.draft.v1:${ORG}`;
+const CURRENT_KEY = `${SALE_DRAFT_KEY_PREFIX}${ORG}`;
+const NOW = new Date("2026-11-02T15:00:00.000Z");
+
+function draftOf(form: SaleFormState): SaleDraft {
+  return {
+    form,
+    startedAt: "2026-11-02T13:00:00.000Z",
+    updatedAt: "2026-11-02T14:00:00.000Z",
+  };
+}
+
+function legacyText(form: SaleFormState): string {
+  const { split: _split, ...legacyForm } = form;
+  return JSON.stringify({ ...draftOf(form), form: legacyForm });
+}
+
+describe("a draft of the version before the split", () => {
+  it("comes back as a sale of one part and moves to the current key", () => {
+    const storage = memoryStorage();
+    storage.setItem(LEGACY_KEY, legacyText(cart()));
+
+    const read = readSaleDraft(storage, ORG, NOW, SAO_PAULO);
+
+    expect(read).toEqual({
+      draft: draftOf({ ...cart(), split: null }),
+      kind: "restored",
+    });
+    expect([...storage.data.keys()]).toEqual([CURRENT_KEY]);
+  });
+
+  it("is dropped, with its key, when its form is not the one that version wrote", () => {
+    const storage = memoryStorage();
+    const wrong = JSON.parse(legacyText(cart()));
+    wrong.form.payment.method = "cheque";
+    storage.setItem(LEGACY_KEY, JSON.stringify(wrong));
+
+    expect(readSaleDraft(storage, ORG, NOW, SAO_PAULO)).toEqual({
+      kind: "unreadable",
+    });
+    expect(storage.data.size).toBe(0);
+  });
+
+  it("does not come back after the current draft was cleared", () => {
+    const storage = memoryStorage();
+    storage.setItem(LEGACY_KEY, legacyText(cart()));
+    readSaleDraft(storage, ORG, NOW, SAO_PAULO);
+
+    writeSaleDraft(storage, ORG, null);
+
+    expect(readSaleDraft(storage, ORG, NOW, SAO_PAULO)).toEqual({
+      kind: "none",
+    });
+  });
+
+  it("is cleared with the other stores' drafts", () => {
+    const storage = memoryStorage();
+    storage.setItem(`polaris.sale.draft.v1:${OTHER}`, "{}");
+    storage.setItem(LEGACY_KEY, "{}");
+
+    clearSaleDrafts(storage, ORG);
+
+    expect([...storage.data.keys()]).toEqual([LEGACY_KEY]);
+  });
+});
+
+describe("a draft of a sale in two parts", () => {
+  function splitCart(): SaleFormState {
+    const form = startSplit(cart());
+    return {
+      ...form,
+      split: form.split && {
+        ...form.split,
+        firstAmount: "30,00",
+        second: {
+          ...form.split.second,
+          amount: "19,90",
+          payment: { ...form.split.second.payment, method: "cash" },
+        },
+        totalSeen: "49.90",
+      },
+    };
+  }
+
+  it("comes back with its parts and amounts", () => {
+    const storage = memoryStorage();
+    writeSaleDraft(storage, ORG, draftOf(splitCart()));
+
+    expect(readSaleDraft(storage, ORG, NOW, SAO_PAULO)).toEqual({
+      draft: draftOf(splitCart()),
+      kind: "restored",
+    });
+  });
+
+  it("is dropped when a part holds a field this build does not write", () => {
+    const storage = memoryStorage();
+    const extra = JSON.parse(JSON.stringify(draftOf(splitCart())));
+    extra.form.split.second.note = "x";
+    storage.setItem(CURRENT_KEY, JSON.stringify(extra));
+
+    expect(readSaleDraft(storage, ORG, NOW, SAO_PAULO)).toEqual({
+      kind: "unreadable",
+    });
+  });
+
+  it("is dropped when the method of the second part is not one of the six", () => {
+    const form = splitCart();
+    const bad = {
+      ...form,
+      split: form.split && {
+        ...form.split,
+        second: {
+          ...form.split.second,
+          payment: { ...form.split.second.payment, method: "cheque" },
+        },
+      },
+    };
+    expect(isSaleFormState(bad)).toBe(false);
+    expect(isSaleFormState(splitCart())).toBe(true);
+  });
+
+  it("is dropped when the legacy shape sits under the current key", () => {
+    const storage = memoryStorage();
+    storage.setItem(CURRENT_KEY, legacyText(cart()));
+
+    expect(readSaleDraft(storage, ORG, NOW, SAO_PAULO)).toEqual({
+      kind: "unreadable",
+    });
   });
 });

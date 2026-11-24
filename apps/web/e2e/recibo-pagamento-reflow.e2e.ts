@@ -1,6 +1,7 @@
 /// <reference lib="dom" />
 import type { Locator, Page } from "@playwright/test";
 import { expect } from "@playwright/test";
+import { axeFaults } from "../e2e-pwa/ui-guardrails/measures";
 import {
   DETAIL_SALE_ID,
   saleDetailAnswers,
@@ -35,6 +36,14 @@ const UNKNOWN_NOTICES = [FEE_NOTICE, SETTLEMENT_NOTICE];
 const UNKNOWN_ROW_LABELS = ["Taxa de processamento", "Prazo"] as const;
 
 const FONTS = [16, 20] as const;
+const PARTS_NAME = "Pagamento em 2 partes";
+const MONEY = /R\$ ([\d.]+),(\d{2})/;
+const centsOf = (text: string) => {
+  const found = MONEY.exec(text);
+  return found
+    ? Number((found[1] ?? "").replaceAll(".", "") + found[2])
+    : Number.NaN;
+};
 
 const answer = (body: string) => ({
   body,
@@ -43,8 +52,15 @@ const answer = (body: string) => ({
 });
 const rpc = (json: unknown) => answer(JSON.stringify({ json, meta: [] }));
 
-async function openPaymentBlock(page: Page, fontPixels: number) {
-  const answers = saleDetailAnswers({ withReturn: true });
+async function openPaymentBlock(
+  page: Page,
+  fontPixels: number,
+  withParts = false
+) {
+  const answers = saleDetailAnswers({
+    withParts,
+    withReturn: !withParts,
+  });
   await openReflowViewport(page, { fontPixels });
   await page.route("**/api/auth/get-session", (route) =>
     route.fulfill(
@@ -67,7 +83,9 @@ async function openPaymentBlock(page: Page, fontPixels: number) {
   });
   await page.clock.setFixedTime(NOW);
   await page.goto(`/sales/detail?saleId=${DETAIL_SALE_ID}`);
-  const block = page.locator('[data-receipt-block="payment"]');
+  const block = withParts
+    ? page.getByRole("list", { name: PARTS_NAME })
+    : page.locator('[data-receipt-block="payment"]');
   await expect(block).toBeVisible();
   await expectReflowFont(page, fontPixels);
   return block;
@@ -168,6 +186,38 @@ for (const fontPixels of FONTS) {
           `o aviso de "${label}" termina na borda direita da linha`
         ).toBeLessThanOrEqual(1);
       });
+    }
+  );
+}
+
+for (const fontPixels of FONTS) {
+  reflowTest(
+    `a 320 px com letra de ${fontPixels} px o pagamento em 2 partes lista método e valor de cada parte, soma o total e não corta nem rola`,
+    async ({ page }) => {
+      const block = await openPaymentBlock(page, fontPixels, true);
+      const parts = block.getByRole("listitem");
+      await expect(parts).toHaveCount(2);
+      await expect(parts.nth(0)).toContainText("Parte 1: Pix");
+      await expect(parts.nth(0)).toContainText("R$ 109,60");
+      await expect(parts.nth(1)).toContainText("Parte 2: Cartão de crédito");
+      await expect(parts.nth(1)).toContainText("R$ 300,00");
+      await expect(parts.nth(1)).toContainText("3x · Parcelado pelo lojista");
+      await expect(page.getByText("Valor do pagamento")).toHaveCount(0);
+      const amounts = await parts.evaluateAll((items) =>
+        items.map(
+          (item) => item.querySelector("p")?.lastElementChild?.textContent ?? ""
+        )
+      );
+      const total = await page
+        .locator("[data-receipt-totals] dd")
+        .first()
+        .textContent();
+      expect(amounts.map(centsOf).reduce((sum, cents) => sum + cents, 0)).toBe(
+        centsOf(total ?? "")
+      );
+      expect(await axeFaults(page, `[aria-label="${PARTS_NAME}"]`)).toEqual([]);
+      await assertNothingClipped(block);
+      await assertNoPageScroll(page);
     }
   );
 }

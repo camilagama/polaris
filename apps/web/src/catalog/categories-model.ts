@@ -29,10 +29,16 @@ const MAX_CATEGORY_NAME = 100;
 export const NAME_TOO_LONG =
   "O nome da categoria deve ter no máximo 100 caracteres.";
 
-export const EMPTY_TEXT: Record<CategoryListStatus, string> = {
-  active: "Nenhuma categoria ativa. Adicione a primeira do catálogo.",
-  archived: "Não há categorias arquivadas.",
-  deleted: "Não há categorias removidas.",
+export const EMPTY_TEXT: Record<
+  CategoryListStatus,
+  { support?: string; title: string }
+> = {
+  active: {
+    support: "Adicione a primeira do catálogo.",
+    title: "Nenhuma categoria ativa.",
+  },
+  archived: { title: "Não há categorias arquivadas." },
+  deleted: { title: "Não há categorias removidas." },
 };
 
 export function categoryNameIsTooLong(name: string): boolean {

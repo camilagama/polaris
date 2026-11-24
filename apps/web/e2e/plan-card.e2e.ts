@@ -230,7 +230,7 @@ test.describe("o cartão do plano Free", () => {
     );
     const cardBox = await box(card(page));
     expect(cardBox.y).toBeGreaterThanOrEqual(help.y + help.height);
-    // o botão é de contorno: sem o fundo de tinta nem a esmeralda
+    // o botão é de contorno: sem o fundo de tinta nem o vermelho da marca
     const background = await proLink(page).evaluate(
       (link) => getComputedStyle(link).backgroundColor
     );

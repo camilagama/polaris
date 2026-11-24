@@ -100,3 +100,32 @@ export async function panelHeight(popup: Locator) {
     return footer.offsetTop + footer.offsetHeight - shortcuts.offsetTop;
   });
 }
+
+const COMMA_ALPHA = /,\s*([\d.]+)\s*\)$/;
+const SLASH_ALPHA = /\/\s*([\d.]+%?)\s*\)$/;
+
+/** Alpha of a computed color: `rgba(r, g, b, a)` or `oklch(l c h / a)`; a color without alpha is opaque. */
+function alphaOf(color: string) {
+  const alpha = (color.startsWith("rgba(") ? COMMA_ALPHA : SLASH_ALPHA).exec(
+    color
+  )?.[1];
+  if (alpha === undefined) {
+    return 1;
+  }
+  return alpha.endsWith("%") ? Number.parseFloat(alpha) / 100 : Number(alpha);
+}
+
+/**
+ * The alpha of the rule over the line under the month: 0 while there is neither a sentence nor "Limpar" in sight. The
+ * color is read in the page and parsed here, since a function given to `evaluate` runs there, without this module.
+ */
+export async function footerRuleAlpha(popup: Locator) {
+  const color = await popup.evaluate((root) => {
+    const footer = root.querySelector<HTMLElement>("[data-range-footer]");
+    if (!footer) {
+      throw new Error("o painel do período não tem rodapé");
+    }
+    return getComputedStyle(footer).borderTopColor;
+  });
+  return alphaOf(color);
+}

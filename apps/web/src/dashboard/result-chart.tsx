@@ -513,10 +513,10 @@ interface ResultChartProps {
 
 /**
  * "Vendas × custos por dia" (AC-4 to AC-12): the sales of each day and the costs against them, hatched and broken on a
- * day whose cost is unknown (AC-9). The total of sales, the total of costs and the best day are written above the drawing,
- * and the table of every day closes the card: invisible, tied to the chart by `aria-details`, and shown in the place of
- * the drawing when the charts chunk does not open. The period is cut at the store's today, read from the server's
- * clock; what the days to come cost closes the table.
+ * day whose cost is unknown (AC-9). The total of sales and the total of costs are written above the drawing; the best
+ * day is written for the screen reader only (`sr-only`). The table of every day closes the card: invisible, tied to the
+ * chart by `aria-details`, and shown in the place of the drawing when the charts chunk does not open. The period is
+ * cut at the store's today, read from the server's clock; what the days to come cost closes the table.
  */
 export function ResultChart({ source, summary, timezone }: ResultChartProps) {
   const numbersId = useId();

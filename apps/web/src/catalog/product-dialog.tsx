@@ -246,6 +246,7 @@ function ProductTabs({
       <ScreenTabList
         label="Partes do produto"
         signature={tabs.join()}
+        surface="popover"
         value={tab}
       >
         {tabs.map((value) => (
