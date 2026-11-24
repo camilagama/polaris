@@ -542,7 +542,7 @@ test("Trocar abre a busca com a variante atual marcada; Escape volta à linha co
 
 const NON_BLANK = /\S/;
 const SINGLE_PAYMENT_TEXT =
-  "Um pagamento só, no valor total. O método não comprova o recebimento.";
+  "Um pagamento no valor total. Para receber de dois jeitos, use Dividir pagamento. O método não comprova o recebimento.";
 
 /** Under "Pagamento" the two explanations are in the (i) of the title, whole, and not on the screen. */
 async function expectPaymentTip(page: Page) {

@@ -1038,4 +1038,5 @@ export const SCREENS: UiScreen[] = [
   attentionScreen("descartando", attentionStates.discarding),
   attentionScreen("vazio", attentionStates.empty),
   attentionScreen("sem offline", attentionStates.unavailable),
+  saleScreen("pagamento dividido", saleStates.split),
 ];
