@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Alert, AlertDescription } from "@/ui/alert";
 import { Button } from "@/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/ui/card";
+import { Block, BlockHeader, BlockPanel } from "@/ui/block";
 import { Checkbox } from "@/ui/checkbox";
 import { Field, FieldError, FieldLabel, FieldSet } from "@/ui/field";
 import { connectionControlProps } from "../app-shell/connection-required-notice";
@@ -252,13 +252,9 @@ function RequestCard({
   }, [send]);
 
   return (
-    <Card aria-labelledby={REQUEST_TITLE_ID} role="region">
-      <CardHeader>
-        <CardTitle aria-level={3} id={REQUEST_TITLE_ID} role="heading">
-          Pedir cópia
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="grid gap-4">
+    <Block aria-labelledby={REQUEST_TITLE_ID}>
+      <BlockHeader id={REQUEST_TITLE_ID} level={3} title="Pedir cópia" />
+      <BlockPanel className="gap-4">
         <p className="text-muted-foreground">{EXPORT_SUPPORT_TEXT}</p>
         <FieldSet
           aria-describedby={formatsError ? FORMATS_ERROR_ID : undefined}
@@ -289,23 +285,19 @@ function RequestCard({
           </Button>
           <RequestFeedback blockedText={blockedText} outcome={outcome} />
         </div>
-      </CardContent>
-    </Card>
+      </BlockPanel>
+    </Block>
   );
 }
 
 function RequestClosedCard({ text }: { text: string }) {
   return (
-    <Card aria-labelledby={REQUEST_TITLE_ID} role="region">
-      <CardHeader>
-        <CardTitle aria-level={3} id={REQUEST_TITLE_ID} role="heading">
-          Pedir cópia
-        </CardTitle>
-      </CardHeader>
-      <CardContent>
+    <Block aria-labelledby={REQUEST_TITLE_ID}>
+      <BlockHeader id={REQUEST_TITLE_ID} level={3} title="Pedir cópia" />
+      <BlockPanel>
         <p>{text}</p>
-      </CardContent>
-    </Card>
+      </BlockPanel>
+    </Block>
   );
 }
 
