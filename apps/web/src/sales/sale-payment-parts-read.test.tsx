@@ -19,6 +19,8 @@ const { SaleReceipt } = await import("./sale-receipt");
 const { ConfirmedSalePanel } = await import("./sale-confirmed-panel");
 
 const MONO_AMOUNT = /text-right"><span class="[^"]*font-mono[^"]*">R\$ 100,01</;
+const PART_HEAD_LINE = /data-payment-part="\d".*?<\/p>/gs;
+const MASKED_MARK = "data-masked-money";
 const PART_BLOCKS = /data-payment-part="\d"/g;
 const TOTAL_CELLS = /data-money-number="">300</g;
 const ID = "11111111-1111-4111-8111-111111111111";
@@ -245,6 +247,20 @@ describe("the receipt of a sale in two parts", () => {
     const markup = render(twoParts());
     expect(markup).not.toContain(">100<");
     expect(markup).not.toContain(">199<");
+    expect(markup).not.toContain("100,01");
+    expect(markup).not.toContain("199,99");
+    const headLines = markup.match(PART_HEAD_LINE) ?? [];
+    expect(headLines).toHaveLength(2);
+    for (const headLine of headLines) {
+      expect(headLine).toContain(MASKED_MARK);
+    }
+  });
+
+  it("writes the amount of each part when the values are shown, with no mask", () => {
+    const markup = render(twoParts());
+    expect(markup).toContain("R$ 100,01");
+    expect(markup).toContain("R$ 199,99");
+    expect(markup).not.toContain(MASKED_MARK);
   });
 
   it("keeps a sale of one part on the block of today, with no group of parts", () => {
