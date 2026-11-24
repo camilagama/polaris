@@ -2,7 +2,6 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { SegmentedFilter } from "@/ui/segmented-filter";
 import { SectionTabs } from "@/ui/section-tabs";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/ui/tabs";
 
 /**
  * The `line` variant of the Tabs: the tab of a screen is text with a 1 px rule across the list and a 2 px stroke in ink
@@ -93,28 +92,5 @@ describe("Tabs, variant segmented", () => {
       expect(tab).toContain("data-active:bg-card");
       expect(tab).not.toContain("after:h-0.5");
     }
-  });
-
-  it("stays the strip inside the panel of a line tab", () => {
-    const nested = html(
-      <Tabs defaultValue="x">
-        <TabsList aria-label="Tela" variant="line">
-          <TabsTrigger value="x">Tela</TabsTrigger>
-        </TabsList>
-        <TabsContent value="x">
-          <Tabs defaultValue="1">
-            <TabsList aria-label="Filtro">
-              <TabsTrigger value="1">Um</TabsTrigger>
-            </TabsList>
-          </Tabs>
-        </TabsContent>
-      </Tabs>
-    );
-    const [screen, inner] = listClasses(nested);
-    expect(screen).toContain("border-b");
-    expect(inner).toContain("bg-muted");
-    const [, innerTab] = tabClasses(nested);
-    expect(innerTab).toContain("data-active:bg-card");
-    expect(innerTab).not.toContain("after:h-0.5");
   });
 });

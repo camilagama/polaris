@@ -144,6 +144,78 @@ function lookOf(list: Locator): Promise<TabLook> {
   );
 }
 
+interface LineLook {
+  activeColor: string;
+  activeStroke: Record<string, string>;
+  closedColors: string[];
+  closedStrokes: Record<string, string>[];
+  ink: string;
+  listBottom: number;
+  rule: string;
+  ruleReaches: boolean;
+  tabBottom: number;
+  tabWidth: number;
+}
+
+function lineOf(list: Locator): Promise<LineLook> {
+  return list.evaluate((element) => {
+    const stroke = (tab: Element) => {
+      const style = getComputedStyle(tab, "::after");
+      return {
+        background: style.backgroundColor,
+        bottom: style.bottom,
+        height: style.height,
+        opacity: style.opacity,
+        position: style.position,
+        width: style.width,
+      };
+    };
+    const tabs = [...element.querySelectorAll('[role="tab"]')];
+    const active = tabs.find(
+      (tab) => tab.getAttribute("aria-selected") === "true"
+    ) as Element;
+    const closed = tabs.filter((tab) => tab !== active);
+    const frame = (
+      (element.parentElement as HTMLElement).parentElement as HTMLElement
+    ).getBoundingClientRect();
+    return {
+      activeColor: getComputedStyle(active).color,
+      activeStroke: stroke(active),
+      closedColors: closed.map((tab) => getComputedStyle(tab).color),
+      closedStrokes: closed.map(stroke),
+      ink: getComputedStyle(document.body).color,
+      listBottom: element.getBoundingClientRect().bottom,
+      rule: getComputedStyle(element).borderBottomWidth,
+      ruleReaches: element.getBoundingClientRect().width >= frame.width - 1,
+      tabBottom: active.getBoundingClientRect().bottom,
+      tabWidth: active.getBoundingClientRect().width,
+    };
+  });
+}
+
+/** The open tab has the 2 px stroke in ink over the 1 px rule, the closed ones have none, and the form tells them apart. */
+function expectLine(line: LineLook) {
+  expect(line.rule, "o fio sob a lista").toBe("1px");
+  expect(line.ruleReaches, "o fio vai até o fim da caixa").toBe(true);
+  expect(line.activeStroke.position).toBe("absolute");
+  expect(line.activeStroke.height).toBe("2px");
+  expect(line.activeStroke.bottom, "o traço cobre o fio").toBe("-1px");
+  expect(
+    Math.abs(Number.parseFloat(line.activeStroke.width) - line.tabWidth),
+    "o traço tem a largura da aba"
+  ).toBeLessThanOrEqual(1);
+  expect(line.listBottom - line.tabBottom, "o fio está sob a aba").toBe(1);
+  expect(line.activeStroke.opacity, "a aba aberta tem o traço").toBe("1");
+  expect(line.activeStroke.background, "o traço é a tinta").toBe(line.ink);
+  expect(line.activeColor, "a aba aberta lê em tinta").toBe(line.ink);
+  for (const stroke of line.closedStrokes) {
+    expect(stroke.opacity, "a aba fechada não tem o traço").toBe("0");
+  }
+  for (const color of line.closedColors) {
+    expect(color, "a aba fechada lê em muted-foreground").not.toBe(line.ink);
+  }
+}
+
 async function lookAt(page: Page, { list, screen }: TabCase) {
   await openScreen(page, screen);
   const tablist = page.getByRole("tablist", { name: list });
@@ -208,48 +280,7 @@ test.describe("o mesmo desenho a 1280 px com mouse", () => {
       await openScreen(page, item.screen);
       const tablist = page.getByRole("tablist", { name: item.list });
       await expect(tablist).toBeVisible();
-      const line = await tablist.evaluate((list) => {
-        const stroke = (tab: Element) => {
-          const style = getComputedStyle(tab, "::after");
-          return {
-            background: style.backgroundColor,
-            height: style.height,
-            opacity: style.opacity,
-          };
-        };
-        const tabs = [...list.querySelectorAll('[role="tab"]')];
-        const active = tabs.find(
-          (tab) => tab.getAttribute("aria-selected") === "true"
-        ) as Element;
-        const closed = tabs.filter((tab) => tab !== active);
-        const ink = getComputedStyle(document.body).color;
-        const parent = (
-          list.parentElement as HTMLElement
-        ).getBoundingClientRect();
-        return {
-          activeColor: getComputedStyle(active).color,
-          activeStroke: stroke(active),
-          closedColors: closed.map((tab) => getComputedStyle(tab).color),
-          closedStrokes: closed.map(stroke),
-          ink,
-          rule: getComputedStyle(list).borderBottomWidth,
-          ruleReaches: list.getBoundingClientRect().width >= parent.width - 1,
-        };
-      });
-      expect(line.rule, "o fio sob a lista").toBe("1px");
-      expect(line.ruleReaches, "o fio vai até o fim da caixa").toBe(true);
-      expect(line.activeStroke.height).toBe("2px");
-      expect(line.activeStroke.opacity, "a aba aberta tem o traço").toBe("1");
-      expect(line.activeStroke.background, "o traço é a tinta").toBe(line.ink);
-      expect(line.activeColor, "a aba aberta lê em tinta").toBe(line.ink);
-      for (const stroke of line.closedStrokes) {
-        expect(stroke.opacity, "a aba fechada não tem o traço").toBe("0");
-      }
-      for (const color of line.closedColors) {
-        expect(color, "a aba fechada lê em muted-foreground").not.toBe(
-          line.ink
-        );
-      }
+      expectLine(await lineOf(tablist));
     });
   }
 
@@ -267,6 +298,32 @@ test.describe("o mesmo desenho a 1280 px com mouse", () => {
         item.list,
         names.map((text) => text.replace(/\s+/g, " ").trim())
       );
+    });
+  }
+});
+
+test.describe("o traço no celular, a 360 px com toque", () => {
+  test.use({ hasTouch: true, viewport: VIEWPORTS["360"] });
+
+  for (const item of TABS) {
+    test(`a aba aberta de ${item.name} tem o traço e o toque de 44 px`, async ({
+      page,
+    }) => {
+      await openScreen(page, item.screen);
+      const tablist = page.getByRole("tablist", { name: item.list });
+      await expect(tablist).toBeVisible();
+      expectLine(await lineOf(tablist));
+      const active = tablist.getByRole("tab", { selected: true });
+      const area = await active.evaluate((tab) => {
+        const before = getComputedStyle(tab, "::before");
+        return {
+          height:
+            tab.getBoundingClientRect().height +
+            Math.abs(Number.parseFloat(before.top)) +
+            Math.abs(Number.parseFloat(before.bottom)),
+        };
+      });
+      expect(area.height).toBeGreaterThanOrEqual(44);
     });
   }
 });

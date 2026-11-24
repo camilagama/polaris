@@ -90,7 +90,7 @@ export function ScreenTabList({
   return (
     <div className="relative -my-1.5 max-w-full">
       <div
-        className="overflow-x-auto py-1.5 [scrollbar-width:none]"
+        className="-mx-1.5 overflow-x-auto px-1.5 py-1.5 [scrollbar-width:none]"
         onScroll={measure}
         ref={scroller}
       >
@@ -133,7 +133,7 @@ export function ScreenTabTrigger({
     <TabsTrigger
       // below 360 px a narrower padding keeps three words of 20 px on the strip, so it does not widen the page
       aria-busy={reserved || undefined}
-      className="flex-none max-[22.5rem]:px-1.5"
+      className="max-[22.5rem]:px-1.5"
       data-value={value}
       disabled={reserved}
       value={value}
