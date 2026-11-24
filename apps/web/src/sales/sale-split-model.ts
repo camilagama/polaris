@@ -297,8 +297,8 @@ export const SINGLE_PAYMENT_HELP =
 export const SPLIT_PAYMENT_HELP =
   "Cada parte tem método, valor e perfil. As duas somam o total. O método não comprova o recebimento.";
 
-export const SPLIT_OFFLINE_REASON = "Dividir precisa de internet";
-export const SPLIT_EMPTY_REASON = "Adicione um item para dividir o pagamento.";
+const SPLIT_OFFLINE_REASON = "Dividir precisa de internet";
+const SPLIT_EMPTY_REASON = "Adicione um item para dividir o pagamento.";
 
 /** Said when a sale in parts meets a dropped connection at the confirmation: the device keeps one payment per sale. */
 export const SPLIT_OFFLINE_REFUSAL =

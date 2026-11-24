@@ -1970,7 +1970,7 @@ export interface EvaluationContext {
   stock: Readonly<Record<string, Loadable<InventoryBalanceReadModel>>>;
 }
 
-export interface SplitPartSummary {
+interface SplitPartSummary {
   amountText: string | null;
   methodText: string;
 }
