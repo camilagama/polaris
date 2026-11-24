@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import type { LazyScreen } from "./lazy-screen";
 import { ScreenTabPanel, ScreenTabs } from "./screen-tabs";
+import { SectionTabs } from "@/ui/section-tabs";
 import { useTabActive } from "./screen-title";
 
 const address = vi.hoisted(() => ({ search: "" }));
@@ -150,5 +151,45 @@ describe("the tabs on a phone: a menu of rows in place of the strip", () => {
     expect(html).not.toContain("<button");
     expect(stateOf(html, "categorias")).toBe("active");
     expect(stateOf(html, "produtos")).toBe("hidden");
+  });
+});
+
+describe("SectionTabs: com rota e sem rota numa API só", () => {
+  const TABS = [
+    { content: <p>conteúdo a</p>, label: "A", value: "a" },
+    { content: <p>conteúdo b</p>, label: "B", value: "b" },
+  ];
+
+  it("com `value` a aba aberta é de quem chama, e os painéis vêm como filhos", () => {
+    const html = renderToStaticMarkup(
+      <SectionTabs
+        label="Abas"
+        onValueChange={vi.fn()}
+        tabs={TABS.map(({ label, value }) => ({ label, value }))}
+        value="b"
+      >
+        <p>painel de fora</p>
+      </SectionTabs>
+    );
+    expect(html.split("<button")).toHaveLength(3);
+    expect(html).toContain("painel de fora");
+    expect(html).not.toContain("conteúdo a");
+  });
+
+  it("sem `value` as abas são locais: o conteúdo vem da própria aba, sem título e sem tocar o endereço", () => {
+    address.search = "?aba=categorias";
+    const html = renderToStaticMarkup(
+      <SectionTabs defaultValue="b" label="Abas locais" tabs={TABS} />
+    );
+    expect(html).not.toContain("<h1");
+    expect(html.split("<button")).toHaveLength(3);
+    expect(html).toContain("conteúdo b");
+  });
+
+  it("`hideList` não desenha a lista", () => {
+    const html = renderToStaticMarkup(
+      <SectionTabs hideList label="Abas" tabs={TABS} />
+    );
+    expect(html).not.toContain("<button");
   });
 });
