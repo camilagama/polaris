@@ -1,10 +1,6 @@
 // @vitest-environment happy-dom
 import { act, cleanup, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { planRead } from "../lib/plan-read";
-import { markSigningOut } from "../lib/sign-out";
-import { useNearLimitRead } from "./limit-help";
-import { clearPlanNotice, rememberedPlanNotice } from "./plan-notice";
 
 const readPlan = vi.fn();
 
@@ -24,6 +20,21 @@ vi.mock("../lib/orpc", () => ({
   },
 }));
 
+async function loadFresh() {
+  vi.resetModules();
+  const [{ planRead }, { useNearLimitRead }, notice, signOut, sessionEnded] =
+    await Promise.all([
+      import("../lib/plan-read"),
+      import("./limit-help"),
+      import("./plan-notice"),
+      import("../lib/sign-out"),
+      import("../offline/runtime/session-ended"),
+    ]);
+  planRead.clear();
+  notice.clearPlanNotice();
+  return { notice, sessionEnded, signOut, useNearLimitRead };
+}
+
 beforeEach(() => {
   readPlan.mockReset();
   readPlan.mockResolvedValue({
@@ -33,26 +44,49 @@ beforeEach(() => {
     state: "free",
     usage: { goals: 0, images: 0, variants: 47 },
   });
-  planRead.clear();
-  clearPlanNotice();
 });
 
 afterEach(() => {
   cleanup();
-  clearPlanNotice();
 });
 
-describe("a leitura do aviso depois do Sair", () => {
-  it("a resposta que chega depois do Sair não volta a gravar o plano da sessão que acabou", async () => {
-    markSigningOut();
-    renderHook(() => useNearLimitRead("variants"));
+describe("a leitura do aviso depois que a sessão acabou", () => {
+  it.each([
+    [
+      "o Sair",
+      (m: Awaited<ReturnType<typeof loadFresh>>) => m.signOut.markSigningOut(),
+    ],
+    [
+      "a sessão encerrada pelo servidor",
+      (m: Awaited<ReturnType<typeof loadFresh>>) =>
+        m.sessionEnded.markSessionOver(),
+    ],
+  ])(
+    "a resposta que chega depois de %s não volta a gravar o plano da sessão que acabou",
+    async (_name, end) => {
+      const loaded = await loadFresh();
+      end(loaded);
+      renderHook(() => loaded.useNearLimitRead("variants"));
+      await act(async () => {
+        for (let tick = 0; tick < 6; tick += 1) {
+          // biome-ignore lint/performance/noAwaitInLoops: each microtask turn must finish before the next
+          await Promise.resolve();
+        }
+      });
+      expect(readPlan).toHaveBeenCalledTimes(1);
+      expect(loaded.notice.rememberedPlanNotice("org-a")).toBeNull();
+    }
+  );
+
+  it("com a sessão de pé a mesma resposta grava o plano", async () => {
+    const loaded = await loadFresh();
+    renderHook(() => loaded.useNearLimitRead("variants"));
     await act(async () => {
       for (let tick = 0; tick < 6; tick += 1) {
         // biome-ignore lint/performance/noAwaitInLoops: each microtask turn must finish before the next
         await Promise.resolve();
       }
     });
-    expect(readPlan).toHaveBeenCalledTimes(1);
-    expect(rememberedPlanNotice("org-a")).toBeNull();
+    expect(loaded.notice.rememberedPlanNotice("org-a")).not.toBeNull();
   });
 });

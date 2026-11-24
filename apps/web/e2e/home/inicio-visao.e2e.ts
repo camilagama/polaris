@@ -24,10 +24,10 @@ import {
   type Scenario,
   SIZES,
   SOLD,
-  SYNCED,
   serve,
   settled,
   TYPE_DATES,
+  waitCopySynced,
 } from "./shared";
 
 /** `--breakpoint-md` in `packages/ui/src/theme.css`: 47.5 rem. */
@@ -1314,11 +1314,6 @@ test.describe("loja sem venda: o checklist (AC-22, AC-23)", () => {
     await expect(footOf(page, 1)).toHaveCount(0);
   }
 
-  const copySynced = (page: Page) =>
-    expect(page.locator(".sync-status").first()).toContainText(SYNCED, {
-      timeout: 20_000,
-    });
-
   async function backToHomeSaysTwoOfThree(page: Page, server: FakeServer) {
     server.scenario.stock = {
       all: 1,
@@ -1353,7 +1348,7 @@ test.describe("loja sem venda: o checklist (AC-22, AC-23)", () => {
     await openRegistrationForm(page);
     // the Produtos screen reopens its runtime on the copy the first page caught up: "Tudo sincronizado" there says
     // it is ready before the click
-    await copySynced(page);
+    await waitCopySynced(page);
     await submitRegistration(page);
     expect(taken).toEqual({ direct: 0, queued: 1 });
     await backToHomeSaysTwoOfThree(page, server);
@@ -1366,7 +1361,15 @@ test.describe("loja sem venda: o checklist (AC-22, AC-23)", () => {
     await page.setViewportSize({ height: 800, width: 1280 });
     const taken = await serveRegistration(page);
     const server = emptyStore();
+    const sessionAnswer = page.waitForResponse("**/api/auth/get-session");
     await openHome(page, server);
+    const session = (await (await sessionAnswer).json()) as {
+      session?: { id?: string };
+    };
+    expect(
+      session.session?.id,
+      "the fake get-session must come without session.id, or the device check may be skipped and the hold never fires"
+    ).toBeUndefined();
     // the runtime of the next page load starts by asking the device check: held, it cannot be ready at the click
     let releaseCopy: () => void = () => undefined;
     const copyHeld = new Promise<void>((resolve) => {

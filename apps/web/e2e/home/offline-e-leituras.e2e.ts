@@ -26,9 +26,9 @@ import {
   reopenWithoutNetwork,
   SIZES,
   SOLD,
-  SYNCED,
   serve,
   UPDATED_AT,
+  waitCopySynced,
 } from "./shared";
 
 /** The button of the menu of the store in the header: what the menu holds, then the store. */
@@ -368,9 +368,7 @@ test.describe("sem conexão (§ 7, AC-28 a AC-31)", () => {
     await expect
       .poll(async () => (await copyKeys(page)).length)
       .toBeGreaterThan(0);
-    await expect(page.locator(".sync-status").first()).toContainText(SYNCED, {
-      timeout: 20_000,
-    });
+    await waitCopySynced(page);
     await reopenWithoutNetwork(page, server);
     await expect(page.getByText(CONFIRMED, { exact: true })).toBeVisible({
       timeout: 20_000,
@@ -542,9 +540,7 @@ test.describe("sem conexão (§ 7, AC-28 a AC-31)", () => {
       timeout: 20_000,
     });
     await expect.poll(() => copyKeys(page)).toHaveLength(3);
-    await expect(page.locator(".sync-status").first()).toContainText(SYNCED, {
-      timeout: 20_000,
-    });
+    await waitCopySynced(page);
     await page.context().setOffline(true);
     await expect(region(page, "Vendas hoje")).toContainText("R$ 320,10");
     await page.clock.runFor(15 * 60_000);
@@ -753,9 +749,7 @@ test.describe("sem conexão (§ 7, AC-28 a AC-31)", () => {
     });
     await openHome(page, server);
     await expect(region(page, "Vendas hoje")).toContainText("R$ 320,10");
-    await expect(page.locator(".sync-status").first()).toContainText(SYNCED, {
-      timeout: 20_000,
-    });
+    await waitCopySynced(page);
     await expect
       .poll(() =>
         server.calls.some((call) => call.procedure === "report/dailySales")
