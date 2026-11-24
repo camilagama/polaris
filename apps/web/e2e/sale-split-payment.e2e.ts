@@ -418,3 +418,109 @@ test("sem item: Dividir pagamento fica desligado e diz por quê", async ({
   await expect(reason).toBeVisible();
   await expect(page.getByRole("group", { name: "Parte 1" })).toHaveCount(0);
 });
+
+for (const edited of [1, 2] as const) {
+  test(`o perfil editado só na parte ${edited} dá o aviso daquela parte, com o botão "Revisei a prévia da parte ${edited}"`, async ({
+    page,
+  }) => {
+    const version = { current: 1 };
+    await openSaleLab(page, undefined, version);
+    await sellShirtFor300(page);
+    await splitButton(page).click();
+    await choose(part(page, 1), "Método", "Pix");
+    await part(page, 1).getByLabel("Valor").fill("100,00");
+    await choose(part(page, 2), "Método", "Dinheiro");
+    const other = edited === 1 ? 2 : 1;
+    await choose(part(page, edited), "Perfil de pagamento", LAB_PROFILE);
+    await choose(
+      part(page, other),
+      "Perfil de pagamento",
+      "Sem perfil de pagamento"
+    );
+    version.current = 2;
+    await page
+      .getByRole("button", { name: "Atualizar estoque e perfis" })
+      .click();
+    const notice = part(page, edited)
+      .getByRole("alert")
+      .filter({ hasText: "mudou desde a última venda" });
+    await expect(notice).toContainText(`da parte ${edited} mudou`);
+    await expect(
+      part(page, other)
+        .getByRole("alert")
+        .filter({ hasText: "mudou desde a última venda" })
+    ).toHaveCount(0);
+    await expect(
+      page.getByRole("alert").filter({ hasText: "Revise a prévia das duas" })
+    ).toHaveCount(0);
+    await expect(
+      page.getByRole("button", { name: /^Revisei a prévia da parte/ })
+    ).toHaveCount(1);
+    await notice
+      .getByRole("button", {
+        exact: true,
+        name: `Revisei a prévia da parte ${edited}`,
+      })
+      .click();
+    await expect(notice).toHaveCount(0);
+    await expect(part(page, 1).getByLabel("Valor")).toHaveValue("100,00");
+    await expect(part(page, 2).getByLabel("Valor")).toHaveValue("200,00");
+  });
+}
+
+test("o leitor de tela ouve a linha de estado uma vez por mudança, ao sair do campo, e não a cada tecla", async ({
+  page,
+}) => {
+  await openSaleLab(page);
+  await splitTheExample(page);
+  // a typed part 2 that is not the rest: every key in part 1 changes the difference
+  await part(page, 2).getByLabel("Valor").fill("150,00");
+  const status = page.locator("#sale-split-balance");
+  const live = status.locator("[aria-live='polite']");
+  const amount = part(page, 1).getByLabel("Valor");
+  await amount.click();
+  await expect(live).toContainText(FALTA_50);
+  const before = (await live.textContent()) ?? "";
+  await page.keyboard.press("ControlOrMeta+a");
+  for (const key of ["1", "2", "0"]) {
+    await page.keyboard.press(key);
+    await expect(amount).toBeFocused();
+    await expect(live).toHaveText(before);
+  }
+  // the line the eye reads has changed; the live region has not
+  await expect(status.locator("p:not([aria-live])").first()).toContainText(
+    "Falta R$ 30,00"
+  );
+  await expect(live).toHaveText(before);
+  await page.keyboard.press("Tab");
+  await expect(live).toContainText("Falta R$ 30,00");
+  await expect(live).not.toHaveText(before);
+});
+
+test("a rede cai com a venda já dividida: Guardar neste aparelho diz que Dividir precisa de internet, não chama o servidor e as partes ficam", async ({
+  page,
+}) => {
+  const calls = await openSaleLab(page);
+  await splitTheExample(page);
+  await page.getByLabel("Rede disponível").uncheck();
+  await page
+    .getByRole("button", { name: "Guardar venda neste aparelho" })
+    .click();
+  await expect(
+    page.getByText(
+      "Dividir precisa de internet. Confirme quando a conexão voltar ou volte a um pagamento só."
+    )
+  ).toBeVisible();
+  expect(calls.bodies).toHaveLength(0);
+  await expect(page.getByText(/tem data própria/)).toHaveCount(0);
+  await expect(part(page, 1).getByLabel("Valor")).toHaveValue("100,00");
+  await expect(part(page, 2).getByLabel("Valor")).toHaveValue("200,00");
+  await expect(
+    page.getByRole("button", { name: "Guardar venda neste aparelho" })
+  ).toBeVisible();
+  // when the connection comes back the same parts go to the server
+  await page.getByLabel("Rede disponível").check();
+  await page.getByRole("button", { name: "Confirmar venda" }).click();
+  await expect.poll(() => calls.bodies.length).toBe(1);
+  expect(calls.bodies[0]?.payments).toHaveLength(2);
+});

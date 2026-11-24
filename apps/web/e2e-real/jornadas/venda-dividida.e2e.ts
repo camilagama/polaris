@@ -80,4 +80,19 @@ test("venda dividida: total 300, Parte 1 = 100, a Parte 2 vem com 200 e a venda 
     { amount: 10_000, method: "pix", position: 0 },
     { amount: 20_000, method: "cash", position: 1 },
   ]);
+
+  // a sale in parts is not "the last payment": nothing is remembered, and the next sale opens with one payment
+  await expect(
+    page.getByRole("radiogroup", { name: "Método de pagamento" })
+  ).toBeVisible();
+  await expect(first).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { exact: true, name: "Dividir pagamento" })
+  ).toBeVisible();
+  const remembered = await page.evaluate(() =>
+    Object.keys(localStorage).filter((key) =>
+      key.startsWith("polaris.sale.lastPayment.v1:")
+    )
+  );
+  expect(remembered).toEqual([]);
 });
