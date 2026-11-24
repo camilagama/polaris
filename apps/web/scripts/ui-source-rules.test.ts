@@ -389,7 +389,6 @@ const NUMBER_FONT_ELSEWHERE: readonly {
     tokens: 1,
     why: SLICE_REASON,
   },
-  { file: "src/catalog/screen-parts.tsx", tokens: 1, why: SLICE_REASON },
   {
     file: "src/expenses/expense-by-category.tsx",
     tokens: 1,
@@ -433,6 +432,7 @@ const NUMBER_FONT_ELSEWHERE: readonly {
   { file: "src/ui/date-picker.tsx", tokens: 1, why: DATE_REASON },
   { file: "src/ui/date-range-picker.tsx", tokens: 1, why: DATE_REASON },
   { file: "src/ui/kpi-card.tsx", tokens: 7, why: SLICE_REASON },
+  { file: "src/ui/list-total-footer.tsx", tokens: 1, why: SLICE_REASON },
   { file: "src/ui/progress.tsx", tokens: 1, why: SLICE_REASON },
 ];
 
@@ -1867,15 +1867,15 @@ describe("o sublinhado de link mora no TextLink (item 12, AC-B2.5)", () => {
 /**
  * Aba de tela (DESIGN.md "Abas"): a lista e a aba vêm do `ScreenTabList` e do `ScreenTabTrigger` (ou do `ScreenTabs`),
  * então altura, fonte, estado ativo e teclado são os mesmos em toda tela. `TabsList` e `TabsTrigger` só se importam em
- * `app-shell/screen-tabs.tsx` e em `ui/`; o filtro de estado de uma lista é o `SegmentedFilter`. A lista abaixo é exata
+ * `ui/` (o `SectionTabs` está em `ui/section-tabs.tsx`); o filtro de estado de uma lista é o `SegmentedFilter`. A lista abaixo é exata
  * e só encolhe, cada arquivo com a razão.
  */
-const TABS_HOME = "src/app-shell/screen-tabs.tsx";
+const TABS_HOME = "src/ui/section-tabs.tsx";
 const TABS_FOLDER = "src/ui/";
 export const TABS_ELSEWHERE: readonly { file: string; why: string }[] = [
   {
     file: "src/ui-gallery/ui-gallery.tsx",
-    why: "a galeria mostra o primitivo Tabs como ele é e só importa de @/ui e @/lib: ScreenTabs vive em app-shell",
+    why: "a galeria mostra o primitivo Tabs como ele é, ao lado do SectionTabs",
   },
 ];
 
@@ -1927,7 +1927,7 @@ export function rawTabsFaults(
     })
     .map(
       (path) =>
-        `${path}: TabsList/TabsTrigger fora de app-shell/screen-tabs.tsx e de ui/: use ScreenTabs (ou ScreenTabList + ScreenTabTrigger) para aba de tela e SegmentedFilter para filtro de lista`
+        `${path}: TabsList/TabsTrigger fora de ui/: use SectionTabs (ou ScreenTabList + ScreenTabTrigger) para aba de tela e SegmentedFilter para filtro de lista`
     );
 }
 
@@ -1956,16 +1956,19 @@ describe("a aba de tela mora no ScreenTabs (item 16, AC-B3.1)", () => {
     }
   });
 
-  it("o ScreenTabs e o SegmentedFilter usam o primitivo, e as telas trocadas usam o ScreenTabTrigger", () => {
+  it("o ScreenTabs e o SegmentedFilter usam o primitivo, e as telas trocadas usam o SectionTabs ou o ScreenTabTrigger", () => {
     expect(read(TABS_HOME)).toMatch(TABS_PART);
     expect(read("src/ui/segmented-filter.tsx")).toMatch(TABS_PART);
     for (const path of [
+      "src/dashboard/dashboard-page.tsx",
       "src/expenses/expenses-page.tsx",
       "src/catalog/product-dialog.tsx",
-      "src/catalog/product-import/import-preview-step.tsx",
     ]) {
-      expect(read(path), path).toContain("ScreenTabTrigger");
+      expect(read(path), path).toContain("SectionTabs");
     }
+    expect(
+      read("src/catalog/product-import/import-preview-step.tsx")
+    ).toContain("ScreenTabTrigger");
   });
 
   it.each([

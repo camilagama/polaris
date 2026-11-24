@@ -12,8 +12,8 @@ import {
 import { cn } from "@/lib/utils";
 import { Badge } from "@/ui/badge";
 import { KPI_STRIP, KpiTileSkeleton } from "@/ui/kpi-card";
+import { SectionTabContent, SectionTabs } from "@/ui/section-tabs";
 import { Skeleton } from "@/ui/skeleton";
-import { Tabs, TabsContent } from "@/ui/tabs";
 import {
   dropNavigationState,
   navigateInApp,
@@ -23,11 +23,7 @@ import {
 } from "../app-shell/address";
 import { addressWithTab, requestedTab } from "../app-shell/navigation-model";
 import { TitleLine } from "../app-shell/screen-title";
-import {
-  ScreenTabList,
-  ScreenTabTrigger,
-  useScreenTab,
-} from "../app-shell/screen-tabs";
+import { useScreenTab } from "../app-shell/screen-tabs";
 import { LoadError } from "../expenses/expense-fields";
 import { monthOfDay } from "../expenses/expense-model";
 import { useConnectionOnline } from "../lib/browser-connection";
@@ -465,20 +461,29 @@ export function DashboardPage() {
           )
         }
       />
-      <Tabs className="min-w-0 gap-5" onValueChange={handleTab} value={tab}>
-        <ScreenTabList label="Resultado e metas" value={tab}>
-          <ScreenTabTrigger value="resultado">Resultado</ScreenTabTrigger>
-          <ScreenTabTrigger value="metas">
-            Metas
-            {inProgress > 0 ? (
-              <Badge variant="secondary">
-                {inProgress}
-                <span className="sr-only"> em andamento</span>
-              </Badge>
-            ) : null}
-          </ScreenTabTrigger>
-        </ScreenTabList>
-        <TabsContent className="grid gap-4" value="resultado">
+      <SectionTabs
+        label="Resultado e metas"
+        onValueChange={handleTab}
+        tabs={[
+          { label: "Resultado", value: "resultado" },
+          {
+            label: (
+              <>
+                Metas
+                {inProgress > 0 ? (
+                  <Badge variant="secondary">
+                    {inProgress}
+                    <span className="sr-only"> em andamento</span>
+                  </Badge>
+                ) : null}
+              </>
+            ),
+            value: "metas",
+          },
+        ]}
+        value={tab}
+      >
+        <SectionTabContent className="grid gap-4" value="resultado">
           <ResultStatus
             period={period}
             state={state}
@@ -516,9 +521,9 @@ export function DashboardPage() {
               timezone={organization.timezone}
             />
           </div>
-        </TabsContent>
+        </SectionTabContent>
         {/* kept mounted: a goal being typed is still there when the person comes back from the other tab */}
-        <TabsContent keepMounted value="metas">
+        <SectionTabContent keepMounted value="metas">
           <GoalsPanel
             actionsHost={goalsActionsHost}
             goals={goals}
@@ -527,8 +532,8 @@ export function DashboardPage() {
             timezone={organization.timezone}
             today={today}
           />
-        </TabsContent>
-      </Tabs>
+        </SectionTabContent>
+      </SectionTabs>
     </div>
   );
 }
