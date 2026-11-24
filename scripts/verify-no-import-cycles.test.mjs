@@ -236,11 +236,9 @@ describe("verify-no-import-cycles", () => {
     }
   );
 
-  // Known blind spots, not an approval: the guard only walks `src`, `worker`
-  // and `poc` of each package and skips any `scripts` folder below them
-  // (`ignoredFolders`), so a cycle in a package's own `scripts/` folder, or in
-  // a `src/scripts/` one, passes. If the guard starts reading those folders,
-  // these cases fail on purpose: turn them into the failing form.
+  // `scripts/` holds the gates and their support modules, which import each
+  // other; it is walked like `src`, and a `scripts` folder nested below a
+  // walked folder is not skipped.
   const SCRIPTS_CYCLE = (folder) => ({
     "packages/a/src/ok.ts": "export const ok = 1;\n",
     [`${folder}/one.ts`]:
@@ -249,21 +247,41 @@ describe("verify-no-import-cycles", () => {
       'import { one } from "./one";\nexport const two = one;\n',
   });
 
-  it("does not see a cycle in a package's own scripts/ folder (outside the walked folders)", () => {
-    const result = runGuard(SCRIPTS_CYCLE("packages/a/scripts"));
+  it.each(["packages/a/scripts", "apps/web/scripts"])(
+    "fails a cycle in the %s folder",
+    (folder) => {
+      const result = runGuard(SCRIPTS_CYCLE(folder));
 
-    expect(result.status).toBe(0);
-    expect(result.stdout).toContain(
-      "No circular runtime imports across 1 source files."
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain(HEADER);
+      expect(result.stderr).toContain(path.join(folder, "one.ts"));
+      expect(result.stderr).toContain(path.join(folder, "two.ts"));
+    }
+  );
+
+  it("fails a cycle in a src/scripts/ folder", () => {
+    const result = runGuard(SCRIPTS_CYCLE("packages/a/src/scripts"));
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain(HEADER);
+    expect(result.stderr).toContain(
+      path.join("packages", "a", "src", "scripts", "one.ts")
+    );
+    expect(result.stderr).toContain(
+      path.join("packages", "a", "src", "scripts", "two.ts")
     );
   });
 
-  it("does not see a cycle in a src/scripts/ folder (ignoredFolders)", () => {
-    const result = runGuard(SCRIPTS_CYCLE("packages/a/src/scripts"));
+  it("counts the scripts/ files of a package in the graph", () => {
+    const result = runGuard({
+      "packages/a/src/ok.ts": "export const ok = 1;\n",
+      "packages/a/scripts/gate.ts":
+        'import { ok } from "../src/ok";\nexport const gate = ok;\n',
+    });
 
     expect(result.status).toBe(0);
     expect(result.stdout).toContain(
-      "No circular runtime imports across 1 source files."
+      "No circular runtime imports across 2 source files."
     );
   });
 });

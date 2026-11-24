@@ -300,12 +300,7 @@ export function exceptionFaults(
 export const DEBT: Readonly<Record<Rule, readonly string[]>> = {
   R1: [
     // catalog
-    "src/catalog/product-dialog.tsx",
     "src/catalog/product-import/import-preview-step.tsx",
-    // dashboard
-    "src/dashboard/dashboard-page.tsx",
-    // expenses
-    "src/expenses/expenses-page.tsx",
   ],
   R2: [
     // app-shell

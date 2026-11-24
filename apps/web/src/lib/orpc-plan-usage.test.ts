@@ -66,4 +66,36 @@ describe("o cliente RPC e a memória do plano", () => {
     await planRead.get(orgId);
     expect(reads).toBe(2);
   });
+
+  it("o cartão do plano guarda o uso numa venda enviada pelo sync/push e o perde com um comando de produto", async () => {
+    const { orpcClient } = await load();
+    const { clearPlanNotice, rememberPlanNotice, rememberedPlanNotice } =
+      await import("../subscription/plan-notice");
+    fetchMock.mockImplementation(() => Promise.resolve(rpcOk({})));
+    const push = (types: string[]) =>
+      orpcClient.sync
+        .push({
+          commands: types.map((type) => ({ type })),
+          organizationId: orgId,
+        } as never)
+        .catch(() => undefined);
+    const plan = {
+      accessEndsAt: null,
+      limits: { goals: 1, images: 50, variants: 50 },
+      nextCharge: null,
+      state: "free",
+      usage: { goals: 0, images: 0, variants: 12 },
+    } as never;
+    rememberPlanNotice(orgId, plan, 1000, null);
+
+    await push(["sale.confirm", "stock.receive", "stock.write_off"]);
+    expect(rememberedPlanNotice(orgId, null)?.variants).toEqual({
+      max: 50,
+      used: 12,
+    });
+
+    await push(["sale.confirm", "product.create"]);
+    expect(rememberedPlanNotice(orgId, null)?.variants).toBeNull();
+    clearPlanNotice(null);
+  });
 });
