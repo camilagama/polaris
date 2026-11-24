@@ -21,6 +21,23 @@ vi.mock("./sale-fields", async (importOriginal) => {
 const { PaymentSection } = await import("./sale-payment-section");
 
 const noop = () => undefined;
+const NO_SPLIT = {
+  blocker: null,
+  evaluation: null,
+  handlers: {
+    onAcknowledgeSecondReview: noop,
+    onAction: noop,
+    onEnd: noop,
+    onFirstAmountChange: noop,
+    onSecondAmountChange: noop,
+    onSecondAnticipationChange: noop,
+    onSecondInstallmentPlanChange: noop,
+    onSecondInstallmentsChange: noop,
+    onSecondMethodChange: noop,
+    onSecondProfileChange: noop,
+    onStart: noop,
+  },
+};
 const SAO_PAULO = "America/Sao_Paulo";
 const AUCKLAND = "Pacific/Auckland";
 const originalZone = process.env.TZ;
@@ -52,6 +69,7 @@ function renderDay(timezone: string | null): { max?: string; today?: string } {
       profileOptions={[]}
       profilesView={{ kind: "empty", message: "Nenhum perfil." }}
       singlePaymentText="Um pagamento só."
+      split={NO_SPLIT}
       timezone={timezone}
     />
   );

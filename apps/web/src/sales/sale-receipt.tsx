@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { formatQuantity } from "@/lib/format";
-import { Card, CardContent } from "@/ui/card";
+import { Block } from "@/ui/block";
 import { MoneyText } from "@/ui/hidden-values";
 import { Money } from "@/ui/money";
 import {
@@ -38,90 +38,77 @@ export function SaleReceipt({
   const rows = sale.totals.filter((row) => row.tone !== "total");
   const total = sale.totals.find((row) => row.tone === "total");
   return (
-    <section aria-labelledby="sale-detail-title">
-      <Card className="gap-0 py-0">
-        <CardContent className="grid gap-4 py-(--card-spacing)">
-          <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
-            <h2 className="text-section" id="sale-detail-title">
-              Venda
-            </h2>
-            <span className="flex flex-wrap items-center gap-1.5">
-              {status}
-            </span>
+    <Block
+      aside={
+        <span className="flex flex-wrap items-center gap-1.5">{status}</span>
+      }
+      title="Venda"
+      variant="plain"
+    >
+      {customer}
+      {before}
+      {total ? (
+        <dl className="flex flex-wrap gap-x-6 gap-y-3" data-receipt-totals="">
+          <div className="grid grow-[1.4] gap-1">
+            <dt className="font-medium text-muted-foreground">{total.label}</dt>
+            <dd>
+              <Money className="font-semibold" size="lg" text={total.value} />
+            </dd>
           </div>
-          {customer}
-          {before}
-          {total ? (
-            <dl
-              className="flex flex-wrap gap-x-6 gap-y-3"
-              data-receipt-totals=""
-            >
-              <div className="grid grow-[1.4] gap-1">
-                <dt className="font-medium text-muted-foreground">
-                  {total.label}
-                </dt>
-                <dd>
-                  <Money
-                    className="font-semibold"
-                    size="lg"
-                    text={total.value}
-                  />
-                </dd>
-              </div>
-              <div className="grid grow gap-1">
-                <dt className="font-medium text-muted-foreground">
-                  {sale.summary.itemCount === 1 ? "Item" : "Itens"}
-                </dt>
-                <dd className="font-mono text-value-md tabular-nums">
-                  {formatQuantity(sale.summary.itemCount)}
-                </dd>
-              </div>
-            </dl>
-          ) : null}
-        </CardContent>
-        {total ? <Perforation /> : null}
-        <CardContent className="grid gap-4 py-(--card-spacing)">
-          <ConfirmedItems
-            headingId="sale-detail-items"
-            items={sale.items}
+          <div className="grid grow gap-1">
+            <dt className="font-medium text-muted-foreground">
+              {sale.summary.itemCount === 1 ? "Item" : "Itens"}
+            </dt>
+            <dd className="font-mono text-value-md tabular-nums">
+              {formatQuantity(sale.summary.itemCount)}
+            </dd>
+          </div>
+        </dl>
+      ) : null}
+      {total ? (
+        <div className="-mx-(--card-spacing)">
+          <Perforation />
+        </div>
+      ) : null}
+      <ConfirmedItems
+        headingId="sale-detail-items"
+        items={sale.items}
+        receipt
+      />
+      <dl className="grid gap-2">
+        {rows.map((row) => (
+          <LeaderRow
+            key={row.key}
+            label={row.label}
+            mono
+            tone={row.tone}
+            value={<MoneyText text={row.value} />}
+          />
+        ))}
+      </dl>
+      <ConfirmedDetails
+        block="dates"
+        details={sale.saleDetails.filter(
+          (detail) => detail.value !== sale.saleId
+        )}
+      />
+      <div className="-mx-(--card-spacing) grid gap-2 border-border border-t px-(--card-spacing) pt-(--card-spacing)">
+        <h3 className="font-medium">Pagamento</h3>
+        {sale.paymentParts ? (
+          <ConfirmedPaymentParts parts={sale.paymentParts} />
+        ) : (
+          <ConfirmedDetails
+            block="payment"
+            details={sale.paymentDetails}
             receipt
           />
-          <dl className="grid gap-2">
-            {rows.map((row) => (
-              <LeaderRow
-                key={row.key}
-                label={row.label}
-                mono
-                tone={row.tone}
-                value={<MoneyText text={row.value} />}
-              />
-            ))}
-          </dl>
-          <ConfirmedDetails
-            block="dates"
-            details={sale.saleDetails.filter(
-              (detail) => detail.value !== sale.saleId
-            )}
-          />
-        </CardContent>
-        <CardContent className="grid gap-2 border-border border-t py-(--card-spacing)">
-          <h3 className="font-medium">Pagamento</h3>
-          {sale.paymentParts ? (
-            <ConfirmedPaymentParts parts={sale.paymentParts} />
-          ) : (
-            <ConfirmedDetails
-              block="payment"
-              details={sale.paymentDetails}
-              receipt
-            />
-          )}
-          <p className="text-muted-foreground text-support">{sale.note}</p>
-          <p className="pt-1 font-mono text-muted-foreground text-xs [overflow-wrap:anywhere]">
-            <span className="sr-only">Identificador da venda: </span>
-            {sale.saleId}
-          </p>
-        </CardContent>
-      </Card>
-    </section>
+        )}
+        <p className="text-muted-foreground text-support">{sale.note}</p>
+        <p className="pt-1 font-mono text-muted-foreground text-xs [overflow-wrap:anywhere]">
+          <span className="sr-only">Identificador da venda: </span>
+          {sale.saleId}
+        </p>
+      </div>
+    </Block>
   );
 }

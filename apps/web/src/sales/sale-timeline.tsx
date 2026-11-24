@@ -1,4 +1,4 @@
-import { Card, CardContent } from "@/ui/card";
+import { Block, BlockHeader, BlockPanel } from "@/ui/block";
 import type { SaleTimelineEvent } from "./sale-history-model";
 
 /** Where the sale stands is the only dot with a color; the rest are the supporting gray. */
@@ -25,32 +25,28 @@ export function SaleTimeline({
     return null;
   }
   return (
-    <section aria-labelledby="sale-timeline-title">
-      <Card className="gap-0 py-0">
-        <CardContent className="grid gap-3 py-(--card-spacing)">
-          <h2 className="text-section" id="sale-timeline-title">
-            Linha do tempo
-          </h2>
-          <ol className="grid">
-            {events.map((event) => (
-              <li className={ITEM} key={event.key}>
-                <span
-                  aria-hidden="true"
-                  className={`absolute top-1.5 left-0 size-2 rounded-full ${DOT[event.tone]}`}
-                />
-                <span>{event.label}</span>
-                <span className="sr-only">, </span>
-                <time
-                  className="shrink-0 text-muted-foreground text-xs tabular-nums"
-                  dateTime={event.at}
-                >
-                  {event.timeText}
-                </time>
-              </li>
-            ))}
-          </ol>
-        </CardContent>
-      </Card>
-    </section>
+    <Block aria-labelledby="sale-timeline-title">
+      <BlockHeader id="sale-timeline-title" title="Linha do tempo" />
+      <BlockPanel>
+        <ol className="grid">
+          {events.map((event) => (
+            <li className={ITEM} key={event.key}>
+              <span
+                aria-hidden="true"
+                className={`absolute top-1.5 left-0 size-2 rounded-full ${DOT[event.tone]}`}
+              />
+              <span>{event.label}</span>
+              <span className="sr-only">, </span>
+              <time
+                className="shrink-0 text-muted-foreground text-xs tabular-nums"
+                dateTime={event.at}
+              >
+                {event.timeText}
+              </time>
+            </li>
+          ))}
+        </ol>
+      </BlockPanel>
+    </Block>
   );
 }

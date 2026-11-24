@@ -285,6 +285,25 @@ describe("the form of a refused sale", () => {
       kind: "unreadable",
     });
   });
+
+  it("does not build the form of a sale paid in parts, whose redo the device does not keep yet", () => {
+    const { payment, ...single } = sale().payload as Record<string, unknown>;
+    const split = {
+      ...sale(),
+      payload: {
+        ...single,
+        payments: [
+          { ...(payment as object), amount: "30.00", paymentProfile: null },
+          { ...(payment as object), amount: "40.00", paymentProfile: null },
+        ],
+      },
+    };
+    expect(
+      buildRedoDraft(split, [entry({ variantId: MUG })], createId)
+    ).toEqual({
+      kind: "unreadable",
+    });
+  });
 });
 
 describe("what stopped the redo, in words", () => {
