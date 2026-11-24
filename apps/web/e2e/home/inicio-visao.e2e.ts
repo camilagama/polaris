@@ -27,6 +27,7 @@ import {
   serve,
   settled,
   TYPE_DATES,
+  waitCopySynced,
 } from "./shared";
 
 /** `--breakpoint-md` in `packages/ui/src/theme.css`: 47.5 rem. */
@@ -270,9 +271,9 @@ test.describe("loja com venda", () => {
       "true"
     );
     await expect(meta).toContainText("R$ 2.670,60de R$ 5.000,00");
-    await expect(meta.locator("[data-goal-projection]")).toHaveText(
-      GOAL_PROJECTION
-    );
+    await expect(
+      meta.locator('[data-goal-slide="open"] [data-goal-projection]')
+    ).toHaveText(GOAL_PROJECTION);
     // two active goals and no foot under 760 px: the one way out is the link at the end of the body
     await expect(meta.getByRole("link")).toHaveCount(1);
     await expect(
@@ -1229,54 +1230,91 @@ test.describe("loja sem venda: o checklist (AC-22, AC-23)", () => {
     ).toHaveAttribute("href", "/#home-checklist");
   });
 
-  test("cadastrar o 1º produto em Produtos: o pé do menu diz 2 de 3 na hora, e o Início diz o mesmo", async ({
-    page,
-  }) => {
-    await page.setViewportSize({ height: 800, width: 1280 });
-    const created = {
-      archivedAt: null,
-      categoryId: null,
-      createdAt: "2026-10-23T15:00:00.000Z",
-      deletedAt: null,
-      description: null,
-      id: PRODUCT,
-      name: "Bolsa de couro",
-      organizationId: ORGANIZATION_ID,
-      status: "active",
-      updatedAt: "2026-10-23T15:00:00.000Z",
-      version: 1,
-    };
+  const REGISTERED_PRODUCT = {
+    archivedAt: null,
+    categoryId: null,
+    createdAt: "2026-10-23T15:00:00.000Z",
+    deletedAt: null,
+    description: null,
+    id: PRODUCT,
+    name: "Bolsa de couro",
+    organizationId: ORGANIZATION_ID,
+    status: "active",
+    updatedAt: "2026-10-23T15:00:00.000Z",
+    version: 1,
+  };
+
+  /**
+   * The server of the registration, and which way the product took: `direct` is `product/create` (no offline copy at
+   * the click), `queued` is a `product.create` command in the `sync/push` (the copy was ready, so the product is
+   * queued and announced only once the send is accepted).
+   */
+  async function serveRegistration(page: Page) {
+    const taken = { direct: 0, queued: 0 };
     let registered = false;
     await page.route("**/rpc/product/list", (route) =>
-      route.fulfill(json({ products: registered ? [created] : [] }))
+      route.fulfill(json({ products: registered ? [REGISTERED_PRODUCT] : [] }))
     );
     await page.route("**/rpc/category/list", (route) =>
       route.fulfill(json({ categories: [] }))
     );
     await page.route("**/rpc/product/create", (route) => {
       registered = true;
-      return route.fulfill(json(created));
+      taken.direct += 1;
+      return route.fulfill(json(REGISTERED_PRODUCT));
     });
-    const server = new FakeServer(
-      empty({ all: 0, unknownCost: 0, withoutStock: 0, withStock: 0 })
-    );
-    await openHome(page, server);
+    await page.route("**/rpc/sync/push", (route) => {
+      const { commands } = (
+        route.request().postDataJSON() as {
+          json: { commands: { commandId: string; type: string }[] };
+        }
+      ).json;
+      const created = commands.some(({ type }) => type === "product.create");
+      registered ||= created;
+      taken.queued += created ? 1 : 0;
+      return route.fulfill(
+        json({
+          results: commands.map(({ commandId }) => ({
+            code: null,
+            commandId,
+            replayed: false,
+            result: null,
+            status: "accepted",
+          })),
+        })
+      );
+    });
+    return taken;
+  }
+
+  const footOf = (page: Page, done: number) =>
+    page.getByRole("link", {
+      exact: true,
+      name: `Primeiros passos, ${done} de 3 concluídos`,
+    });
+
+  /**
+   * The link of the step is a page load: the Produtos screen opens its own runtime, and whether it holds the offline
+   * copy by the time the form is sent is what picks the way the product takes.
+   */
+  async function openRegistrationForm(page: Page) {
     const checklist = region(page, "Primeiros passos");
     await expect(checklist).toContainText("Cadastrar o 1º produto");
-    const foot = (done: number) =>
-      page.getByRole("link", {
-        exact: true,
-        name: `Primeiros passos, ${done} de 3 concluídos`,
-      });
-    await expect(foot(1)).toBeVisible();
+    await expect(footOf(page, 1)).toBeVisible();
     await checklist.getByRole("link", { name: "Cadastrar à mão" }).click();
     await page.waitForURL("**/products?novo=1");
     await page.getByLabel("Nome do produto").fill("Bolsa de couro");
+  }
+
+  async function submitRegistration(page: Page) {
     await page.getByRole("button", { name: "Cadastrar produto" }).click();
     await expect(page.getByLabel("Nome do produto")).toHaveCount(0);
     // the Início was not opened again: nothing was read, the foot follows the registration
-    await expect(foot(2)).toBeVisible();
-    await expect(foot(1)).toHaveCount(0);
+    await expect(footOf(page, 2)).toBeVisible();
+    await expect(footOf(page, 1)).toHaveCount(0);
+  }
+
+  async function backToHomeSaysTwoOfThree(page: Page, server: FakeServer) {
     server.scenario.stock = {
       all: 1,
       unknownCost: 1,
@@ -1290,7 +1328,66 @@ test.describe("loja sem venda: o checklist (AC-22, AC-23)", () => {
     await expect(
       region(page, "Primeiros passos").getByRole("listitem").nth(1)
     ).toContainText("Cadastrar o 1º produto (feito)");
-    await expect(foot(2)).toBeVisible();
+    await expect(footOf(page, 2)).toBeVisible();
+  }
+
+  const emptyStore = () =>
+    new FakeServer(
+      empty({ all: 0, unknownCost: 0, withoutStock: 0, withStock: 0 })
+    );
+
+  test("cadastrar o 1º produto com a cópia offline pronta: vai pela fila e o pé do menu diz 2 de 3 quando o envio é aceito", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 800, width: 1280 });
+    const taken = await serveRegistration(page);
+    const server = emptyStore();
+    const pulled = page.waitForResponse("**/rpc/sync/pull");
+    await openHome(page, server);
+    await pulled;
+    await openRegistrationForm(page);
+    // the Produtos screen reopens its runtime on the copy the first page caught up: "Tudo sincronizado" there says
+    // it is ready before the click
+    await waitCopySynced(page);
+    await submitRegistration(page);
+    expect(taken).toEqual({ direct: 0, queued: 1 });
+    await backToHomeSaysTwoOfThree(page, server);
+    expect(taken).toEqual({ direct: 0, queued: 1 });
+  });
+
+  test("cadastrar o 1º produto antes da cópia offline ficar pronta: vai direto ao servidor e o pé do menu diz 2 de 3", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 800, width: 1280 });
+    const taken = await serveRegistration(page);
+    const server = emptyStore();
+    const sessionAnswer = page.waitForResponse("**/api/auth/get-session");
+    await openHome(page, server);
+    const session = (await (await sessionAnswer).json()) as {
+      session?: { id?: string };
+    };
+    expect(
+      session.session?.id,
+      "the fake get-session must come without session.id, or the device check may be skipped and the hold never fires"
+    ).toBeUndefined();
+    // the runtime of the next page load starts by asking the device check: held, it cannot be ready at the click
+    let releaseCopy: () => void = () => undefined;
+    const copyHeld = new Promise<void>((resolve) => {
+      releaseCopy = resolve;
+    });
+    let held = 0;
+    await page.route("**/rpc/device/check", async (route) => {
+      held += 1;
+      await copyHeld;
+      await route.fallback();
+    });
+    await openRegistrationForm(page);
+    await expect.poll(() => held).toBeGreaterThan(0);
+    await submitRegistration(page);
+    expect(taken).toEqual({ direct: 1, queued: 0 });
+    releaseCopy();
+    await backToHomeSaysTwoOfThree(page, server);
+    expect(taken).toEqual({ direct: 1, queued: 0 });
   });
 
   test("produto sem quantidade: 'Dar entrada no estoque' abre o painel do produto", async ({

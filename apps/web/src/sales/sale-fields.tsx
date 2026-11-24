@@ -356,6 +356,8 @@ export function QuantityStepper({
 
 interface SelectFieldProps {
   className?: string | undefined;
+  /** The id of a text elsewhere on the screen that also describes the control. */
+  describedById?: string | undefined;
   disabled?: boolean | undefined;
   error?: string | undefined;
   hint?: string | undefined;
@@ -371,6 +373,7 @@ interface SelectFieldProps {
 /** A choice from a short list (Base UI Select): it opens below the field, never over it. */
 export function SelectField({
   className,
+  describedById,
   disabled,
   error,
   hint,
@@ -400,7 +403,11 @@ export function SelectField({
         value={value === "" ? null : value}
       >
         <SelectTrigger
-          aria-describedby={describedBy(id, error, hint)}
+          aria-describedby={
+            [describedBy(id, error, hint), describedById]
+              .filter(Boolean)
+              .join(" ") || undefined
+          }
           aria-invalid={error ? true : undefined}
           aria-labelledby={labelId}
           className="w-full min-w-0"

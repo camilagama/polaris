@@ -40,6 +40,16 @@ Os outros jobs ficam com o checkout de hoje (profundidade 1, sem filtro): nenhum
 
 A preparação dos jobs com Chromium inclui o `playwright install` (36–40 s no p50), que é da frente CI-5a e não muda aqui. Nos demais, o que se pode mexer é o cache do Bun mais o `bun install` (~9–10 s no p50) e o checkout (~5 s).
 
+### Chromium nos jobs de navegador
+
+O passo `.github/actions/chromium` restaura `~/.cache/ms-playwright` pela versão do `playwright-core` do `bun.lock` e roda `scripts/playwright-install.sh <app>`. No caminho normal não há apt: o runner `ubuntu-24.04` já traz as bibliotecas do Chrome e o navegador vem do cache da `main` ou da CDN do Playwright. O script:
+
+1. baixa o Chromium em até 2 tentativas que dividem o teto total de `PLAYWRIGHT_DOWNLOAD_TIMEOUT` (180 s, ou seja, 90 s cada) e, se as duas falham, termina com erro sem chamar o apt;
+2. confere com `ldd` os binários `chrome` e `chrome-headless-shell` do cache; sem `not found`, imprime "apt não usado" e termina;
+3. só com biblioteca faltando chama o apt (`playwright install-deps chromium`), com `Acquire::Retries 3` e `Timeout 30`, também em até 2 tentativas que dividem `PLAYWRIGHT_INSTALL_ATTEMPT_TIMEOUT` (450 s). O teto mata o Playwright, mas não o `apt-get` que ele lançou como root; antes da 2ª tentativa o `wait_for_apt` espera esse processo sair (45 s, `PLAYWRIGHT_INSTALL_APT_ORPHAN_GRACE`) e envia SIGTERM ao `apt-get` se ele ficar (o `dpkg` nunca é morto, para não deixar o banco de pacotes interrompido). Sem isso a 2ª tentativa cai em "Could not get lock /var/lib/apt/lists/lock".
+
+O passo também tem o seu próprio `timeout-minutes` no `ci.yml` (5 min), que corta o script inteiro: o caminho do apt, com os tetos de 450 s, pode ser cortado por ele antes da 2ª tentativa; o apt é exceção e o log mostra até onde chegou. `scripts/playwright-install.test.mjs` cobre os caminhos com `bunx`, `ldd`, `pgrep` e `sudo` de mentira (download que passa, que falha e repete, que estoura; biblioteca faltando; apt que estoura e repete depois do `wait_for_apt`).
+
 ## O que esperar
 
 Ganho pequeno, e não garantido. O arquivo de `node_modules` tem ~313 MB comprimido (1,4 GB, ~70 mil arquivos), do tamanho do cache do Bun de hoje (326 MB); extrair isso levou 4,5 s neste computador de 2 núcleos. Trocar "restaurar o cache do Bun + `bun install`" (~10 s) por "restaurar `node_modules`" deve poupar de 1 a 3 s por job, e não leva ao p50 de 15 s nos jobs com Chromium. O que não cabe ao cache de `node_modules` (setup do job, Node, Bun, checkout) fica como está.

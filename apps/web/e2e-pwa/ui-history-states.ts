@@ -163,12 +163,13 @@ export const historyStates = {
     await showScreenAlone(page);
   },
 
-  /** The list on its way: three rows of skeleton in the card, and the line for the screen reader (P-14). */
+  /** The list on its way: three rows of skeleton in the frame, and the line for the screen reader (P-14). */
   async loading(page: Page) {
     await openHistoryLab(page, false, true);
     await page
+      .locator("[data-list-block]")
       .getByRole("status")
-      .getByText("Carregando vendas…")
+      .filter({ hasText: "Carregando…" })
       .waitFor({ state: "attached" });
     await showScreenAlone(page);
   },

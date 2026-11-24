@@ -156,3 +156,43 @@ test("a Assinatura segue em Configurações da loja, com o retorno do pagamento"
     })
   ).toBeVisible();
 });
+
+for (const [passwordOn, settled] of [
+  [false, "Aparelhos"],
+  [true, "Senha"],
+] as const) {
+  test(`sem aba, enquanto auth-methods não responde só há o título e a espera; com a senha ${passwordOn ? "ligada" : "desligada"} abre ${settled}`, async ({
+    page,
+  }) => {
+    await page.setViewportSize(SMALL);
+    await serve(page);
+    let release: () => void = () => undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await authMethods(page, passwordOn);
+    await page.route("**/api/auth-methods", async (route) => {
+      await held;
+      await route.fallback();
+    });
+    await page.goto("/conta");
+    await expect(title(page)).toBeVisible();
+    await expect(
+      page.getByRole("status").filter({ hasText: "Carregando…" })
+    ).toBeVisible();
+    await expect(page.getByRole("tab")).toHaveCount(0);
+    await expect(page.getByRole("tabpanel")).toHaveCount(0);
+    await expect(page.getByText("Trocar senha")).toHaveCount(0);
+    expect(await axeFaults(page)).toEqual([]);
+    release();
+    if (passwordOn) {
+      await expect(tab(page, "Senha")).toHaveAttribute("aria-selected", "true");
+      await expect(page.getByLabel("Senha atual")).toBeVisible();
+    } else {
+      await expect(
+        page.getByRole("heading", { name: "Aparelhos" })
+      ).toBeVisible();
+      await expect(page.getByRole("tab")).toHaveCount(0);
+    }
+  });
+}

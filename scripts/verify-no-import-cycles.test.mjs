@@ -15,6 +15,7 @@ const GUARD = fileURLToPath(
   new URL("./verify-no-import-cycles.mjs", import.meta.url)
 );
 const HEADER = "Circular runtime imports found:";
+const SOURCE_SUFFIX = /\.(?:tsx?|mjs|js)$/;
 
 const created = [];
 
@@ -168,31 +169,78 @@ describe("verify-no-import-cycles", () => {
     );
   });
 
-  it("leaves .test.ts and .d.ts files out of the graph", () => {
-    const result = runGuard({
-      "packages/lib/src/a.test.ts":
-        'import { b } from "./b.test";\nimport { real } from "./real";\nexport const t = [b, real];\n',
-      "packages/lib/src/b.test.ts":
-        'import { t } from "./a.test";\nexport const b = t;\n',
-      "packages/lib/src/c.d.ts":
-        'import { d } from "./d";\nexport declare const c: typeof d;\n',
-      "packages/lib/src/d.d.ts":
-        'import { c } from "./c";\nexport declare const d: typeof c;\n',
-      "packages/lib/src/real.ts":
-        'import { t } from "./a.test";\nexport const real = t;\n',
-    });
+  // Each exclusion gets a cycle that exists only through the excluded file
+  // (real.ts -> excluded -> real.ts), so the guard passes only while the
+  // exclusion holds; the control plants the same loop under a name the guard
+  // does read and must fail, proving the planted tree is a real cycle.
+  function exclusionCycle(excludedFile, specifier) {
+    return {
+      "packages/lib/src/real.ts": `import { other } from "${specifier}";\nexport const real = other;\n`,
+      [excludedFile]:
+        'import { real } from "../real";\nexport const other = real;\n',
+    };
+  }
 
-    expect(result.status).toBe(0);
-    expect(result.stdout).toContain(
-      "No circular runtime imports across 1 source files."
-    );
-  });
+  const EXCLUDED_SUFFIXES = [
+    { control: "ex.spec.ts", suffix: ".test.ts" },
+    { control: "ex.spec.tsx", suffix: ".test.tsx" },
+    { control: "ex.spec.ts", suffix: ".d.ts" },
+    { control: "ex.spec.ts", suffix: ".gen.ts" },
+    { control: "ex.spec.mjs", suffix: ".test.mjs" },
+    { control: "ex.spec.js", suffix: ".test.js" },
+  ];
 
-  // Known blind spots, not an approval: the guard only walks `src`, `worker`
-  // and `poc` of each package and skips any `scripts` folder below them
-  // (`ignoredFolders`), so a cycle in a package's own `scripts/` folder, or in
-  // a `src/scripts/` one, passes. If the guard starts reading those folders,
-  // these cases fail on purpose: turn them into the failing form.
+  it.each(EXCLUDED_SUFFIXES)(
+    "leaves a $suffix file out of the graph",
+    ({ control, suffix }) => {
+      const excluded = `ex${suffix}`;
+      const tree = (name) =>
+        exclusionCycle(
+          `packages/lib/src/dir/${name}`,
+          `./dir/${name.replace(SOURCE_SUFFIX, "")}`
+        );
+
+      const passed = runGuard(tree(excluded));
+      expect(passed.status, `${suffix} must stay excluded`).toBe(0);
+      expect(passed.stdout).toContain(
+        "No circular runtime imports across 1 source files."
+      );
+
+      const failed = runGuard(tree(control));
+      expect(failed.status, `control ${control} must form a cycle`).toBe(1);
+      expect(failed.stderr).toContain(HEADER);
+    }
+  );
+
+  const EXCLUDED_FOLDERS = [
+    "node_modules",
+    "dist",
+    ".wrangler",
+    "drizzle",
+    "e2e",
+  ];
+
+  it.each(EXCLUDED_FOLDERS)(
+    "leaves the %s folder out of the graph",
+    (folder) => {
+      const tree = (name) =>
+        exclusionCycle(`packages/lib/src/${name}/ex.ts`, `./${name}/ex`);
+
+      const passed = runGuard(tree(folder));
+      expect(passed.status, `${folder} must stay excluded`).toBe(0);
+      expect(passed.stdout).toContain(
+        "No circular runtime imports across 1 source files."
+      );
+
+      const failed = runGuard(tree("pasta"));
+      expect(failed.status, "control folder must form a cycle").toBe(1);
+      expect(failed.stderr).toContain(HEADER);
+    }
+  );
+
+  // `scripts/` holds the gates and their support modules, which import each
+  // other; it is walked like `src`, and a `scripts` folder nested below a
+  // walked folder is not skipped.
   const SCRIPTS_CYCLE = (folder) => ({
     "packages/a/src/ok.ts": "export const ok = 1;\n",
     [`${folder}/one.ts`]:
@@ -201,21 +249,71 @@ describe("verify-no-import-cycles", () => {
       'import { one } from "./one";\nexport const two = one;\n',
   });
 
-  it("does not see a cycle in a package's own scripts/ folder (outside the walked folders)", () => {
-    const result = runGuard(SCRIPTS_CYCLE("packages/a/scripts"));
+  it.each(["packages/a/scripts", "apps/web/scripts"])(
+    "fails a cycle in the %s folder",
+    (folder) => {
+      const result = runGuard(SCRIPTS_CYCLE(folder));
 
-    expect(result.status).toBe(0);
-    expect(result.stdout).toContain(
-      "No circular runtime imports across 1 source files."
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain(HEADER);
+      expect(result.stderr).toContain(path.join(folder, "one.ts"));
+      expect(result.stderr).toContain(path.join(folder, "two.ts"));
+    }
+  );
+
+  it("fails a cycle in a src/scripts/ folder", () => {
+    const result = runGuard(SCRIPTS_CYCLE("packages/a/src/scripts"));
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain(HEADER);
+    expect(result.stderr).toContain(
+      path.join("packages", "a", "src", "scripts", "one.ts")
+    );
+    expect(result.stderr).toContain(
+      path.join("packages", "a", "src", "scripts", "two.ts")
     );
   });
 
-  it("does not see a cycle in a src/scripts/ folder (ignoredFolders)", () => {
-    const result = runGuard(SCRIPTS_CYCLE("packages/a/src/scripts"));
+  it("counts the scripts/ files of a package in the graph", () => {
+    const result = runGuard({
+      "packages/a/src/ok.ts": "export const ok = 1;\n",
+      "packages/a/scripts/gate.ts":
+        'import { ok } from "../src/ok";\nexport const gate = ok;\n',
+    });
 
     expect(result.status).toBe(0);
     expect(result.stdout).toContain(
-      "No circular runtime imports across 1 source files."
+      "No circular runtime imports across 2 source files."
+    );
+  });
+
+  // A `.ts` file may import a `.mjs`/`.js` module by its extension (apps/web/scripts does), and that
+  // module may import the `.ts` back; a graph with only `.ts` nodes cannot see the loop.
+  const MIXED_FOLDER = "apps/web/scripts";
+
+  it.each([".mjs", ".js"])("fails a .ts -> %s -> .ts cycle", (extension) => {
+    const result = runGuard({
+      [`${MIXED_FOLDER}/one.ts`]: `import { two } from "./two${extension}";\nexport const one = two;\n`,
+      [`${MIXED_FOLDER}/two${extension}`]:
+        'import { one } from "./one";\nexport const two = one;\n',
+    });
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain(HEADER);
+    expect(result.stderr).toContain(path.join(MIXED_FOLDER, "one.ts"));
+    expect(result.stderr).toContain(path.join(MIXED_FOLDER, `two${extension}`));
+  });
+
+  it("passes a .ts -> .mjs chain that does not come back and counts the .mjs", () => {
+    const result = runGuard({
+      [`${MIXED_FOLDER}/one.ts`]:
+        'import { two } from "./two.mjs";\nexport const one = two;\n',
+      [`${MIXED_FOLDER}/two.mjs`]: "export const two = 1;\n",
+    });
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain(
+      "No circular runtime imports across 2 source files."
     );
   });
 });

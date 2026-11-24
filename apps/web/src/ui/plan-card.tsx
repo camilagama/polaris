@@ -72,8 +72,8 @@ function PlanCardBar({ share }: { share: number }) {
 
 /**
  * The card of the plan at the foot of the menu: the use in words with a thin bar under it, what the plan above adds
- * and a button of outline (the emerald is not for buttons) that is a link. `art` is the strip of the desktop; the
- * phone's card is the compact one, without it. Nothing closes it.
+ * and a button of outline (the brand red is only for the mark dot and "where you are") that is a link. `art` is
+ * the strip of the desktop; the phone's card is the compact one, without it. Nothing closes it.
  */
 export function PlanCard({
   art,

@@ -22,6 +22,8 @@ import { useCurrentOrganization } from "../lib/current-organization";
 import { orpcClient } from "../lib/orpc";
 import { isPlainClick } from "../lib/plain-click";
 import { planRead } from "../lib/plan-read";
+import { isSigningOut } from "../lib/sign-out";
+import { isSessionOver } from "../offline/runtime/session-ended";
 import {
   LIMIT_ASK_OWNER,
   type LimitHelpView,
@@ -35,6 +37,7 @@ import {
   type NearLimitView,
   nearLimitText,
 } from "./limit-help-model";
+import { rememberPlanNotice } from "./plan-notice";
 
 const SUBSCRIPTION_HREF = tabHref("settings", "assinatura");
 
@@ -289,10 +292,19 @@ export function useNearLimitRead(
       askedVersion.current !== null && askedVersion.current !== version;
     askedVersion.current = version;
     const since = clearedAtLastRead.current;
-    clearedAtLastRead.current = planRead.clearedAt;
+    const clearedBefore = planRead.clearedAt;
+    clearedAtLastRead.current = clearedBefore;
     planRead
       .get(organizationId, { fresh, since })
       .then((plan) => {
+        // the card of the foot of the menu takes this number instead of waiting for its own read; an answer that a
+        // write cleared on its way is older than that write and is not handed over
+        if (
+          planRead.clearedAt === clearedBefore &&
+          !(isSessionOver() || isSigningOut())
+        ) {
+          rememberPlanNotice(organizationId, plan);
+        }
         if (current) {
           setRead({
             organizationId,
