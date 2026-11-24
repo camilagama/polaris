@@ -54,7 +54,7 @@ async function fillCashSale(
 /** The balance on the row of a product of the Estoque list: the first `definition` after the term "Saldo". */
 function balanceOf(page: Page, product: string) {
   return page
-    .getByRole("list", { name: "Saldos por variante" })
+    .getByRole("list", { name: "Saldos em estoque" })
     .getByRole("listitem")
     .filter({ hasText: product })
     .getByRole("definition")

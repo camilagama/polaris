@@ -6,9 +6,10 @@ import { productStates } from "./ui-product-states";
 import { stockStates } from "./ui-stock-states";
 
 /**
- * The gap between the line that counts the list ("25 variantes") and the card of the list is the same on Estoque,
- * Produtos and Clientes: 16 px at 360 px. The notice of the open panel lives inside the panel, so nothing sits
- * between the count and the list, and the gap does not change with the "Precisa de ação" strip above.
+ * The gap between the line that counts the list ("25 produtos") and the card of the list is the same on Produtos and
+ * Clientes: 16 px at 360 px. On Estoque the count is in the title of the frame, so the 16 px is between the controls
+ * (search and filters) and the frame; the notice of the open panel lives inside the panel, so nothing sits between
+ * them, and the gap does not change with the "Precisa de ação" strip above.
  */
 const GAP = 16;
 const TOLERANCE = 1;
@@ -51,13 +52,24 @@ function gapBelowCount(page: Page) {
   });
 }
 
+/** From the bottom of the controls of the list (the search and the filters) to the top of the frame of the list. */
+async function gapBelowControls(page: Page) {
+  const controls = await page
+    .getByRole("search", { name: "Filtrar estoque" })
+    .boundingBox();
+  const frame = await page.locator("[data-list-block]").boundingBox();
+  return controls && frame
+    ? { gap: frame.y - (controls.y + controls.height) }
+    : null;
+}
+
 test.describe("o vão entre a contagem e a lista a 360 px", () => {
   test("Estoque, Produtos e Clientes têm o mesmo vão de 16 px", async ({
     page,
   }) => {
     await stockStates.list(page);
     await expect(page.locator('[data-slot="action-strip"]')).toBeVisible();
-    const stock = await gapBelowCount(page);
+    const stock = await gapBelowControls(page);
 
     await productStates.list(page);
     const products = await gapBelowCount(page);
@@ -81,11 +93,11 @@ test.describe("o vão entre a contagem e a lista a 360 px", () => {
   }) => {
     await stockStates.list(page);
     await expect(page.locator('[data-slot="action-strip"]')).toBeVisible();
-    const withStrip = await gapBelowCount(page);
+    const withStrip = await gapBelowControls(page);
 
     await stockStates.attentionUnavailable(page);
     await expect(page.locator('[data-slot="action-strip"]')).toHaveCount(0);
-    const withoutStrip = await gapBelowCount(page);
+    const withoutStrip = await gapBelowControls(page);
 
     expect(withStrip).not.toBeNull();
     expect(withoutStrip).not.toBeNull();
@@ -99,7 +111,7 @@ test.describe("o vão entre a contagem e a lista a 360 px", () => {
     page,
   }) => {
     await stockStates.list(page);
-    const rows = page.getByRole("list", { name: "Saldos por variante" });
+    const rows = page.getByRole("list", { name: "Saldos em estoque" });
     const top = () =>
       rows.evaluate((list) => list.getBoundingClientRect().top + scrollY);
     const before = await top();
@@ -114,7 +126,7 @@ test.describe("o vão entre a contagem e a lista a 360 px", () => {
     await expect(
       page.getByRole("button", { name: COUNT_JEANS })
     ).toHaveAccessibleDescription(OPEN_REASON);
-    const open = await gapBelowCount(page);
+    const open = await gapBelowControls(page);
     expect(open?.gap).toBeCloseTo(GAP, 0);
   });
 });

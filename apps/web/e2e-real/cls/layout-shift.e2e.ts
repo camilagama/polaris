@@ -364,7 +364,7 @@ const SCREENS: Record<Path, (page: Page) => Locator[]> = {
   ],
   "/inventory": (page) => [
     page.getByRole("heading", { level: 1, name: "Estoque" }),
-    page.getByRole("list", { name: "Saldos por variante" }),
+    page.getByRole("list", { name: "Saldos em estoque" }),
   ],
   "/products": (page) => [
     page.getByRole("heading", { level: 1, name: "Produtos" }),

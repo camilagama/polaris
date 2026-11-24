@@ -84,7 +84,7 @@ test.describe("Estoque, Precisa de ação", () => {
     await expect(strip(page)).toContainText(
       "Precisa de ação1 variante sem saldo · 1 sem custo"
     );
-    const rows = page.getByRole("list", { name: "Saldos por variante" });
+    const rows = page.getByRole("list", { name: "Saldos em estoque" });
 
     await strip(page)
       .getByRole("link", { name: "1 variante sem saldo" })
@@ -116,7 +116,7 @@ test.describe("Estoque, Precisa de ação", () => {
     await expect(page.getByLabel("Buscar no estoque")).toHaveValue("");
     await expectPills(page, ["Saldo: Sem saldo"]);
     await expect(
-      page.getByRole("list", { name: "Saldos por variante" })
+      page.getByRole("list", { name: "Saldos em estoque" })
     ).toContainText("Boné aba reta");
   });
 
@@ -148,7 +148,7 @@ test.describe("Estoque, Precisa de ação", () => {
       page.getByText("Avisos do estoque indisponíveis agora.")
     ).toBeVisible();
     await expect(
-      page.getByRole("list", { name: "Saldos por variante" })
+      page.getByRole("list", { name: "Saldos em estoque" })
     ).toContainText("Camiseta do teste");
   });
 
@@ -320,5 +320,113 @@ test.describe("Pendências, Precisa de ação", () => {
     await attentionStates.empty(page);
     await expect(strip(page)).toHaveCount(0);
     expect(await axeFaults(page)).toEqual([]);
+  });
+});
+
+const FRAME = "[data-list-block]";
+
+test.describe("Estoque, a lista na moldura", () => {
+  test("o título e a contagem estão na moldura, a lista é nomeada por ele e a busca e o filtro ficam 16 px acima dela", async ({
+    page,
+  }) => {
+    await stockStates.list(page);
+    const frame = page.getByRole("region", { name: "Saldos em estoque" });
+    await expect(
+      frame.getByRole("heading", { level: 2, name: "Saldos em estoque" })
+    ).toBeVisible();
+    await expect(frame.locator("[data-list-count]")).toHaveText(
+      "Mostrando 4 variantes"
+    );
+    await expect(
+      frame.getByRole("list", { name: "Saldos em estoque" })
+    ).toBeVisible();
+    await expect(page.locator("[data-list-count]")).toHaveCount(1);
+    await expect(frame.getByRole("search")).toHaveCount(0);
+    await expect(frame.getByLabel("Buscar no estoque")).toHaveCount(0);
+
+    const geometry = await page.evaluate((selector) => {
+      const box = (element: Element | null) => {
+        if (element === null) {
+          throw new Error("a part of the list is not on the screen");
+        }
+        const { bottom, left, right, top } = element.getBoundingClientRect();
+        return { bottom, left, right, top };
+      };
+      const frameElement = document.querySelector(selector);
+      return {
+        bar: box(document.querySelector("search")),
+        frame: box(frameElement),
+        panel: box(
+          frameElement?.querySelector("[data-list-block-scroll]") ?? null
+        ),
+        rows: [
+          ...(frameElement?.querySelectorAll("[data-list-block-row]") ?? []),
+        ].map(box),
+      };
+    }, FRAME);
+    expect(geometry.frame.top - geometry.bar.bottom).toBeCloseTo(16, 0);
+    expect(geometry.rows).toHaveLength(4);
+    for (const row of geometry.rows) {
+      expect(row.left).toBeCloseTo(geometry.panel.left, 0);
+      expect(row.right).toBeCloseTo(geometry.panel.right, 0);
+    }
+  });
+
+  test("sem nenhuma variante: só o estado vazio, sem moldura, com a busca e o filtro como sempre", async ({
+    page,
+  }) => {
+    await stockStates.empty(page);
+    await expect(page.locator(FRAME)).toHaveCount(0);
+    const empty = page.getByRole("status").filter({
+      hasText: "Nenhuma variante cadastrada.",
+    });
+    await expect(empty).toContainText(
+      "Cadastre um produto para controlar o estoque dele."
+    );
+    await expect(
+      empty.getByRole("link", { name: "Ir para Produtos" })
+    ).toHaveAttribute("href", "/products");
+    await expect(page.getByLabel("Buscar no estoque")).toBeVisible();
+    await expect(bar(page)).toBeVisible();
+  });
+
+  test("busca sem resultado: a moldura fica, com a contagem e a frase no painel", async ({
+    page,
+  }) => {
+    await stockStates.noResult(page);
+    const frame = page.getByRole("region", { name: "Saldos em estoque" });
+    await expect(frame).toHaveAttribute("data-state", "filtered-empty");
+    await expect(frame.locator("[data-list-count]")).toHaveText("0 variantes");
+    await expect(
+      frame.getByText("Nenhuma variante encontrada para “zzz”.")
+    ).toBeVisible();
+    await expect(frame.getByRole("list")).toHaveCount(0);
+  });
+
+  test("erro ao ler: sem moldura, o aviso com Tentar novamente", async ({
+    page,
+  }) => {
+    await stockStates.error(page);
+    await expect(page.locator(FRAME)).toHaveCount(0);
+    await expect(
+      page.getByRole("alert").getByRole("button", { name: "Tentar novamente" })
+    ).toBeVisible();
+  });
+
+  test("sem internet: o aviso fica acima da busca e do filtro, e a moldura segue com a lista do aparelho", async ({
+    page,
+  }) => {
+    await stockStates.offline(page);
+    const notice = await page
+      .locator('[data-slot="alert"]')
+      .filter({ hasText: "Sem conexão." })
+      .boundingBox();
+    const controls = await bar(page).boundingBox();
+    expect(notice).not.toBeNull();
+    expect(controls).not.toBeNull();
+    expect((notice?.y ?? 0) + (notice?.height ?? 0)).toBeLessThanOrEqual(
+      controls?.y ?? 0
+    );
+    await expect(page.locator(FRAME)).toHaveCount(1);
   });
 });

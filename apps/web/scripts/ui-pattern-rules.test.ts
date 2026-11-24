@@ -329,8 +329,6 @@ export const DEBT: Readonly<Record<Rule, readonly string[]>> = {
     // home
     "src/home/home-goal.tsx",
     "src/home/home-parts.tsx",
-    // inventory
-    "src/inventory/inventory-page.tsx",
     // offline
     "src/offline/attention-panel.tsx",
     "src/offline/logout-dialog.tsx",
@@ -388,9 +386,6 @@ export const DEBT: Readonly<Record<Rule, readonly string[]>> = {
     "src/expenses/month-picker.tsx",
     // home
     "src/home/home-figures.tsx",
-    // inventory
-    "src/inventory/stock-command-panel.tsx",
-    "src/inventory/stock-panel-fields.tsx",
     // legal
     "src/legal/legal-page.tsx",
     // offline
@@ -543,7 +538,6 @@ describe("o padrão visual das telas (R1 a R3)", () => {
       "src/catalog/category-list.tsx",
       "src/customers/customer-list.tsx",
       "src/expenses/expense-list.tsx",
-      "src/inventory/inventory-page.tsx",
       "src/sales/sale-history-page.tsx",
       "src/sales/sale-history-list.tsx",
     ]) {

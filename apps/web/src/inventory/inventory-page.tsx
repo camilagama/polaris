@@ -1,5 +1,6 @@
 import type { InventoryBalanceReadModel } from "@polaris/contracts";
 import CloudOffIcon from "lucide-react/dist/esm/icons/cloud-off";
+import PackageIcon from "lucide-react/dist/esm/icons/package";
 import RefreshCwIcon from "lucide-react/dist/esm/icons/refresh-cw";
 import {
   type MouseEvent,
@@ -13,10 +14,12 @@ import {
 import { cn } from "@/lib/utils";
 import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
 import { Badge } from "@/ui/badge";
-import { Button } from "@/ui/button";
-import { Card } from "@/ui/card";
+import { Button, buttonVariants } from "@/ui/button";
+import { Block } from "@/ui/block";
+import { EmptyState } from "@/ui/empty-state";
 import { HelpTip } from "@/ui/help-tip";
 import { MoneyText } from "@/ui/hidden-values";
+import { ListBlock } from "@/ui/list-block";
 import { RefreshButton } from "@/ui/refresh-button";
 import { SearchField } from "@/ui/search-field";
 import { Skeleton } from "@/ui/skeleton";
@@ -150,11 +153,8 @@ function StockItem({
   const thumbs = useMediaThumbsEnabled();
   const rowLocked = panelOpen || otherPanelOpen;
   return (
-    <li
-      className={cn(
-        "@container grid gap-3 p-(--card-spacing)",
-        panelOpen && "bg-muted/50"
-      )}
+    <ListBlock.Row
+      className="@container grid items-stretch gap-3"
       data-open={panelOpen ? "" : undefined}
     >
       <div className="grid gap-3 md:grid-cols-[minmax(0,1.1fr)_minmax(0,1.5fr)_auto] md:items-center md:gap-6">
@@ -225,35 +225,19 @@ function StockItem({
         <RowActions disabled={rowLocked} onOpen={onOpen} row={row} />
       </div>
       {children}
-    </li>
+    </ListBlock.Row>
   );
 }
 
-/** The empty state: a card with one line, centered under the toolbar. */
-function StateCard({ children }: { children: ReactNode }) {
-  return (
-    <Card className="items-center px-(--card-spacing) text-center">
-      <p className="text-muted-foreground">{children}</p>
-    </Card>
-  );
-}
+const LIST_TITLE = "Saldos em estoque";
 
-const LOADING_ROWS = [0, 1, 2];
-
-/** Loading: three rows of skeleton in the card, and the line that says it for the screen reader. */
-function LoadingCard({ message }: { message: string }) {
-  return (
-    <Card aria-busy="true" className="gap-3 px-(--card-spacing)" role="status">
-      <p className="sr-only">{message}</p>
-      {LOADING_ROWS.map((row) => (
-        <div aria-hidden="true" className="grid gap-1.5" key={row}>
-          <Skeleton className="h-3.5 w-2/3" />
-          <Skeleton className="h-3 w-1/3" />
-        </div>
-      ))}
-    </Card>
-  );
-}
+/** The shape of a row while the list is read: the name and the variant, as the two lines a row has. */
+const ROW_SKELETON = (
+  <div className="grid gap-1.5">
+    <Skeleton className="h-3.5 w-2/3" />
+    <Skeleton className="h-3 w-1/3" />
+  </div>
+);
 
 /** "Carregar mais", the retry of the refresh warning and the retry of the full-screen error never show together, and a re-read always passes through a loading render between them, so the hook sees one render with none. */
 function hasFocusableControl(
@@ -455,33 +439,23 @@ export function InventoryPage() {
         onChange={setFilters}
       />
 
-      <p
-        aria-live="polite"
-        className="flex min-h-ctl-sm min-w-0 items-center text-muted-foreground text-support"
-        role="status"
-      >
-        {countText ?? " "}
-      </p>
-
       {open?.standalone ? (
-        <Card className="gap-0 py-0">
-          <div className="p-(--card-spacing)">
-            <StockCommandPanel
-              action={open.action}
-              key={`${open.target.variantId}-${open.action}`}
-              local={offlineWorkspace ?? undefined}
-              onBalance={applyBalance}
-              onClose={handleClose}
-              onInformCost={handleInformCost}
-              onReloadList={reload}
-              organizationId={organizationId}
-              requestedQuantity={open.quantity}
-              standalone
-              target={open.target}
-              today={today}
-            />
-          </div>
-        </Card>
+        <Block variant="plain">
+          <StockCommandPanel
+            action={open.action}
+            key={`${open.target.variantId}-${open.action}`}
+            local={offlineWorkspace ?? undefined}
+            onBalance={applyBalance}
+            onClose={handleClose}
+            onInformCost={handleInformCost}
+            onReloadList={reload}
+            organizationId={organizationId}
+            requestedQuantity={open.quantity}
+            standalone
+            target={open.target}
+            today={today}
+          />
+        </Block>
       ) : null}
 
       {more.refreshFailed ? (
@@ -502,7 +476,6 @@ export function InventoryPage() {
           </AlertDescription>
         </Alert>
       ) : null}
-      {view.kind === "loading" ? <LoadingCard message={view.message} /> : null}
       {view.kind === "error" ? (
         <Alert variant="destructive">
           <AlertDescription className="flex flex-wrap items-center gap-x-3 gap-y-1">
@@ -521,57 +494,76 @@ export function InventoryPage() {
           </AlertDescription>
         </Alert>
       ) : null}
-      {view.kind === "empty" ? (
-        <StateCard>
-          {view.message}
-          {view.showCatalogLink ? (
-            <>
-              {" "}
-              <TextLink href="/products">Ir para Produtos</TextLink>
-            </>
-          ) : null}
-        </StateCard>
+      {view.kind === "empty" && view.showCatalogLink ? (
+        <EmptyState
+          afterRead
+          icon={PackageIcon}
+          support="Cadastre um produto para controlar o estoque dele."
+          title="Nenhuma variante cadastrada."
+        >
+          <a
+            className={buttonVariants({ variant: "outline" })}
+            href="/products"
+          >
+            Ir para Produtos
+          </a>
+        </EmptyState>
+      ) : null}
+      {view.kind === "loading" ? (
+        <ListBlock
+          count=""
+          skeleton={ROW_SKELETON}
+          state="loading"
+          title={LIST_TITLE}
+        />
+      ) : null}
+      {view.kind === "empty" && !view.showCatalogLink ? (
+        <ListBlock
+          count={countText ?? ""}
+          emptyNotice={
+            <p className="text-muted-foreground" role="status">
+              {view.message}
+            </p>
+          }
+          state="filtered-empty"
+          title={LIST_TITLE}
+        />
       ) : null}
       {view.kind === "ready" ? (
-        <Card className="gap-0 py-0">
-          <ul
-            aria-label="Saldos por variante"
-            className="divide-y divide-border"
-          >
-            {view.rows.map((row) => (
-              <StockItem
-                canOpenProduct={canOpenProduct}
-                key={row.id}
-                onOpen={handleOpen}
-                otherPanelOpen={
-                  panelMounted &&
-                  open !== null &&
-                  (open.standalone || open.target.variantId !== row.id)
-                }
-                panelOpen={
-                  open?.standalone === false && open.target.variantId === row.id
-                }
-                row={row}
-              >
-                {open?.standalone === false &&
-                open.target.variantId === row.id ? (
-                  <StockCommandPanel
-                    action={open.action}
-                    key={`${open.target.variantId}-${open.action}`}
-                    local={offlineWorkspace ?? undefined}
-                    onBalance={applyBalance}
-                    onClose={handleClose}
-                    onInformCost={handleInformCost}
-                    onReloadList={reload}
-                    organizationId={organizationId}
-                    target={open.target}
-                    today={today}
-                  />
-                ) : null}
-              </StockItem>
-            ))}
-          </ul>
-        </Card>
+        <ListBlock count={countText ?? ""} state="rows" title={LIST_TITLE}>
+          {view.rows.map((row) => (
+            <StockItem
+              canOpenProduct={canOpenProduct}
+              key={row.id}
+              onOpen={handleOpen}
+              otherPanelOpen={
+                panelMounted &&
+                open !== null &&
+                (open.standalone || open.target.variantId !== row.id)
+              }
+              panelOpen={
+                open?.standalone === false && open.target.variantId === row.id
+              }
+              row={row}
+            >
+              {open?.standalone === false &&
+              open.target.variantId === row.id ? (
+                <StockCommandPanel
+                  action={open.action}
+                  key={`${open.target.variantId}-${open.action}`}
+                  local={offlineWorkspace ?? undefined}
+                  onBalance={applyBalance}
+                  onClose={handleClose}
+                  onInformCost={handleInformCost}
+                  onReloadList={reload}
+                  organizationId={organizationId}
+                  target={open.target}
+                  today={today}
+                />
+              ) : null}
+            </StockItem>
+          ))}
+        </ListBlock>
       ) : null}
 
       {more.error ? (
