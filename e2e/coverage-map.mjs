@@ -946,6 +946,7 @@ export const SPEC_SCREENS = {
   "apps/web/e2e/turnstile-real.e2e.ts": ["sign-in"],
   "apps/web/e2e/usabilidade-formularios.e2e.ts": ["settings"],
   "apps/web/e2e/usabilidade-lote-1.e2e.ts": ["home", "settings", "sign-in"],
+  "apps/web/e2e/venda-dividida-reflow.e2e.ts": ["sale", "inventory"],
   "apps/web/e2e/venda-trocar-preco.e2e.ts": ["sale"],
 };
 
