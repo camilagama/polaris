@@ -7,6 +7,7 @@ import { serveLabWorker, WORKER_MARK } from "./worker-mark";
  * "Dividir pagamento" on the sale screen, in the lab of the offline screens (no server: the reads and the
  * confirmation are answered here). Two parts at most; each with its method, amount, credit fields and profile.
  */
+const ANY_ID = /.+/;
 const SHIRT_OPTION = /Camiseta do laboratório · Azul/;
 const LAB_PROFILE = /Maquininha do laboratório/;
 const DESKTOP_ONLY = "teclas e linha única só no desktop";
@@ -107,7 +108,7 @@ const part = (page: Page, ordinal: 1 | 2) =>
 async function choose(scope: Locator, label: string, option: RegExp | string) {
   const trigger = scope.getByRole("combobox", { exact: true, name: label });
   await trigger.click();
-  await expect(trigger).toHaveAttribute("aria-controls", /.+/);
+  await expect(trigger).toHaveAttribute("aria-controls", ANY_ID);
   const list = scope
     .page()
     .locator(`[id="${await trigger.getAttribute("aria-controls")}"]`);

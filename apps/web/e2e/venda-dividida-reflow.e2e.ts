@@ -35,6 +35,8 @@ const PROFILE = {
   version: 1,
 };
 
+const ANY_ID = /.+/;
+
 const rpc = (json: unknown) => ({
   body: JSON.stringify({ json, meta: [] }),
   contentType: "application/json",
@@ -45,7 +47,7 @@ const rpc = (json: unknown) => ({
 async function choose(scope: Locator, label: string, option: string) {
   const trigger = scope.getByRole("combobox", { exact: true, name: label });
   await trigger.click();
-  await expect(trigger).toHaveAttribute("aria-controls", /.+/);
+  await expect(trigger).toHaveAttribute("aria-controls", ANY_ID);
   const list = scope
     .page()
     .locator(`[id="${await trigger.getAttribute("aria-controls")}"]`);
