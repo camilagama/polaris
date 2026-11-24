@@ -1,5 +1,7 @@
 # Gera e commita no ramo de um PR as capturas do ui-visual que mudaram (desenho do Filipe, arquitetura-2026-11-24.md).
 # Só por disparo manual, nunca na main, nunca em fork; o revisor confere a lista de PNGs e o artefato de diffs.
+# Dois jobs (Rodrigo, seguranca/2026-11-24.md 00:32): "gerar" roda o código do ramo só com leitura;
+# "publicar" tem escrita e não roda nada do ramo, só confere os PNGs do artefato e faz o push.
 name: Visual baselines
 run-name: "Baselines do ui-visual PR #${{ inputs.pr }}"
 on:
@@ -14,13 +16,14 @@ concurrency:
   group: visual-baselines-${{ github.ref }}
   cancel-in-progress: false
 jobs:
-  baselines:
+  gerar:
     runs-on: ubuntu-24.04
     timeout-minutes: 35
     permissions:
-      contents: write       # push só no ramo do PR (conferido abaixo)
-      actions: write        # disparar o ci.yml no head novo
-      pull-requests: read   # conferir o PR
+      contents: read
+      pull-requests: read   # conferir o PR antes de gastar o runner
+    outputs:
+      mudou: ${{ steps.lista.outputs.mudou }}
     steps:
       - name: Recusa main e ramo que não é o head de um PR aberto deste repositório
         env:
@@ -38,8 +41,8 @@ jobs:
           [ "$(jq -r .headRefOid <<<"$info")" = "$GITHUB_SHA" ] || { echo "o head mudou desde o disparo"; exit 1; }
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.ref_name }}
-          persist-credentials: true
+          ref: ${{ github.sha }}
+          persist-credentials: false
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version-file: .node-version
@@ -66,15 +69,27 @@ jobs:
       - name: Gera só as capturas que mudaram (imagem fixada do ui-visual)
         working-directory: apps/web
         run: bun run test:visual:update
-      - name: Só PNGs do ui-visual podem mudar
+      - name: Separa os PNGs que mudaram
+        id: lista
         run: |
           set -euo pipefail
           changed=$(git status --porcelain --untracked-files=all)
-          [ -n "$changed" ] || { echo "nenhuma captura mudou"; exit 0; }
+          if [ -z "$changed" ]; then echo "nenhuma captura mudou"; echo "mudou=false" >> "$GITHUB_OUTPUT"; exit 0; fi
           if grep -v -E '^.. apps/web/e2e-pwa/ui-visual\.e2e\.ts-snapshots/[^/]+\.png$' <<<"$changed"; then
             echo "arquivo fora das capturas mudou: recuso"; exit 1
           fi
+          mkdir -p "$RUNNER_TEMP/capturas"
+          sed 's/^.. //' <<<"$changed" | while IFS= read -r f; do cp -- "$f" "$RUNNER_TEMP/capturas/"; done
           { echo "### Capturas regravadas"; echo; sed 's/^.. /- /' <<<"$changed"; } >> "$GITHUB_STEP_SUMMARY"
+          echo "mudou=true" >> "$GITHUB_OUTPUT"
+      - name: Capturas para o job de publicação
+        if: steps.lista.outputs.mudou == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: visual-baselines-capturas-pr-${{ inputs.pr }}
+          path: ${{ runner.temp }}/capturas/
+          if-no-files-found: error
+          retention-days: 1
       - name: Diffs para o revisor
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -84,18 +99,78 @@ jobs:
             apps/web/test-results/
             apps/web/e2e-pwa/ui-visual.e2e.ts-snapshots/
           if-no-files-found: ignore
+
+  publicar:
+    needs: gerar
+    if: needs.gerar.outputs.mudou == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write       # push só no ramo do PR (conferido abaixo)
+      actions: write        # disparar o ci.yml no head novo
+      pull-requests: read   # conferir o PR de novo
+    steps:
+      - name: Confere de novo o PR e o head (nada do ramo roda neste job)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ inputs.pr }}
+          REF: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          [ "$GITHUB_REF_TYPE" = branch ] || { echo "só ramo"; exit 1; }
+          [ "$REF" != "main" ] || { echo "nunca na main"; exit 1; }
+          info=$(gh pr view "$PR" --repo "$GITHUB_REPOSITORY" --json state,headRefName,isCrossRepository,headRefOid)
+          [ "$(jq -r .state <<<"$info")" = OPEN ] || { echo "PR fechado"; exit 1; }
+          [ "$(jq -r .isCrossRepository <<<"$info")" = false ] || { echo "PR de fork"; exit 1; }
+          [ "$(jq -r .headRefName <<<"$info")" = "$REF" ] || { echo "ref não é o head do PR"; exit 1; }
+          [ "$(jq -r .headRefOid <<<"$info")" = "$GITHUB_SHA" ] || { echo "o head mudou desde o disparo"; exit 1; }
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: visual-baselines-capturas-pr-${{ inputs.pr }}
+          path: ${{ runner.temp }}/capturas
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: true
+      - name: Confere cada arquivo e copia para a pasta de capturas
+        run: |
+          set -euo pipefail
+          src="$RUNNER_TEMP/capturas"
+          dst="apps/web/e2e-pwa/ui-visual.e2e.ts-snapshots"
+          [ -d "$dst" ] && [ ! -L "$dst" ] || { echo "pasta de capturas ausente ou symlink"; exit 1; }
+          n=0
+          while IFS= read -r -d '' f; do
+            name=$(basename -- "$f")
+            [[ "$name" =~ ^[A-Za-z0-9._-]+\.png$ ]] || { echo "nome recusado: $name"; exit 1; }
+            [ -f "$f" ] && [ ! -L "$f" ] || { echo "não é arquivo comum: $name"; exit 1; }
+            [ "$(stat -c %s -- "$f")" -le 5242880 ] || { echo "maior que 5 MB: $name"; exit 1; }
+            [ "$(head -c 8 -- "$f" | od -An -tx1 | tr -d ' \n')" = 89504e470d0a1a0a ] || { echo "não é PNG: $name"; exit 1; }
+            [ ! -L "$dst/$name" ] || { echo "destino é symlink: $name"; exit 1; }
+            cp -- "$f" "$dst/$name"
+            n=$((n+1))
+          done < <(find "$src" -mindepth 1 -print0)
+          [ "$n" -gt 0 ] || { echo "artefato vazio"; exit 1; }
+          changed=$(git status --porcelain --untracked-files=all)
+          if grep -v -E '^.. apps/web/e2e-pwa/ui-visual\.e2e\.ts-snapshots/[^/]+\.png$' <<<"$changed"; then
+            echo "arquivo fora das capturas mudou: recuso"; exit 1
+          fi
       - name: Commit e push no ramo do PR
+        id: push
         env:
           RUN: ${{ github.run_id }}
         run: |
           set -euo pipefail
-          git diff --quiet && git diff --cached --quiet && [ -z "$(git ls-files --others --exclude-standard)" ] && exit 0
+          if git diff --quiet && [ -z "$(git ls-files --others --exclude-standard)" ]; then
+            echo "pushed=false" >> "$GITHUB_OUTPUT"; exit 0
+          fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add apps/web/e2e-pwa/ui-visual.e2e.ts-snapshots/
+          git add -- apps/web/e2e-pwa/ui-visual.e2e.ts-snapshots/
           git commit -m "test(visual): capturas do ui-visual geradas no CI (run $RUN)"
           git push origin "HEAD:refs/heads/${GITHUB_REF_NAME}"
+          echo "pushed=true" >> "$GITHUB_OUTPUT"
       - name: CI completo no head novo (push com GITHUB_TOKEN não dispara o CI)
+        if: steps.push.outputs.pushed == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           PR: ${{ inputs.pr }}
