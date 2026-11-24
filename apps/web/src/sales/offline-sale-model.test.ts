@@ -165,11 +165,16 @@ describe("keeping a locked sale on the device as the same sale", () => {
     phase: "locked" as const,
   };
   const evaluation = (
-    overrides: Partial<{ override: string | null; profile: unknown }> = {}
+    overrides: Partial<{
+      override: string | null;
+      payments: unknown;
+      profile: unknown;
+    }> = {}
   ) =>
     ({
       body: {
         paymentProfile: "profile" in overrides ? overrides.profile : null,
+        payments: overrides.payments,
       },
       occurredAtOverride: "override" in overrides ? overrides.override : null,
     }) as unknown as Parameters<typeof canKeepLockedSaleOnDevice>[2];
@@ -185,7 +190,7 @@ describe("keeping a locked sale on the device as the same sale", () => {
     ).toBe(true);
   });
 
-  it("is refused with a typed date, another instant, no attempt, or any other state", () => {
+  it("is refused with a typed date, another instant, no attempt, a sale in parts, or any other state", () => {
     expect(
       canKeepLockedSaleOnDevice(
         locked,
@@ -201,6 +206,13 @@ describe("keeping a locked sale on the device as the same sale", () => {
       )
     ).toBe(false);
     expect(canKeepLockedSaleOnDevice(locked, null, evaluation())).toBe(false);
+    expect(
+      canKeepLockedSaleOnDevice(
+        locked,
+        attempt,
+        evaluation({ payments: [{ amount: "100.00" }, { amount: "200.00" }] })
+      )
+    ).toBe(false);
     expect(
       canKeepLockedSaleOnDevice(idleSubmission, attempt, evaluation())
     ).toBe(false);
