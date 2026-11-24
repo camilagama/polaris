@@ -51,9 +51,7 @@ function gapBelowCount(page: Page) {
 }
 
 test.describe("o vão entre a contagem e a lista a 360 px", () => {
-  test("Estoque e Produtos têm o mesmo vão de 16 px", async ({
-    page,
-  }) => {
+  test("Estoque e Produtos têm o mesmo vão de 16 px", async ({ page }) => {
     await stockStates.list(page);
     await expect(page.locator('[data-slot="action-strip"]')).toBeVisible();
     const stock = await gapBelowCount(page);
