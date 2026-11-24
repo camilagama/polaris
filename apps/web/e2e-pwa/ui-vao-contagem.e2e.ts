@@ -6,9 +6,10 @@ import { productStates } from "./ui-product-states";
 import { stockStates } from "./ui-stock-states";
 
 /**
- * The gap between the line that counts the list ("25 variantes") and the card of the list is the same on Estoque,
- * Produtos and Clientes: 16 px at 360 px. The notice of the open panel lives inside the panel, so nothing sits
- * between the count and the list, and the gap does not change with the "Precisa de ação" strip above.
+ * The gap between the line that counts the list ("25 variantes") and the card of the list is the same on Estoque and
+ * Clientes: 16 px at 360 px. The notice of the open panel lives inside the panel, so nothing sits between the count
+ * and the list, and the gap does not change with the "Precisa de ação" strip above. Produtos has no such line: its
+ * count is in the header of the frame, and the line of controls sits 16 px above the frame.
  */
 const GAP = 16;
 const TOLERANCE = 1;
@@ -51,28 +52,46 @@ function gapBelowCount(page: Page) {
   });
 }
 
+/** From the bottom of the filter of the products (the last of the line of controls) to the top of the frame of the list. */
+function gapBelowControls(page: Page) {
+  return page.evaluate(() => {
+    const filter = document.querySelector(
+      '[role="tablist"][aria-label="Estado dos produtos"]'
+    );
+    const frame = document.querySelector("[data-list-block]");
+    if (!(filter && frame)) {
+      return null;
+    }
+    return {
+      gap:
+        frame.getBoundingClientRect().top -
+        filter.getBoundingClientRect().bottom,
+    };
+  });
+}
+
 test.describe("o vão entre a contagem e a lista a 360 px", () => {
-  test("Estoque, Produtos e Clientes têm o mesmo vão de 16 px", async ({
+  test("Produtos: a moldura da lista fica a 16 px da linha de controles", async ({
     page,
   }) => {
+    await productStates.list(page);
+    const products = await gapBelowControls(page);
+    expect(products).not.toBeNull();
+    expect(products?.gap).toBeCloseTo(GAP, 0);
+  });
+
+  test("Estoque e Clientes têm o mesmo vão de 16 px", async ({ page }) => {
     await stockStates.list(page);
     await expect(page.locator('[data-slot="action-strip"]')).toBeVisible();
     const stock = await gapBelowCount(page);
-
-    await productStates.list(page);
-    const products = await gapBelowCount(page);
 
     await customerStates.list(page);
     const customers = await gapBelowCount(page);
 
     expect(stock?.gap).toBeCloseTo(GAP, 0);
     expect(
-      Math.abs((stock?.gap ?? 0) - (products?.gap ?? 99))
-    ).toBeLessThanOrEqual(TOLERANCE);
-    expect(
       Math.abs((stock?.gap ?? 0) - (customers?.gap ?? 99))
     ).toBeLessThanOrEqual(TOLERANCE);
-    expect(products?.gap).toBeCloseTo(GAP, 0);
     expect(customers?.gap).toBeCloseTo(GAP, 0);
   });
 
