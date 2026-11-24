@@ -5,7 +5,7 @@ O Histórico (`/sales/history`) lista as vendas da loja com filtros por período
 ## Sub-features
 
 - `historico-lista` a lista `list "Vendas"`, cada venda um link com data, situação, cliente, método e total.
-- `historico-vazio` loja sem venda: "Nenhuma venda ainda. Registre a primeira venda para vê-la aqui."
+- `historico-vazio` loja sem venda e sem filtro: só o `EmptyState` (sem moldura, sem o título "Vendas do período" e sem total), com "Nenhuma venda ainda.", o apoio "Registre a primeira venda para vê-la aqui." e o link "Registrar uma venda"; a busca e o filtro ficam acima
 - `historico-filtros` o `search "Filtrar vendas"` com o botão "Filtrar"; sem resultado: "Nenhuma venda encontrada com estes filtros." e o botão "Limpar filtros"
 - `historico-total-periodo` com o período escolhido sozinho (as duas pontas, sem Situação, Cliente nem busca, com conexão, até 366 dias) o rodapé da lista é "Vendas líquidas do período" (o `netSales` do Resultado, com o (i) "Sobre Vendas líquidas do período"); em qualquer outro caso é "Total na tela". Sem conexão ou com a leitura falha, "Total na tela" com a frase calma na linha de nota.
 - `historico-detalhe` o detalhe com as regiões "Venda" (com a linha "Cliente: …") e "Itens", e o botão "Ações" na linha do título (menu com as ações da venda).

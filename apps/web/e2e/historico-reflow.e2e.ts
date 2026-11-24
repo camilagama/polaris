@@ -10,6 +10,7 @@ import {
   reflowTest,
   skipOutsideChromium,
 } from "./reflow";
+import { applyEditor } from "./filter-bar-editor";
 import { serveLabWorker, WORKER_MARK } from "./worker-mark";
 
 /**
@@ -27,6 +28,7 @@ const LONG_CUSTOMER =
   "Maria Aparecida dos Santos Albuquerque Pereira de Oliveira Souza";
 const SHORT_CUSTOMER = "Ana Paula";
 const TIME = /\d{2}:\d{2}/;
+const SITUATION_ITEM = /^Situação/;
 const COUNT_TEXT = /^\d+ vendas?/;
 const FOOT_VALUE = /^R\$ \d{1,3}(\.\d{3})*,\d{2}$/;
 
@@ -76,20 +78,57 @@ function manySales() {
   });
 }
 
+interface Asked {
+  occurredFrom?: string;
+  status?: string;
+}
+
+interface OpenOptions {
+  /** The sales the list answers for the request; the default answers `sales` whatever was asked. */
+  answer?: (asked: Asked) => unknown[];
+  fontPixels?: number;
+  hasMore?: boolean;
+  /** What the server reads for a period alone (the Resultado's figures). */
+  period?: { netSales: string; salesCount: number };
+  /** False for a store with no sale and no filter: the screen has the empty state, no frame and no total. */
+  total?: boolean;
+  width?: number;
+}
+
 async function openHistory(
   page: Page,
   sales: unknown[],
-  { fontPixels = 20, hasMore = false, width = 320 } = {}
+  {
+    answer,
+    fontPixels = 20,
+    hasMore = false,
+    period,
+    total = true,
+    width = 320,
+  }: OpenOptions = {}
 ) {
   await openReflowViewport(page, { fontPixels, width });
   await page.clock.setFixedTime(new Date(NOW));
-  await page.route("**/rpc/sale/list", (route: Route) =>
-    route.fulfill({
-      body: JSON.stringify({ json: { hasMore, sales }, meta: [] }),
+  await page.route("**/rpc/sale/list", (route: Route) => {
+    const asked = (route.request().postDataJSON() as { json: Asked }).json;
+    return route.fulfill({
+      body: JSON.stringify({
+        json: { hasMore, sales: answer ? answer(asked) : sales },
+        meta: [],
+      }),
       contentType: "application/json",
       headers: { ...WORKER_MARK },
-    })
-  );
+    });
+  });
+  if (period) {
+    await page.route("**/rpc/report/periodSummary", (route: Route) =>
+      route.fulfill({
+        body: JSON.stringify({ json: { cards: period }, meta: [] }),
+        contentType: "application/json",
+        headers: { ...WORKER_MARK },
+      })
+    );
+  }
   await serveLabWorker(page);
   await page.goto("/offline-screens-lab?screen=history");
   await page.getByLabel("Usuário").fill(`user-${crypto.randomUUID()}`);
@@ -97,9 +136,38 @@ async function openHistory(
   await expect(
     page.getByRole("heading", { exact: true, name: "Histórico de vendas" })
   ).toBeVisible({ timeout: 20_000 });
-  await expect(page.locator("[data-list-total]")).toBeVisible();
+  await expect(
+    page.locator(total ? "[data-list-total]" : "[data-empty-state]")
+  ).toBeVisible();
   await expectReflowFont(page, fontPixels);
   return page.locator("[data-list-total]");
+}
+
+/** The period of the title line, the "7 dias" shortcut: a filter on that the test's server answers with no sale. */
+async function chooseSevenDays(page: Page) {
+  await page.locator('header button[aria-label^="Período"]').click();
+  const popup = page.getByRole("dialog", { name: "Período" });
+  await popup
+    .getByRole("group", { name: "Atalhos do período" })
+    .getByRole("button", { exact: true, name: "7 dias" })
+    .click();
+  await expect(popup).toBeHidden();
+}
+
+/** The "Situação" pill with "Canceladas", added from the "Filtrar" menu of the bar. */
+async function chooseCancelled(page: Page) {
+  await page
+    .getByRole("search", { exact: true, name: "Filtrar vendas" })
+    .getByRole("button", { exact: true, name: "Filtrar" })
+    .click();
+  await page
+    .getByRole("menu", { name: "Filtrar por" })
+    .getByRole("menuitem", { name: SITUATION_ITEM })
+    .click();
+  const editor = page.getByRole("dialog", { name: "Situação" });
+  await editor.getByRole("button", { exact: true, name: "Canceladas" }).click();
+  await applyEditor(page, editor);
+  await expect(editor).toBeHidden();
 }
 
 interface RowGeometry {
@@ -531,16 +599,25 @@ reflowTest(
   }
 );
 
+const totalBox = (page: Page) =>
+  page.locator("[data-list-total]").boundingBox();
+
 reflowTest(
-  "a 320 px com letra de 20 px o rodapé tem a mesma altura com e sem vendas",
+  "a 320 px com letra de 20 px o filtro sem resultado deixa o rodapé na mesma altura de com vendas",
   async ({ page }) => {
-    const filled = await (
-      await openHistory(page, manySales().slice(0, 3), { hasMore: true })
-    ).boundingBox();
+    await openHistory(page, manySales().slice(0, 3), { hasMore: true });
     await expect(page.locator("[data-list-total]")).toContainText("há mais");
-    const empty = await (await openHistory(page, [])).boundingBox();
+    const filled = await totalBox(page);
+    await openHistory(page, manySales(), {
+      answer: (asked) => (asked.status === "cancelled" ? [] : manySales()),
+    });
+    await chooseCancelled(page);
+    await expect(page.locator("[data-list-block]")).toContainText(
+      "Nenhuma venda encontrada com estes filtros."
+    );
     await expect(page.locator("[data-list-total]")).toContainText("0 vendas");
     await expect(page.locator("[data-list-total]")).toContainText("R$ 0,00");
+    const empty = await totalBox(page);
     expect(filled).not.toBeNull();
     expect(empty).not.toBeNull();
     expect(
@@ -603,7 +680,7 @@ for (const width of [360, WIDE_WINDOW]) {
       await expect(
         block.getByRole("heading", { level: 2, name: "Vendas do período" })
       ).toBeVisible();
-      await expect(block.locator("[data-list-count]")).toHaveText(COUNT_TEXT);
+      await expect(block.locator("[data-list-count]")).toHaveText("6 vendas");
       await expect(
         block.getByRole("list", { name: "Vendas do período" })
       ).toBeVisible();
@@ -659,17 +736,111 @@ for (const width of [360, WIDE_WINDOW]) {
 }
 
 reflowTest(
-  "sem nenhuma venda a moldura fica com o título, a frase de hoje e o total",
+  "sem nenhuma venda e sem filtro é só o estado vazio: sem moldura, sem título da lista e sem total",
   async ({ page }) => {
-    await openHistory(page, [], { fontPixels: 16, width: WIDE_WINDOW });
+    await openHistory(page, [], {
+      fontPixels: 16,
+      total: false,
+      width: WIDE_WINDOW,
+    });
+    const empty = page.locator("[data-empty-state]");
+    await expect(empty).toContainText("Nenhuma venda ainda.");
+    await expect(empty).toContainText(
+      "Registre a primeira venda para vê-la aqui."
+    );
+    await expect(
+      empty.getByRole("link", { name: "Registrar uma venda" })
+    ).toBeVisible();
+    await expect(page.locator("[data-list-block]")).toHaveCount(0);
+    await expect(
+      page.getByRole("heading", { level: 2, name: "Vendas do período" })
+    ).toHaveCount(0);
+    await expect(page.locator("[data-list-total]")).toHaveCount(0);
+    await expect(
+      page.getByRole("search", { name: "Filtrar vendas" })
+    ).toBeVisible();
+  },
+  { coarse: false }
+);
+
+reflowTest(
+  "a 320 px com letra de 20 px o período sem vendas fica na moldura com a frase, Limpar filtros e o total R$ 0,00 inteiro",
+  async ({ page }) => {
+    await openHistory(page, manySales(), {
+      answer: (asked) => (asked.occurredFrom ? [] : manySales()),
+      period: { netSales: "0.00", salesCount: 0 },
+    });
+    await chooseSevenDays(page);
     const block = page.locator("[data-list-block]");
     await expect(
       block.getByRole("heading", { level: 2, name: "Vendas do período" })
     ).toBeVisible();
     await expect(block.locator("[data-list-block-notice]")).toContainText(
-      "Nenhuma venda ainda."
+      "Nenhuma venda encontrada com estes filtros."
     );
+    await expect(
+      block.getByRole("button", { name: "Limpar filtros" })
+    ).toBeVisible();
+    await expect(block.locator("[data-list-count]")).toHaveText("0 vendas");
     await expect(block.locator("[data-list-total]")).toContainText("R$ 0,00");
-  },
-  { coarse: false }
+    await expect(block.locator("[data-list-total]")).toContainText("0 vendas");
+    await expect(page.locator("[data-empty-state]")).toHaveCount(0);
+    await assertNothingClipped(block.locator("[data-list-total]"));
+    await assertNoPageScroll(page);
+  }
+);
+
+/** The count beside the title is the rows on the screen: a cancelled sale is a row, the total does not sum it. */
+const COUNT_WIDTH = 360;
+
+reflowTest(
+  `a ${COUNT_WIDTH} px a contagem do cabeçalho conta as linhas na tela, a cancelada incluída, e o rodapé só o que soma`,
+  async ({ page }) => {
+    const footer = await openHistory(page, manySales().slice(0, 8), {
+      fontPixels: 16,
+      width: COUNT_WIDTH,
+    });
+    const block = page.locator("[data-list-block]");
+    await expect(block.locator("ul > li")).toHaveCount(8);
+    await expect(block.locator("[data-list-count]")).toHaveText("8 vendas");
+    await expect(footer).toContainText("7 vendas");
+    await expect(footer).toContainText("1 cancelada fica fora da soma.");
+    await expect(footer).not.toContainText("8 vendas");
+  }
+);
+
+reflowTest(
+  `a ${COUNT_WIDTH} px com mais a carregar o cabeçalho diz "há mais" depois das linhas na tela`,
+  async ({ page }) => {
+    await openHistory(page, manySales().slice(0, 8), {
+      fontPixels: 16,
+      hasMore: true,
+      width: COUNT_WIDTH,
+    });
+    await expect(page.locator("[data-list-count]")).toHaveText(
+      "8 vendas · há mais"
+    );
+  }
+);
+
+reflowTest(
+  `a ${COUNT_WIDTH} px com o filtro só de canceladas o cabeçalho conta as linhas e o total fica zerado`,
+  async ({ page }) => {
+    const cancelled = manySales()
+      .filter((sale) => sale.status === "cancelled")
+      .slice(0, 3);
+    const footer = await openHistory(page, manySales(), {
+      answer: (asked) =>
+        asked.status === "cancelled" ? cancelled : manySales(),
+      fontPixels: 16,
+      width: COUNT_WIDTH,
+    });
+    await chooseCancelled(page);
+    const block = page.locator("[data-list-block]");
+    await expect(block.locator("ul > li")).toHaveCount(3);
+    await expect(block.locator("[data-list-count]")).toHaveText("3 vendas");
+    await expect(footer).toContainText("0 vendas");
+    await expect(footer).toContainText("R$ 0,00");
+    await expect(footer).toContainText("3 canceladas ficam fora da soma.");
+  }
 );

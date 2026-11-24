@@ -38,14 +38,16 @@ import {
 } from "./history-return";
 import { SavedSalesCard } from "./offline-sale-panels";
 import { sessionStorageOrNull } from "./sale-attempt-storage";
-import { HistoryEmptyCard } from "./sale-history-empty";
+import { HistoryEmptyCard, HistoryNothingYet } from "./sale-history-empty";
 import { HistoryFiltersBar, HistoryPeriodPicker } from "./sale-history-filters";
 import { SaleHistoryList, SaleHistoryNoRows } from "./sale-history-list";
 import {
   emptyHistoryFilters,
   type HistoryFilters,
   type HistoryFooterView,
+  type HistoryView,
   historyFooterView,
+  historyListCount,
   historyView,
   type LoadMoreView,
   loadMoreView,
@@ -125,6 +127,29 @@ function historyTotalLine(view: HistoryFooterView, className?: string) {
       notice={view.notice}
       value={view.value}
       valueLoading={view.valueLoading}
+    />
+  );
+}
+
+/** No filter on: only the empty state. A filter, a search or a period with no result: the frame with the sentence and the total. */
+function HistoryNoSales({
+  footer,
+  onClearFilters,
+  view,
+}: {
+  footer: HistoryFooterView;
+  onClearFilters: () => void;
+  view: Extract<HistoryView, { kind: "empty" }>;
+}) {
+  if (!view.clearFilters) {
+    return <HistoryNothingYet view={view} />;
+  }
+  return (
+    <SaleHistoryNoRows
+      count={historyListCount(view, false)}
+      notice={<HistoryEmptyCard onClearFilters={onClearFilters} view={view} />}
+      state="filtered-empty"
+      total={historyTotalLine(footer)}
     />
   );
 }
@@ -291,7 +316,7 @@ export function SaleHistoryPage() {
       ) : null}
       {view.kind === "loading" ? (
         <SaleHistoryNoRows
-          count={footer.count}
+          count={historyListCount(view, false)}
           state="loading"
           total={historyTotalLine(footer)}
         />
@@ -315,18 +340,15 @@ export function SaleHistoryPage() {
         </Alert>
       ) : null}
       {view.kind === "empty" ? (
-        <SaleHistoryNoRows
-          count={footer.count}
-          notice={
-            <HistoryEmptyCard onClearFilters={handleClearFilters} view={view} />
-          }
-          state="filtered-empty"
-          total={historyTotalLine(footer)}
+        <HistoryNoSales
+          footer={footer}
+          onClearFilters={handleClearFilters}
+          view={view}
         />
       ) : null}
       {view.kind === "ready" ? (
         <SaleHistoryList
-          count={footer.count}
+          count={historyListCount(view, state.hasMore)}
           footer={historyTotalLine(
             footer,
             offline ? undefined : TOTAL_UNDER_VALUES
