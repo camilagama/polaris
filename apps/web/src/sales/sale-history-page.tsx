@@ -1,4 +1,3 @@
-import type { SaleListEntryReadModel } from "@polaris/contracts";
 import { hasCapabilityForRole } from "@polaris/domain/authorization/capabilities";
 import ArrowRightIcon from "lucide-react/dist/esm/icons/arrow-right";
 import CloudOffIcon from "lucide-react/dist/esm/icons/cloud-off";
@@ -7,15 +6,13 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
 import { Button, buttonVariants } from "@/ui/button";
-import { Card } from "@/ui/card";
-import { Skeleton } from "@/ui/skeleton";
+import { ListBlock } from "@/ui/list-block";
 import {
   dropNavigationState,
   navigateInApp,
   readNavigationState,
 } from "../app-shell/address";
 import { TitleLine } from "../app-shell/screen-title";
-import { ListTotalFooter } from "../catalog/screen-parts";
 import {
   HISTORY_PERIOD_STATE,
   HISTORY_STATUS_STATE,
@@ -33,30 +30,30 @@ import {
 import { useFocusTitleWhenGone } from "../lib/use-focus-title-when-gone";
 import { useLocalWorkspace } from "../offline/runtime/use-local-workspace";
 import { todayOr } from "../ui/date-values";
-import { SavedSalesCard } from "./offline-sale-panels";
-import { HistoryEmptyCard } from "./sale-history-empty";
-import { HistoryFiltersBar, HistoryPeriodPicker } from "./sale-history-filters";
-import { SaleHistoryList } from "./sale-history-list";
-import {
-  emptyHistoryFilters,
-  type HistoryFilters,
-  historyFooterView,
-  historyView,
-  type LoadMoreView,
-  loadMoreView,
-  PERIOD_TOTAL_HELP,
-  PERIOD_TOTAL_LABEL,
-  type PeriodTotalRead,
-  periodTotalPeriod,
-  statusFromState,
-} from "./sale-history-model";
 import {
   clearHistoryReturn,
   type HistoryReturn,
   readHistoryReturn,
   rememberHistoryReturn,
 } from "./history-return";
+import { SavedSalesCard } from "./offline-sale-panels";
 import { sessionStorageOrNull } from "./sale-attempt-storage";
+import { HistoryEmptyCard } from "./sale-history-empty";
+import { HistoryFiltersBar, HistoryPeriodPicker } from "./sale-history-filters";
+import { SaleHistoryList, SaleHistoryNoRows } from "./sale-history-list";
+import {
+  emptyHistoryFilters,
+  type HistoryFilters,
+  type HistoryFooterView,
+  historyFooterView,
+  historyView,
+  type LoadMoreView,
+  loadMoreView,
+  PERIOD_TOTAL_HELP,
+  PERIOD_TOTAL_LABEL,
+  periodTotalPeriod,
+  statusFromState,
+} from "./sale-history-model";
 import { useHistoryPeriodTotal } from "./use-history-period-total";
 import { useSaleHistory } from "./use-sale-history";
 
@@ -108,44 +105,14 @@ function resultPeriodOf(filters: { from: string; to: string }): Period | null {
     : null;
 }
 
-const LOADING_ROWS = [0, 1, 2];
-
-/** Loading: three rows of skeleton in the card, and the line that says it for the screen reader. */
-function LoadingCard({ message }: { message: string }) {
-  return (
-    <Card aria-busy="true" className="gap-3 px-(--card-spacing)" role="status">
-      <p className="sr-only">{message}</p>
-      {LOADING_ROWS.map((row) => (
-        <div aria-hidden="true" className="grid gap-1.5" key={row}>
-          <Skeleton className="h-3.5 w-2/3" />
-          <Skeleton className="h-3 w-1/3" />
-        </div>
-      ))}
-    </Card>
-  );
-}
-
 /** With the chevron on the rows (16 px and a gap of 8, 12 from 760 px), the total ends where their figures end. */
 const TOTAL_UNDER_VALUES =
-  "border-t pr-[calc(0.625rem+1.5rem)] md:pr-[calc(1rem+1.75rem)]";
+  "pr-[calc(0.625rem+1.5rem)] md:pr-[calc(1rem+1.75rem)]";
 
-/** What the foot of the history needs to say its total: see `historyFooterView`. */
-interface HistoryFooterInput {
-  filters: HistoryFilters;
-  hasMore: boolean;
-  listLoading: boolean;
-  offline: boolean;
-  read: PeriodTotalRead;
-  sales: readonly SaleListEntryReadModel[];
-}
-
-function HistoryTotalFooter({
-  className,
-  ...input
-}: HistoryFooterInput & { className?: string | undefined }) {
-  const view = historyFooterView(input);
+/** The total as the last line of the frame: a plain call, not a component, because the frame takes the total by the type of its child. */
+function historyTotalLine(view: HistoryFooterView, className?: string) {
   return (
-    <ListTotalFooter
+    <ListBlock.Total
       className={className}
       count={view.count}
       help={
@@ -262,8 +229,15 @@ export function SaleHistoryPage() {
     offline ? null : periodTotalPeriod(filters),
     reloadVersion
   );
-  const footerInput = { filters, offline, read: periodRead };
   const view = historyView(state, filters);
+  const footer = historyFooterView({
+    filters,
+    hasMore: view.kind === "ready" && state.hasMore,
+    listLoading: view.kind === "loading",
+    offline,
+    read: periodRead,
+    sales: state.sales,
+  });
   const handleClearFilters = useCallback(
     () => setFilters(emptyHistoryFilters),
     [setFilters]
@@ -316,17 +290,11 @@ export function SaleHistoryPage() {
         </Alert>
       ) : null}
       {view.kind === "loading" ? (
-        <>
-          <LoadingCard message={view.message} />
-          <Card className="gap-0 overflow-hidden py-0">
-            <HistoryTotalFooter
-              {...footerInput}
-              hasMore={false}
-              listLoading
-              sales={state.sales}
-            />
-          </Card>
-        </>
+        <SaleHistoryNoRows
+          count={footer.count}
+          state="loading"
+          total={historyTotalLine(footer)}
+        />
       ) : null}
       {view.kind === "error" ? (
         <Alert variant="destructive">
@@ -347,29 +315,22 @@ export function SaleHistoryPage() {
         </Alert>
       ) : null}
       {view.kind === "empty" ? (
-        <>
-          <HistoryEmptyCard onClearFilters={handleClearFilters} view={view} />
-          <Card className="gap-0 overflow-hidden py-0">
-            <HistoryTotalFooter
-              {...footerInput}
-              hasMore={false}
-              listLoading={false}
-              sales={state.sales}
-            />
-          </Card>
-        </>
+        <SaleHistoryNoRows
+          count={footer.count}
+          notice={
+            <HistoryEmptyCard onClearFilters={handleClearFilters} view={view} />
+          }
+          state="filtered-empty"
+          total={historyTotalLine(footer)}
+        />
       ) : null}
       {view.kind === "ready" ? (
         <SaleHistoryList
-          footer={
-            <HistoryTotalFooter
-              {...footerInput}
-              className={offline ? "border-t" : TOTAL_UNDER_VALUES}
-              hasMore={state.hasMore}
-              listLoading={false}
-              sales={state.sales}
-            />
-          }
+          count={footer.count}
+          footer={historyTotalLine(
+            footer,
+            offline ? undefined : TOTAL_UNDER_VALUES
+          )}
           offline={offline}
           onOpen={handleOpenSale}
           rows={view.rows}

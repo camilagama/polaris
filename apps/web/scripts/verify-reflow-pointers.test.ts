@@ -58,7 +58,7 @@ const SPECS: Readonly<Record<string, SpecRule>> = {
   },
   "historico-reflow.e2e.ts": {
     bare: 0,
-    coarse: 1,
+    coarse: 3,
     why: "the window of 1280 px is not a phone",
   },
   "goals.e2e.ts": {

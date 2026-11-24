@@ -147,7 +147,7 @@ function rowGeometry(page: Page) {
           .filter((b) => shared(a.rect, b.rect))
           .map((b) => `${a.text} x ${b.text}`)
       );
-    return [...document.querySelectorAll('ul[aria-label="Vendas"] > li')].map(
+    return [...document.querySelectorAll("[data-list-block] ul > li")].map(
       (item): RowGeometry => {
         const box = item.getBoundingClientRect();
         const fragments = fragmentsOf(item);
@@ -297,58 +297,53 @@ reflowTest(
  */
 function visibleMethods(page: Page) {
   return page.evaluate(() =>
-    [...document.querySelectorAll('ul[aria-label="Vendas"] > li')].map(
-      (item) => {
-        const support = item.querySelector("p.text-support") as HTMLElement;
-        const name = support.firstElementChild as HTMLElement;
-        const method = support.lastElementChild as HTMLElement;
-        const box = item.getBoundingClientRect();
-        const money = (
-          item.querySelector("[data-money]") as HTMLElement
-        ).getBoundingClientRect();
-        const textRects = (element: HTMLElement) => {
-          const range = document.createRange();
-          range.selectNodeContents(element);
-          return [...range.getClientRects()].filter((rect) => rect.width > 0);
-        };
-        const rects = textRects(method);
-        const nameBottom = Math.max(...textRects(name).map((r) => r.bottom));
-        const clippers: string[] = [];
-        for (
-          let node: HTMLElement | null = method;
-          node !== null && node !== item;
-          node = node.parentElement
-        ) {
-          if (getComputedStyle(node).overflowX === "visible") {
-            continue;
-          }
-          const clip = node.getBoundingClientRect();
-          const past = rects.some(
-            (rect) =>
-              rect.right > clip.right + 0.5 || rect.left < clip.left - 0.5
-          );
-          if (past || node.scrollWidth > node.clientWidth + 1) {
-            clippers.push(node.tagName.toLowerCase());
-          }
+    [...document.querySelectorAll("[data-list-block] ul > li")].map((item) => {
+      const support = item.querySelector("p.text-support") as HTMLElement;
+      const name = support.firstElementChild as HTMLElement;
+      const method = support.lastElementChild as HTMLElement;
+      const box = item.getBoundingClientRect();
+      const money = (
+        item.querySelector("[data-money]") as HTMLElement
+      ).getBoundingClientRect();
+      const textRects = (element: HTMLElement) => {
+        const range = document.createRange();
+        range.selectNodeContents(element);
+        return [...range.getClientRects()].filter((rect) => rect.width > 0);
+      };
+      const rects = textRects(method);
+      const nameBottom = Math.max(...textRects(name).map((r) => r.bottom));
+      const clippers: string[] = [];
+      for (
+        let node: HTMLElement | null = method;
+        node !== null && node !== item;
+        node = node.parentElement
+      ) {
+        if (getComputedStyle(node).overflowX === "visible") {
+          continue;
         }
-        return {
-          belowName:
-            Math.min(...rects.map((rect) => rect.top)) >= nameBottom - 1,
-          clippers,
-          insideRow: rects.every(
-            (rect) =>
-              rect.left >= box.left - 0.5 && rect.right <= box.right + 0.5
-          ),
-          overMoney: rects.some(
-            (rect) =>
-              rect.right > money.left + 0.5 &&
-              rect.bottom > money.top &&
-              rect.top < money.bottom
-          ),
-          text: support.textContent ?? "",
-        };
+        const clip = node.getBoundingClientRect();
+        const past = rects.some(
+          (rect) => rect.right > clip.right + 0.5 || rect.left < clip.left - 0.5
+        );
+        if (past || node.scrollWidth > node.clientWidth + 1) {
+          clippers.push(node.tagName.toLowerCase());
+        }
       }
-    )
+      return {
+        belowName: Math.min(...rects.map((rect) => rect.top)) >= nameBottom - 1,
+        clippers,
+        insideRow: rects.every(
+          (rect) => rect.left >= box.left - 0.5 && rect.right <= box.right + 0.5
+        ),
+        overMoney: rects.some(
+          (rect) =>
+            rect.right > money.left + 0.5 &&
+            rect.bottom > money.top &&
+            rect.top < money.bottom
+        ),
+        text: support.textContent ?? "",
+      };
+    })
   );
 }
 
@@ -425,38 +420,36 @@ for (const { fontPixels, width } of [
 /** Per line: the text an ellipsis is hiding (what the line cuts), and whether the value box is whole and inside the line. */
 function cutTexts(page: Page) {
   return page.evaluate(() =>
-    [...document.querySelectorAll('ul[aria-label="Vendas"] > li')].map(
-      (item) => {
-        const box = item.getBoundingClientRect();
-        const money = item.querySelector("[data-money]");
-        const moneyBox = money?.getBoundingClientRect();
-        const cut = [...item.querySelectorAll("*")]
-          .filter(
-            (element) =>
-              getComputedStyle(element).textOverflow === "ellipsis" &&
-              element.scrollWidth > element.clientWidth + 1
-          )
-          .map((element) => element.textContent ?? "");
-        const hidden = [...item.querySelectorAll("*")]
-          .filter(
-            (element) =>
-              !element.closest(".sr-only") &&
-              getComputedStyle(element).overflowX === "hidden" &&
-              element.scrollWidth > element.clientWidth + 1
-          )
-          .map((element) => element.textContent ?? "");
-        return {
-          cut,
-          hidden,
-          moneyInside:
-            moneyBox !== undefined &&
-            moneyBox.left >= box.left - 0.5 &&
-            moneyBox.right <= box.right + 0.5 &&
-            (money?.scrollWidth ?? 0) <= (money?.clientWidth ?? 0) + 1,
-          text: item.textContent ?? "",
-        };
-      }
-    )
+    [...document.querySelectorAll("[data-list-block] ul > li")].map((item) => {
+      const box = item.getBoundingClientRect();
+      const money = item.querySelector("[data-money]");
+      const moneyBox = money?.getBoundingClientRect();
+      const cut = [...item.querySelectorAll("*")]
+        .filter(
+          (element) =>
+            getComputedStyle(element).textOverflow === "ellipsis" &&
+            element.scrollWidth > element.clientWidth + 1
+        )
+        .map((element) => element.textContent ?? "");
+      const hidden = [...item.querySelectorAll("*")]
+        .filter(
+          (element) =>
+            !element.closest(".sr-only") &&
+            getComputedStyle(element).overflowX === "hidden" &&
+            element.scrollWidth > element.clientWidth + 1
+        )
+        .map((element) => element.textContent ?? "");
+      return {
+        cut,
+        hidden,
+        moneyInside:
+          moneyBox !== undefined &&
+          moneyBox.left >= box.left - 0.5 &&
+          moneyBox.right <= box.right + 0.5 &&
+          (money?.scrollWidth ?? 0) <= (money?.clientWidth ?? 0) + 1,
+        text: item.textContent ?? "",
+      };
+    })
   );
 }
 
@@ -517,7 +510,7 @@ reflowTest(
     expect(text).toBe("R$ 7.857,60");
 
     const [card, valueBox, countBox] = await Promise.all([
-      footer.locator("xpath=ancestor::*[@data-slot='card'][1]").boundingBox(),
+      footer.locator("xpath=ancestor::*[@data-list-block][1]").boundingBox(),
       value.boundingBox(),
       footer.getByText("2 vendas · há mais").boundingBox(),
     ]);
@@ -596,3 +589,87 @@ for (const width of [360, WIDE_WINDOW]) {
     { coarse: width !== WIDE_WINDOW }
   );
 }
+
+/** The frame of the history: the title and the count in it, the controls above it, the lines edge to edge and the total last. */
+for (const width of [360, WIDE_WINDOW]) {
+  reflowTest(
+    `a ${width} px a lista é uma moldura com título e contagem, os controles ficam acima dela e o total é a última linha do painel`,
+    async ({ page }) => {
+      const footer = await openHistory(page, manySales().slice(0, 6), {
+        fontPixels: 16,
+        width,
+      });
+      const block = page.locator("[data-list-block]");
+      await expect(
+        block.getByRole("heading", { level: 2, name: "Vendas do período" })
+      ).toBeVisible();
+      await expect(block.locator("[data-list-count]")).toHaveText(COUNT_TEXT);
+      await expect(
+        block.getByRole("list", { name: "Vendas do período" })
+      ).toBeVisible();
+      await expect(
+        block.getByRole("search", { name: "Filtrar vendas" })
+      ).toHaveCount(0);
+
+      const controls = page.getByRole("search", { name: "Filtrar vendas" });
+      const [blockBox, controlsBox, panelBox, footerBox, firstRow, lastRow] =
+        await Promise.all([
+          block.boundingBox(),
+          controls.boundingBox(),
+          block.locator("[data-list-block-scroll]").boundingBox(),
+          footer.boundingBox(),
+          block.locator("ul > li").first().boundingBox(),
+          block.locator("ul > li").last().boundingBox(),
+        ]);
+      for (const box of [
+        blockBox,
+        controlsBox,
+        panelBox,
+        footerBox,
+        firstRow,
+        lastRow,
+      ]) {
+        expect(box).not.toBeNull();
+      }
+      expect(
+        (blockBox?.y ?? 0) -
+          ((controlsBox?.y ?? 0) + (controlsBox?.height ?? 0))
+      ).toBeGreaterThanOrEqual(15);
+      expect(Math.abs((firstRow?.x ?? 0) - (panelBox?.x ?? 0))).toBeLessThan(1);
+      expect(
+        Math.abs(
+          (firstRow?.x ?? 0) +
+            (firstRow?.width ?? 0) -
+            ((panelBox?.x ?? 0) + (panelBox?.width ?? 0))
+        )
+      ).toBeLessThan(1);
+      expect(
+        (footerBox?.y ?? 0) + 1 >= (lastRow?.y ?? 0) + (lastRow?.height ?? 0)
+      ).toBe(true);
+      expect(
+        Math.abs(
+          (footerBox?.y ?? 0) +
+            (footerBox?.height ?? 0) -
+            ((panelBox?.y ?? 0) + (panelBox?.height ?? 0))
+        )
+      ).toBeLessThan(1);
+    },
+    { coarse: width !== WIDE_WINDOW }
+  );
+}
+
+reflowTest(
+  "sem nenhuma venda a moldura fica com o título, a frase de hoje e o total",
+  async ({ page }) => {
+    await openHistory(page, [], { fontPixels: 16, width: WIDE_WINDOW });
+    const block = page.locator("[data-list-block]");
+    await expect(
+      block.getByRole("heading", { level: 2, name: "Vendas do período" })
+    ).toBeVisible();
+    await expect(block.locator("[data-list-block-notice]")).toContainText(
+      "Nenhuma venda ainda."
+    );
+    await expect(block.locator("[data-list-total]")).toContainText("R$ 0,00");
+  },
+  { coarse: false }
+);

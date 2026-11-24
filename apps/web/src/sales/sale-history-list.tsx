@@ -1,8 +1,9 @@
 import ChevronRightIcon from "lucide-react/dist/esm/icons/chevron-right";
-import type { ReactNode } from "react";
+import type { ReactElement, ReactNode } from "react";
 import { Badge } from "@/ui/badge";
-import { Card } from "@/ui/card";
+import { ListBlock } from "@/ui/list-block";
 import { Money } from "@/ui/money";
+import { Skeleton } from "@/ui/skeleton";
 import { isPlainClick } from "../lib/plain-click";
 import type { HistoryRow } from "./sale-history-model";
 
@@ -167,31 +168,77 @@ function HistoryItem({
   );
 }
 
-/** Newest first, one card with a line per sale (the pattern of the products list). */
+/** The title of the history's frame: the period is what the screen is about, the filters narrow it. */
+const HISTORY_LIST_TITLE = "Vendas do período";
+
+/** The shape of a row while the list loads: the date and the line under it. */
+function HistoryRowShape() {
+  return (
+    <div className="grid gap-1.5">
+      <Skeleton className="h-3.5 w-2/3" />
+      <Skeleton className="h-3 w-1/3" />
+    </div>
+  );
+}
+
+type HistoryNoRows =
+  | { state: "loading" }
+  | { notice: ReactNode; state: "filtered-empty" };
+
+/**
+ * The frame of a history with no rows to draw: the skeleton while it loads, or the sentence of a list with no sales,
+ * and the total always last. `total` is a `ListBlock.Total` element: the frame only takes it as the total when it is
+ * one of its direct children.
+ */
+export function SaleHistoryNoRows({
+  count,
+  total,
+  ...body
+}: HistoryNoRows & { count: string; total: ReactElement }) {
+  if (body.state === "loading") {
+    return (
+      <ListBlock
+        count={count}
+        skeleton={<HistoryRowShape />}
+        state="loading"
+        title={HISTORY_LIST_TITLE}
+      >
+        {total}
+      </ListBlock>
+    );
+  }
+  return (
+    <ListBlock
+      count={count}
+      emptyNotice={body.notice}
+      state="filtered-empty"
+      title={HISTORY_LIST_TITLE}
+    >
+      {total}
+    </ListBlock>
+  );
+}
+
+/** Newest first, one line per sale in the frame of the history, and the total (a `ListBlock.Total`) as the last line. */
 export function SaleHistoryList({
+  count = "",
   footer,
   offline,
   onOpen,
   rows,
 }: {
+  count?: string;
   footer?: ReactNode;
   offline: boolean;
-  onOpen?: (saleId: string) => void;
+  onOpen?: ((saleId: string) => void) | undefined;
   rows: readonly HistoryRow[];
 }) {
   return (
-    <Card className="gap-0 py-0">
-      <ul aria-label="Vendas" className="divide-y divide-border">
-        {rows.map((row) => (
-          <HistoryItem
-            key={row.id}
-            offline={offline}
-            onOpen={onOpen}
-            row={row}
-          />
-        ))}
-      </ul>
+    <ListBlock count={count} state="rows" title={HISTORY_LIST_TITLE}>
+      {rows.map((row) => (
+        <HistoryItem key={row.id} offline={offline} onOpen={onOpen} row={row} />
+      ))}
       {footer}
-    </Card>
+    </ListBlock>
   );
 }

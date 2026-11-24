@@ -1,13 +1,12 @@
 import { Button } from "@/ui/button";
-import { Card } from "@/ui/card";
 import { TextLink } from "@/ui/text-link";
 import type { HistoryView } from "./sale-history-model";
 
 type EmptyView = Extract<HistoryView, { kind: "empty" }>;
 
 /**
- * Empty, in the same card the products and the stock use. With filters on, "Limpar filtros" is the way out: the
- * sentence alone made the person find the pills and take them out one by one.
+ * The sentence of a history with no sales, for the notice of the frame. With filters on, "Limpar filtros" is the way
+ * out: the sentence alone made the person find the pills and take them out one by one.
  */
 export function HistoryEmptyCard({
   onClearFilters,
@@ -17,7 +16,7 @@ export function HistoryEmptyCard({
   view: EmptyView;
 }) {
   return (
-    <Card className="items-center px-(--card-spacing) text-center">
+    <>
       <p className="text-muted-foreground">
         {view.message}
         {view.href ? (
@@ -32,6 +31,6 @@ export function HistoryEmptyCard({
           Limpar filtros
         </Button>
       ) : null}
-    </Card>
+    </>
   );
 }
