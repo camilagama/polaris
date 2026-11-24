@@ -1956,16 +1956,19 @@ describe("a aba de tela mora no ScreenTabs (item 16, AC-B3.1)", () => {
     }
   });
 
-  it("o ScreenTabs e o SegmentedFilter usam o primitivo, e as telas trocadas usam o ScreenTabTrigger", () => {
+  it("o ScreenTabs e o SegmentedFilter usam o primitivo, e as telas trocadas usam o SectionTabs ou o ScreenTabTrigger", () => {
     expect(read(TABS_HOME)).toMatch(TABS_PART);
     expect(read("src/ui/segmented-filter.tsx")).toMatch(TABS_PART);
     for (const path of [
+      "src/dashboard/dashboard-page.tsx",
       "src/expenses/expenses-page.tsx",
       "src/catalog/product-dialog.tsx",
-      "src/catalog/product-import/import-preview-step.tsx",
     ]) {
-      expect(read(path), path).toContain("ScreenTabTrigger");
+      expect(read(path), path).toContain("SectionTabs");
     }
+    expect(
+      read("src/catalog/product-import/import-preview-step.tsx")
+    ).toContain("ScreenTabTrigger");
   });
 
   it.each([
