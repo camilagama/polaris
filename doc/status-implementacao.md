@@ -1978,7 +1978,7 @@ Primeiro passo da Fase 14 ([ADR 0097](../docs/adr/0097-staging-fixo-e-producao-e
 
 ### Tela de entrada: e-mail e senha atrás de flag, bloqueio de conta e aceite legal (POL-85; P0, ADR 0100; só documentação)
 
-Decisões do usuário E1 a E4 e desenho (t085) aprovados em 19/10/2026, revisados por arquitetura, segurança e UX e consolidados pelo Arrascaeta. O ADR é o 0100 (`status: accepted`) e as migrations da entrada que já estão na `main` incluem a 0082, 0083, 0092, 0093 e 0094. A tela de entrada (`/entrar`) é pré-requisito para ligar a flag do modo offline e para o checklist do [Gate 5](../docs/runbooks/gate-5-offline.md); o P3 (PR 183) já está na main e fechou no código os critérios de entrada do corte de aparelhos e sessões; a volta real com o Google (AC-15, AC-16 e AC-20) só será provada no staging.
+Decisões do usuário E1 a E4 e desenho (t085) aprovados em 19/10/2026, revisados por arquitetura, segurança e UX e consolidados pelo Arrascaeta. O ADR é o 0100 (`status: accepted`) e as migrations da entrada que já estão na `main` incluem a 0082, 0083, 0092, 0093 e 0094. A tela de entrada (`/entrar`) é pré-requisito para ligar a flag do modo offline e para o checklist do [Gate 5](../docs/runbooks/gate-5-offline.md); o P3 (PR 183) já está na main e fechou no código os critérios de entrada do corte de aparelhos e sessões; a volta real com o Google (de "Entrar de novo" na tela de aparelhos até `/devices`, com a caixa "Encerrar também as outras sessões" desmarcada de novo) só será provada no staging.
 
 | Subetapa | Status | Evidência / dependência |
 | --- | --- | --- |
