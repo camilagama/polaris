@@ -796,6 +796,7 @@ export const SPEC_SCREENS = {
     "sale",
     "inventory",
   ],
+  "apps/web/e2e-real/jornadas/venda-dividida.e2e.ts": ["home", "sale"],
   "apps/web/e2e-real/jornadas/venda.e2e.ts": ["home", "sale"],
   "apps/web/e2e-real/pilha/fumaca.e2e.ts": ["home", "dashboard"],
   "apps/web/e2e-real/pilha/hyperdrive-papeis.e2e.ts": ["home"],
