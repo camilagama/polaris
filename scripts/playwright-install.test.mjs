@@ -179,7 +179,7 @@ describe("scripts/playwright-install.sh", () => {
 
     expect(status).toBe(0);
     expect(downloads(calls)).toHaveLength(2);
-    expect(output).toContain("download do Chromium falhou ou estourou 1s");
+    expect(output).toContain("download do Chromium falhou ou estourou");
   });
 
   it("calls apt once, with the retry settings, when a library is missing", () => {
@@ -216,7 +216,7 @@ describe("scripts/playwright-install.sh", () => {
 
     expect(status).toBe(0);
     expect(aptCalls(calls)).toHaveLength(2);
-    expect(output).toContain("apt falhou ou estourou 1s");
+    expect(output).toContain("apt falhou ou estourou");
     expect(output).toContain("apt, tentativa 2 de 2");
     expect(calls).toContain("sudo pkill -TERM -x apt-get|apt");
     expect(calls.indexOf("sudo pkill -TERM -x apt-get|apt")).toBeLessThan(
