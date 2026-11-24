@@ -5,6 +5,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { cn } from "@/lib/utils";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./tabs";
 
 /** What the edges of the list hide: tabs to the left (already passed) and to the right (not reached yet). */
@@ -32,11 +33,14 @@ const EDGE_FADE_FROM = {
  */
 export function ScrollingTabList({
   children,
+  inset = false,
   signature = "",
   surface = "page",
   value,
 }: {
   children: ReactNode;
+  /** Room at the sides, kept out of the layout, for the focus outline of the first and last tab of a list that has no padding of its own (the segmented strip). */
+  inset?: boolean;
   /** Changes when the tabs of the list change (one more, one less): the open tab is placed again. */
   signature?: string;
   /** What the list sits on: the page, or a dialog (`bg-popover`); the fade at the edges takes its color. */
@@ -88,7 +92,10 @@ export function ScrollingTabList({
   return (
     <div className="relative -my-1.5 max-w-full">
       <div
-        className="overflow-x-auto py-1.5 [scrollbar-width:none]"
+        className={cn(
+          "overflow-x-auto py-1.5 [scrollbar-width:none]",
+          inset && "-mx-1 px-1"
+        )}
         onScroll={measure}
         ref={scroller}
       >

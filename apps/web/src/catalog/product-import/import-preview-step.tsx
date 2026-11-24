@@ -191,6 +191,7 @@ export function ImportPreviewStep({
         value={filter}
       />
       <ImportRowsTable
+        key={filter}
         caption={`Linhas do arquivo: ${selected}`}
         markHeader="Situação"
         rows={rows

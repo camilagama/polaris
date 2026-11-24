@@ -45,6 +45,7 @@ export function SegmentedFilter<T extends string>({
   return (
     <Tabs className="min-w-0" onValueChange={handleChange} value={value}>
       <ScrollingTabList
+        inset
         signature={options.map(([option]) => option).join()}
         surface={surface}
         value={value}
