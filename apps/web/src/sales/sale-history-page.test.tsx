@@ -341,3 +341,54 @@ describe("as vendas guardadas no Histórico", () => {
     expect(html).not.toContain("unidades");
   });
 });
+
+const COUNT_IN_MARKUP = /data-list-count[^>]*>([^<]*)</;
+const TOTAL_IN_MARKUP = /data-list-total[\s\S]*$/;
+const totalOf = (html: string) => TOTAL_IN_MARKUP.exec(html)?.[0] ?? "";
+const countOfList = (html: string) => COUNT_IN_MARKUP.exec(html)?.[1] ?? null;
+
+describe("o Histórico sem linhas", () => {
+  it("sem nenhuma venda e sem filtro é só o EmptyState: sem moldura, sem título da lista e sem total", () => {
+    server.sales = [];
+    const html = openWith(null);
+
+    expect(html).toContain("data-empty-state");
+    expect(html).toContain("Nenhuma venda ainda.");
+    expect(html).toContain("Registre a primeira venda para vê-la aqui.");
+    expect(html).toContain("Registrar uma venda");
+    expect(html).not.toContain("data-list-block");
+    expect(html).not.toContain("data-list-total");
+    expect(html).not.toContain("Vendas do período");
+  });
+
+  it("com um filtro sem resultado a moldura fica, com a frase, Limpar filtros e o total zerado", () => {
+    server.sales = [CONFIRMED_IN];
+    const html = openWith({ historyStatus: "cancelled" });
+
+    expect(html).toContain("data-list-block");
+    expect(html).toContain("Nenhuma venda encontrada com estes filtros.");
+    expect(html).toContain("Limpar filtros");
+    expect(html).toContain("data-list-total");
+    expect(html).toContain("R$ 0,00");
+    expect(html).not.toContain("data-empty-state");
+    expect(countOfList(html)).toBe("0 vendas");
+  });
+});
+
+describe("a contagem do cabeçalho da lista do Histórico", () => {
+  it("conta as linhas na tela, a cancelada incluída, e o rodapé só o que soma", () => {
+    server.sales = [CONFIRMED_IN, CANCELLED_IN];
+    const html = openWith(null);
+
+    expect(countOfList(html)).toBe("2 vendas");
+    expect(totalOf(html)).toContain("1 venda");
+    expect(totalOf(html)).toContain("1 cancelada fica fora da soma.");
+  });
+
+  it("com o filtro só de canceladas conta as linhas, não o zero da soma", () => {
+    server.sales = [CANCELLED_IN, CANCELLED_OUT];
+    const html = openWith({ historyStatus: "cancelled" });
+
+    expect(countOfList(html)).toBe("2 vendas");
+  });
+});

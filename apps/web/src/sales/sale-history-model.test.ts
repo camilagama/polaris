@@ -14,8 +14,10 @@ import {
   historyListRequest,
   historyLoaded,
   historyLoadFailed,
+  historyListCount,
   historyLoading,
   historyRows,
+  historyTotal,
   historyView,
   initialHistoryState,
   loadMoreStarted,
@@ -83,7 +85,11 @@ describe("list load states", () => {
   it("explains an empty history and links to the new sale screen", () => {
     const view = historyView(loaded([]));
     expect(view).toMatchObject({ href: "/sales", kind: "empty" });
-    expect("message" in view && view.message).toContain("Nenhuma venda ainda");
+    expect(view).toMatchObject({
+      clearFilters: false,
+      message: "Nenhuma venda ainda.",
+      support: "Registre a primeira venda para vê-la aqui.",
+    });
   });
 
   it("reports an error, with the generic forbidden message", () => {
@@ -486,6 +492,61 @@ describe("filters", () => {
       kind: "empty",
     });
     expect("message" in filtered && filtered.message).toContain("filtros");
+  });
+});
+
+describe("the count beside the title of the list", () => {
+  const countOf = (sales: SaleListEntryReadModel[], hasMore = false) =>
+    historyListCount(historyView(loaded(sales, hasMore)), hasMore);
+
+  it("counts the rows on the screen, the cancelled ones included", () => {
+    const sales = [
+      ...Array.from({ length: 7 }, (_, n) => entry(n + 1)),
+      entry(8, {
+        cancelledAt: "2026-05-02T12:00:00.000Z",
+        status: "cancelled",
+      }),
+    ];
+    expect(countOf(sales)).toBe("8 vendas");
+    expect(historyTotal(sales).countText).toBe("7 vendas");
+  });
+
+  it("is a list of cancelled ones only: the rows, not the zero of the sum", () => {
+    const cancelled = [1, 2].map((n) =>
+      entry(n, { cancelledAt: "2026-05-02T12:00:00.000Z", status: "cancelled" })
+    );
+    expect(countOf(cancelled)).toBe("2 vendas");
+    expect(historyTotal(cancelled).countText).toBe("0 vendas");
+  });
+
+  it("says the singular, and 'há mais' while another page is pending", () => {
+    expect(countOf([entry(1)])).toBe("1 venda");
+    expect(countOf([entry(1), entry(2), entry(3), entry(4)], true)).toBe(
+      "4 vendas · há mais"
+    );
+  });
+
+  it("is empty while the list loads or failed, and zero for a list with no result", () => {
+    expect(historyListCount(historyView(initialHistoryState()), false)).toBe(
+      ""
+    );
+    expect(
+      historyListCount(
+        historyView(
+          historyLoadFailed(initialHistoryState(), { code: "FORBIDDEN" }, KEY)
+        ),
+        false
+      )
+    ).toBe("");
+    expect(
+      historyListCount(
+        historyView(loaded([]), {
+          ...emptyHistoryFilters,
+          status: "cancelled",
+        }),
+        false
+      )
+    ).toBe("0 vendas");
   });
 });
 

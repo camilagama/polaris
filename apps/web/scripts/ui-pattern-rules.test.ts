@@ -346,9 +346,6 @@ export const DEBT: Readonly<Record<Rule, readonly string[]>> = {
     "src/sales/sale-confirmed-panel.tsx",
     "src/sales/sale-customer-panel.tsx",
     "src/sales/sale-detail-page.tsx",
-    "src/sales/sale-history-empty.tsx",
-    "src/sales/sale-history-list.tsx",
-    "src/sales/sale-history-page.tsx",
     "src/sales/sale-id-missing.tsx",
     "src/sales/sale-item-editor.tsx",
     "src/sales/sale-page.tsx",
@@ -417,7 +414,6 @@ export const DEBT: Readonly<Record<Rule, readonly string[]>> = {
     // payment-profiles
     "src/payment-profiles/payment-profile-list.tsx",
     // sales
-    "src/sales/sale-history-page.tsx",
   ],
 };
 
@@ -540,8 +536,6 @@ describe("o padrão visual das telas (R1 a R3)", () => {
       "src/catalog/category-list.tsx",
       "src/expenses/expense-list.tsx",
       "src/inventory/inventory-page.tsx",
-      "src/sales/sale-history-page.tsx",
-      "src/sales/sale-history-list.tsx",
     ]) {
       expect([...DEBT.R2, ...DEBT.R3], file).toContain(file);
     }
@@ -800,7 +794,7 @@ describe("R4: as peças soltas da lista só vivem em ui/ (controles)", () => {
     ]);
   });
 
-  it("os arquivos da dívida de R4 são os de hoje: as 7 telas que importam e o screen-parts que reexporta", () => {
+  it("os arquivos da dívida de R4 são os de hoje: as 7 telas que ainda importam e o screen-parts que reexporta", () => {
     expect(DEBT.R4).toEqual([
       "src/catalog/category-list.tsx",
       "src/catalog/product-list.tsx",
@@ -809,7 +803,6 @@ describe("R4: as peças soltas da lista só vivem em ui/ (controles)", () => {
       "src/expenses/expense-list.tsx",
       "src/offline/runtime/device-item.tsx",
       "src/payment-profiles/payment-profile-list.tsx",
-      "src/sales/sale-history-page.tsx",
     ]);
   });
 });
