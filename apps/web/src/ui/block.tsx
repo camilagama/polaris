@@ -23,7 +23,11 @@ type FramedBlockProps = React.ComponentProps<typeof CardFrame> & {
 
 type PlainBlockProps = Omit<React.ComponentProps<"div">, "title"> &
   Pick<HeadingProps, "action" | "aside" | "help"> & {
+    /** A thin strip: the row is as tall as its title (no 36 px floor from 760 px) and the body fills a card the grid stretches. */
+    compact?: boolean;
     description?: ReactNode;
+    /** The id of the heading, for a screen that links or tests it; a generated one when it is left out. */
+    headingId?: string;
     title?: ReactNode;
     variant: "plain";
   };
@@ -39,7 +43,7 @@ type BlockProps = FramedBlockProps | PlainBlockProps;
 function Block(props: BlockProps) {
   const id = useId();
   if (props.variant === "plain") {
-    return <PlainBlock {...props} headingId={id} />;
+    return <PlainBlock {...props} headingId={props.headingId ?? id} />;
   }
   const { variant: _variant, ...frame } = props;
   return <CardFrame role="region" {...frame} />;
@@ -50,6 +54,7 @@ function PlainBlock({
   aside,
   children,
   className,
+  compact = false,
   description,
   headingId,
   help,
@@ -73,7 +78,7 @@ function PlainBlock({
             <BlockHeading
               action={action}
               aside={aside}
-              className="md:flex-nowrap"
+              className={compact ? "md:min-h-0" : "md:flex-nowrap"}
               help={help}
               id={headingId}
               title={title}
@@ -90,7 +95,12 @@ function PlainBlock({
         </CardHeader>
       ) : null}
       {children === undefined || children === null ? null : (
-        <CardContent className="flex min-w-0 flex-col gap-(--card-spacing)">
+        <CardContent
+          className={cn(
+            "flex min-w-0 flex-col gap-(--card-spacing)",
+            compact && "grow"
+          )}
+        >
           {children}
         </CardContent>
       )}

@@ -1,6 +1,7 @@
 import { useCallback, useId, useMemo } from "react";
 import { cn } from "@/lib/utils";
-import { BlockHeader } from "@/ui/block-header";
+import { Block, BlockHeader, BlockPanel } from "@/ui/block";
+import { BlockHeader as Heading } from "@/ui/block-header";
 import { Button } from "@/ui/button";
 import { CardFrame, CardFrameHeader, CardFramePanel } from "@/ui/card";
 import { ChartDataTable } from "@/ui/charts/chart-data-table";
@@ -315,14 +316,12 @@ function ChartHeader({
       : []),
   ];
   return (
-    <CardFrameHeader>
-      <BlockHeader
-        aside={<HeaderLegend legend={legend} />}
-        help={tips}
-        id={TITLE_ID}
-        title={title}
-      />
-    </CardFrameHeader>
+    <BlockHeader
+      aside={<HeaderLegend legend={legend} />}
+      help={tips}
+      id={TITLE_ID}
+      title={title}
+    />
   );
 }
 
@@ -551,7 +550,7 @@ export function ResultChart({ source, summary, timezone }: ResultChartProps) {
   const label = `Vendas líquidas${costsDrawn ? " e custos" : ""} por ${series.grouped ? "mês" : "dia"}, ${range}: ${formatBrlAmount(salesTotal)} de vendas${costsTotal ? ` e ${formatBrlAmount(costsTotal)} de custos` : ""}${unknown ? `. ${unknownDaysCount({ ...days, input: series.missing })}` : ""}`;
 
   return (
-    <CardFrame aria-labelledby={TITLE_ID} role="region">
+    <Block aria-labelledby={TITLE_ID}>
       <ChartHeader
         legend={legendOf(series, hasAnyValue(rows, costsDrawn))}
         range={range}
@@ -559,7 +558,7 @@ export function ResultChart({ source, summary, timezone }: ResultChartProps) {
         support={supportParts(series, summary.chain)}
         unit={series.grouped ? "mês" : "dia"}
       />
-      <CardFramePanel className="grid grid-cols-[minmax(0,1fr)] gap-2">
+      <BlockPanel className="grid grid-cols-[minmax(0,1fr)] gap-2">
         <Totals costsTotal={costsTotal} salesTotal={salesTotal} />
         <div
           className={cn(
@@ -589,8 +588,8 @@ export function ResultChart({ source, summary, timezone }: ResultChartProps) {
             visible={drawingFailed}
           />
         ) : null}
-      </CardFramePanel>
-    </CardFrame>
+      </BlockPanel>
+    </Block>
   );
 }
 
@@ -604,7 +603,8 @@ export function ResultChartSkeleton() {
   return (
     <CardFrame>
       <CardFrameHeader aria-hidden="true">
-        <BlockHeader
+        <Heading
+          className="md:flex-nowrap"
           aside={
             <HeaderLegend
               legend={{

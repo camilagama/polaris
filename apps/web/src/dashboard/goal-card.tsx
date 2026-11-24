@@ -8,9 +8,9 @@ import {
 import type { GoalReadModel } from "@polaris/contracts";
 import { useCallback, useState } from "react";
 import { Badge } from "@/ui/badge";
+import { Block } from "@/ui/block";
 import { Button } from "@/ui/button";
 import { PaceLine } from "@/ui/pace-line";
-import { Card, CardContent } from "@/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -209,8 +209,8 @@ export function SettledGoalCard({
   const [historyOpen, setHistoryOpen] = useState(false);
   const handleHistory = useCallback(() => setHistoryOpen((open) => !open), []);
   return (
-    <Card className="bg-muted/30 shadow-none">
-      <CardContent className="grid gap-3">
+    <Block className="bg-muted/30 shadow-none" variant="plain">
+      <div className="grid gap-3">
         <GoalHeader goal={goal} today={today} />
         <SettledResult goal={goal} timezone={timezone} />
         <div className={ACTIONS}>
@@ -226,8 +226,8 @@ export function SettledGoalCard({
           organizationId={organizationId}
           timezone={timezone}
         />
-      </CardContent>
-    </Card>
+      </div>
+    </Block>
   );
 }
 
@@ -403,8 +403,8 @@ export function ActiveGoalCard({
   const handleHistory = useCallback(() => setHistoryOpen((open) => !open), []);
 
   return (
-    <Card>
-      <CardContent className="grid gap-3">
+    <Block variant="plain">
+      <div className="grid gap-3">
         <GoalHeader goal={goal} today={today} />
         <GoalProgress goal={goal} pausedHelp={pausedHelp} today={today} />
         {mode === "edit" ? (
@@ -439,7 +439,7 @@ export function ActiveGoalCard({
           onOpenChange={handleDialog}
           open={mode === "cancel"}
         />
-      </CardContent>
-    </Card>
+      </div>
+    </Block>
   );
 }

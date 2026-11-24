@@ -1018,7 +1018,7 @@ test("uma falha ao cancelar fecha o diálogo, diz o que houve sob o título e le
     page.getByText("Não foi possível concluir a operação. Tente novamente.")
   ).toBeVisible();
   await expect(
-    page.getByRole("heading", { exact: true, level: 2, name: "Metas" })
+    page.getByRole("region", { exact: true, name: "Metas" })
   ).toBeFocused();
   // nothing was cancelled: the goal is still active, with its buttons
   expect(server.goals[0]?.status).toBe("active");
@@ -1448,7 +1448,7 @@ for (const viewport of FORM_VIEWPORTS) {
     const region = page.getByRole("region", { exact: true, name: "Metas" });
     const parts = {
       button: page.getByRole("button", { name: "Nova meta" }),
-      heading: region.getByRole("heading", { exact: true, name: "Metas" }),
+      support: region.getByText("Também estimativas."),
       screenTitle: page.getByRole("heading", {
         exact: true,
         includeHidden: true,

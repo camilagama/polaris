@@ -10,8 +10,8 @@ import {
   useRef,
   useState,
 } from "react";
+import { Block } from "@/ui/block";
 import { Button } from "@/ui/button";
-import { Card, CardContent } from "@/ui/card";
 import { EmptyState } from "@/ui/empty-state";
 import { RefreshButton } from "@/ui/refresh-button";
 import { ActionNotice, ListNote, LoadError } from "../expenses/expense-fields";
@@ -45,8 +45,6 @@ interface GoalsPanelProps {
   /** The organization's today, YYYY-MM-DD. */
   today: string;
 }
-
-const HEADING_ID = "goals-heading";
 
 const returnKey = (organizationId: string) => `goals:${organizationId}`;
 
@@ -96,11 +94,9 @@ function GoalList({
         />
       ) : null}
       {state.isLoading && goals.length === 0 ? (
-        <Card>
-          <CardContent>
-            <ListNote loading>Carregando as metas…</ListNote>
-          </CardContent>
-        </Card>
+        <Block variant="plain">
+          <ListNote loading>Carregando as metas…</ListNote>
+        </Block>
       ) : null}
       {!state.isLoading && goals.length === 0 && state.error === null ? (
         <EmptyState
@@ -192,6 +188,7 @@ export function GoalsPanel({
   // the form is a dialog: opened by the button, or by the address the Início links to
   const [creating, setCreating] = useState(link === "new");
   const newButtonRef = useRef<HTMLButtonElement>(null);
+  const regionRef = useRef<HTMLElement>(null);
 
   // what was typed when the form was closed by Esc or "Fechar", for the next opening; in memory only (and kept while
   // "Conhecer o Pro" opens the Assinatura with no load of the page, for "voltar")
@@ -234,9 +231,9 @@ export function GoalsPanel({
     clearFeedback();
     setCreating(true);
   }, [clearFeedback]);
-  // the focus goes back to what opened the form (the button in the title line, or the heading when that line is not drawn)
+  // the focus goes back to what opened the form (the button in the title line, or the region when that line is not drawn)
   const finalFocus = useCallback(
-    () => newButtonRef.current ?? document.getElementById(HEADING_ID) ?? true,
+    () => newButtonRef.current ?? regionRef.current ?? true,
     []
   );
   // before the dialog's own effects: on a phone the form opened by `?meta=nova` pushes its entry over this address, and
@@ -254,9 +251,8 @@ export function GoalsPanel({
     }
     if (link === "list") {
       focusLater(() => {
-        const heading = document.getElementById(HEADING_ID);
-        heading?.scrollIntoView({ block: "start" });
-        heading?.focus({ preventScroll: true });
+        regionRef.current?.scrollIntoView({ block: "start" });
+        regionRef.current?.focus({ preventScroll: true });
       });
     }
   }, [link]);
@@ -277,19 +273,24 @@ export function GoalsPanel({
     },
     [closeForm, create, showLimitHelp]
   );
-  // the dialog closes, and after a cancel that went through the card is gone: the focus goes to the heading
+  // the dialog closes, and after a cancel that went through the card is gone: the focus goes to the region
   const handleCancel = useCallback(
     async (goal: GoalReadModel) => {
       const outcome = await cancel(goal);
-      // the dialog closes with any answer, and what happened is said right under the heading
-      focusLater(() => document.getElementById(HEADING_ID)?.focus());
+      // the dialog closes with any answer, and what happened is said right under the note
+      focusLater(() => regionRef.current?.focus());
       return outcome;
     },
     [cancel]
   );
 
   return (
-    <section aria-labelledby={HEADING_ID} className="grid gap-3">
+    <section
+      aria-label="Metas"
+      className="focus-ring grid gap-3"
+      ref={regionRef}
+      tabIndex={-1}
+    >
       {actionsHost
         ? createPortal(
             <>
@@ -301,7 +302,7 @@ export function GoalsPanel({
                 onClick={handleRetry}
               />
               <Button
-                className="flex-1 min-[47.5rem]:flex-none"
+                className="flex-1 max-md:h-ctl-lg min-[47.5rem]:flex-none"
                 disabled={busy !== null}
                 onClick={handleNew}
                 ref={newButtonRef}
@@ -314,14 +315,9 @@ export function GoalsPanel({
             actionsHost
           )
         : null}
-      <div className="grid gap-0.5">
-        <h2 className="text-section" id={HEADING_ID} tabIndex={-1}>
-          Metas
-        </h2>
-        <p className="text-muted-foreground text-support">
-          Também estimativas. Uma meta concluída continua concluída.
-        </p>
-      </div>
+      <p className="text-muted-foreground text-support">
+        Também estimativas. Uma meta concluída continua concluída.
+      </p>
       {/* while the form is open it covers this part of the screen: what the commands say is said inside it */}
       <ActionNotice
         errorExtra={limitExtra}

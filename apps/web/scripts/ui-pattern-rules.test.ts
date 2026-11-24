@@ -312,10 +312,6 @@ export const DEBT: Readonly<Record<Rule, readonly string[]>> = {
     "src/catalog/public-catalog-panels.tsx",
     // customers
     "src/customers/customer-list.tsx",
-    // dashboard
-    "src/dashboard/goal-card.tsx",
-    "src/dashboard/goals-panel.tsx",
-    "src/dashboard/result-chain.tsx",
     // data-export
     "src/data-export/data-export-cards.tsx",
     "src/data-export/data-export-list.tsx",
@@ -326,9 +322,6 @@ export const DEBT: Readonly<Record<Rule, readonly string[]>> = {
     "src/expenses/expenses-page.tsx",
     // help
     "src/help/help-page.tsx",
-    // home
-    "src/home/home-goal.tsx",
-    "src/home/home-parts.tsx",
     // inventory
     "src/inventory/inventory-page.tsx",
     // offline
@@ -377,8 +370,6 @@ export const DEBT: Readonly<Record<Rule, readonly string[]>> = {
     // expenses
     "src/expenses/expense-list.tsx",
     "src/expenses/month-picker.tsx",
-    // home
-    "src/home/home-figures.tsx",
     // inventory
     "src/inventory/stock-command-panel.tsx",
     "src/inventory/stock-panel-fields.tsx",

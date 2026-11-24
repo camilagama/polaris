@@ -1,6 +1,5 @@
 import type { PeriodSummaryReadModel } from "@polaris/contracts";
 import { Money } from "@polaris/domain/money/money";
-import CheckIcon from "lucide-react/dist/esm/icons/check";
 import ShoppingBagIcon from "lucide-react/dist/esm/icons/shopping-bag";
 import StoreIcon from "lucide-react/dist/esm/icons/store";
 import TagIcon from "lucide-react/dist/esm/icons/tag";
@@ -20,6 +19,7 @@ import { MoneyText } from "@/ui/hidden-values";
 import { monoWidthEm } from "@/ui/money";
 import { ProgressRing } from "@/ui/progress-ring";
 import { SkeletonArt, type SkeletonArtKind } from "@/ui/skeleton-art";
+import { StepTile } from "@/ui/step-tile";
 import {
   currentFirstStep,
   FIRST_STEPS_ANCHOR,
@@ -219,15 +219,6 @@ const STEPS = ["Loja criada", "Cadastrar o 1º produto", "Fazer a 1ª venda"];
 /** The icon of each step: the store has no destination in the menu; Produtos and Vender keep the icon they have there. */
 const STEP_ICONS = [StoreIcon, TagIcon, ShoppingBagIcon] as const;
 
-/** The box of a step's icon: the same 28 px in the three states, so the state moves nothing. */
-const STEP_BOX = "grid size-7 shrink-0 place-items-center rounded-md border";
-
-const STEP_BOX_STATE = {
-  current: "border-primary bg-primary/10 text-primary",
-  done: "border-transparent bg-primary/10 text-primary",
-  todo: "text-muted-foreground",
-} as const;
-
 function stepState(isDone: boolean, isCurrent: boolean) {
   if (isDone) {
     return "done";
@@ -349,17 +340,9 @@ function StepRow({
       )}
     >
       <span className={cn("flex items-center", line)}>
-        <span
-          aria-hidden="true"
-          className={cn(STEP_BOX, STEP_BOX_STATE[state])}
-          data-step-box={state}
-        >
-          {state === "done" ? (
-            <CheckIcon className="size-4" />
-          ) : (
-            <Icon className="size-4" />
-          )}
-        </span>
+        <StepTile state={state}>
+          <Icon />
+        </StepTile>
       </span>
       <span
         className={cn(
