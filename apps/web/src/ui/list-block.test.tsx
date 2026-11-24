@@ -74,15 +74,26 @@ describe("ListBlock: o título e a contagem na árvore de acessibilidade", () =>
     }
   });
 
-  it("abaixo de 760 px a contagem ocupa o resto da linha, e a reserva de largura só vale de 760 px", () => {
+  it("abaixo de 760 px a contagem ocupa o resto da linha, e a reserva de largura só vale de 760 px quando as linhas estão na tela", () => {
     const html = draw(
       { action: <button type="button">Exportar</button> },
       rows
     );
-    const count = COUNT_CLASS.exec(html)?.[1];
-    expect(count?.split(" ")).toContain("max-md:grow");
-    expect(count?.split(" ")).toContain("md:min-w-28");
-    expect(count?.split(" ")).not.toContain("min-w-28");
+    const count = COUNT_CLASS.exec(html)?.[1]?.split(" ");
+    expect(count).toContain("max-md:grow");
+    expect(count).toContain("md:min-w-28");
+    expect(count).not.toContain("min-w-28");
+    expect(count).not.toContain("max-md:min-w-28");
+  });
+
+  it("em loading a reserva vale no celular também: o cabeçalho quebra igual quando o texto chega", () => {
+    const html = draw(
+      { action: <button type="button">Exportar</button>, state: "loading" },
+      rows
+    );
+    expect(COUNT_CLASS.exec(html)?.[1]?.split(" ")).toContain(
+      "max-md:min-w-28"
+    );
   });
 
   it("com ação, o grupo da direita ocupa a linha e encosta à direita; sem ação, não", () => {

@@ -111,6 +111,15 @@ describe("Block variant plain", () => {
     expect(html).toContain("resumo");
   });
 
+  it("título vazio com descrição: sem região nem h2, e a descrição fica", () => {
+    const html = renderToStaticMarkup(
+      <Block description="Pago em 2 vezes." title="" variant="plain" />
+    );
+    expect(html).not.toContain('role="region"');
+    expect(html).not.toContain("<h2");
+    expect(html).toContain("Pago em 2 vezes.");
+  });
+
   it("sem título nem nada além do conteúdo não desenha a linha do cabeçalho", () => {
     const html = renderToStaticMarkup(<Block variant="plain">só isto</Block>);
     expect(html).not.toContain('data-slot="card-header"');
