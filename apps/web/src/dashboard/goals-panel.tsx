@@ -62,12 +62,12 @@ interface GoalListProps {
   today: string;
 }
 
-/** The label over a group of cards. */
+/** The label over a group of cards: the panel has no title of its own (the tab names it), so these are its `h2`. */
 function GroupLabel({ children, id }: { children: string; id: string }) {
   return (
-    <h3 className="mt-1 font-medium text-muted-foreground text-support" id={id}>
+    <h2 className="mt-1 font-medium text-muted-foreground text-support" id={id}>
       {children}
-    </h3>
+    </h2>
   );
 }
 

@@ -1065,7 +1065,7 @@ test("as metas finais não têm editar nem cancelar", async ({ page }) => {
   await expect(
     page
       .locator("[data-slot=card]")
-      .filter({ has: page.getByRole("heading", { level: 4 }) })
+      .filter({ has: page.getByRole("heading", { level: 3 }) })
   ).toHaveCount(3);
   await expect(page.getByRole("progressbar")).toHaveCount(0);
   await expect(goalActions(page)).toHaveCount(0);
@@ -1390,7 +1390,7 @@ test("uma falha ao carregar mostra o erro e deixa tentar de novo", async ({
   await expect(
     page
       .locator("[data-slot=card]")
-      .filter({ has: page.getByRole("heading", { level: 4 }) })
+      .filter({ has: page.getByRole("heading", { level: 3 }) })
   ).toHaveCount(0);
 
   server.listFailure = null;

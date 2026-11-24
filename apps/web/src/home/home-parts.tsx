@@ -87,11 +87,7 @@ export function HomeBlock({
     footer && role !== null && hasCapabilityForRole(role, footer.capability)
       ? footer
       : null;
-  const heading = {
-    action,
-    help,
-    title,
-  };
+  const titleRow = { action, help, title };
   if (plain) {
     return (
       <Block
@@ -100,7 +96,7 @@ export function HomeBlock({
         compact
         headingId={id}
         variant="plain"
-        {...heading}
+        {...titleRow}
       >
         {children}
       </Block>
@@ -112,7 +108,7 @@ export function HomeBlock({
       className={cn("min-w-0", className)}
       {...attributes}
     >
-      <BlockHeader id={id} {...heading} />
+      <BlockHeader id={id} {...titleRow} />
       <BlockPanel className={panelClassName}>
         {children}
         {foot?.inBody && foot.link !== false ? (

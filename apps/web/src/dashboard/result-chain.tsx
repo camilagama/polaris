@@ -52,7 +52,7 @@ const LEADER =
   "min-w-4 max-[22rem]:min-w-0 flex-1 translate-y-[-0.3em] border-input border-b border-dotted @max-[19rem]:hidden";
 
 /**
- * The card measures its own box (`@container`): narrower than 19 rem (320 px at the default font of 16 px, 360 px
+ * The panel measures its own box (`@container`): narrower than 19 rem (320 px at the default font of 16 px, 360 px
  * with 18 px or more; the value is in Geist Mono, wider than the Geist of the name) the name of the line and its value
  * no longer fit side by side, so each row stacks them, the name
  * above the value, and the value keeps the whole width of the card instead of rolling the table sideways. The dotted

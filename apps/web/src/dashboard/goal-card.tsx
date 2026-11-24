@@ -69,7 +69,7 @@ function GoalHeader({ goal, today }: { goal: GoalReadModel; today: string }) {
   return (
     <div className="grid gap-0.5">
       <div className="flex flex-wrap items-center gap-2">
-        <h4 className="text-section">{goalTitle(goal)}</h4>
+        <h3 className="text-section">{goalTitle(goal)}</h3>
         <Badge variant={goalBadgeVariant(goal.status, goal.paused)}>
           {goal.paused ? "Pausada pelo plano" : goalStatusLabel(goal.status)}
         </Badge>

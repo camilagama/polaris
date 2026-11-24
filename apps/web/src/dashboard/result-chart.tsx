@@ -318,6 +318,7 @@ function ChartHeader({
   return (
     <BlockHeader
       aside={<HeaderLegend legend={legend} />}
+      className="md:flex-wrap"
       help={tips}
       id={TITLE_ID}
       title={title}
@@ -604,7 +605,6 @@ export function ResultChartSkeleton() {
     <CardFrame>
       <CardFrameHeader aria-hidden="true">
         <Heading
-          className="md:flex-nowrap"
           aside={
             <HeaderLegend
               legend={{
