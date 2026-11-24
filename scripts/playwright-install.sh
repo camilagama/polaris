@@ -11,7 +11,8 @@
 # lockfile instala o navegador).
 # Variáveis: PLAYWRIGHT_INSTALL_ATTEMPTS (download, 2), PLAYWRIGHT_INSTALL_DOWNLOAD_TIMEOUT (120 s),
 # PLAYWRIGHT_INSTALL_APT_ATTEMPTS (como o download), PLAYWRIGHT_INSTALL_ATTEMPT_TIMEOUT (apt, 450 s),
-# PLAYWRIGHT_INSTALL_FIRST_ATTEMPT_TIMEOUT (1ª tentativa do apt), PLAYWRIGHT_INSTALL_FORCE_DEPS=1
+# PLAYWRIGHT_INSTALL_FIRST_ATTEMPT_TIMEOUT (1ª tentativa do apt), PLAYWRIGHT_INSTALL_APT_ORPHAN_GRACE
+# (espera pelo apt-get que sobrou, 45 s), PLAYWRIGHT_INSTALL_FORCE_DEPS=1
 # (chama o apt mesmo sem biblioteca faltando), PLAYWRIGHT_INSTALL_RETRY_PAUSE (pausa entre tentativas, 5 s).
 set -euo pipefail
 
@@ -77,6 +78,10 @@ download_browser() {
 # Imprime uma linha por biblioteca que os binários do Chromium não encontram; sem saída, nada falta.
 missing_libraries() {
   local locations dir binary found=0 output
+  if ! command -v ldd >/dev/null 2>&1; then
+    echo "ldd: não está instalado"
+    return 0
+  fi
   locations="$(timeout 60 "${runner[@]}" install --dry-run chromium | sed -n 's/^ *Install location: *//p')" || {
     echo "binário do Chromium: não consegui listar o local de instalação"
     return 0
@@ -128,12 +133,12 @@ fi
 
 missing="$(missing_libraries)"
 if [[ -z "$missing" && "${PLAYWRIGHT_INSTALL_FORCE_DEPS:-}" != "1" ]]; then
-  echo "playwright install: as bibliotecas do Chromium já estão no sistema; o apt não foi chamado"
+  echo "playwright install: o ldd não achou biblioteca faltando nos binários do Chromium; o apt não foi chamado"
   exit 0
 fi
 
 if [[ -n "$missing" ]]; then
-  echo "playwright install: faltam bibliotecas; chamando o apt:"
+  echo "playwright install: chamando o apt, o que o Chromium não achou:"
   echo "$missing"
 fi
 if ! install_dependencies_with_apt; then

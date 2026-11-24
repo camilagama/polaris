@@ -29,6 +29,7 @@ const STUBS = {
     'case "$2" in',
     "  install)",
     '    if [[ "$3" == "--dry-run" ]]; then',
+    '      if [[ "$STUB_DRY_RUN_FAILS" == "1" ]]; then exit 1; fi',
     '      echo "  Install location:    $STUB_BROWSERS/chromium-1"',
     "      exit 0",
     "    fi",
@@ -43,12 +44,19 @@ const STUBS = {
   ldd: [
     "#!/usr/bin/env bash",
     'echo "ldd $1" >> "$STUB_LOG"',
-    'if [[ -n "$STUB_MISSING_LIBRARY" ]]; then',
-    '  echo "\\t$STUB_MISSING_LIBRARY => not found"',
+    'if [[ -n "$STUB_MISSING_LIBRARY" && "$1" == *"$STUB_MISSING_IN" ]]; then',
+    "  printf '\\t%s => not found\\n' \"$STUB_MISSING_LIBRARY\"",
     "fi",
-    'echo "\\tlibc.so.6 => /lib/libc.so.6"',
+    "printf '\\tlibc.so.6 => /lib/libc.so.6 (0x1)\\n'",
   ].join("\n"),
-  pgrep: "#!/usr/bin/env bash\nexit 1",
+  pgrep: [
+    "#!/usr/bin/env bash",
+    'count_file="$STUB_STATE/pgrep"',
+    'n=$(($(cat "$count_file" 2>/dev/null || echo 0) + 1))',
+    'echo "$n" > "$count_file"',
+    'echo "pgrep" >> "$STUB_LOG"',
+    "((n <= STUB_PGREP_RUNNING))",
+  ].join("\n"),
   sudo: [
     "#!/usr/bin/env bash",
     'echo "sudo $1" >> "$STUB_LOG"',
@@ -89,8 +97,11 @@ function run(env = {}) {
       STUB_APT_STALLS: "0",
       STUB_BROWSERS: path.join(sandbox, "browsers"),
       STUB_DOWNLOAD_FAILURES: "0",
+      STUB_DRY_RUN_FAILS: "0",
       STUB_LOG: path.join(sandbox, "calls.log"),
+      STUB_MISSING_IN: "",
       STUB_MISSING_LIBRARY: "",
+      STUB_PGREP_RUNNING: "0",
       STUB_STATE: path.join(sandbox, "state"),
       ...env,
     },
@@ -122,7 +133,10 @@ describe("scripts/playwright-install.sh", () => {
 
     expect(status).toBe(0);
     expect(downloads(calls)).toHaveLength(1);
-    expect(calls.filter((call) => call.startsWith("ldd "))).toHaveLength(2);
+    const checked = calls
+      .filter((call) => call.startsWith("ldd "))
+      .map((call) => path.basename(call));
+    expect(checked.sort()).toEqual(["chrome", "chrome-headless-shell"]);
     expect(aptCalls(calls)).toEqual([]);
     expect(calls.some((call) => call.startsWith("sudo"))).toBe(false);
     expect(output).toContain("o apt não foi chamado");
@@ -206,5 +220,42 @@ describe("scripts/playwright-install.sh", () => {
 
     expect(status).toBe(0);
     expect(aptCalls(calls)).toHaveLength(1);
+  });
+
+  it("calls apt when only the headless shell misses a library", () => {
+    const { calls, output, status } = run({
+      STUB_MISSING_IN: "chrome-headless-shell",
+      STUB_MISSING_LIBRARY: "libgbm.so.1",
+    });
+
+    expect(status).toBe(0);
+    expect(aptCalls(calls)).toHaveLength(1);
+    expect(output).toContain("chrome-headless-shell:");
+    expect(output).toContain("libgbm.so.1 => not found");
+  });
+
+  it("calls apt when the install location cannot be listed", () => {
+    const { calls, output, status } = run({ STUB_DRY_RUN_FAILS: "1" });
+
+    expect(status).toBe(0);
+    expect(aptCalls(calls)).toHaveLength(1);
+    expect(output).toContain("não consegui listar o local de instalação");
+  });
+
+  it("waits for a leftover apt-get and ends it before the second apt attempt", () => {
+    const { calls, output, status } = run({
+      PLAYWRIGHT_INSTALL_APT_ORPHAN_GRACE: "0",
+      STUB_APT_FAILURES: "1",
+      STUB_MISSING_LIBRARY: "libnss3.so",
+      STUB_PGREP_RUNNING: "2",
+    });
+
+    expect(status).toBe(0);
+    expect(calls).toContain("sudo pkill");
+    expect(output).toContain("enviando SIGTERM");
+    expect(aptCalls(calls)).toHaveLength(2);
+    expect(calls.indexOf("sudo pkill")).toBeLessThan(
+      calls.lastIndexOf("playwright install-deps chromium")
+    );
   });
 });
