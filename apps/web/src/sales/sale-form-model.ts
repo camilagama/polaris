@@ -2355,7 +2355,10 @@ export interface ConfirmedSaleView {
   headline: string;
   items: ConfirmedSaleItemView[];
   note: string;
+  /** The part at position 0; a sale with `paymentParts` is drawn from them instead. */
   paymentDetails: ConfirmedSaleDetail[];
+  /** Present only for a sale paid in more than one part. */
+  paymentParts?: ConfirmedPaymentPartView[];
   replayed: boolean;
   saleDetails: ConfirmedSaleDetail[];
   saleId: string;
@@ -2418,10 +2421,9 @@ function confirmedTotals(sale: ConfirmedSaleReadModel): SummaryRow[] {
   ];
 }
 
-function confirmedPaymentDetails(
-  sale: ConfirmedSaleReadModel
+function paymentFeeDetails(
+  payment: ConfirmedSaleReadModel["payment"]
 ): ConfirmedSaleDetail[] {
-  const { payment } = sale;
   const processing = describeFee(payment.processingFee);
   const anticipation = describeFee(payment.anticipationFee);
   const profile =
@@ -2433,20 +2435,6 @@ function confirmedPaymentDetails(
       ? "Nenhuma regra exata aplicada"
       : `Regra exata: ${describeRule(payment.method, payment.installments, payment.installmentPlan)}`;
   return [
-    {
-      label: "Método",
-      tone: "plain",
-      value: describeRule(
-        payment.method,
-        payment.installments,
-        payment.installmentPlan
-      ),
-    },
-    {
-      label: "Valor do pagamento",
-      tone: "known",
-      value: formatBrlAmount(payment.amount),
-    },
     { label: "Perfil de pagamento", tone: "plain", value: profile },
     { label: "Regra", tone: "plain", value: rule },
     {
@@ -2465,6 +2453,73 @@ function confirmedPaymentDetails(
       value: describeSettlementDays(payment.expectedSettlementDays),
     },
   ];
+}
+
+function confirmedPaymentDetails(
+  sale: ConfirmedSaleReadModel
+): ConfirmedSaleDetail[] {
+  const { payment } = sale;
+  return [
+    {
+      label: "Método",
+      tone: "plain",
+      value: describeRule(
+        payment.method,
+        payment.installments,
+        payment.installmentPlan
+      ),
+    },
+    {
+      label: "Valor do pagamento",
+      tone: "known",
+      value: formatBrlAmount(payment.amount),
+    },
+    ...paymentFeeDetails(payment),
+  ];
+}
+
+/**
+ * One part of a sale paid in more than one: the method in full and the amount of the part, the installments under
+ * them, and the profile, rule, fees and settlement estimate of that part. The installment value is not written: the
+ * sale stores the number of installments and the amount, not what each installment is.
+ */
+interface ConfirmedPaymentPartView {
+  amountText: string;
+  details: ConfirmedSaleDetail[];
+  /** "3x · Parcelado pelo lojista" for a card with installments; null otherwise. */
+  installmentText: string | null;
+  methodText: string;
+  position: number;
+}
+
+function installmentTextOf(
+  payment: ConfirmedSaleReadModel["payment"]
+): string | null {
+  const parts = [
+    payment.installments === null ? null : `${payment.installments}x`,
+    payment.installmentPlan === null
+      ? null
+      : (planLabels[payment.installmentPlan] ?? payment.installmentPlan),
+  ].filter((part): part is string => part !== null);
+  return parts.length > 0 ? parts.join(" · ") : null;
+}
+
+/** One entry per part, in the order the server sends them (by position), only when the sale has more than one: a sale of one part keeps the plain block. */
+function paymentPartsField(
+  sale: ConfirmedSaleReadModel
+): { paymentParts: ConfirmedPaymentPartView[] } | Record<string, never> {
+  const parts = sale.payments ?? [];
+  if (parts.length < 2) {
+    return {};
+  }
+  const views = parts.map((part) => ({
+    amountText: formatBrlAmount(part.amount),
+    details: paymentFeeDetails(part),
+    installmentText: installmentTextOf(part),
+    methodText: methodLabels.get(part.method) ?? part.method,
+    position: part.position,
+  }));
+  return { paymentParts: views };
 }
 
 const timeFormatter = new Intl.DateTimeFormat("pt-BR", { timeStyle: "short" });
@@ -2534,6 +2589,7 @@ export function confirmedSaleView(
     items: confirmedItems(sale),
     note: "O método de pagamento registrado não comprova liquidação, e taxas e prazo são estimativas do perfil escolhido.",
     paymentDetails: confirmedPaymentDetails(sale),
+    ...paymentPartsField(sale),
     replayed: sale.replayed,
     saleDetails: [
       { label: "Venda", tone: "plain", value: sale.sale.id },
