@@ -7,12 +7,15 @@ import {
 } from "./last-payment-model";
 import { refreshedDraftMessage } from "./sale-draft-restore";
 import {
+  acknowledgeProfileReview,
   acknowledgeSecondProfileReview,
   applySalePreset,
   applySplitAction,
   createBlankSaleForm,
+  describePartRefusal,
   endSplit,
   evaluateSaleForm,
+  failSubmission,
   isSaleFormDirty,
   NO_PROFILE_CHOICE,
   prepareConfirmation,
@@ -27,10 +30,12 @@ import {
   selectSecondProfileChoice,
   setFirstPartAmount,
   setSecondPartAmount,
+  sharedProfileReview,
   startSplit,
   updateItem,
   updateSecondPayment,
 } from "./sale-form-model";
+import { SHARED_PROFILE_REVIEW_MESSAGE } from "./sale-split-model";
 
 const productId = "11111111-1111-4111-8111-111111111111";
 const variantId = "22222222-2222-4222-8222-222222222222";
@@ -39,6 +44,7 @@ const ruleCardId = "55555555-5555-4555-8555-555555555555";
 const noFee = { fixedAmount: null, mode: "none", percentage: null } as const;
 const NOW = new Date("2026-11-02T15:00:00.000Z");
 const TOTAL_MOVED_ENDING = / O total mudou\. Confira as partes\.$/;
+const PART_2_PREFIX = /^Parte 2: O perfil de pagamento foi editado/;
 
 function sequentialIds(): () => string {
   let next = 0;
@@ -250,7 +256,10 @@ describe("parts that do not close the total", () => {
 
     expect(evaluation.body).toBeNull();
     expect(evaluation.split?.balance?.text).toBe("Falta R$ 6,68");
-    expect(evaluation.errors["payment2:amount"]).toBe("Falta R$ 6,68");
+    expect(evaluation.errors["payment2:amount"]).toBe(
+      "A soma das partes precisa ser R$ 100,01. Falta R$ 6,68."
+    );
+    expect(evaluation.split?.mismatchKey).toBe("payment2:amount");
     expect(evaluation.firstIssueKey).toBe("payment2:amount");
   });
 
@@ -261,9 +270,11 @@ describe("parts that do not close the total", () => {
       "100.00"
     );
     expect(evaluate(form).body).toBeNull();
-    expect(evaluate(form).errors["payment2:amount"]).toBe("Passou R$ 50,00");
+    expect(evaluate(form).errors["payment2:amount"]).toBe(
+      "A soma das partes precisa ser R$ 100,00. Passou R$ 50,00."
+    );
     expect(evaluate(form).split?.balance?.hint).toBe(
-      "Se for troco, a parte em dinheiro é R$ 60,00"
+      "Se for troco, a parte em dinheiro é R$ 60,00."
     );
 
     form = selectSecondPaymentMethod(form, "pix");
@@ -286,7 +297,10 @@ describe("parts that do not close the total", () => {
   it("puts the Passou of a first part bigger than the total at the first part, not at the rest", () => {
     const evaluation = evaluate(splitSale("100,00", "120,00"));
     expect(evaluation.body).toBeNull();
-    expect(evaluation.errors["payment:amount"]).toBe("Passou R$ 20,00");
+    expect(evaluation.errors["payment:amount"]).toBe(
+      "A soma das partes precisa ser R$ 100,00. Passou R$ 20,00."
+    );
+    expect(evaluation.split?.mismatchKey).toBe("payment:amount");
     expect(evaluation.firstIssueKey).toBe("payment:amount");
   });
 
@@ -322,7 +336,7 @@ describe("parts that do not close the total", () => {
       "O total mudou. Confira as partes."
     );
     expect(evaluation.errors["payment2:amount"]).toBe(
-      "Falta R$ 20,00. O total mudou. Confira as partes."
+      "A soma das partes precisa ser R$ 120,00. Falta R$ 20,00. O total mudou. Confira as partes."
     );
 
     const followed = updateItem(
@@ -380,6 +394,35 @@ describe("the validation of each part", () => {
     });
   });
 
+  it("points at the amount of part 1 before its profile, as the screen has them", () => {
+    let form = startSplit(saleOf("100,00"));
+    form = selectProfileChoice(form, "", [profile()]);
+    const evaluation = evaluate(form);
+    expect(evaluation.firstIssueKey).toBe("payment:amount");
+    expect(evaluation.errors.profile).toBe(
+      "Escolha um perfil de pagamento ou “Sem perfil” na parte 1."
+    );
+  });
+
+  it("refuses an amount that is not a number, in the field of the part", () => {
+    const form = setFirstPartAmount(
+      startSplit(saleOf("100,00")),
+      "12,3,4",
+      "100.00"
+    );
+    const evaluation = evaluate(form);
+    expect(evaluation.body).toBeNull();
+    expect(evaluation.errors["payment:amount"]).toBeDefined();
+    expect(evaluation.split?.balance).toBeNull();
+    const typedSecond = setSecondPartAmount(
+      splitSale("60,00", "40,00"),
+      "abc",
+      "100.00"
+    );
+    expect(evaluate(typedSecond).errors["payment2:amount"]).toBeDefined();
+    expect(evaluate(typedSecond).body).toBeNull();
+  });
+
   it("asks for the amount of part 2 once the person typed there and emptied it", () => {
     const form = setSecondPartAmount(
       splitSale("100,00", "40,00"),
@@ -424,7 +467,7 @@ describe("the validation of each part", () => {
 });
 
 describe("the profile of each part", () => {
-  it("is reviewed per part, with the number of the part", () => {
+  it("is reviewed once for both parts when both use the profile that changed", () => {
     let form = splitSale("100,00", "40,00");
     form = selectProfileChoice(form, profileId, [profile(3)]);
     form = selectSecondProfileChoice(form, profileId, [profile(3)]);
@@ -434,17 +477,54 @@ describe("the profile of each part", () => {
     expect(reconciled.split?.second.profile.reviewNotice).toContain(
       "da parte 2"
     );
+    expect(sharedProfileReview(reconciled)).toBe(true);
+    expect(SHARED_PROFILE_REVIEW_MESSAGE).toBe(
+      "Revise a prévia das duas partes."
+    );
+
+    for (const acknowledge of [
+      acknowledgeProfileReview,
+      acknowledgeSecondProfileReview,
+    ]) {
+      const acknowledged = acknowledge(reconciled, [profile(4)]);
+      const reviewed = {
+        choice: profileId,
+        reviewNotice: null,
+        seenVersion: 4,
+      };
+      expect(acknowledged.profile).toEqual(reviewed);
+      expect(acknowledged.split?.second.profile).toEqual(reviewed);
+      expect(sharedProfileReview(acknowledged)).toBe(false);
+      expect(
+        evaluate(acknowledged, [profile(4)]).errors.profile
+      ).toBeUndefined();
+    }
+  });
+
+  it("is reviewed per part, with the number of the part, when each part has its own profile", () => {
+    const otherId = "66666666-6666-4666-8666-666666666666";
+    const other = (version: number): PaymentProfileReadModel => ({
+      ...profile(version),
+      id: otherId,
+      name: "Pix da loja",
+    });
+    let form = splitSale("100,00", "40,00");
+    form = selectProfileChoice(form, profileId, [profile(3), other(1)]);
+    form = selectSecondProfileChoice(form, otherId, [profile(3), other(1)]);
+    const reconciled = reconcileProfileReload(form, [profile(4), other(2)]);
+    expect(sharedProfileReview(reconciled)).toBe(false);
 
     const acknowledged = acknowledgeSecondProfileReview(reconciled, [
       profile(4),
+      other(2),
     ]);
     expect(acknowledged.split?.second.profile).toEqual({
-      choice: profileId,
+      choice: otherId,
       reviewNotice: null,
-      seenVersion: 4,
+      seenVersion: 2,
     });
     expect(acknowledged.profile).toEqual(reconciled.profile);
-    expect(evaluate(acknowledged, [profile(4)]).errors.profile).toBe(
+    expect(evaluate(acknowledged, [profile(4), other(2)]).errors.profile).toBe(
       "Confirme a revisão da prévia da parte 1 antes de continuar."
     );
   });
@@ -573,5 +653,35 @@ describe("what a split sale leaves behind", () => {
     expect(
       isSaleFormDirty(startSplit(createBlankSaleForm(sequentialIds())))
     ).toBe(true);
+  });
+});
+
+describe("a refusal of a sale sent in parts", () => {
+  const refusal = (reason: string, code: string, part?: number) =>
+    failSubmission(
+      Object.assign(new Error(reason), {
+        code,
+        data: part === undefined ? { reason } : { part, reason },
+      }),
+      []
+    );
+
+  it("says the parts do not close the total, and keeps the form editable", () => {
+    const state = refusal("sale_payment_split_mismatch", "BAD_REQUEST");
+    expect(state.phase).toBe("failed");
+    expect(state.phase === "failed" && state.failure.message).toBe(
+      "A soma das partes não fecha o total da venda. Confira o valor de cada parte e confirme de novo."
+    );
+  });
+
+  it("names the part whose profile refused the sale, only for a sale sent in parts", () => {
+    const state = refusal("payment_profile_version_conflict", "CONFLICT", 1);
+    const split = describePartRefusal(state, 2);
+    expect(split.phase === "failed" && split.failure.message).toMatch(
+      PART_2_PREFIX
+    );
+    expect(describePartRefusal(state, 1)).toBe(state);
+    const unnamed = refusal("payment_profile_version_conflict", "CONFLICT");
+    expect(describePartRefusal(unnamed, 2)).toBe(unnamed);
   });
 });
