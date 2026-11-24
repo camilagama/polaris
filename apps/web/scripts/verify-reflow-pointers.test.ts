@@ -58,7 +58,7 @@ const SPECS: Readonly<Record<string, SpecRule>> = {
   },
   "historico-reflow.e2e.ts": {
     bare: 0,
-    coarse: 1,
+    coarse: 3,
     why: "the window of 1280 px is not a phone",
   },
   "goals.e2e.ts": {
@@ -137,6 +137,7 @@ const SPECS: Readonly<Record<string, SpecRule>> = {
     coarse: 1,
     why: "the window of 1280 px is not a phone",
   },
+  "venda-dividida-reflow.e2e.ts": { bare: 0, coarse: 0, why: "" },
 };
 
 /** Files that name "reflow" or import it and are not specs of a screen. */

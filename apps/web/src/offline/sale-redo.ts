@@ -117,6 +117,11 @@ export function buildRedoDraft(
     return { kind: "unreadable" };
   }
   const sale = parsed.data;
+  const { payment } = sale;
+  if (payment === undefined) {
+    // the device keeps one payment per sale and refuses to queue one paid in parts: such a payload is not a redo
+    return { kind: "unreadable" };
+  }
   const byVariant = new Map(entries.map((entry) => [entry.variantId, entry]));
   const problems = problemsOf(sale.items, byVariant);
   if (problems.length > 0) {
@@ -144,13 +149,11 @@ export function buildRedoDraft(
       items,
       occurredAtLocal: "",
       payment: {
-        anticipationRequested: sale.payment.anticipationRequested,
-        installmentPlan: sale.payment.installmentPlan ?? "",
+        anticipationRequested: payment.anticipationRequested,
+        installmentPlan: payment.installmentPlan ?? "",
         installments:
-          sale.payment.installments === null
-            ? ""
-            : String(sale.payment.installments),
-        method: sale.payment.method,
+          payment.installments === null ? "" : String(payment.installments),
+        method: payment.method,
       },
       profile: sale.paymentProfile
         ? {

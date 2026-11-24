@@ -11,6 +11,23 @@ import { PaymentSection } from "./sale-payment-section";
 vi.mock("../lib/orpc", () => ({ orpcClient: {} }));
 
 const noop = () => undefined;
+const NO_SPLIT = {
+  blocker: null,
+  evaluation: null,
+  handlers: {
+    onAcknowledgeSecondReview: noop,
+    onAction: noop,
+    onEnd: noop,
+    onFirstAmountChange: noop,
+    onSecondAmountChange: noop,
+    onSecondAnticipationChange: noop,
+    onSecondInstallmentPlanChange: noop,
+    onSecondInstallmentsChange: noop,
+    onSecondMethodChange: noop,
+    onSecondProfileChange: noop,
+    onStart: noop,
+  },
+};
 const bare = {
   altKey: false,
   ctrlKey: false,
@@ -50,6 +67,7 @@ function renderPayment(): string {
       profileOptions={[]}
       profilesView={{ kind: "empty", message: "Nenhum perfil." }}
       singlePaymentText="Um pagamento só."
+      split={NO_SPLIT}
       timezone="America/Sao_Paulo"
     />
   );

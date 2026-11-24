@@ -14,7 +14,8 @@ const { SaleHistoryList } = await import("./sale-history-list");
 const { SaleReceipt } = await import("./sale-receipt");
 
 const FRAME = /\bborder|\bring|\bshadow/;
-const DETAILS_BLOCK = /<dl\b[^>]*\bdata-receipt-block="[^"]*"[^>]*>/g;
+const DETAILS_BLOCK =
+  /<div\b[^>]*\bdata-receipt-block="[^"]*"[^>]*><dl\b[^>]*>/g;
 const PERFORATION = "data-receipt-perforation";
 const MONO_CELL = /<(?:dd|span|p)\b[^>]*class="[^"]*font-mono[^"]*"[^>]*>/g;
 const TOTALS_STRIP = /<dl\b[^>]*\bdata-receipt-totals\b/;
