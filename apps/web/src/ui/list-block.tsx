@@ -31,7 +31,7 @@ type ListBlockProps = ListBlockStateProps & {
   /** The `ListBlock.Header`, the `ListBlock.Row`s and the `ListBlock.Total`, as direct children: one wrapped in a component or a fragment is taken for a row. */
   children?: ReactNode;
   className?: string | undefined;
-  /** "1.248 produtos": the support text beside the title, announced when it changes. Empty while it is unknown. */
+  /** "1.248 produtos": the support text beside the title, announced when it changes. Empty while it is unknown, and the block drops it by itself while loading. */
   count: string;
   help?: ComponentProps<typeof BlockHeader>["help"];
   id?: string;
@@ -189,10 +189,10 @@ function ListBlockRoot({
         aside={
           <p
             aria-live="polite"
-            className="min-h-5 min-w-28 text-muted-foreground text-support md:text-right"
+            className="min-h-5 text-muted-foreground text-support max-md:grow md:min-w-28 md:text-right"
             data-list-count=""
           >
-            {count}
+            {stateProps.state === "loading" ? "" : count}
           </p>
         }
         className="border-border border-b px-3 py-3 md:border-b-0 md:p-0"

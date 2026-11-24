@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { Fragment, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { ListBlock, type ListBlockProps } from "./list-block";
@@ -8,6 +8,7 @@ const COUNT =
   /<p[^>]*aria-live="polite"[^>]*data-list-count=""[^>]*>([^<]*)<\/p>/;
 const REGION = /<div[^>]*role="region"[^>]*aria-labelledby="([^"]+)"/;
 const STATUS = /<p class="sr-only" role="status">([^<]*)<\/p>/;
+const COUNT_CLASS = /<p[^>]*class="([^"]*)"[^>]*data-list-count=""/;
 const ROWS = /data-list-block-row=""/g;
 const ANY_HEADING = /<h[1-6]\b/g;
 const COUNT_AS_HEADING = /<h[1-6][^>]*>2 produtos/;
@@ -57,6 +58,40 @@ describe("ListBlock: o título e a contagem na árvore de acessibilidade", () =>
     const html = draw({ count: "", state: "loading" }, rows);
     expect(COUNT.exec(html)?.[1]).toBe("");
     expect(html).toContain("min-h-5");
+  });
+
+  it("a contagem fica vazia sozinha em loading, mesmo que a tela passe o texto", () => {
+    const html = draw({ count: "2 produtos", state: "loading" }, rows);
+    expect(COUNT.exec(html)?.[1]).toBe("");
+    expect(html).not.toContain("2 produtos");
+  });
+
+  it("fora de loading a contagem da tela aparece", () => {
+    for (const state of ["rows", "filtered-empty"] as const) {
+      expect(COUNT.exec(draw({ count: "7 produtos", state }, rows))?.[1]).toBe(
+        "7 produtos"
+      );
+    }
+  });
+
+  it("abaixo de 760 px a contagem ocupa o resto da linha, e a reserva de largura só vale de 760 px", () => {
+    const html = draw(
+      { action: <button type="button">Exportar</button> },
+      rows
+    );
+    const count = COUNT_CLASS.exec(html)?.[1];
+    expect(count?.split(" ")).toContain("max-md:grow");
+    expect(count?.split(" ")).toContain("md:min-w-28");
+    expect(count?.split(" ")).not.toContain("min-w-28");
+  });
+
+  it("com ação, o grupo da direita ocupa a linha e encosta à direita; sem ação, não", () => {
+    const withAction = draw(
+      { action: <button type="button">Exportar</button> },
+      rows
+    );
+    expect(withAction).toContain("max-md:grow max-md:justify-end");
+    expect(draw({}, rows)).not.toContain("max-md:grow max-md:justify-end");
   });
 
   it("a ação fica depois da contagem, à direita do cabeçalho", () => {
@@ -131,6 +166,45 @@ describe("ListBlock: o cabeçalho de coluna e o total", () => {
     expect(html.indexOf('data-slot="card-frame-header"')).toBeLessThan(scroll);
     expect(html.indexOf("data-list-block-header")).toBeGreaterThan(scroll);
     expect(html.indexOf("data-list-total")).toBeGreaterThan(scroll);
+  });
+});
+
+describe("ListBlock: filho embrulhado", () => {
+  function WrappedTotal() {
+    return <ListBlock.Total count="2 produtos" value="R$ 10,00" />;
+  }
+
+  it("um Total dentro de componente é tratado como linha: fica na lista, na ordem em que foi declarado", () => {
+    const html = draw({}, [<WrappedTotal key="t" />, ...rows]);
+    expect(html).toContain("data-list-total");
+    const list = html.slice(html.indexOf("<ul"), html.indexOf("</ul>"));
+    expect(list).toContain("data-list-total");
+    expect(html.indexOf("data-list-total")).toBeLessThan(
+      html.lastIndexOf("data-list-block-row")
+    );
+  });
+
+  it("um Total dentro de fragmento também cai na lista", () => {
+    const html = draw({}, [
+      <Fragment key="t">
+        <ListBlock.Total count="2 produtos" value="R$ 10,00" />
+      </Fragment>,
+      ...rows,
+    ]);
+    const list = html.slice(html.indexOf("<ul"), html.indexOf("</ul>"));
+    expect(list).toContain("data-list-total");
+  });
+
+  it("o Total direto fica fora da lista, por último", () => {
+    const html = draw({}, [
+      <ListBlock.Total count="2 produtos" key="t" value="R$ 10,00" />,
+      ...rows,
+    ]);
+    const list = html.slice(html.indexOf("<ul"), html.indexOf("</ul>"));
+    expect(list).not.toContain("data-list-total");
+    expect(html.indexOf("data-list-total")).toBeGreaterThan(
+      html.indexOf("</ul>")
+    );
   });
 });
 
