@@ -3,7 +3,11 @@ import { formatQuantity } from "@/lib/format";
 import { Card, CardContent } from "@/ui/card";
 import { MoneyText } from "@/ui/hidden-values";
 import { Money } from "@/ui/money";
-import { ConfirmedDetails, ConfirmedItems } from "./confirmed-sale-parts";
+import {
+  ConfirmedDetails,
+  ConfirmedItems,
+  ConfirmedPaymentParts,
+} from "./confirmed-sale-parts";
 import type { ConfirmedSaleView } from "./sale-form-model";
 import { LeaderRow, Perforation } from "./sale-summary-panel";
 
@@ -102,11 +106,15 @@ export function SaleReceipt({
         </CardContent>
         <CardContent className="grid gap-2 border-border border-t py-(--card-spacing)">
           <h3 className="font-medium">Pagamento</h3>
-          <ConfirmedDetails
-            block="payment"
-            details={sale.paymentDetails}
-            receipt
-          />
+          {sale.paymentParts ? (
+            <ConfirmedPaymentParts parts={sale.paymentParts} />
+          ) : (
+            <ConfirmedDetails
+              block="payment"
+              details={sale.paymentDetails}
+              receipt
+            />
+          )}
           <p className="text-muted-foreground text-support">{sale.note}</p>
           <p className="pt-1 font-mono text-muted-foreground text-xs [overflow-wrap:anywhere]">
             <span className="sr-only">Identificador da venda: </span>

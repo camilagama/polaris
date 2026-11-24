@@ -54,8 +54,8 @@ describe("the checklist of the Início marks the step of the hour", () => {
       true,
       false,
     ]);
-    expect(box(rows[1] as string)).toContain("border-mark");
-    expect(box(rows[1] as string)).toContain("text-mark-foreground");
+    expect(box(rows[1] as string)).toContain("border-primary");
+    expect(box(rows[1] as string)).toContain("text-primary");
     expect(box(rows[1] as string)).toContain('data-step-box="current"');
     expect(icon(rows[1] as string)).toBe("tag");
     expect(text(rows[1] as string)).toContain("Cadastrar o 1º produto");
@@ -78,7 +78,7 @@ describe("the checklist of the Início marks the step of the hour", () => {
     const rows = render("p1");
     for (const row of rows.slice(0, 2)) {
       expect(box(row)).toContain("bg-primary/10");
-      expect(box(row)).not.toContain("border-mark");
+      expect(box(row)).not.toContain("border-primary");
       expect(icon(row)).toBe("check");
       expect(row).toContain("bg-muted/50");
       expect(row).toContain("text-muted-foreground");
@@ -94,7 +94,7 @@ describe("the checklist of the Início marks the step of the hour", () => {
     expect(icon(future)).toBe("shopping-bag");
     expect(box(future)).toContain('data-step-box="todo"');
     expect(box(future)).toContain("text-muted-foreground");
-    expect(box(future)).not.toContain("border-mark");
+    expect(box(future)).not.toContain("border-primary");
     expect(future).not.toContain("bg-muted/50");
     expect(future).not.toContain("aria-current");
     expect(future).not.toContain("(feito)");

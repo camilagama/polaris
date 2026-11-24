@@ -16,7 +16,7 @@ const ORGANIZATION = {
 };
 const PRODUCT_ID = "0199c2d0-0000-7000-8000-0000000000f1";
 const VARIANT_ID = "0199c2d0-0000-7000-8000-0000000000b1";
-const DRAFT_KEY = `polaris.sale.draft.v1:${ORGANIZATION.id}`;
+const DRAFT_KEY = `polaris.sale.draft.v2:${ORGANIZATION.id}`;
 const SEEDED_KEY = "polaris.e2e.sale-draft-midnight.seeded";
 const NOW = new Date("2026-11-20T00:30:00-03:00");
 const HOUR = 3_600_000;
@@ -77,6 +77,7 @@ function savedDraft(updatedAt: string, startedAt = STARTED_AT) {
         method: "pix",
       },
       profile: { choice: "", reviewNotice: null, seenVersion: null },
+      split: null,
     },
     startedAt,
     updatedAt,

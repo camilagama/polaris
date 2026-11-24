@@ -634,8 +634,11 @@ test("sem aparelhos mostra o vazio com o próximo passo, e nunca depois de um er
   state.down = false;
   await page.getByRole("button", { name: "Tentar novamente" }).click();
   await expect(
+    page.getByText("Nenhum aparelho registrado nesta conta.")
+  ).toBeVisible();
+  await expect(
     page.getByText(
-      "Nenhum aparelho registrado nesta conta. Um aparelho aparece aqui depois que você abre o Polaris nele com internet."
+      "Um aparelho aparece aqui depois que você abre o Polaris nele com internet."
     )
   ).toBeVisible();
   await expect(page.getByRole("alert")).toHaveCount(0);

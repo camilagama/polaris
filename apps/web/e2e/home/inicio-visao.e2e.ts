@@ -1562,9 +1562,9 @@ test.describe("loja sem venda: o checklist (AC-22, AC-23)", () => {
           item.removeAttribute("aria-current");
           const circle = item.querySelector("[aria-hidden='true']");
           circle?.classList.remove(
-            "border-mark",
-            "bg-mark/10",
-            "text-mark-foreground"
+            "border-primary",
+            "bg-primary/10",
+            "text-primary"
           );
         });
         const plain = await heights();

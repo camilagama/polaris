@@ -574,6 +574,7 @@ function ReadyDetailDialogs({
           onSaleChanged={onSaleChanged}
           open={open.return}
           organizationId={organizationId}
+          paymentParts={detail.sale.payments?.length ?? 1}
           rows={view.returnRows}
           saleId={saleId}
         />

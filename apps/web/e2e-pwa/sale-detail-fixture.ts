@@ -217,13 +217,42 @@ const SALE_DETAIL_ALL_RETURNED = {
   })),
 };
 
+/** The same sale paid in two parts, Pix and a credit card in 3 installments, whose amounts add up to the total. */
+const SALE_DETAIL_TWO_PARTS = {
+  ...SALE_DETAIL_WITHOUT_RETURNS,
+  sale: {
+    ...SALE_DETAIL_WITHOUT_RETURNS.sale,
+    payments: [
+      {
+        ...SALE_DETAIL_WITHOUT_RETURNS.sale.payment,
+        amount: "109.60",
+        position: 0,
+      },
+      {
+        ...SALE_DETAIL_WITHOUT_RETURNS.sale.payment,
+        amount: "300.00",
+        anticipationFee: zeroFee("not_applicable"),
+        expectedSettlementDays: 30,
+        installmentPlan: "merchant",
+        installments: 3,
+        method: "credit_card",
+        position: 1,
+      },
+    ],
+  },
+};
+
 export type SaleDetailSituation = "allReturned" | "cancelled";
 
 function saleDetailRead(
   withReturn: boolean,
   withFee: boolean,
-  situation: SaleDetailSituation | undefined
+  situation: SaleDetailSituation | undefined,
+  withParts: boolean
 ) {
+  if (withParts) {
+    return SALE_DETAIL_TWO_PARTS;
+  }
   if (situation === "cancelled") {
     return SALE_DETAIL_CANCELLED;
   }
@@ -240,14 +269,16 @@ function saleDetailRead(
 export const saleDetailAnswers = ({
   situation,
   withFee = false,
+  withParts = false,
   withReturn,
 }: {
   situation?: SaleDetailSituation | undefined;
   withFee?: boolean;
+  withParts?: boolean;
   withReturn: boolean;
 }): Readonly<Record<string, unknown>> => ({
   "customer/get": customer(CUSTOMER_ANGELA, "Ângela Souza"),
   "customer/list": SALE_CUSTOMERS,
-  "sale/get": saleDetailRead(withReturn, withFee, situation),
+  "sale/get": saleDetailRead(withReturn, withFee, situation, withParts),
   "sale/getCustomerLink": SALE_CUSTOMER_LINK,
 });

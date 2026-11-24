@@ -15,10 +15,13 @@ import {
  * store's day unless the person changed it in the last six hours (a counter that sells past midnight). It holds identifiers, quantities and values only: the form has no customer, and nothing about a
  * person may be added to it.
  *
- * A change to the shape of `SaleFormState` changes the version in the key (`v1`) in the same change: the test of
- * this module pins the shape next to the key.
+ * A change to the shape of `SaleFormState` changes the version in the key (`v2`) in the same change: the test of
+ * this module pins the shape next to the key. A draft of the previous version (`v1`, no split) is still read back, as a
+ * sale of one part, and moved to the current key.
  */
-export const SALE_DRAFT_KEY_PREFIX = "polaris.sale.draft.v1:";
+export const SALE_DRAFT_KEY_PREFIX = "polaris.sale.draft.v2:";
+
+const LEGACY_DRAFT_KEY_PREFIX = "polaris.sale.draft.v1:";
 
 /** How long after the person's last change a cart of another store day is still given back. */
 const DRAFT_GRACE_MS = 6 * 60 * 60 * 1000;
@@ -52,6 +55,10 @@ function draftKey(organizationId: string): string {
   return `${SALE_DRAFT_KEY_PREFIX}${organizationId}`;
 }
 
+function legacyDraftKey(organizationId: string): string {
+  return `${LEGACY_DRAFT_KEY_PREFIX}${organizationId}`;
+}
+
 type Shape = Record<string, unknown>;
 
 function hasExactKeys(value: unknown, keys: readonly string[]): value is Shape {
@@ -72,7 +79,14 @@ const isText = (value: unknown): value is string =>
 
 export const SALE_DRAFT_SHAPE = {
   adjustment: ["draftId", "kind", "value", "valueType"],
-  form: ["adjustments", "items", "occurredAtLocal", "payment", "profile"],
+  form: [
+    "adjustments",
+    "items",
+    "occurredAtLocal",
+    "payment",
+    "profile",
+    "split",
+  ],
   item: [
     "chargedUnitPrice",
     "draftId",
@@ -89,7 +103,17 @@ export const SALE_DRAFT_SHAPE = {
     "method",
   ],
   profile: ["choice", "reviewNotice", "seenVersion"],
+  second: ["amount", "payment", "profile"],
+  split: ["firstAmount", "second", "totalSeen"],
 } as const;
+
+const LEGACY_FORM_KEYS = [
+  "adjustments",
+  "items",
+  "occurredAtLocal",
+  "payment",
+  "profile",
+] as const;
 
 const methods = new Set<string>([
   "",
@@ -151,11 +175,27 @@ function uniqueDraftIds(rows: readonly unknown[]): boolean {
   return new Set(ids).size === ids.length;
 }
 
-/** The validator of what is read back: the exact shape this build writes, nothing more. */
-export function isSaleFormState(value: unknown): value is SaleFormState {
-  if (!hasExactKeys(value, SALE_DRAFT_SHAPE.form)) {
-    return false;
-  }
+function isSecondPart(value: unknown): boolean {
+  return (
+    hasExactKeys(value, SALE_DRAFT_SHAPE.second) &&
+    (value.amount === null || isText(value.amount)) &&
+    isPayment(value.payment) &&
+    isProfile(value.profile)
+  );
+}
+
+function isSplit(value: unknown): boolean {
+  return (
+    value === null ||
+    (hasExactKeys(value, SALE_DRAFT_SHAPE.split) &&
+      isText(value.firstAmount) &&
+      (value.totalSeen === null || isText(value.totalSeen)) &&
+      isSecondPart(value.second))
+  );
+}
+
+/** What every version of the form holds: the cart, the date and the first part. */
+function isFormBody(value: Shape): boolean {
   const { adjustments, items, occurredAtLocal, payment, profile } = value;
   return (
     Array.isArray(items) &&
@@ -168,22 +208,54 @@ export function isSaleFormState(value: unknown): value is SaleFormState {
     isText(occurredAtLocal) &&
     isPayment(payment) &&
     isProfile(profile) &&
-    uniqueDraftIds([...items, ...adjustments])
+    uniqueDraftIds([...(items as unknown[]), ...(adjustments as unknown[])])
   );
+}
+
+/** The validator of what is read back: the exact shape this build writes, nothing more. */
+export function isSaleFormState(value: unknown): value is SaleFormState {
+  return (
+    hasExactKeys(value, SALE_DRAFT_SHAPE.form) &&
+    isFormBody(value) &&
+    isSplit(value.split)
+  );
+}
+
+/** A form of the previous version, which had no split: it is a sale of one part. */
+function formOfLegacy(value: unknown): SaleFormState | null {
+  return hasExactKeys(value, LEGACY_FORM_KEYS) && isFormBody(value)
+    ? ({ ...value, split: null } as unknown as SaleFormState)
+    : null;
 }
 
 const isInstant = (value: unknown): value is string =>
   isText(value) && Number.isFinite(new Date(value).getTime());
 
-function isDraft(value: unknown): value is SaleDraft {
+/** The draft as stored, whose form `readForm` accepts: this version's shape, or the legacy one converted. */
+function draftOf(
+  value: unknown,
+  readForm: (form: unknown) => SaleFormState | null
+): SaleDraft | null {
   const withUpdatedAt = hasExactKeys(value, ["form", "startedAt", "updatedAt"]);
-  return (
-    (withUpdatedAt || hasExactKeys(value, ["form", "startedAt"])) &&
-    isInstant(value.startedAt) &&
-    (!withUpdatedAt || isInstant(value.updatedAt)) &&
-    isSaleFormState(value.form)
-  );
+  const withoutUpdatedAt = hasExactKeys(value, ["form", "startedAt"]);
+  if (!(withUpdatedAt || withoutUpdatedAt)) {
+    return null;
+  }
+  const { form: stored, startedAt, updatedAt } = value;
+  if (!isInstant(startedAt) || (withUpdatedAt && !isInstant(updatedAt))) {
+    return null;
+  }
+  const form = readForm(stored);
+  if (form === null) {
+    return null;
+  }
+  return withUpdatedAt
+    ? { form, startedAt, updatedAt: updatedAt as string }
+    : { form, startedAt };
 }
+
+const currentForm = (form: unknown): SaleFormState | null =>
+  isSaleFormState(form) ? form : null;
 
 /** Within six hours of the last change; a change in the future of this clock (the clock went back) is not. */
 function changedRecently(draft: SaleDraft, now: Date): boolean {
@@ -197,6 +269,7 @@ function changedRecently(draft: SaleDraft, now: Date): boolean {
 function forget(storage: DraftStorage | null, organizationId: string): void {
   try {
     storage?.removeItem(draftKey(organizationId));
+    storage?.removeItem(legacyDraftKey(organizationId));
   } catch {
     // a blocked storage holds nothing to forget
   }
@@ -213,8 +286,13 @@ export function readSaleDraft(
   timezone: string | null
 ): SaleDraftRead {
   let text: string | null | undefined;
+  let legacy = false;
   try {
     text = storage?.getItem(draftKey(organizationId));
+    if (!text) {
+      text = storage?.getItem(legacyDraftKey(organizationId));
+      legacy = Boolean(text);
+    }
   } catch {
     return { kind: "none" };
   }
@@ -227,22 +305,23 @@ export function readSaleDraft(
   } catch {
     parsed = null;
   }
-  if (!isDraft(parsed)) {
+  const draft = draftOf(parsed, legacy ? formOfLegacy : currentForm);
+  if (draft === null) {
     forget(storage, organizationId);
     return { kind: "unreadable" };
   }
-  const startedDay = calendarDayInTimezone(
-    new Date(parsed.startedAt),
-    timezone
-  );
+  const startedDay = calendarDayInTimezone(new Date(draft.startedAt), timezone);
   if (
     startedDay !== calendarDayInTimezone(now, timezone) &&
-    !changedRecently(parsed, now)
+    !changedRecently(draft, now)
   ) {
     forget(storage, organizationId);
     return { kind: "expired" };
   }
-  return { draft: parsed, kind: "restored" };
+  if (legacy) {
+    writeSaleDraft(storage, organizationId, draft);
+  }
+  return { draft, kind: "restored" };
 }
 
 /** Stores the draft, or forgets it when null. A failure only loses the copy: the cart on the screen stays. */
@@ -257,6 +336,7 @@ export function writeSaleDraft(
   }
   try {
     storage?.setItem(draftKey(organizationId), JSON.stringify(draft));
+    storage?.removeItem(legacyDraftKey(organizationId));
   } catch {
     // full or blocked: the cart on the screen still works
   }
@@ -272,11 +352,18 @@ export function clearSaleDrafts(
       return;
     }
     const keep =
-      keepOrganizationId === null ? null : draftKey(keepOrganizationId);
+      keepOrganizationId === null
+        ? []
+        : [draftKey(keepOrganizationId), legacyDraftKey(keepOrganizationId)];
     const found: string[] = [];
     for (let index = 0; index < storage.length; index += 1) {
       const key = storage.key(index);
-      if (key?.startsWith(SALE_DRAFT_KEY_PREFIX) && key !== keep) {
+      if (
+        key !== null &&
+        (key.startsWith(SALE_DRAFT_KEY_PREFIX) ||
+          key.startsWith(LEGACY_DRAFT_KEY_PREFIX)) &&
+        !keep.includes(key)
+      ) {
         found.push(key);
       }
     }

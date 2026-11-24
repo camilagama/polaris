@@ -195,24 +195,23 @@ describe.each([
 });
 
 /**
- * The step of the hour of the "Primeiros passos" (Início): its number is `mark-foreground` over the tint of the circle
- * (`mark/10`, `mark/15` in the dark) and its border is `mark` over the card. Both pairs are rows of the tables above;
- * this one says they cannot leave the map, and holds the number to the 4.5:1 of text and the border to the 3:1 of a
- * graphic element.
+ * The step of the hour of the "Primeiros passos" (Início): its icon is `primary` (ink) over the tint of the circle
+ * (`primary/10`) and its border is `primary` over the card, never the brand red (which reads as an error in a box).
+ * Both pairs are rows of the tables above; this one says they cannot leave the map, and holds the icon to the 4.5:1 of
+ * text and the border to the 3:1 of a graphic element.
  */
 describe.each([
-  ["Tema claro", tokens(block(":root")), "mark/10"],
+  ["Tema claro", tokens(block(":root"))],
   [
     "Tema escuro",
     new Map([...tokens(block(":root")), ...tokens(block(".dark"))]),
-    "mark/15",
   ],
-])("contraste do passo atual, %s", (section, palette, tint) => {
+])("contraste do passo atual, %s", (section, palette) => {
   const rows = pairs(section);
 
   it.each([
-    ["`mark-foreground`", `\`${tint} sobre card\``, 4.5],
-    ["`mark`", "`card`", 3],
+    ["`primary`", "`primary/10 sobre card`", 4.5],
+    ["`primary`", "`card`", 3],
   ] as const)(
     "%s / %s is in the map and reaches %d:1",
     (foreground, background, bar) => {
