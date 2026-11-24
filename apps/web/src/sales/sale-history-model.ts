@@ -309,6 +309,19 @@ function rowCustomerInitials(sale: SaleListEntryReadModel): string {
   return letters.join("").toLocaleUpperCase("pt-BR");
 }
 
+const methodLabel = (method: string) => methodLabels.get(method) ?? method;
+
+/** One method as before; two or more parts join their methods by position ("Pix + Crédito"), equal methods included. */
+function rowMethodText(sale: SaleListEntryReadModel): string {
+  const methods = sale.paymentMethods ?? [];
+  if (methods.length > 1) {
+    return methods.map(methodLabel).join(" + ");
+  }
+  return sale.paymentMethod === null
+    ? "Pagamento não informado"
+    : methodLabel(sale.paymentMethod);
+}
+
 export function historyRows(state: HistoryState): HistoryRow[] {
   return state.sales.map((sale) => ({
     backdated: sale.occurredOn < localDay(sale.confirmedAt),
@@ -318,10 +331,7 @@ export function historyRows(state: HistoryState): HistoryRow[] {
     detailHref: saleDetailHref(sale.id),
     id: sale.id,
     itemCountText: `${sale.itemCount} ${sale.itemCount === 1 ? "item" : "itens"}`,
-    methodText:
-      sale.paymentMethod === null
-        ? "Pagamento não informado"
-        : (methodLabels.get(sale.paymentMethod) ?? sale.paymentMethod),
+    methodText: rowMethodText(sale),
     returnsBadge: sale.hasReturns ? RETURNS_BADGE : null,
     statusLabel: sale.status === "cancelled" ? "Cancelada" : "Confirmada",
     statusTone: sale.status,
