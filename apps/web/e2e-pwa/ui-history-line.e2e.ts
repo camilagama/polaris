@@ -6,12 +6,15 @@ import { historyStates, WORST_CUSTOMER_NAME } from "./ui-history-states";
  * The line of a sale in the history, "cliente · forma de pagamento · itens": with a connection the row is a link
  * that ends in a chevron. On a phone the line wraps instead of cutting: when the method and the item count do not fit
  * beside the customer they go under it, whole, and only the end of a name wider than the line is cut with an
- * ellipsis. Nothing reaches the total. The time is one piece: it may drop under the date, never split. Without a connection the row is plain
- * text, with no link and no chevron.
+ * ellipsis. Nothing reaches the total. The date is plain text that may wrap; the time (`· hh:mm`) is a `nowrap` span
+ * in `RowBody` (`sale-history-list.tsx`), so it is one piece: at the widths below date and time fit on one line, and
+ * where they would not the time drops whole under the date, never split. Without a connection the row is plain text,
+ * with no link and no chevron.
  */
 const LONG_NAME =
   "Maria Aparecida da Conceição Albuquerque de Oliveira Santos Filho";
 const DATE_AND_TIME = /^\d\d\/\d\d\/\d{4} · \d\d:\d\d$/;
+const TIME_PIECE = /^· \d\d:\d\d$/;
 const WIDTHS = [320, 359, 360];
 const ROW_NAMES = [
   /^14\/10\/2026 · \d\d:\d\d Confirmada Ângela Souza · Pix · 2 itens/,
@@ -103,7 +106,7 @@ for (const width of WIDTHS) {
       });
     }
 
-    test("um nome curto aparece inteiro, e a data e a hora ficam em uma linha em toda venda", async ({
+    test("um nome curto aparece inteiro, e a data e a hora cabem em uma linha, com a hora inteira, em toda venda", async ({
       page,
     }) => {
       await historyStates.list(page);
@@ -125,6 +128,23 @@ for (const width of WIDTHS) {
         expect(measured.height).toBeGreaterThan(0);
         expect(measured.lines).toBeLessThan(1.05);
       }
+      const times = page
+        .getByRole("list", { name: "Vendas" })
+        .getByText(TIME_PIECE);
+      expect(await times.count()).toBe(4);
+      const timeMeasures = await Promise.all(
+        (await times.all()).map((time) => time.evaluate(lineCount))
+      );
+      for (const measured of timeMeasures) {
+        expect(measured.height).toBeGreaterThan(0);
+        expect(measured.lines).toBeLessThan(1.05);
+      }
+      const whiteSpaces = await Promise.all(
+        (await times.all()).map((time) =>
+          time.evaluate((el) => getComputedStyle(el).whiteSpace)
+        )
+      );
+      expect(whiteSpaces).toEqual(new Array(4).fill("nowrap"));
     });
   });
 }
