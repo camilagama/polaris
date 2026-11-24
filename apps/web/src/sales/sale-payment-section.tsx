@@ -567,6 +567,10 @@ interface PartFieldsProps {
   showReview: boolean;
 }
 
+export const SPLIT_PROFILE_HINT_ID = "sale-split-profile-hint";
+export const SPLIT_PROFILE_HINT =
+  "O perfil define taxas e prazo estimados de cada parte. Sem perfil, ficam desconhecidos.";
+
 /** One part: method in a list, amount, the credit fields only for credit, and the profile last. */
 function PartFields({
   amount,
@@ -665,6 +669,7 @@ function PartFields({
         </>
       ) : null}
       <SelectField
+        describedById={SPLIT_PROFILE_HINT_ID}
         disabled={disabled}
         error={errors[keys.profile]}
         id={`${prefix}-profile`}
@@ -1025,6 +1030,12 @@ function SplitParts({
           onAcknowledge={handleAcknowledgeBoth}
         />
       ) : null}
+      <p
+        className="text-muted-foreground text-support"
+        id={SPLIT_PROFILE_HINT_ID}
+      >
+        {SPLIT_PROFILE_HINT}
+      </p>
       <SplitStatus
         balance={evaluation?.balance ?? null}
         onAction={handleAction}
