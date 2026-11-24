@@ -194,10 +194,10 @@ function methodHint(
   return same ? "Igual à última venda neste aparelho." : "";
 }
 
-/** Focuses the first invalid control; a group of choice cards gives the focus to its first card. */
 /**
- * The first field with a problem, or the state line of the parts when the only thing wrong is that they do not close
- * the total: the line says how far they are and has the button that closes them.
+ * Focuses the first invalid control (a group of choice cards gives the focus to its first card), or the state line of
+ * the parts when the only thing wrong is that they do not close the total: the line says how far they are and has the
+ * button that closes them.
  */
 function focusFirstInvalidField(splitMismatchFirst = false) {
   window.requestAnimationFrame(() => {

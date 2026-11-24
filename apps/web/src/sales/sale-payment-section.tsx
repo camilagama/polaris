@@ -895,10 +895,13 @@ function SplitParts({
   profileOptions,
 }: SplitPartsProps) {
   const { split } = form;
-  // "Troco: R$ X" lives on the screen only, beside the cash part, until that amount is typed again
-  const [change, setChange] = useState<{ cents: bigint; part: 1 | 2 } | null>(
-    null
-  );
+  // "Troco: R$ X" lives on the screen only, and is said only while the cash part still holds the amount it was set to
+  // and the parts still close the total
+  const [change, setChange] = useState<{
+    cents: bigint;
+    part: 1 | 2;
+    text: string;
+  } | null>(null);
   const {
     onAction,
     onFirstAmountChange,
@@ -927,7 +930,7 @@ function SplitParts({
       } else {
         onSecondAmountChange(text);
       }
-      setChange({ cents: adjust.change, part: adjust.part });
+      setChange({ cents: adjust.change, part: adjust.part, text });
     },
     [onFirstAmountChange, onSecondAmountChange]
   );
@@ -950,8 +953,17 @@ function SplitParts({
   const secondAmount =
     split.second.amount ??
     (restCents === null ? "" : fieldTextOfCents(restCents));
+  const parts = {
+    1: { amount: split.firstAmount, method: form.payment.method },
+    2: { amount: split.second.amount, method: split.second.payment.method },
+  } as const;
   const hintOf = (part: 1 | 2): string | undefined =>
-    change?.part === part ? changeText(change.cents) : undefined;
+    change?.part === part &&
+    parts[part].amount === change.text &&
+    parts[part].method === "cash" &&
+    evaluation?.balance?.kind === "closed"
+      ? changeText(change.cents)
+      : undefined;
   return (
     <div className="grid gap-4">
       <PartFields

@@ -117,9 +117,9 @@ export function buildRedoDraft(
     return { kind: "unreadable" };
   }
   const sale = parsed.data;
-  const payment = sale.payment;
+  const { payment } = sale;
   if (payment === undefined) {
-    // a sale paid in parts never reaches the device's queue yet, so its redo is not built here
+    // the device keeps one payment per sale and refuses to queue one paid in parts: such a payload is not a redo
     return { kind: "unreadable" };
   }
   const byVariant = new Map(entries.map((entry) => [entry.variantId, entry]));
