@@ -107,7 +107,10 @@ for (const month of MONTHS) {
       name: "Filtrar despesas",
     });
     const monthButton = bar.locator("#expense-month");
-    const segmented = bar.getByRole("group", { exact: true, name: "Situação" });
+    const segmented = bar.getByRole("tablist", {
+      exact: true,
+      name: "Situação",
+    });
     const filter = bar.getByRole("button", {
       exact: true,
       name: "Filtrar despesas",
@@ -141,14 +144,29 @@ for (const month of MONTHS) {
     const spare = lineEnd - ((filterBox?.x ?? 0) + (filterBox?.width ?? 0));
     expect(spare).toBeGreaterThanOrEqual(LINE_SPARE);
 
-    const halves = await segmented.getByRole("button").all();
+    const halves = await segmented.getByRole("tab").all();
     expect(halves).toHaveLength(2);
-    const halfBoxes = await Promise.all(
-      halves.map((half) => half.boundingBox())
+    const halfAreas = await Promise.all(
+      halves.map((half) =>
+        half.evaluate((tab) => {
+          const box = tab.getBoundingClientRect();
+          const before = getComputedStyle(tab, "::before");
+          return {
+            height:
+              box.height +
+              Math.abs(Number.parseFloat(before.top)) +
+              Math.abs(Number.parseFloat(before.bottom)),
+            width:
+              box.width +
+              Math.abs(Number.parseFloat(before.left)) +
+              Math.abs(Number.parseFloat(before.right)),
+          };
+        })
+      )
     );
-    for (const halfBox of halfBoxes) {
-      expect(halfBox?.width ?? 0).toBeGreaterThanOrEqual(TOUCH_TARGET);
-      expect(halfBox?.height ?? 0).toBeGreaterThanOrEqual(TOUCH_TARGET);
+    for (const area of halfAreas) {
+      expect(area.width).toBeGreaterThanOrEqual(TOUCH_TARGET);
+      expect(area.height).toBeGreaterThanOrEqual(TOUCH_TARGET);
     }
 
     const first = await page.locator("[data-expense-id]").first().boundingBox();

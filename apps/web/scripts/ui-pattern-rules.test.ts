@@ -298,10 +298,7 @@ export function exceptionFaults(
  * neighbouring lines.
  */
 export const DEBT: Readonly<Record<Rule, readonly string[]>> = {
-  R1: [
-    // catalog
-    "src/catalog/product-import/import-preview-step.tsx",
-  ],
+  R1: [],
   R2: [
     // app-shell
     "src/app-shell/state-panel.tsx",
