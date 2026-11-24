@@ -73,7 +73,7 @@ Este glossário é a fonte de verdade para os termos do produto e do domínio. E
 **Subtotal da venda:** soma dos valores dos itens pelo preço cobrado, antes dos ajustes da venda.
 **Ajuste de venda:** desconto, acréscimo, frete cobrado ou sobretaxa de pagamento aplicada à venda.
 **Sobretaxa de pagamento:** valor cobrado do comprador por um meio de pagamento; é distinto das taxas de processamento e antecipação pagas pelo negócio.
-**Parcela:** divisão de uma cobrança no cartão de crédito; a quantidade de parcelas é registrada na venda.
+**Parcela:** divisão de uma cobrança no cartão de crédito; a quantidade de parcelas é registrada na parte do pagamento em cartão de crédito, não na venda; os demais métodos não têm parcelas.
 **Modalidade do parcelamento** (na interface, "Quem parcela"): classificação registrada no cartão de crédito como `merchant` (parcelamento do lojista) ou `issuer` (parcelamento do emissor); não é evidência de liquidação.
 **Parte do pagamento:** cada uma das formas de pagar uma venda confirmada, de uma a três por venda no banco, na ordem em que o operador as informou; a soma dos valores das partes é exatamente o total devido, sem pagamento parcial nem saldo pendente (não existe fiado), e cada parte escolhe o seu perfil de pagamento, ou nenhum. O troco é só uma conta da tela e não é gravado.
 **Perfil de pagamento:** configuração manual da organização que descreve regras de taxa por método e, para cartão, modalidade e quantidade de parcelas. O operador seleciona o perfil de cada parte do pagamento; o snapshot registra a regra aplicada.
