@@ -24,10 +24,10 @@ vi.mock("../sign-in/change-password-page", () => ({
 const LOOKUP_TIMEOUT_MS = 6000;
 const CHANGE_PASSWORD = /Trocar senha/;
 
-function authMethodsAnswer(emailPassword: boolean) {
+function authMethodsAnswer(emailPassword: boolean, status = 200) {
   return new Response(
     JSON.stringify({ emailPassword, google: true, turnstileSiteKey: null }),
-    { headers: { "content-type": "application/json" }, status: 200 }
+    { headers: { "content-type": "application/json" }, status }
   );
 }
 
@@ -101,7 +101,7 @@ describe("Minha conta sem aba: o fim da espera do auth-methods", () => {
   it("com o servidor que responde 503 sai da espera e abre Aparelhos, sem Senha", async () => {
     vi.stubGlobal(
       "fetch",
-      vi.fn(async () => new Response("{}", { status: 503 }))
+      vi.fn(async () => authMethodsAnswer(true, 503))
     );
     await openAccountScreen();
     expect(await screen.findByText("Aparelhos deste usuário")).toBeTruthy();
