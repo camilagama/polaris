@@ -67,9 +67,21 @@ export interface SplitBalanceInput {
   total: bigint;
 }
 
+/** "Ajustar para R$ X" on the cash part: the extra is change, so the cash part drops by it, wherever it sits. */
+export interface CashAdjust {
+  /** The cents the cash part is set to. */
+  amount: bigint;
+  /** What the customer gets back once the cash part drops. */
+  change: bigint;
+  label: string;
+  part: 1 | 2;
+}
+
 export interface SplitBalance {
   /** What closes the difference by moving part 2, or null when part 2 cannot absorb it. */
   action: SplitAction | null;
+  /** Present with the change hint: the button the screen offers instead of `action`. */
+  cashAdjust: CashAdjust | null;
   /** Parts minus total: positive is "Passou", negative "Falta". */
   difference: bigint;
   /** Said only for the cash part when the parts pass the total: the cash part if the extra is change. */
@@ -81,20 +93,35 @@ export interface SplitBalance {
   text: string;
 }
 
-function changeHint(
+function cashAdjustOf(
   input: SplitBalanceInput,
   second: bigint,
   excess: bigint
-): string | null {
+): CashAdjust | null {
   const amounts: readonly [bigint, bigint] = [input.first, second];
   const cash = input.methods
-    .map((method, index) => ({ cents: amounts[index] ?? 0n, method }))
+    .map((method, index) => ({
+      cents: amounts[index] ?? 0n,
+      method,
+      part: (index + 1) as 1 | 2,
+    }))
     .filter((part) => part.method === "cash");
   const only = cash.length === 1 ? cash[0] : undefined;
   if (only === undefined || only.cents <= excess) {
     return null;
   }
-  return `Se for troco, a parte em dinheiro é ${brl(only.cents - excess)}`;
+  const amount = only.cents - excess;
+  return {
+    amount,
+    change: excess,
+    label: `Ajustar para ${brl(amount)}`,
+    part: only.part,
+  };
+}
+
+/** "Troco: R$ 50,00", said beside the cash part after "Ajustar para". */
+export function changeText(change: bigint): string {
+  return `Troco: ${brl(change)}`;
 }
 
 function actionFor(
@@ -126,6 +153,7 @@ export function splitBalance(input: SplitBalanceInput): SplitBalance {
   if (difference === 0n) {
     return {
       action: null,
+      cashAdjust: null,
       difference,
       hint: null,
       kind: "closed",
@@ -136,6 +164,7 @@ export function splitBalance(input: SplitBalanceInput): SplitBalance {
   if (difference < 0n) {
     return {
       action: actionFor("short", second, difference),
+      cashAdjust: null,
       difference,
       hint: null,
       kind: "short",
@@ -143,10 +172,15 @@ export function splitBalance(input: SplitBalanceInput): SplitBalance {
       text: `Falta ${brl(-difference)}`,
     };
   }
+  const cashAdjust = cashAdjustOf(input, second, difference);
   return {
     action: actionFor("over", second, difference),
+    cashAdjust,
     difference,
-    hint: changeHint(input, second, difference),
+    hint:
+      cashAdjust === null
+        ? null
+        : `Se for troco, a parte em dinheiro é ${brl(cashAdjust.amount)}.`,
     kind: "over",
     second,
     text: `Passou ${brl(difference)}`,
@@ -159,6 +193,9 @@ export function splitBalanceSentence(balance: SplitBalance): string {
     ? balance.text
     : `${balance.text}. ${balance.hint}`;
 }
+
+/** One warning, one button, when both parts use the profile that changed. */
+export const SHARED_PROFILE_REVIEW_MESSAGE = "Revise a prévia das duas partes.";
 
 export const SPLIT_TOTAL_CHANGED_MESSAGE = "O total mudou. Confira as partes.";
 
@@ -244,3 +281,41 @@ export const splitFieldKeys = {
   secondMethod: "payment2:method",
   secondProfile: "profile2",
 } as const;
+
+/* -------------------------------------------------------------------------- */
+/* The screen                                                                 */
+/* -------------------------------------------------------------------------- */
+
+export const SPLIT_START_LABEL = "Dividir pagamento";
+export const SPLIT_END_LABEL = "Voltar a um pagamento só";
+
+/** What the (i) of "Pagamento" says while the sale is paid in one go. */
+export const SINGLE_PAYMENT_HELP =
+  "Um pagamento no valor total. Para receber de dois jeitos, use Dividir pagamento. O método não comprova o recebimento.";
+
+/** What the (i) of "Pagamento" says while the sale is paid in two parts. */
+export const SPLIT_PAYMENT_HELP =
+  "Cada parte tem método, valor e perfil. As duas somam o total. O método não comprova o recebimento.";
+
+const SPLIT_OFFLINE_REASON = "Dividir precisa de internet";
+const SPLIT_EMPTY_REASON = "Adicione um item para dividir o pagamento.";
+
+/** Said when a sale in parts meets a dropped connection at the confirmation: the device keeps one payment per sale. */
+export const SPLIT_OFFLINE_REFUSAL =
+  "Dividir precisa de internet. Confirme quando a conexão voltar ou volte a um pagamento só.";
+
+/**
+ * Why "Dividir pagamento" is off, or null when it is on. Without a connection the device could not keep the sale (it
+ * carries one payment); with no total there is nothing to split.
+ */
+export function splitStartBlocker(
+  offline: boolean,
+  total: string | null
+): string | null {
+  if (offline) {
+    return SPLIT_OFFLINE_REASON;
+  }
+  return total === null || total.startsWith("-") || centsOfMoney(total) <= 0n
+    ? SPLIT_EMPTY_REASON
+    : null;
+}

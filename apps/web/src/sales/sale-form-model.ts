@@ -73,6 +73,9 @@ export type SaleCommandBody = Omit<
   "recordedAt" | "commandId" | "occurredAt" | "organizationId"
 >;
 
+/** One payment: the whole sale paid in one go, or the method of a part. */
+type SalePayment = NonNullable<SaleCommandBody["payment"]>;
+
 export const MAX_SALE_ITEMS = 200;
 export const MAX_SALE_ADJUSTMENTS = 20;
 const MAX_QUANTITY = 2_147_483_647;
@@ -674,11 +677,28 @@ function acknowledgedSelection(
   };
 }
 
+/** Both parts wait on the review of the same profile: the screen shows one warning and one button for the two. */
+export function sharedProfileReview(form: SaleFormState): boolean {
+  return (
+    form.split !== null &&
+    form.profile.reviewNotice !== null &&
+    form.split.second.profile.reviewNotice !== null &&
+    form.profile.choice !== "" &&
+    form.profile.choice === form.split.second.profile.choice
+  );
+}
+
+/** Reviewing the preview of a profile both parts use reviews it for both. */
 export function acknowledgeProfileReview(
   form: SaleFormState,
   profiles: readonly PaymentProfileReadModel[]
 ): SaleFormState {
-  return { ...form, profile: acknowledgedSelection(form.profile, profiles) };
+  const shared = sharedProfileReview(form);
+  const reviewed = {
+    ...form,
+    profile: acknowledgedSelection(form.profile, profiles),
+  };
+  return shared ? acknowledgeSecondProfileReview(reviewed, profiles) : reviewed;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -801,6 +821,9 @@ export function acknowledgeSecondProfileReview(
   form: SaleFormState,
   profiles: readonly PaymentProfileReadModel[]
 ): SaleFormState {
+  if (sharedProfileReview(form)) {
+    return acknowledgeProfileReview(form, profiles);
+  }
   return withSecond(form, (second) => ({
     ...second,
     profile: acknowledgedSelection(second.profile, profiles),
@@ -1145,7 +1168,10 @@ export interface FeeLine {
 }
 
 /** Unknown is never zero: each state has its own text and tone. */
-export function describeFee(fee: SalePaymentFeeSnapshot): FeeLine {
+export function describeFee(
+  fee: SalePaymentFeeSnapshot,
+  base = "do total devido"
+): FeeLine {
   if (fee.mode === "not_applicable") {
     return {
       text: "não se aplica",
@@ -1162,7 +1188,7 @@ export function describeFee(fee: SalePaymentFeeSnapshot): FeeLine {
     fee.fixedAmount === null ? null : formatBrlAmount(fee.fixedAmount),
     fee.percentage === null
       ? null
-      : `${formatPercentage(fee.percentage)} do total devido`,
+      : `${formatPercentage(fee.percentage)} ${base}`,
   ].filter((part): part is string => part !== null);
   const amount = formatBrlAmount(fee.amount);
   const text = parts.length > 0 ? `${amount} (${parts.join(" + ")})` : amount;
@@ -1181,6 +1207,8 @@ function describeSettlementDays(days: number | null): string {
 
 export interface FeePreview {
   anticipation: FeeLine;
+  /** Processing plus anticipation, in cents; null when either is unknown (never taken as zero). */
+  feeCents: bigint | null;
   processing: FeeLine;
   profileText: string;
   ruleMatched: boolean;
@@ -1226,10 +1254,30 @@ type ProfileSelection =
   | { kind: "none" }
   | { kind: "profile"; profile: PaymentProfileReadModel };
 
+function feeCentsOf(fee: SalePaymentFeeSnapshot): bigint | null {
+  if (fee.mode === "not_applicable") {
+    return 0n;
+  }
+  return fee.amount === null ? null : Money.from(fee.amount).minorUnits;
+}
+
+function sumOfFees(fees: readonly (bigint | null)[]): bigint | null {
+  let sum = 0n;
+  for (const fee of fees) {
+    if (fee === null) {
+      return null;
+    }
+    sum += fee;
+  }
+  return sum;
+}
+
+/** `base` is what a percentage applies to: the total due, or the amount of a part. */
 function buildFeePreview(
   totalDue: string,
-  payment: SaleCommandBody["payment"],
-  selection: ProfileSelection
+  payment: SalePayment,
+  selection: ProfileSelection,
+  base?: string
 ): FeePreview | null {
   try {
     const profile =
@@ -1243,8 +1291,12 @@ function buildFeePreview(
         : "Nenhuma regra exata para este método/parcelas";
     }
     return {
-      anticipation: describeFee(snapshot.anticipationFee),
-      processing: describeFee(snapshot.processingFee),
+      anticipation: describeFee(snapshot.anticipationFee, base),
+      feeCents: sumOfFees([
+        feeCentsOf(snapshot.processingFee),
+        feeCentsOf(snapshot.anticipationFee),
+      ]),
+      processing: describeFee(snapshot.processingFee, base),
       profileText: profile ? profile.name : "Sem perfil de pagamento",
       ruleMatched,
       ruleText,
@@ -1641,7 +1693,7 @@ function parsePayment(
   issues: Issue[],
   keys: PartKeys,
   messages: PartMessages
-): SaleCommandBody["payment"] | null {
+): SalePayment | null {
   if (draft.method === "") {
     pushIssue(issues, keys.method, messages.methodEmpty, true);
     return null;
@@ -1919,11 +1971,22 @@ export interface EvaluationContext {
   stock: Readonly<Record<string, Loadable<InventoryBalanceReadModel>>>;
 }
 
-interface SplitEvaluation {
+interface SplitPartSummary {
+  amountText: string | null;
+  methodText: string;
+}
+
+export interface SplitEvaluation {
   /** The state of the parts against the total; null while the total or an amount cannot be read yet. */
   balance: SplitBalance | null;
+  /** The fees of both parts added up; unknown when either part's is, null until both previews exist. */
+  feesTotal: FeeLine | null;
+  /** The field where the parts not closing the total was reported; null when they close it. */
+  mismatchKey: string | null;
   /** The fee preview of each part, by position; null where the part is not complete. */
   partPreviews: readonly [FeePreview | null, FeePreview | null];
+  /** What the summary says of each part, by position: the method and the amount (null until it can be read). */
+  parts: readonly [SplitPartSummary, SplitPartSummary];
   /** "O total mudou. Confira as partes." while typed parts no longer match the total they were checked against. */
   totalChangedNotice: string | null;
 }
@@ -1950,6 +2013,8 @@ export interface SaleEvaluation {
   profileText: string;
   /** Present only while the sale is paid in two parts. */
   split: SplitEvaluation | null;
+  /** The total due as the API writes it (`123.45`); null while items or adjustments cannot be read. */
+  totalDue: string | null;
   stockWarnings: Record<string, string>;
   summary: SaleSummary | null;
 }
@@ -2017,7 +2082,7 @@ type SalePaymentProfileSelection = NonNullable<
 function buildBody(
   items: readonly ParsedItem[],
   adjustments: SaleCommandBody["adjustments"],
-  payment: SaleCommandBody["payment"],
+  payment: SalePayment,
   resolution: ProfileResolution
 ): SaleCommandBody | null {
   if (resolution.kind === "blocked") {
@@ -2043,14 +2108,11 @@ function bodyItems(items: readonly ParsedItem[]): SaleCommandBody["items"] {
 
 interface ResolvedPart {
   amount: string;
-  payment: SaleCommandBody["payment"];
+  payment: SalePayment;
   resolution: ProfileResolution;
 }
 
-/**
- * The body of a sale in two parts. The contract still types `payment` as required (the sale screen was the last to move
- * to parts), though at runtime exactly one of `payment` and `payments` travels and the profile goes inside each part.
- */
+/** The body of a sale in two parts: `payments` instead of `payment`, the profile inside each part. */
 function buildSplitBody(
   items: readonly ParsedItem[],
   adjustments: SaleCommandBody["adjustments"],
@@ -2065,23 +2127,33 @@ function buildSplitBody(
       amount,
       paymentProfile: profileSelectionOfResolution(resolution),
     })),
-  } as SaleCommandBody;
+  };
 }
 
 interface EvaluatedPart {
-  payment: SaleCommandBody["payment"] | null;
+  payment: SalePayment | null;
   resolution: ProfileResolution;
 }
 
+/**
+ * `readAmount` reads the amount of a part, whose field sits right after the method on the screen: its problems come
+ * after the method's and before the credit fields' and the profile's, so the first problem is the first on the screen.
+ */
 function evaluatePart(
   draft: { payment: PaymentDraft; profile: ProfileSelectionDraft },
   context: EvaluationContext,
   issues: Issue[],
   keys: PartKeys,
-  messages: PartMessages
-): EvaluatedPart {
-  const payment = parsePayment(draft.payment, issues, keys, messages);
+  messages: PartMessages,
+  readAmount: () => PartAmount = () => ({ kind: "invalid" })
+): EvaluatedPart & { amount: PartAmount } {
+  const paymentIssues: Issue[] = [];
+  const payment = parsePayment(draft.payment, paymentIssues, keys, messages);
+  issues.push(...paymentIssues.filter((issue) => issue.key === keys.method));
+  const amount = readAmount();
+  issues.push(...paymentIssues.filter((issue) => issue.key !== keys.method));
   return {
+    amount,
     payment,
     resolution: resolveProfile(
       draft.profile,
@@ -2144,42 +2216,41 @@ function evaluateSplit(
 ): SplitResult {
   const firstMessages = partMessages(1);
   const secondMessages = partMessages(2);
+  const total = parsed.calculation?.totalDue ?? null;
+  const totalCents = total === null ? null : centsOfMoney(total);
   const first = evaluatePart(
     form,
     context,
     issues,
     FIRST_PART_KEYS,
-    firstMessages
+    firstMessages,
+    () =>
+      parsePartAmount(
+        split.firstAmount,
+        issues,
+        FIRST_PART_KEYS.amount,
+        firstMessages
+      )
   );
-  const firstAmount = parsePartAmount(
-    split.firstAmount,
-    issues,
-    FIRST_PART_KEYS.amount,
-    firstMessages
-  );
+  const firstAmount = first.amount;
   const secondDraft = split.second;
   const second = evaluatePart(
     secondDraft,
     context,
     issues,
     SECOND_PART_KEYS,
-    secondMessages
+    secondMessages,
+    () =>
+      secondDraft.amount === null
+        ? secondAmountOfRest(firstAmount, totalCents)
+        : parsePartAmount(
+            secondDraft.amount,
+            issues,
+            SECOND_PART_KEYS.amount,
+            secondMessages
+          )
   );
-  const total = parsed.calculation?.totalDue ?? null;
-  const totalCents = total === null ? null : centsOfMoney(total);
-  const rest =
-    firstAmount.kind === "ok" && totalCents !== null
-      ? restOfTotal(totalCents, firstAmount.cents)
-      : null;
-  const secondAmount: PartAmount =
-    secondDraft.amount === null
-      ? secondAmountOfRest(rest)
-      : parsePartAmount(
-          secondDraft.amount,
-          issues,
-          SECOND_PART_KEYS.amount,
-          secondMessages
-        );
+  const secondAmount = second.amount;
   const previews = [
     partPreview(first, firstAmount),
     partPreview(second, secondAmount),
@@ -2196,15 +2267,16 @@ function evaluateSplit(
         })
       : null;
   const totalChangedNotice = splitTotalChangedNotice(split, total);
-  if (balance !== null && balance.kind !== "closed") {
-    pushIssue(
-      issues,
+  let mismatchKey: string | null = null;
+  if (balance !== null && balance.kind !== "closed" && total !== null) {
+    mismatchKey =
       balance.kind === "over" && secondDraft.amount === null
         ? FIRST_PART_KEYS.amount
-        : SECOND_PART_KEYS.amount,
-      totalChangedNotice === null
-        ? balance.text
-        : `${balance.text}. ${totalChangedNotice}`,
+        : SECOND_PART_KEYS.amount;
+    pushIssue(
+      issues,
+      mismatchKey,
+      splitMismatchMessage(balance, total, totalChangedNotice),
       false
     );
   } else if (
@@ -2247,7 +2319,13 @@ function evaluateSplit(
     body,
     evaluation: {
       balance,
+      feesTotal: feesTotalOf(previews),
+      mismatchKey,
       partPreviews: previews,
+      parts: [
+        partSummary(form.payment, firstAmount),
+        partSummary(secondDraft.payment, secondAmount),
+      ],
       totalChangedNotice,
     },
     first,
@@ -2255,10 +2333,54 @@ function evaluateSplit(
   };
 }
 
-function secondAmountOfRest(rest: bigint | null): PartAmount {
-  return rest === null
-    ? { kind: "invalid" }
-    : { cents: rest, kind: "ok", text: moneyOfCents(rest) };
+function partSummary(
+  payment: PaymentDraft,
+  amount: PartAmount
+): SplitPartSummary {
+  return {
+    amountText: amount.kind === "ok" ? formatBrlAmount(amount.text) : null,
+    methodText: methodSummary(payment),
+  };
+}
+
+function secondAmountOfRest(
+  first: PartAmount,
+  total: bigint | null
+): PartAmount {
+  if (first.kind !== "ok" || total === null) {
+    return { kind: "invalid" };
+  }
+  const rest = restOfTotal(total, first.cents);
+  return { cents: rest, kind: "ok", text: moneyOfCents(rest) };
+}
+
+/** The error of the amount field when the parts do not close the total: the rule, then how far they are. */
+function splitMismatchMessage(
+  balance: SplitBalance,
+  total: string,
+  totalChangedNotice: string | null
+): string {
+  const message = `A soma das partes precisa ser ${formatBrlAmount(total)}. ${balance.text}.`;
+  return totalChangedNotice === null
+    ? message
+    : `${message} ${totalChangedNotice}`;
+}
+
+function feesTotalOf(
+  previews: readonly [FeePreview | null, FeePreview | null]
+): FeeLine | null {
+  const [first, second] = previews;
+  if (first === null || second === null) {
+    return null;
+  }
+  const sum = sumOfFees([first.feeCents, second.feeCents]);
+  if (sum === null) {
+    return { text: "desconhecida — não é zero", tone: "unknown" };
+  }
+  return {
+    text: formatBrlAmount(moneyOfCents(sum)),
+    tone: sum === 0n ? "zero" : "known",
+  };
 }
 
 function partPreview(
@@ -2273,7 +2395,12 @@ function partPreview(
   ) {
     return null;
   }
-  return buildFeePreview(amount.text, part.payment, part.resolution);
+  return buildFeePreview(
+    amount.text,
+    part.payment,
+    part.resolution,
+    "do valor da parte"
+  );
 }
 
 /**
@@ -2352,6 +2479,7 @@ export function evaluateSaleForm(
     split: split?.evaluation ?? null,
     stockWarnings: items ? stockWarnings(items, context.stock) : {},
     summary,
+    totalDue: calculation?.totalDue ?? null,
   };
 }
 
@@ -2605,6 +2733,8 @@ export interface SaleSubmitFailure {
   entry: { label: string; missing: number; variantId: string } | null;
   kind: SaleFailureKind;
   message: string;
+  /** The position of the payment part the server named (`error.data.part`, from 0), when it named one. */
+  part?: number;
   /** Stable domain code from `error.data.reason`, when the server sent one. */
   reason: string | null;
   /** The server rejected the sale on current data: reload catalog and profiles. */
@@ -2690,6 +2820,13 @@ const reasonOutcomes = new Map<string, ReasonOutcome>([
     },
   ],
   [
+    "sale_payment_split_mismatch",
+    {
+      message:
+        "A soma das partes não fecha o total da venda. Confira o valor de cada parte e confirme de novo.",
+    },
+  ],
+  [
     "sale_command_conflict",
     {
       discardAttempt: true,
@@ -2757,6 +2894,7 @@ function failure(
   message: string,
   options: {
     discardAttempt?: boolean;
+    part?: number | null;
     reason?: string | null;
     refreshData?: boolean;
   } = {}
@@ -2766,6 +2904,9 @@ function failure(
     entry: null,
     kind,
     message,
+    ...(options.part === undefined || options.part === null
+      ? {}
+      : { part: options.part }),
     reason: options.reason ?? null,
     refreshData: options.refreshData ?? false,
     unknownOutcome:
@@ -2810,6 +2951,20 @@ export function isDefiniteRejection(error: unknown): boolean {
   return definiteFailure(rpcErrorCode(error)) !== null;
 }
 
+function rpcErrorPart(error: unknown): number | null {
+  const data =
+    typeof error === "object" && error !== null && "data" in error
+      ? (error as { data?: unknown }).data
+      : null;
+  const part =
+    typeof data === "object" && data !== null && "part" in data
+      ? (data as { part?: unknown }).part
+      : null;
+  return typeof part === "number" && Number.isInteger(part) && part >= 0
+    ? part
+    : null;
+}
+
 /** The server does not say why it refused an adjustment: the cap is known from what was sent. */
 function refusalMessage(
   reason: string | null,
@@ -2852,6 +3007,7 @@ export function mapSaleSubmitError(
     const message = refusalMessage(reason, outcome.message, sentAdjustments);
     return failure(byCode.kind, message, {
       discardAttempt: outcome.discardAttempt ?? false,
+      part: rpcErrorPart(error),
       reason,
       refreshData: outcome.refreshData ?? false,
     });
@@ -3183,6 +3339,7 @@ export function canKeepLockedSaleOnDevice(
     state.phase === "locked" &&
     attempt !== null &&
     evaluation.body !== null &&
+    evaluation.body.payments === undefined &&
     evaluation.occurredAtOverride === null &&
     attempt.occurredAt === attempt.recordedAt
   );
@@ -3377,6 +3534,31 @@ export function describeStockRefusal(
     sent.canAdjustStock
   );
   return { ...state, failure: { ...state.failure, ...notice } };
+}
+
+/**
+ * A refusal that names a payment part, for a sale sent in parts: the message starts with the part ("Parte 2: …"), so
+ * the person knows which profile to review. A sale paid in one go keeps the message of always.
+ */
+export function describePartRefusal(
+  state: SubmissionState,
+  partsSent: number
+): SubmissionState {
+  if (
+    state.phase !== "failed" ||
+    state.failure.part === undefined ||
+    partsSent < 2 ||
+    state.failure.part >= partsSent
+  ) {
+    return state;
+  }
+  return {
+    ...state,
+    failure: {
+      ...state.failure,
+      message: `Parte ${state.failure.part + 1}: ${state.failure.message}`,
+    },
+  };
 }
 
 /** The final domain validation rejected the form before any request. */
