@@ -5,11 +5,11 @@ import { saleDetailStates } from "./ui-sale-detail-states";
 import { stockStates } from "./ui-stock-states";
 
 /**
- * The loading of the sale detail and of the sales history: a `role="status"` card that carries the sentence for the
- * screen reader and, as the picture, the skeleton (hidden from the screen reader). The loading of the stock is the
- * one of the `ListBlock`: the frame and its title stay, the sentence is in a status of the frame and the rows are
- * skeleton out of the screen reader's way. The states are the ones the guardrails open (`ui-*-states.ts`), the read
- * never answers.
+ * The loading of the sale detail: a `role="status"` card that carries the sentence for the screen reader
+ * and, as the picture, the skeleton (hidden from the screen reader). The loading of the stock and of the sales
+ * history is the one of the `ListBlock`: the frame and its title stay, the sentence is in a status of the frame
+ * and the rows are skeleton out of the screen reader's way. The states are the ones the guardrails open
+ * (`ui-*-states.ts`), the read never answers.
  */
 const SCREEN_READER_ONLY = /sr-only/;
 const LOADING: ReadonlyArray<{
@@ -21,11 +21,6 @@ const LOADING: ReadonlyArray<{
     message: "Carregando venda…",
     name: "Detalhe da venda",
     open: saleDetailStates.loading,
-  },
-  {
-    message: "Carregando vendas…",
-    name: "Histórico de vendas",
-    open: historyStates.loading,
   },
 ];
 
@@ -71,4 +66,31 @@ test("Estoque: carregando mantém a moldura e o título, diz Carregando… só a
     frame.locator('[aria-hidden="true"] [data-slot="skeleton"]')
   ).toHaveCount(await drawn.count());
   await expect(frame.locator("[data-list-count]")).toHaveText("");
+});
+
+test("Histórico de vendas: carregando é a moldura com o título, a frase só para o leitor de tela e o esqueleto escondido dele", async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name.includes("mobile"), "a mesma tela");
+  await historyStates.loading(page);
+
+  const block = page.locator("[data-list-block]");
+  await expect(
+    block.getByRole("heading", { name: "Vendas do período" })
+  ).toBeVisible();
+  const status = block.getByRole("status").filter({ hasText: "Carregando…" });
+  await expect(status).toHaveCount(1);
+  await expect(status).toHaveClass(SCREEN_READER_ONLY);
+  await expect(status).toHaveText("Carregando…");
+  const drawn = block.locator(
+    '[data-list-block-scroll] [data-slot="skeleton"]'
+  );
+  await expect(drawn).not.toHaveCount(0);
+  expect(
+    await drawn.evaluateAll((skeletons) =>
+      skeletons.every(
+        (skeleton) => skeleton.closest('[aria-hidden="true"]') !== null
+      )
+    )
+  ).toBe(true);
 });
