@@ -482,6 +482,8 @@ const LIST_EXAMPLES = [
   { name: "Busca sem total", state: "filtered-empty", total: false },
 ] as const;
 
+const ANY_VALUE = /.*/;
+
 const LIST_SIZES = [
   { height: 800, width: 1280 },
   { height: 740, width: 360 },
@@ -589,9 +591,20 @@ for (const size of LIST_SIZES) {
     if (size.width >= 760) {
       // the 40 rem table fits the 1280 px column: nothing to scroll, and nothing cut
       expect(wide).toBe(false);
+      await expect(
+        page
+          .getByRole("region", { exact: true, name })
+          .locator("[data-list-block-scroll]")
+      ).not.toHaveAttribute("tabindex", ANY_VALUE);
       return;
     }
     expect(wide).toBe(true);
+    // wider than the screen, the box is a stop of the keyboard, named by the title, so it scrolls without a pointer
+    await expect(
+      page
+        .getByRole("region", { exact: true, name })
+        .getByRole("group", { name })
+    ).toHaveAttribute("tabindex", "0");
     await page
       .getByRole("region", { exact: true, name })
       .locator("[data-list-block-scroll]")

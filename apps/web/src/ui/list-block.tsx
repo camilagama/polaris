@@ -3,7 +3,10 @@ import {
   type ComponentProps,
   isValidElement,
   type ReactNode,
+  useEffect,
   useId,
+  useRef,
+  useState,
 } from "react";
 import { cn } from "@/lib/utils";
 import { Block, BlockHeader, BlockPanel } from "./block";
@@ -25,7 +28,7 @@ type ListBlockStateProps =
 
 type ListBlockProps = ListBlockStateProps & {
   action?: SingleNode;
-  /** The `ListBlock.Header`, the `ListBlock.Row`s and the `ListBlock.Total`, as direct children. */
+  /** The `ListBlock.Header`, the `ListBlock.Row`s and the `ListBlock.Total`, as direct children: one wrapped in a component or a fragment is taken for a row. */
   children?: ReactNode;
   className?: string | undefined;
   /** "1.248 produtos": the support text beside the title, announced when it changes. Empty while it is unknown. */
@@ -76,6 +79,27 @@ function ListBlockRow({
 /** The total of what is on the screen: always the last line of the panel, wherever it is among the children. */
 function ListBlockTotal(props: ComponentProps<typeof ListTotalFooter>) {
   return <ListTotalFooter {...props} />;
+}
+
+/** Whether the content is wider than the box: only then the box is a stop of the keyboard, so it can be scrolled without a pointer. */
+function useOverflowX() {
+  const ref = useRef<HTMLDivElement>(null);
+  const [overflows, setOverflows] = useState(false);
+  useEffect(() => {
+    const box = ref.current;
+    if (box === null) {
+      return;
+    }
+    const measure = () => setOverflows(box.scrollWidth > box.clientWidth + 1);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(box);
+    if (box.firstElementChild) {
+      observer.observe(box.firstElementChild);
+    }
+    return () => observer.disconnect();
+  }, []);
+  return { overflows, ref };
 }
 
 function sortParts(children: ReactNode) {
@@ -149,6 +173,7 @@ function ListBlockRoot({
   const generated = useId();
   const headingId = id ?? generated;
   const { header, rows, total } = sortParts(children);
+  const { overflows, ref } = useOverflowX();
   return (
     <Block
       aria-labelledby={headingId}
@@ -179,7 +204,14 @@ function ListBlockRoot({
         <p className="sr-only" role="status">
           {stateProps.state === "loading" ? "Carregando…" : ""}
         </p>
-        <div className="min-w-0 overflow-x-auto" data-list-block-scroll="">
+        <div
+          className="min-w-0 overflow-x-auto focus-visible:outline-3 focus-visible:outline-ring focus-visible:outline-solid focus-visible:-outline-offset-3"
+          data-list-block-scroll=""
+          ref={ref}
+          {...(overflows
+            ? { "aria-labelledby": headingId, role: "group", tabIndex: 0 }
+            : {})}
+        >
           <div className="w-fit min-w-full divide-y divide-border">
             {header}
             <Body
