@@ -56,6 +56,8 @@ else
   runner=(npx playwright)
 fi
 
+DIAG_DIR="$(pwd)" ; "$(git rev-parse --show-toplevel)/scripts/playwright-diag-tmp.sh" "$DIAG_DIR" || true
+
 for ((attempt = 1; attempt <= attempts; attempt++)); do
   limit="$attempt_timeout"
   if ((attempt == 1)); then
