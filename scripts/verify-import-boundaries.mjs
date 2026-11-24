@@ -25,6 +25,7 @@ const uiMessage =
   "packages/ui must stay framework-free: the Admin page has no React, and the dash's components live in apps/web/src/ui.";
 const browserMessage =
   "Browser code must not import the database, the server layer or server-only libraries.";
+const uiPieceMessage = "A piece of ui/ imports neither a screen nor app-shell";
 
 // Biome's category for each kind of case: the run checks the rule and the message of every
 // diagnostic, so a different rule that happens to print the same text cannot satisfy a fixture.
@@ -89,6 +90,21 @@ const cases = [
     ["apps", "web", "src", "lib"],
     browserMessage,
   ],
+  ["@/app-shell/screen-tabs", ["apps", "web", "src", "ui"], uiPieceMessage],
+  ["../app-shell/screen-tabs", ["apps", "web", "src", "ui"], uiPieceMessage],
+  ["@/sales/sale-page", ["apps", "web", "src", "ui"], uiPieceMessage],
+  ["../sales/sale-page", ["apps", "web", "src", "ui"], uiPieceMessage],
+  [
+    "../../sales/sale-page",
+    ["apps", "web", "src", "ui", "charts"],
+    uiPieceMessage,
+  ],
+  [
+    "../../app-shell/screen-tabs",
+    ["apps", "web", "src", "ui", "charts"],
+    uiPieceMessage,
+  ],
+  ["@polaris/db/client", ["apps", "web", "src", "ui"], browserMessage],
   ["@polaris/db/client", ["apps", "catalog", "src"], catalogMessage],
   [
     "@polaris/db/tenant-transaction",
@@ -195,8 +211,22 @@ const importControls = [
   controlImport(["packages", "db", "src"], dbMessage),
   controlImport(["packages", "ui", "src"], uiMessage),
   controlImport(["apps", "web", "src", "lib"], browserMessage),
+  controlImport(["apps", "web", "src", "ui"], uiPieceMessage),
   controlImport(["apps", "catalog", "src"], catalogMessage),
   controlImport(["apps", "admin", "src"], adminMessage),
+  ...[
+    ["@/lib/utils", ["apps", "web", "src", "ui"]],
+    ["@/ui/block", ["apps", "web", "src", "ui"]],
+    ["../money", ["apps", "web", "src", "ui", "charts"]],
+    ["../../lib/utils", ["apps", "web", "src", "ui", "charts"]],
+  ].map(([specifier, workspace]) => ({
+    allowed: true,
+    expected: uiPieceMessage,
+    rule: importRule,
+    source: forbiddenImport(specifier),
+    specifier,
+    workspace,
+  })),
   // the one door the Admin has to billing must stay open, or the rejections above would only mean "all of billing"
   {
     allowed: true,
