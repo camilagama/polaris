@@ -926,6 +926,7 @@ export const SPEC_SCREENS = {
   "apps/web/e2e/sale-item-reflow.e2e.ts": ["sale", "inventory"],
   "apps/web/e2e/sale-receipt-mono.e2e.ts": ["sale", "sale-detail", "inventory"],
   "apps/web/e2e/sale-screen.e2e.ts": ["sale"],
+  "apps/web/e2e/sale-split-payment.e2e.ts": ["sale"],
   "apps/web/e2e/session-ended-screens.e2e.ts": [
     "sale",
     "products",
