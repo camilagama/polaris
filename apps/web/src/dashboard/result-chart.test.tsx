@@ -406,6 +406,7 @@ const NOTES_ATTRIBUTE = /data-notes="([^"]*)"/;
 const BEST_DAY_FOR_READERS = /<p class="sr-only">[^<]*Melhor dia/;
 const BEST_DAY_LINE = /<p class="[^"]*min-h-\[1\.125rem\]/;
 const TITLE_HEADING = /<h2 class="text-section" id="dashboard-chart-title"/;
+const ANY_HEIGHT_RESERVE = /min-h-\[/;
 
 describe("the room the card keeps for its lines (lugar reservado)", () => {
   it("keeps the line of the note in the box, whatever the state, and writes the best day only for the screen reader", () => {
@@ -427,7 +428,9 @@ describe("the room the card keeps for its lines (lugar reservado)", () => {
   it("keeps no row above the drawing: the legend sits in the header and the box that stands in for the drawing is the plot's", () => {
     const markup = chart(october([3]));
     expect(markup).toContain("data-chart-loading");
-    expect(markup).not.toContain("min-h-[8.5rem]");
+    expect(markup.slice(0, markup.indexOf("data-chart-loading"))).not.toMatch(
+      ANY_HEIGHT_RESERVE
+    );
     expect(markup).toContain("height:240px");
     const header = markup.slice(
       markup.indexOf('data-slot="block-header"'),
