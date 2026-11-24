@@ -658,6 +658,63 @@ test("o Block plain: sem a moldura de fora, com o mesmo cabeçalho do Block", as
   await expect(page.getByText("O mesmo bloco sem título.")).toBeVisible();
 });
 
+/** The two inner panels, the checkable option and the step tile of the gallery, measured in the browser. */
+test("os painéis internos, a opção marcável e a caixa do passo: medidas e clique", async ({
+  page,
+}) => {
+  await openGallery(page, null);
+  const inset = page.locator('[data-gallery-panel="inset"]');
+  const insetStyle = await inset.evaluate((box) => {
+    const style = getComputedStyle(box);
+    return {
+      border: style.borderTopWidth,
+      fill: style.backgroundColor,
+      radius: style.borderTopLeftRadius,
+    };
+  });
+  expect(insetStyle.border).toBe("0px");
+  expect(insetStyle.fill).not.toBe("rgba(0, 0, 0, 0)");
+  expect(Number.parseFloat(insetStyle.radius)).toBeGreaterThan(0);
+
+  const group = page.getByRole("group", { name: "Contato" });
+  await expect(group).toHaveAttribute("data-gallery-panel", "group");
+  const groupStyle = await group.evaluate((box) => {
+    const style = getComputedStyle(box);
+    return { border: style.borderTopWidth, fill: style.backgroundColor };
+  });
+  expect(groupStyle.border).toBe("1px");
+  expect(groupStyle.fill).toBe("rgba(0, 0, 0, 0)");
+
+  const steps = page.locator("[data-step-box]");
+  await expect(steps).toHaveCount(3);
+  const sizes = await steps.evaluateAll((boxes) =>
+    boxes.map((box) => {
+      const { height, width } = box.getBoundingClientRect();
+      return [width, height];
+    })
+  );
+  expect(sizes).toEqual([
+    [28, 28],
+    [28, 28],
+    [28, 28],
+  ]);
+
+  const option = page.getByRole("checkbox", { name: "Azul / P" });
+  await expect(option).not.toBeChecked();
+  await page.getByText("Azul / P", { exact: true }).click();
+  await expect(option).toBeChecked();
+  await expect(
+    page.getByRole("checkbox", { name: "Desligada, sem imagem para enviar" })
+  ).toBeDisabled();
+  const long = page.locator('[data-slot="checkable-option"]', {
+    hasText: "bem comprido",
+  });
+  await page.setViewportSize({ height: 740, width: 320 });
+  expect(await long.evaluate((row) => row.scrollWidth <= row.clientWidth)).toBe(
+    true
+  );
+});
+
 test("controle: o axe desta página acusa uma imagem sem texto alternativo", async ({
   page,
 }) => {
