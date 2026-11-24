@@ -676,11 +676,28 @@ function acknowledgedSelection(
   };
 }
 
+/** Both parts wait on the review of the same profile: the screen shows one warning and one button for the two. */
+export function sharedProfileReview(form: SaleFormState): boolean {
+  return (
+    form.split !== null &&
+    form.profile.reviewNotice !== null &&
+    form.split.second.profile.reviewNotice !== null &&
+    form.profile.choice !== "" &&
+    form.profile.choice === form.split.second.profile.choice
+  );
+}
+
+/** Reviewing the preview of a profile both parts use reviews it for both. */
 export function acknowledgeProfileReview(
   form: SaleFormState,
   profiles: readonly PaymentProfileReadModel[]
 ): SaleFormState {
-  return { ...form, profile: acknowledgedSelection(form.profile, profiles) };
+  const shared = sharedProfileReview(form);
+  const reviewed = {
+    ...form,
+    profile: acknowledgedSelection(form.profile, profiles),
+  };
+  return shared ? acknowledgeSecondProfileReview(reviewed, profiles) : reviewed;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -803,6 +820,9 @@ export function acknowledgeSecondProfileReview(
   form: SaleFormState,
   profiles: readonly PaymentProfileReadModel[]
 ): SaleFormState {
+  if (sharedProfileReview(form)) {
+    return acknowledgeProfileReview(form, profiles);
+  }
   return withSecond(form, (second) => ({
     ...second,
     profile: acknowledgedSelection(second.profile, profiles),
@@ -1147,7 +1167,10 @@ export interface FeeLine {
 }
 
 /** Unknown is never zero: each state has its own text and tone. */
-export function describeFee(fee: SalePaymentFeeSnapshot): FeeLine {
+export function describeFee(
+  fee: SalePaymentFeeSnapshot,
+  base = "do total devido"
+): FeeLine {
   if (fee.mode === "not_applicable") {
     return {
       text: "não se aplica",
@@ -1164,7 +1187,7 @@ export function describeFee(fee: SalePaymentFeeSnapshot): FeeLine {
     fee.fixedAmount === null ? null : formatBrlAmount(fee.fixedAmount),
     fee.percentage === null
       ? null
-      : `${formatPercentage(fee.percentage)} do total devido`,
+      : `${formatPercentage(fee.percentage)} ${base}`,
   ].filter((part): part is string => part !== null);
   const amount = formatBrlAmount(fee.amount);
   const text = parts.length > 0 ? `${amount} (${parts.join(" + ")})` : amount;
@@ -1183,6 +1206,8 @@ function describeSettlementDays(days: number | null): string {
 
 export interface FeePreview {
   anticipation: FeeLine;
+  /** Processing plus anticipation, in cents; null when either is unknown (never taken as zero). */
+  feeCents: bigint | null;
   processing: FeeLine;
   profileText: string;
   ruleMatched: boolean;
@@ -1228,10 +1253,30 @@ type ProfileSelection =
   | { kind: "none" }
   | { kind: "profile"; profile: PaymentProfileReadModel };
 
+function feeCentsOf(fee: SalePaymentFeeSnapshot): bigint | null {
+  if (fee.mode === "not_applicable") {
+    return 0n;
+  }
+  return fee.amount === null ? null : Money.from(fee.amount).minorUnits;
+}
+
+function sumOfFees(fees: readonly (bigint | null)[]): bigint | null {
+  let sum = 0n;
+  for (const fee of fees) {
+    if (fee === null) {
+      return null;
+    }
+    sum += fee;
+  }
+  return sum;
+}
+
+/** `base` is what a percentage applies to: the total due, or the amount of a part. */
 function buildFeePreview(
   totalDue: string,
   payment: SalePayment,
-  selection: ProfileSelection
+  selection: ProfileSelection,
+  base?: string
 ): FeePreview | null {
   try {
     const profile =
@@ -1245,8 +1290,12 @@ function buildFeePreview(
         : "Nenhuma regra exata para este método/parcelas";
     }
     return {
-      anticipation: describeFee(snapshot.anticipationFee),
-      processing: describeFee(snapshot.processingFee),
+      anticipation: describeFee(snapshot.anticipationFee, base),
+      feeCents: sumOfFees([
+        feeCentsOf(snapshot.processingFee),
+        feeCentsOf(snapshot.anticipationFee),
+      ]),
+      processing: describeFee(snapshot.processingFee, base),
       profileText: profile ? profile.name : "Sem perfil de pagamento",
       ruleMatched,
       ruleText,
@@ -1924,6 +1973,10 @@ export interface EvaluationContext {
 interface SplitEvaluation {
   /** The state of the parts against the total; null while the total or an amount cannot be read yet. */
   balance: SplitBalance | null;
+  /** The fees of both parts added up; unknown when either part's is, null until both previews exist. */
+  feesTotal: FeeLine | null;
+  /** The field where the parts not closing the total was reported; null when they close it. */
+  mismatchKey: string | null;
   /** The fee preview of each part, by position; null where the part is not complete. */
   partPreviews: readonly [FeePreview | null, FeePreview | null];
   /** "O total mudou. Confira as partes." while typed parts no longer match the total they were checked against. */
@@ -2072,15 +2125,25 @@ interface EvaluatedPart {
   resolution: ProfileResolution;
 }
 
+/**
+ * `readAmount` reads the amount of a part, whose field sits right after the method on the screen: its problems come
+ * after the method's and before the credit fields' and the profile's, so the first problem is the first on the screen.
+ */
 function evaluatePart(
   draft: { payment: PaymentDraft; profile: ProfileSelectionDraft },
   context: EvaluationContext,
   issues: Issue[],
   keys: PartKeys,
-  messages: PartMessages
-): EvaluatedPart {
-  const payment = parsePayment(draft.payment, issues, keys, messages);
+  messages: PartMessages,
+  readAmount: () => PartAmount = () => ({ kind: "invalid" })
+): EvaluatedPart & { amount: PartAmount } {
+  const paymentIssues: Issue[] = [];
+  const payment = parsePayment(draft.payment, paymentIssues, keys, messages);
+  issues.push(...paymentIssues.filter((issue) => issue.key === keys.method));
+  const amount = readAmount();
+  issues.push(...paymentIssues.filter((issue) => issue.key !== keys.method));
   return {
+    amount,
     payment,
     resolution: resolveProfile(
       draft.profile,
@@ -2143,42 +2206,41 @@ function evaluateSplit(
 ): SplitResult {
   const firstMessages = partMessages(1);
   const secondMessages = partMessages(2);
+  const total = parsed.calculation?.totalDue ?? null;
+  const totalCents = total === null ? null : centsOfMoney(total);
   const first = evaluatePart(
     form,
     context,
     issues,
     FIRST_PART_KEYS,
-    firstMessages
+    firstMessages,
+    () =>
+      parsePartAmount(
+        split.firstAmount,
+        issues,
+        FIRST_PART_KEYS.amount,
+        firstMessages
+      )
   );
-  const firstAmount = parsePartAmount(
-    split.firstAmount,
-    issues,
-    FIRST_PART_KEYS.amount,
-    firstMessages
-  );
+  const firstAmount = first.amount;
   const secondDraft = split.second;
   const second = evaluatePart(
     secondDraft,
     context,
     issues,
     SECOND_PART_KEYS,
-    secondMessages
+    secondMessages,
+    () =>
+      secondDraft.amount === null
+        ? secondAmountOfRest(firstAmount, totalCents)
+        : parsePartAmount(
+            secondDraft.amount,
+            issues,
+            SECOND_PART_KEYS.amount,
+            secondMessages
+          )
   );
-  const total = parsed.calculation?.totalDue ?? null;
-  const totalCents = total === null ? null : centsOfMoney(total);
-  const rest =
-    firstAmount.kind === "ok" && totalCents !== null
-      ? restOfTotal(totalCents, firstAmount.cents)
-      : null;
-  const secondAmount: PartAmount =
-    secondDraft.amount === null
-      ? secondAmountOfRest(rest)
-      : parsePartAmount(
-          secondDraft.amount,
-          issues,
-          SECOND_PART_KEYS.amount,
-          secondMessages
-        );
+  const secondAmount = second.amount;
   const previews = [
     partPreview(first, firstAmount),
     partPreview(second, secondAmount),
@@ -2195,15 +2257,16 @@ function evaluateSplit(
         })
       : null;
   const totalChangedNotice = splitTotalChangedNotice(split, total);
-  if (balance !== null && balance.kind !== "closed") {
-    pushIssue(
-      issues,
+  let mismatchKey: string | null = null;
+  if (balance !== null && balance.kind !== "closed" && total !== null) {
+    mismatchKey =
       balance.kind === "over" && secondDraft.amount === null
         ? FIRST_PART_KEYS.amount
-        : SECOND_PART_KEYS.amount,
-      totalChangedNotice === null
-        ? balance.text
-        : `${balance.text}. ${totalChangedNotice}`,
+        : SECOND_PART_KEYS.amount;
+    pushIssue(
+      issues,
+      mismatchKey,
+      splitMismatchMessage(balance, total, totalChangedNotice),
       false
     );
   } else if (
@@ -2246,6 +2309,8 @@ function evaluateSplit(
     body,
     evaluation: {
       balance,
+      feesTotal: feesTotalOf(previews),
+      mismatchKey,
       partPreviews: previews,
       totalChangedNotice,
     },
@@ -2254,10 +2319,44 @@ function evaluateSplit(
   };
 }
 
-function secondAmountOfRest(rest: bigint | null): PartAmount {
-  return rest === null
-    ? { kind: "invalid" }
-    : { cents: rest, kind: "ok", text: moneyOfCents(rest) };
+function secondAmountOfRest(
+  first: PartAmount,
+  total: bigint | null
+): PartAmount {
+  if (first.kind !== "ok" || total === null) {
+    return { kind: "invalid" };
+  }
+  const rest = restOfTotal(total, first.cents);
+  return { cents: rest, kind: "ok", text: moneyOfCents(rest) };
+}
+
+/** The error of the amount field when the parts do not close the total: the rule, then how far they are. */
+function splitMismatchMessage(
+  balance: SplitBalance,
+  total: string,
+  totalChangedNotice: string | null
+): string {
+  const message = `A soma das partes precisa ser ${formatBrlAmount(total)}. ${balance.text}.`;
+  return totalChangedNotice === null
+    ? message
+    : `${message} ${totalChangedNotice}`;
+}
+
+function feesTotalOf(
+  previews: readonly [FeePreview | null, FeePreview | null]
+): FeeLine | null {
+  const [first, second] = previews;
+  if (first === null || second === null) {
+    return null;
+  }
+  const sum = sumOfFees([first.feeCents, second.feeCents]);
+  if (sum === null) {
+    return { text: "desconhecida — não é zero", tone: "unknown" };
+  }
+  return {
+    text: formatBrlAmount(moneyOfCents(sum)),
+    tone: sum === 0n ? "zero" : "known",
+  };
 }
 
 function partPreview(
@@ -2272,7 +2371,12 @@ function partPreview(
   ) {
     return null;
   }
-  return buildFeePreview(amount.text, part.payment, part.resolution);
+  return buildFeePreview(
+    amount.text,
+    part.payment,
+    part.resolution,
+    "do valor da parte"
+  );
 }
 
 /**
@@ -3190,6 +3294,7 @@ export function canKeepLockedSaleOnDevice(
     state.phase === "locked" &&
     attempt !== null &&
     evaluation.body !== null &&
+    evaluation.body.payments === undefined &&
     evaluation.occurredAtOverride === null &&
     attempt.occurredAt === attempt.recordedAt
   );
