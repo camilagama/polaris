@@ -1,6 +1,6 @@
 import { LEGAL_PATHS } from "@polaris/domain/legal/legal-documents";
 import type { ReactNode } from "react";
-import { Card, CardContent, CardDescription, CardTitle } from "@/ui/card";
+import { Block, BlockHeader, BlockPanel } from "@/ui/block";
 import { TextLink } from "@/ui/text-link";
 import { HELP_LABEL } from "../app-shell/navigation-model";
 import { ScreenTitle } from "../app-shell/screen-title";
@@ -20,7 +20,7 @@ function AddressLink({ address, label }: { address: string; label: string }) {
   return (
     <TextLink
       aria-label={`${label}: ${address}`}
-      className="w-fit select-text break-words font-medium text-base"
+      className="w-fit max-w-full select-text font-medium text-base [overflow-wrap:anywhere]"
       href={mailtoHref(address)}
     >
       {address}
@@ -42,15 +42,13 @@ function ContactCard({
   title: string;
 }) {
   return (
-    <Card aria-labelledby={id} role="region">
-      <CardContent className="grid gap-2">
-        <CardTitle aria-level={2} id={id} role="heading">
-          {title}
-        </CardTitle>
-        <CardDescription className="text-sm">{children}</CardDescription>
+    <Block aria-labelledby={id}>
+      <BlockHeader id={id} title={title} />
+      <BlockPanel className="gap-2">
+        <p className="m-0 text-muted-foreground text-sm">{children}</p>
         <AddressLink address={address} label={label} />
-      </CardContent>
-    </Card>
+      </BlockPanel>
+    </Block>
   );
 }
 
