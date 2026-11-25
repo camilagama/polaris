@@ -38,9 +38,3 @@ export function addDays(date: string, days: number): string {
   const instant = Date.parse(`${date}T12:00:00Z`) + days * 86_400_000;
   return new Date(instant).toISOString().slice(0, 10);
 }
-
-/** "DD/MM/AAAA" as the app shows a calendar date. */
-export function brDate(date: string): string {
-  const [year, month, day] = date.split("-");
-  return `${day}/${month}/${year}`;
-}
