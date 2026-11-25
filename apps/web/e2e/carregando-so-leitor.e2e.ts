@@ -75,18 +75,16 @@ for (const viewport of VIEWPORTS) {
       });
       await serve(page);
       await page.goto("/expenses");
-      const status = page
+      const block = page.getByRole("region", { name: "Despesas do período" });
+      const status = block
         .getByRole("status")
-        .filter({ hasText: "Carregando despesas…" });
+        .filter({ hasText: "Carregando…" });
       await expect(status).toBeAttached();
-      await expect(status.locator('[data-slot="skeleton"]')).toHaveCount(3);
+      await expect(status).toHaveClass(SCREEN_READER_ONLY);
       await expect(
-        status.locator('[data-slot="skeleton"]').first()
+        block.locator('[data-slot="skeleton"]').first()
       ).toBeVisible();
       expect(await visibleText(page)).not.toContain("Carregando");
-      const box = await status.boundingBox();
-      expect(box?.height ?? 0).toBeGreaterThanOrEqual(viewport.minNoteHeight);
-      expect(box?.height ?? 0).toBeLessThan(viewport.minNoteHeight + 1);
       release();
     });
   });

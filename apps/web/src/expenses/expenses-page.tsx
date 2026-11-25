@@ -12,7 +12,6 @@ import {
   useState,
 } from "react";
 import { Button } from "@/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/ui/card";
 import { Dialog, DialogContent } from "@/ui/dialog";
 import { HelpTip } from "@/ui/help-tip";
 import { SectionTabContent, SectionTabs } from "@/ui/section-tabs";
@@ -37,7 +36,7 @@ import { ExpenseByCategory } from "./expense-by-category";
 import { ActionNotice, LoadError } from "./expense-fields";
 import { ExpenseForm } from "./expense-form";
 import { ExpenseFiltersBar, focusFilterAfterClear } from "./expense-filters";
-import { ExpenseList, ExpenseSummary } from "./expense-list";
+import { ExpenseList } from "./expense-list";
 import {
   categoryFieldsDiffer,
   type ExpenseDraft,
@@ -125,8 +124,6 @@ function Heading({
     </header>
   );
 }
-
-const LIST_TITLE_ID = "expense-list-title";
 
 /** What opened the form (or, when its row left the list, the button of a new one): "Nova despesa" or the "Editar" of the expense. */
 function expenseFormOrigin(next: ExpenseReadModel | "new") {
@@ -462,27 +459,17 @@ export function ExpensesPage() {
             organizationId={organizationId}
             state={state}
           />
-          <Card aria-labelledby={LIST_TITLE_ID} role="region">
-            <CardHeader className="gap-3">
-              <CardTitle aria-level={2} id={LIST_TITLE_ID} role="heading">
-                Despesas do período
-              </CardTitle>
-              <ExpenseSummary filters={filters} state={state} />
-            </CardHeader>
-            <CardContent className="grid gap-4">
-              <ExpenseList
-                busyKey={busy}
-                filters={filters}
-                onClearFilters={handleClearFilters}
-                onEdit={openForm}
-                onLoadMore={loadMore}
-                onRestore={handleRestore}
-                onRetry={handleRetry}
-                onVoid={handleVoid}
-                state={state}
-              />
-            </CardContent>
-          </Card>
+          <ExpenseList
+            busyKey={busy}
+            filters={filters}
+            onClearFilters={handleClearFilters}
+            onEdit={openForm}
+            onLoadMore={loadMore}
+            onRestore={handleRestore}
+            onRetry={handleRetry}
+            onVoid={handleVoid}
+            state={state}
+          />
         </SectionTabContent>
 
         <SectionTabContent keepMounted value="recorrentes">
