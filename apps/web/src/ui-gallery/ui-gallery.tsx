@@ -2158,17 +2158,14 @@ export function UiGallery() {
             <p className="max-w-prose text-muted-foreground text-support">
               O aviso <code>ActionStrip</code> ("Precisa de ação") fica sob o
               título da tela: o triângulo, o nome e uma linha com os números,
-              cada um um link quando leva a uma lista. Só existe quando há o que
-              fazer.
+              cada um um link quando leva a uma lista, ou só o texto quando não
+              leva. Só existe quando há o que fazer.
             </p>
             <ActionStrip>
               <TextLink href="/ajuda" inline>
-                3 produtos com custo desconhecido
+                3 sem custo
               </TextLink>
-              {" · "}
-              <TextLink href="/ajuda" inline>
-                2 sem saldo
-              </TextLink>
+              {" · 2 sem saldo"}
             </ActionStrip>
           </Section>
 
