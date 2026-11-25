@@ -374,10 +374,16 @@ describe("a sale paid in parts, made offline", () => {
     });
   });
 
-  it("is refused whole when the second part's profile moved on, and is not sent again without profiles", async () => {
-    const confirmSale = vi.fn(() =>
-      Promise.reject(new PaymentProfileVersionConflictError(1))
-    );
+  it("is refused whole when the second part's profile moved on, and sent again without it keeps both parts and drops only that profile", async () => {
+    const accepted = confirmSaleStub();
+    const confirmSale = vi.fn((...args: unknown[]) => {
+      const input = args[2] as {
+        payments?: { paymentProfile: unknown }[];
+      };
+      return input.payments?.some((part) => part.paymentProfile !== null)
+        ? Promise.reject(new PaymentProfileVersionConflictError(1))
+        : accepted(...args);
+    });
     const device = await setup();
     device.serve(
       createSaleConfirmHandler({ confirmSale: confirmSale as never })
@@ -387,14 +393,57 @@ describe("a sale paid in parts, made offline", () => {
     const refused = await device.sync();
 
     expect(refused.blockedBy?.rejection?.code).toBe("payment_profile_changed");
-    expect((await device.outbox.snapshot()).commands).toHaveLength(1);
+    expect(accepted).not.toHaveBeenCalled();
+    const again = await resubmitRejectedSale(device.outbox, {
+      commandId: command.commandId,
+      lease: device.lease,
+      newCommandId: () => uuid(501),
+      withoutProfile: true,
+    });
+    expect(again.commandId).toBe(uuid(501));
+    expect((await device.sync()).accepted).toBe(1);
+    expect(accepted).toHaveBeenCalledTimes(1);
+    expect(accepted.mock.calls[0]?.[2]).toMatchObject({
+      payments: [
+        { amount: "30.00", method: "pix", paymentProfile: null },
+        {
+          amount: "70.00",
+          installments: 3,
+          method: "credit_card",
+          paymentProfile: null,
+        },
+      ],
+    });
+    expect((await device.outbox.snapshot()).commands).toHaveLength(0);
+  });
+
+  it("with a different profile on each part, the device does not guess which one was refused and keeps the sale", async () => {
+    const confirmSale = vi.fn(() =>
+      Promise.reject(new PaymentProfileVersionConflictError(1))
+    );
+    const device = await setup();
+    device.serve(
+      createSaleConfirmHandler({ confirmSale: confirmSale as never })
+    );
+    const [first, second] = PARTS;
+    const { command } = await device.sell({
+      payments: [
+        {
+          ...(first as OfflineSalePaymentPart),
+          paymentProfile: { expectedVersion: 1, id: uuid(602) },
+        },
+        second as OfflineSalePaymentPart,
+      ],
+    });
+    await device.sync();
+
     await expect(
       resubmitRejectedSale(device.outbox, {
         commandId: command.commandId,
         lease: device.lease,
         withoutProfile: true,
       })
-    ).rejects.toThrow("split_sale_profile_refusal");
+    ).rejects.toThrow("split_sale_profile_unknown");
     const [kept] = (await device.outbox.snapshot()).commands;
     expect(kept?.commandId).toBe(command.commandId);
     expect(kept?.payload).toEqual(command.payload);

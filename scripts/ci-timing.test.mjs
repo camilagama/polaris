@@ -66,6 +66,52 @@ function job(name, { started, installEnd, end, conclusion = "success" }) {
   };
 }
 
+const CHROMIUM_STEP_NAME = "Chromium (cache da main, sem apt)";
+const CHROMIUM_ACTION = "./.github/actions/chromium";
+const QUOTES = /^(["'])(.*)\1$/;
+const STEP_START = /^ {6}- /;
+const STEP_NAME = /^(?: {6}- | {8})name:\s*(.+?)\s*(?:\s#.*)?$/;
+const STEP_USES = /^(?: {6}- | {8})uses:\s*(\S+)/;
+
+/** The steps of a job that runs the opening sequence, a Chromium step called `chromiumName` ending at `start + 90`, and the tests. */
+function chromiumJobSteps(chromiumName, start) {
+  return [
+    step("Set up job", start, start + 2),
+    step("Run actions/checkout@abc", start + 2, start + 10),
+    step("Run actions/setup-node@abc", start + 10, start + 20),
+    step("Run oven-sh/setup-bun@abc", start + 20, start + 25),
+    step("Run actions/cache@abc", start + 25, start + 40),
+    step("Run bun install --frozen-lockfile", start + 40, start + 60),
+    step(chromiumName, start + 60, start + 85),
+    step("Run bun run test", start + 85, 695),
+    step("Post Run actions/cache@abc", 695, 699),
+  ];
+}
+
+/** The `name` of each step of a workflow that uses the Chromium composite action; steps without a name are skipped. */
+function namedChromiumSteps(workflow) {
+  const names = [];
+  let current = null;
+  const flush = () => {
+    if (current?.name && current.action === CHROMIUM_ACTION) {
+      names.push(current.name.replace(QUOTES, "$2"));
+    }
+  };
+  for (const line of workflow.split("\n")) {
+    if (STEP_START.test(line)) {
+      flush();
+      current = {};
+    }
+    if (!current) {
+      continue;
+    }
+    current.name ??= STEP_NAME.exec(line)?.[1];
+    current.action ??= STEP_USES.exec(line)?.[1];
+  }
+  flush();
+  return names;
+}
+
 describe("percentile", () => {
   it("interpolates between ranks", () => {
     expect(percentile([10, 20, 30, 40], 50)).toBe(25);
@@ -201,6 +247,45 @@ describe("splitJob", () => {
       preparation: 23,
       wait: 2,
     });
+  });
+
+  it("ends the preparation at the Chromium step of the ci.yml, not at the test step", () => {
+    const chromium = {
+      completed_at: at(700),
+      conclusion: "success",
+      created_at: at(0),
+      name: "Offline browser gate (shard 1/4)",
+      started_at: at(5),
+      steps: chromiumJobSteps(CHROMIUM_STEP_NAME, 5),
+    };
+    expect(splitJob(chromium)).toEqual({
+      execution: 700 - 90,
+      preparation: 90 - 5,
+      wait: 5,
+    });
+  });
+
+  it("counts every named Chromium step of the real ci.yml as preparation", () => {
+    const text = readFileSync(
+      new URL("../.github/workflows/ci.yml", import.meta.url),
+      "utf8"
+    );
+    const names = namedChromiumSteps(text);
+    expect(names.length).toBeGreaterThanOrEqual(4);
+    for (const name of new Set(names)) {
+      const parts = splitJob({
+        completed_at: at(700),
+        conclusion: "success",
+        created_at: at(0),
+        name: "Job of the ci.yml",
+        started_at: at(5),
+        steps: chromiumJobSteps(name, 5),
+      });
+      expect(
+        parts.preparation,
+        `o passo "${name}" do ci.yml não entra na preparação: ajuste INSTALL_STEP em ci-timing.mjs`
+      ).toBe(90 - 5);
+    }
   });
 
   it("gives no split to a skipped job", () => {

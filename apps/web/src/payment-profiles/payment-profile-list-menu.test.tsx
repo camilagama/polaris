@@ -152,7 +152,7 @@ describe("PaymentProfileList, the states of the list", () => {
     expect(region.hasAttribute("data-list-block")).toBe(true);
     const filter = screen.getByRole("checkbox", { name: "Incluir arquivados" });
     expect(region.contains(filter)).toBe(false);
-    expect(region.querySelector("[data-list-count]")?.textContent).toBe("");
+    expect(region.querySelector("[data-list-count]")).toBeNull();
   });
 
   it("draws only the EmptyState, with no frame, when nothing was ever registered", () => {
