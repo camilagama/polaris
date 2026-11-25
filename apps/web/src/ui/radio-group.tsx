@@ -24,14 +24,14 @@ function RadioGroup({ className, ...props }: RadioGroupPrimitive.Props) {
    is a target too), focus as a border and a 30% halo. Inside a choice card the card draws the focus outline, so
    the halo of the radio steps back (as in the registry) instead of showing two rings; `!` because the group
    variant has the specificity of a single class and would lose to `focus-visible:ring-[3px]`. Disabled it fades by
-   itself (`data-disabled`, the root is a span). The choice cards fade as a whole (`has-data-disabled:opacity-50` on
-   their `FieldLabel`), so inside any `FieldLabel` it stays at 1 to keep the two from multiplying to 25% (`!` again,
-   to win over `data-disabled`); a `FieldLabel` that holds a disabled radio must fade itself. */
+   itself (`data-disabled`, the root is a span). The choice cards fade as a whole (`Label` fades when it holds a
+   disabled control), so inside any `Label` it stays at 1 to keep the two from multiplying to 25% (`!` again, to win
+   over `data-disabled`). */
 function RadioGroupItem({ className, ...props }: RadioPrimitive.Root.Props) {
   return (
     <RadioPrimitive.Root
       className={cn(
-        "group/radio-group-item peer relative flex aspect-square size-4 touch:size-4.5 shrink-0 rounded-full border border-input outline-none motion-full:transition-colors after:absolute after:-inset-2 touch:after:-inset-3.5 focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/30 group-has-data-disabled/field-label:opacity-100! group-has-[:focus-visible]/field-label:ring-0! aria-invalid:border-destructive group-aria-invalid/radio-group:border-destructive data-disabled:cursor-not-allowed data-checked:border-primary data-checked:bg-primary data-checked:text-primary-foreground data-disabled:opacity-50 dark:bg-input/30 dark:data-checked:bg-primary",
+        "group/radio-group-item peer relative flex aspect-square size-4 touch:size-4.5 shrink-0 rounded-full border border-input outline-none motion-full:transition-colors after:absolute after:-inset-2 touch:after:-inset-3.5 focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/30 group-has-data-disabled/label:opacity-100! group-has-[:focus-visible]/field-label:ring-0! aria-invalid:border-destructive group-aria-invalid/radio-group:border-destructive data-disabled:cursor-not-allowed data-checked:border-primary data-checked:bg-primary data-checked:text-primary-foreground data-disabled:opacity-50 dark:bg-input/30 dark:data-checked:bg-primary",
         className
       )}
       data-slot="radio-group-item"

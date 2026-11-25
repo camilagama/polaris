@@ -201,11 +201,7 @@ function Choice<T extends number | string>({
       value={value}
     >
       {options.map((option) => (
-        <FieldLabel
-          className="has-data-disabled:opacity-50"
-          htmlFor={`${id}-${option.value}`}
-          key={option.value}
-        >
+        <FieldLabel htmlFor={`${id}-${option.value}`} key={option.value}>
           <Field orientation="horizontal">
             <FieldContent className="min-w-0">
               <FieldTitle className="flex-wrap">

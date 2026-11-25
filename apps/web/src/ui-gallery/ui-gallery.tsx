@@ -721,10 +721,7 @@ function DisabledControlExamples() {
           disabled
           name="galeria-forma-desligada"
         >
-          <FieldLabel
-            className="has-data-disabled:opacity-50"
-            htmlFor="galeria-forma-desligada-pix"
-          >
+          <FieldLabel htmlFor="galeria-forma-desligada-pix">
             <Field orientation="horizontal">
               <FieldContent>
                 <FieldTitle>Cartão desligado</FieldTitle>
@@ -741,6 +738,16 @@ function DisabledControlExamples() {
           </FieldContent>
           <Switch defaultChecked disabled id="galeria-chave-desligada" />
         </Field>
+        <div className="grid gap-8">
+          <Label>
+            <Checkbox defaultChecked disabled />
+            Caixa dentro do rótulo
+          </Label>
+          <Label>
+            <Switch defaultChecked disabled />
+            Chave dentro do rótulo
+          </Label>
+        </div>
       </div>
     </div>
   );

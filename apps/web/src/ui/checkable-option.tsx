@@ -11,7 +11,8 @@ type CheckableOptionProps = Omit<React.ComponentProps<"label">, "onChange"> & {
 
 /**
  * One choice among several that can all be on (the variants an image belongs to): a checkbox and its text inside a
- * 1 px border, the whole row being the target. The text is the name of the checkbox, so the label is the row.
+ * 1 px border, the whole row being the target. The text is the name of the checkbox, so the label is the row. Off, the
+ * box and the text fade and the border stays: the row opts out of the fade of the whole label.
  */
 function CheckableOption({
   checked,
@@ -24,7 +25,7 @@ function CheckableOption({
   return (
     <Label
       className={cn(
-        "group/option min-h-ctl-md rounded-md border border-border px-3 has-disabled:cursor-not-allowed",
+        "group/option min-h-ctl-md rounded-md border border-border px-3 has-disabled:cursor-not-allowed has-data-disabled:opacity-100",
         className
       )}
       data-slot="checkable-option"
@@ -32,6 +33,7 @@ function CheckableOption({
     >
       <Checkbox
         checked={checked}
+        className="group-has-data-disabled/label:opacity-50!"
         disabled={disabled ?? false}
         onCheckedChange={onCheckedChange}
       />

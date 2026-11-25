@@ -1291,11 +1291,7 @@ function SinglePayment({
           value={form.payment.method === "" ? null : form.payment.method}
         >
           {SALE_METHOD_CARDS.map(([method, label], index) => (
-            <FieldLabel
-              className="has-data-disabled:opacity-50"
-              htmlFor={`sale-method-${method}`}
-              key={method}
-            >
+            <FieldLabel htmlFor={`sale-method-${method}`} key={method}>
               <Field orientation="horizontal">
                 <FieldContent>
                   <FieldTitle>
