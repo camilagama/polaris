@@ -1614,12 +1614,17 @@ test.describe("P-2: Categorias e Despesas sem conexão", () => {
       .click();
     await expect(page.getByText(WITH_FORM)).toBeVisible({ timeout: 15_000 });
 
-    const voidIt = page.getByRole("button", {
+    await page
+      .getByRole("button", { name: "Mais ações para Aluguel de outubro" })
+      .click();
+    const voidIt = page.getByRole("menuitem", {
       name: "Anular despesa Aluguel de outubro",
     });
     await expectOffWithReason(voidIt);
     await voidIt.focus();
     await page.keyboard.press("Enter");
+    await page.keyboard.press("Escape");
+    await expect(voidIt).toHaveCount(0);
     // "Nova despesa" and "Editar" only open the form: they stay on
     await expect(newExpense).not.toHaveAttribute("aria-disabled", "true");
     await expect(
