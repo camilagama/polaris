@@ -330,10 +330,6 @@ export const DEBT: Readonly<Record<Rule, readonly string[]>> = {
     // inventory
     "src/inventory/inventory-page.tsx",
     // offline
-    "src/offline/attention-panel.tsx",
-    "src/offline/logout-dialog.tsx",
-    "src/offline/runtime/device-item.tsx",
-    "src/offline/runtime/devices-page.tsx",
     // organization
     "src/organization/close-store-section.tsx",
     "src/organization/closed-queue-section.tsx",
@@ -378,8 +374,6 @@ export const DEBT: Readonly<Record<Rule, readonly string[]>> = {
     // legal
     "src/legal/legal-page.tsx",
     // offline
-    "src/offline/runtime/logout-control.tsx",
-    "src/offline/runtime/sync-status.tsx",
     // payment-profiles
     "src/payment-profiles/payment-profile-list.tsx",
     // sales
@@ -398,7 +392,6 @@ export const DEBT: Readonly<Record<Rule, readonly string[]>> = {
     // expenses
     "src/expenses/expense-list.tsx",
     // offline
-    "src/offline/runtime/device-item.tsx",
     // payment-profiles
     "src/payment-profiles/payment-profile-list.tsx",
     // sales
@@ -783,7 +776,7 @@ describe("R4: as peças soltas da lista só vivem em ui/ (controles)", () => {
     ]);
   });
 
-  it("os arquivos da dívida de R4 são os de hoje: as 7 telas que ainda importam e o screen-parts que reexporta", () => {
+  it("os arquivos da dívida de R4 são os de hoje: as 6 telas que ainda importam e o screen-parts que reexporta", () => {
     expect(DEBT.R4).toEqual([
       "src/catalog/category-list.tsx",
       "src/catalog/product-list.tsx",
@@ -791,7 +784,6 @@ describe("R4: as peças soltas da lista só vivem em ui/ (controles)", () => {
       "src/catalog/screen-parts.tsx",
       "src/customers/customer-list.tsx",
       "src/expenses/expense-list.tsx",
-      "src/offline/runtime/device-item.tsx",
       "src/payment-profiles/payment-profile-list.tsx",
     ]);
   });

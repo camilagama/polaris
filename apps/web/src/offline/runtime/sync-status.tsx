@@ -2,6 +2,7 @@ import CheckIcon from "lucide-react/dist/esm/icons/check";
 import CloudOffIcon from "lucide-react/dist/esm/icons/cloud-off";
 import RefreshCwIcon from "lucide-react/dist/esm/icons/refresh-cw";
 import TriangleAlertIcon from "lucide-react/dist/esm/icons/triangle-alert";
+import { Badge } from "@/ui/badge";
 import { PLAN_REFUSED_REASON, type RuntimeSnapshot } from "./offline-runtime";
 import { useRuntimeSnapshot } from "./runtime-context";
 
@@ -195,14 +196,12 @@ function offlineText(waiting: number, onlineOnly: boolean): string {
     .join(" · ");
 }
 
-/* v5.1 (the SyncChip of the design): a 20 px pill. Synced and sending are neutral; only what asks for attention has
-   color, and never only color: an icon and the text go with it. */
-const TONE_CLASS: Record<SyncStatusLabel["tone"], string> = {
-  attention: "bg-destructive/10 text-destructive dark:bg-destructive/15",
-  busy: "border-border bg-card text-foreground",
-  offline: "border-warning/30 bg-warning/10 text-warning",
-  ok: "border-border bg-card text-foreground",
-};
+const TONE_VARIANT = {
+  attention: "destructive",
+  busy: "outline",
+  offline: "warning",
+  ok: "outline",
+} as const;
 
 const TONE_ICON = {
   attention: TriangleAlertIcon,
@@ -211,8 +210,10 @@ const TONE_ICON = {
   ok: CheckIcon,
 };
 
+/* The v5.1 chip is the Badge: synced and sending are neutral; only what asks for attention has color, and never only
+   color: an icon and the text go with it. */
 const CHIP =
-  "sync-status relative inline-flex h-5 min-w-0 max-w-full shrink items-center gap-1 whitespace-nowrap rounded-full border border-transparent pr-2 pl-1.5 font-medium text-xs leading-none no-underline [&>svg]:size-3 [&>svg]:shrink-0";
+  "sync-status relative min-w-0 max-w-full shrink justify-start overflow-visible no-underline [&>svg]:shrink-0";
 
 export function SyncStatusView({
   screen,
@@ -225,7 +226,7 @@ export function SyncStatusView({
   const Icon = TONE_ICON[label.tone];
   const content = (
     <>
-      <Icon aria-hidden="true" />
+      <Icon aria-hidden="true" data-icon="inline-start" />
       {/* one line; the ellipsis is only the last resort, for a chip alone on a line that is still too narrow.
           The ::after stretches this span over the whole chip so the tooltip also shows over the icon, the padding and
           the border; the title cannot go on the chip, where it would become its description or name. */}
@@ -240,21 +241,23 @@ export function SyncStatusView({
     </>
   );
   return label.attention ? (
-    <a
-      className={`${CHIP} touch-hit focus-ring ${TONE_CLASS[label.tone]}`}
+    <Badge
+      className={`${CHIP} touch-hit`}
       data-tone={label.tone}
-      href="/attention"
+      render={<a href="/attention" />}
+      variant={TONE_VARIANT[label.tone]}
     >
       {content}
-    </a>
+    </Badge>
   ) : (
-    <p
-      className={`${CHIP} m-0 ${TONE_CLASS[label.tone]}`}
+    <Badge
+      className={CHIP}
       data-tone={label.tone}
-      role="status"
+      render={<p role="status" />}
+      variant={TONE_VARIANT[label.tone]}
     >
       {content}
-    </p>
+    </Badge>
   );
 }
 
