@@ -17,6 +17,8 @@ const SUM_RULE =
 const REVIEW_BUTTON = /^Revisei a prévia da parte/;
 const OWN_DATE_REFUSAL = /tem data própria/;
 const PART_2_PROFILE = /^Parte 2: O perfil de pagamento foi editado/;
+const SPLIT_PROFILE_HINT =
+  "O perfil define taxas e prazo estimados de cada parte. Sem perfil, ficam desconhecidos.";
 const SPLIT_MISMATCH =
   "A soma das partes não fecha o total da venda. Confira o valor de cada parte e confirme de novo.";
 
@@ -194,6 +196,13 @@ test('o exemplo do usuário: total 300, Parte 1 = 100, a Parte 2 já mostra 200,
   const second = part(page, 2).getByLabel("Valor");
   await expect(second).toHaveValue("200,00");
   await expect(second).toHaveAccessibleDescription("O restante");
+  const profileOf = (ordinal: 1 | 2) =>
+    part(page, ordinal).getByRole("combobox", {
+      exact: true,
+      name: "Perfil de pagamento",
+    });
+  await expect(profileOf(1)).toHaveAccessibleDescription(SPLIT_PROFILE_HINT);
+  await expect(profileOf(2)).toHaveAccessibleDescription(SPLIT_PROFILE_HINT);
   const status = page.locator("#sale-split-balance");
   await expect(status).toContainText("Fechou: R$ 300,00");
   const summary = page.getByRole("complementary", { name: "Resumo" });
@@ -373,23 +382,145 @@ test("o mesmo perfil editado nas duas partes dá um aviso só, com um botão que
   await expect(part(page, 2).getByLabel("Valor")).toHaveValue("200,00");
 });
 
-test("sem internet: Dividir pagamento fica desligado com a frase, e a venda de 1 parte segue como hoje", async ({
+test("sem internet: Dividir pagamento fica ligado, a venda dividida é guardada no aparelho com as partes e o servidor a recebe quando a rede volta", async ({
   page,
 }) => {
-  await openSaleLab(page);
+  const calls = await openSaleLab(page);
   await sellShirtFor300(page);
   await page.getByLabel("Rede disponível").uncheck();
   const start = splitButton(page);
-  await expect(start).toHaveAttribute("aria-disabled", "true");
-  await expect(start).toHaveAccessibleDescription(
-    "Dividir precisa de internet"
+  await expect(start).not.toHaveAttribute("aria-disabled");
+  await expect(page.getByText("Dividir precisa de internet")).toHaveCount(0);
+  await page
+    .getByRole("radiogroup", { name: "Método de pagamento" })
+    .getByRole("radio", { name: "Pix" })
+    .check();
+  await choose(
+    page.locator("form"),
+    "Perfil de pagamento",
+    "Sem perfil de pagamento"
   );
-  await start.focus();
-  await page.keyboard.press("Enter");
-  await expect(page.getByRole("group", { name: "Parte 1" })).toHaveCount(0);
+  await start.click();
+  await part(page, 1).getByLabel("Valor").fill("100,00");
+  await choose(part(page, 2), "Método", "Dinheiro");
+  await choose(part(page, 2), "Perfil de pagamento", "Sem perfil de pagamento");
   await expect(
-    page.getByRole("note").filter({ hasText: "Dividir precisa de internet" })
+    page.getByText("Fechou: R$ 300,00", { exact: true }).first()
   ).toBeVisible();
+  await page
+    .getByRole("button", { name: "Guardar venda neste aparelho" })
+    .click();
+  await expect(
+    page
+      .getByRole("status")
+      .filter({ hasText: "Venda guardada neste aparelho" })
+  ).toBeVisible();
+  expect(calls.bodies).toHaveLength(0);
+  // the form starts over with one payment: the screen never opens split
+  await expect(part(page, 1)).toHaveCount(0);
+
+  await page.getByLabel("Rede disponível").check();
+  await expect(page.getByTestId("server-records")).toHaveText("1", {
+    timeout: 20_000,
+  });
+  expect(calls.bodies).toHaveLength(0);
+});
+
+/** The payloads of the commands this page keeps to send (IndexedDB stores named `commands`). */
+function queuedPayloads(page: Page): Promise<Record<string, unknown>[]> {
+  return page.evaluate(async () => {
+    const payloads: Record<string, unknown>[] = [];
+    for (const { name } of await indexedDB.databases()) {
+      if (!name) {
+        continue;
+      }
+      // biome-ignore lint/performance/noAwaitInLoops: a handful of tiny databases
+      const database = await new Promise<IDBDatabase>((resolve, reject) => {
+        const request = indexedDB.open(name);
+        request.onerror = () => reject(request.error);
+        request.onsuccess = () => resolve(request.result);
+      });
+      if (database.objectStoreNames.contains("commands")) {
+        const rows = await new Promise<unknown[]>((resolve, reject) => {
+          const request = database
+            .transaction("commands", "readonly")
+            .objectStore("commands")
+            .getAll();
+          request.onerror = () => reject(request.error);
+          request.onsuccess = () => resolve(request.result);
+        });
+        for (const row of rows) {
+          payloads.push((row as { payload: Record<string, unknown> }).payload);
+        }
+      }
+      database.close();
+    }
+    return payloads;
+  });
+}
+
+test("sem internet, cada parte usa os perfis da última conexão: o Resumo mostra a prévia de cada parte e a fila leva o perfil e a versão de cada uma", async ({
+  page,
+}) => {
+  await openSaleLab(page, undefined, { current: 4 });
+  await sellShirtFor300(page);
+  // the profiles were read with the connection: the device keeps them for the sale without one
+  await expect(
+    page.getByRole("combobox", { exact: true, name: "Perfil de pagamento" })
+  ).toBeVisible();
+  await page.getByLabel("Rede disponível").uncheck();
+  await expect(
+    page.getByText("estes são os perfis da última vez com conexão")
+  ).toBeVisible();
+  await splitButton(page).click();
+  await choose(part(page, 1), "Método", "Pix");
+  await part(page, 1).getByLabel("Valor").fill("100,00");
+  await choose(part(page, 1), "Perfil de pagamento", "Sem perfil de pagamento");
+  await choose(part(page, 2), "Método", "Débito");
+  await choose(part(page, 2), "Perfil de pagamento", LAB_PROFILE);
+  await expect(
+    page
+      .getByRole("note")
+      .filter({ hasText: "estes são os perfis da última vez com conexão" })
+  ).toHaveCount(1);
+  const summary = page.getByRole("complementary", { name: "Resumo" });
+  await expect(summary).toContainText("Parte 1 · Pix");
+  await expect(summary).toContainText("Parte 2 · Cartão de débito");
+  await expect(summary.getByText("Maquininha do laboratório")).toHaveCount(1);
+  await expect(summary).toContainText("Taxas das duas partes");
+  await page
+    .getByRole("button", { name: "Guardar venda neste aparelho" })
+    .click();
+  await expect(
+    page
+      .getByRole("status")
+      .filter({ hasText: "Venda guardada neste aparelho" })
+  ).toBeVisible();
+  await expect(
+    page
+      .getByRole("region", { name: "Vendas guardadas neste aparelho" })
+      .getByRole("listitem")
+  ).toContainText("Pix + Débito");
+  const [payload] = await queuedPayloads(page);
+  expect(payload).not.toHaveProperty("payment");
+  expect(payload?.payments).toEqual([
+    expect.objectContaining({
+      amount: "100.00",
+      method: "pix",
+      paymentProfile: null,
+    }),
+    expect.objectContaining({
+      amount: "200.00",
+      method: "debit_card",
+      paymentProfile: { expectedVersion: 4, id: PROFILE.id },
+    }),
+  ]);
+});
+
+test("sem internet, a venda de 1 parte segue como hoje", async ({ page }) => {
+  await openSaleLab(page);
+  await sellShirtFor300(page);
+  await page.getByLabel("Rede disponível").uncheck();
   await page
     .getByRole("radiogroup", { name: "Método de pagamento" })
     .getByRole("radio", { name: "Pix" })
@@ -507,7 +638,7 @@ test("o leitor de tela ouve a linha de estado uma vez por mudança, ao sair do c
   await expect(live).not.toHaveText(before);
 });
 
-test("a rede cai com a venda já dividida: Guardar neste aparelho diz que Dividir precisa de internet, não chama o servidor e as partes ficam", async ({
+test("a rede cai com a venda já dividida: Guardar neste aparelho guarda a venda com as partes, sem chamar o servidor", async ({
   page,
 }) => {
   const calls = await openSaleLab(page);
@@ -517,20 +648,11 @@ test("a rede cai com a venda já dividida: Guardar neste aparelho diz que Dividi
     .getByRole("button", { name: "Guardar venda neste aparelho" })
     .click();
   await expect(
-    page.getByText(
-      "Dividir precisa de internet. Confirme quando a conexão voltar ou volte a um pagamento só."
-    )
+    page
+      .getByRole("status")
+      .filter({ hasText: "Venda guardada neste aparelho" })
   ).toBeVisible();
   expect(calls.bodies).toHaveLength(0);
   await expect(page.getByText(OWN_DATE_REFUSAL)).toHaveCount(0);
-  await expect(part(page, 1).getByLabel("Valor")).toHaveValue("100,00");
-  await expect(part(page, 2).getByLabel("Valor")).toHaveValue("200,00");
-  await expect(
-    page.getByRole("button", { name: "Guardar venda neste aparelho" })
-  ).toBeVisible();
-  // when the connection comes back the same parts go to the server
-  await page.getByLabel("Rede disponível").check();
-  await page.getByRole("button", { name: "Confirmar venda" }).click();
-  await expect.poll(() => calls.bodies.length).toBe(1);
-  expect(calls.bodies[0]?.payments).toHaveLength(2);
+  await expect(page.getByText("Dividir precisa de internet")).toHaveCount(0);
 });

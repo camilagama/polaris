@@ -1,9 +1,8 @@
 import ArrowRightIcon from "lucide-react/dist/esm/icons/arrow-right";
 import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
-import { BlockHeader } from "@/ui/block-header";
+import { Block, BlockHeader, BlockPanel } from "@/ui/block";
 import { buttonVariants } from "@/ui/button";
-import { Card, CardContent, CardHeader } from "@/ui/card";
 import { Figure } from "@/ui/figure";
 import { MoneyText } from "@/ui/hidden-values";
 import { Skeleton } from "@/ui/skeleton";
@@ -53,7 +52,7 @@ const LEADER =
   "min-w-4 max-[22rem]:min-w-0 flex-1 translate-y-[-0.3em] border-input border-b border-dotted @max-[19rem]:hidden";
 
 /**
- * The card measures its own box (`@container`): narrower than 19 rem (320 px at the default font of 16 px, 360 px
+ * The panel measures its own box (`@container`): narrower than 19 rem (320 px at the default font of 16 px, 360 px
  * with 18 px or more; the value is in Geist Mono, wider than the Geist of the name) the name of the line and its value
  * no longer fit side by side, so each row stacks them, the name
  * above the value, and the value keeps the whole width of the card instead of rolling the table sideways. The dotted
@@ -148,97 +147,95 @@ function ChainCard({
   rows: readonly ChainRow[];
 }) {
   return (
-    <Card
+    <Block
       aria-hidden={loading ? "true" : undefined}
       aria-labelledby={CHAIN_TITLE_ID}
-      className="@container gap-0 py-0"
-      role="region"
     >
-      <CardHeader className="border-b py-(--card-spacing)">
-        <BlockHeader
-          {...(canCreateExpense
-            ? {
-                action: loading ? (
-                  <Skeleton className="h-8 w-32 rounded-md" />
-                ) : (
-                  <a className={EXPENSES_LINK} href="/expenses">
-                    Ver despesas
-                    <ArrowRightIcon aria-hidden="true" data-icon="inline-end" />
-                  </a>
-                ),
-              }
-            : {})}
-          {...(loading
-            ? {}
-            : {
-                help: {
-                  about: "Como chegamos a este resultado: o que é",
-                  text: "Das vendas brutas ao resultado estimado, linha a linha.",
-                },
-              })}
-          id={CHAIN_TITLE_ID}
-          title="Como chegamos a este resultado"
-        />
-      </CardHeader>
-      <Table className={STACKED_TABLE}>
-        <caption className="sr-only">
-          Das vendas brutas ao resultado operacional estimado
-        </caption>
-        {/* the names of the columns are for the screen reader: the receipt shows only names and values */}
-        <TableHeader className="sr-only">
-          <TableRow>
-            <TableHead scope="col">Etapa</TableHead>
-            <TableHead className="text-right" scope="col">
-              Valor
-            </TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {rows.map((row) => (
-            <TableRow className={rowClass(row)} key={row.id}>
-              <TableHead
-                className={cn(
-                  "h-auto w-full whitespace-normal pr-0 align-top font-[weight:inherit] text-[length:inherit] text-foreground",
-                  row.kind === "result" ? "pt-4 pb-2.5" : "py-3",
-                  "@max-[19rem]:pr-4 @max-[19rem]:pb-0"
-                )}
-                scope="row"
-              >
-                <span className="flex items-baseline gap-2">
-                  <span>{row.label}</span>
-                  <span aria-hidden="true" className={LEADER} />
-                </span>
-
-                {row.note ? (
-                  <span className="mt-0.5 block font-normal text-warning text-xs italic">
-                    <MoneyText text={row.note} />
-                  </span>
-                ) : null}
+      <BlockHeader
+        {...(canCreateExpense
+          ? {
+              action: loading ? (
+                <Skeleton className="h-8 w-32 rounded-md" />
+              ) : (
+                <a className={EXPENSES_LINK} href="/expenses">
+                  Ver despesas
+                  <ArrowRightIcon aria-hidden="true" data-icon="inline-end" />
+                </a>
+              ),
+            }
+          : {})}
+        {...(loading
+          ? {}
+          : {
+              help: {
+                about: "Como chegamos a este resultado: o que é",
+                text: "Das vendas brutas ao resultado estimado, linha a linha.",
+              },
+            })}
+        id={CHAIN_TITLE_ID}
+        title="Como chegamos a este resultado"
+      />
+      <BlockPanel className="@container gap-0">
+        <Table className={STACKED_TABLE}>
+          <caption className="sr-only">
+            Das vendas brutas ao resultado operacional estimado
+          </caption>
+          {/* the names of the columns are for the screen reader: the receipt shows only names and values */}
+          <TableHeader className="sr-only">
+            <TableRow>
+              <TableHead scope="col">Etapa</TableHead>
+              <TableHead className="text-right" scope="col">
+                Valor
               </TableHead>
-              <TableCell
-                className={cn(
-                  "pl-2 text-right align-top",
-                  STACKED_VALUE,
-                  row.kind === "result" ? "pt-4 pb-2.5" : "py-3",
-                  row.negative && row.kind !== "line" && "text-destructive"
-                )}
-              >
-                <Figure className={cn(VALUE_FLOOR, loading && "align-top")}>
-                  <ChainValue loading={loading} value={row.value} />
-                </Figure>
-              </TableCell>
             </TableRow>
-          ))}
-        </TableBody>
-      </Table>
-      <CardContent className="grid gap-4 border-t py-(--card-spacing)">
-        {parts}
-        <p className="text-muted-foreground text-support">
-          Despesas do período são as que não estão ligadas a uma venda, contadas
-          pelo mês de competência. O resultado é uma estimativa operacional, não
-          lucro líquido nem caixa liquidado.
-        </p>
-      </CardContent>
-    </Card>
+          </TableHeader>
+          <TableBody>
+            {rows.map((row) => (
+              <TableRow className={rowClass(row)} key={row.id}>
+                <TableHead
+                  className={cn(
+                    "h-auto w-full whitespace-normal pr-0 align-top font-[weight:inherit] text-[length:inherit] text-foreground first:pl-0",
+                    row.kind === "result" ? "pt-4 pb-2.5" : "py-3",
+                    "@max-[19rem]:pr-4 @max-[19rem]:pb-0"
+                  )}
+                  scope="row"
+                >
+                  <span className="flex items-baseline gap-2">
+                    <span>{row.label}</span>
+                    <span aria-hidden="true" className={LEADER} />
+                  </span>
+
+                  {row.note ? (
+                    <span className="mt-0.5 block font-normal text-warning text-xs italic">
+                      <MoneyText text={row.note} />
+                    </span>
+                  ) : null}
+                </TableHead>
+                <TableCell
+                  className={cn(
+                    "pl-2 text-right align-top last:pr-0",
+                    STACKED_VALUE,
+                    row.kind === "result" ? "pt-4 pb-2.5" : "py-3",
+                    row.negative && row.kind !== "line" && "text-destructive"
+                  )}
+                >
+                  <Figure className={cn(VALUE_FLOOR, loading && "align-top")}>
+                    <ChainValue loading={loading} value={row.value} />
+                  </Figure>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+        <div className="grid gap-4 border-t pt-(--card-spacing)">
+          {parts}
+          <p className="text-muted-foreground text-support">
+            Despesas do período são as que não estão ligadas a uma venda,
+            contadas pelo mês de competência. O resultado é uma estimativa
+            operacional, não lucro líquido nem caixa liquidado.
+          </p>
+        </div>
+      </BlockPanel>
+    </Block>
   );
 }

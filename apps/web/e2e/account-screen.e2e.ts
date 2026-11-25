@@ -104,7 +104,9 @@ test("com uma aba só não há faixa nem título repetido: Minha conta e o conte
   await expect(page.getByRole("heading", { name: "Minha conta" })).toHaveCount(
     1
   );
-  await expect(page.getByRole("heading", { name: "Aparelhos" })).toHaveCount(1);
+  await expect(
+    page.getByRole("heading", { exact: true, name: "Aparelhos" })
+  ).toHaveCount(1);
   expect(await axeFaults(page)).toEqual([]);
 });
 
@@ -114,7 +116,9 @@ test("o endereço de uma aba que a pessoa não tem não mostra tela vazia: Senha
   await open(page, "/conta?aba=senha", { passwordOn: false, size: LARGE });
   await expect(page).toHaveURL(AT_DEVICES);
   await expect(title(page)).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Aparelhos" })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { exact: true, name: "Aparelhos" })
+  ).toBeVisible();
   await expect(page.getByLabel("Senha atual")).toHaveCount(0);
 });
 
@@ -190,7 +194,7 @@ for (const [passwordOn, settled] of [
       await expect(page.getByLabel("Senha atual")).toBeVisible();
     } else {
       await expect(
-        page.getByRole("heading", { name: "Aparelhos" })
+        page.getByRole("heading", { exact: true, name: "Aparelhos" })
       ).toBeVisible();
       await expect(page.getByRole("tab")).toHaveCount(0);
     }

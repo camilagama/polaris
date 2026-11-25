@@ -11,7 +11,6 @@ const BOX = /<span aria-hidden="true"[^>]*data-step-box[^>]*>/;
 const box = (item: string) => BOX.exec(item)?.[0] ?? "";
 
 const LUCIDE = /lucide-([a-z-]+)/;
-const ICON_SIZE = /<svg[^>]*class="[^"]*\bsize-4\b/;
 const DASH_OFFSET = /stroke-dashoffset:([\d.]+)/;
 
 const icon = (item: string) =>
@@ -113,7 +112,8 @@ describe("the checklist of the Início marks the step of the hour", () => {
   it("every icon is 16 px and sits in a box of 28 px", () => {
     for (const row of render(null)) {
       expect(box(row)).toContain("size-7");
-      expect(row).toMatch(ICON_SIZE);
+      expect(box(row)).toContain("[&amp;&gt;svg]:size-4");
+      expect(row).toContain("<svg");
     }
   });
 });

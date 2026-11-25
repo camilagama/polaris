@@ -417,6 +417,45 @@ test("com a senha ligada, 'Segurança' vem depois da lista, com 'Trocar senha' c
   }
 });
 
+test("'Trocar senha' tem a largura do próprio conteúdo a 1280 px e a do painel no celular", async ({
+  page,
+}) => {
+  const state = scenario({ devices: twoDevices() });
+  await page.route("**/api/auth-methods", (route) =>
+    route.fulfill({
+      body: JSON.stringify({
+        emailPassword: true,
+        google: true,
+        turnstileSiteKey: null,
+      }),
+      contentType: "application/json",
+      headers: { ...WORKER_MARK },
+    })
+  );
+  await page.setViewportSize({ height: 800, width: 1280 });
+  await openDevices(page, state);
+
+  const section = page.getByRole("region", { name: "Segurança" });
+  const link = section.getByRole("link", { name: "Trocar senha" });
+  await expect(link).toBeVisible();
+  const panel = link.locator("..");
+  const wide = {
+    button: (await link.boundingBox())?.width ?? 0,
+    panel: (await panel.boundingBox())?.width ?? 0,
+  };
+  expect(wide.panel).toBeGreaterThan(600);
+  expect(wide.button).toBeLessThan(wide.panel / 2);
+
+  await page.setViewportSize({ height: 740, width: 360 });
+  await expect
+    .poll(async () => {
+      const button = (await link.boundingBox())?.width ?? 0;
+      const box = (await panel.boundingBox())?.width ?? 0;
+      return box > 0 && Math.abs(button - box) <= 2;
+    })
+    .toBe(true);
+});
+
 test("lista os aparelhos, pede confirmação clara e revoga um deles sem a opção", async ({
   page,
 }) => {
@@ -442,7 +481,9 @@ test("lista os aparelhos, pede confirmação clara e revoga um deles sem a opç�
   await expect(list.getByRole("listitem")).toHaveCount(1);
   await expect(list).not.toContainText("Celular da Ana");
   // the confirmation is gone: the focus stays on the page, not on the body, and the keyboard sees where it is
-  await expectFocusRing(page.getByRole("heading", { name: "Aparelhos" }));
+  await expectFocusRing(
+    page.getByRole("heading", { name: "Aparelhos", exact: true })
+  );
   // the option was not ticked: the call carries false
   expect(state.revokeBodies).toHaveLength(1);
   expect(state.revokeBodies[0]?.endOtherSessions ?? false).toBe(false);
@@ -1291,7 +1332,9 @@ test("uma recusa definitiva fecha a confirmação e o aviso fica no topo, com a 
   await expect(page.getByRole("alert")).toContainText("Nada foi alterado");
   await expect(page.getByRole("dialog")).toHaveCount(0);
   // the confirmation that held the focus is gone: the focus goes to the heading, not to the body
-  await expect(page.getByRole("heading", { name: "Aparelhos" })).toBeFocused();
+  await expect(
+    page.getByRole("heading", { name: "Aparelhos", exact: true })
+  ).toBeFocused();
   await expect(askRevoke(page, "Celular da Ana")).toBeEnabled();
 });
 

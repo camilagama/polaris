@@ -356,6 +356,56 @@ describe("the config of the runner", () => {
     expect(text).toContain("retry/retries sobe de 1 para 2");
   });
 
+  it("fails when a config that runs protected files gains grepInvert", () => {
+    const { code, text } = outcomeOf((cwd) =>
+      write(cwd, {
+        "apps/web/playwright.config.ts": PLAYWRIGHT_CONFIG.replace(
+          '  testDir: "./e2e",',
+          '  grepInvert: /x/,\n  testDir: "./e2e",'
+        ),
+      })
+    );
+    expect(code).toBe(1);
+    expect(text).toContain("ganhou grepInvert e alcança");
+  });
+
+  it("passes when the grepInvert was already there", () => {
+    const withGrepInvert = PLAYWRIGHT_CONFIG.replace(
+      '  testDir: "./e2e",',
+      '  grepInvert: /x/,\n  testDir: "./e2e",'
+    );
+    const { code } = outcomeOf(
+      (cwd) =>
+        write(cwd, {
+          "apps/web/playwright.config.ts": withGrepInvert.replace("/x/", "/y/"),
+        }),
+      {
+        baseFiles: {
+          ...BASE_FILES,
+          "apps/web/playwright.config.ts": withGrepInvert,
+        },
+      }
+    );
+    expect(code).toBe(0);
+  });
+
+  it("passes when the grepInvert is removed", () => {
+    const { code } = outcomeOf(
+      (cwd) =>
+        write(cwd, { "apps/web/playwright.config.ts": PLAYWRIGHT_CONFIG }),
+      {
+        baseFiles: {
+          ...BASE_FILES,
+          "apps/web/playwright.config.ts": PLAYWRIGHT_CONFIG.replace(
+            '  testDir: "./e2e",',
+            '  grepInvert: /x/,\n  testDir: "./e2e",'
+          ),
+        },
+      }
+    );
+    expect(code).toBe(0);
+  });
+
   it("passes on a filter that reaches only unprotected files", () => {
     const { code } = outcomeOf((cwd) =>
       write(cwd, {

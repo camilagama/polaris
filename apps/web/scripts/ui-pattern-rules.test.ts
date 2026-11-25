@@ -298,24 +298,12 @@ export function exceptionFaults(
  * neighbouring lines.
  */
 export const DEBT: Readonly<Record<Rule, readonly string[]>> = {
-  R1: [
-    // catalog
-    "src/catalog/product-import/import-preview-step.tsx",
-  ],
+  R1: [],
   R2: [
     // app-shell
     "src/app-shell/state-panel.tsx",
     // catalog
-    "src/catalog/category-form.tsx",
-    "src/catalog/category-list.tsx",
-    "src/catalog/product-list.tsx",
-    "src/catalog/public-catalog-panels.tsx",
     // customers
-    "src/customers/customer-list.tsx",
-    // dashboard
-    "src/dashboard/goal-card.tsx",
-    "src/dashboard/goals-panel.tsx",
-    "src/dashboard/result-chain.tsx",
     // data-export
     // expenses
     "src/expenses/expense-by-category.tsx",
@@ -323,23 +311,10 @@ export const DEBT: Readonly<Record<Rule, readonly string[]>> = {
     "src/expenses/expense-rules-panel.tsx",
     "src/expenses/expenses-page.tsx",
     // help
-    "src/help/help-page.tsx",
-    // home
-    "src/home/home-goal.tsx",
-    "src/home/home-parts.tsx",
     // inventory
-    "src/inventory/inventory-page.tsx",
     // offline
-    "src/offline/attention-panel.tsx",
-    "src/offline/logout-dialog.tsx",
-    "src/offline/runtime/device-item.tsx",
-    "src/offline/runtime/devices-page.tsx",
     // organization
-    "src/organization/close-store-section.tsx",
-    "src/organization/closed-queue-section.tsx",
-    "src/organization/closed-store-page.tsx",
     // payment-profiles
-    "src/payment-profiles/payment-profile-list.tsx",
     // sales
     "src/sales/sale-id-missing.tsx",
     "src/sales/sale-item-editor.tsx",
@@ -347,11 +322,7 @@ export const DEBT: Readonly<Record<Rule, readonly string[]>> = {
     "src/sales/sale-payment-section.tsx",
     "src/sales/sale-summary-panel.tsx",
     // settings
-    "src/settings/email-preference-card.tsx",
-    "src/settings/settings-screen.tsx",
     // sign-in
-    "src/sign-in/change-password-page.tsx",
-    "src/sign-in/entry-ui.tsx",
     // subscription
   ],
   R3: [
@@ -359,28 +330,14 @@ export const DEBT: Readonly<Record<Rule, readonly string[]>> = {
     "src/app-shell/action-strip.tsx",
     "src/app-shell/menu-progress.tsx",
     // catalog
-    "src/catalog/product-form.tsx",
-    "src/catalog/product-media-crop.tsx",
-    "src/catalog/product-media-list.tsx",
-    "src/catalog/product-media-panel.tsx",
-    "src/catalog/product-variants-form.tsx",
     // customers
-    "src/customers/customer-form.tsx",
     "src/customers/customer-list.tsx",
     // expenses
     "src/expenses/expense-list.tsx",
     "src/expenses/month-picker.tsx",
-    // home
-    "src/home/home-figures.tsx",
-    // inventory
-    "src/inventory/stock-command-panel.tsx",
-    "src/inventory/stock-panel-fields.tsx",
     // legal
     // offline
-    "src/offline/runtime/logout-control.tsx",
-    "src/offline/runtime/sync-status.tsx",
     // payment-profiles
-    "src/payment-profiles/payment-profile-list.tsx",
     // sales
     "src/sales/sale-payment-section.tsx",
     "src/sales/sale-summary-panel.tsx",
@@ -388,18 +345,12 @@ export const DEBT: Readonly<Record<Rule, readonly string[]>> = {
   ],
   R4: [
     // catalog
-    "src/catalog/category-list.tsx",
-    "src/catalog/product-list.tsx",
-    "src/catalog/public-catalog-page.tsx",
     "src/catalog/screen-parts.tsx",
     // customers
-    "src/customers/customer-list.tsx",
     // expenses
     "src/expenses/expense-list.tsx",
     // offline
-    "src/offline/runtime/device-item.tsx",
     // payment-profiles
-    "src/payment-profiles/payment-profile-list.tsx",
     // sales
   ],
 };
@@ -518,13 +469,7 @@ describe("o padrão visual das telas (R1 a R3)", () => {
   });
 
   it("as listas e tabelas principais ficam na dívida: elas saem só quando a tela vai para o Block", () => {
-    for (const file of [
-      "src/catalog/product-list.tsx",
-      "src/catalog/category-list.tsx",
-      "src/customers/customer-list.tsx",
-      "src/expenses/expense-list.tsx",
-      "src/inventory/inventory-page.tsx",
-    ]) {
+    for (const file of ["src/expenses/expense-list.tsx"]) {
       expect([...DEBT.R2, ...DEBT.R3], file).toContain(file);
     }
   });
@@ -782,16 +727,10 @@ describe("R4: as peças soltas da lista só vivem em ui/ (controles)", () => {
     ]);
   });
 
-  it("os arquivos da dívida de R4 são os de hoje: as 7 telas que ainda importam e o screen-parts que reexporta", () => {
+  it("os arquivos da dívida de R4 são os de hoje: a 1 tela que ainda importa e o screen-parts que reexporta", () => {
     expect(DEBT.R4).toEqual([
-      "src/catalog/category-list.tsx",
-      "src/catalog/product-list.tsx",
-      "src/catalog/public-catalog-page.tsx",
       "src/catalog/screen-parts.tsx",
-      "src/customers/customer-list.tsx",
       "src/expenses/expense-list.tsx",
-      "src/offline/runtime/device-item.tsx",
-      "src/payment-profiles/payment-profile-list.tsx",
     ]);
   });
 });
@@ -913,7 +852,7 @@ describe("a dívida por pasta: tirar arquivos de pastas diferentes não conflita
     DEBT.R2.filter((file) => folderOf(file) !== folder);
 
   it("duas cópias da lista de R2, cada uma sem uma pasta vizinha diferente, mesclam sem conflito", () => {
-    expect(folders.length).toBeGreaterThan(5);
+    expect(folders.length).toBeGreaterThan(2);
     const base = listText(DEBT.R2, folders);
     for (const [index, folder] of folders.slice(0, -1).entries()) {
       const next = folders[index + 1];

@@ -215,7 +215,9 @@ test("AC-B2.3 · voltar do detalhe repõe o período, a situação e a rolagem d
   await page.setViewportSize({ height: 800, width: 1280 });
   const lists = await serve(page);
   await page.goto("/sales/history");
-  await expect(page.getByRole("list", { name: "Vendas" })).toBeVisible();
+  await expect(
+    page.getByRole("list", { exact: true, name: "Vendas do período" })
+  ).toBeVisible();
   await page.evaluate(() =>
     window.history.replaceState(
       {
@@ -226,7 +228,9 @@ test("AC-B2.3 · voltar do detalhe repõe o período, a situação e a rolagem d
     )
   );
   await page.reload();
-  await expect(page.getByRole("list", { name: "Vendas" })).toBeVisible();
+  await expect(
+    page.getByRole("list", { exact: true, name: "Vendas do período" })
+  ).toBeVisible();
   await expect.poll(() => lists.at(-1)?.status).toBe("cancelled");
   expect(lists.at(-1)?.occurredFrom).toBe("2026-10-01");
   expect(lists.at(-1)?.occurredTo).toBe("2026-10-14");
@@ -241,7 +245,9 @@ test("AC-B2.3 · voltar do detalhe repõe o período, a situação e a rolagem d
 
   const before = lists.length;
   await page.getByRole("link", { exact: true, name: BACK_NAME }).click();
-  await expect(page.getByRole("list", { name: "Vendas" })).toBeVisible();
+  await expect(
+    page.getByRole("list", { exact: true, name: "Vendas do período" })
+  ).toBeVisible();
   await expect.poll(() => lists.length).toBeGreaterThan(before);
   expect(lists.at(-1)).toMatchObject({
     occurredFrom: "2026-10-01",
@@ -295,7 +301,9 @@ test("AC-B2.3 · o Voltar de outra venda que não saiu da lista não repõe a li
   ).toBeVisible();
   const before = lists.length;
   await page.getByRole("link", { exact: true, name: BACK_NAME }).click();
-  await expect(page.getByRole("list", { name: "Vendas" })).toBeVisible();
+  await expect(
+    page.getByRole("list", { exact: true, name: "Vendas do período" })
+  ).toBeVisible();
   await expect.poll(() => lists.length).toBeGreaterThan(before);
   expect(lists.at(-1)?.status).toBeUndefined();
 });

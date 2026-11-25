@@ -5,7 +5,8 @@ import { useCallback, useMemo } from "react";
 import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
 import { EmptyState } from "@/ui/empty-state";
-import { Card } from "@/ui/card";
+import { ListBlock } from "@/ui/list-block";
+import { Skeleton } from "@/ui/skeleton";
 import { TextLink } from "@/ui/text-link";
 import {
   DropdownMenu,
@@ -19,7 +20,7 @@ import type { PendingProduct } from "../offline/product-create";
 import { ProductThumbnail, useThumbnailSequence } from "./product-thumbnail";
 import { productInitials } from "./product-search-model";
 import { OFFLINE_NOTICE_ID } from "./products-page-parts";
-import { ListNotice, OPENABLE_ROW_CLASS, RowOpenButton } from "./screen-parts";
+import { OPENABLE_ROW_CLASS, RowOpenButton } from "./screen-parts";
 
 export type ProductListStatus = "active" | "archived";
 
@@ -235,8 +236,8 @@ function ProductRow({
   const hasExtras = Boolean(syncState || pendingLabel);
   const thumbs = useMediaThumbsEnabled();
   return (
-    <li
-      className={`grid px-3 md:px-4 ${OPENABLE_ROW_CLASS}`}
+    <ListBlock.Row
+      className={`grid items-stretch gap-0 py-0 ${OPENABLE_ROW_CLASS}`}
       data-product-id={product.id}
     >
       <div className="flex items-center gap-3">
@@ -304,12 +305,32 @@ function ProductRow({
           ) : null}
         </div>
       ) : null}
-    </li>
+    </ListBlock.Row>
+  );
+}
+
+/** The id of the frame's title: "Carregar mais" finds the rows of the list by it. */
+export const PRODUCT_LIST_TITLE_ID = "product-list-title";
+
+const PRODUCT_LIST_TITLE = "Produtos cadastrados";
+
+/** The shape of a row while the list loads: the mark, the name and the line under it. */
+function ProductRowShape() {
+  return (
+    <div className="flex items-center gap-3">
+      <Skeleton className="size-9 shrink-0 rounded-full" />
+      <div className="grid flex-1 gap-1.5">
+        <Skeleton className="h-3.5 w-1/2" />
+        <Skeleton className="h-3 w-1/3" />
+      </div>
+    </div>
   );
 }
 
 interface ProductListProps extends RowActions {
   categories: CategoryReadModel[];
+  /** "1.248 produtos": the count beside the title, empty while it is not known. */
+  count: string;
   isLoading: boolean;
   /** Working from this device's collections while the connection is down. */
   isOffline: boolean;
@@ -328,6 +349,7 @@ interface ProductListProps extends RowActions {
 
 export function ProductList({
   categories,
+  count,
   isLoading,
   isOffline,
   onNew,
@@ -346,11 +368,13 @@ export function ProductList({
   useThumbnailSequence(coverIds);
   if (isLoading) {
     return (
-      <ListNotice>
-        <p className="text-muted-foreground" role="status">
-          Carregando produtos…
-        </p>
-      </ListNotice>
+      <ListBlock
+        count={count}
+        id={PRODUCT_LIST_TITLE_ID}
+        skeleton={<ProductRowShape />}
+        state="loading"
+        title={PRODUCT_LIST_TITLE}
+      />
     );
   }
 
@@ -377,11 +401,17 @@ export function ProductList({
 
   if (products.length === 0) {
     return (
-      <ListNotice>
-        <p className="text-muted-foreground" role="status">
-          Nenhum produto com “{query.trim()}”.
-        </p>
-      </ListNotice>
+      <ListBlock
+        count={count}
+        emptyNotice={
+          <p className="text-muted-foreground" role="status">
+            Nenhum produto com “{query.trim()}”.
+          </p>
+        }
+        id={PRODUCT_LIST_TITLE_ID}
+        state="filtered-empty"
+        title={PRODUCT_LIST_TITLE}
+      />
     );
   }
 
@@ -389,28 +419,31 @@ export function ProductList({
     categories.map((category) => [category.id, category.name])
   );
   return (
-    <Card className="gap-0 py-0">
-      <ul aria-label="Produtos" className="divide-y divide-border">
-        {products.map((product) => {
-          const syncState = syncStates.get(product.id);
-          return (
-            <ProductRow
-              {...actions}
-              categoryName={
-                product.categoryId
-                  ? (categoryNames.get(product.categoryId) ??
-                    "Categoria vinculada")
-                  : null
-              }
-              key={product.id}
-              lockedReason={lockedReasonFor(syncState, isOffline)}
-              pendingAction={pendingAction}
-              product={product}
-              syncState={syncState}
-            />
-          );
-        })}
-      </ul>
-    </Card>
+    <ListBlock
+      count={count}
+      id={PRODUCT_LIST_TITLE_ID}
+      state="rows"
+      title={PRODUCT_LIST_TITLE}
+    >
+      {products.map((product) => {
+        const syncState = syncStates.get(product.id);
+        return (
+          <ProductRow
+            {...actions}
+            categoryName={
+              product.categoryId
+                ? (categoryNames.get(product.categoryId) ??
+                  "Categoria vinculada")
+                : null
+            }
+            key={product.id}
+            lockedReason={lockedReasonFor(syncState, isOffline)}
+            pendingAction={pendingAction}
+            product={product}
+            syncState={syncState}
+          />
+        );
+      })}
+    </ListBlock>
   );
 }

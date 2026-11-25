@@ -1,7 +1,7 @@
 import { useCallback, useState } from "react";
 import { Alert, AlertDescription } from "@/ui/alert";
+import { Block } from "@/ui/block";
 import { Button } from "@/ui/button";
-import { Card, CardContent } from "@/ui/card";
 import type { BlockedWorkspace, LogoutBlockReason } from "./logout-guard";
 
 /**
@@ -61,95 +61,88 @@ export function LogoutDialog({
   );
 
   return (
-    <Card
+    <Block
       aria-describedby="logout-description"
-      aria-labelledby="logout-title"
       className="font-sans"
       role="alertdialog"
+      title="Há trabalho que ainda não foi enviado"
+      variant="plain"
     >
-      <CardContent className="grid gap-4">
-        <div className="grid gap-2">
-          <h2 className="text-section" id="logout-title">
-            Há trabalho que ainda não foi enviado
-          </h2>
-          <p className="text-muted-foreground" id="logout-description">
-            Este aparelho guarda {plural(total, "operação", "operações")} que o
-            servidor ainda não recebeu. Se você sair agora sem enviar, elas se
-            perdem.
-          </p>
-        </div>
-        <ul className="m-0 grid list-none gap-1.5 p-0 text-support">
-          {blocked.map((item) => (
-            <li key={item.label}>
-              <strong className="font-semibold">{item.label}</strong>:{" "}
-              {plural(item.total, "operação", "operações")}.{" "}
-              {REASON_TEXT[item.reason]}
-            </li>
-          ))}
-        </ul>
-        {errorMessage ? (
+      <p className="text-muted-foreground" id="logout-description">
+        Este aparelho guarda {plural(total, "operação", "operações")} que o
+        servidor ainda não recebeu. Se você sair agora sem enviar, elas se
+        perdem.
+      </p>
+      <ul className="m-0 grid list-none gap-1.5 p-0 text-support">
+        {blocked.map((item) => (
+          <li key={item.label}>
+            <strong className="font-semibold">{item.label}</strong>:{" "}
+            {plural(item.total, "operação", "operações")}.{" "}
+            {REASON_TEXT[item.reason]}
+          </li>
+        ))}
+      </ul>
+      {errorMessage ? (
+        <Alert variant="destructive">
+          <AlertDescription>{errorMessage}</AlertDescription>
+        </Alert>
+      ) : null}
+      {confirming ? (
+        <div className="grid gap-3">
           <Alert variant="destructive">
-            <AlertDescription>{errorMessage}</AlertDescription>
+            <AlertDescription>
+              Isto apaga {plural(total, "operação", "operações")} deste
+              aparelho, sem registrá-las no servidor, e depois encerra a sessão.
+              {sending > 0
+                ? ` ${plural(sending, "delas já foi enviada", "delas já foram enviadas")} e o servidor pode ter recebido: confira antes se ${sending === 1 ? "ela" : "elas"} apareceu no sistema.`
+                : ""}
+            </AlertDescription>
           </Alert>
-        ) : null}
-        {confirming ? (
-          <div className="grid gap-3">
-            <Alert variant="destructive">
-              <AlertDescription>
-                Isto apaga {plural(total, "operação", "operações")} deste
-                aparelho, sem registrá-las no servidor, e depois encerra a
-                sessão.
-                {sending > 0
-                  ? ` ${plural(sending, "delas já foi enviada", "delas já foram enviadas")} e o servidor pode ter recebido: confira antes se ${sending === 1 ? "ela" : "elas"} apareceu no sistema.`
-                  : ""}
-              </AlertDescription>
-            </Alert>
+          <Button
+            disabled={busy}
+            onClick={confirmDiscard}
+            type="button"
+            variant="destructive"
+          >
+            Descartar e sair
+          </Button>
+          <Button onClick={keep} type="button" variant="outline">
+            Voltar
+          </Button>
+        </div>
+      ) : (
+        <div className="grid gap-3">
+          <Button disabled={busy} onClick={onRetry} type="button">
+            Tentar enviar de novo
+          </Button>
+          {needsAttention && onShowAttention ? (
             <Button
               disabled={busy}
-              onClick={confirmDiscard}
-              type="button"
-              variant="destructive"
-            >
-              Descartar e sair
-            </Button>
-            <Button onClick={keep} type="button" variant="outline">
-              Voltar
-            </Button>
-          </div>
-        ) : (
-          <div className="grid gap-3">
-            <Button disabled={busy} onClick={onRetry} type="button">
-              Tentar enviar de novo
-            </Button>
-            {needsAttention && onShowAttention ? (
-              <Button
-                disabled={busy}
-                onClick={onShowAttention}
-                type="button"
-                variant="outline"
-              >
-                Ver Pendências
-              </Button>
-            ) : null}
-            <Button
-              disabled={busy}
-              onClick={onCancel}
+              onClick={onShowAttention}
               type="button"
               variant="outline"
             >
-              Ficar conectado
+              Ver Pendências
             </Button>
-            <Button
-              disabled={busy}
-              onClick={askDiscard}
-              type="button"
-              variant="destructive"
-            >
-              Descartar e sair…
-            </Button>
-          </div>
-        )}
-      </CardContent>
-    </Card>
+          ) : null}
+          <Button
+            disabled={busy}
+            onClick={onCancel}
+            type="button"
+            variant="outline"
+          >
+            Ficar conectado
+          </Button>
+          <Button
+            disabled={busy}
+            onClick={askDiscard}
+            type="button"
+            variant="destructive"
+          >
+            Descartar e sair…
+          </Button>
+        </div>
+      )}
+    </Block>
   );
 }
