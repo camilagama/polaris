@@ -310,11 +310,6 @@ export const DEBT: Readonly<Record<Rule, readonly string[]>> = {
     "src/catalog/category-list.tsx",
     "src/catalog/product-list.tsx",
     // customers
-    "src/customers/customer-list.tsx",
-    // dashboard
-    "src/dashboard/goal-card.tsx",
-    "src/dashboard/goals-panel.tsx",
-    "src/dashboard/result-chain.tsx",
     // data-export
     // expenses
     "src/expenses/expense-by-category.tsx",
@@ -323,9 +318,6 @@ export const DEBT: Readonly<Record<Rule, readonly string[]>> = {
     "src/expenses/expenses-page.tsx",
     // help
     "src/help/help-page.tsx",
-    // home
-    "src/home/home-goal.tsx",
-    "src/home/home-parts.tsx",
     // inventory
     "src/inventory/inventory-page.tsx",
     // offline
@@ -358,13 +350,10 @@ export const DEBT: Readonly<Record<Rule, readonly string[]>> = {
     "src/catalog/product-media-panel.tsx",
     "src/catalog/product-variants-form.tsx",
     // customers
-    "src/customers/customer-form.tsx",
     "src/customers/customer-list.tsx",
     // expenses
     "src/expenses/expense-list.tsx",
     "src/expenses/month-picker.tsx",
-    // home
-    "src/home/home-figures.tsx",
     // inventory
     "src/inventory/stock-command-panel.tsx",
     "src/inventory/stock-panel-fields.tsx",
@@ -385,7 +374,6 @@ export const DEBT: Readonly<Record<Rule, readonly string[]>> = {
     "src/catalog/product-list.tsx",
     "src/catalog/screen-parts.tsx",
     // customers
-    "src/customers/customer-list.tsx",
     // expenses
     "src/expenses/expense-list.tsx",
     // offline
@@ -512,7 +500,6 @@ describe("o padrão visual das telas (R1 a R3)", () => {
     for (const file of [
       "src/catalog/product-list.tsx",
       "src/catalog/category-list.tsx",
-      "src/customers/customer-list.tsx",
       "src/expenses/expense-list.tsx",
       "src/inventory/inventory-page.tsx",
     ]) {
@@ -778,7 +765,6 @@ describe("R4: as peças soltas da lista só vivem em ui/ (controles)", () => {
       "src/catalog/category-list.tsx",
       "src/catalog/product-list.tsx",
       "src/catalog/screen-parts.tsx",
-      "src/customers/customer-list.tsx",
       "src/expenses/expense-list.tsx",
       "src/offline/runtime/device-item.tsx",
     ]);
