@@ -336,7 +336,7 @@ function ListBody({
     );
   }
   return (
-    <ListBlock count="" state="rows" title={LIST_TITLE}>
+    <ListBlock state="rows" title={LIST_TITLE}>
       {profiles.map((profile) => (
         <ProfileRow
           key={profile.id}

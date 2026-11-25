@@ -666,6 +666,7 @@ export const SPEC_SCREENS = {
   "apps/web/e2e-pwa/ui-entry-settle.e2e.ts": ["sign-in", "home"],
   "apps/web/e2e-pwa/ui-filter-bar-dialog.e2e.ts": ["legal", "ui-gallery"],
   "apps/web/e2e-pwa/ui-filter-bar.e2e.ts": ["ui-gallery"],
+  "apps/web/e2e-pwa/ui-filtro-segmentado.e2e.ts": ["ui-gallery"],
   "apps/web/e2e-pwa/ui-guardrails/controle-medidas.e2e.ts": "all",
   "apps/web/e2e-pwa/ui-guardrails/controle-movimento.e2e.ts": "all",
   "apps/web/e2e-pwa/ui-guardrails/telas-01.e2e.ts": "all",
