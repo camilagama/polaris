@@ -227,8 +227,11 @@ describe("the timeline inside the detail", () => {
       "<div",
       html.indexOf('aria-labelledby="sale-timeline-title"')
     );
-    const next = html.indexOf('aria-labelledby="sale-returns-title"', start);
-    return html.slice(start, next === -1 ? undefined : next);
+    const listEnd = html.indexOf("</ol>", start);
+    return html.slice(
+      start,
+      listEnd === -1 ? undefined : listEnd + "</ol>".length
+    );
   };
   const twoReturns = detail({
     returns: [
@@ -264,6 +267,27 @@ describe("the timeline inside the detail", () => {
     for (const text of [CANCEL_NOTE, ITEM_LABEL, "Motivo", "Observação"]) {
       expect(own).not.toContain(text);
     }
+  });
+
+  it("cuts the timeline at the end of its own list, so a text after it is not read as inside", () => {
+    const html = renderToStaticMarkup(
+      <ReadyDetailTop
+        detail={detail({
+          confirmedAt: "2026-06-10T18:00:00.000Z",
+          occurredAt: "2026-06-10T12:00:00.000Z",
+          recordedAt: "2026-06-10T12:00:30.000Z",
+        })}
+        refreshing
+      />
+    );
+    const own = section(html);
+    expect(own.endsWith("</ol>")).toBe(true);
+    expect(own).toContain("Confirmada no servidor");
+    expect(html).toContain("Atualizando a venda…");
+    expect(html.indexOf("Atualizando a venda…")).toBeGreaterThan(
+      html.indexOf(own) + own.length
+    );
+    expect(own).not.toContain("Atualizando a venda…");
   });
 
   it("leaves the reason, the note and the items of the returns to their card", () => {

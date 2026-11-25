@@ -24,6 +24,7 @@ import {
   DialogTitle,
 } from "@/ui/dialog";
 import { FORM_NOTICE_CLASS } from "@/ui/dialog-layout";
+import { FieldGroup } from "@/ui/field-group";
 import {
   Field,
   FieldDescription,
@@ -214,10 +215,7 @@ function PossibleDuplicates({
   onUseExisting,
 }: DuplicatesProps) {
   return (
-    <section
-      aria-labelledby="customer-duplicate-heading"
-      className="grid gap-1 rounded-lg border border-border p-3"
-    >
+    <FieldGroup aria-labelledby="customer-duplicate-heading" className="gap-1">
       <h3 className="text-section" id="customer-duplicate-heading">
         Encontramos possíveis clientes existentes
       </h3>
@@ -246,7 +244,7 @@ function PossibleDuplicates({
           Criar mesmo assim
         </Button>
       </div>
-    </section>
+    </FieldGroup>
   );
 }
 
