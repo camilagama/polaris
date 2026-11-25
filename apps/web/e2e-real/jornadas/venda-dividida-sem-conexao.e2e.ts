@@ -117,6 +117,11 @@ async function openStore(
 
 /** Vender with the connection, until the device holds the store; then the connection drops. */
 async function sellerOffline(page: Page): Promise<void> {
+  // the device clock starts at T0, minutes before this journey on the CI, and the server refuses a command dated too far
+  // behind its own clock (`invalid_creation_time`): the device is set to the server's `Date` header first
+  const serverNow = (await page.request.get("/health")).headers().date;
+  expect(serverNow, "the server answers with its date").toBeDefined();
+  await page.clock.setSystemTime(new Date(serverNow as string));
   await page.goto("/sales");
   await expect(
     syncChip(page).filter({ hasText: "Tudo sincronizado" })
