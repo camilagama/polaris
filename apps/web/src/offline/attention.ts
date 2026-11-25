@@ -489,7 +489,7 @@ export function discardWarning(item: AttentionItem): string {
       if (item.redone) {
         return "Esta venda recusada será apagada deste aparelho. A venda refeita já está registrada ou guardada e não muda.";
       }
-      return item.code === REVOKED_CODE
+      return item.actions.includes("redo_sale")
         ? "A venda será apagada deste aparelho e não será registrada. Se ela aconteceu, use Refazer esta venda antes: depois do descarte os itens não ficam guardados. Confirme só se ela não aconteceu."
         : "A venda será apagada deste aparelho e não será registrada. Confirme só se ela não aconteceu.";
     case "product":
