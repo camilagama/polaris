@@ -232,6 +232,7 @@ function titleOf(command: OutboxCommand, kind: AttentionItem["kind"]): string {
 }
 
 const REVOKED_CODE = "authorization_revoked";
+const INVALID_PAYLOAD_CODE = "invalid_payload";
 
 function revokedDetail(kind: AttentionItem["kind"]): string {
   if (kind === "sale") {
@@ -267,7 +268,25 @@ function splitProfileDetail(
     return `O perfil de pagamento de uma das partes desta venda ${what}, e a venda inteira foi recusada. ${redo}`;
   }
   const parts = partsText(split.refusedParts);
-  return `O perfil de pagamento ${parts} desta venda ${what}, e a venda inteira foi recusada. ${redo} Ou toque em Reenviar sem perfil de pagamento: as taxas e o prazo ${parts} ficam desconhecidos, e a outra parte não muda.`;
+  const untouched =
+    split.refusedParts.length === 1 ? ", e a outra parte não muda" : "";
+  return `O perfil de pagamento ${parts} desta venda ${what}, e a venda inteira foi recusada. ${redo} Ou toque em Reenviar sem perfil de pagamento: as taxas e o prazo ${parts} ficam desconhecidos${untouched}.`;
+}
+
+const SPLIT_INVALID_PAYLOAD_DETAIL =
+  "O servidor recusou esta venda dividida como inválida (acontece quando ele ainda está numa versão sem pagamento em partes); nada foi registrado e as duas partes estão guardadas aqui. Toque em Refazer esta venda: as duas partes voltam a Vender e, depois de confirmar a nova, você descarta esta.";
+
+function splitDetailOf(
+  cause: AttentionCause,
+  code: string,
+  split: SplitSaleFacts
+): string | null {
+  if (cause === "profile_changed" || cause === "profile_unavailable") {
+    return splitProfileDetail(cause, split);
+  }
+  return cause === "other" && code === INVALID_PAYLOAD_CODE
+    ? SPLIT_INVALID_PAYLOAD_DETAIL
+    : null;
 }
 
 function detailOf(
@@ -284,11 +303,9 @@ function detailOf(
   if (redone && kind === "sale" && (code === REVOKED_CODE || split !== null)) {
     return REDONE_DETAIL;
   }
-  if (
-    split !== null &&
-    (cause === "profile_changed" || cause === "profile_unavailable")
-  ) {
-    return splitProfileDetail(cause, split);
+  const splitDetail = split === null ? null : splitDetailOf(cause, code, split);
+  if (splitDetail !== null) {
+    return splitDetail;
   }
   switch (cause) {
     case "insufficient_stock":
@@ -387,6 +404,15 @@ function actionsFor(
     (cause === "profile_changed" || cause === "profile_unavailable")
   ) {
     return profileRefusalActions(options.split, options.redone);
+  }
+  if (
+    kind === "sale" &&
+    cause === "other" &&
+    options.split !== null &&
+    options.code === INVALID_PAYLOAD_CODE
+  ) {
+    // a Worker without the parts refuses the whole sale this way; either way the parts are still on the device
+    return options.redone ? ["discard"] : ["redo_sale", "discard"];
   }
   return kind === "sale" && RESUBMITTABLE.has(cause)
     ? ["resubmit", "discard"]

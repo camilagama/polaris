@@ -627,6 +627,35 @@ describe("a sale paid in parts refused for the profile of a part", () => {
     expect(item.detail).toContain("O perfil de pagamento da parte 2");
     expect(item.detail).toContain("a venda inteira foi recusada");
     expect(item.detail).toContain("Refazer esta venda");
+    expect(item.detail).toContain(
+      "ficam desconhecidos, e a outra parte não muda."
+    );
+  });
+
+  it("refused as invalid_payload (Worker from before the parts), offers redo and discard with the parts kept", async () => {
+    const { command, outbox } = await splitSale(null, null, "invalid_payload");
+    const item = await itemOf(outbox);
+    expect(item.cause).toBe("other");
+    expect(item.actions).toEqual(["redo_sale", "discard"]);
+    expect(item.detail).toContain("Refazer esta venda");
+    expect(item.detail).toContain("as duas partes");
+    const [kept] = (await outbox.snapshot()).commands;
+    expect(kept?.payload).toEqual(command.payload);
+  });
+
+  it("a split sale refused for another unknown code keeps only discard", async () => {
+    const { outbox } = await splitSale(null, null, "something_else");
+    expect((await itemOf(outbox)).actions).toEqual(["discard"]);
+  });
+
+  it("refused as invalid_payload and already redone, offers only discard", async () => {
+    const { command, outbox } = await splitSale(null, null, "invalid_payload");
+    const [item] = buildAttention(
+      await outbox.snapshot(),
+      new Set([command.commandId])
+    ).items;
+    expect(item?.actions).toEqual(["discard"]);
+    expect(item?.detail).toContain("Você já refez esta venda");
   });
 
   it("resubmitting without the profile keeps the parts and their order and takes it only from the part that had it", async () => {
@@ -656,6 +685,8 @@ describe("a sale paid in parts refused for the profile of a part", () => {
     const { lease, outbox } = await splitSale(card, card);
     const item = await itemOf(outbox);
     expect(item.detail).toContain("das duas partes");
+    expect(item.detail).toContain("ficam desconhecidos.");
+    expect(item.detail).not.toContain("a outra parte");
     await resubmitAttentionItem(item, { lease, outbox });
     const sent = (await outbox.snapshot()).commands[0]?.payload as {
       payments: { paymentProfile: unknown }[];
