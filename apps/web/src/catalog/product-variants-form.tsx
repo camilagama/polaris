@@ -17,6 +17,7 @@ import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
 import { Checkbox } from "@/ui/checkbox";
 import { FieldLegend, FieldSet } from "@/ui/field";
+import { FieldGroup } from "@/ui/field-group";
 import { Label } from "@/ui/label";
 import { canManageBilling } from "../lib/billing-access";
 import { useCurrentOrganization } from "../lib/current-organization";
@@ -160,37 +161,39 @@ function CombinationRow({
     [index, onValueChange]
   );
   return (
-    <li className="grid gap-3 rounded-lg border border-border p-3">
-      <div className="flex items-center justify-between gap-2">
-        <Badge>Combinação {index + 1}</Badge>
-        <Button
-          aria-label={`Remover combinação ${index + 1}`}
-          disabled={isPending}
-          onClick={handleRemove}
-          size="sm"
-          type="button"
-          variant="ghost"
-        >
-          Remover
-        </Button>
-      </div>
-      <div className="grid gap-3 min-[30rem]:grid-cols-2">
-        {optionNames.map((name) => (
-          <SelectField
-            disabled={isPending || optionValues[name].length === 0}
-            id={`product-variant-${productId}-${index}-${name}`}
-            key={name}
-            label={optionLabel(name)}
-            onChange={handleChange(name)}
-            options={optionValues[name].map((option) => ({
-              id: option,
-              label: option,
-            }))}
-            placeholder="Selecione"
-            value={variant.values[name] ?? ""}
-          />
-        ))}
-      </div>
+    <li>
+      <FieldGroup>
+        <div className="flex items-center justify-between gap-2">
+          <Badge>Combinação {index + 1}</Badge>
+          <Button
+            aria-label={`Remover combinação ${index + 1}`}
+            disabled={isPending}
+            onClick={handleRemove}
+            size="sm"
+            type="button"
+            variant="ghost"
+          >
+            Remover
+          </Button>
+        </div>
+        <div className="grid gap-3 min-[30rem]:grid-cols-2">
+          {optionNames.map((name) => (
+            <SelectField
+              disabled={isPending || optionValues[name].length === 0}
+              id={`product-variant-${productId}-${index}-${name}`}
+              key={name}
+              label={optionLabel(name)}
+              onChange={handleChange(name)}
+              options={optionValues[name].map((option) => ({
+                id: option,
+                label: option,
+              }))}
+              placeholder="Selecione"
+              value={variant.values[name] ?? ""}
+            />
+          ))}
+        </div>
+      </FieldGroup>
     </li>
   );
 }
