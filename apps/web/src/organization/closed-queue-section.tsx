@@ -6,8 +6,8 @@ import {
   useState,
 } from "react";
 import { Alert, AlertDescription } from "@/ui/alert";
+import { Block, BlockHeader, BlockPanel } from "@/ui/block";
 import { Button } from "@/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -212,7 +212,7 @@ function OutcomeNotice({ outcome }: { outcome: DiscardOutcome }) {
 export function ClosedQueueSection({ store }: { store: ClosedStore }) {
   const { discard, outcome, pending, queue } = useClosedQueue(store.id);
   const [dialog, setDialog] = useState(false);
-  const titleRef = useRef<HTMLDivElement>(null);
+  const titleRef = useRef<HTMLHeadingElement>(null);
   const view = queueView(queue, store);
 
   const open = useCallback(() => setDialog(true), []);
@@ -233,20 +233,13 @@ export function ClosedQueueSection({ store }: { store: ClosedStore }) {
     return null;
   }
   return (
-    <Card aria-labelledby={TITLE_ID} role="region">
-      <CardHeader>
-        <CardTitle
-          aria-level={2}
-          className="focus-ring"
-          id={TITLE_ID}
-          ref={titleRef}
-          role="heading"
-          tabIndex={-1}
-        >
-          {QUEUE_SECTION_TITLE}
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="grid justify-items-start gap-3">
+    <Block aria-labelledby={TITLE_ID}>
+      <BlockHeader
+        id={TITLE_ID}
+        title={QUEUE_SECTION_TITLE}
+        titleRef={titleRef}
+      />
+      <BlockPanel className="items-start">
         {outcome ? <OutcomeNotice outcome={outcome} /> : null}
         {view.kind === "hidden" ? null : (
           <p
@@ -276,7 +269,7 @@ export function ClosedQueueSection({ store }: { store: ClosedStore }) {
             />
           </>
         ) : null}
-      </CardContent>
-    </Card>
+      </BlockPanel>
+    </Block>
   );
 }

@@ -1,5 +1,5 @@
 # Gera e commita no ramo de um PR as capturas do ui-visual que mudaram.
-# Só por disparo manual, nunca na main, nunca em fork; o revisor confere a lista de PNGs e o artefato de diffs.
+# Só por disparo manual, nunca na main, nunca em fork; o revisor confere as capturas pelo diff de PNG do PR, e o artefato de diffs é só apoio.
 # Dois jobs: "gerar" roda o código do ramo só com leitura;
 # "publicar" tem escrita e não roda nada do ramo, só confere os PNGs do artefato e faz o push.
 name: Visual baselines

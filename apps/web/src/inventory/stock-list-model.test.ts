@@ -8,11 +8,14 @@ import {
 import {
   canLoadMoreStock,
   defaultStockFilters,
+  framedListState,
   initialStockListState,
+  readStockLinkFilters,
+  readStockLinkSearch,
   STOCK_PAGE_SIZE,
-  stockBalanceUpdated,
   stockAttentionLinks,
   stockAttentionRequest,
+  stockBalanceUpdated,
   stockCountText,
   stockCoverIds,
   stockEmptyMessage,
@@ -25,8 +28,6 @@ import {
   stockMoreLoaded,
   stockMoreStarted,
   stockMoreView,
-  readStockLinkFilters,
-  readStockLinkSearch,
   stockRowActions,
   stockRows,
   type VariantCount,
@@ -69,7 +70,7 @@ const OTHER_KEY = "filtro-b";
 const ready = (
   entries: InventoryBalanceEntryReadModel[],
   nextCursor: string | null = null
-) => stockLoaded(initialStockListState(), { entries, nextCursor }, KEY);
+) => stockLoaded(initialStockListState(), { entries, nextCursor }, KEY, null);
 
 describe("stockListRequest", () => {
   it("asks only for what is needed in one read", () => {
@@ -307,7 +308,8 @@ describe("list state", () => {
     const state = stockLoaded(
       stockLoading(ready([entry(1), entry(2)], "cursor-1")),
       { entries: [entry(9)], nextCursor: "cursor-9" },
-      OTHER_KEY
+      OTHER_KEY,
+      null
     );
     expect(state.entries.map((item) => item.variantId)).toEqual([variantId(9)]);
     expect(state.nextCursor).toBe("cursor-9");
@@ -473,9 +475,9 @@ describe("stockRows", () => {
 
 describe("views", () => {
   it("covers loading, error, empty and ready", () => {
-    expect(
-      stockListView(initialStockListState(), defaultStockFilters).kind
-    ).toBe("loading");
+    expect(stockListView(initialStockListState(), defaultStockFilters)).toEqual(
+      { kind: "loading" }
+    );
     expect(
       stockListView(
         stockLoadFailed(initialStockListState(), new Error("x"), KEY),
@@ -491,6 +493,18 @@ describe("views", () => {
     );
   });
 
+  it("frames the list in every state but the error and the empty catalog", () => {
+    const frameOf = (state: Parameters<typeof stockListView>[0], query = "") =>
+      framedListState(stockListView(state, { ...defaultStockFilters, query }));
+    expect(frameOf(initialStockListState())).toBe("loading");
+    expect(frameOf(ready([entry(1)]))).toBe("rows");
+    expect(frameOf(ready([]), "zzz")).toBe("filtered-empty");
+    expect(frameOf(ready([]))).toBeNull();
+    expect(
+      frameOf(stockLoadFailed(initialStockListState(), new Error("x"), KEY))
+    ).toBeNull();
+  });
+
   it("explains an empty result by the filter that caused it", () => {
     expect(stockEmptyMessage({ ...defaultStockFilters, query: " azul " })).toBe(
       "Nenhuma variante encontrada para “azul”."
@@ -504,6 +518,23 @@ describe("views", () => {
     expect(
       stockListView(ready([]), { ...defaultStockFilters, query: "x" })
     ).toMatchObject({ kind: "empty", showCatalogLink: false });
+  });
+
+  it("keeps the empty search on screen, not the empty catalog, while the cleared search waits to be read", () => {
+    const searched = { ...defaultStockFilters, query: "zzz" };
+    const state = stockLoaded(
+      initialStockListState(),
+      { entries: [], nextCursor: null },
+      KEY,
+      searched
+    );
+    const view = stockListView(state, defaultStockFilters);
+    expect(view).toMatchObject({
+      kind: "empty",
+      message: "Nenhuma variante encontrada para “zzz”.",
+      showCatalogLink: false,
+    });
+    expect(framedListState(view)).toBe("filtered-empty");
   });
 
   it("says why the list without a cost is empty, online and without connection", () => {

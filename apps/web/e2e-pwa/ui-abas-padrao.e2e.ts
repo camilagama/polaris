@@ -14,7 +14,8 @@ import { SCREENS, VIEWPORTS } from "./ui-screens";
 /**
  * A tab of a screen is drawn by one piece (`ScreenTabList` and `ScreenTabTrigger`), and the state filter of a list by
  * another (`SegmentedFilter`): the strip, the tab and the open tab read the same height, font and colors on Despesas,
- * Resultado, Configurações, the dialog of the product and the preview of the import; the arrows, Home, End and Enter do
+ * Resultado, Configurações and the dialog of the product (the filters of Produtos, Clientes, Categorias, the status of
+ * Despesas and the lines of the preview of the import read the same among themselves); the arrows, Home, End and Enter do
  * the same on all of them; and at 320 px with the browser font at 20 px no tab is cut (the strip scrolls inside its box).
  */
 skipOutsideChromium();
@@ -48,11 +49,6 @@ const TABS: readonly TabCase[] = [
     name: "diálogo do produto",
     screen: "produtos edição com erro no nome",
   },
-  {
-    list: "Linhas do arquivo",
-    name: "prévia da importação",
-    screen: "importar planilha prévia com erro, já existe e sem categoria",
-  },
 ];
 
 const SETTINGS: TabCase = {
@@ -76,6 +72,16 @@ const FILTERS: readonly TabCase[] = [
     list: "Estado das categorias",
     name: "filtro de Categorias",
     screen: "categorias lista",
+  },
+  {
+    list: "Situação",
+    name: "filtro de Despesas",
+    screen: "despesas lista",
+  },
+  {
+    list: "Linhas do arquivo",
+    name: "prévia da importação",
+    screen: "importar planilha prévia com erro, já existe e sem categoria",
   },
 ];
 
@@ -337,7 +343,7 @@ test.describe("o traço no celular, a 360 px com toque", () => {
   }
 });
 
-for (const item of TABS) {
+for (const item of [...TABS, ...FILTERS]) {
   test.describe(`${item.name} a 320 px com a letra do navegador em 20 px`, () => {
     reflowTest(`nenhuma aba de ${item.name} é cortada`, async ({ page }) => {
       await openReflowViewport(page);
@@ -368,7 +374,7 @@ for (const item of TABS) {
   });
 }
 
-const DIALOG_TABS = TABS.filter((item) =>
+const DIALOG_TABS = [...TABS, ...FILTERS].filter((item) =>
   ["diálogo do produto", "prévia da importação"].includes(item.name)
 );
 

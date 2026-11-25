@@ -51,7 +51,7 @@ test("a chave do runtime offline é a do projeto, e o preview serve o build do p
     0
   );
   await expect(
-    page.getByRole("heading", { level: 2, name: "Aparelhos" })
+    page.getByRole("heading", { exact: true, level: 2, name: "Aparelhos" })
   ).toHaveCount(enabled ? 1 : 0);
   expect(await registered).toBe(enabled);
 });

@@ -57,8 +57,14 @@ const render = (
     />
   );
 
+const STATUS_LIST = /role="tablist"[^>]*aria-label="Situação"/;
+const TAB_TAG = /<button[^>]*role="tab"[^>]*>/g;
 const pressed = (html: string, status: string) =>
-  new RegExp(`aria-pressed="true"[^>]*data-status="${status}"`).test(html);
+  (html.match(TAB_TAG) ?? []).some(
+    (tab) =>
+      tab.includes(`data-value="${status}"`) &&
+      tab.includes('aria-selected="true"')
+  );
 
 describe("a barra de filtros de Despesas", () => {
   it("o mês, Ativas | Anuladas e 'Filtrar' dividem a primeira linha, nessa ordem, sem pílula", () => {
@@ -74,6 +80,13 @@ describe("a barra de filtros de Despesas", () => {
     expect(segmented).toBeLessThan(filter);
     expect(html).not.toContain("filter-pill");
     expect(html).not.toContain("Limpar tudo");
+  });
+
+  it("a situação é uma lista de abas do filtro de lista, sem botão de alternar", () => {
+    const html = render({ categoryId: "", status: "active" });
+    expect(html).toMatch(STATUS_LIST);
+    expect(html.match(TAB_TAG)).toHaveLength(2);
+    expect(html).not.toContain("aria-pressed");
   });
 
   it("o segmentado marca a situação atual: Ativas na abertura, Anuladas depois do toque", () => {

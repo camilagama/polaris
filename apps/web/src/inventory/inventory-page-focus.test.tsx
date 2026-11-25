@@ -59,7 +59,7 @@ const page = () => (
 );
 
 const ready = (nextCursor: string | null) =>
-  stockLoaded(initialStockListState(), { entries: [], nextCursor }, "k");
+  stockLoaded(initialStockListState(), { entries: [], nextCursor }, "k", null);
 const refreshFailed = () => stockLoadFailed(ready("c"), new Error("x"), "k");
 
 beforeEach(() => {
