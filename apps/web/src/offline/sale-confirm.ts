@@ -207,7 +207,7 @@ type StoredSalePayload = Omit<
   OfflineSalePayload,
   "payment" | "paymentProfile"
 > & {
-  payment?: OfflineSalePayload["payment"];
+  payment?: NonNullable<OfflineSalePayload["payment"]>;
   paymentProfile?: { expectedVersion: number; id: string };
 };
 
