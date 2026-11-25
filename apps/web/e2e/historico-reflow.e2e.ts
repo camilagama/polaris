@@ -239,7 +239,10 @@ for (const width of [320, 360]) {
     async ({ page }) => {
       const sales = manySales();
       await openHistory(page, sales, { width });
-      const list = page.getByRole("list", { name: "Vendas" });
+      const list = page.getByRole("list", {
+        exact: true,
+        name: "Vendas do período",
+      });
       await expect(list.locator("> li")).toHaveCount(ROWS);
 
       const rows = await rowGeometry(page);
@@ -340,7 +343,10 @@ reflowTest(
   async ({ page }) => {
     const sales = twoPartsSales();
     await openHistory(page, sales);
-    const list = page.getByRole("list", { name: "Vendas" });
+    const list = page.getByRole("list", {
+      exact: true,
+      name: "Vendas do período",
+    });
     await expect(list.locator("> li")).toHaveCount(sales.length);
     const rows = await rowGeometry(page);
     for (const [index, row] of rows.entries()) {
@@ -427,7 +433,10 @@ for (const { fontPixels, width } of [
     async ({ page }) => {
       const sales = twoPartsSales();
       await openHistory(page, sales, { fontPixels, width });
-      const list = page.getByRole("list", { name: "Vendas" });
+      const list = page.getByRole("list", {
+        exact: true,
+        name: "Vendas do período",
+      });
       await expect(list.locator("> li")).toHaveCount(sales.length);
       const measures = await visibleMethods(page);
       for (const [index, measure] of measures.entries()) {
@@ -456,7 +465,10 @@ for (const { fontPixels, width } of [
     async ({ page }) => {
       const sales = twoPartsSales(MEDIUM_CUSTOMER);
       await openHistory(page, sales, { fontPixels, width });
-      const list = page.getByRole("list", { name: "Vendas" });
+      const list = page.getByRole("list", {
+        exact: true,
+        name: "Vendas do período",
+      });
       await expect(list.locator("> li")).toHaveCount(sales.length);
       const measures = await visibleMethods(page);
       const cuts = await cutTexts(page);
@@ -532,7 +544,10 @@ for (const { fontPixels, width } of [
     `a ${width} px com letra de ${fontPixels} px o valor de 7 dígitos fica inteiro e o método nunca é cortado: só o fim do nome do cliente`,
     async ({ page }) => {
       await openHistory(page, methodRows(), { fontPixels, width });
-      const list = page.getByRole("list", { name: "Vendas" });
+      const list = page.getByRole("list", {
+        exact: true,
+        name: "Vendas do período",
+      });
       await expect(list.locator("> li")).toHaveCount(5);
       const rows = await cutTexts(page);
       const methods = [
@@ -637,7 +652,7 @@ for (const width of [360, WIDE_WINDOW]) {
         width,
       });
       const first = page
-        .getByRole("list", { name: "Vendas" })
+        .getByRole("list", { exact: true, name: "Vendas do período" })
         .locator("> li")
         .first();
       const [rowBox, moneyBox] = await Promise.all([
