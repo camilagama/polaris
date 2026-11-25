@@ -207,7 +207,7 @@ jobs:
       github.event.workflow_run.head_branch == 'main' &&
       github.event.workflow_run.head_repository.full_name == github.repository
     runs-on: ubuntu-24.04
-    timeout-minutes: 25
+    timeout-minutes: 27
     environment: staging
     permissions:
       contents: read
@@ -336,9 +336,10 @@ jobs:
       - if: steps.tip.outputs.deploy == 'true'
         name: Smoke
         # 20 checks (18 common + 2 platform); worst case 20 x (3 tries of 10 s + 2 pauses of 5 s) = 800 s, about 13.3 min,
-        # when every request times out (a platform check stops at its first platform failure, so 740 s if those answer);
+        # when every request times out (a platform check stops at its first platform failure, so 740 s if those answer),
+        # plus the wait for the release to reach the edge: 120 s of ceiling and the 10 s of its last read = 930 s;
         # scripts/smoke-staging.test.mjs fails when this worst case plus 15 s no longer fits in timeout-minutes
-        timeout-minutes: 14
+        timeout-minutes: 16
         env:
           STAGING_WEB_URL: ${{ vars.STAGING_WEB_URL }}
           STAGING_CATALOG_URL: ${{ vars.STAGING_CATALOG_URL }}
