@@ -144,7 +144,7 @@ import {
 } from "./sale-form-model";
 import { AddItemButton, ItemEditor, ItemsCount } from "./sale-item-editor";
 import { PaymentSection, type SplitHandlers } from "./sale-payment-section";
-import { SPLIT_OFFLINE_REFUSAL, splitStartBlocker } from "./sale-split-model";
+import { splitStartBlocker } from "./sale-split-model";
 import { SubmitBar, SummaryPanel } from "./sale-summary-panel";
 import {
   coversOfStock,
@@ -942,11 +942,6 @@ export function SalePage() {
         );
         return;
       }
-      if (body.payments !== undefined && offlineWorkspace !== null) {
-        // the device keeps one payment per sale: the parts stay on the screen
-        setSubmission(rejectSubmission(SPLIT_OFFLINE_REFUSAL));
-        return;
-      }
       const prepared = prepareConfirmation({
         attemptUnsettled: attemptUnsettled(),
         body,
@@ -974,7 +969,6 @@ export function SalePage() {
       attemptUnsettled,
       catalog.stock,
       form,
-      offlineWorkspace,
       organizationId,
       rememberAttempt,
       settleConfirmation,
@@ -1233,7 +1227,7 @@ export function SalePage() {
             profilesView={profilesState}
             singlePaymentText={methodHint(lastPayment, form, preset)}
             split={{
-              blocker: splitStartBlocker(offline, totalDue),
+              blocker: splitStartBlocker(totalDue),
               evaluation: evaluation.split,
               handlers: splitHandlers,
             }}
