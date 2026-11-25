@@ -4,8 +4,8 @@ import { cn } from "@/lib/utils";
 interface InsetBlockProps extends React.ComponentProps<"div"> {
   /**
    * `destructive` is the confirmation of something that cannot be undone, asked in the row itself: the same grey with a
-   * 1 px inner ring in `destructive` at 60 %, the first opacity that keeps 3:1 against `--muted` in both themes (WCAG
-   * 1.4.11). No red fill and no red text.
+   * 1 px inner ring in `destructive` at 60 %, which keeps 3:1 against `--muted` in both themes (WCAG 1.4.11, held by
+   * `styles/contrast.test.ts`). No red fill and no red text.
    */
   tone?: "default" | "destructive";
 }
