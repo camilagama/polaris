@@ -306,10 +306,6 @@ export const DEBT: Readonly<Record<Rule, readonly string[]>> = {
     // customers
     // data-export
     // expenses
-    "src/expenses/expense-by-category.tsx",
-    "src/expenses/expense-categories-panel.tsx",
-    "src/expenses/expense-rules-panel.tsx",
-    "src/expenses/expenses-page.tsx",
     // help
     // inventory
     // offline
@@ -332,8 +328,6 @@ export const DEBT: Readonly<Record<Rule, readonly string[]>> = {
     // catalog
     // customers
     // expenses
-    "src/expenses/expense-list.tsx",
-    "src/expenses/month-picker.tsx",
     // legal
     // offline
     // payment-profiles
@@ -347,7 +341,6 @@ export const DEBT: Readonly<Record<Rule, readonly string[]>> = {
     "src/catalog/screen-parts.tsx",
     // customers
     // expenses
-    "src/expenses/expense-list.tsx",
     // offline
     // payment-profiles
     // sales
@@ -467,9 +460,14 @@ describe("o padrão visual das telas (R1 a R3)", () => {
     }
   });
 
-  it("as listas e tabelas principais ficam na dívida: elas saem só quando a tela vai para o Block", () => {
-    for (const file of ["src/expenses/expense-list.tsx"]) {
-      expect([...DEBT.R2, ...DEBT.R3], file).toContain(file);
+  it("as listas principais de Clientes e Despesas, já no Block, não voltam para a dívida", () => {
+    const owed = Object.values(DEBT).flat();
+    for (const file of [
+      "src/customers/customer-list.tsx",
+      "src/expenses/expense-list.tsx",
+    ]) {
+      expect(existsSync(join(web, file)), file).toBe(true);
+      expect(owed, file).not.toContain(file);
     }
   });
 });
@@ -726,11 +724,8 @@ describe("R4: as peças soltas da lista só vivem em ui/ (controles)", () => {
     ]);
   });
 
-  it("os arquivos da dívida de R4 são os de hoje: a 1 tela que ainda importa e o screen-parts que reexporta", () => {
-    expect(DEBT.R4).toEqual([
-      "src/catalog/screen-parts.tsx",
-      "src/expenses/expense-list.tsx",
-    ]);
+  it("os arquivos da dívida de R4 são os de hoje: o screen-parts que reexporta", () => {
+    expect(DEBT.R4).toEqual(["src/catalog/screen-parts.tsx"]);
   });
 });
 
@@ -845,8 +840,18 @@ function mergeThreeWay(base: string, mine: string, theirs: string) {
   }
 }
 
+/** The folders that have a comment line in the list of a rule, with or without files left: what keeps their neighbours apart. */
+function commentFolders(rule: Rule): string[] {
+  const source = readFileSync(fileURLToPath(import.meta.url), "utf8");
+  const start = source.indexOf(`  ${rule}: [\n`);
+  const body = source.slice(start, source.indexOf("\n  ],", start));
+  return [...body.matchAll(/^ {4}\/\/ (\S+)$/gm)].map(
+    (match) => match[1] ?? ""
+  );
+}
+
 describe("a dívida por pasta: tirar arquivos de pastas diferentes não conflita (AC-L0.8)", () => {
-  const folders = [...new Set(DEBT.R2.map(folderOf))];
+  const folders = commentFolders("R2");
   const without = (folder: string | undefined) =>
     DEBT.R2.filter((file) => folderOf(file) !== folder);
 
@@ -871,7 +876,9 @@ describe("a dívida por pasta: tirar arquivos de pastas diferentes não conflita
   });
 
   it("controle: sem a linha de comentário por pasta as mesmas duas edições conflitam", () => {
-    const [first, second] = folders;
+    const [first, second] = folders.filter((folder) =>
+      DEBT.R2.some((file) => folderOf(file) === folder)
+    );
     const merged = mergeThreeWay(
       listText(DEBT.R2, false),
       listText(without(first), false),
