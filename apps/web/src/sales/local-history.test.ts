@@ -1,7 +1,11 @@
 import type { SaleListEntryReadModel } from "@polaris/contracts";
 import { describe, expect, it } from "vitest";
 import { filterLocalSales } from "./local-history";
-import { emptyHistoryFilters } from "./sale-history-model";
+import {
+  emptyHistoryFilters,
+  historyRows,
+  initialHistoryState,
+} from "./sale-history-model";
 
 const uuid = (n: number) =>
   `0199c2d0-0000-7000-8000-${n.toString(16).padStart(12, "0")}`;
@@ -83,5 +87,26 @@ describe("the sale history read from the device", () => {
     expect(
       ids(filterLocalSales(rows, { ...emptyHistoryFilters, customer: "zzz" }))
     ).toEqual([]);
+  });
+});
+
+describe("a sale paid in parts in the history read from the device", () => {
+  it("keeps the methods of the parts the server sent, and its row says them in order", () => {
+    const split = sale(5, {
+      paymentMethod: "pix",
+      paymentMethods: ["pix", "credit_card"],
+    });
+    const page = filterLocalSales([...rows, split], emptyHistoryFilters);
+    const [first] = page.sales;
+    expect(first?.paymentMethods).toEqual(["pix", "credit_card"]);
+    const lines = historyRows({
+      ...initialHistoryState(),
+      sales: [...page.sales],
+    });
+    expect(lines[0]).toMatchObject({
+      methodText: "Pix + Crédito",
+      splitPayment: true,
+    });
+    expect(lines[1]).toMatchObject({ methodText: "Pix", splitPayment: false });
   });
 });

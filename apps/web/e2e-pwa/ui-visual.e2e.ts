@@ -88,7 +88,8 @@ const HOME_CONTEXTS = [
  * The states whose strip of tabs (`ScreenTabList` and `ScreenTabTrigger`) is whole on a phone are also drawn at 320 px,
  * where the tabs get the narrowest padding and a label that wraps or is cut shows. Out of it: Configurações (below
  * 760 px it is a menu of rows, with no strip), the Produtos and Categorias states (the lab draws the list without the
- * strip) and Despesas (its three tabs do not fit in 320 px and the strip cuts the last one at its edge).
+ * strip) and Despesas (its three tabs do not fit in 320 px and the strip cuts the last one at its edge; the list of
+ * Despesas has its own 320 px image below, for the line of the month, the state filter and "Filtrar").
  */
 const TABS_FILES: readonly string[] = ["resultado-vazio"];
 const TABS_CONTEXTS = [
@@ -96,10 +97,17 @@ const TABS_CONTEXTS = [
   { theme: "escuro", touch: true, viewport: "320" },
 ] as const;
 
+/** The list of Despesas at 320 px, light only: the shared line (month, state filter, "Filtrar") and the strip that cuts its third tab. */
+const EXPENSES_FILES: readonly string[] = ["despesas-lista"];
+const EXPENSES_CONTEXTS = [
+  { theme: "claro", touch: true, viewport: "320" },
+] as const;
+
 const contextsOf = (file: string): readonly UiContext[] => [
   ...CONTEXTS,
   ...(HOME_FILES.includes(file) ? HOME_CONTEXTS : []),
   ...(TABS_FILES.includes(file) ? TABS_CONTEXTS : []),
+  ...(EXPENSES_FILES.includes(file) ? EXPENSES_CONTEXTS : []),
 ];
 
 const SCREENSHOT = {

@@ -245,13 +245,17 @@ describe("a sale with a payment profile", () => {
     expect((await outbox.snapshot()).commands).toHaveLength(0);
   });
 
-  it("is refused when it is paid in two parts, which the device command does not carry: payments never vanish in the queue", async () => {
+  it("keeps a sale paid in two parts with its parts in order, each with its own profile, and no sale-level profile", async () => {
     const { outbox, stores } = await setup();
     const split = prepared();
     const { payment, paymentProfile: _profile, ...rest } = split.request;
     if (payment === undefined) {
       throw new Error("the fixture pays in one go");
     }
+    const card = {
+      expectedVersion: 4,
+      id: "0199c2d0-0000-7000-8000-0000000000c1",
+    };
     const request = {
       ...rest,
       payments: [
@@ -259,14 +263,57 @@ describe("a sale with a payment profile", () => {
         {
           ...payment,
           amount: "50.00",
-          method: "cash" as const,
-          paymentProfile: null,
+          installmentPlan: "merchant" as const,
+          installments: 3,
+          method: "credit_card" as const,
+          paymentProfile: card,
         },
       ],
     };
-    await expect(queueOfflineSale({ labels, request, stores })).rejects.toThrow(
-      "device_sale_not_carriable"
-    );
+    const view = await queueOfflineSale({ labels, request, stores });
+
+    expect(view.totalDue).toContain("90,00");
+    const { commands } = await outbox.snapshot();
+    expect(commands).toHaveLength(1);
+    const stored = commands[0]?.payload as Record<string, unknown>;
+    expect(stored).not.toHaveProperty("payment");
+    expect(stored).not.toHaveProperty("paymentProfile");
+    expect(stored.payments).toEqual([
+      {
+        amount: "40.00",
+        anticipationRequested: false,
+        installmentPlan: null,
+        installments: null,
+        method: "pix",
+        paymentProfile: null,
+      },
+      {
+        amount: "50.00",
+        anticipationRequested: false,
+        installmentPlan: "merchant",
+        installments: 3,
+        method: "credit_card",
+        paymentProfile: card,
+      },
+    ]);
+  });
+
+  it("refuses parts that do not add up to the total before anything is queued", async () => {
+    const { outbox, stores } = await setup();
+    const { payment, paymentProfile: _profile, ...rest } = prepared().request;
+    if (payment === undefined) {
+      throw new Error("the fixture pays in one go");
+    }
+    const request = {
+      ...rest,
+      payments: [
+        { ...payment, amount: "40.00", paymentProfile: null },
+        { ...payment, amount: "40.00", paymentProfile: null },
+      ],
+    };
+    await expect(
+      queueOfflineSale({ labels, request, stores })
+    ).rejects.toThrow();
     expect((await outbox.snapshot()).commands).toHaveLength(0);
   });
 });

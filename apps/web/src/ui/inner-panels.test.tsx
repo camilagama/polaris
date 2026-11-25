@@ -43,6 +43,47 @@ describe("InsetBlock", () => {
   });
 });
 
+describe("InsetBlock tone", () => {
+  it("o padrão não tem anel", () => {
+    const classes = classesOf(renderToStaticMarkup(<InsetBlock>x</InsetBlock>));
+    expect(classes.some((name) => name.startsWith("ring"))).toBe(false);
+  });
+
+  it("destructive põe o anel interno de 1 px em destructive a 60 % sobre o mesmo cinza, sem fundo nem texto vermelho", () => {
+    const classes = classesOf(
+      renderToStaticMarkup(<InsetBlock tone="destructive">x</InsetBlock>)
+    );
+    expect(classes).toEqual(
+      expect.arrayContaining([
+        "bg-muted",
+        "ring-1",
+        "ring-inset",
+        "ring-destructive/60",
+      ])
+    );
+    expect(
+      classes.some(
+        (name) =>
+          name.startsWith("bg-destructive") ||
+          name.startsWith("text-destructive")
+      )
+    ).toBe(false);
+  });
+
+  it("a tela não precisa escrever classe de anel: o tom basta e o className dela convive", () => {
+    const classes = classesOf(
+      renderToStaticMarkup(
+        <InsetBlock className="grid gap-3 p-3" tone="destructive">
+          x
+        </InsetBlock>
+      )
+    );
+    expect(classes).toEqual(
+      expect.arrayContaining(["grid", "gap-3", "ring-destructive/60"])
+    );
+  });
+});
+
 describe("FieldGroup", () => {
   it("é um fieldset com borda de 1 px, arredondado e sem fundo", () => {
     const html = renderToStaticMarkup(

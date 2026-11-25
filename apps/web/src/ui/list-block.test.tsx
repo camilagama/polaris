@@ -103,6 +103,29 @@ describe("ListBlock: o título e a contagem na árvore de acessibilidade", () =>
     }
   });
 
+  it("sem count e sem ação, com linhas, não há contagem nem a reserva de largura", () => {
+    const html = draw({ count: undefined, state: "rows" }, rows);
+    expect(html).not.toContain("data-list-count");
+    expect(html).not.toContain("min-w-28");
+    expect(html).not.toContain("aria-live");
+    expect(html).toContain("Camiseta");
+  });
+
+  it("count vazio continua reservando o lugar, e sem count a ação e o loading mantêm a contagem", () => {
+    expect(COUNT_CLASS.exec(draw({ count: "" }, rows))?.[1]).toContain(
+      "min-w-28"
+    );
+    expect(
+      draw(
+        { action: <button type="button">Exportar</button>, count: undefined },
+        rows
+      )
+    ).toContain("data-list-count");
+    expect(draw({ count: undefined, state: "loading" }, rows)).toContain(
+      "data-list-count"
+    );
+  });
+
   it("com ação, o grupo da direita ocupa a linha e encosta à direita; sem ação, não", () => {
     const withAction = draw(
       { action: <button type="button">Exportar</button> },

@@ -246,16 +246,44 @@ const LONG_LIST = Array.from(
 /** The state filter of a list: the strip of the tabs with no panel; the list below is the screen's. */
 function GallerySegmentedFilter() {
   const [state, setState] = useState<"active" | "archived">("active");
+  const [status, setStatus] = useState<"active" | "voided">("active");
+  const [rows, setRows] = useState("all");
   return (
-    <SegmentedFilter
-      label="Estado dos produtos"
-      onSelect={setState}
-      options={[
-        ["active", "Ativos"],
-        ["archived", "Arquivados"],
-      ]}
-      value={state}
-    />
+    <div className="grid gap-4">
+      <SegmentedFilter
+        label="Estado dos produtos"
+        onSelect={setState}
+        options={[
+          ["active", "Ativos"],
+          ["archived", "Arquivados"],
+        ]}
+        value={state}
+      />
+      <SegmentedFilter
+        compact
+        label="Situação"
+        onSelect={setStatus}
+        options={[
+          ["active", "Ativas"],
+          ["voided", "Anuladas"],
+        ]}
+        value={status}
+      />
+      <div className="w-60 max-w-full">
+        <SegmentedFilter
+          label="Linhas do arquivo"
+          onSelect={setRows}
+          options={[
+            ["all", "Todas (9)"],
+            ["error", "Com erro (1)"],
+            ["exists", "Já existem (2)"],
+            ["no_category", "Sem categoria (1)"],
+            ["over_limit", "Fora do limite (3)"],
+          ]}
+          value={rows}
+        />
+      </div>
+    </div>
   );
 }
 
@@ -2067,9 +2095,12 @@ export function UiGallery() {
             <p className="max-w-prose text-muted-foreground text-support">
               Os dois únicos painéis dentro de um bloco, de um cartão ou de um
               diálogo. O bloco rebaixado (<code>InsetBlock</code>) é o cinza
-              cheio, sem borda, para o dado que se lê; o grupo de campos (
-              <code>FieldGroup</code>) é o <code>fieldset</code> com borda de 1
-              px e sem fundo, para os campos de um formulário.
+              cheio, sem borda, para o dado que se lê (com{" "}
+              <code>tone="destructive"</code>, a confirmação do que não tem
+              volta, na própria linha: o mesmo cinza com um anel de 1 px em
+              perigo); o grupo de campos (<code>FieldGroup</code>) é o{" "}
+              <code>fieldset</code> com borda de 1 px e sem fundo, para os
+              campos de um formulário.
             </p>
             <div className="grid items-start gap-4 md:grid-cols-2">
               <InsetBlock data-gallery-panel="inset">
@@ -2077,6 +2108,15 @@ export function UiGallery() {
                   <dt className="text-muted-foreground">Pagamento</dt>
                   <dd>Pix, R$ 111,80</dd>
                 </dl>
+              </InsetBlock>
+              <InsetBlock
+                data-gallery-panel="inset-destructive"
+                tone="destructive"
+              >
+                <p className="text-sm">
+                  Anonimizar não dá para desfazer. Confirmação na própria linha:
+                  o mesmo cinza, com anel de perigo.
+                </p>
               </InsetBlock>
               <FieldGroup data-gallery-panel="group">
                 <FieldLegend>Contato</FieldLegend>

@@ -298,10 +298,7 @@ export function exceptionFaults(
  * neighbouring lines.
  */
 export const DEBT: Readonly<Record<Rule, readonly string[]>> = {
-  R1: [
-    // catalog
-    "src/catalog/product-import/import-preview-step.tsx",
-  ],
+  R1: [],
   R2: [
     // app-shell
     "src/app-shell/state-panel.tsx",
@@ -333,17 +330,11 @@ export const DEBT: Readonly<Record<Rule, readonly string[]>> = {
     "src/app-shell/action-strip.tsx",
     "src/app-shell/menu-progress.tsx",
     // catalog
-    "src/catalog/product-form.tsx",
-    "src/catalog/product-media-crop.tsx",
-    "src/catalog/product-media-panel.tsx",
-    "src/catalog/product-variants-form.tsx",
     // customers
-    "src/customers/customer-list.tsx",
     // expenses
     "src/expenses/expense-list.tsx",
     "src/expenses/month-picker.tsx",
     // legal
-    "src/legal/legal-page.tsx",
     // offline
     // payment-profiles
     // sales
@@ -551,7 +542,7 @@ describe("a trava reprova o que planto (controles)", () => {
     'const a = "rounded border-0 bg-muted";',
     'const a = cn("rounded-xl", "border-0", "p-2");',
     'import { ListBlock } from "@/ui/list-block";',
-    'import { ListCountLine, LoadMoreButton } from "./screen-parts";',
+    'import { useListPage, LoadMoreButton } from "./screen-parts";',
     'import { RowOpenButton, formatDate } from "../catalog/screen-parts";',
     'import { RowTileSkeleton } from "./row-tile-skeleton";',
     'import { Block, BlockPanel } from "@/ui/block";',
@@ -860,7 +851,7 @@ describe("a dívida por pasta: tirar arquivos de pastas diferentes não conflita
     DEBT.R2.filter((file) => folderOf(file) !== folder);
 
   it("duas cópias da lista de R2, cada uma sem uma pasta vizinha diferente, mesclam sem conflito", () => {
-    expect(folders.length).toBeGreaterThan(2);
+    expect(folders.length).toBeGreaterThanOrEqual(2);
     const base = listText(DEBT.R2, folders);
     for (const [index, folder] of folders.slice(0, -1).entries()) {
       const next = folders[index + 1];

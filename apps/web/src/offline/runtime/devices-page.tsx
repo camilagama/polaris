@@ -247,7 +247,7 @@ interface ListSectionProps {
 }
 
 /** Everything under the heading while this browser's session is alive: messages, then the list. */
-function ListSection({
+export function ListSection({
   actionError,
   confirming,
   devices,
@@ -319,7 +319,7 @@ function ListSection({
         </p>
       ) : null}
       {devices && rows.length > 0 ? (
-        <ListBlock count="" state="rows" title="Aparelhos desta conta">
+        <ListBlock state="rows" title="Aparelhos desta conta">
           {rows.map((row) => (
             <DeviceItem
               actionError={confirming === row.id ? actionError : null}
