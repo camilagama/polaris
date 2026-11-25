@@ -359,7 +359,7 @@ test("cada pílula pede ao servidor o que o filtro de antes pedia e sai pelo X",
 });
 
 const rowNames = (page: Page) =>
-  page.getByRole("list", { name: "Saldos por variante" }).getByRole("listitem");
+  page.getByRole("list", { name: "Saldos em estoque" }).getByRole("listitem");
 
 test("o nome da linha é um link para o produto, na variante quando a linha é de variante", async ({
   page,
@@ -386,7 +386,7 @@ test("com um painel aberto o nome de nenhuma linha leva ao produto, e fechado o 
 }) => {
   await openStockLab(page, "claro");
   const productLinks = page
-    .getByRole("list", { name: "Saldos por variante" })
+    .getByRole("list", { name: "Saldos em estoque" })
     .locator('a[href^="/products"]');
   await expect(productLinks.first()).toBeVisible();
   const withLinks = await productLinks.count();

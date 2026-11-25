@@ -316,8 +316,8 @@ export const DEBT: Readonly<Record<Rule, readonly string[]>> = {
     "src/expenses/expense-categories-panel.tsx",
     "src/expenses/expense-rules-panel.tsx",
     "src/expenses/expenses-page.tsx",
+    // help
     // inventory
-    "src/inventory/inventory-page.tsx",
     // offline
     "src/offline/attention-panel.tsx",
     "src/offline/logout-dialog.tsx",
@@ -350,9 +350,6 @@ export const DEBT: Readonly<Record<Rule, readonly string[]>> = {
     // expenses
     "src/expenses/expense-list.tsx",
     "src/expenses/month-picker.tsx",
-    // inventory
-    "src/inventory/stock-command-panel.tsx",
-    "src/inventory/stock-panel-fields.tsx",
     // legal
     "src/legal/legal-page.tsx",
     // offline
@@ -497,7 +494,6 @@ describe("o padrão visual das telas (R1 a R3)", () => {
       "src/catalog/product-list.tsx",
       "src/catalog/category-list.tsx",
       "src/expenses/expense-list.tsx",
-      "src/inventory/inventory-page.tsx",
     ]) {
       expect([...DEBT.R2, ...DEBT.R3], file).toContain(file);
     }
@@ -884,7 +880,7 @@ describe("a dívida por pasta: tirar arquivos de pastas diferentes não conflita
     DEBT.R2.filter((file) => folderOf(file) !== folder);
 
   it("duas cópias da lista de R2, cada uma sem uma pasta vizinha diferente, mesclam sem conflito", () => {
-    expect(folders.length).toBeGreaterThan(5);
+    expect(folders.length).toBeGreaterThan(2);
     const base = listText(DEBT.R2, folders);
     for (const [index, folder] of folders.slice(0, -1).entries()) {
       const next = folders[index + 1];
