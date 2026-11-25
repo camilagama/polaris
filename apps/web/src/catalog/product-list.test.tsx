@@ -82,6 +82,7 @@ const noop = () => undefined;
 type Props = ComponentProps<typeof ProductList>;
 const base: Props = {
   categories: [clothes],
+  count: "",
   isLoading: false,
   isOffline: false,
   onArchive: noop,
@@ -123,12 +124,38 @@ const pending = (
   variantId: "00000000-0000-4000-8000-000000000002",
 });
 
+const TITLE_H2 = /<h2[^>]*>Produtos cadastrados<\/h2>/;
+const LIST_NAMED_BY_TITLE = /<ul aria-labelledby="product-list-title"/;
+const COUNT_LINE = /aria-live="polite"[^>]*data-list-count="">2 produtos</;
+
 describe("estados da lista", () => {
-  it("carregando diz que carrega, como status, e não mostra a lista nem o convite", () => {
+  it("carregando mantém a moldura e o título, mostra o esqueleto e diz que carrega só para o leitor de tela", () => {
     const markup = html({ isLoading: true });
-    expect(markup).toContain('role="status"');
-    expect(markup).toContain("Carregando produtos…");
+    expect(markup).toContain('data-list-block=""');
+    expect(markup).toContain(">Produtos cadastrados</h2>");
+    expect(markup).toContain(
+      '<p class="sr-only" role="status">Carregando…</p>'
+    );
+    expect(markup).toContain('data-slot="skeleton"');
+    expect(markup).not.toContain("Carregando produtos…");
     expect(markup).not.toContain("Nenhum produto ainda");
+  });
+
+  it("com produtos, a lista é a ListBlock: o título nomeia a lista e a contagem fica ao lado dele, sem ser título", () => {
+    const markup = html({
+      count: "2 produtos",
+      products: [product(1), product(2)],
+      total: 2,
+    });
+    expect(markup).toMatch(TITLE_H2);
+    expect(markup).toMatch(LIST_NAMED_BY_TITLE);
+    expect(markup).toMatch(COUNT_LINE);
+    expect(markup).not.toContain('aria-label="Produtos"');
+  });
+
+  it("sem produto nenhum, o vazio de verdade e o dos arquivados ficam sem moldura", () => {
+    expect(html()).not.toContain('data-list-block=""');
+    expect(html({ status: "archived" })).not.toContain('data-list-block=""');
   });
 
   it("sem produto nenhum convida a cadastrar o primeiro, com o botão", () => {
@@ -147,6 +174,8 @@ describe("estados da lista", () => {
   it("com produtos e uma busca que não casa, diz o que foi buscado em vez de dizer que não há produtos", () => {
     const markup = html({ query: " tenis ", total: 3 });
     expect(markup).toContain("Nenhum produto com “tenis”.");
+    expect(markup).toContain('data-state="filtered-empty"');
+    expect(markup).toContain(">Produtos cadastrados</h2>");
     expect(markup).not.toContain("Nenhum produto ainda");
   });
 });

@@ -120,11 +120,29 @@ describe("the list of categories without a connection (P-2)", () => {
   });
 });
 
+const TITLE_H2 = /<h2[^>]*>Categorias cadastradas<\/h2>/;
+const LIST_NAMED_BY_TITLE = /<ul aria-labelledby="/;
+
 describe("the list of categories", () => {
-  it("says it is loading, and shows no row", () => {
+  it("says it is loading in the frame, with the skeleton and a status for the screen reader alone, and shows no row", () => {
     const html = render({ isLoading: true });
-    expect(html).toContain("Carregando categorias…");
+    expect(html).toContain('data-state="loading"');
+    expect(html).toContain(">Categorias cadastradas</h2>");
+    expect(html).toContain('<p class="sr-only" role="status">Carregando…</p>');
+    expect(html).toContain('data-slot="skeleton"');
+    expect(html).not.toContain("Carregando categorias…");
     expect(html).not.toContain("Camisetas");
+  });
+
+  it("draws the rows in the frame, named by its title", () => {
+    const html = render();
+    expect(html).toMatch(TITLE_H2);
+    expect(html).toMatch(LIST_NAMED_BY_TITLE);
+    expect(html).not.toContain('aria-label="Categorias"');
+  });
+
+  it("draws no frame for an empty list: the empty state stands alone", () => {
+    expect(render({ categories: [] })).not.toContain('data-list-block=""');
   });
 
   it("tells each tab what an empty list means, as an empty state read after the load", () => {
