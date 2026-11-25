@@ -209,7 +209,7 @@ function ExpenseRow({
         </p>
         <div
           className={cn(
-            "flex items-center justify-end gap-2 touch:gap-3",
+            "ml-auto flex items-center justify-end gap-2 touch:gap-3",
             ACTIONS_WIDTH
           )}
         >

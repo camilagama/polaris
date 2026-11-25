@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import type { ExpenseReadModel } from "@polaris/contracts";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ExpenseList } from "./expense-list";
@@ -101,6 +101,26 @@ describe("o menu … da linha de uma despesa", () => {
     expect(item.getAttribute("aria-describedby")).not.toBeNull();
     await user.click(item);
     expect(onVoid).not.toHaveBeenCalled();
+  });
+
+  it("pelo teclado: Enter no gatilho abre o menu e Enter no item Anular age uma vez", async () => {
+    const onVoid = vi.fn();
+    render(list(null, onVoid));
+    await user.tab();
+    expect(document.activeElement?.getAttribute("data-expense-edit")).toBe("");
+    await user.tab();
+    const trigger = screen.getByRole("button", {
+      name: `Mais ações para ${NAME}`,
+    });
+    expect(document.activeElement).toBe(trigger);
+    await user.keyboard("{Enter}");
+    const item = await screen.findByRole("menuitem", {
+      name: `Anular despesa ${NAME}`,
+    });
+    await waitFor(() => expect(document.activeElement).toBe(item));
+    await user.keyboard("{Enter}");
+    expect(onVoid).toHaveBeenCalledTimes(1);
+    expect(onVoid).toHaveBeenCalledWith(expense);
   });
 
   it("o item tem a altura de toque de 44 px", async () => {
