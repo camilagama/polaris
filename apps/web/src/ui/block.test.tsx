@@ -55,6 +55,9 @@ describe("Block", () => {
 });
 
 const PLAIN_HEADING = /<h2[^>]*>Comprovante<\/h2>/;
+const HEADING_WITH_ID = /<h2[^>]*id="home-goal"[^>]*>Meta<\/h2>/;
+const GROWING_CONTENT = /class="[^"]*\bgrow\b[^"]*" data-slot="card-content"/;
+const ANY_GROW = /\bgrow\b/;
 const PLAIN_REGION = /<div[^>]*aria-labelledby="([^"]+)"[^>]*role="region"/;
 
 describe("Block variant plain", () => {
@@ -124,6 +127,33 @@ describe("Block variant plain", () => {
     const html = renderToStaticMarkup(<Block variant="plain">só isto</Block>);
     expect(html).not.toContain('data-slot="card-header"');
     expect(html).toContain("só isto");
+  });
+
+  it("headingId dá o id ao h2 que nomeia a região, no lugar do gerado", () => {
+    const html = renderToStaticMarkup(
+      <Block headingId="home-goal" title="Meta" variant="plain">
+        corpo
+      </Block>
+    );
+    expect(html).toContain('aria-labelledby="home-goal"');
+    expect(html).toMatch(HEADING_WITH_ID);
+  });
+
+  it("compact tira o piso de 36 px do cabeçalho e deixa o corpo crescer; sem ele, nenhum dos dois", () => {
+    const compact = renderToStaticMarkup(
+      <Block compact title="Meta" variant="plain">
+        corpo
+      </Block>
+    );
+    const regular = renderToStaticMarkup(
+      <Block title="Meta" variant="plain">
+        corpo
+      </Block>
+    );
+    expect(compact).toContain("md:min-h-0");
+    expect(compact).toMatch(GROWING_CONTENT);
+    expect(regular).not.toContain("md:min-h-0");
+    expect(regular).not.toMatch(ANY_GROW);
   });
 
   it("o título só se omite no plain: sem ele e sem o nome da região, não compila", () => {
