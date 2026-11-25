@@ -3,8 +3,9 @@ import CircleAlertIcon from "lucide-react/dist/esm/icons/circle-alert";
 import type { ReactNode } from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
 import { Badge } from "@/ui/badge";
+import { Block, BlockHeader, BlockPanel } from "@/ui/block";
 import { Button } from "@/ui/button";
-import { Card, CardContent, CardDescription, CardHeader } from "@/ui/card";
+import { CardFrame, CardFrameHeader, CardFramePanel } from "@/ui/card";
 import { Progress } from "@/ui/progress";
 import { Skeleton } from "@/ui/skeleton";
 import {
@@ -25,21 +26,6 @@ export const WRAPS = "h-auto min-h-ctl-md whitespace-normal py-1.5";
 
 /* The main action of the tab: the same wrapping, with the floor of the `xl` size (36 with a mouse, 44 with touch). */
 export const WRAPS_XL = "h-auto min-h-ctl-xl whitespace-normal py-1.5";
-
-/** The heading of a card that names a section of the screen (the card title is a div, as in the registry). */
-export function SectionTitle({
-  children,
-  id,
-}: {
-  children: ReactNode;
-  id: string;
-}) {
-  return (
-    <h2 className="m-0 text-section" id={id}>
-      {children}
-    </h2>
-  );
-}
 
 function UsageLine({ row }: { row: UsageRow }) {
   const used =
@@ -93,32 +79,31 @@ export function PlanCard({
   const kept = keptLine(plan.kept);
   const pending = refundAwaited ? null : refundPendingNotice(plan);
   const showUsage = plan.state !== "trial_setup";
+  const intro = headline.badge || headline.support;
   return (
-    <Card aria-labelledby="subscription-plan-title" role="region">
-      <CardHeader>
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-          <SectionTitle id="subscription-plan-title">
-            {headline.title}
-          </SectionTitle>
-          {headline.badge ? (
-            <Badge variant={headline.badge.tone}>{headline.badge.text}</Badge>
-          ) : null}
-        </div>
-        {headline.support ? (
-          <CardDescription>{headline.support}</CardDescription>
+    <Block aria-labelledby="subscription-plan-title">
+      <BlockHeader id="subscription-plan-title" title={headline.title} />
+      <BlockPanel>
+        {intro ? (
+          <div className="grid justify-items-start gap-1">
+            {headline.badge ? (
+              <Badge variant={headline.badge.tone}>{headline.badge.text}</Badge>
+            ) : null}
+            {headline.support ? (
+              <p className="m-0 text-muted-foreground text-support">
+                {headline.support}
+              </p>
+            ) : null}
+          </div>
         ) : null}
-      </CardHeader>
-      {showUsage ? (
-        <CardContent>
+        {showUsage ? (
           <div className="grid gap-3" data-usage-lines="">
             {usageRows(plan).map((row) => (
               <UsageLine key={row.id} row={row} />
             ))}
           </div>
-        </CardContent>
-      ) : null}
-      {pending ? (
-        <CardContent>
+        ) : null}
+        {pending ? (
           <Alert variant="warning">
             <AlertTitle>{pending.title}</AlertTitle>
             <AlertDescription className="grid justify-items-start gap-2">
@@ -126,57 +111,57 @@ export function PlanCard({
               {pendingAction}
             </AlertDescription>
           </Alert>
-        </CardContent>
-      ) : null}
-      {payment ? (
-        <CardContent className="grid gap-2 border-t pt-(--card-spacing)">
-          <h3 className="m-0 font-medium text-sm">Pagamento</h3>
-          <dl className="m-0 grid gap-x-6 gap-y-2 sm:grid-cols-3">
-            {payment.map((line) => (
-              <div className="grid gap-0.5" key={line.label}>
-                <dt className="text-muted-foreground text-xs">{line.label}</dt>
-                <dd className="m-0 font-medium tabular-nums">{line.value}</dd>
-              </div>
-            ))}
-          </dl>
-        </CardContent>
-      ) : null}
-      {resubscribe || kept ? (
-        <CardContent className="grid gap-1">
-          {resubscribe ? (
-            <p className="m-0 text-muted-foreground text-support">
-              {resubscribe}
-            </p>
-          ) : null}
-          {kept ? (
-            <p className="m-0 text-muted-foreground text-support">{kept}</p>
-          ) : null}
-        </CardContent>
-      ) : null}
-      {children}
-    </Card>
+        ) : null}
+        {payment ? (
+          <div className="grid gap-2 border-t pt-(--card-spacing)">
+            <h3 className="m-0 font-medium text-sm">Pagamento</h3>
+            <dl className="m-0 grid gap-x-6 gap-y-2 sm:grid-cols-3">
+              {payment.map((line) => (
+                <div className="grid gap-0.5" key={line.label}>
+                  <dt className="text-muted-foreground text-xs">
+                    {line.label}
+                  </dt>
+                  <dd className="m-0 font-medium tabular-nums">{line.value}</dd>
+                </div>
+              ))}
+            </dl>
+          </div>
+        ) : null}
+        {resubscribe || kept ? (
+          <div className="grid gap-1">
+            {resubscribe ? (
+              <p className="m-0 text-muted-foreground text-support">
+                {resubscribe}
+              </p>
+            ) : null}
+            {kept ? (
+              <p className="m-0 text-muted-foreground text-support">{kept}</p>
+            ) : null}
+          </div>
+        ) : null}
+        {children}
+      </BlockPanel>
+    </Block>
   );
 }
 
-/** The plan while it loads: the shapes of the card, and a line the screen reader reads. */
+/** The plan while it loads: the shapes of the block, and a line the screen reader reads. */
 export function PlanLoading() {
   return (
-    <Card aria-busy="true">
-      <CardHeader>
-        <p className="sr-only" role="status">
-          Carregando a assinatura…
-        </p>
-        <Skeleton className="h-5 w-32" />
-        <Skeleton className="h-4 w-56" />
-      </CardHeader>
-      <CardContent>
+    <CardFrame aria-busy="true" className="min-w-0" role="status">
+      <span className="sr-only">Carregando a assinatura…</span>
+      <CardFrameHeader>
+        <Skeleton aria-hidden="true" className="h-5 w-32" />
+      </CardFrameHeader>
+      <CardFramePanel>
+        <Skeleton aria-hidden="true" className="h-4 w-56" />
         <div className="grid gap-3">
-          <Skeleton className="h-7.5 sm:h-5" />
-          <Skeleton className="h-7.5 sm:h-5" />
-          <Skeleton className="h-7.5 sm:h-5" />
+          <Skeleton aria-hidden="true" className="h-7.5 sm:h-5" />
+          <Skeleton aria-hidden="true" className="h-7.5 sm:h-5" />
+          <Skeleton aria-hidden="true" className="h-7.5 sm:h-5" />
         </div>
-      </CardContent>
-    </Card>
+      </CardFramePanel>
+    </CardFrame>
   );
 }
 

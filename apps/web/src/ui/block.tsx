@@ -57,7 +57,8 @@ function PlainBlock({
   variant: _variant,
   ...props
 }: PlainBlockProps & { headingId: string }) {
-  const named = title !== undefined && title !== null && title !== false;
+  const named =
+    title !== undefined && title !== null && title !== false && title !== "";
   const hasRow = named || description || action || aside;
   return (
     <Card
