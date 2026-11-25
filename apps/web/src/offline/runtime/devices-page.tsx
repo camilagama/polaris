@@ -247,7 +247,7 @@ interface ListSectionProps {
 }
 
 /** Everything under the heading while this browser's session is alive: messages, then the list. */
-function ListSection({
+export function ListSection({
   actionError,
   confirming,
   devices,

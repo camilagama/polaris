@@ -427,7 +427,7 @@ export function CategoryList({
     return pendingDeleteId === id ? "delete" : null;
   };
   return (
-    <ListBlock count="" state="rows" title={CATEGORY_LIST_TITLE}>
+    <ListBlock state="rows" title={CATEGORY_LIST_TITLE}>
       {categories.map((category) => (
         <CategoryRow
           {...actions}
