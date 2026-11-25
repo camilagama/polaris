@@ -10,6 +10,7 @@ import {
   type SplitDraft,
   splitBalance,
   splitBalanceSentence,
+  splitStartBlocker,
   splitTotalChangedNotice,
 } from "./sale-split-model";
 
@@ -277,5 +278,19 @@ describe("the messages of each part", () => {
       "Escolha o método de pagamento."
     );
     expect(partMessages(null).planEmpty).toBe("Escolha quem parcela.");
+  });
+});
+
+describe("when Dividir pagamento is off", () => {
+  it("is on with a positive total, with or without a connection: the device keeps the parts", () => {
+    expect(splitStartBlocker("300.00")).toBeNull();
+  });
+
+  it("is off with no total, a zero total or a negative one, and says why", () => {
+    for (const total of [null, "0.00", "-1.00"]) {
+      expect(splitStartBlocker(total)).toBe(
+        "Adicione um item para dividir o pagamento."
+      );
+    }
   });
 });

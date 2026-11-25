@@ -377,11 +377,9 @@ function SaleDate({
 }
 
 interface SplitStartProps {
-  /** Why it is off ("Dividir precisa de internet"), or null. */
+  /** Why it is off ("Adicione um item para dividir o pagamento."), or null; it shows when the person presses the button. */
   blocker: string | null;
   onStart: () => void;
-  /** Without a connection the reason stays on the screen; with no item it shows when the person presses the button. */
-  reasonVisible: boolean;
 }
 
 /**
@@ -392,7 +390,6 @@ function SplitStart({
   blocker,
   children,
   onStart,
-  reasonVisible,
 }: SplitStartProps & { children: ReactNode }) {
   const reasonId = useId();
   const [reasonShown, setReasonShown] = useState(false);
@@ -408,7 +405,6 @@ function SplitStart({
     }
     setReasonShown(true);
   }, [blocker, onStart]);
-  const shown = reasonVisible || reasonShown;
   return (
     <>
       <ExtrasActions>
@@ -429,10 +425,10 @@ function SplitStart({
       {blocker === null ? null : (
         <span
           className={
-            shown ? "basis-full text-muted-foreground text-support" : "sr-only"
+            reasonShown ? "basis-full text-muted-foreground text-support" : "sr-only"
           }
           id={reasonId}
-          role={shown ? "note" : undefined}
+          role={reasonShown ? "note" : undefined}
         >
           {blocker}
         </span>
@@ -1182,9 +1178,10 @@ export function PaymentSection({
           )}
           {offline ? (
             <p className="-mt-3 text-muted-foreground text-support" role="note">
-              Sem conexão: estes são os perfis da última vez com conexão. Se o
-              perfil mudar até o servidor confirmar a venda, ela é recusada e
-              você pode reenviá-la sem perfil em Pendências.
+              Sem conexão: estes são os perfis da última vez com conexão.{" "}
+              {splitOn
+                ? "Se o perfil de uma parte mudar até o servidor confirmar a venda, ela é recusada inteira e fica em Pendências para você refazer com as duas partes."
+                : "Se o perfil mudar até o servidor confirmar a venda, ela é recusada e você pode reenviá-la sem perfil em Pendências."}
             </p>
           ) : null}
           <CatalogNotice
@@ -1230,7 +1227,6 @@ export function PaymentSection({
                 : {
                     blocker: split.blocker,
                     onStart: split.handlers.onStart,
-                    reasonVisible: offline,
                   }
             }
             summary={saleExtrasSummary(form, offline)}
