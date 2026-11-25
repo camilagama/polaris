@@ -2,6 +2,7 @@ import type { NormalizedMediaCropRect } from "@polaris/domain/catalog/media";
 import type { KeyboardEvent, PointerEvent } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/ui/button";
+import { InsetBlock } from "@/ui/inset-block";
 import { describeCrop } from "./media-crop-model";
 
 interface ProductMediaCropFieldProps {
@@ -77,7 +78,7 @@ export function ProductMediaCropField({
           </Button>
         </div>
       </div>
-      <div className="flex max-h-[62vh] max-w-full items-center justify-center overflow-auto rounded-lg border border-border bg-muted p-2 min-[30rem]:p-3">
+      <InsetBlock className="flex max-h-[62vh] max-w-full items-center justify-center overflow-auto p-2 min-[30rem]:p-3">
         <button
           aria-describedby="product-media-crop-help product-media-crop-state"
           aria-label="Área de recorte. Arraste ou use as setas para ajustar."
@@ -106,7 +107,7 @@ export function ProductMediaCropField({
             style={selectionStyle}
           />
         </button>
-      </div>
+      </InsetBlock>
       <p
         aria-live="polite"
         className="text-muted-foreground text-support"

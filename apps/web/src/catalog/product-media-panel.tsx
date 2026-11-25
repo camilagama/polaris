@@ -23,9 +23,8 @@ import {
 } from "react";
 import { Alert, AlertDescription } from "@/ui/alert";
 import { Button } from "@/ui/button";
-import { Checkbox } from "@/ui/checkbox";
+import { CheckableOption } from "@/ui/checkable-option";
 import { Field, FieldDescription, FieldLegend, FieldSet } from "@/ui/field";
-import { Label } from "@/ui/label";
 import { markLegalAcceptanceRequired } from "../lib/legal-acceptance";
 import {
   listProductMedia,
@@ -203,14 +202,13 @@ function VariantOption({
     [onToggle, variantId]
   );
   return (
-    <Label className="min-h-ctl-md rounded-md border border-border px-3">
-      <Checkbox
-        checked={checked}
-        disabled={disabled}
-        onCheckedChange={handleChange}
-      />
-      <span className="[overflow-wrap:anywhere]">{label}</span>
-    </Label>
+    <CheckableOption
+      checked={checked}
+      disabled={disabled}
+      onCheckedChange={handleChange}
+    >
+      {label}
+    </CheckableOption>
   );
 }
 

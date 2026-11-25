@@ -330,17 +330,12 @@ export const DEBT: Readonly<Record<Rule, readonly string[]>> = {
     "src/app-shell/action-strip.tsx",
     "src/app-shell/menu-progress.tsx",
     // catalog
-    "src/catalog/product-form.tsx",
-    "src/catalog/product-media-crop.tsx",
-    "src/catalog/product-media-panel.tsx",
-    "src/catalog/product-variants-form.tsx",
     // customers
     "src/customers/customer-list.tsx",
     // expenses
     "src/expenses/expense-list.tsx",
     "src/expenses/month-picker.tsx",
     // legal
-    "src/legal/legal-page.tsx",
     // offline
     // payment-profiles
     // sales

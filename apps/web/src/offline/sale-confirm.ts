@@ -314,6 +314,8 @@ export interface PendingSale {
   /** Lines of the sale. */
   lineCount: number;
   occurredAt: string;
+  /** The method of each part of a sale paid in parts, in order; null for a sale paid in one go. */
+  partMethods?: string[] | null;
   state: Exclude<OfflineSaleState, "confirmed">;
   /** What the customer owes, as the server computes it from the same lines and adjustments; null if it cannot be computed. */
   totalDue: string | null;
@@ -327,6 +329,21 @@ function isSalePayload(value: unknown): value is OfflineSalePayload {
   }
   const row = value as Record<string, unknown>;
   return Array.isArray(row.items) && typeof row.occurredAt === "string";
+}
+
+/** The methods of the parts, in order, when the sale the device kept is paid in parts; null otherwise. */
+export function partMethodsOf(payload: unknown): string[] | null {
+  const payments =
+    typeof payload === "object" && payload !== null
+      ? (payload as { payments?: unknown }).payments
+      : undefined;
+  if (!Array.isArray(payments) || payments.length < 2) {
+    return null;
+  }
+  return payments.map((part) => {
+    const method = (part as { method?: unknown } | null)?.method;
+    return typeof method === "string" ? method : "";
+  });
 }
 
 /** The units of a payload the device kept: a line whose quantity is not a whole number counts as zero, never as NaN. */
@@ -391,6 +408,7 @@ export async function pendingSales(outbox: Outbox): Promise<PendingSale[]> {
             commandId: command.commandId,
             lineCount: command.payload.items.length,
             occurredAt: command.payload.occurredAt,
+            partMethods: partMethodsOf(command.payload),
             state: stateOf(command),
             totalDue: totalDueOf(command.payload),
             unitCount: unitCountOf(command.payload.items),
@@ -432,6 +450,49 @@ async function findSale(
 }
 
 /**
+ * The profile a refusal of a sale paid in parts is about, when the device can tell without the part: the sync keeps
+ * only the code, so it is known only when every part with a profile uses the same one. With two different profiles,
+ * or none, it is null and nothing is guessed: the way out is to redo the sale, which reprices every part with the
+ * current profiles.
+ */
+export function refusedProfileOfParts(
+  payments: readonly { paymentProfile: { id: string } | null }[]
+): string | null {
+  const ids = new Set(
+    payments.flatMap((part) =>
+      part.paymentProfile ? [part.paymentProfile.id] : []
+    )
+  );
+  return ids.size === 1 ? ([...ids][0] ?? null) : null;
+}
+
+/**
+ * The sale without the profile that was refused: a single payment loses the sale-level one; a sale in parts keeps its
+ * parts and their order, and only the parts priced with the refused profile lose it, so their fees and term become
+ * unknown (never zero) and the other part keeps its own.
+ */
+function withoutRefusedProfile<P extends OfflineSalePayload>(payload: P): P {
+  if (payload.payments === undefined) {
+    const { paymentProfile: _profile, ...rest } = payload;
+    return rest as P;
+  }
+  const refused = Array.isArray(payload.payments)
+    ? refusedProfileOfParts(payload.payments)
+    : null;
+  if (refused === null) {
+    throw new Error("split_sale_profile_unknown");
+  }
+  return {
+    ...payload,
+    payments: payload.payments.map((part) =>
+      part.paymentProfile?.id === refused
+        ? { ...part, paymentProfile: null }
+        : part
+    ),
+  };
+}
+
+/**
  * Sends the same sale again as a NEW command, after what made the server refuse
  * it was fixed (the missing stock was received, the product restored). The old
  * command is gone only once the new one is queued, so a crash in between leaves
@@ -447,7 +508,8 @@ export async function resubmitRejectedSale(
     newCommandId?: () => string;
     /**
      * Send it again without its payment profile (taxes and term unknown), the way
-     * out of a profile that changed or went away. Only for those refusals.
+     * out of a profile that changed or went away. Only for those refusals; a sale
+     * in parts loses only the refused profile (`refusedProfileOfParts`).
      */
     withoutProfile?: boolean;
   }
@@ -464,14 +526,7 @@ export async function resubmitRejectedSale(
     if (!PROFILE_REFUSALS.has(sale.rejection?.code ?? "")) {
       throw new Error("sale_not_profile_refused");
     }
-    // Which part loses its profile is not decided for a split sale: the sync
-    // keeps only the code, not the part, so it is refused rather than guessed.
-    if (sale.payload.payments !== undefined) {
-      throw new Error("split_sale_profile_refusal");
-    }
-    const { paymentProfile: _profile, ...rest } =
-      sale.payload as OfflineSalePayload;
-    payload = rest as typeof sale.payload;
+    payload = withoutRefusedProfile(sale.payload);
   }
   const next = await outbox.enqueue({
     baseVersion: null,

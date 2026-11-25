@@ -297,24 +297,13 @@ export const SINGLE_PAYMENT_HELP =
 export const SPLIT_PAYMENT_HELP =
   "Cada parte tem método, valor e perfil. As duas somam o total. O método não comprova o recebimento.";
 
-const SPLIT_OFFLINE_REASON = "Dividir precisa de internet";
 const SPLIT_EMPTY_REASON = "Adicione um item para dividir o pagamento.";
 
-/** Said when a sale in parts meets a dropped connection at the confirmation: the device keeps one payment per sale. */
-export const SPLIT_OFFLINE_REFUSAL =
-  "Dividir precisa de internet. Confirme quando a conexão voltar ou volte a um pagamento só.";
-
 /**
- * Why "Dividir pagamento" is off, or null when it is on. Without a connection the device could not keep the sale (it
- * carries one payment); with no total there is nothing to split.
+ * Why "Dividir pagamento" is off, or null when it is on. With no total there is nothing to split; without a
+ * connection it is on, because the device keeps the parts of the sale (ADR 0107).
  */
-export function splitStartBlocker(
-  offline: boolean,
-  total: string | null
-): string | null {
-  if (offline) {
-    return SPLIT_OFFLINE_REASON;
-  }
+export function splitStartBlocker(total: string | null): string | null {
   return total === null || total.startsWith("-") || centsOfMoney(total) <= 0n
     ? SPLIT_EMPTY_REASON
     : null;
