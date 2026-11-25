@@ -16,6 +16,7 @@ const noop = () => undefined;
 
 const TAB_TAG = /<button[^>]*role="tab"[^>]*>/g;
 const SCROLL_BOX = /overflow-x-auto[^>]*>\s*<div[^>]*role="tablist"/;
+const PHONE_PADDING = /\sp-0\.5\s/;
 const TAB_LIST_TAG = /<div[^>]*role="tablist"[^>]*>/;
 const TAB_LIST =
   /<div[^>]*role="tablist"[^>]*aria-label="Estado das categorias"/;
@@ -103,10 +104,10 @@ describe("SegmentedFilter", () => {
       />
     );
     const list = compact.match(TAB_LIST_TAG)?.[0] ?? "";
-    expect(list).toContain("p-0.5");
+    expect(list).toMatch(PHONE_PADDING);
     expect(list).toContain("sm:p-0.75");
     const plain = draw("active").match(TAB_LIST_TAG)?.[0] ?? "";
-    expect(plain).not.toContain("p-0.5");
+    expect(plain).not.toMatch(PHONE_PADDING);
     expect(plain).not.toContain("sm:p-0.75");
   });
 });

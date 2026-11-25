@@ -60,8 +60,10 @@ test("clicar em Escuro e em Claro muda o tema, e a escolha fica guardada depois 
   await expect(appearance).toBeVisible();
   await expect(choice("Escuro")).toHaveAttribute("aria-selected", "true");
   await expect(choice("Automático")).toHaveAttribute("aria-selected", "false");
-  expect(await isDark(page)).toBe(true);
+  await expect.poll(() => isDark(page)).toBe(true);
 
+  // with the system dark, only a stored "Claro" keeps the page light
+  await page.emulateMedia({ colorScheme: "dark" });
   await choice("Claro").click();
   await expect(choice("Claro")).toHaveAttribute("aria-selected", "true");
   await expect.poll(() => isDark(page)).toBe(false);
@@ -69,10 +71,11 @@ test("clicar em Escuro e em Claro muda o tema, e a escolha fica guardada depois 
 
   await page.reload();
   await expect(choice("Claro")).toHaveAttribute("aria-selected", "true");
-  expect(await isDark(page)).toBe(false);
+  await expect.poll(() => isDark(page)).toBe(false);
 
   await choice("Automático").click();
   await expect.poll(() => storedTheme(page)).toBeNull();
+  await expect.poll(() => isDark(page)).toBe(true);
 });
 
 /**
