@@ -306,6 +306,33 @@ describe("the form of a refused sale", () => {
   });
 });
 
+describe("the form of a refused sale paid in parts", () => {
+  it("is unreadable, never a single payment with the parts dropped", () => {
+    const part = (amount: string, method: string) => ({
+      amount,
+      anticipationRequested: false,
+      installmentPlan: null,
+      installments: null,
+      method,
+      paymentProfile: null,
+    });
+    const { payment: _payment, ...single } = sale().payload as {
+      payment: unknown;
+    };
+    const split: OutboxCommand = {
+      ...sale(),
+      payload: {
+        ...single,
+        payments: [part("30.00", "pix"), part("40.00", "cash")],
+      } as OutboxCommand["payload"],
+    };
+
+    expect(
+      buildRedoDraft(split, [entry({ variantId: MUG })], createId)
+    ).toEqual({ kind: "unreadable" });
+  });
+});
+
 describe("what stopped the redo, in words", () => {
   it("names the line and the reason for each kind", () => {
     const problems: RedoLineProblem[] = [

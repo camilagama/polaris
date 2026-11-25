@@ -318,13 +318,7 @@ export const DEBT: Readonly<Record<Rule, readonly string[]>> = {
     "src/expenses/expenses-page.tsx",
     // help
     "src/help/help-page.tsx",
-    // inventory
-    "src/inventory/inventory-page.tsx",
     // offline
-    "src/offline/attention-panel.tsx",
-    "src/offline/logout-dialog.tsx",
-    "src/offline/runtime/device-item.tsx",
-    "src/offline/runtime/devices-page.tsx",
     // organization
     // payment-profiles
     // sales
@@ -354,14 +348,9 @@ export const DEBT: Readonly<Record<Rule, readonly string[]>> = {
     // expenses
     "src/expenses/expense-list.tsx",
     "src/expenses/month-picker.tsx",
-    // inventory
-    "src/inventory/stock-command-panel.tsx",
-    "src/inventory/stock-panel-fields.tsx",
     // legal
     "src/legal/legal-page.tsx",
     // offline
-    "src/offline/runtime/logout-control.tsx",
-    "src/offline/runtime/sync-status.tsx",
     // payment-profiles
     // sales
     "src/sales/sale-payment-section.tsx",
@@ -377,7 +366,6 @@ export const DEBT: Readonly<Record<Rule, readonly string[]>> = {
     // expenses
     "src/expenses/expense-list.tsx",
     // offline
-    "src/offline/runtime/device-item.tsx",
     // payment-profiles
     // sales
   ],
@@ -501,7 +489,6 @@ describe("o padrão visual das telas (R1 a R3)", () => {
       "src/catalog/product-list.tsx",
       "src/catalog/category-list.tsx",
       "src/expenses/expense-list.tsx",
-      "src/inventory/inventory-page.tsx",
     ]) {
       expect([...DEBT.R2, ...DEBT.R3], file).toContain(file);
     }
@@ -760,13 +747,12 @@ describe("R4: as peças soltas da lista só vivem em ui/ (controles)", () => {
     ]);
   });
 
-  it("os arquivos da dívida de R4 são os de hoje: as 5 telas que ainda importam e o screen-parts que reexporta", () => {
+  it("os arquivos da dívida de R4 são os de hoje: as 3 telas que ainda importam e o screen-parts que reexporta", () => {
     expect(DEBT.R4).toEqual([
       "src/catalog/category-list.tsx",
       "src/catalog/product-list.tsx",
       "src/catalog/screen-parts.tsx",
       "src/expenses/expense-list.tsx",
-      "src/offline/runtime/device-item.tsx",
     ]);
   });
 });

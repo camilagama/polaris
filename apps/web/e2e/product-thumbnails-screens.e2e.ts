@@ -447,12 +447,14 @@ const STOCK_ENTRIES = [
 const CLOSE_PANEL = /^(Cancelar|Fechar)$/;
 
 const stockItems = (page: Page) =>
-  page.locator('ul[aria-label="Saldos por variante"] > li');
+  page.locator("[data-list-block] ul[aria-labelledby] > li");
 
 async function stockGeometry(page: Page) {
   return await page.evaluate(() =>
     [
-      ...document.querySelectorAll('ul[aria-label="Saldos por variante"] > li'),
+      ...document.querySelectorAll(
+        "[data-list-block] ul[aria-labelledby] > li"
+      ),
     ].map((row) => {
       const box = row.querySelector("[data-thumbnail]");
       const rect = box?.getBoundingClientRect();

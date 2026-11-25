@@ -6,7 +6,7 @@ const SEE_STOCK = /^Ver estoque$/;
 
 /** The rows of the list of the stock screen. */
 export const stockRows = (page: Page) =>
-  page.getByRole("list", { name: "Saldos por variante" }).getByRole("listitem");
+  page.getByRole("list", { name: "Saldos em estoque" }).getByRole("listitem");
 
 /**
  * From the stock to the product and back: the name of the row of the mug opens its dialog, and "Ver estoque" opens the

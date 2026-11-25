@@ -39,6 +39,9 @@ const OFFLINE_OR_SERVER = /src\/(?:offline-poc|server)\//;
 const ADMIN_REFERENCE = /apps\/admin|\.\.\/admin\/|admin\/ui/;
 const PROSE_REFERENCE =
   /(?:\.\.\/)+(?:docs?|DESIGN|PRODUCT|CONTEXT|AGENTS)\b|["'`/]docs?\/|\.md["'`]/;
+const MIN_SCREEN_IMPORTS = 1000;
+const MIN_SPEC_APP_IMPORTS = 50;
+const MIN_APP_SOURCES_SCANNED = 350;
 const CONFIGS = [
   ["playwright.offline-poc.config.ts", "e2e"],
   ["playwright.pwa.config.ts", "e2e-pwa"],
@@ -457,12 +460,20 @@ describe("guarda do mapa de cobertura", () => {
 
   it("toda tela que importa um arquivo de código o tem entre os specs dela", () => {
     const missing = [];
+    const importedByScreen = {};
     for (const [screen, entries] of Object.entries(SCREEN_ENTRY_POINTS)) {
       const expected = specsForScreens([screen]);
+      const entryFiles = new Set(
+        entries.map((entry) => path.join(root, entry))
+      );
+      importedByScreen[screen] = 0;
       for (const file of closure(entries)) {
         const relative = repoPath(file);
         if (relative.includes(".test.")) {
           continue;
+        }
+        if (!entryFiles.has(file)) {
+          importedByScreen[screen] += 1;
         }
         const result = select(relative);
         if (result.full) {
@@ -474,6 +485,16 @@ describe("guarda do mapa de cobertura", () => {
         }
       }
     }
+    for (const [screen, imported] of Object.entries(importedByScreen)) {
+      expect(
+        imported,
+        `${screen}: a varredura não achou arquivo nenhum importado pelo ponto de entrada da tela (a regex IMPORT perdeu o formato?)`
+      ).toBeGreaterThanOrEqual(1);
+    }
+    expect(
+      Object.values(importedByScreen).reduce((sum, n) => sum + n, 0),
+      "arquivos de código importados pelas telas e conferidos (soma por tela, com repetidos entre telas): abaixo do piso, a varredura de imports deixou de ler o código"
+    ).toBeGreaterThanOrEqual(MIN_SCREEN_IMPORTS);
     expect(
       missing,
       "o arquivo é importado pela tela mas não a seleciona: ponha-o em FILE_SCREENS ou acrescente a tela a DIRECTORY_SCREENS (e2e/coverage-map.mjs)"
@@ -482,6 +503,7 @@ describe("guarda do mapa de cobertura", () => {
 
   it("todo spec que importa código do app o tem entre os que o código seleciona", () => {
     const missing = [];
+    let appFilesReached = 0;
     for (const spec of realSpecs) {
       const reached = closure([spec], {
         alias: true,
@@ -491,12 +513,17 @@ describe("guarda do mapa de cobertura", () => {
         if (!file.startsWith(path.join(web, "src"))) {
           continue;
         }
+        appFilesReached += 1;
         const result = select(repoPath(file));
         if (!(result.full || result.specs.includes(spec))) {
           missing.push(`${spec} importa ${repoPath(file)}`);
         }
       }
     }
+    expect(
+      appFilesReached,
+      "arquivos de apps/web/src alcançados pelos imports dos specs: abaixo do piso, a varredura de imports deixou de ler os specs"
+    ).toBeGreaterThanOrEqual(MIN_SPEC_APP_IMPORTS);
     expect(missing).toEqual([]);
   });
 
@@ -532,6 +559,7 @@ describe("guarda do mapa de cobertura", () => {
 
   it("nenhum arquivo do código do app importa um teste unitário", () => {
     const offenders = [];
+    let scanned = 0;
     for (const file of tracked) {
       if (
         !(
@@ -542,10 +570,15 @@ describe("guarda do mapa de cobertura", () => {
       ) {
         continue;
       }
+      scanned += 1;
       if (UNIT_TEST_IMPORT.test(readFileSync(path.join(root, file), "utf8"))) {
         offenders.push(file);
       }
     }
+    expect(
+      scanned,
+      "arquivos de código de apps/web/src varridos: abaixo do piso, a lista de arquivos do git deixou de trazê-los"
+    ).toBeGreaterThanOrEqual(MIN_APP_SOURCES_SCANNED);
     expect(offenders).toEqual([]);
   });
 

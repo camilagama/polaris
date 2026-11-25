@@ -442,7 +442,9 @@ test("lista os aparelhos, pede confirmação clara e revoga um deles sem a opç�
   await expect(list.getByRole("listitem")).toHaveCount(1);
   await expect(list).not.toContainText("Celular da Ana");
   // the confirmation is gone: the focus stays on the page, not on the body, and the keyboard sees where it is
-  await expectFocusRing(page.getByRole("heading", { name: "Aparelhos" }));
+  await expectFocusRing(
+    page.getByRole("heading", { name: "Aparelhos", exact: true })
+  );
   // the option was not ticked: the call carries false
   expect(state.revokeBodies).toHaveLength(1);
   expect(state.revokeBodies[0]?.endOtherSessions ?? false).toBe(false);
@@ -1291,7 +1293,9 @@ test("uma recusa definitiva fecha a confirmação e o aviso fica no topo, com a 
   await expect(page.getByRole("alert")).toContainText("Nada foi alterado");
   await expect(page.getByRole("dialog")).toHaveCount(0);
   // the confirmation that held the focus is gone: the focus goes to the heading, not to the body
-  await expect(page.getByRole("heading", { name: "Aparelhos" })).toBeFocused();
+  await expect(
+    page.getByRole("heading", { name: "Aparelhos", exact: true })
+  ).toBeFocused();
   await expect(askRevoke(page, "Celular da Ana")).toBeEnabled();
 });
 

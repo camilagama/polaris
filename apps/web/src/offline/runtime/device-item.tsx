@@ -4,10 +4,10 @@ import MonitorSmartphoneIcon from "lucide-react/dist/esm/icons/monitor-smartphon
 import SmartphoneIcon from "lucide-react/dist/esm/icons/smartphone";
 import TabletIcon from "lucide-react/dist/esm/icons/tablet";
 import { useCallback, useRef } from "react";
+import { cn } from "@/lib/utils";
 import { Alert, AlertDescription } from "@/ui/alert";
 import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
-import { Card } from "@/ui/card";
 import { Checkbox } from "@/ui/checkbox";
 import {
   Dialog,
@@ -18,11 +18,8 @@ import {
   DialogTitle,
 } from "@/ui/dialog";
 import { Field, FieldContent, FieldDescription, FieldLabel } from "@/ui/field";
-import {
-  ROW_BODY_CLASS,
-  ROW_TEXT_CLASS,
-  RowTile,
-} from "../../catalog/screen-parts";
+import { ListBlock } from "@/ui/list-block";
+import { ROW_BODY_CLASS, ROW_TEXT_CLASS } from "../../catalog/screen-parts";
 import {
   confirmLabel,
   type DeviceKind,
@@ -227,68 +224,64 @@ export function DeviceItem({
     return document.getElementById(DEVICES_HEADING_ID);
   }, []);
   return (
-    <li>
-      <Card className="gap-2 px-(--card-spacing)">
-        <div className="flex items-start gap-3">
-          <RowTile>
-            <DeviceIcon kind={row.kind} />
-          </RowTile>
-          <div className={ROW_BODY_CLASS}>
-            <div className={ROW_TEXT_CLASS}>
-              <p className="font-medium [overflow-wrap:anywhere]">
-                {row.labelText}
-              </p>
-              <p className="text-muted-foreground text-support">
-                Registrado em {row.registeredText} · visto por último em{" "}
-                {row.lastSeenText}
-              </p>
-              {row.isCurrent && !sessionGone ? (
-                <p className="text-muted-foreground text-support">
-                  {online ? THIS_DEVICE_ONLINE_HELP : THIS_DEVICE_OFFLINE_HELP}
-                </p>
-              ) : null}
-            </div>
-            {row.isCurrent ? (
-              <Badge variant="outline">Este aparelho</Badge>
-            ) : null}
-          </div>
+    <ListBlock.Row
+      className="flex-wrap items-start"
+      tile={<DeviceIcon kind={row.kind} />}
+    >
+      <div
+        className={cn(ROW_BODY_CLASS, "max-[40rem]:basis-[calc(100%-3rem)]")}
+      >
+        <div className={ROW_TEXT_CLASS}>
+          <p className="font-medium [overflow-wrap:anywhere]">
+            {row.labelText}
+          </p>
+          <p className="text-muted-foreground text-support">
+            Registrado em {row.registeredText} · visto por último em{" "}
+            {row.lastSeenText}
+          </p>
+          {row.isCurrent && !sessionGone ? (
+            <p className="text-muted-foreground text-support">
+              {online ? THIS_DEVICE_ONLINE_HELP : THIS_DEVICE_OFFLINE_HELP}
+            </p>
+          ) : null}
         </div>
-        {row.isCurrent ? null : (
-          <>
-            <Button
-              aria-describedby={offline ? reasonId : undefined}
-              aria-disabled={busy || offline || undefined}
-              aria-label={`Revogar o aparelho ${row.labelText}`}
-              className="mt-1 self-start"
-              onClick={busy || offline ? undefined : handleAsk}
-              ref={askRef}
-              type="button"
-              variant="destructive"
+        {row.isCurrent ? <Badge variant="outline">Este aparelho</Badge> : null}
+      </div>
+      {row.isCurrent ? null : (
+        <>
+          <Button
+            aria-describedby={offline ? reasonId : undefined}
+            aria-disabled={busy || offline || undefined}
+            aria-label={`Revogar o aparelho ${row.labelText}`}
+            className="max-[40rem]:ml-12 min-[40rem]:self-center"
+            onClick={busy || offline ? undefined : handleAsk}
+            ref={askRef}
+            type="button"
+            variant="destructive"
+          >
+            Revogar
+          </Button>
+          <Dialog onOpenChange={handleOpenChange} open={confirming}>
+            <DialogContent
+              className="sm:max-w-md"
+              finalFocus={finalFocus}
+              showCloseButton={false}
             >
-              Revogar
-            </Button>
-            <Dialog onOpenChange={handleOpenChange} open={confirming}>
-              <DialogContent
-                className="sm:max-w-md"
-                finalFocus={finalFocus}
-                showCloseButton={false}
-              >
-                <RevokeBody
-                  actionError={actionError}
-                  busy={busy}
-                  endOtherSessions={endOtherSessions}
-                  offline={offline}
-                  onCancel={handleCancel}
-                  onChoose={handleChoose}
-                  onRevoke={handleRevoke}
-                  reasonId={reasonId}
-                  row={row}
-                />
-              </DialogContent>
-            </Dialog>
-          </>
-        )}
-      </Card>
-    </li>
+              <RevokeBody
+                actionError={actionError}
+                busy={busy}
+                endOtherSessions={endOtherSessions}
+                offline={offline}
+                onCancel={handleCancel}
+                onChoose={handleChoose}
+                onRevoke={handleRevoke}
+                reasonId={reasonId}
+                row={row}
+              />
+            </DialogContent>
+          </Dialog>
+        </>
+      )}
+    </ListBlock.Row>
   );
 }
