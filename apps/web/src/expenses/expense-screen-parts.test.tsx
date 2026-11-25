@@ -250,47 +250,46 @@ describe("ExpenseList", () => {
     expect(html).not.toContain("Anulando");
   });
 
-  it("voiding says Anulando… as a status on that row only", () => {
-    const html = list(
-      state({
-        count: 2,
-        expenses: [expense({}), expense({ description: "Energia", id: "e2" })],
-      }),
-      "active",
-      "",
-      "void:e1"
-    );
-    expect(html.match(VOIDING_TEXT)).toHaveLength(1);
-    expect(html).toMatch(VOIDING_STATUS);
-    expect(rowOf(html, "e1"), "row e1 is the one being voided").toContain(
-      "Anulando…"
-    );
-    expect(rowOf(html, "e2"), "row e2 is not being voided").not.toContain(
-      "Anulando…"
-    );
-  });
+  describe.each([
+    ["e1, e2", [{}, { description: "Energia", id: "e2" }]],
+    ["e2, e1", [{ description: "Energia", id: "e2" }, {}]],
+  ] as const)("with the rows in the order %s", (_order, rows) => {
+    it("voiding says Anulando… as a status on that row only", () => {
+      const html = list(
+        state({ count: 2, expenses: rows.map((row) => expense(row)) }),
+        "active",
+        "",
+        "void:e1"
+      );
+      expect(html.match(VOIDING_TEXT)).toHaveLength(1);
+      expect(html).toMatch(VOIDING_STATUS);
+      expect(rowOf(html, "e1"), "row e1 is the one being voided").toContain(
+        "Anulando…"
+      );
+      expect(rowOf(html, "e2"), "row e2 is not being voided").not.toContain(
+        "Anulando…"
+      );
+    });
 
-  it("restoring says Reativando… on the voided row only", () => {
-    const html = list(
-      state({
-        count: 2,
-        expenses: [
-          expense({ status: "voided" }),
-          expense({ id: "e2", status: "voided" }),
-        ],
-      }),
-      "voided",
-      "",
-      "restore:e1"
-    );
-    expect(html.match(RESTORING_TEXT)).toHaveLength(1);
-    expect(rowOf(html, "e1"), "row e1 is the one being restored").toContain(
-      "Reativando…"
-    );
-    expect(rowOf(html, "e2"), "row e2 is not being restored").not.toContain(
-      "Reativando…"
-    );
-    expect(html).not.toContain("Anulando");
+    it("restoring says Reativando… on the voided row only", () => {
+      const html = list(
+        state({
+          count: 2,
+          expenses: rows.map((row) => expense({ ...row, status: "voided" })),
+        }),
+        "voided",
+        "",
+        "restore:e1"
+      );
+      expect(html.match(RESTORING_TEXT)).toHaveLength(1);
+      expect(rowOf(html, "e1"), "row e1 is the one being restored").toContain(
+        "Reativando…"
+      );
+      expect(rowOf(html, "e2"), "row e2 is not being restored").not.toContain(
+        "Reativando…"
+      );
+      expect(html).not.toContain("Anulando");
+    });
   });
 
   it("a generated occurrence carries the Recorrente badge", () => {

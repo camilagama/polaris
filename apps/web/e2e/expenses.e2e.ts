@@ -1330,7 +1330,7 @@ async function boxOrFail(locator: Locator) {
 const TOUCH_AREA = 44;
 const TOUCH_SLACK = 0.5;
 
-/** Whether a tap `distance` px from the centre of the control, along each axis, still lands on it (its own box or its `touch-hit` area). */
+/** Whether a tap `distance` px from the centre of the control, along each axis and at its four corners, still lands on it (its own box or its `touch-hit` area). */
 function tapReaches(control: Locator, distance: number) {
   return control.evaluate((element, reach) => {
     const box = element.getBoundingClientRect();
@@ -1342,6 +1342,11 @@ function tapReaches(control: Locator, distance: number) {
     return {
       across:
         lands(middle.x - reach, middle.y) && lands(middle.x + reach, middle.y),
+      diagonal: [-1, 1].every((dx) =>
+        [-1, 1].every((dy) =>
+          lands(middle.x + dx * reach, middle.y + dy * reach)
+        )
+      ),
       down:
         lands(middle.x, middle.y - reach) && lands(middle.x, middle.y + reach),
     };
@@ -1376,11 +1381,27 @@ test.describe("com toque", () => {
       reach.down,
       "um toque 21,5 px acima ou abaixo do gatilho … cai fora dele"
     ).toBe(true);
+    expect(
+      reach.diagonal,
+      "um toque 21,5 px na diagonal do gatilho … (canto da área de toque) cai nele"
+    ).toBe(true);
 
-    await trigger.click();
+    const triggerBox = await boxOrFail(trigger);
+    await page.touchscreen.tap(
+      triggerBox.x + triggerBox.width / 2 + (TOUCH_AREA / 2 - TOUCH_SLACK),
+      triggerBox.y + triggerBox.height / 2 + (TOUCH_AREA / 2 - TOUCH_SLACK)
+    );
     const item = page.getByRole("menuitem", {
       name: "Anular despesa Despesa 1",
     });
+    await expect(
+      item,
+      "o toque no canto da área do gatilho … abre o menu"
+    ).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(item).toBeHidden();
+
+    await trigger.click();
     await expect(item).toBeVisible();
     const itemBox = await item.boundingBox();
     expect(itemBox?.height ?? 0).toBeGreaterThanOrEqual(
