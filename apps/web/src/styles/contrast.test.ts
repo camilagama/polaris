@@ -407,6 +407,8 @@ const WHITESPACE = /\s+/;
 const DARK_PREFIX = /^dark:/;
 const TEXT_SIZE_CLASS =
   /^text-(?:xs|sm|base|lg|[2-9]?xl|\[[\d.]+(?:px|rem|em|%)\])(?:\/[\w.[\]]+)?$/;
+const NOT_A_COLOR_CLASS =
+  /^(?:text-(?:left|center|right|justify|start|end|wrap|nowrap|balance|pretty|ellipsis|clip|shadow-[\w-]+)|bg-(?:no-repeat|repeat(?:-x|-y|-round|-space)?|clip-(?:border|padding|content|text)|origin-(?:border|padding|content)|fixed|local|scroll|auto|cover|contain|none|(?:top|bottom|left|right|center)(?:-(?:top|bottom|left|right))?|(?:size|position)-[\w./[\]-]+|blend-[\w-]+))$/;
 const BADGE_COLOR_CLASS = /^[a-z]+-([a-z-]+?)(?:\/(\d+))?$/;
 const BADGE_VARIANT_ENTRY = /(\w+):\s*"([^"]*)"/g;
 const BADGE_VARIANT_KEY = /^\s*[\w"'`]+:/gm;
@@ -435,7 +437,9 @@ function badgePair(
         .map((item) => item.replace(DARK_PREFIX, ""))
         .filter(
           (item) =>
-            item.startsWith(`${utility}-`) && !TEXT_SIZE_CLASS.test(item)
+            item.startsWith(`${utility}-`) &&
+            !TEXT_SIZE_CLASS.test(item) &&
+            !NOT_A_COLOR_CLASS.test(item)
         )
         .map((item) => {
           const match = BADGE_COLOR_CLASS.exec(item);
@@ -580,7 +584,7 @@ describe.each([
   }
 );
 
-describe("badgePair: a ordem das classes e as utilidades de tamanho", () => {
+describe("badgePair: a ordem das classes e as utilidades que não são cor", () => {
   const palette = new Map([
     ...tokens(block(":root")),
     ...tokens(block(".dark")),
@@ -599,23 +603,106 @@ describe("badgePair: a ordem das classes e as utilidades de tamanho", () => {
     expect(badgePair(inverted, palette, false)?.background).toBe("`card`");
   });
 
-  it("ignora utilidade de tamanho em text-*, sem erro de token de cor", () => {
-    const base = badgePair("bg-card text-foreground", palette, false);
+  it("mede cada ramo de tamanho, também com o prefixo dark:", () => {
+    const base = badgePair("bg-card text-foreground", palette, true);
     for (const size of [
-      "text-sm",
       "text-xs",
+      "text-sm",
+      "text-base",
+      "text-lg",
+      "text-xl",
+      "text-2xl",
       "text-9xl",
       "text-[11px]",
+      "text-[0.75rem]",
+      "text-[0.75em]",
+      "text-[110%]",
       "text-sm/6",
+      "text-base/[1.5]",
     ]) {
+      for (const dark of [false, true]) {
+        const expected = badgePair("bg-card text-foreground", palette, dark);
+        expect(
+          badgePair(`bg-card text-foreground ${size}`, palette, dark),
+          size
+        ).toEqual(expected);
+      }
       expect(
-        badgePair(`${size} bg-card text-foreground`, palette, false)
-      ).toEqual(base);
-      expect(
-        badgePair(`bg-card text-foreground ${size}`, palette, false)
+        badgePair(`bg-card text-foreground dark:${size}`, palette, true),
+        `dark:${size}`
       ).toEqual(base);
     }
   });
+
+  it("ignora utilidade text-*/bg-* que não é cor, sem erro de token", () => {
+    for (const dark of [false, true]) {
+      const expected = badgePair("bg-card text-foreground", palette, dark);
+      for (const other of [
+        "text-center",
+        "text-left",
+        "text-right",
+        "text-justify",
+        "text-start",
+        "text-end",
+        "text-ellipsis",
+        "text-clip",
+        "text-wrap",
+        "text-nowrap",
+        "text-balance",
+        "text-pretty",
+        "bg-no-repeat",
+        "bg-repeat-x",
+        "bg-clip-text",
+        "bg-origin-border",
+        "bg-fixed",
+        "bg-cover",
+        "bg-center",
+        "bg-top-left",
+        "bg-none",
+        "bg-left-bottom",
+        "bg-size-cover",
+        "dark:bg-no-repeat",
+        "dark:text-center",
+      ]) {
+        expect(
+          badgePair(`${other} bg-card text-foreground`, palette, dark),
+          other
+        ).toEqual(expected);
+        expect(
+          badgePair(`bg-card text-foreground ${other}`, palette, dark),
+          other
+        ).toEqual(expected);
+      }
+    }
+  });
+
+  it("a utilidade que não é cor não esconde a cor que vem depois", () => {
+    expect(
+      badgePair("bg-card text-center text-foreground", palette, false)
+    ).toEqual(badgePair("bg-card text-foreground", palette, false));
+    expect(
+      badgePair(
+        "bg-card bg-no-repeat bg-secondary text-foreground",
+        palette,
+        false
+      )?.background
+    ).toBe("`secondary`");
+  });
+
+  it.each(badgeVariants)(
+    "a variante real $name mede o mesmo par com utilidades que não são cor",
+    ({ classes }) => {
+      for (const dark of [false, true]) {
+        expect(
+          badgePair(
+            `${classes} text-center bg-no-repeat text-sm`,
+            palette,
+            dark
+          )
+        ).toEqual(badgePair(classes, palette, dark));
+      }
+    }
+  );
 
   it("só a classe dark: de um nível troca a clara", () => {
     for (const nested of [

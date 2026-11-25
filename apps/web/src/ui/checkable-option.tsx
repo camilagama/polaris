@@ -32,7 +32,6 @@ function CheckableOption({
     >
       <Checkbox
         checked={checked}
-        className="data-disabled:opacity-50"
         disabled={disabled ?? false}
         onCheckedChange={onCheckedChange}
       />
