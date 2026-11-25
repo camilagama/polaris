@@ -1,13 +1,13 @@
 /// <reference lib="dom" />
-import type { Locator, Page, Route } from "@playwright/test";
+import type { Page, Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
+import { chooseSelectOption } from "./select-option";
 import { serveLabWorker, WORKER_MARK } from "./worker-mark";
 
 /**
  * "Dividir pagamento" on the sale screen, in the lab of the offline screens (no server: the reads and the
  * confirmation are answered here). Two parts at most; each with its method, amount, credit fields and profile.
  */
-const ANY_ID = /.+/;
 const SHIRT_OPTION = /Camiseta do laboratório · Azul/;
 const LAB_PROFILE = /Maquininha do laboratório/;
 const DESKTOP_ONLY = "teclas e linha única só no desktop";
@@ -103,23 +103,6 @@ const splitButton = (page: Page) =>
 const part = (page: Page, ordinal: 1 | 2) =>
   page.getByRole("group", { exact: true, name: `Parte ${ordinal}` });
 
-/**
- * A closed Select popup stays in the page, transparent and with no size, and answers the same role and name as the
- * one that opens next. The option is looked up inside the list this trigger opened (its aria-controls).
- */
-async function choose(scope: Locator, label: string, option: RegExp | string) {
-  const trigger = scope.getByRole("combobox", { exact: true, name: label });
-  await trigger.click();
-  await expect(trigger).toHaveAttribute("aria-controls", ANY_ID);
-  const list = scope
-    .page()
-    .locator(`[id="${await trigger.getAttribute("aria-controls")}"]`);
-  await list
-    .getByRole("option", { exact: typeof option === "string", name: option })
-    .click();
-  await expect(trigger).toHaveAttribute("aria-expanded", "false");
-}
-
 /** Total 300, part 1 Pix 100 with no profile, part 2 cash with no profile. */
 async function splitTheExample(page: Page): Promise<void> {
   await sellShirtFor300(page);
@@ -127,7 +110,7 @@ async function splitTheExample(page: Page): Promise<void> {
     .getByRole("radiogroup", { name: "Método de pagamento" })
     .getByRole("radio", { name: "Pix" })
     .check();
-  await choose(
+  await chooseSelectOption(
     page.locator("form"),
     "Perfil de pagamento",
     "Sem perfil de pagamento"
@@ -135,8 +118,12 @@ async function splitTheExample(page: Page): Promise<void> {
   await splitButton(page).click();
   await expect(part(page, 1).getByLabel("Valor")).toBeFocused();
   await part(page, 1).getByLabel("Valor").fill("100,00");
-  await choose(part(page, 2), "Método", "Dinheiro");
-  await choose(part(page, 2), "Perfil de pagamento", "Sem perfil de pagamento");
+  await chooseSelectOption(part(page, 2), "Método", "Dinheiro");
+  await chooseSelectOption(
+    part(page, 2),
+    "Perfil de pagamento",
+    "Sem perfil de pagamento"
+  );
 }
 
 test("o caso comum não pesa: Dividir pagamento é um botão de texto na linha fechada, uma parada depois do perfil, e nada mais à vista", async ({
@@ -264,9 +251,9 @@ test("Ajustar para na parte em dinheiro, e o troco fica só na tela", async ({
   await openSaleLab(page);
   await sellShirtFor300(page);
   await splitButton(page).click();
-  await choose(part(page, 1), "Método", "Dinheiro");
+  await chooseSelectOption(part(page, 1), "Método", "Dinheiro");
   await part(page, 1).getByLabel("Valor").fill("250,00");
-  await choose(part(page, 2), "Método", "Pix");
+  await chooseSelectOption(part(page, 2), "Método", "Pix");
   await part(page, 2).getByLabel("Valor").fill("100,00");
   const status = page.locator("#sale-split-balance");
   await expect(status).toContainText("Passou R$ 50,00");
@@ -337,11 +324,11 @@ test("perfil por parte: cada parte tem o seu no Resumo; a recusa do servidor diz
   );
   await sellShirtFor300(page);
   await splitButton(page).click();
-  await choose(part(page, 1), "Método", "Pix");
+  await chooseSelectOption(part(page, 1), "Método", "Pix");
   await part(page, 1).getByLabel("Valor").fill("100,00");
-  await choose(part(page, 1), "Perfil de pagamento", LAB_PROFILE);
-  await choose(part(page, 2), "Método", "Dinheiro");
-  await choose(part(page, 2), "Perfil de pagamento", LAB_PROFILE);
+  await chooseSelectOption(part(page, 1), "Perfil de pagamento", LAB_PROFILE);
+  await chooseSelectOption(part(page, 2), "Método", "Dinheiro");
+  await chooseSelectOption(part(page, 2), "Perfil de pagamento", LAB_PROFILE);
   const summary = page.getByRole("complementary", { name: "Resumo" });
   await expect(summary).toContainText("Parte 1 · Pix");
   await expect(summary.getByText("Maquininha do laboratório")).toHaveCount(2);
@@ -358,11 +345,11 @@ test("o mesmo perfil editado nas duas partes dá um aviso só, com um botão que
   await openSaleLab(page, undefined, version);
   await sellShirtFor300(page);
   await splitButton(page).click();
-  await choose(part(page, 1), "Método", "Pix");
+  await chooseSelectOption(part(page, 1), "Método", "Pix");
   await part(page, 1).getByLabel("Valor").fill("100,00");
-  await choose(part(page, 1), "Perfil de pagamento", LAB_PROFILE);
-  await choose(part(page, 2), "Método", "Dinheiro");
-  await choose(part(page, 2), "Perfil de pagamento", LAB_PROFILE);
+  await chooseSelectOption(part(page, 1), "Perfil de pagamento", LAB_PROFILE);
+  await chooseSelectOption(part(page, 2), "Método", "Dinheiro");
+  await chooseSelectOption(part(page, 2), "Perfil de pagamento", LAB_PROFILE);
   version.current = 2;
   await page
     .getByRole("button", { name: "Atualizar estoque e perfis" })
@@ -395,15 +382,19 @@ test("sem internet: Dividir pagamento fica ligado, a venda dividida é guardada 
     .getByRole("radiogroup", { name: "Método de pagamento" })
     .getByRole("radio", { name: "Pix" })
     .check();
-  await choose(
+  await chooseSelectOption(
     page.locator("form"),
     "Perfil de pagamento",
     "Sem perfil de pagamento"
   );
   await start.click();
   await part(page, 1).getByLabel("Valor").fill("100,00");
-  await choose(part(page, 2), "Método", "Dinheiro");
-  await choose(part(page, 2), "Perfil de pagamento", "Sem perfil de pagamento");
+  await chooseSelectOption(part(page, 2), "Método", "Dinheiro");
+  await chooseSelectOption(
+    part(page, 2),
+    "Perfil de pagamento",
+    "Sem perfil de pagamento"
+  );
   await expect(
     page.getByText("Fechou: R$ 300,00", { exact: true }).first()
   ).toBeVisible();
@@ -473,11 +464,15 @@ test("sem internet, cada parte usa os perfis da última conexão: o Resumo mostr
     page.getByText("estes são os perfis da última vez com conexão")
   ).toBeVisible();
   await splitButton(page).click();
-  await choose(part(page, 1), "Método", "Pix");
+  await chooseSelectOption(part(page, 1), "Método", "Pix");
   await part(page, 1).getByLabel("Valor").fill("100,00");
-  await choose(part(page, 1), "Perfil de pagamento", "Sem perfil de pagamento");
-  await choose(part(page, 2), "Método", "Débito");
-  await choose(part(page, 2), "Perfil de pagamento", LAB_PROFILE);
+  await chooseSelectOption(
+    part(page, 1),
+    "Perfil de pagamento",
+    "Sem perfil de pagamento"
+  );
+  await chooseSelectOption(part(page, 2), "Método", "Débito");
+  await chooseSelectOption(part(page, 2), "Perfil de pagamento", LAB_PROFILE);
   await expect(
     page
       .getByRole("note")
@@ -525,7 +520,7 @@ test("sem internet, a venda de 1 parte segue como hoje", async ({ page }) => {
     .getByRole("radiogroup", { name: "Método de pagamento" })
     .getByRole("radio", { name: "Pix" })
     .check();
-  await choose(
+  await chooseSelectOption(
     page.locator("form"),
     "Perfil de pagamento",
     "Sem perfil de pagamento"
@@ -567,12 +562,16 @@ for (const edited of [1, 2] as const) {
     await openSaleLab(page, undefined, version);
     await sellShirtFor300(page);
     await splitButton(page).click();
-    await choose(part(page, 1), "Método", "Pix");
+    await chooseSelectOption(part(page, 1), "Método", "Pix");
     await part(page, 1).getByLabel("Valor").fill("100,00");
-    await choose(part(page, 2), "Método", "Dinheiro");
+    await chooseSelectOption(part(page, 2), "Método", "Dinheiro");
     const other = edited === 1 ? 2 : 1;
-    await choose(part(page, edited), "Perfil de pagamento", LAB_PROFILE);
-    await choose(
+    await chooseSelectOption(
+      part(page, edited),
+      "Perfil de pagamento",
+      LAB_PROFILE
+    );
+    await chooseSelectOption(
       part(page, other),
       "Perfil de pagamento",
       "Sem perfil de pagamento"
