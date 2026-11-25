@@ -1,13 +1,13 @@
 /// <reference lib="dom" />
 import type { Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
+import { chooseProfileAction } from "./payment-profile-actions";
 import { WORKER_MARK } from "./worker-mark";
 
 /**
  * Correções de usabilidade do staging, lote 1, parte C: percentual de taxa dos perfis de pagamento
  * (U-29 e U-30). U-14 (SKU repetido) está em products-screen.e2e.ts, junto da tela dele.
  */
-const EDIT = /Editar/;
 const ORGANIZATION = {
   id: "0199c2d0-0000-7000-8000-00000000a001",
   name: "Loja do teste",
@@ -133,7 +133,7 @@ test("U-30: a taxa aparece como 3% e 2,5%, e o campo de edição vem sem os zero
   await expect(card).not.toContainText("3.000000");
   await expect(card).not.toContainText("2.500000");
 
-  await page.getByRole("button", { name: EDIT }).first().click();
+  await chooseProfileAction(page, "Editar", "Maquininha da loja");
   await expect(
     page.getByLabel("Percentual efetivo sobre o total devido").first()
   ).toHaveValue("3");

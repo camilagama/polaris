@@ -102,7 +102,7 @@ for (const theme of THEMES) {
       await useDevice(page, viewport, theme, false);
       await historyStates.list(page);
       const amounts = page
-        .getByRole("list", { name: "Vendas" })
+        .getByRole("list", { exact: true, name: "Vendas do período" })
         .locator("[data-money]");
       expect(await amounts.count()).toBeGreaterThan(2);
       const measured = await amounts.evaluateAll((roots) =>
