@@ -1,6 +1,7 @@
 import type { InventoryBalanceEntryReadModel } from "@polaris/contracts";
 import { describe, expect, it } from "vitest";
 import { isSaleFormState } from "../sales/sale-draft-storage";
+import { NO_PROFILE_CHOICE } from "../sales/sale-form-model";
 import type { OutboxCommand } from "./outbox/command";
 import {
   buildRedoDraft,
@@ -285,51 +286,123 @@ describe("the form of a refused sale", () => {
       kind: "unreadable",
     });
   });
-
-  it("does not build the form of a sale paid in parts, whose redo the device does not keep yet", () => {
-    const { payment, ...single } = sale().payload as Record<string, unknown>;
-    const split = {
-      ...sale(),
-      payload: {
-        ...single,
-        payments: [
-          { ...(payment as object), amount: "30.00", paymentProfile: null },
-          { ...(payment as object), amount: "40.00", paymentProfile: null },
-        ],
-      },
-    };
-    expect(
-      buildRedoDraft(split, [entry({ variantId: MUG })], createId)
-    ).toEqual({
-      kind: "unreadable",
-    });
-  });
 });
 
-describe("the form of a refused sale paid in parts", () => {
-  it("is unreadable, never a single payment with the parts dropped", () => {
-    const part = (amount: string, method: string) => ({
-      amount,
-      anticipationRequested: false,
-      installmentPlan: null,
-      installments: null,
-      method,
-      paymentProfile: null,
-    });
-    const { payment: _payment, ...single } = sale().payload as {
-      payment: unknown;
-    };
-    const split: OutboxCommand = {
-      ...sale(),
-      payload: {
-        ...single,
-        payments: [part("30.00", "pix"), part("40.00", "cash")],
-      } as OutboxCommand["payload"],
-    };
+const part = (
+  amount: string,
+  method: string,
+  overrides: Record<string, unknown> = {}
+) => ({
+  amount,
+  anticipationRequested: false,
+  installmentPlan: null,
+  installments: null,
+  method,
+  paymentProfile: null,
+  ...overrides,
+});
 
+function splitSale(parts: readonly unknown[]): OutboxCommand {
+  const { payment: _payment, ...single } = sale().payload as {
+    payment: unknown;
+  };
+  return {
+    ...sale(),
+    payload: { ...single, payments: parts } as OutboxCommand["payload"],
+    rejection: {
+      at: "2026-11-02T11:00:00.000Z",
+      code: "payment_profile_changed",
+    },
+  };
+}
+
+describe("the form of a refused sale paid in parts", () => {
+  const cardProfile = { expectedVersion: 2, id: uuid(40) };
+  const pixProfile = { expectedVersion: 7, id: uuid(41) };
+
+  it("comes back split: part 1 in the payment of the form, part 2 typed, each with its method, amount, credit fields and profile at the version seen", () => {
+    const built = buildRedoDraft(
+      splitSale([
+        part("30.00", "pix", { paymentProfile: pixProfile }),
+        part("40.00", "credit_card", {
+          anticipationRequested: true,
+          installmentPlan: "merchant",
+          installments: 3,
+          paymentProfile: cardProfile,
+        }),
+      ]),
+      [entry({ variantId: MUG })],
+      createId
+    );
+    if (built.kind !== "ready") {
+      throw new Error(`expected a form, got ${built.kind}`);
+    }
+    expect(built.form.payment).toEqual({
+      anticipationRequested: false,
+      installmentPlan: "",
+      installments: "",
+      method: "pix",
+    });
+    expect(built.form.profile).toEqual({
+      choice: pixProfile.id,
+      reviewNotice: null,
+      seenVersion: 7,
+    });
+    expect(built.form.split).toEqual({
+      firstAmount: "30,00",
+      second: {
+        amount: "40,00",
+        payment: {
+          anticipationRequested: true,
+          installmentPlan: "merchant",
+          installments: "3",
+          method: "credit_card",
+        },
+        profile: { choice: cardProfile.id, reviewNotice: null, seenVersion: 2 },
+      },
+      totalSeen: "70.00",
+    });
+    expect(isSaleFormState(built.form)).toBe(true);
+  });
+
+  it("keeps a part with no profile as 'Sem perfil', never as a profile left to choose", () => {
+    const built = buildRedoDraft(
+      splitSale([
+        part("30.00", "cash"),
+        part("40.00", "pix", { paymentProfile: pixProfile }),
+      ]),
+      [entry({ variantId: MUG })],
+      createId
+    );
+    if (built.kind !== "ready") {
+      throw new Error(`expected a form, got ${built.kind}`);
+    }
+    expect(built.form.profile.choice).toBe(NO_PROFILE_CHOICE);
+    expect(built.form.split?.second.profile.choice).toBe(pixProfile.id);
+  });
+
+  it("is unreadable with a third part, which the screen does not hold: never brought back with a part dropped", () => {
     expect(
-      buildRedoDraft(split, [entry({ variantId: MUG })], createId)
+      buildRedoDraft(
+        splitSale([
+          part("20.00", "pix"),
+          part("20.00", "cash"),
+          part("30.00", "pix"),
+        ]),
+        [entry({ variantId: MUG })],
+        createId
+      )
     ).toEqual({ kind: "unreadable" });
+  });
+
+  it("is blocked like any sale when a line cannot be sold as it was", () => {
+    expect(
+      buildRedoDraft(
+        splitSale([part("30.00", "pix"), part("40.00", "cash")]),
+        [entry({ quantity: 1, variantId: MUG })],
+        createId
+      ).kind
+    ).toBe("blocked");
   });
 });
 
