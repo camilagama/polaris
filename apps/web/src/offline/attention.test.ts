@@ -696,6 +696,25 @@ describe("a sale paid in parts refused for the profile of a part", () => {
     expect(item.actions).toContain("redo_sale");
   });
 
+  it("a payload of one part is a sale paid in one go: no redo, no parts in the title", async () => {
+    const context = await setup();
+    const { command } = await createOfflineSale({
+      deviceId,
+      lease: context.lease,
+      lines: [{ quantity: 2, variantId }],
+      newCommandId: context.id,
+      now: () => now,
+      organizationId,
+      outbox: context.outbox,
+      payments: [{ amount: "20.00", method: "pix", paymentProfile: card }],
+      reader: context.writer,
+    });
+    await context.refuse(command.commandId, "payment_profile_changed");
+    const item = await itemOf(context.outbox);
+    expect(item.actions).toEqual(["resubmit_without_profile", "discard"]);
+    expect(item.title).toMatch(SALE_TITLE);
+  });
+
   it("once redone, only discard is left", async () => {
     const { command, outbox } = await splitSale(pix, card);
     const [item] = buildAttention(

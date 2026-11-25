@@ -143,7 +143,8 @@ interface SplitSaleFacts {
 
 function splitSaleFacts(command: OutboxCommand): SplitSaleFacts | null {
   const payments = field(command, "payments");
-  if (!Array.isArray(payments)) {
+  // one part is a sale paid in one go for every screen (the form, the redo, the panels)
+  if (!Array.isArray(payments) || payments.length < 2) {
     return null;
   }
   const parts = payments.map((part) => {

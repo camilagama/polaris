@@ -22,8 +22,9 @@ import type { OutboxCommand } from "./outbox/command";
 /**
  * Redoing a sale the server refused for its authorization, or a sale paid in parts refused for the profile of a part:
  * the sale the device still holds becomes the form of Vender again (with its parts, each with the profile and the
- * version it was priced with, so the form asks to review the one that changed), and confirming it makes a NEW sale (a new command ID). The refused command is never sent again and
- * nothing is removed here: the person discards it only once the new sale is recorded or kept.
+ * version it was priced with, so the form asks to review the one that changed), and confirming it makes a NEW sale (a
+ * new command ID). The refused command is never sent again and nothing is removed here: the person discards it only
+ * once the new sale is recorded or kept.
  *
  * The form is filled only when every line can be sold as it was: a line whose variant left the catalog or whose
  * product was archived, or whose quantity the stock no longer covers, is said and the form is not filled at all, so

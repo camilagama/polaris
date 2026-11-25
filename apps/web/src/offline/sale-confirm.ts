@@ -476,7 +476,9 @@ function withoutRefusedProfile<P extends OfflineSalePayload>(payload: P): P {
     const { paymentProfile: _profile, ...rest } = payload;
     return rest as P;
   }
-  const refused = refusedProfileOfParts(payload.payments);
+  const refused = Array.isArray(payload.payments)
+    ? refusedProfileOfParts(payload.payments)
+    : null;
   if (refused === null) {
     throw new Error("split_sale_profile_unknown");
   }
