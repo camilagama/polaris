@@ -113,10 +113,15 @@ describe("StepTile", () => {
       </StepTile>
     );
 
-  it("tem 28 px nos três estados, para o estado não mover nada", () => {
+  it("tem 28 px nos três estados, para o estado não mover nada, e o ícone dentro tem 16 px", () => {
     for (const state of ["current", "done", "todo"] as const) {
       expect(classesOf(draw(state))).toEqual(
-        expect.arrayContaining(["size-7", "rounded-md", "border"])
+        expect.arrayContaining([
+          "size-7",
+          "rounded-md",
+          "border",
+          "[&amp;&gt;svg]:size-4",
+        ])
       );
     }
   });
