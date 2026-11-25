@@ -228,7 +228,10 @@ describe("the timeline inside the detail", () => {
       html.indexOf('aria-labelledby="sale-timeline-title"')
     );
     const listEnd = html.indexOf("</ol>", start);
-    return html.slice(start, listEnd === -1 ? undefined : listEnd + 5);
+    return html.slice(
+      start,
+      listEnd === -1 ? undefined : listEnd + "</ol>".length
+    );
   };
   const twoReturns = detail({
     returns: [
@@ -266,22 +269,25 @@ describe("the timeline inside the detail", () => {
     }
   });
 
-  it("cuts the timeline at the end of its own list, so a text outside it is not read as inside", () => {
-    const html = top(cancelled);
-    const own = section(html);
-    const outside = html.replace(own, "");
-    expect(own.endsWith("</ol>")).toBe(true);
-    expect(outside).toContain(CANCEL_NOTE);
-    expect(own).not.toContain(CANCEL_NOTE);
-    const twoInstants = top(
-      detail({
-        confirmedAt: "2026-06-10T18:00:00.000Z",
-        occurredAt: "2026-06-10T12:00:00.000Z",
-        recordedAt: "2026-06-10T12:00:30.000Z",
-      })
+  it("cuts the timeline at the end of its own list, so a text after it is not read as inside", () => {
+    const html = renderToStaticMarkup(
+      <ReadyDetailTop
+        detail={detail({
+          confirmedAt: "2026-06-10T18:00:00.000Z",
+          occurredAt: "2026-06-10T12:00:00.000Z",
+          recordedAt: "2026-06-10T12:00:30.000Z",
+        })}
+        refreshing
+      />
     );
-    const twoOwn = section(twoInstants);
-    expect(twoInstants.replace(twoOwn, "")).toContain("Confirmada no servidor");
+    const own = section(html);
+    expect(own.endsWith("</ol>")).toBe(true);
+    expect(own).toContain("Confirmada no servidor");
+    expect(html).toContain("Atualizando a venda…");
+    expect(html.indexOf("Atualizando a venda…")).toBeGreaterThan(
+      html.indexOf(own) + own.length
+    );
+    expect(own).not.toContain("Atualizando a venda…");
   });
 
   it("leaves the reason, the note and the items of the returns to their card", () => {
