@@ -634,7 +634,18 @@ const RIGHT_EDGE_TOLERANCE = 1;
 /** Count and action share a line: their centers differ by rounding only. */
 const SAME_LINE_TOLERANCE = 2;
 
-/** Where the count, the action and the content box of a `ListBlock` header are, in pixels: the padding of a phone (`px-3`) is the block header's, not the frame's. */
+/** A title as wide as the header: the count and the action no longer fit on its line, and without the grow rule of their group (`max-md:grow max-md:justify-end`) the group would stand at the left of the line below. */
+async function widenTitle(page: Page, name: string) {
+  await page
+    .getByRole("region", { exact: true, name })
+    .getByRole("heading", { level: 2 })
+    .evaluate((heading) => {
+      heading.style.width = "100%";
+      heading.parentElement?.style.setProperty("width", "100%");
+    });
+}
+
+/** Where the title, the count, the action and the content box of a `ListBlock` header are, in pixels: the padding of a phone (`px-3`) is the block header's, not the frame's. */
 async function headerActionBoxes(page: Page, name: string) {
   return await page
     .getByRole("region", { exact: true, name })
@@ -645,6 +656,10 @@ async function headerActionBoxes(page: Page, name: string) {
         (button) => button.textContent?.trim() === "Exportar"
       );
       if (!(header && count && action)) {
+        return null;
+      }
+      const title = header.querySelector("h2");
+      if (!title) {
         return null;
       }
       const box = (element: Element) => {
@@ -658,6 +673,7 @@ async function headerActionBoxes(page: Page, name: string) {
           headerBox.right -
           Number.parseFloat(getComputedStyle(header).paddingRight),
         count: box(count),
+        title: box(title),
       };
     });
 }
@@ -670,10 +686,19 @@ for (const size of LIST_SIZES) {
       await page.setViewportSize(size);
       await openGallery(page, null);
       const label = `${example.name} a ${size.width} px`;
+      const forcesWrap = example.name === "Tabela larga" && size.width < 760;
+      if (forcesWrap) {
+        await widenTitle(page, example.name);
+      }
       const boxes = await headerActionBoxes(page, example.name);
       expect(boxes, label).not.toBeNull();
       if (!boxes) {
         return;
+      }
+      if (forcesWrap) {
+        expect(boxes.title.bottom, label).toBeLessThanOrEqual(
+          boxes.action.top + SIDE_BY_SIDE_TOLERANCE
+        );
       }
       expect(boxes.count.right, label).toBeLessThanOrEqual(
         boxes.action.left + SIDE_BY_SIDE_TOLERANCE

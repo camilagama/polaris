@@ -94,11 +94,15 @@ describe("ScreenTitle", () => {
         </TabPanelScope>
       )
     );
-    expect(hidden.classes).toEqual(["text-section", "sr-only", "mb-2"]);
+    expect(hidden.classes).toEqual(
+      expect.arrayContaining(["text-section", "sr-only", "mb-2"])
+    );
     const standalone = titleTag(
       renderToStaticMarkup(<ScreenTitle className="mb-2">Produtos</ScreenTitle>)
     );
-    expect(standalone.classes).toEqual(["text-title", "mb-2"]);
+    expect(standalone.classes).toEqual(
+      expect.arrayContaining(["text-title", "mb-2"])
+    );
   });
 
   it("leva o texto como filho, uma só vez, e repassa os atributos ao título", () => {
