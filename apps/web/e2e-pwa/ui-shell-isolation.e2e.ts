@@ -906,7 +906,11 @@ const SCREENS = [
         "/devices",
         async () => {
           await expect(
-            page.getByRole("heading", { level: 2, name: "Aparelhos" })
+            page.getByRole("heading", {
+              exact: true,
+              level: 2,
+              name: "Aparelhos",
+            })
           ).toBeVisible();
           await expect(page.getByText("Celular da Ana")).toBeVisible();
         },

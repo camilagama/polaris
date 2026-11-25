@@ -397,3 +397,44 @@ describe.each([
     }
   );
 });
+
+/**
+ * The state of the synchronization in the header (src/offline/runtime/sync-status.tsx) is the `Badge`: synced and
+ * sending are `foreground` on `card`, offline is `warning` on its own tint and "Atenção" is `destructive` on its own
+ * tint (`/10` in the light theme, `/15` in the dark), over the header. All are text (4.5:1, WCAG 1.4.3), and each pair
+ * is a row of the tables above, so a token change that breaks one is read there too.
+ */
+describe.each([
+  ["Tema claro", tokens(block(":root")), "10"],
+  [
+    "Tema escuro",
+    new Map([...tokens(block(":root")), ...tokens(block(".dark"))]),
+    "15",
+  ],
+] as const)(
+  "contraste do estado da sincronização no Badge, %s",
+  (section, palette, alpha) => {
+    const rows = pairs(section);
+
+    it.each([
+      ["`foreground`", "`card`"],
+      ["`warning`", "`warning/10 sobre sidebar`"],
+      ["`destructive`", `\`destructive/${alpha} sobre sidebar\``],
+    ] as const)(
+      "%s / %s reaches 4.5:1 and is in the map",
+      (foreground, background) => {
+        const row = rows.find(
+          (item) =>
+            item.foreground === foreground && item.background === background
+        );
+        expect(
+          row,
+          `${foreground} / ${background} is not in "${section}"`
+        ).toBeDefined();
+        expect(
+          ratio(color(foreground, palette), color(background, palette))
+        ).toBeGreaterThanOrEqual(4.5);
+      }
+    );
+  }
+);

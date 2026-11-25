@@ -274,4 +274,11 @@ describe("a device row, its tile and its badge", () => {
       other.indexOf("Revogar o aparelho")
     );
   });
+
+  it("is a line of the list block, with no card of its own, and Revogar stays the destructive button", () => {
+    const html = render();
+    expect(html).toContain("data-list-block-row");
+    expect(html).not.toContain('data-slot="card"');
+    expect(buttonTag(html, "Revogar")).toContain('data-slot="button"');
+  });
 });
