@@ -707,8 +707,9 @@ const SYSTEM_CLOCK = {
  * version is still propagating), and `other` is anything else (no header, an error, no answer).
  */
 async function releaseRead(check, release, fetchImpl, target) {
+  let response;
   try {
-    const response = await send(check, fetchImpl, target);
+    response = await send(check, fetchImpl, target);
     const declared = response.headers.get(RELEASE_HEADER) ?? "";
     if (response.status === 200 && declared === release) {
       return { active: declared, state: "arrived" };
@@ -718,6 +719,8 @@ async function releaseRead(check, release, fetchImpl, target) {
     }
   } catch {
     return { active: null, state: "other" };
+  } finally {
+    await response?.body?.cancel().catch(() => undefined);
   }
   return { active: null, state: "other" };
 }

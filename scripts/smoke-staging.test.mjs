@@ -1354,6 +1354,33 @@ describe("the wait for the release to reach the edge", () => {
     expect(reason).toBe(waitFailure("web"));
   });
 
+  it.each([
+    ["arrived", 200, { "x-polaris-release": RELEASE }],
+    ["stale", 200, { "x-polaris-release": OLD_RELEASE }],
+    ["no header", 200, {}],
+    ["error", 503, {}],
+  ])(
+    "cancels the body of a read that is %s, so the socket is not held until the garbage collector",
+    async (_name, status, headers) => {
+      const state = { cancelled: false };
+      const body = new ReadableStream({
+        cancel() {
+          state.cancelled = true;
+        },
+        pull(controller) {
+          controller.enqueue(new Uint8Array(8));
+        },
+      });
+      await awaitRelease(
+        webReleaseCheck(),
+        RELEASE,
+        () => Promise.resolve(fromWorker(status, headers, body)),
+        fakeClock()
+      );
+      expect(state.cancelled).toBe(true);
+    }
+  );
+
   it("does not wait for what is not an older release: no header, an error or no answer go to the check", async () => {
     const answers = [
       () => answer(200),
