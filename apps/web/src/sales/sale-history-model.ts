@@ -477,7 +477,7 @@ export function historyFooterView(input: {
 }
 
 export type HistoryView =
-  | { kind: "loading"; message: string }
+  | { kind: "loading" }
   | { kind: "error"; message: string }
   | {
       clearFilters: boolean;
@@ -493,7 +493,7 @@ export function historyView(
   filters: HistoryFilters = emptyHistoryFilters
 ): HistoryView {
   if (state.list === "loading") {
-    return { kind: "loading", message: "Carregando vendas…" };
+    return { kind: "loading" };
   }
   if (state.list === "error") {
     return {

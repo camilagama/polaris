@@ -76,10 +76,7 @@ function loaded(
 
 describe("list load states", () => {
   it("starts loading", () => {
-    expect(historyView(initialHistoryState())).toEqual({
-      kind: "loading",
-      message: "Carregando vendas…",
-    });
+    expect(historyView(initialHistoryState())).toEqual({ kind: "loading" });
   });
 
   it("explains an empty history and links to the new sale screen", () => {
