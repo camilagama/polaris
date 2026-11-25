@@ -12,6 +12,10 @@ import {
   useState,
 } from "react";
 import { focusLater } from "../lib/focus";
+import {
+  SPLIT_PROFILE_HINT,
+  SPLIT_PROFILE_HINT_ID,
+} from "./sale-payment-hints";
 import { useSettledText } from "./sale-summary-panel";
 import { useStoreToday } from "../lib/use-store-today";
 import { Alert, AlertDescription } from "@/ui/alert";
@@ -564,10 +568,6 @@ interface PartFieldsProps {
   /** Off when both parts wait on the same profile: one warning for the two comes after the parts. */
   showReview: boolean;
 }
-
-export const SPLIT_PROFILE_HINT_ID = "sale-split-profile-hint";
-export const SPLIT_PROFILE_HINT =
-  "O perfil define taxas e prazo estimados de cada parte. Sem perfil, ficam desconhecidos.";
 
 /** One part: method in a list, amount, the credit fields only for credit, and the profile last. */
 function PartFields({

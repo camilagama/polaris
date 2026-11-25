@@ -43,7 +43,7 @@ const FOCUSABLE = "input, textarea, button, [role=combobox]";
 afterEach(cleanup);
 
 describe("sections of the product form", () => {
-  it("splits a new product into Produto, Preço e estoque and the details, each a fieldset named by its legend", () => {
+  it("splits a new product into Produto, Preço e estoque and the details, each a fieldset named by its legend, but the details, which the trigger names", () => {
     expect(sections(drawForm(false))).toEqual([
       { controls: ["product-name"], legend: "Produto", visible: true },
       {
@@ -57,7 +57,7 @@ describe("sections of the product form", () => {
       },
       {
         controls: ["product-description"],
-        legend: "Mais detalhes",
+        legend: undefined,
         visible: false,
       },
     ]);
@@ -66,7 +66,7 @@ describe("sections of the product form", () => {
   it("keeps the edit to Produto and the details, without the opening stock", () => {
     expect(sections(drawForm(true)).map((section) => section.legend)).toEqual([
       "Produto",
-      "Mais detalhes",
+      undefined,
     ]);
   });
 

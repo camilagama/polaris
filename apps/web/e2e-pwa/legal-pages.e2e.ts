@@ -275,7 +275,7 @@ test.describe("/privacidade: a tabela no celular é um cartão por linha", () =>
               expect(
                 cell.label,
                 "a primeira célula é o título do cartão, sem rótulo"
-              ).not.toBe(headers[0]);
+              ).toBe("none");
               continue;
             }
             expect(cell.label).toBe(headers[column]);
