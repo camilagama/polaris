@@ -315,8 +315,6 @@ export const DEBT: Readonly<Record<Rule, readonly string[]>> = {
     "src/expenses/expenses-page.tsx",
     // help
     "src/help/help-page.tsx",
-    // inventory
-    "src/inventory/inventory-page.tsx",
     // offline
     "src/offline/attention-panel.tsx",
     "src/offline/logout-dialog.tsx",
@@ -350,9 +348,6 @@ export const DEBT: Readonly<Record<Rule, readonly string[]>> = {
     // expenses
     "src/expenses/expense-list.tsx",
     "src/expenses/month-picker.tsx",
-    // inventory
-    "src/inventory/stock-command-panel.tsx",
-    "src/inventory/stock-panel-fields.tsx",
     // legal
     "src/legal/legal-page.tsx",
     // offline
@@ -493,7 +488,6 @@ describe("o padrão visual das telas (R1 a R3)", () => {
   it("as listas e tabelas principais ficam na dívida: elas saem só quando a tela vai para o Block", () => {
     for (const file of [
       "src/expenses/expense-list.tsx",
-      "src/inventory/inventory-page.tsx",
     ]) {
       expect([...DEBT.R2, ...DEBT.R3], file).toContain(file);
     }

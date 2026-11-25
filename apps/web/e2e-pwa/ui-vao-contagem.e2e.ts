@@ -5,11 +5,11 @@ import { productStates } from "./ui-product-states";
 import { stockStates } from "./ui-stock-states";
 
 /**
- * The gap between the line that counts the list ("25 variantes") and the card of the list on
- * Estoque: 16 px at 360 px (Clientes counts in the title of its `ListBlock`, with no line of its own). The notice of
- * the open panel lives inside the panel, so nothing sits between the count and the list, and the gap does not change
- * with the "Precisa de ação" strip above. Produtos has no such line either: its count is in the header of the frame,
- * and the line of controls sits 16 px above the frame.
+ * The gap between the list and what sits above its frame is 16 px at 360 px. On Produtos the count is in the header
+ * of the frame, so the 16 px is between the line of controls (the filter of the state) and the frame. On Estoque the
+ * count is in the title of the frame too, so the 16 px is between the controls (search and filters) and the frame;
+ * the notice of the open panel lives inside the panel, so nothing sits between them, and the gap does not change with
+ * the "Precisa de ação" strip above. Clientes counts in the title of its `ListBlock`, with no line of its own.
  */
 const GAP = 16;
 const TOLERANCE = 1;
@@ -26,34 +26,8 @@ test.beforeEach(({ browserName }, testInfo) => {
   );
 });
 
-/**
- * From the bottom of the line of the count (the element that holds the live count, or the row that holds it with
- * "Atualizar") to the top of the card of the list. The line is the ancestor of the count that is a sibling of the card.
- */
-function gapBelowCount(page: Page) {
-  return page.evaluate(() => {
-    const live = document.querySelector(
-      '[aria-live="polite"][role="status"], p[aria-live="polite"]'
-    );
-    const card = document
-      .querySelector("ul[aria-label]")
-      ?.closest('[data-slot="card"]');
-    if (!(live && card)) {
-      return null;
-    }
-    let line: Element = live;
-    while (line.parentElement && !line.parentElement.contains(card)) {
-      line = line.parentElement;
-    }
-    return {
-      gap:
-        card.getBoundingClientRect().top - line.getBoundingClientRect().bottom,
-    };
-  });
-}
-
 /** From the bottom of the filter of the products (the last of the line of controls) to the top of the frame of the list. */
-function gapBelowControls(page: Page) {
+function gapBelowFilter(page: Page) {
   return page.evaluate(() => {
     const filter = document.querySelector(
       '[role="tablist"][aria-label="Estado dos produtos"]'
@@ -70,12 +44,23 @@ function gapBelowControls(page: Page) {
   });
 }
 
+/** From the bottom of the controls of the stock (the search and the filters) to the top of the frame of the list. */
+async function gapBelowControls(page: Page) {
+  const controls = await page
+    .getByRole("search", { name: "Filtrar estoque" })
+    .boundingBox();
+  const frame = await page.locator("[data-list-block]").boundingBox();
+  return controls && frame
+    ? { gap: frame.y - (controls.y + controls.height) }
+    : null;
+}
+
 test.describe("o vão entre a contagem e a lista a 360 px", () => {
   test("Produtos: a moldura da lista fica a 16 px da linha de controles", async ({
     page,
   }) => {
     await productStates.list(page);
-    const products = await gapBelowControls(page);
+    const products = await gapBelowFilter(page);
     expect(products).not.toBeNull();
     expect(products?.gap).toBeCloseTo(GAP, 0);
   });
@@ -85,7 +70,7 @@ test.describe("o vão entre a contagem e a lista a 360 px", () => {
   }) => {
     await stockStates.list(page);
     await expect(page.locator('[data-slot="action-strip"]')).toBeVisible();
-    const stock = await gapBelowCount(page);
+    const stock = await gapBelowControls(page);
 
     expect(stock?.gap).toBeCloseTo(GAP, 0);
   });
@@ -95,11 +80,11 @@ test.describe("o vão entre a contagem e a lista a 360 px", () => {
   }) => {
     await stockStates.list(page);
     await expect(page.locator('[data-slot="action-strip"]')).toBeVisible();
-    const withStrip = await gapBelowCount(page);
+    const withStrip = await gapBelowControls(page);
 
     await stockStates.attentionUnavailable(page);
     await expect(page.locator('[data-slot="action-strip"]')).toHaveCount(0);
-    const withoutStrip = await gapBelowCount(page);
+    const withoutStrip = await gapBelowControls(page);
 
     expect(withStrip).not.toBeNull();
     expect(withoutStrip).not.toBeNull();
@@ -113,7 +98,7 @@ test.describe("o vão entre a contagem e a lista a 360 px", () => {
     page,
   }) => {
     await stockStates.list(page);
-    const rows = page.getByRole("list", { name: "Saldos por variante" });
+    const rows = page.getByRole("list", { name: "Saldos em estoque" });
     const top = () =>
       rows.evaluate((list) => list.getBoundingClientRect().top + scrollY);
     const before = await top();
@@ -128,7 +113,7 @@ test.describe("o vão entre a contagem e a lista a 360 px", () => {
     await expect(
       page.getByRole("button", { name: COUNT_JEANS })
     ).toHaveAccessibleDescription(OPEN_REASON);
-    const open = await gapBelowCount(page);
+    const open = await gapBelowControls(page);
     expect(open?.gap).toBeCloseTo(GAP, 0);
   });
 });
