@@ -643,6 +643,11 @@ function CheckableOptionExamples() {
         disabled
         name="Desligada, sem imagem para enviar"
       />
+      <GalleryOption
+        checked
+        disabled
+        name="Desligada e marcada, durante o envio"
+      />
     </div>
   );
 }

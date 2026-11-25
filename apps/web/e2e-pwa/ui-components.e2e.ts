@@ -875,6 +875,74 @@ test("os painéis internos, a opção marcável e a caixa do passo: medidas e cl
   );
 });
 
+const OPTION_STATES = [
+  { disabled: false, name: "Azul / M" },
+  { disabled: false, name: "Azul / P" },
+  { disabled: true, name: "Desligada, sem imagem para enviar" },
+  { disabled: true, name: "Desligada e marcada, durante o envio" },
+] as const;
+
+for (const theme of THEMES.slice(0, 2)) {
+  test(`tema ${theme.name}: a opção marcável desligada apaga o texto e a caixa a 50 %, sem mudar a borda e com cursor de bloqueio`, async ({
+    browser,
+  }) => {
+    const context = await browser.newContext({
+      colorScheme: theme.colorScheme,
+    });
+    const page = await context.newPage();
+    await openGallery(page, theme.stored);
+    const measures = await Promise.all(
+      OPTION_STATES.map(async (state) => ({
+        disabled: state.disabled,
+        ...(await page
+          .locator('[data-slot="checkable-option"]', { hasText: state.name })
+          .evaluate((label) => {
+            const box = label.querySelector('[role="checkbox"]');
+            const text = label.querySelector(":scope > span:not([role])");
+            if (!(box && text)) {
+              throw new Error("option without box or text");
+            }
+            const fadedAncestors: string[] = [];
+            for (
+              let node: Element | null = box.parentElement;
+              node;
+              node = node.parentElement
+            ) {
+              if (Number(getComputedStyle(node).opacity) < 1) {
+                fadedAncestors.push(node.tagName);
+              }
+            }
+            return {
+              border: getComputedStyle(label).borderTopColor,
+              boxCursor: getComputedStyle(box).cursor,
+              boxOpacity: getComputedStyle(box).opacity,
+              fadedAncestors,
+              rowOpacity: getComputedStyle(label).opacity,
+              textCursor: getComputedStyle(text).cursor,
+              textOpacity: getComputedStyle(text).opacity,
+            };
+          })),
+      }))
+    );
+    const [on, ...off] = measures;
+    expect(on?.textOpacity).toBe("1");
+    expect(on?.boxOpacity).toBe("1");
+    for (const measure of measures) {
+      expect(measure.rowOpacity).toBe("1");
+      expect(measure.fadedAncestors).toEqual([]);
+      expect(measure.border).toBe(on?.border);
+    }
+    for (const measure of off.filter((item) => item.disabled)) {
+      expect(measure.textOpacity).toBe("0.5");
+      expect(measure.boxOpacity).toBe("0.5");
+      expect(measure.textCursor).toBe("not-allowed");
+      expect(measure.boxCursor).toBe("not-allowed");
+    }
+    expect(measures.filter((item) => !item.disabled)).toHaveLength(2);
+    await context.close();
+  });
+}
+
 test("controle: o axe desta página acusa uma imagem sem texto alternativo", async ({
   page,
 }) => {
