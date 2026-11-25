@@ -24,7 +24,7 @@ function CheckableOption({
   return (
     <Label
       className={cn(
-        "min-h-ctl-md rounded-md border border-border px-3",
+        "group/option min-h-ctl-md rounded-md border border-border px-3 has-disabled:cursor-not-allowed",
         className
       )}
       data-slot="checkable-option"
@@ -32,10 +32,13 @@ function CheckableOption({
     >
       <Checkbox
         checked={checked}
+        className="data-disabled:opacity-50"
         disabled={disabled ?? false}
         onCheckedChange={onCheckedChange}
       />
-      <span className="[overflow-wrap:anywhere]">{children}</span>
+      <span className="[overflow-wrap:anywhere] group-has-disabled/option:opacity-50">
+        {children}
+      </span>
     </Label>
   );
 }
