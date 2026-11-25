@@ -405,6 +405,8 @@ const badgeSource = readFileSync(
 const BADGE_VARIANTS = /variant:\s*\{([\s\S]*?)\n\s*\}/;
 const WHITESPACE = /\s+/;
 const DARK_PREFIX = /^dark:/;
+const TEXT_SIZE_CLASS =
+  /^text-(?:xs|sm|base|lg|[2-9]?xl|\[[\d.]+(?:px|rem|em|%)\])(?:\/[\w.[\]]+)?$/;
 const BADGE_COLOR_CLASS = /^[a-z]+-([a-z-]+?)(?:\/(\d+))?$/;
 const BADGE_VARIANT_ENTRY = /(\w+):\s*"([^"]*)"/g;
 const BADGE_VARIANT_KEY = /^\s*[\w"'`]+:/gm;
@@ -422,24 +424,30 @@ function badgePair(
   palette: ReturnType<typeof tokens>,
   dark: boolean
 ) {
-  const applied = classes.split(WHITESPACE).filter((item) => {
-    const [first, ...rest] = item.split(":");
-    return rest.length === 0 || (dark && first === "dark" && rest.length === 1);
-  });
+  const items = classes.split(WHITESPACE).filter(Boolean);
+  const light = items.filter((item) => !item.includes(":"));
+  const darkOnly = dark
+    ? items.filter((item) => DARK_PREFIX.test(item) && !item.includes(":", 5))
+    : [];
   const pick = (utility: string) => {
-    const found = applied
-      .map((item) => item.replace(DARK_PREFIX, ""))
-      .filter((item) => item.startsWith(`${utility}-`))
-      .map((item) => {
-        const match = BADGE_COLOR_CLASS.exec(item);
-        if (!(match && palette.has(match[1] as string))) {
-          throw new Error(
-            `class "${item}" is not a ${utility}-<token> of theme.css`
-          );
-        }
-        return match;
-      });
-    return found.at(-1);
+    const read = (list: string[]) =>
+      list
+        .map((item) => item.replace(DARK_PREFIX, ""))
+        .filter(
+          (item) =>
+            item.startsWith(`${utility}-`) && !TEXT_SIZE_CLASS.test(item)
+        )
+        .map((item) => {
+          const match = BADGE_COLOR_CLASS.exec(item);
+          if (!(match && palette.has(match[1] as string))) {
+            throw new Error(
+              `class "${item}" is not a ${utility}-<token> of theme.css`
+            );
+          }
+          return match;
+        })
+        .at(-1);
+    return read(darkOnly) ?? read(light);
   };
   const fill = pick("bg");
   const text = pick("text");
@@ -515,4 +523,68 @@ describe.each([
       ).toBeGreaterThanOrEqual(4.5);
     }
   );
+});
+
+describe("badgePair: a ordem das classes e as utilidades de tamanho", () => {
+  const palette = new Map([
+    ...tokens(block(":root")),
+    ...tokens(block(".dark")),
+  ]);
+
+  it("mede o mesmo par com a classe dark: antes ou depois da clara", () => {
+    const normal = "bg-card text-foreground dark:bg-secondary";
+    const inverted = "dark:bg-secondary bg-card text-foreground";
+    expect(badgePair(inverted, palette, true)).toEqual(
+      badgePair(normal, palette, true)
+    );
+    expect(badgePair(inverted, palette, true)?.background).toBe("`secondary`");
+    expect(badgePair(inverted, palette, false)).toEqual(
+      badgePair(normal, palette, false)
+    );
+    expect(badgePair(inverted, palette, false)?.background).toBe("`card`");
+  });
+
+  it("ignora utilidade de tamanho em text-*, sem erro de token de cor", () => {
+    const base = badgePair("bg-card text-foreground", palette, false);
+    for (const size of [
+      "text-sm",
+      "text-xs",
+      "text-9xl",
+      "text-[11px]",
+      "text-sm/6",
+    ]) {
+      expect(
+        badgePair(`${size} bg-card text-foreground`, palette, false)
+      ).toEqual(base);
+      expect(
+        badgePair(`bg-card text-foreground ${size}`, palette, false)
+      ).toEqual(base);
+    }
+  });
+
+  it("só a classe dark: de um nível troca a clara", () => {
+    for (const nested of [
+      "dark:hover:bg-secondary",
+      "hover:dark:bg-secondary",
+    ]) {
+      expect(
+        badgePair(`bg-card text-foreground ${nested}`, palette, true)
+          ?.background
+      ).toBe("`card`");
+    }
+  });
+
+  it("segue recusando text-* de cor arbitrária, que não é tamanho", () => {
+    for (const arbitrary of ["text-[#fff]", "text-[var(--x)]"]) {
+      expect(() =>
+        badgePair(`bg-card text-foreground ${arbitrary}`, palette, false)
+      ).toThrow("is not a text-<token> of theme.css");
+    }
+  });
+
+  it("segue recusando text-* que não é token nem tamanho", () => {
+    expect(() => badgePair("bg-card text-nao-existe", palette, false)).toThrow(
+      "is not a text-<token> of theme.css"
+    );
+  });
 });

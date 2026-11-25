@@ -798,6 +798,12 @@ export const SPEC_SCREENS = {
     "inventory",
   ],
   "apps/web/e2e-real/jornadas/venda-dividida.e2e.ts": ["home", "sale"],
+  "apps/web/e2e-real/jornadas/venda-dividida-sem-conexao.e2e.ts": [
+    "home",
+    "sale",
+    "attention",
+    "sale-history",
+  ],
   "apps/web/e2e-real/jornadas/venda.e2e.ts": ["home", "sale"],
   "apps/web/e2e-real/pilha/fumaca.e2e.ts": ["home", "dashboard"],
   "apps/web/e2e-real/pilha/hyperdrive-papeis.e2e.ts": ["home"],

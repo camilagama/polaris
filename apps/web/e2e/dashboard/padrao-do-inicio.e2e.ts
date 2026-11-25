@@ -201,6 +201,25 @@ test.describe("Como chegamos: todo valor termina no mesmo x (AC-C3.4)", () => {
   }
 });
 
+test.describe("Como chegamos: nenhum fio sob o cabeçalho do bloco (AC-4.1)", () => {
+  for (const size of SIZES) {
+    test(`${size.width} px`, async ({ page }) => {
+      await page.setViewportSize(size);
+      await openDashboard(page, new FakeReportServer());
+      await expect(chain(page)).toBeVisible();
+      await settled(page);
+      const frameHeader = chain(page).locator(
+        '[data-slot="card-frame-header"]'
+      );
+      const heading = chain(page).locator('[data-slot="block-header"]');
+      await expect(frameHeader).toHaveCount(1);
+      await expect(heading).toHaveCount(1);
+      await expect(frameHeader).toHaveCSS("border-bottom-width", "0px");
+      await expect(heading).toHaveCSS("border-bottom-width", "0px");
+    });
+  }
+});
+
 test.describe("o esqueleto tem a altura do pronto (AC-C3.5)", () => {
   for (const size of SIZES) {
     test(`${size.width} px`, async ({ page }) => {

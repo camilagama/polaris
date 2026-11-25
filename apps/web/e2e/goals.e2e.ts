@@ -449,9 +449,12 @@ async function startLab(page: Page) {
 async function openGoals(page: Page, server: FakeGoalServer) {
   await openDashboard(page, server);
   await page.getByRole("tab", { name: "Metas" }).click();
+  const region = page.getByRole("region", { exact: true, name: "Metas" });
+  await expect(region).toBeVisible();
+  // the tab is the title: the panel does not repeat it as an h2 of its own (AC-13.2)
   await expect(
-    page.getByRole("region", { exact: true, name: "Metas" })
-  ).toBeVisible();
+    region.getByRole("heading", { exact: true, level: 2, name: "Metas" })
+  ).toHaveCount(0);
 }
 
 const card = (page: Page, title: string): Locator =>
@@ -477,6 +480,11 @@ test("cria uma meta e mostra o progresso com a barra", async ({ page }) => {
     .getByRole("status")
     .filter({ hasText: "Nenhuma meta ainda" });
   await expect(empty.getByText("Nenhuma meta ainda")).toBeVisible();
+  await expect(
+    page
+      .getByRole("region", { exact: true, name: "Metas" })
+      .getByRole("heading", { exact: true, level: 2, name: "Metas" })
+  ).toHaveCount(0);
   await expect(empty.getByText("Crie uma para acompanhar")).toHaveCount(0);
   await expect(empty.getByText("Acompanhe as vendas líquidas")).toBeVisible();
   const [title, support] = await Promise.all([
@@ -1265,6 +1273,23 @@ for (const viewport of FORM_VIEWPORTS) {
       endsOn: "2026-10-20",
       startsOn: "2026-10-10",
     });
+  });
+}
+
+for (const width of [360, 700]) {
+  test(`a ${width} px "Nova meta" tem a altura de "Atualizar metas": 40 px`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 740, width });
+    await openGoals(page, new FakeGoalServer());
+    const heightOf = (name: string) =>
+      page
+        .getByRole("button", { name })
+        .evaluate((button) => button.getBoundingClientRect().height);
+    const refresh = await heightOf("Atualizar metas");
+    const create = await heightOf("Nova meta");
+    expect(refresh, "Atualizar metas").toBe(40);
+    expect(create, "Nova meta").toBe(refresh);
   });
 }
 

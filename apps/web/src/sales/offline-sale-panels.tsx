@@ -16,7 +16,7 @@ import {
 } from "./pending-sales";
 import { SaleCountLabel } from "./sale-count-label";
 import type { SaleCount } from "./sale-count-text";
-import type { QueuedSaleView } from "./sale-form-model";
+import { type QueuedSaleView, SALE_METHOD_CARDS } from "./sale-form-model";
 import { Money } from "./sale-summary-panel";
 
 /** Said at the top of the sale form while there is no connection. */
@@ -46,6 +46,8 @@ export interface SavedSaleLine {
   justSaved: boolean;
   /** Null when there is no date to show yet. */
   occurredAt: string | null;
+  /** "Pix + Crédito" for a sale paid in parts; null for a sale paid in one go, whose line stays as it always was. */
+  partsText: string | null;
   state: PendingSale["state"];
   /** The lines the device's stock does not seem to cover (only for the sale kept just now). */
   stockWarnings: readonly string[];
@@ -53,12 +55,18 @@ export interface SavedSaleLine {
   totalText: string | null;
 }
 
+const METHOD_LABELS = new Map<string, string>(SALE_METHOD_CARDS);
+
 function lineOf(sale: PendingSale): SavedSaleLine {
   return {
     commandId: sale.commandId,
     count: { lines: sale.lineCount, units: sale.unitCount },
     justSaved: false,
     occurredAt: sale.occurredAt,
+    partsText:
+      sale.partMethods
+        ?.map((method) => METHOD_LABELS.get(method) ?? "Outro")
+        .join(" + ") ?? null,
     state: sale.state,
     stockWarnings: [],
     totalText: sale.totalDue === null ? null : formatBrlAmount(sale.totalDue),
@@ -91,6 +99,7 @@ export function savedSaleLines(
         count: null,
         justSaved: true,
         occurredAt: null,
+        partsText: null,
         state: "pending",
         stockWarnings: justSaved.stockWarnings,
         totalText: justSaved.totalDue,
@@ -173,6 +182,11 @@ export function SavedSaleRow({
           )}
         </div>
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+          {line.partsText === null ? null : (
+            <span className="text-muted-foreground text-support">
+              {line.partsText}
+            </span>
+          )}
           <Badge variant={attention ? "destructive" : "outline"}>
             {pendingStateLabels[line.state]}
           </Badge>
