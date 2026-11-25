@@ -100,7 +100,7 @@ describe("PaymentProfileList, the row of a profile", () => {
       />
     );
 
-  it("reads name, count, state and then the buttons, with the state as a word in the badge", () => {
+  it("reads name, count, state and then the action (the menu of an active profile, Restaurar of an archived one), with the state as a word in the badge", () => {
     for (const status of ["active", "archived"] as const) {
       const html = renderOf({ ...PROFILE, status });
       const word = status === "active" ? "Ativo" : "Arquivado";
@@ -110,7 +110,9 @@ describe("PaymentProfileList, the row of a profile", () => {
         html.indexOf(">1 regra<"),
         html.indexOf(`>${word}<`),
         html.indexOf(
-          `${status === "active" ? "Arquivar" : "Restaurar"} perfil Maquininha`
+          status === "active"
+            ? "Mais ações para Maquininha"
+            : "Restaurar perfil Maquininha"
         ),
       ];
       expect(order).not.toContain(-1);

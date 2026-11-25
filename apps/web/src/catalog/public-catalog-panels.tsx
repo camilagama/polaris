@@ -9,8 +9,8 @@ import GlobeIcon from "lucide-react/dist/esm/icons/globe";
 import TriangleAlertIcon from "lucide-react/dist/esm/icons/triangle-alert";
 import { type FormEvent, useCallback, useState } from "react";
 import { Badge } from "@/ui/badge";
+import { Block, BlockHeader, BlockPanel } from "@/ui/block";
 import { Button } from "@/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/ui/card";
 import { FieldLegend, FieldSeparator, FieldSet } from "@/ui/field";
 import { TextLink } from "@/ui/text-link";
 import { connectionControlProps } from "../app-shell/connection-required-notice";
@@ -112,6 +112,7 @@ interface ProfileFormProps {
 }
 
 const SAVE_REASON_ID = "public-profile-save-reason";
+const PROFILE_TITLE_ID = "public-profile-title";
 
 export function ProfileForm(props: ProfileFormProps) {
   const { draft, onChange, onSlugEdited, problem, slugEdited } = props;
@@ -169,14 +170,10 @@ export function ProfileForm(props: ProfileFormProps) {
   );
 
   return (
-    <Card>
-      <form className="grid gap-4" noValidate onSubmit={handleSubmit}>
-        <CardHeader>
-          <CardTitle aria-level={2} role="heading">
-            Perfil público
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="grid gap-4">
+    <Block aria-labelledby={PROFILE_TITLE_ID} className="min-w-0">
+      <BlockHeader id={PROFILE_TITLE_ID} title="Perfil público" />
+      <BlockPanel>
+        <form className="grid gap-4" noValidate onSubmit={handleSubmit}>
           <p className="text-muted-foreground text-support">
             O que você digitar aqui é o que aparece. Nada é copiado do seu
             cadastro, do seu login ou do plano.
@@ -239,30 +236,30 @@ export function ProfileForm(props: ProfileFormProps) {
               value={draft.instagram}
             />
           </FieldSet>
-        </CardContent>
-        <CardContent>
-          <div className="grid gap-2 min-[30rem]:flex min-[30rem]:items-center min-[30rem]:gap-3">
-            <Button
-              aria-describedby={reasonId}
-              aria-disabled={reasonId !== undefined || undefined}
-              disabled={props.pending}
-              type="submit"
-            >
-              {props.pending ? "Salvando…" : "Salvar perfil"}
-            </Button>
-            {reasonId === SAVE_REASON_ID ? (
-              <p
-                className="text-muted-foreground text-support"
-                id={SAVE_REASON_ID}
+          <div>
+            <div className="grid gap-2 min-[30rem]:flex min-[30rem]:items-center min-[30rem]:gap-3">
+              <Button
+                aria-describedby={reasonId}
+                aria-disabled={reasonId !== undefined || undefined}
+                disabled={props.pending}
+                type="submit"
               >
-                Nada mudou para salvar.
-              </p>
-            ) : null}
+                {props.pending ? "Salvando…" : "Salvar perfil"}
+              </Button>
+              {reasonId === SAVE_REASON_ID ? (
+                <p
+                  className="text-muted-foreground text-support"
+                  id={SAVE_REASON_ID}
+                >
+                  Nada mudou para salvar.
+                </p>
+              ) : null}
+            </div>
+            <ActionMessages {...props.feedback} />
           </div>
-          <ActionMessages {...props.feedback} />
-        </CardContent>
-      </form>
-    </Card>
+        </form>
+      </BlockPanel>
+    </Block>
   );
 }
 
@@ -305,13 +302,9 @@ export function SwitchCard(props: SwitchCardProps) {
   }, [onToggle, reasonId]);
 
   return (
-    <Card aria-labelledby="catalog-switch" role="region">
-      <CardHeader>
-        <CardTitle aria-level={2} id="catalog-switch" role="heading">
-          Catálogo
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="grid gap-3">
+    <Block aria-labelledby="catalog-switch" className="min-w-0">
+      <BlockHeader id="catalog-switch" title="Catálogo" />
+      <BlockPanel>
         <p
           className={
             props.visibility === "waiting-plan"
@@ -360,8 +353,8 @@ export function SwitchCard(props: SwitchCardProps) {
             </span>
           </p>
         ) : null}
-      </CardContent>
-    </Card>
+      </BlockPanel>
+    </Block>
   );
 }
 
@@ -449,39 +442,40 @@ export function ProductsCard(props: ProductsCardProps) {
   );
 
   return (
-    <Card aria-labelledby="catalog-products" role="region">
-      <CardHeader className="flex flex-wrap items-center justify-between gap-3">
-        <CardTitle aria-level={2} id="catalog-products" role="heading">
-          Produtos
-        </CardTitle>
-        <div className="flex flex-wrap gap-3">
-          <Button
-            {...connectionControlProps(props.online)}
-            disabled={
-              props.pending ||
-              props.planBlocks ||
-              shownCount === products.length
-            }
-            onClick={handleShowAll}
-            size="sm"
-            type="button"
-            variant="outline"
-          >
-            Mostrar todos
-          </Button>
-          <Button
-            {...connectionControlProps(props.online)}
-            disabled={props.pending || shownCount === 0}
-            onClick={handleHideAll}
-            size="sm"
-            type="button"
-            variant="outline"
-          >
-            Tirar todos
-          </Button>
-        </div>
-      </CardHeader>
-      <CardContent className="grid gap-3">
+    <Block aria-labelledby="catalog-products" className="min-w-0">
+      <BlockHeader
+        action={
+          <div className="flex flex-wrap gap-3">
+            <Button
+              {...connectionControlProps(props.online)}
+              disabled={
+                props.pending ||
+                props.planBlocks ||
+                shownCount === products.length
+              }
+              onClick={handleShowAll}
+              size="sm"
+              type="button"
+              variant="outline"
+            >
+              Mostrar todos
+            </Button>
+            <Button
+              {...connectionControlProps(props.online)}
+              disabled={props.pending || shownCount === 0}
+              onClick={handleHideAll}
+              size="sm"
+              type="button"
+              variant="outline"
+            >
+              Tirar todos
+            </Button>
+          </div>
+        }
+        id="catalog-products"
+        title="Produtos"
+      />
+      <BlockPanel>
         <div>
           <p className="text-muted-foreground text-support">
             {formatQuantity(shownCount)} de {formatQuantity(products.length)}{" "}
@@ -541,7 +535,7 @@ export function ProductsCard(props: ProductsCardProps) {
             shown={page.items.length}
           />
         ) : null}
-      </CardContent>
-    </Card>
+      </BlockPanel>
+    </Block>
   );
 }
