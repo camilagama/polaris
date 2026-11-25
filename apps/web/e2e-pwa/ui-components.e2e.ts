@@ -437,6 +437,360 @@ for (const size of [
   });
 }
 
+/** The boxes that tell where a `ListBlock` of the gallery put its parts, in pixels. */
+async function listBoxes(page: Page, name: string) {
+  return await page
+    .getByRole("region", { exact: true, name })
+    .evaluate((region) => {
+      const rect = (element: Element | null) => {
+        const { bottom, height, left, right, top, width } = (
+          element as Element
+        ).getBoundingClientRect();
+        return { bottom, height, left, right, top, width };
+      };
+      const all = (selector: string) =>
+        [...region.querySelectorAll(selector)].map(rect);
+      const one = (selector: string) => {
+        const found = region.querySelector(selector);
+        return found ? rect(found) : null;
+      };
+      const scroll = region.querySelector("[data-list-block-scroll]");
+      return {
+        columnHeader: one("[data-list-block-header]"),
+        count: one("[data-list-count]"),
+        frame: rect(region),
+        header: one('[data-slot="card-frame-header"]'),
+        headingTag: region.querySelector("h2")?.tagName ?? null,
+        panel: rect(scroll),
+        rows: all("[data-list-block-row]"),
+        scrollable:
+          scroll !== null && scroll.scrollWidth > scroll.clientWidth + 1,
+        skeletons: region.querySelectorAll(
+          "[aria-hidden='true'] .animate-pulse"
+        ).length,
+        total: one("[data-list-total]"),
+      };
+    });
+}
+
+const LIST_EXAMPLES = [
+  { name: "Produtos com total", state: "rows", total: true },
+  { name: "Produtos sem total", state: "rows", total: false },
+  { name: "Carregando com total", state: "loading", total: true },
+  { name: "Carregando sem total", state: "loading", total: false },
+  { name: "Busca com total", state: "filtered-empty", total: true },
+  { name: "Busca sem total", state: "filtered-empty", total: false },
+] as const;
+
+const ANY_VALUE = /.*/;
+
+const LIST_SIZES = [
+  { height: 800, width: 1280 },
+  { height: 740, width: 360 },
+] as const;
+
+for (const size of LIST_SIZES) {
+  for (const example of LIST_EXAMPLES) {
+    test(`o ListBlock "${example.name}" a ${size.width} px: cabeçalho de coluna primeiro, linhas de borda a borda, total por último`, async ({
+      page,
+    }) => {
+      await page.setViewportSize(size);
+      await openGallery(page, null);
+      const boxes = await listBoxes(page, example.name);
+      const label = `${example.name} a ${size.width} px`;
+      expect(boxes.headingTag, label).toBe("H2");
+      expect(boxes.columnHeader, label).not.toBeNull();
+      // the column header is the first line of the panel
+      expect(boxes.columnHeader?.top, label).toBeCloseTo(boxes.panel.top, 0);
+      expect(boxes.columnHeader?.left, label).toBeCloseTo(boxes.panel.left, 0);
+      expect(boxes.columnHeader?.width, label).toBeCloseTo(
+        boxes.panel.width,
+        0
+      );
+      if (example.state === "rows") {
+        expect(boxes.rows, label).toHaveLength(3);
+        for (const row of boxes.rows) {
+          expect(row.left, label).toBeCloseTo(boxes.panel.left, 0);
+          expect(row.width, label).toBeCloseTo(boxes.panel.width, 0);
+          expect(row.top, label).toBeGreaterThanOrEqual(
+            (boxes.columnHeader?.bottom ?? 0) - 0.5
+          );
+        }
+      } else {
+        expect(boxes.rows, label).toHaveLength(0);
+      }
+      if (example.state === "loading") {
+        expect(boxes.skeletons, label).toBeGreaterThan(0);
+      }
+      if (!example.total) {
+        expect(boxes.total, label).toBeNull();
+        return;
+      }
+      // the total is the last line: it ends where the panel ends and nothing of the list is below it
+      expect(boxes.total, label).not.toBeNull();
+      expect(boxes.total?.bottom, label).toBeCloseTo(boxes.panel.bottom, 0);
+      expect(boxes.total?.width, label).toBeCloseTo(boxes.panel.width, 0);
+      for (const row of boxes.rows) {
+        expect(row.bottom, label).toBeLessThanOrEqual(
+          (boxes.total?.top ?? 0) + 0.5
+        );
+      }
+      const lastLine = await page
+        .getByRole("region", { exact: true, name: example.name })
+        .evaluate(
+          (region) =>
+            region.querySelector("[data-list-total]")?.parentElement
+              ?.nextElementSibling === null
+        );
+      expect(lastLine, label).toBe(true);
+    });
+  }
+}
+
+for (const size of LIST_SIZES) {
+  test(`o ListBlock a ${size.width} px: carregando mantém a altura do cabeçalho e a busca sem resultado diz a frase`, async ({
+    page,
+  }) => {
+    await page.setViewportSize(size);
+    await openGallery(page, null);
+    const rows = await listBoxes(page, "Produtos com total");
+    const loading = await listBoxes(page, "Carregando com total");
+    const search = await listBoxes(page, "Busca com total");
+    expect(loading.header?.height).toBeCloseTo(rows.header?.height ?? 0, 0);
+    expect(loading.count?.height).toBeCloseTo(rows.count?.height ?? 0, 0);
+    expect(search.header?.height).toBeCloseTo(rows.header?.height ?? 0, 0);
+    const region = page.getByRole("region", {
+      exact: true,
+      name: "Busca com total",
+    });
+    await expect(
+      region.getByText("Nenhum produto com essa busca.")
+    ).toBeVisible();
+    await expect(region.locator("[data-list-count]")).toHaveText("0 produtos");
+    await expect(
+      page
+        .getByRole("region", { exact: true, name: "Carregando com total" })
+        .getByRole("status")
+    ).toHaveText("Carregando…");
+    await expect(
+      page
+        .getByRole("region", { exact: true, name: "Produtos com total" })
+        .locator("[data-list-count]")
+    ).toHaveAttribute("aria-live", "polite");
+  });
+
+  test(`o ListBlock a ${size.width} px: a tabela larga rola por dentro e a moldura e o título ficam parados`, async ({
+    page,
+  }) => {
+    await page.setViewportSize(size);
+    await openGallery(page, null);
+    const name = "Tabela larga";
+    const before = await listBoxes(page, name);
+    expect(before.frame.right).toBeLessThanOrEqual(size.width + 0.5);
+    const wide = before.scrollable;
+    if (size.width >= 760) {
+      // the 40 rem table fits the 1280 px column: nothing to scroll, and nothing cut
+      expect(wide).toBe(false);
+      await expect(
+        page
+          .getByRole("region", { exact: true, name })
+          .locator("[data-list-block-scroll]")
+      ).not.toHaveAttribute("tabindex", ANY_VALUE);
+      return;
+    }
+    expect(wide).toBe(true);
+    // wider than the screen, the box is a stop of the keyboard, named by the title, so it scrolls without a pointer
+    await expect(
+      page
+        .getByRole("region", { exact: true, name })
+        .getByRole("group", { name })
+    ).toHaveAttribute("tabindex", "0");
+    await page
+      .getByRole("region", { exact: true, name })
+      .locator("[data-list-block-scroll]")
+      .evaluate((scroll) => {
+        scroll.scrollLeft = 120;
+      });
+    const after = await listBoxes(page, name);
+    expect(after.frame.left).toBeCloseTo(before.frame.left, 0);
+    expect(after.frame.width).toBeCloseTo(before.frame.width, 0);
+    expect(after.header?.left).toBeCloseTo(before.header?.left ?? 0, 0);
+    expect(after.columnHeader?.left).toBeCloseTo(
+      (before.columnHeader?.left ?? 0) - 120,
+      0
+    );
+  });
+}
+
+const HEADER_ACTION_EXAMPLES = [
+  ...LIST_EXAMPLES,
+  { name: "Tabela larga", state: "rows", total: true },
+] as const;
+
+/** Sub-pixel rounding of the layout: the count may touch the action, never overlap it. */
+const SIDE_BY_SIDE_TOLERANCE = 0.5;
+/** How far the action may stand from the right edge of the header's content box on a phone. */
+const RIGHT_EDGE_TOLERANCE = 1;
+/** Count and action share a line: their centers differ by rounding only. */
+const SAME_LINE_TOLERANCE = 2;
+
+/** Where the count, the action and the content box of a `ListBlock` header are, in pixels: the padding of a phone (`px-3`) is the block header's, not the frame's. */
+async function headerActionBoxes(page: Page, name: string) {
+  return await page
+    .getByRole("region", { exact: true, name })
+    .evaluate((region) => {
+      const header = region.querySelector('[data-slot="block-header"]');
+      const count = region.querySelector("[data-list-count]");
+      const action = [...(header?.querySelectorAll("button") ?? [])].find(
+        (button) => button.textContent?.trim() === "Exportar"
+      );
+      if (!(header && count && action)) {
+        return null;
+      }
+      const box = (element: Element) => {
+        const { bottom, left, right, top } = element.getBoundingClientRect();
+        return { bottom, centerY: (top + bottom) / 2, left, right, top };
+      };
+      const headerBox = header.getBoundingClientRect();
+      return {
+        action: box(action),
+        contentRight:
+          headerBox.right -
+          Number.parseFloat(getComputedStyle(header).paddingRight),
+        count: box(count),
+      };
+    });
+}
+
+for (const size of LIST_SIZES) {
+  for (const example of HEADER_ACTION_EXAMPLES) {
+    test(`o ListBlock "${example.name}" a ${size.width} px: a contagem fica à esquerda da ação do cabeçalho e, no celular, a ação encosta à direita`, async ({
+      page,
+    }) => {
+      await page.setViewportSize(size);
+      await openGallery(page, null);
+      const label = `${example.name} a ${size.width} px`;
+      const boxes = await headerActionBoxes(page, example.name);
+      expect(boxes, label).not.toBeNull();
+      if (!boxes) {
+        return;
+      }
+      expect(boxes.count.right, label).toBeLessThanOrEqual(
+        boxes.action.left + SIDE_BY_SIDE_TOLERANCE
+      );
+      if (size.width >= 760) {
+        expect(boxes.action.right, label).toBeLessThanOrEqual(
+          boxes.contentRight + RIGHT_EDGE_TOLERANCE
+        );
+        return;
+      }
+      expect(
+        Math.abs(boxes.action.right - boxes.contentRight),
+        label
+      ).toBeLessThanOrEqual(RIGHT_EDGE_TOLERANCE);
+      if (example.state === "rows") {
+        expect(
+          Math.abs(boxes.count.centerY - boxes.action.centerY),
+          label
+        ).toBeLessThanOrEqual(SAME_LINE_TOLERANCE);
+      }
+    });
+  }
+}
+
+test("o ListBlock: o título é o único h2 da lista, a contagem não é título e axe não acusa a página", async ({
+  page,
+}) => {
+  await openGallery(page, null);
+  const region = page.getByRole("region", {
+    exact: true,
+    name: "Produtos com total",
+  });
+  await expect(region.getByRole("heading")).toHaveCount(1);
+  await expect(
+    region.getByRole("heading", { level: 2, name: "Produtos com total" })
+  ).toBeVisible();
+  await expect(
+    region.getByRole("list", { name: "Produtos com total" })
+  ).toBeVisible();
+  expect(await axeViolations(page)).toEqual([]);
+});
+
+/** The frame and the first line of a `Block variant="plain"` of the gallery. */
+test("o Block plain: sem a moldura de fora, com o mesmo cabeçalho do Block", async ({
+  page,
+}) => {
+  await openGallery(page, null);
+  const plain = page.getByRole("region", { exact: true, name: "Comprovante" });
+  await expect(
+    plain.getByRole("heading", { level: 2, name: "Comprovante" })
+  ).toBeVisible();
+  await expect(plain.locator('[data-slot="card-frame"]')).toHaveCount(0);
+  await expect(plain.locator('[data-slot="block-header"]')).toBeVisible();
+  const header = await plain
+    .locator('[data-slot="block-header"]')
+    .evaluate((row) => row.getBoundingClientRect().height);
+  expect(header).toBeGreaterThanOrEqual(32);
+  await expect(page.getByText("O mesmo bloco sem título.")).toBeVisible();
+});
+
+/** The two inner panels, the checkable option and the step tile of the gallery, measured in the browser. */
+test("os painéis internos, a opção marcável e a caixa do passo: medidas e clique", async ({
+  page,
+}) => {
+  await openGallery(page, null);
+  const inset = page.locator('[data-gallery-panel="inset"]');
+  const insetStyle = await inset.evaluate((box) => {
+    const style = getComputedStyle(box);
+    return {
+      border: style.borderTopWidth,
+      fill: style.backgroundColor,
+      radius: style.borderTopLeftRadius,
+    };
+  });
+  expect(insetStyle.border).toBe("0px");
+  expect(insetStyle.fill).not.toBe("rgba(0, 0, 0, 0)");
+  expect(Number.parseFloat(insetStyle.radius)).toBeGreaterThan(0);
+
+  const group = page.getByRole("group", { name: "Contato" });
+  await expect(group).toHaveAttribute("data-gallery-panel", "group");
+  const groupStyle = await group.evaluate((box) => {
+    const style = getComputedStyle(box);
+    return { border: style.borderTopWidth, fill: style.backgroundColor };
+  });
+  expect(groupStyle.border).toBe("1px");
+  expect(groupStyle.fill).toBe("rgba(0, 0, 0, 0)");
+
+  const steps = page.locator("[data-step-box]");
+  await expect(steps).toHaveCount(3);
+  const sizes = await steps.evaluateAll((boxes) =>
+    boxes.map((box) => {
+      const { height, width } = box.getBoundingClientRect();
+      return [width, height];
+    })
+  );
+  expect(sizes).toEqual([
+    [28, 28],
+    [28, 28],
+    [28, 28],
+  ]);
+
+  const option = page.getByRole("checkbox", { name: "Azul / P" });
+  await expect(option).not.toBeChecked();
+  await page.getByText("Azul / P", { exact: true }).click();
+  await expect(option).toBeChecked();
+  await expect(
+    page.getByRole("checkbox", { name: "Desligada, sem imagem para enviar" })
+  ).toBeDisabled();
+  const long = page.locator('[data-slot="checkable-option"]', {
+    hasText: "bem comprido",
+  });
+  await page.setViewportSize({ height: 740, width: 320 });
+  expect(await long.evaluate((row) => row.scrollWidth <= row.clientWidth)).toBe(
+    true
+  );
+});
+
 test("controle: o axe desta página acusa uma imagem sem texto alternativo", async ({
   page,
 }) => {

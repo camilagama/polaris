@@ -343,9 +343,9 @@ test("U-25: cliente parecido — o aviso é anunciado e 'Usar existente' é a a�
   await register(page, "Carla D.", "11900000003");
   await expect(page.getByText("Mesmo telefone")).toBeVisible();
   // a live region that was there before the panel, now with the sentence
-  await expect(page.locator('p.sr-only[role="status"]').first()).toContainText(
-    "Encontramos possíveis clientes existentes"
-  );
+  await expect(
+    page.getByRole("dialog").locator('p.sr-only[role="status"]').first()
+  ).toContainText("Encontramos possíveis clientes existentes");
   const useExisting = page.getByRole("button", {
     name: "Usar existente: Carla Dias",
   });

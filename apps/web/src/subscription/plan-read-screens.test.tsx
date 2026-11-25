@@ -5,6 +5,7 @@ import { planRead } from "../lib/plan-read";
 import { notifyPlanUsageChanged } from "../lib/plan-usage-changes";
 import { clearSessionCaches } from "../offline/runtime/leave-browser";
 import { useLimitHelp, useNearLimitRead } from "./limit-help";
+import { clearPlanNotice, rememberedPlanNotice } from "./plan-notice";
 
 const connection = { online: true };
 const readPlan = vi.fn();
@@ -26,6 +27,8 @@ vi.mock("../lib/orpc", () => ({
 }));
 
 const planWith = (variants: number) => ({
+  accessEndsAt: null,
+  nextCharge: null,
   limits: { goals: 1, images: 50, variants: 50 },
   state: "free",
   usage: { goals: 0, images: 0, variants },
@@ -51,9 +54,13 @@ beforeEach(() => {
   readPlan.mockReset();
   readPlan.mockResolvedValue(planWith(47));
   planRead.clear();
+  clearPlanNotice();
 });
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  clearPlanNotice();
+});
 
 describe("a memória de 10 s do plano entre as telas", () => {
   it("dois avisos montados juntos fazem 1 leitura", async () => {
@@ -120,6 +127,53 @@ describe("a memória de 10 s do plano entre as telas", () => {
     expect(readPlan).toHaveBeenCalledTimes(2);
     expect(view.result.current.page.view?.usage.used).toBe(48);
     expect(view.result.current.panel.view?.usage.used).toBe(48);
+  });
+
+  it("gravar um produto tira a linha do cartão e a leitura que o cadastro faz a devolve com o número novo, sem chamada extra", async () => {
+    const view = renderHook(
+      ({ version }) => useNearLimitRead("variants", version),
+      { initialProps: { version: 0 } }
+    );
+    await flush();
+    expect(rememberedPlanNotice("org-a")?.variants).toEqual({
+      max: 50,
+      used: 47,
+    });
+
+    readPlan.mockResolvedValue(planWith(48));
+    notifyPlanUsageChanged();
+    expect(rememberedPlanNotice("org-a")?.variants).toBeNull();
+    view.rerender({ version: 1 });
+    await flush();
+
+    expect(readPlan).toHaveBeenCalledTimes(2);
+    expect(rememberedPlanNotice("org-a")).toMatchObject({
+      state: "free",
+      variants: { max: 50, used: 48 },
+    });
+  });
+
+  it("a resposta que uma gravação passou na frente não volta ao cartão", async () => {
+    const answers: Array<(plan: unknown) => void> = [];
+    readPlan.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          answers.push(resolve);
+        })
+    );
+    renderHook(() => useNearLimitRead("variants"));
+    notifyPlanUsageChanged();
+    answers[0]?.(planWith(40));
+    await flush();
+    expect(rememberedPlanNotice("org-a")).toBeNull();
+  });
+
+  it("sem conexão a leitura não chega ao cartão", async () => {
+    connection.online = false;
+    renderHook(() => useNearLimitRead("variants"));
+    await flush();
+    expect(readPlan).not.toHaveBeenCalled();
+    expect(rememberedPlanNotice("org-a")).toBeNull();
   });
 
   it("o version subindo sem clear() faz 2 leituras", async () => {

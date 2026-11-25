@@ -2,7 +2,7 @@ import type { GoalReadModel } from "@polaris/contracts";
 import ArrowRightIcon from "lucide-react/dist/esm/icons/arrow-right";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/ui/badge";
-import { Card } from "@/ui/card";
+import { Block } from "@/ui/block";
 import { buttonVariants } from "@/ui/button";
 import { Figure } from "@/ui/figure";
 import { MoneyText } from "@/ui/hidden-values";
@@ -14,6 +14,7 @@ import {
   formatGoalValue,
   goalProgressWidth,
   goalTitle,
+  groupGoals,
 } from "../dashboard/goal-model";
 import {
   type GoalPace,
@@ -34,14 +35,16 @@ import {
   goalPeriodShort,
   monthTitle,
   type OfflineGoal,
+  orderGoalsByProximity,
   pastGoalSummary,
 } from "./home-model";
+import { GoalSlides, GoalStepper, useGoalPosition } from "./goal-carousel";
 import { BlockError, HomeBlock } from "./home-parts";
-import type { Block } from "./use-home";
+import type { Block as ReadBlock } from "./use-home";
 
 /**
- * The goal of the Início (AC-10, AC-11, § 5.3): the active one that ends first, the one that just settled, or the
- * way to set one. Goals are set and changed on the Resultado: the links take the person there.
+ * The goal of the Início (AC-10, AC-11, § 5.3): the active one nearest to being reached (or each of them, one at a time,
+ * when there are several), the one that just settled, or the way to set one. Goals are set and changed on the Resultado: the links take the person there.
  */
 
 const BLOCK_ACTION = cn(
@@ -428,17 +431,72 @@ function SettledGoal({
 /** The goal while it reads: the shape of the card of a store without a goal (the title and "Definir meta"), its least. */
 function GoalSkeleton() {
   return (
-    <Card
-      aria-busy="true"
-      className="min-w-0 px-(--card-spacing)"
-      role="status"
-    >
+    <Block aria-busy="true" role="status" variant="plain">
       <span className="sr-only">Carregando a meta…</span>
       <div aria-hidden="true" className="flex h-5 items-center">
         <Skeleton className="h-4 w-12" />
       </div>
       <Skeleton aria-hidden="true" className="h-ctl-md w-32" />
-    </Card>
+    </Block>
+  );
+}
+
+/**
+ * The block with active goals: one goal at a time, the nearest to being reached first (`orderGoalsByProximity`), with
+ * the arrows and "1 de 3" in the heading when there is more than one. With one goal the block is as it always was.
+ * Every goal sits in the same grid cell, so the tallest sets the height and the swap moves nothing.
+ */
+function ActiveGoalsBlock({
+  goals,
+  others,
+  projection,
+  projections,
+  today,
+  view,
+}: {
+  goals: readonly GoalReadModel[];
+  others: number;
+  projection: GoalProjection | null;
+  projections: Readonly<Record<string, GoalProjection | null>> | undefined;
+  today: string | null;
+  view: Extract<GoalView, { kind: "active" }>;
+}) {
+  const position = useGoalPosition(goals);
+  const carousel = goals.length > 1;
+  const projectionOf = (goal: GoalReadModel) =>
+    goal.id === view.goal.id ? projection : (projections?.[goal.id] ?? null);
+  const helpText = goalHelpText(
+    goals.map(projectionOf).find(Boolean) ?? null,
+    goals.map((goal) => goalPace(goal, today)).find(Boolean) ?? null
+  );
+  const renderGoal = (goal: GoalReadModel) => (
+    <ActiveGoal
+      daysLeft={today ? goalDaysLeftText(goal, today) : null}
+      goal={goal}
+      projection={projectionOf(goal)}
+      today={today}
+    />
+  );
+  return (
+    <HomeBlock
+      {...(carousel ? { action: <GoalStepper {...position} /> } : {})}
+      footer={goalFooter(carousel ? goals.length - 1 : others)}
+      id="home-goal"
+      title="Meta"
+      {...(helpText ? { help: { about: "Meta", text: helpText } } : {})}
+    >
+      {carousel ? (
+        <GoalSlides
+          position={position}
+          slides={goals.map((goal) => ({
+            id: goal.id,
+            node: renderGoal(goal),
+          }))}
+        />
+      ) : (
+        renderGoal(view.goal)
+      )}
+    </HomeBlock>
   );
 }
 
@@ -446,13 +504,16 @@ export function GoalBlock({
   block,
   onRetry,
   projection,
+  projections,
   today,
   view,
 }: {
-  block: Block<GoalReadModel[]>;
+  block: ReadBlock<GoalReadModel[]>;
   onRetry: () => void;
-  /** The estimate of the active goal, when what it needs is known (`goalProjection`). */
+  /** The estimate of the goal that opens, when what it needs is known (`goalProjection`). */
   projection: GoalProjection | null;
+  /** The estimate of each goal of the card by its id, by the same rule; without it only the one that opens has one. */
+  projections?: Readonly<Record<string, GoalProjection | null>>;
   /** The store's today by the server's clock, for the days left; null when it is not known (no figures read). */
   today: string | null;
   view: GoalView | null;
@@ -478,31 +539,29 @@ export function GoalBlock({
       </HomeBlock>
     );
   }
+  if (view.kind === "active") {
+    const ordered = orderGoalsByProximity(groupGoals(block.data).active);
+    return (
+      <ActiveGoalsBlock
+        goals={ordered.length > 0 ? ordered : [view.goal]}
+        others={view.others}
+        projection={projection}
+        projections={projections}
+        today={today}
+        view={view}
+      />
+    );
+  }
   const pastMonth = pastMonthOf(view, today);
-  const helpText =
-    view.kind === "active"
-      ? goalHelpText(projection, goalPace(view.goal, today))
-      : null;
   const strip = view.kind === "none" || pastMonth !== null;
   return (
     <HomeBlock
       {...(strip
         ? { attributes: STRIP_ATTRIBUTES, plain: true }
-        : {
-            footer: goalFooter(view.kind === "active" ? view.others : 0),
-          })}
+        : { footer: goalFooter(0) })}
       id="home-goal"
       title={pastMonth ? monthGoalTitle(monthTitle(pastMonth)) : "Meta"}
-      {...(helpText ? { help: { about: "Meta", text: helpText } } : {})}
     >
-      {view.kind === "active" ? (
-        <ActiveGoal
-          daysLeft={today ? goalDaysLeftText(view.goal, today) : null}
-          goal={view.goal}
-          projection={projection}
-          today={today}
-        />
-      ) : null}
       {view.kind === "settled" ? (
         <SettledOrPast goal={view.goal} pastMonth={pastMonth !== null} />
       ) : null}

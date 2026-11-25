@@ -13,6 +13,7 @@ const { FeePreviewDetails, Money } = await import("./sale-summary-panel");
 
 const PREVIEW: FeePreview = {
   anticipation: { text: "não solicitada", tone: "not_applicable" },
+  feeCents: 250n,
   processing: { text: "2,5% (R$ 2,50)", tone: "known" },
   profileText: "Maquininha",
   ruleMatched: true,

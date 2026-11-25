@@ -1,3 +1,4 @@
+import type { GoalReadModel } from "@polaris/contracts";
 import PlusIcon from "lucide-react/dist/esm/icons/plus";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
@@ -33,6 +34,7 @@ import {
 import { LowerBlocks } from "./home-lower-blocks";
 import {
   copyLine,
+  type GoalProjection,
   type GoalView,
   goalProjection,
   homeUpdatedLine,
@@ -907,14 +909,21 @@ function pickGoalBlock({
   }
   // the estimate only from the server's series of this read, measured on its today (never from the copy)
   const figures = state.figures.status === "ready" ? state.figures.data : null;
-  const projection =
-    goal?.kind === "active" && figures
+  const projectionOf = (target: GoalReadModel) =>
+    figures
       ? goalProjection(
-          goal.goal,
+          target,
           { before: figures.before.daily, month: figures.month.daily },
           figures.today
         )
       : null;
+  const projection = goal?.kind === "active" ? projectionOf(goal.goal) : null;
+  const projections: Record<string, GoalProjection | null> = {};
+  if (state.goals.status === "ready") {
+    for (const target of state.goals.data) {
+      projections[target.id] = projectionOf(target);
+    }
+  }
   return {
     loading: state.goals.status === "loading",
     node: (
@@ -922,6 +931,7 @@ function pickGoalBlock({
         block={state.goals}
         onRetry={retryGoals}
         projection={projection}
+        projections={projections}
         today={figures?.today ?? null}
         view={goal}
       />

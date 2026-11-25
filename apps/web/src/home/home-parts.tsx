@@ -11,14 +11,18 @@ import {
 } from "react";
 import { cn } from "@/lib/utils";
 import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
-import { BlockHeader } from "@/ui/block-header";
+import {
+  Block,
+  BlockFooter,
+  BlockHeader,
+  BlockLink,
+  BlockPanel,
+} from "@/ui/block";
 import { Button } from "@/ui/button";
 import {
-  Card,
   CardFrame,
   CardFrameFooter,
   CardFrameHeader,
-  CardFrameLink,
   CardFramePanel,
 } from "@/ui/card";
 import { Skeleton } from "@/ui/skeleton";
@@ -31,7 +35,7 @@ export const HomeRoleProvider = HomeRole.Provider;
  * The foot of a framed block (from 760 px): one link to the screen the block is a summary of. `link` false keeps the
  * foot's line empty (the destination needs the connection and there is none), so the block does not change height.
  */
-interface BlockFooter {
+interface HomeFooter {
   capability: string;
   href: string;
   label: string;
@@ -54,7 +58,7 @@ interface BlockProps {
   children: ReactNode;
   className?: string;
   /** The foot on the frame, from 760 px. */
-  footer?: BlockFooter;
+  footer?: HomeFooter;
   id: string;
   /** The (i) beside the heading, for a block with a term or an estimate to explain (never a warning). */
   help?: { about: string; text: string };
@@ -83,55 +87,47 @@ export function HomeBlock({
     footer && role !== null && hasCapabilityForRole(role, footer.capability)
       ? footer
       : null;
-  const heading = (
-    <BlockHeader
-      action={action}
-      className={plain ? "md:min-h-0" : "md:flex-nowrap"}
-      help={help}
-      id={id}
-      title={title}
-    />
-  );
+  const titleRow = { action, help, title };
   if (plain) {
     return (
-      <Card
-        aria-labelledby={id}
-        className={cn("min-w-0 px-(--card-spacing)", className)}
-        role="region"
+      <Block
         {...attributes}
+        className={cn(className)}
+        compact
+        headingId={id}
+        variant="plain"
+        {...titleRow}
       >
-        {heading}
         {children}
-      </Card>
+      </Block>
     );
   }
   return (
-    <CardFrame
+    <Block
       aria-labelledby={id}
       className={cn("min-w-0", className)}
-      role="region"
       {...attributes}
     >
-      <CardFrameHeader>{heading}</CardFrameHeader>
-      <CardFramePanel className={panelClassName}>
+      <BlockHeader id={id} {...titleRow} />
+      <BlockPanel className={panelClassName}>
         {children}
         {foot?.inBody && foot.link !== false ? (
-          <CardFrameLink
+          <BlockLink
             className="w-fit self-end justify-self-end md:hidden"
             href={foot.href}
           >
             {foot.label}
-          </CardFrameLink>
+          </BlockLink>
         ) : null}
-      </CardFramePanel>
+      </BlockPanel>
       {foot ? (
-        <CardFrameFooter>
+        <BlockFooter>
           {foot.link === false ? null : (
-            <CardFrameLink href={foot.href}>{foot.label}</CardFrameLink>
+            <BlockLink href={foot.href}>{foot.label}</BlockLink>
           )}
-        </CardFrameFooter>
+        </BlockFooter>
       ) : null}
-    </CardFrame>
+    </Block>
   );
 }
 

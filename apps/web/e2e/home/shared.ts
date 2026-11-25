@@ -706,6 +706,8 @@ export async function serve(page: Page, server: FakeServer) {
       ? route.abort("internetdisconnected")
       : route.fulfill(json({ organizations: [server.organization] }))
   );
+  // no `session.id` on purpose: the device check is remembered per session id, and with one `checkStillStands` may skip
+  // the `device/check` call that the lease tests hold back
   await page.route("**/api/auth/get-session", (route) =>
     server.down
       ? route.abort("internetdisconnected")
@@ -847,7 +849,7 @@ export function goal(overrides: Record<string, unknown>) {
   };
 }
 
-export const SYNCED = /sincronizado/i;
+const SYNCED = /sincronizado/i;
 
 export const OFFLINE_KEYS =
   /^polaris\.offline\.(home|periodSummary|dailySales)\./;
@@ -862,15 +864,19 @@ export const copyKeys = (page: Page) =>
     OFFLINE_KEYS.source
   );
 
+/** Waits for the offline runtime to say the copy is in sync ("Tudo sincronizado" in the sync status). */
+export const waitCopySynced = (page: Page) =>
+  expect(page.locator(".sync-status").first()).toContainText(SYNCED, {
+    timeout: 20_000,
+  });
+
 /** Opens the Início with the server, waits for its copy on the device, and leaves it ready to be cut. */
 export async function openWithCopy(page: Page, server: FakeServer) {
   await openHome(page, server);
   await expect(region(page, "Vendas hoje")).toContainText("R$ 320,10");
   await expect.poll(() => copyKeys(page)).toHaveLength(3);
   // the offline runtime finished opening (a usable lease, the collections in place): a sale can be kept offline
-  await expect(page.locator(".sync-status").first()).toContainText(SYNCED, {
-    timeout: 20_000,
-  });
+  await waitCopySynced(page);
 }
 
 /** Opens the page again with no network at all but `navigator.onLine` true, the device's clock at `at`. */

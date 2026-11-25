@@ -11,6 +11,8 @@ interface BlockHelp {
  * The heading row of a block (a card with a title): the title and its (i) on the left, what the block shows at its
  * side (a total, a legend) and its action on the right, all on one line of at least 36 px. The only place that
  * order is written: the blocks of the Início and of the Resultado differ in what they hold, never in this row.
+ * Below 760 px, when a side and an action drop to the second line together, that line is the whole row: the side
+ * stays on the left, under the title, and the action sits at the right edge.
  */
 export function BlockHeader({
   action,
@@ -59,7 +61,12 @@ export function BlockHeader({
         ))}
       </div>
       {right ? (
-        <div className="flex min-w-0 items-center gap-x-3">
+        <div
+          className={cn(
+            "flex min-w-0 items-center gap-x-3",
+            aside && action && "max-md:grow max-md:justify-end"
+          )}
+        >
           {aside}
           {action}
         </div>

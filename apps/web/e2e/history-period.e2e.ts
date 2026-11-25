@@ -76,6 +76,17 @@ const askedWithout = (asked: ListRequest[], key: keyof ListRequest) => {
   return last !== undefined && !(key in last);
 };
 
+const FILTER_KEYS = [
+  "customerQuery",
+  "occurredFrom",
+  "occurredTo",
+  "status",
+] as const satisfies readonly (keyof ListRequest)[];
+const filtersAsked = (asked: ListRequest[]) => {
+  const last = lastAsked(asked);
+  return FILTER_KEYS.filter((key) => last !== undefined && key in last);
+};
+
 async function openHistory(page: Page) {
   const asked: ListRequest[] = [];
   await page.clock.setFixedTime(new Date(NOW));
@@ -258,7 +269,7 @@ for (const viewport of FORM_VIEWPORTS) {
         occurredFrom: "2026-10-08",
         occurredTo: "2026-10-14",
       });
-      expect(lastAsked(asked)).not.toHaveProperty("status");
+      expect(filtersAsked(asked)).toEqual(["occurredFrom", "occurredTo"]);
 
       // Cliente back, so the phase with two pills below starts as before
       const customerAgain = await addFilter(page, "Cliente");
