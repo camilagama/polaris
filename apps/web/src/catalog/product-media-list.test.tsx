@@ -39,6 +39,7 @@ const base: Props = {
 const render = (overrides: Partial<Props> = {}) =>
   renderToStaticMarkup(<ProductMediaList {...base} {...overrides} />);
 
+const ALERT_DIALOG_TAG = /<div[^>]*role="alertdialog"[^>]*>/;
 const OFF = ' disabled=""';
 /** The tag of the button of an action of an image, as drawn: to say whether it is off. */
 function button(markup: string, label: string): string {
@@ -113,6 +114,17 @@ describe("the list of images of a product", () => {
     });
     expect(html).toContain("Substituir a imagem 1?");
     expect(html).toContain("Remover e escolher outra");
+  });
+
+  it("draws the confirmation of removing and of replacing as the inset block in the destructive tone", () => {
+    for (const kind of ["remove", "replace"] as const) {
+      const html = render({
+        confirm: { assetId: base.assets[1]?.assetId ?? "", kind },
+      });
+      const tag = ALERT_DIALOG_TAG.exec(html)?.[0] ?? "";
+      expect(tag).toContain('data-slot="inset-block"');
+      expect(tag).toContain("ring-destructive/60");
+    }
   });
 
   it("says what the confirmation is doing while it runs", () => {
