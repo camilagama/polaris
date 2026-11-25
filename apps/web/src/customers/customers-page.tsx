@@ -15,8 +15,7 @@ import {
   ActionFeedback,
   LoadErrorNotice,
 } from "../catalog/products-page-parts";
-import { countLineShown, shownListCount } from "../catalog/list-page-model";
-import { ListCountLine } from "../catalog/screen-parts";
+import { shownListCount } from "../catalog/list-page-model";
 import { SegmentedFilter } from "@/ui/segmented-filter";
 import { focusLater } from "../lib/focus";
 import { useCurrentOrganization } from "../lib/current-organization";
@@ -648,28 +647,29 @@ export function CustomersPage() {
         onUseExisting={handleUseExisting}
         open={formOpen}
       />
-      <CustomerSearch onChange={setQuery} value={query} />
-      <SegmentedFilter
-        disabled={pendingAction !== null}
-        label="Estado dos clientes"
-        onSelect={handleStatus}
-        options={STATUS_OPTIONS}
-        value={status}
-      />
-      <ListCountLine
-        shown={countLineShown(isLoading, listIsShown, customers.length)}
-        text={shownListCount(
-          listIsShown,
-          foundCustomers.length,
-          customers.length,
-          query,
-          CUSTOMER_NOUN
-        )}
-      />
+      <div className="grid gap-4 md:flex md:items-center md:justify-between">
+        <CustomerSearch onChange={setQuery} value={query} />
+        <SegmentedFilter
+          disabled={pendingAction !== null}
+          label="Estado dos clientes"
+          onSelect={handleStatus}
+          options={STATUS_OPTIONS}
+          value={status}
+        />
+      </div>
       {loadError ? (
         <LoadErrorNotice message={loadError} onRetry={handleRetry} />
       ) : (
         <CustomerList
+          count={
+            shownListCount(
+              listIsShown,
+              foundCustomers.length,
+              customers.length,
+              query,
+              CUSTOMER_NOUN
+            ) ?? ""
+          }
           customers={foundCustomers}
           isLoading={isLoading}
           isOffline={isOffline}

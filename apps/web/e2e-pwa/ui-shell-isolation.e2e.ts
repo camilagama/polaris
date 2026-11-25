@@ -15,6 +15,7 @@ import { resultAnswers } from "./ui-result-states";
 import { addSheet, rulesOutsideTailwindLayers } from "./ui-shell-isolation";
 import { serveStockRows } from "./ui-stock-states";
 import { WORKER_MARK } from "./worker-mark";
+import { chooseProfileAction } from "../e2e/payment-profile-actions";
 
 /**
  * The screens inside the real shell and the pages outside it (since batch 6): every style rule on the page
@@ -631,9 +632,7 @@ const PAYMENT_SCREENS = [
     name: "Formas de receber no shell: edição",
     open: (page: Page) =>
       openPaymentProfiles(page, async () => {
-        await page
-          .getByRole("button", { name: "Editar perfil Maquininha da loja" })
-          .click();
+        await chooseProfileAction(page, "Editar", "Maquininha da loja");
         await expect(page.getByLabel("Nome do perfil")).toBeFocused();
       }),
   },
@@ -641,9 +640,7 @@ const PAYMENT_SCREENS = [
     name: "Formas de receber no shell: percentual inválido",
     open: (page: Page) =>
       openPaymentProfiles(page, async () => {
-        await page
-          .getByRole("button", { name: "Editar perfil Maquininha da loja" })
-          .click();
+        await chooseProfileAction(page, "Editar", "Maquininha da loja");
         await page
           .getByLabel("Percentual efetivo sobre o total devido")
           .fill("150");

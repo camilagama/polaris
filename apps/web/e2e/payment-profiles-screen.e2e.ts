@@ -15,6 +15,7 @@ import {
 } from "./csp-fixture";
 import { activateByKeyboard, expectFocusRing } from "./focus-ring";
 import { serveHealth, serveLabWorker, WORKER_MARK } from "./worker-mark";
+import { chooseProfileAction } from "./payment-profile-actions";
 
 /**
  * The payment profiles screen on the components of src/ui (v5.1):
@@ -159,9 +160,7 @@ async function useEveryControl(page: Page) {
   ).toBeVisible();
 
   // the edit of a profile: the form comes filled, with the cursor in the name
-  await page
-    .getByRole("button", { name: "Editar perfil Maquininha da loja" })
-    .click();
+  await chooseProfileAction(page, "Editar", "Maquininha da loja");
   await expect(page.getByLabel("Nome do perfil")).toHaveValue(
     "Maquininha da loja"
   );
@@ -201,10 +200,10 @@ async function useEveryControl(page: Page) {
   await page.getByRole("button", { name: "Remover regra 2" }).click();
   await expect(addRule).toBeFocused();
 
-  // cancelling the edit gives the focus back to the button of the profile
+  // cancelling the edit gives the focus back to the "…" button of the profile
   await page.getByRole("button", { name: "Cancelar edição" }).click();
   await expect(
-    page.getByRole("button", { name: "Editar perfil Maquininha da loja" })
+    page.getByRole("button", { name: "Mais ações para Maquininha da loja" })
   ).toBeFocused();
 }
 
@@ -278,9 +277,7 @@ test("a 320 px nada transborda: a lista, a edição com as duas taxas e os erros
   await page.getByRole("checkbox", { name: "Incluir arquivados" }).check();
   await expectNoSidewaysScroll(page);
 
-  await page
-    .getByRole("button", { name: "Editar perfil Maquininha da loja" })
-    .click();
+  await chooseProfileAction(page, "Editar", "Maquininha da loja");
   const mode = page.getByRole("combobox", { name: "Como a taxa é informada" });
   await chooseOption(page, mode.first(), "Fixo e percentual");
   await chooseOption(page, mode.nth(1), "Fixo e percentual");
@@ -550,13 +547,13 @@ for (const theme of THEMES) {
     }, theme.stored);
     await openServerScreen(page, { lists: [answer([MACHINE])] });
 
-    const rule = await boxOf(page.locator("ul ul > li").first());
+    const rule = await boxOf(
+      page.locator('ul ul > li > [data-slot="inset-block"]').first()
+    );
     expect(rule.borders).toEqual(["0px", "0px", "0px", "0px"]);
     expect(rule.background).toBe(rule.muted);
 
-    await page
-      .getByRole("button", { name: "Editar perfil Maquininha da loja" })
-      .click();
+    await chooseProfileAction(page, "Editar", "Maquininha da loja");
     const feeBlock = await boxOf(
       page.getByRole("group", { name: "Taxa de processamento" })
     );
@@ -585,9 +582,7 @@ test("arquivar e restaurar dizem o resultado e a lista acompanha", async ({
       },
     },
   });
-  await page
-    .getByRole("button", { name: "Arquivar perfil Maquininha da loja" })
-    .click();
+  await chooseProfileAction(page, "Arquivar", "Maquininha da loja");
   await expect(
     page.getByText("Perfil “Maquininha da loja” arquivado.")
   ).toBeVisible();
@@ -674,9 +669,7 @@ test("arquivar com o 503 server_busy diz que pode ter sido salvo, lê a lista de
       },
     },
   });
-  await page
-    .getByRole("button", { name: "Arquivar perfil Maquininha da loja" })
-    .click();
+  await chooseProfileAction(page, "Arquivar", "Maquininha da loja");
   await expect(
     page.getByText(
       "A alteração não foi confirmada. Pode ter sido salva: confira antes de repetir."
@@ -820,9 +813,7 @@ test("o valor fixo aparece com vírgula na lista e no campo, e vai ao servidor c
   // the rule with no settlement said so
   await expect(row).toContainText("não informado");
 
-  await page
-    .getByRole("button", { name: "Editar perfil Maquininha da loja" })
-    .click();
+  await chooseProfileAction(page, "Editar", "Maquininha da loja");
   await expect(page.getByLabel("Valor fixo por pagamento")).toHaveValue("0,50");
   await page.getByRole("button", { name: "Salvar alterações" }).click();
   await expect

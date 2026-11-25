@@ -309,9 +309,7 @@ export const DEBT: Readonly<Record<Rule, readonly string[]>> = {
     "src/catalog/category-form.tsx",
     "src/catalog/category-list.tsx",
     "src/catalog/product-list.tsx",
-    "src/catalog/public-catalog-panels.tsx",
     // customers
-    "src/customers/customer-list.tsx",
     // data-export
     // expenses
     "src/expenses/expense-by-category.tsx",
@@ -324,11 +322,7 @@ export const DEBT: Readonly<Record<Rule, readonly string[]>> = {
     "src/inventory/inventory-page.tsx",
     // offline
     // organization
-    "src/organization/close-store-section.tsx",
-    "src/organization/closed-queue-section.tsx",
-    "src/organization/closed-store-page.tsx",
     // payment-profiles
-    "src/payment-profiles/payment-profile-list.tsx",
     // sales
     "src/sales/sale-id-missing.tsx",
     "src/sales/sale-item-editor.tsx",
@@ -336,8 +330,6 @@ export const DEBT: Readonly<Record<Rule, readonly string[]>> = {
     "src/sales/sale-payment-section.tsx",
     "src/sales/sale-summary-panel.tsx",
     // settings
-    "src/settings/email-preference-card.tsx",
-    "src/settings/settings-screen.tsx",
     // sign-in
     "src/sign-in/change-password-page.tsx",
     "src/sign-in/entry-ui.tsx",
@@ -354,7 +346,6 @@ export const DEBT: Readonly<Record<Rule, readonly string[]>> = {
     "src/catalog/product-media-panel.tsx",
     "src/catalog/product-variants-form.tsx",
     // customers
-    "src/customers/customer-form.tsx",
     "src/customers/customer-list.tsx",
     // expenses
     "src/expenses/expense-list.tsx",
@@ -366,7 +357,6 @@ export const DEBT: Readonly<Record<Rule, readonly string[]>> = {
     "src/legal/legal-page.tsx",
     // offline
     // payment-profiles
-    "src/payment-profiles/payment-profile-list.tsx",
     // sales
     "src/sales/sale-payment-section.tsx",
     "src/sales/sale-summary-panel.tsx",
@@ -376,15 +366,12 @@ export const DEBT: Readonly<Record<Rule, readonly string[]>> = {
     // catalog
     "src/catalog/category-list.tsx",
     "src/catalog/product-list.tsx",
-    "src/catalog/public-catalog-page.tsx",
     "src/catalog/screen-parts.tsx",
     // customers
-    "src/customers/customer-list.tsx",
     // expenses
     "src/expenses/expense-list.tsx",
     // offline
     // payment-profiles
-    "src/payment-profiles/payment-profile-list.tsx",
     // sales
   ],
 };
@@ -506,7 +493,6 @@ describe("o padrão visual das telas (R1 a R3)", () => {
     for (const file of [
       "src/catalog/product-list.tsx",
       "src/catalog/category-list.tsx",
-      "src/customers/customer-list.tsx",
       "src/expenses/expense-list.tsx",
       "src/inventory/inventory-page.tsx",
     ]) {
@@ -767,15 +753,12 @@ describe("R4: as peças soltas da lista só vivem em ui/ (controles)", () => {
     ]);
   });
 
-  it("os arquivos da dívida de R4 são os de hoje: as 6 telas que ainda importam e o screen-parts que reexporta", () => {
+  it("os arquivos da dívida de R4 são os de hoje: as 3 telas que ainda importam e o screen-parts que reexporta", () => {
     expect(DEBT.R4).toEqual([
       "src/catalog/category-list.tsx",
       "src/catalog/product-list.tsx",
-      "src/catalog/public-catalog-page.tsx",
       "src/catalog/screen-parts.tsx",
-      "src/customers/customer-list.tsx",
       "src/expenses/expense-list.tsx",
-      "src/payment-profiles/payment-profile-list.tsx",
     ]);
   });
 });
