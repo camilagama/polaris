@@ -316,11 +316,6 @@ export const DEBT: Readonly<Record<Rule, readonly string[]>> = {
     // organization
     // payment-profiles
     // sales
-    "src/sales/sale-id-missing.tsx",
-    "src/sales/sale-item-editor.tsx",
-    "src/sales/sale-page.tsx",
-    "src/sales/sale-payment-section.tsx",
-    "src/sales/sale-summary-panel.tsx",
     // settings
     // sign-in
     // subscription
@@ -338,8 +333,6 @@ export const DEBT: Readonly<Record<Rule, readonly string[]>> = {
     // offline
     // payment-profiles
     // sales
-    "src/sales/sale-payment-section.tsx",
-    "src/sales/sale-summary-panel.tsx",
     // subscription
   ],
   R4: [
@@ -846,13 +839,21 @@ function mergeThreeWay(base: string, mine: string, theirs: string) {
 }
 
 describe("a dívida por pasta: tirar arquivos de pastas diferentes não conflita (AC-L0.8)", () => {
-  const folders = [...new Set(DEBT.R2.map(folderOf))];
+  // a list of its own: the live debt shrinks to fewer than three folders as the screens migrate
+  const GROUPED_DEBT = [
+    "src/alfa/um.tsx",
+    "src/alfa/dois.tsx",
+    "src/beta/tres.tsx",
+    "src/gama/quatro.tsx",
+    "src/gama/cinco.tsx",
+  ];
+  const folders = [...new Set(GROUPED_DEBT.map(folderOf))];
   const without = (folder: string | undefined) =>
-    DEBT.R2.filter((file) => folderOf(file) !== folder);
+    GROUPED_DEBT.filter((file) => folderOf(file) !== folder);
 
   it("duas cópias da lista de R2, cada uma sem uma pasta vizinha diferente, mesclam sem conflito", () => {
-    expect(folders.length).toBeGreaterThanOrEqual(2);
-    const base = listText(DEBT.R2, folders);
+    expect(folders.length).toBeGreaterThan(2);
+    const base = listText(GROUPED_DEBT, folders);
     for (const [index, folder] of folders.slice(0, -1).entries()) {
       const next = folders[index + 1];
       const merged = mergeThreeWay(
@@ -863,7 +864,9 @@ describe("a dívida por pasta: tirar arquivos de pastas diferentes não conflita
       expect(merged.conflicted, `${folder} e ${next}`).toBe(false);
       expect(merged.text).toBe(
         listText(
-          DEBT.R2.filter((file) => ![folder, next].includes(folderOf(file))),
+          GROUPED_DEBT.filter(
+            (file) => ![folder, next].includes(folderOf(file))
+          ),
           folders
         )
       );
@@ -873,7 +876,7 @@ describe("a dívida por pasta: tirar arquivos de pastas diferentes não conflita
   it("controle: sem a linha de comentário por pasta as mesmas duas edições conflitam", () => {
     const [first, second] = folders;
     const merged = mergeThreeWay(
-      listText(DEBT.R2, false),
+      listText(GROUPED_DEBT, false),
       listText(without(first), false),
       listText(without(second), false)
     );

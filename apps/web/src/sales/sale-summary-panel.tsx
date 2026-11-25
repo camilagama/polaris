@@ -9,8 +9,9 @@ import {
 } from "@/lib/hidden-values";
 import { cn } from "@/lib/utils";
 import { Alert, AlertDescription } from "@/ui/alert";
+import { Badge } from "@/ui/badge";
+import { Block } from "@/ui/block";
 import { Button, buttonVariants } from "@/ui/button";
-import { Card, CardContent } from "@/ui/card";
 import { FieldError } from "@/ui/field";
 import { MoneyText } from "@/ui/hidden-values";
 import { stockEntryHref } from "../inventory/stock-entry-link";
@@ -35,9 +36,12 @@ import type { SplitBalance } from "./sale-split-model";
 /** An unknown cost or fee: explicit text, italic, dashed border, warning color. Never zero. */
 function Unknown({ children }: { children: ReactNode }) {
   return (
-    <span className="rounded-sm border border-warning/60 border-dashed px-1.5 py-px font-medium text-warning text-xs italic">
+    <Badge
+      className="inline overflow-visible whitespace-normal rounded-sm border-warning/60 border-dashed bg-transparent px-1.5 py-px italic leading-4"
+      variant="warning"
+    >
       {children}
-    </span>
+    </Badge>
   );
 }
 
@@ -78,11 +82,14 @@ export function LeaderRow({
 }
 
 /** The perforation before the total. */
-export function Perforation() {
+export function Perforation({ className }: { className?: string }) {
   return (
     <div
       aria-hidden="true"
-      className="relative h-0 overflow-x-clip border-input border-t border-dashed before:absolute before:-top-2 before:-left-2 before:size-4 before:rounded-full before:bg-background before:ring-1 before:ring-foreground/[0.08] after:absolute after:-top-2 after:-right-2 after:size-4 after:rounded-full after:bg-background after:ring-1 after:ring-foreground/[0.08]"
+      className={cn(
+        "relative h-0 overflow-x-clip border-input border-t border-dashed before:absolute before:-top-2 before:-left-2 before:size-4 before:rounded-full before:bg-background before:ring-1 before:ring-foreground/[0.08] after:absolute after:-top-2 after:-right-2 after:size-4 after:rounded-full after:bg-background after:ring-1 after:ring-foreground/[0.08]",
+        className
+      )}
       data-receipt-perforation=""
     />
   );
@@ -531,11 +538,8 @@ export function SummaryPanel({
       aria-labelledby="sale-summary-title"
       className="@[44rem]/sale:sticky @[44rem]/sale:top-4 min-w-0 @[44rem]/sale:self-start"
     >
-      <Card className="gap-0 py-0">
-        <CardContent className="grid gap-3 py-(--card-spacing)">
-          <h2 className="text-section" id="sale-summary-title">
-            Resumo
-          </h2>
+      <Block headingId="sale-summary-title" title="Resumo" variant="plain">
+        <div className="grid gap-3">
           {summary ? (
             <dl className="grid gap-2">
               {rows.map((row) => (
@@ -578,28 +582,26 @@ export function SummaryPanel({
           ) : (
             <FeePreviewDetails preview={evaluation.feePreview} />
           )}
-        </CardContent>
+        </div>
         {total ? (
           <>
-            <Perforation />
-            <CardContent className="py-(--card-spacing)">
-              <dl aria-atomic="true" aria-live="polite">
-                <div className="flex items-baseline justify-between gap-3">
-                  <dt className="font-medium text-muted-foreground">
-                    {total.label}
-                  </dt>
-                  <dd>
-                    <Money
-                      className="font-semibold text-value-lg tracking-[-0.035em]"
-                      text={total.value}
-                    />
-                  </dd>
-                </div>
-              </dl>
-            </CardContent>
+            <Perforation className="-mx-(--card-spacing)" />
+            <dl aria-atomic="true" aria-live="polite">
+              <div className="flex items-baseline justify-between gap-3">
+                <dt className="font-medium text-muted-foreground">
+                  {total.label}
+                </dt>
+                <dd>
+                  <Money
+                    className="font-semibold text-value-lg tracking-[-0.035em]"
+                    text={total.value}
+                  />
+                </dd>
+              </div>
+            </dl>
           </>
         ) : null}
-        <CardContent className="grid gap-3 border-border border-t py-(--card-spacing)">
+        <div className="-mx-(--card-spacing) grid gap-3 border-border border-t px-(--card-spacing) pt-(--card-spacing)">
           {showRequired && errorCount > 0 ? (
             <Alert variant="destructive">
               <TriangleAlertIcon aria-hidden="true" />
@@ -636,8 +638,8 @@ export function SummaryPanel({
           <p className="text-muted-foreground text-support">
             {offline ? offlineNote : onlineNote}
           </p>
-        </CardContent>
-      </Card>
+        </div>
+      </Block>
     </aside>
   );
 }

@@ -206,7 +206,9 @@ for (const pixels of [16, 20]) {
         const spoken = page.getByText("1 linha, 9.999 unidades", {
           exact: true,
         });
-        const header = page.locator("#sale-items-title").locator("..");
+        const header = page
+          .locator("[data-slot=block-header]")
+          .filter({ has: page.locator("#sale-items-title") });
         const refresh = header.getByRole("button", { name: REFRESH_BUTTON });
         for (const width of [320, 360]) {
           // biome-ignore lint/performance/noAwaitInLoops: the widths are applied to the same page, one after the other
