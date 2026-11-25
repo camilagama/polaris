@@ -164,7 +164,8 @@ function ExpenseRow({
     [expense, onRestore]
   );
   const isBusy = busyKey !== null;
-  const thisBusy = busyKey?.endsWith(expense.id) ?? false;
+  const voiding = busyKey === `void:${expense.id}`;
+  const restoring = busyKey === `restore:${expense.id}`;
 
   return (
     <ListBlock.Row
@@ -192,7 +193,7 @@ function ExpenseRow({
           {expense.categoryName} · {formatCalendarDate(expense.competenceOn)}
           {expense.payee ? ` · ${expense.payee}` : ""}
         </p>
-        {thisBusy && !voided ? (
+        {voiding && !voided ? (
           <p className="text-muted-foreground text-support" role="status">
             Anulando…
           </p>
@@ -223,7 +224,7 @@ function ExpenseRow({
               type="button"
               variant="outline"
             >
-              {thisBusy ? "Reativando…" : "Reativar"}
+              {restoring ? "Reativando…" : "Reativar"}
             </Button>
           ) : (
             <>
