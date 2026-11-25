@@ -638,7 +638,7 @@ export const SPEC_SCREENS = {
   ],
   "apps/web/e2e-pwa/home-offline.e2e.ts": ["home"],
   "apps/web/e2e-pwa/lazy-retry.e2e.ts": ["home"],
-  "apps/web/e2e-pwa/legal-pages.e2e.ts": ["home", "legal"],
+  "apps/web/e2e-pwa/legal-pages.e2e.ts": ["home", "inventory", "legal"],
   "apps/web/e2e-pwa/motion-level.e2e.ts": "all",
   "apps/web/e2e-pwa/product-thumbnail.e2e.ts": ["ui-gallery"],
   "apps/web/e2e-pwa/recarga-com-worker.e2e.ts": ["sign-in"],
