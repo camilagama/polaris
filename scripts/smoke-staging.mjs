@@ -15,9 +15,9 @@ import { pathToFileURL } from "node:url";
  * Asaas and Woovi get a POST without a token or a signature, which the Worker must refuse with 401 before storing
  * anything (a 503 says a provider secret is missing). Before the checks that compare the release or the shell, a
  * Worker that still answers with another release is waited for, up to `RELEASE_WAIT_CEILING_MS`: the edge shows a
- * new version some seconds after the deploy says it is active. Prints the check, the status and a fixed reason, never a body
- * or a header; the one value taken from a header is the release a Worker still serves, and only when it is 12 hex
- * characters.
+ * new version some seconds after the deploy says it is active. Prints the check, the status and a fixed reason,
+ * never a body or a header; the one value taken from a header is the release a Worker still serves, and only when
+ * it is 12 hex characters.
  *
  * `--env production` runs the same checks against the production Workers. The production domain is not defined in the repository,
  * so no host is written in this file: the hosts, the Access team of the Admin, the expected sign-in methods and release header come
@@ -645,7 +645,7 @@ async function bodyOf(check, response) {
   return check.readBody ? await response.text() : "";
 }
 
-/** True when the check passed, otherwise the fixed reason of the failure; never a body or a header value (the release of the wait aside, see `awaitRelease`). */
+/** True when the check passed, otherwise the fixed reason of the failure; never a body or a header value. */
 async function judge(check, response) {
   if (
     check.worker &&

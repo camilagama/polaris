@@ -73,14 +73,14 @@ function fakeClock() {
   let elapsed = 0;
   const sleeps = [];
   return {
+    advance: (ms) => {
+      elapsed += ms;
+    },
     now: () => elapsed,
     sleep: (ms) => {
       sleeps.push(ms);
       elapsed += ms;
       return Promise.resolve();
-    },
-    advance: (ms) => {
-      elapsed += ms;
     },
     sleeps,
   };
@@ -1205,6 +1205,28 @@ describe("the wait for the release to reach the edge", () => {
     expect(calls.catalog).toBe(3);
     expect(clock.sleeps).toEqual([2000, 2000]);
     expect(pause).not.toHaveBeenCalled();
+  });
+
+  it("waits for the web and the catalog side by side: both are read before the first pause", async () => {
+    const clock = fakeClock();
+    const events = [];
+    const { sleep } = clock;
+    clock.sleep = (ms) => {
+      events.push("sleep");
+      return sleep(ms);
+    };
+    const { fetchImpl } = propagating(clock, 2000);
+    const traced = (url, init) => {
+      const target = String(url);
+      if (target.endsWith("/health")) {
+        events.push("web");
+      } else if (target.endsWith("/robots.txt")) {
+        events.push("catalog");
+      }
+      return fetchImpl(url, init);
+    };
+    await runSmoke(origins, { ...options, clock }, traced, noPause);
+    expect(events.slice(0, 3)).toEqual(["web", "catalog", "sleep"]);
   });
 
   it("(a) control: the three tries of the check alone do not outlast a release that takes 30 s", async () => {
