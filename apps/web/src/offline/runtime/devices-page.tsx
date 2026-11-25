@@ -5,6 +5,7 @@ import CloudOffIcon from "lucide-react/dist/esm/icons/cloud-off";
 import RefreshCwIcon from "lucide-react/dist/esm/icons/refresh-cw";
 import TriangleAlertIcon from "lucide-react/dist/esm/icons/triangle-alert";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { cn } from "@/lib/utils";
 import { Alert, AlertDescription } from "@/ui/alert";
 import { Block, BlockHeader, BlockPanel } from "@/ui/block";
 import { Button, buttonVariants } from "@/ui/button";
@@ -84,7 +85,10 @@ function SecuritySection() {
       <BlockHeader id="device-security-title" title="Segurança" />
       <BlockPanel>
         <a
-          className={buttonVariants({ variant: "outline" })}
+          className={cn(
+            buttonVariants({ variant: "outline" }),
+            "self-start max-sm:w-full"
+          )}
           href={tabHref("account", "senha")}
         >
           Trocar senha
