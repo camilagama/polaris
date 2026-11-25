@@ -475,9 +475,9 @@ describe("stockRows", () => {
 
 describe("views", () => {
   it("covers loading, error, empty and ready", () => {
-    expect(
-      stockListView(initialStockListState(), defaultStockFilters)
-    ).toEqual({ kind: "loading" });
+    expect(stockListView(initialStockListState(), defaultStockFilters)).toEqual(
+      { kind: "loading" }
+    );
     expect(
       stockListView(
         stockLoadFailed(initialStockListState(), new Error("x"), KEY),
