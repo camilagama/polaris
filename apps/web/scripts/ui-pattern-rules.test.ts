@@ -311,7 +311,6 @@ export const DEBT: Readonly<Record<Rule, readonly string[]>> = {
     "src/catalog/product-list.tsx",
     "src/catalog/public-catalog-panels.tsx",
     // customers
-    "src/customers/customer-list.tsx",
     // data-export
     // expenses
     "src/expenses/expense-by-category.tsx",
@@ -353,7 +352,6 @@ export const DEBT: Readonly<Record<Rule, readonly string[]>> = {
     "src/catalog/product-media-panel.tsx",
     "src/catalog/product-variants-form.tsx",
     // customers
-    "src/customers/customer-form.tsx",
     "src/customers/customer-list.tsx",
     // expenses
     "src/expenses/expense-list.tsx",
@@ -380,7 +378,6 @@ export const DEBT: Readonly<Record<Rule, readonly string[]>> = {
     "src/catalog/public-catalog-page.tsx",
     "src/catalog/screen-parts.tsx",
     // customers
-    "src/customers/customer-list.tsx",
     // expenses
     "src/expenses/expense-list.tsx",
     // offline
@@ -508,7 +505,6 @@ describe("o padrão visual das telas (R1 a R3)", () => {
     for (const file of [
       "src/catalog/product-list.tsx",
       "src/catalog/category-list.tsx",
-      "src/customers/customer-list.tsx",
       "src/expenses/expense-list.tsx",
       "src/inventory/inventory-page.tsx",
     ]) {
@@ -775,7 +771,6 @@ describe("R4: as peças soltas da lista só vivem em ui/ (controles)", () => {
       "src/catalog/product-list.tsx",
       "src/catalog/public-catalog-page.tsx",
       "src/catalog/screen-parts.tsx",
-      "src/customers/customer-list.tsx",
       "src/expenses/expense-list.tsx",
       "src/offline/runtime/device-item.tsx",
       "src/payment-profiles/payment-profile-list.tsx",
