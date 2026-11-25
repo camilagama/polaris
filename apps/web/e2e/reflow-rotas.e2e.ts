@@ -168,15 +168,6 @@ const KNOWN_FINDINGS_24: readonly KnownFinding[] = [
   {
     clientWidth: 272,
     reason:
-      'na Assinatura, o cartão "Plano Pro" tem 272 px e o conteúdo da oferta mede 310 px: passa 38 px da borda direita do cartão',
-    screens: ["assinatura oferta com Pix"],
-    scrollWidth: 310,
-    selector:
-      'div[data-slot="tabs"] > div[data-slot="tabs-content"] > div[data-slot="card"]',
-  },
-  {
-    clientWidth: 272,
-    reason:
       'no diálogo "Cancelar a renovação do Pro?", o diálogo tem 272 px e o conteúdo mede 298 px: passa 26 px da borda direita, e quem mais passa é o rodapé com "Continuar no Pro" e "Cancelar a renovação"',
     screens: ["assinatura cancelar a renovação"],
     scrollWidth: 298,
