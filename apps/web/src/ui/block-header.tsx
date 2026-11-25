@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import type { ReactNode, Ref } from "react";
 import { cn } from "@/lib/utils";
 import { HelpTip } from "./help-tip";
 
@@ -22,6 +22,7 @@ export function BlockHeader({
   id,
   level = 2,
   title,
+  titleRef,
 }: {
   /** The one action of the block, last on the right. */
   action?: ReactNode;
@@ -34,6 +35,8 @@ export function BlockHeader({
   id: string;
   level?: 2 | 3;
   title: ReactNode;
+  /** The heading itself, for a block whose title takes the focus after a result (a stop of script only, never of the keyboard). */
+  titleRef?: Ref<HTMLHeadingElement>;
 }) {
   const Heading = level === 2 ? "h2" : "h3";
   const right = aside || action;
@@ -47,7 +50,12 @@ export function BlockHeader({
       data-slot="block-header"
     >
       <div className="flex min-w-0 items-center gap-1">
-        <Heading className="text-section" id={id}>
+        <Heading
+          className={cn("text-section", titleRef && "focus-ring")}
+          id={id}
+          ref={titleRef}
+          tabIndex={titleRef ? -1 : undefined}
+        >
           {title}
         </Heading>
         {tips.map((tip, index) => (
