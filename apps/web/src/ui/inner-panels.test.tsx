@@ -13,10 +13,15 @@ const FRACTION_OF_GREY = /bg-muted\//;
 const LEGEND = /<legend[^>]*>Endereço<\/legend>/;
 const DISABLED_FIELDSET = /<fieldset[^>]*disabled/;
 const SVG = /<svg[\s\S]*<\/svg>/;
+const LABEL_SPAN = /<span class="([^"]*)">Azul \/ M<\/span>/;
 const noop = () => undefined;
 
 function classesOf(html: string): string[] {
   return (CLASS.exec(html)?.[1] ?? "").split(" ");
+}
+
+function labelClassesOf(html: string): string[] {
+  return (LABEL_SPAN.exec(html)?.[1] ?? "").split(" ");
 }
 
 describe("InsetBlock", () => {
@@ -153,9 +158,13 @@ describe("CheckableOption", () => {
         "has-disabled:cursor-not-allowed",
       ])
     );
-    expect(html).toContain(
-      'class="[overflow-wrap:anywhere] group-has-disabled/option:opacity-50"'
+    expect(labelClassesOf(html)).toEqual(
+      expect.arrayContaining([
+        "[overflow-wrap:anywhere]",
+        "group-has-disabled/option:opacity-50",
+      ])
     );
+    expect(labelClassesOf(html)).not.toContain("opacity-50");
     expect(classesOf(html)).not.toContain("opacity-50");
     expect(html).toContain("data-disabled:opacity-50");
   });

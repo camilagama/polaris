@@ -118,6 +118,34 @@ describe("SegmentedFilter", () => {
     expect(plain).not.toContain("sm:p-0.75");
   });
 
+  it("reads the classes of the drawn tabs by whole token, never by a neighbour that contains the name", () => {
+    const compact = renderToStaticMarkup(
+      <SegmentedFilter
+        compact
+        label="Situação"
+        onSelect={noop}
+        options={OPTIONS}
+        value="active"
+      />
+    );
+    const tab = compact.match(TAB_TAG)?.[0] ?? "";
+    const tokens = classTokens(tab);
+    expect(tokens).toContain("px-1");
+    expect(tokens).toContain("sm:px-2.5");
+    expect(tokens).toContain("disabled:opacity-50");
+    expect(tokens).toContain("hover:text-foreground");
+    expect(tab).toContain("px-2.5");
+    expect(tab).toContain("opacity-50");
+    expect(tab).toContain("text-foreground");
+    expect(tokens).not.toContain("px-2.5");
+    expect(tokens).not.toContain("opacity-50");
+    expect(tokens).not.toContain("text-foreground");
+    const list = classTokens(compact.match(TAB_LIST_TAG)?.[0] ?? "");
+    expect(list).toContain("p-0.5");
+    expect(list).toContain("sm:p-0.75");
+    expect(list).not.toContain("p-0.75");
+  });
+
   it("reads a class by its whole token, wherever it sits in the list and never by a neighbour that contains it", () => {
     for (const className of [
       "p-0.5 flex gap-1",
