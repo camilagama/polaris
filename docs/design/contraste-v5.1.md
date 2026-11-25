@@ -68,6 +68,7 @@ Mapa de contraste do desenho v5.1 (Petković, 20/10/2026), trazido para o reposi
 | `muted-foreground` / `muted` | chip de variação que cai ou fica igual (v7) | DeltaChip | **7.26** | 4.5 | ✓ |
 | `chart-2` / `card` | série 2 | Chart | **3.64** | 3 | ✓ |
 | `chart-2` / `muted` | barra de "Por categoria" (Despesas) sobre a trilha | Chart | **3.26** | 3 | ✓ |
+| `destructive/60 sobre muted` / `muted` | anel de 1 px da confirmação do que não se desfaz, na própria linha (elemento gráfico, 3:1; o texto da confirmação identifica o bloco) | InsetBlock `destructive` | **3.10** | 3 | ✓ |
 | `chart-3` / `card` | série 3 | Chart | **6.79** | 3 | ✓ |
 | `chart-4` / `card` | série 4 | Chart | **12.27** | 3 | ✓ |
 | `chart-5` / `card` | série 5 | Chart | **18.09** | 3 | ✓ |
@@ -169,6 +170,7 @@ Mapa de contraste do desenho v5.1 (Petković, 20/10/2026), trazido para o reposi
 | `muted-foreground` / `muted` | chip de variação que cai ou fica igual (v7) | DeltaChip | **7.05** | 4.5 | ✓ |
 | `chart-2` / `card` | série 2 | Chart | **4.22** | 3 | ✓ |
 | `chart-2` / `muted` | barra de "Por categoria" (Despesas) sobre a trilha | Chart | **3.45** | 3 | ✓ |
+| `destructive/60 sobre muted` / `muted` | anel de 1 px da confirmação do que não se desfaz, na própria linha (elemento gráfico, 3:1; o texto da confirmação identifica o bloco) | InsetBlock `destructive` | **3.21** | 3 | ✓ |
 | `chart-3` / `card` | série 3 | Chart | **6.69** | 3 | ✓ |
 | `chart-4` / `card` | série 4 | Chart | **9.85** | 3 | ✓ |
 | `chart-5` / `card` | série 5 | Chart | **14.22** | 3 | ✓ |
