@@ -314,12 +314,8 @@ export const DEBT: Readonly<Record<Rule, readonly string[]>> = {
     "src/expenses/expense-rules-panel.tsx",
     "src/expenses/expenses-page.tsx",
     // help
-    "src/help/help-page.tsx",
+    // inventory
     // offline
-    "src/offline/attention-panel.tsx",
-    "src/offline/logout-dialog.tsx",
-    "src/offline/runtime/device-item.tsx",
-    "src/offline/runtime/devices-page.tsx",
     // organization
     // payment-profiles
     // sales
@@ -330,8 +326,6 @@ export const DEBT: Readonly<Record<Rule, readonly string[]>> = {
     "src/sales/sale-summary-panel.tsx",
     // settings
     // sign-in
-    "src/sign-in/change-password-page.tsx",
-    "src/sign-in/entry-ui.tsx",
     // subscription
   ],
   R3: [
@@ -351,8 +345,6 @@ export const DEBT: Readonly<Record<Rule, readonly string[]>> = {
     // legal
     "src/legal/legal-page.tsx",
     // offline
-    "src/offline/runtime/logout-control.tsx",
-    "src/offline/runtime/sync-status.tsx",
     // payment-profiles
     // sales
     "src/sales/sale-payment-section.tsx",
@@ -366,7 +358,6 @@ export const DEBT: Readonly<Record<Rule, readonly string[]>> = {
     // expenses
     "src/expenses/expense-list.tsx",
     // offline
-    "src/offline/runtime/device-item.tsx",
     // payment-profiles
     // sales
   ],
@@ -744,11 +735,10 @@ describe("R4: as peças soltas da lista só vivem em ui/ (controles)", () => {
     ]);
   });
 
-  it("os arquivos da dívida de R4 são os de hoje: as 2 telas que ainda importam e o screen-parts que reexporta", () => {
+  it("os arquivos da dívida de R4 são os de hoje: a 1 tela que ainda importa e o screen-parts que reexporta", () => {
     expect(DEBT.R4).toEqual([
       "src/catalog/screen-parts.tsx",
       "src/expenses/expense-list.tsx",
-      "src/offline/runtime/device-item.tsx",
     ]);
   });
 });
@@ -870,7 +860,7 @@ describe("a dívida por pasta: tirar arquivos de pastas diferentes não conflita
     DEBT.R2.filter((file) => folderOf(file) !== folder);
 
   it("duas cópias da lista de R2, cada uma sem uma pasta vizinha diferente, mesclam sem conflito", () => {
-    expect(folders.length).toBeGreaterThan(5);
+    expect(folders.length).toBeGreaterThan(2);
     const base = listText(DEBT.R2, folders);
     for (const [index, folder] of folders.slice(0, -1).entries()) {
       const next = folders[index + 1];

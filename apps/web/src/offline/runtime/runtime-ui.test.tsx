@@ -19,6 +19,8 @@ import {
   syncStatusLabel,
 } from "./sync-status";
 
+const STATUS_PARAGRAPH = /^<p [^>]*role="status"/;
+const ATTENTION_LINK = /^<a [^>]*href="\/attention"/;
 const SHORT_TEXT =
   /<span aria-hidden="true" class="sync-status-short[^"]*" title="[^"]*">/;
 const OPENING_TAG = /^<[^>]*>/;
@@ -260,6 +262,29 @@ describe("the sync status in the header", () => {
     );
     expect(attention).toContain('href="/attention"');
     expect(attention).toContain("Atenção: 2 operações precisam de atenção");
+  });
+});
+
+describe("the sync status is the Badge", () => {
+  const view = (overrides: Partial<RuntimeSnapshot>) =>
+    renderToStaticMarkup(<SyncStatusView snapshot={snapshot(overrides)} />);
+
+  it("draws every tone with the badge and keeps the marks the page and the tests look for", () => {
+    const synced = view({});
+    const offline = view({ online: false });
+    const attention = view({ counts: counts({ rejected: 1 }) });
+    for (const html of [synced, offline, attention]) {
+      expect(html).toContain('data-slot="badge"');
+      expect(html).toContain("sync-status ");
+    }
+    expect(synced).toContain('data-tone="ok"');
+    expect(offline).toContain('data-tone="offline"');
+    expect(attention).toContain('data-tone="attention"');
+  });
+
+  it("says synced and sending as a status, and sends the attention to the page of attention as a link", () => {
+    expect(view({})).toMatch(STATUS_PARAGRAPH);
+    expect(view({ counts: counts({ rejected: 1 }) })).toMatch(ATTENTION_LINK);
   });
 });
 

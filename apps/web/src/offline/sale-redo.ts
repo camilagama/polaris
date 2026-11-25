@@ -117,9 +117,10 @@ export function buildRedoDraft(
     return { kind: "unreadable" };
   }
   const sale = parsed.data;
+  // The form here holds one payment: a sale paid in parts is not brought back
+  // as one, and its parts are not dropped either.
   const { payment } = sale;
   if (payment === undefined) {
-    // the device keeps one payment per sale and refuses to queue one paid in parts: such a payload is not a redo
     return { kind: "unreadable" };
   }
   const byVariant = new Map(entries.map((entry) => [entry.variantId, entry]));

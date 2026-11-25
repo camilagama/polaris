@@ -16,8 +16,8 @@ import {
 import { flushSync } from "react-dom";
 import { cn } from "@/lib/utils";
 import { Alert, AlertDescription } from "@/ui/alert";
+import { Block } from "@/ui/block";
 import { Button, buttonVariants } from "@/ui/button";
-import { Card, CardContent } from "@/ui/card";
 import { Field, FieldError, FieldLabel } from "@/ui/field";
 import { InputGroup, InputGroupInput } from "@/ui/input-group";
 import { SkeletonArt } from "@/ui/skeleton-art";
@@ -238,8 +238,8 @@ export function EntryScreen({
         id="conteudo"
       >
         <div className={cn("mx-auto w-full min-w-0", ENTRY_WIDTH[width])}>
-          <Card className="motion-full:animate-rise">
-            <CardContent className="flex flex-col gap-4 py-1">
+          <Block className="motion-full:animate-rise" variant="plain">
+            <div className="flex flex-col gap-4 py-1">
               {brandHref ? (
                 <a
                   className="focus-ring touch-hit relative flex w-fit items-center gap-2 rounded-sm font-semibold text-[1.0625rem] tracking-tight"
@@ -270,8 +270,8 @@ export function EntryScreen({
                 ) : null}
               </div>
               {children}
-            </CardContent>
-          </Card>
+            </div>
+          </Block>
           {help && !settling ? <HelpLine /> : null}
           {legalLinks && !settling ? <LegalLinks /> : null}
         </div>

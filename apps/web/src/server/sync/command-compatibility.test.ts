@@ -157,60 +157,35 @@ async function currentPayloads() {
     newProductId: () => uuid(303),
     newVariantId: () => uuid(304),
   });
+  // a sale paid in two parts, each with its own profile choice (no sale-level profile)
+  await createOfflineSale({
+    ...common(),
+    lines: [{ quantity: 2, variantId }],
+    payments: SPLIT_PARTS,
+    reader: writer,
+  });
   const { commands } = await outbox.snapshot();
-  return [
-    ...commands.map((command) => ({
-      baseVersion: command.baseVersion,
-      payload: command.payload,
-      type: command.type,
-    })),
-    splitSalePayload(variantId),
-  ];
+  return commands.map((command) => ({
+    baseVersion: command.baseVersion,
+    payload: command.payload,
+    type: command.type,
+  }));
 }
 
-/**
- * A sale paid in two parts, each with its own profile choice, written by hand:
- * the device builder emits only the single-payment form, and the server must
- * already take this one. It gives way to the builder's own output once the
- * builder emits parts.
- */
-function splitSalePayload(variantId: string) {
-  return {
-    baseVersion: null,
-    payload: {
-      adjustments: [],
-      items: [
-        {
-          chargedUnitPrice: "50.00",
-          listedUnitPrice: "50.00",
-          quantity: 2,
-          variantId,
-        },
-      ],
-      occurredAt: now.toISOString(),
-      payments: [
-        {
-          amount: "30.00",
-          anticipationRequested: false,
-          installmentPlan: null,
-          installments: null,
-          method: "pix",
-          paymentProfile: null,
-        },
-        {
-          amount: "70.00",
-          anticipationRequested: false,
-          installmentPlan: "issuer",
-          installments: 3,
-          method: "credit_card",
-          paymentProfile: { expectedVersion: 3, id: uuid(601) },
-        },
-      ],
-      recordedAt: now.toISOString(),
-    },
-    type: "sale.confirm",
-  };
-}
+const SPLIT_PARTS = [
+  {
+    amount: "30.00",
+    method: "pix",
+    paymentProfile: null,
+  },
+  {
+    amount: "70.00",
+    installmentPlan: "issuer",
+    installments: 3,
+    method: "credit_card",
+    paymentProfile: { expectedVersion: 3, id: uuid(601) },
+  },
+] as const;
 
 describe("old app versions", () => {
   it("the payloads the client emits today are the ones committed, so a change is deliberate", async () => {

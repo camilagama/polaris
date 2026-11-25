@@ -11,10 +11,11 @@ import {
 import { MASKED_SPOKEN, maskMoney, useHiddenValues } from "@/lib/hidden-values";
 import { cn } from "@/lib/utils";
 import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
+import { Block } from "@/ui/block";
 import { Button, buttonVariants } from "@/ui/button";
-import { Card } from "@/ui/card";
 import { EmptyState } from "@/ui/empty-state";
 import { MoneyText } from "@/ui/hidden-values";
+import { InsetBlock } from "@/ui/inset-block";
 import { ActionStrip } from "../app-shell/action-strip";
 import { tabHref } from "../app-shell/navigation-model";
 import { type TitleBack, TitleLine } from "../app-shell/screen-title";
@@ -159,9 +160,9 @@ export function AttentionStateCard({
   role?: "status" | undefined;
 }) {
   return (
-    <Card className="items-center px-(--card-spacing) text-center" role={role}>
-      <p className="text-muted-foreground">{children}</p>
-    </Card>
+    <Block role={role} variant="plain">
+      <p className="text-center text-muted-foreground">{children}</p>
+    </Block>
   );
 }
 
@@ -302,7 +303,7 @@ function ItemCard({
   }, [item, onDiscard]);
   return (
     <li data-cause={item.cause}>
-      <Card className="gap-3 px-(--card-spacing)">
+      <Block className="gap-3" variant="plain">
         <div className="flex items-start gap-2">
           <Icon
             aria-hidden="true"
@@ -325,9 +326,9 @@ function ItemCard({
           Código: {item.code}
         </p>
         {confirming ? (
-          <div
+          <InsetBlock
             aria-label={`Descartar ${hidden ? maskMoney(item.title, MASKED_SPOKEN) : item.title}`}
-            className="grid gap-3 rounded-lg bg-muted/50 p-3 outline-none ring-1 ring-destructive/30 focus-visible:outline-3 focus-visible:outline-ring focus-visible:outline-offset-2"
+            className="grid gap-3 p-3 outline-none focus-visible:outline-3 focus-visible:outline-ring focus-visible:outline-offset-2"
             ref={confirmRef}
             role="alertdialog"
             tabIndex={-1}
@@ -346,7 +347,7 @@ function ItemCard({
                 Manter
               </Button>
             </div>
-          </div>
+          </InsetBlock>
         ) : (
           <div className="flex flex-wrap gap-3">
             {item.actions.map((action) => (
@@ -386,7 +387,7 @@ function ItemCard({
             </AlertDescription>
           </Alert>
         ) : null}
-      </Card>
+      </Block>
     </li>
   );
 }
