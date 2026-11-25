@@ -57,10 +57,10 @@ export function SegmentedFilter<T extends string>({
           {options.map(([option, text]) => (
             <TabsTrigger
               // three words of 20 px do not fit a 320 px window with the usual padding of a tab, and the strip would widen the page
-              // the scroll box clips at the strip, so the outline stays inside its padding: 3 px, or 3 px over a 2 px strip
+              // the scroll box clips at the strip, so the outline stays inside the strip's padding (3 px, and a 3 px outline over a 2 px padding is pulled in by 1 px)
               className={
                 compact
-                  ? "px-1 text-xs focus-visible:outline-offset-[-1px]! sm:px-2.5 sm:text-sm sm:focus-visible:outline-offset-0!"
+                  ? "px-1 text-xs focus-visible:outline-offset-[-0.0625rem]! sm:px-2.5 sm:text-sm sm:focus-visible:outline-offset-0!"
                   : "px-1 focus-visible:outline-offset-0! min-[18.5rem]:px-2.5"
               }
               data-value={option}
