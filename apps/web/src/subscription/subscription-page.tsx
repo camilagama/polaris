@@ -2,7 +2,6 @@ import type { BillingPlanView } from "@polaris/contracts";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, AlertDescription } from "@/ui/alert";
 import { Button } from "@/ui/button";
-import { CardContent } from "@/ui/card";
 import { useConnectionNoticeForm } from "../app-shell/connection-required-notice";
 import { useSignedInUser } from "../app-shell/signed-in-email";
 import { canManageBilling } from "../lib/billing-access";
@@ -11,6 +10,7 @@ import { useCurrentOrganization } from "../lib/current-organization";
 import { orpcClient } from "../lib/orpc";
 import { planRead } from "../lib/plan-read";
 import { isConnectionFailure } from "../lib/rpc-error";
+import { useIsMobile } from "../lib/use-mobile";
 import { useNow } from "../lib/use-now";
 import { rememberPlanNotice } from "./plan-notice";
 import {
@@ -51,7 +51,8 @@ import {
 import { ScreenTitle } from "../app-shell/screen-title";
 
 function Title() {
-  return <ScreenTitle>Assinatura</ScreenTitle>;
+  const phone = useIsMobile();
+  return <ScreenTitle tabNamesIt={!phone}>Assinatura</ScreenTitle>;
 }
 
 /** The screen for someone who may not open it: what it is not, and nothing to do (AS-19). */
@@ -261,7 +262,7 @@ function WaitingPart({
     return null;
   }
   return (
-    <CardContent className="grid gap-2 border-t pt-(--card-spacing)">
+    <div className="grid gap-2 border-t pt-(--card-spacing)">
       <WaitingLine
         onReread={onReread}
         text="Conferindo a aprovação a cada 5 segundos…"
@@ -277,7 +278,7 @@ function WaitingPart({
           Escolher outra forma de pagamento
         </Button>
       </div>
-    </CardContent>
+    </div>
   );
 }
 
