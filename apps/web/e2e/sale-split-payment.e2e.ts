@@ -426,6 +426,97 @@ test("sem internet: Dividir pagamento fica ligado, a venda dividida é guardada 
   expect(calls.bodies).toHaveLength(0);
 });
 
+/** The payloads of the commands this page keeps to send (IndexedDB stores named `commands`). */
+function queuedPayloads(page: Page): Promise<Record<string, unknown>[]> {
+  return page.evaluate(async () => {
+    const payloads: Record<string, unknown>[] = [];
+    for (const { name } of await indexedDB.databases()) {
+      if (!name) {
+        continue;
+      }
+      // biome-ignore lint/performance/noAwaitInLoops: a handful of tiny databases
+      const database = await new Promise<IDBDatabase>((resolve, reject) => {
+        const request = indexedDB.open(name);
+        request.onerror = () => reject(request.error);
+        request.onsuccess = () => resolve(request.result);
+      });
+      if (database.objectStoreNames.contains("commands")) {
+        const rows = await new Promise<unknown[]>((resolve, reject) => {
+          const request = database
+            .transaction("commands", "readonly")
+            .objectStore("commands")
+            .getAll();
+          request.onerror = () => reject(request.error);
+          request.onsuccess = () => resolve(request.result);
+        });
+        for (const row of rows) {
+          payloads.push((row as { payload: Record<string, unknown> }).payload);
+        }
+      }
+      database.close();
+    }
+    return payloads;
+  });
+}
+
+test("sem internet, cada parte usa os perfis da última conexão: o Resumo mostra a prévia de cada parte e a fila leva o perfil e a versão de cada uma", async ({
+  page,
+}) => {
+  await openSaleLab(page, undefined, { current: 4 });
+  await sellShirtFor300(page);
+  // the profiles were read with the connection: the device keeps them for the sale without one
+  await expect(
+    page.getByRole("combobox", { exact: true, name: "Perfil de pagamento" })
+  ).toBeVisible();
+  await page.getByLabel("Rede disponível").uncheck();
+  await expect(
+    page.getByText("estes são os perfis da última vez com conexão")
+  ).toBeVisible();
+  await splitButton(page).click();
+  await choose(part(page, 1), "Método", "Pix");
+  await part(page, 1).getByLabel("Valor").fill("100,00");
+  await choose(part(page, 1), "Perfil de pagamento", "Sem perfil de pagamento");
+  await choose(part(page, 2), "Método", "Débito");
+  await choose(part(page, 2), "Perfil de pagamento", LAB_PROFILE);
+  await expect(
+    page
+      .getByRole("note")
+      .filter({ hasText: "estes são os perfis da última vez com conexão" })
+  ).toHaveCount(1);
+  const summary = page.getByRole("complementary", { name: "Resumo" });
+  await expect(summary).toContainText("Parte 1 · Pix");
+  await expect(summary).toContainText("Parte 2 · Cartão de débito");
+  await expect(summary.getByText("Maquininha do laboratório")).toHaveCount(1);
+  await expect(summary).toContainText("Taxas das duas partes");
+  await page
+    .getByRole("button", { name: "Guardar venda neste aparelho" })
+    .click();
+  await expect(
+    page
+      .getByRole("status")
+      .filter({ hasText: "Venda guardada neste aparelho" })
+  ).toBeVisible();
+  await expect(
+    page
+      .getByRole("region", { name: "Vendas guardadas neste aparelho" })
+      .getByRole("listitem")
+  ).toContainText("Pix + Débito");
+  const [payload] = await queuedPayloads(page);
+  expect(payload).not.toHaveProperty("payment");
+  expect(payload?.payments).toEqual([
+    expect.objectContaining({
+      amount: "100.00",
+      method: "pix",
+      paymentProfile: null,
+    }),
+    expect.objectContaining({
+      amount: "200.00",
+      method: "debit_card",
+      paymentProfile: { expectedVersion: 4, id: PROFILE.id },
+    }),
+  ]);
+});
+
 test("sem internet, a venda de 1 parte segue como hoje", async ({ page }) => {
   await openSaleLab(page);
   await sellShirtFor300(page);
