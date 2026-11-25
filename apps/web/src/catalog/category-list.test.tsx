@@ -141,6 +141,13 @@ describe("the list of categories", () => {
     expect(html).not.toContain('aria-label="Categorias"');
   });
 
+  it("draws no count paragraph nor its reserved width in the frame of the rows", () => {
+    const html = render();
+    expect(html).toContain('data-list-block=""');
+    expect(html).not.toContain("data-list-count");
+    expect(html).not.toContain("min-w-28");
+  });
+
   it("draws no frame for an empty list: the empty state stands alone", () => {
     expect(render({ categories: [] })).not.toContain('data-list-block=""');
   });

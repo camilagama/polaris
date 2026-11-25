@@ -209,13 +209,13 @@ export function ProductForm({
           <FieldSeparator />
         </>
       )}
+      {/* the trigger names the section: a named group around it would be read twice */}
       <Collapsible
         className="col-span-full gap-4 p-0"
         onOpenChange={setDetailsOpen}
         open={detailsOpen}
-        render={<FieldGroup />}
+        render={<FieldGroup role="none" />}
       >
-        <FieldLegend className="sr-only">Mais detalhes</FieldLegend>
         <CollapsibleTrigger
           className="h-auto min-h-ctl-lg w-full justify-between whitespace-normal px-3 text-left"
           render={<Button type="button" variant="ghost" />}

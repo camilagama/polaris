@@ -443,9 +443,13 @@ describe("resolving an item", () => {
       title: "",
     };
     expect(discardWarning(base)).toContain("use Refazer esta venda antes");
-    expect(discardWarning({ ...base, code: "wrong_device" })).not.toContain(
-      "Refazer"
-    );
+    expect(
+      discardWarning({
+        ...base,
+        actions: ["sign_in_again", "discard"],
+        code: "wrong_device",
+      })
+    ).not.toContain("Refazer");
   });
 
   it("keeps the words about the access coming back for the other account codes, and sends them to sign in again", async () => {
@@ -580,6 +584,21 @@ describe("a sale refused for its payment profile", () => {
       expect(after.commands[0]?.payload).not.toHaveProperty("paymentProfile");
     }
   );
+
+  it.each(["payment_profile_changed", "payment_profile_unavailable"])(
+    "%s on a sale of one payment keeps the generic discard warning, without the redo",
+    async (code) => {
+      const { outbox, refuse, sale } = await setup();
+      const refused = await sale();
+      await refuse(refused.commandId, code);
+      const item = await itemOf(outbox);
+
+      expect(item.actions).toEqual(["resubmit_without_profile", "discard"]);
+      const warning = discardWarning(item);
+      expect(warning).toContain("Confirme só se ela não aconteceu.");
+      expect(warning).not.toContain("Refazer");
+    }
+  );
 });
 
 describe("a sale paid in parts refused for the profile of a part", () => {
@@ -643,9 +662,44 @@ describe("a sale paid in parts refused for the profile of a part", () => {
     expect(kept?.payload).toEqual(command.payload);
   });
 
+  it("tells, before a discard of a split sale refused as invalid_payload and not redone, to redo it first", async () => {
+    const { outbox } = await splitSale(null, null, "invalid_payload");
+    expect(discardWarning(await itemOf(outbox))).toContain(
+      "use Refazer esta venda antes"
+    );
+  });
+
+  it("tells, before a discard of a split sale refused for its profile and not redone, to redo it first", async () => {
+    const { outbox } = await splitSale(null, card);
+    expect(discardWarning(await itemOf(outbox))).toContain(
+      "use Refazer esta venda antes"
+    );
+  });
+
+  it("tells, before a discard of a split sale with two different profiles and not redone, to redo it first", async () => {
+    const { outbox } = await splitSale(card, pix);
+    const item = await itemOf(outbox);
+    expect(item.actions).toEqual(["redo_sale", "discard"]);
+    expect(discardWarning(item)).toContain("use Refazer esta venda antes");
+  });
+
+  it("keeps the redone text for a split sale already redone", async () => {
+    const { command, outbox } = await splitSale(null, card);
+    const [item] = buildAttention(
+      await outbox.snapshot(),
+      new Set([command.commandId])
+    ).items;
+    expect(item?.actions).toEqual(["discard"]);
+    const warning = discardWarning(item as AttentionItem);
+    expect(warning).toContain("A venda refeita já está registrada ou guardada");
+    expect(warning).not.toContain("Refazer");
+  });
+
   it("a split sale refused for another unknown code keeps only discard", async () => {
     const { outbox } = await splitSale(null, null, "something_else");
-    expect((await itemOf(outbox)).actions).toEqual(["discard"]);
+    const item = await itemOf(outbox);
+    expect(item.actions).toEqual(["discard"]);
+    expect(discardWarning(item)).not.toContain("Refazer");
   });
 
   it("refused as invalid_payload and already redone, offers only discard", async () => {

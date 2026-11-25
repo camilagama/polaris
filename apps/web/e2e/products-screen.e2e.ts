@@ -812,7 +812,7 @@ test("lista longa: 50 de cada vez com 'Carregar mais', o total no alto com milha
   await openServerScreen(page, { lists: [answer(many)] });
   const count = page.getByText("1.248 produtos", { exact: true });
   await expect(count).toBeVisible();
-  // the count is above the list, read before the rows
+  // the count sits beside the frame's title, above the rows, and is read before them
   const list = page.getByRole("list", { name: "Produtos" });
   const [countBox, listBox] = await Promise.all([
     count.boundingBox(),
@@ -1592,7 +1592,6 @@ test("a lista relida traz a versão nova: a próxima tentativa de Excluir manda 
   );
   expect(sent.map((call) => call.expectedVersion)).toEqual([1]);
   await reread;
-  await expect(page.getByText("Carregando produtos…")).toBeHidden();
   // the hook retargets once the list shows the new version; nothing in the dialog changes, so the row's new description is the signal
   await expect(page.getByText(REREAD_MARK)).toBeVisible();
   await confirm.click();

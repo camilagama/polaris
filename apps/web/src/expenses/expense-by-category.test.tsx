@@ -79,7 +79,9 @@ function render(
 describe("ExpenseByCategory", () => {
   it("writes the name, the share and the amount of each line, and the bar is a drawing only", () => {
     const html = render();
-    expect(html).toContain('role="heading"');
+    expect(html).toContain(
+      '<h2 class="text-section" id="expense-by-category-title">Por categoria</h2>'
+    );
     expect(html).toContain("Por categoria");
     expect(html).toContain("Aluguel");
     expect(html).toContain("75%");
