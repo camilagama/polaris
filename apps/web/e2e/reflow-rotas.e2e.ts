@@ -140,14 +140,6 @@ const KNOWN_FINDINGS_24: readonly KnownFinding[] = [
   {
     clientWidth: 320,
     reason:
-      "a página de Categorias rola 35 px para o lado; na medida, a faixa de abas Ativas, Arquivadas e Removidas mede 331 px e o título e o texto de apoio vão até 355 px; as abas têm de caber em 272 px ou rolar dentro da faixa",
-    screens: ["categorias lista", "categorias remover"],
-    scrollWidth: 355,
-    selector: "html",
-  },
-  {
-    clientWidth: 320,
-    reason:
       "no diálogo de produto, o conteúdo do corpo mede 342 px em 320 px e passa 22 px: o painel Variantes (as seções de opções e de combinações, com o formulário de cada uma) pede 318 px numa coluna de 272 px; a faixa de abas Dados, Variantes e Imagens rola dentro da própria caixa e já não alarga o corpo",
     screens: ["produtos variantes, opções e combinação"],
     scrollWidth: 342,
