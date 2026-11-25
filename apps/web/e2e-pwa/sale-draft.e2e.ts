@@ -472,6 +472,9 @@ test("AC-3 e AC-6: a venda confirmada nunca volta como rascunho", async ({
   await buildCart(page);
   await page.getByRole("button", { name: SUBMIT_NAME }).last().click();
   await page.getByRole("region", { name: CONFIRMED_REGION }).waitFor();
+  await expect(
+    page.getByRole("region", { name: CONFIRMED_REGION })
+  ).toBeFocused();
   expect(await storageKeys(page, "sessionStorage")).not.toContain(DRAFT_KEY);
 
   await goHome(page);

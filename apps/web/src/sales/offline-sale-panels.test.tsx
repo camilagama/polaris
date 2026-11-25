@@ -174,3 +174,48 @@ describe("SavedSalesCard", () => {
     expect(html).toContain("parece não cobrir este item");
   });
 });
+
+describe("a venda dividida guardada no aparelho", () => {
+  it("diz as partes na ordem, na Venda e no Histórico; a venda de um pagamento não ganha linha", () => {
+    queue.sales = [
+      pending("a", { partMethods: ["pix", "credit_card"] }),
+      pending("b", { partMethods: null }),
+    ];
+    try {
+      for (const html of [
+        renderToStaticMarkup(<SavedSalesCard workspace={null} />),
+        renderToStaticMarkup(
+          <SavedSalesCard countStyle="items" workspace={null} />
+        ),
+      ]) {
+        expect(html.match(/Pix \+ Crédito/g)).toHaveLength(1);
+        expect(html).not.toContain("Dinheiro");
+      }
+      const lines = savedSaleLines(queue.sales, null);
+      expect(lines.map((line) => line.partsText)).toEqual([
+        "Pix + Crédito",
+        null,
+      ]);
+    } finally {
+      queue.sales = [];
+    }
+  });
+
+  it("a recusada também diz as partes, ao lado do estado", () => {
+    const [line] = savedSaleLines(
+      [
+        pending("a", {
+          code: "payment_profile_changed",
+          partMethods: ["cash", "debit_card"],
+          state: "rejected",
+        }),
+      ],
+      null
+    );
+    const html = renderToStaticMarkup(
+      <ul>{line ? <SavedSaleRow line={line} /> : null}</ul>
+    );
+    expect(html).toContain("Dinheiro + Débito");
+    expect(html).toContain("Recusada pelo servidor");
+  });
+});
