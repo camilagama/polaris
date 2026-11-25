@@ -346,6 +346,11 @@ test("U-25: cliente parecido — o aviso é anunciado e 'Usar existente' é a a�
   await expect(
     page.getByRole("dialog").locator('p.sr-only[role="status"]').first()
   ).toContainText("Encontramos possíveis clientes existentes");
+  await expect(
+    page.getByRole("group", {
+      name: "Encontramos possíveis clientes existentes",
+    })
+  ).toBeVisible();
   const useExisting = page.getByRole("button", {
     name: "Usar existente: Carla Dias",
   });
