@@ -529,6 +529,61 @@ describe.each([
   );
 });
 
+const menuProgressSource = readFileSync(
+  new URL("../app-shell/menu-progress.tsx", import.meta.url),
+  "utf8"
+);
+const DEFAULT_BADGE_VARIANT = /defaultVariants:\s*\{\s*variant:\s*"(\w+)"/;
+const MENU_BADGE = /<Badge([^>]*)>\s*Assinatura\s*<\/Badge>/;
+
+/**
+ * The "Assinatura" mark of the trial line at the foot of the menu is the `Badge` with no variant and no color class of
+ * its own, so its pair is the one of the default variant of `ui/badge.tsx`: read from there, it is in the map of the
+ * two themes and reaches 4.5:1 (WCAG 1.4.3). A variant or a `text-*`/`bg-*` class added to the mark leaves this pair.
+ */
+describe.each([
+  ["Tema claro", tokens(block(":root")), false],
+  [
+    "Tema escuro",
+    new Map([...tokens(block(":root")), ...tokens(block(".dark"))]),
+    true,
+  ],
+] as const)(
+  "contraste do selo Assinatura do menu, %s",
+  (section, palette, dark) => {
+    it("usa a variante padrão do Badge, sem cor própria, e o par chega a 4.5:1", () => {
+      const attributes = MENU_BADGE.exec(menuProgressSource)?.[1];
+      expect(
+        attributes,
+        'the "Assinatura" mark of src/app-shell/menu-progress.tsx must be a `<Badge>`'
+      ).toBeDefined();
+      expect((attributes as string).trim()).toBe("");
+      const name = DEFAULT_BADGE_VARIANT.exec(badgeSource)?.[1];
+      const variant = badgeVariants.find((item) => item.name === name);
+      expect(
+        variant,
+        "the default variant of the Badge was not read"
+      ).toBeDefined();
+      const pair = badgePair(
+        (variant as NonNullable<typeof variant>).classes,
+        palette,
+        dark
+      );
+      const { background, foreground } = pair as NonNullable<typeof pair>;
+      expect(
+        pairs(section).find(
+          (item) =>
+            item.foreground === foreground && item.background === background
+        ),
+        `${foreground} / ${background} is not in "${section}" of docs/design/contraste-v5.1.md`
+      ).toBeDefined();
+      expect(
+        ratio(color(foreground, palette), color(background, palette))
+      ).toBeGreaterThanOrEqual(4.5);
+    });
+  }
+);
+
 describe("badgePair: a ordem das classes e as utilidades que não são cor", () => {
   const palette = new Map([
     ...tokens(block(":root")),
