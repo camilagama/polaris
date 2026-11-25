@@ -435,7 +435,7 @@ export function stockEmptyMessage(
 }
 
 export type StockListView =
-  | { kind: "loading"; message: string }
+  | { kind: "loading" }
   | { kind: "error"; message: string }
   | { kind: "empty"; message: string; showCatalogLink: boolean }
   | { kind: "ready"; rows: StockRow[] };
@@ -446,7 +446,7 @@ export function stockListView(
   costUnavailable = false
 ): StockListView {
   if (state.status === "loading") {
-    return { kind: "loading", message: "Carregando o estoque…" };
+    return { kind: "loading" };
   }
   if (state.status === "error") {
     return {
