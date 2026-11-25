@@ -377,7 +377,10 @@ test("AC-3 e AC-14: prévia de 3 grupos não grava nada; a confirmação cria s�
 
   await tap(dialog.getByRole("button", { name: "Ver os produtos" }));
   await expect(dialog).toHaveCount(0);
-  const list = page.getByRole("list", { name: "Produtos" });
+  const list = page.getByRole("list", {
+    exact: true,
+    name: "Produtos cadastrados",
+  });
   await expect(list.getByText("Camiseta básica")).toBeVisible();
   await expect(list.getByText("Meia")).toBeVisible();
   // the page says what entered, and the focus goes to it, as after a product made by hand
