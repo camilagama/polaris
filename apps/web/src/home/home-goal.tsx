@@ -2,7 +2,7 @@ import type { GoalReadModel } from "@polaris/contracts";
 import ArrowRightIcon from "lucide-react/dist/esm/icons/arrow-right";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/ui/badge";
-import { Card } from "@/ui/card";
+import { Block } from "@/ui/block";
 import { buttonVariants } from "@/ui/button";
 import { Figure } from "@/ui/figure";
 import { MoneyText } from "@/ui/hidden-values";
@@ -40,7 +40,7 @@ import {
 } from "./home-model";
 import { GoalSlides, GoalStepper, useGoalPosition } from "./goal-carousel";
 import { BlockError, HomeBlock } from "./home-parts";
-import type { Block } from "./use-home";
+import type { Block as ReadBlock } from "./use-home";
 
 /**
  * The goal of the Início (AC-10, AC-11, § 5.3): the active one nearest to being reached (or each of them, one at a time,
@@ -431,17 +431,13 @@ function SettledGoal({
 /** The goal while it reads: the shape of the card of a store without a goal (the title and "Definir meta"), its least. */
 function GoalSkeleton() {
   return (
-    <Card
-      aria-busy="true"
-      className="min-w-0 px-(--card-spacing)"
-      role="status"
-    >
+    <Block aria-busy="true" role="status" variant="plain">
       <span className="sr-only">Carregando a meta…</span>
       <div aria-hidden="true" className="flex h-5 items-center">
         <Skeleton className="h-4 w-12" />
       </div>
       <Skeleton aria-hidden="true" className="h-ctl-md w-32" />
-    </Card>
+    </Block>
   );
 }
 
@@ -512,7 +508,7 @@ export function GoalBlock({
   today,
   view,
 }: {
-  block: Block<GoalReadModel[]>;
+  block: ReadBlock<GoalReadModel[]>;
   onRetry: () => void;
   /** The estimate of the goal that opens, when what it needs is known (`goalProjection`). */
   projection: GoalProjection | null;

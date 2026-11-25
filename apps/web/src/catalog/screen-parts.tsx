@@ -37,31 +37,6 @@ export function useListPage<T>(
   return { ...listPage(items, size), loadMore };
 }
 
-/**
- * The count above a list ("1.248 produtos"), read before the rows. The line stays while the list loads and while a
- * search finds nothing, empty, so the rows do not move when the number arrives and the live region is already
- * there to announce it; it takes no room only when the list has no row at all (`shown` false).
- */
-export function ListCountLine({
-  shown,
-  text,
-}: {
-  shown: boolean;
-  text: string | null;
-}) {
-  if (!shown) {
-    return null;
-  }
-  return (
-    <p
-      aria-live="polite"
-      className="min-h-5 text-muted-foreground text-support"
-    >
-      {text}
-    </p>
-  );
-}
-
 type LoadMoreListProps =
   | {
       /** The id of the title of the `ListBlock` the button feeds: the focus goes to the first new row in its list. */

@@ -308,11 +308,6 @@ export const DEBT: Readonly<Record<Rule, readonly string[]>> = {
     // catalog
     "src/catalog/public-catalog-panels.tsx",
     // customers
-    "src/customers/customer-list.tsx",
-    // dashboard
-    "src/dashboard/goal-card.tsx",
-    "src/dashboard/goals-panel.tsx",
-    "src/dashboard/result-chain.tsx",
     // data-export
     // expenses
     "src/expenses/expense-by-category.tsx",
@@ -321,9 +316,6 @@ export const DEBT: Readonly<Record<Rule, readonly string[]>> = {
     "src/expenses/expenses-page.tsx",
     // help
     "src/help/help-page.tsx",
-    // home
-    "src/home/home-goal.tsx",
-    "src/home/home-parts.tsx",
     // inventory
     "src/inventory/inventory-page.tsx",
     // offline
@@ -361,13 +353,10 @@ export const DEBT: Readonly<Record<Rule, readonly string[]>> = {
     "src/catalog/product-media-panel.tsx",
     "src/catalog/product-variants-form.tsx",
     // customers
-    "src/customers/customer-form.tsx",
     "src/customers/customer-list.tsx",
     // expenses
     "src/expenses/expense-list.tsx",
     "src/expenses/month-picker.tsx",
-    // home
-    "src/home/home-figures.tsx",
     // inventory
     "src/inventory/stock-command-panel.tsx",
     "src/inventory/stock-panel-fields.tsx",
@@ -388,7 +377,6 @@ export const DEBT: Readonly<Record<Rule, readonly string[]>> = {
     "src/catalog/public-catalog-page.tsx",
     "src/catalog/screen-parts.tsx",
     // customers
-    "src/customers/customer-list.tsx",
     // expenses
     "src/expenses/expense-list.tsx",
     // offline
@@ -514,7 +502,6 @@ describe("o padrão visual das telas (R1 a R3)", () => {
 
   it("as listas e tabelas principais ficam na dívida: elas saem só quando a tela vai para o Block", () => {
     for (const file of [
-      "src/customers/customer-list.tsx",
       "src/expenses/expense-list.tsx",
       "src/inventory/inventory-page.tsx",
     ]) {
@@ -779,7 +766,6 @@ describe("R4: as peças soltas da lista só vivem em ui/ (controles)", () => {
     expect(DEBT.R4).toEqual([
       "src/catalog/public-catalog-page.tsx",
       "src/catalog/screen-parts.tsx",
-      "src/customers/customer-list.tsx",
       "src/expenses/expense-list.tsx",
       "src/offline/runtime/device-item.tsx",
       "src/payment-profiles/payment-profile-list.tsx",

@@ -17,6 +17,8 @@ const SUM_RULE =
 const REVIEW_BUTTON = /^Revisei a prévia da parte/;
 const OWN_DATE_REFUSAL = /tem data própria/;
 const PART_2_PROFILE = /^Parte 2: O perfil de pagamento foi editado/;
+const SPLIT_PROFILE_HINT =
+  "O perfil define taxas e prazo estimados de cada parte. Sem perfil, ficam desconhecidos.";
 const SPLIT_MISMATCH =
   "A soma das partes não fecha o total da venda. Confira o valor de cada parte e confirme de novo.";
 
@@ -194,6 +196,13 @@ test('o exemplo do usuário: total 300, Parte 1 = 100, a Parte 2 já mostra 200,
   const second = part(page, 2).getByLabel("Valor");
   await expect(second).toHaveValue("200,00");
   await expect(second).toHaveAccessibleDescription("O restante");
+  const profileOf = (ordinal: 1 | 2) =>
+    part(page, ordinal).getByRole("combobox", {
+      exact: true,
+      name: "Perfil de pagamento",
+    });
+  await expect(profileOf(1)).toHaveAccessibleDescription(SPLIT_PROFILE_HINT);
+  await expect(profileOf(2)).toHaveAccessibleDescription(SPLIT_PROFILE_HINT);
   const status = page.locator("#sale-split-balance");
   await expect(status).toContainText("Fechou: R$ 300,00");
   const summary = page.getByRole("complementary", { name: "Resumo" });
