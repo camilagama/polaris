@@ -169,7 +169,7 @@ for (const viewport of VIEWPORTS) {
       const total = footer.locator("div.tabular-nums");
       await expect(total).toHaveCSS("font-variant-numeric", TABULAR_NUMS);
       const rowValue = page
-        .getByRole("list", { name: "Vendas" })
+        .getByRole("list", { exact: true, name: "Vendas do período" })
         .locator("li")
         .first()
         .locator("[data-money]");
@@ -271,7 +271,7 @@ test("o valor de cada linha e o total da lista estão em Geist Mono", async ({
   await expect(footer).toContainText("R$ 12.565,57");
   await expectMono(
     page
-      .getByRole("list", { name: "Vendas" })
+      .getByRole("list", { exact: true, name: "Vendas do período" })
       .locator("li")
       .first()
       .locator("[data-money]"),
