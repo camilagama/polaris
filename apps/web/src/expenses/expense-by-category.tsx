@@ -1,7 +1,7 @@
 import type { ExpenseCategoryReadModel } from "@polaris/contracts";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { cn } from "@/lib/utils";
-import { Card, CardContent, CardHeader, CardTitle } from "@/ui/card";
+import { Block } from "@/ui/block";
 import { Money } from "@/ui/money";
 import { Skeleton } from "@/ui/skeleton";
 import { formatBrlAmount } from "../lib/format";
@@ -183,23 +183,16 @@ export function ExpenseByCategory({
     return null;
   }
   return (
-    <Card aria-labelledby={TITLE_ID} role="region">
-      <CardHeader>
-        <CardTitle aria-level={2} id={TITLE_ID} role="heading">
-          Por categoria
-        </CardTitle>
-      </CardHeader>
-      <CardContent>
-        {rows ? (
-          <ul className="grid gap-1">
-            {rows.map((row) => (
-              <ShareLine key={row.key} onPick={onPick} row={row} />
-            ))}
-          </ul>
-        ) : (
-          <ShareSkeleton lines={skeletonLines ?? 0} />
-        )}
-      </CardContent>
-    </Card>
+    <Block headingId={TITLE_ID} title="Por categoria" variant="plain">
+      {rows ? (
+        <ul className="grid gap-1">
+          {rows.map((row) => (
+            <ShareLine key={row.key} onPick={onPick} row={row} />
+          ))}
+        </ul>
+      ) : (
+        <ShareSkeleton lines={skeletonLines ?? 0} />
+      )}
+    </Block>
   );
 }

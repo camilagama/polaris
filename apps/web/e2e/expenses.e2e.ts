@@ -468,8 +468,17 @@ async function openExpenses(
   ).toBeVisible({ timeout: 20_000 });
 }
 
+const voidExpense = async (page: Page, description: string) => {
+  await page
+    .getByRole("button", { name: `Mais ações para ${description}` })
+    .click();
+  await page
+    .getByRole("menuitem", { name: `Anular despesa ${description}` })
+    .click();
+};
+
 const row = (page: Page, text: string) =>
-  page.locator("article").filter({ hasText: text }).first();
+  page.locator("[data-expense-id]").filter({ hasText: text }).first();
 
 /** Picks an option of a Base UI select: its list opens in a portal, on the page. */
 async function choose(
@@ -854,13 +863,14 @@ test("a barra 'Filtrar despesas': abre em Ativas, Anuladas está a um toque no s
   const summary = page
     .getByRole("status")
     .filter({ hasText: "Total do período" });
-  await expect(summary).toContainText("2 despesas");
+  const count = page.locator("[data-list-count]");
+  await expect(count).toHaveText("2 despesas");
   await expect(summary).not.toContainText("anuladas");
 
   await showStatus(page, "Anuladas");
   await expect(page.locator("[data-slot='filter-pill']")).toHaveCount(0);
   await expect(page.locator("[data-expense-id]")).toHaveCount(1);
-  await expect(summary).toContainText("1 despesa");
+  await expect(count).toHaveText("1 despesa");
   await expect(summary).toContainText("Total do período (anuladas)");
 
   await showStatus(page, "Ativas");
@@ -955,7 +965,7 @@ test("anular tira a despesa do período, aparece em Anuladas e pode ser reativad
   await page.getByRole("button", { name: "Registrar despesa" }).click();
   await expect(row(page, "Panfletos")).toBeVisible();
 
-  await page.getByRole("button", { name: "Anular despesa Panfletos" }).click();
+  await voidExpense(page, "Panfletos");
   await expect(row(page, "Panfletos")).toHaveCount(0);
 
   await showStatus(page, "Anuladas");
@@ -984,7 +994,7 @@ test("anular avisa com o nome da despesa e Desfazer a devolve ao período", asyn
   await page.getByRole("button", { name: "Registrar despesa" }).click();
   await expect(row(page, "Cartazes")).toBeVisible();
 
-  await page.getByRole("button", { name: "Anular despesa Cartazes" }).click();
+  await voidExpense(page, "Cartazes");
   await expect(row(page, "Cartazes")).toHaveCount(0);
   const notice = page
     .getByRole("status")
@@ -1054,7 +1064,7 @@ const rulesPanel = (page: Page) =>
 const listedExpense = (page: Page, text: string) =>
   page
     .getByRole("region", { name: "Despesas do período" })
-    .locator("article")
+    .locator("[data-expense-id]")
     .filter({ hasText: text });
 
 async function openRulesPanel(page: Page) {
@@ -1782,7 +1792,11 @@ for (const viewport of FORM_VIEWPORTS) {
       name: "Nova despesa",
     });
 
-    await expect(page.getByText("Carregando despesas…")).toBeVisible();
+    await expect(
+      page
+        .getByRole("region", { name: "Despesas do período" })
+        .getByText("Carregando…")
+    ).toBeVisible();
     await expect(newButtons).toHaveCount(1);
     const reading = await placesOf(parts);
 
@@ -1809,7 +1823,7 @@ for (const viewport of FORM_VIEWPORTS) {
   });
 }
 
-test("a troca de carregando para vazio deixa o cartão da lista com a mesma altura e no mesmo lugar (até 1 px), no celular e no desktop", async ({
+test("a troca de carregando para vazio mantém a moldura da lista no mesmo lugar, com o título e o total dentro dela nos dois estados (até 1 px), no celular e no desktop", async ({
   page,
 }) => {
   const server = new FakeExpenseServer();
@@ -1824,18 +1838,21 @@ test("a troca de carregando para vazio deixa o cartão da lista com a mesma altu
     })
   );
   const card = page.getByRole("region", { name: "Despesas do período" });
-  await expect(page.getByText("Carregando despesas…")).toBeVisible();
+  await expect(card.getByText("Carregando…")).toBeVisible();
+  const title = card.getByRole("heading", { name: "Despesas do período" });
   const measure = async () => {
     const box = await card.boundingBox();
-    return { height: box?.height ?? 0, top: box?.y ?? 0 };
+    const heading = await title.boundingBox();
+    return { heading: heading?.y ?? 0, top: box?.y ?? 0 };
   };
   const reading = await measure();
+  await expect(card.locator("[data-list-total]")).toBeVisible();
   release?.();
-  await expect(page.getByText("Nenhuma despesa neste período.")).toBeVisible();
+  await expect(card.getByText("Nenhuma despesa neste período.")).toBeVisible();
+  await expect(card.locator("[data-list-total]")).toBeVisible();
   const empty = await measure();
-  expect(Math.abs(empty.height - reading.height)).toBeLessThanOrEqual(1);
-  // the title's button is there in both states, so the card does not move
   expect(Math.abs(empty.top - reading.top)).toBeLessThanOrEqual(1);
+  expect(Math.abs(empty.heading - reading.heading)).toBeLessThanOrEqual(1);
 });
 
 const VER_RECURRING = /[?&]ver=recorrentes(&|$)/;
