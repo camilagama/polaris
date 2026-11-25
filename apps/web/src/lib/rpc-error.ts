@@ -13,6 +13,23 @@ export function rpcErrorCode(error: unknown): string | undefined {
   return typeof code === "string" ? code : undefined;
 }
 
+/**
+ * Codes of a server that failed or did not answer in time (a 5xx or a timeout), as opposed to one that answered
+ * "no" (UNAUTHORIZED, FORBIDDEN, CONFLICT, NOT_FOUND...). Lives here, with the other readers of the oRPC error,
+ * because `transient-server-fault.ts` judges the body of a response and has no oRPC code to read.
+ */
+export const SERVER_FAILURE_CODES: ReadonlySet<string> = new Set([
+  "BAD_GATEWAY",
+  "GATEWAY_TIMEOUT",
+  "INTERNAL_SERVER_ERROR",
+  "SERVICE_UNAVAILABLE",
+  "TIMEOUT",
+]);
+
+export function isServerFailureCode(code: string | undefined): boolean {
+  return code !== undefined && SERVER_FAILURE_CODES.has(code);
+}
+
 /** The stable domain code the server sends in `error.data.reason`. */
 export function rpcErrorReason(error: unknown): string | undefined {
   if (typeof error !== "object" || error === null || !("data" in error)) {

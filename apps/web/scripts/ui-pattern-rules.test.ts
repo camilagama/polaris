@@ -1,4 +1,13 @@
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import {
+  existsSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -8,18 +17,23 @@ import { describe, expect, it } from "vitest";
  *
  * - R1: aba de tela e filtro não importam o `Tabs` cru (`@/ui/tabs`): só `ui/` o importa (o `SectionTabs` vive lá).
  * - R2: nenhuma tela importa `Card`, `CardHeader`, `CardContent`, `CardTitle` nem `CardDescription`: a moldura é o `Block`.
- * - R3: nenhuma tela escreve à mão uma moldura (`rounded` e `border` de largura simples na mesma string de classe).
+ * - R3: nenhuma tela escreve à mão uma moldura (`rounded` e `border` de largura simples na mesma string de classe; uma
+ *   string com `border-0` não conta, porque essa classe tira a borda).
+ * - R4: `ListTotalFooter`, `ListNotice` e `RowTile` só vivem em `ui/`: a tela usa o `ListBlock` (o total é o
+ *   `ListBlock.Total`), nunca as peças soltas.
+ * - R5 (aviso, não reprova): um `Block` cujo conteúdo faz `.map(` de linhas fora de um `ListBlock`.
  *
  * A varredura é `src/**` fora de `ui/`, da galeria e dos testes. Cada regra tem uma lista de dívida com os arquivos de
- * antes do padrão, que só encolhe: arquivo novo fora do padrão reprova, e arquivo da lista que já está limpo também
+ * antes do padrão, uma linha de comentário por pasta separando os grupos (dois pacotes de pastas diferentes não
+ * conflitam ao tirar linhas), que só encolhe: arquivo novo fora do padrão reprova, e arquivo da lista que já está limpo também
  * (quem migra a tela tira o arquivo da lista no mesmo PR). `ALLOWLIST` guarda as exceções que ficam para sempre, cada
  * uma com a razão, e reprova quando a exceção deixa de ser usada.
  */
 const web = fileURLToPath(new URL("..", import.meta.url));
 
-type Rule = "R1" | "R2" | "R3";
+type Rule = "R1" | "R2" | "R3" | "R4";
 
-const RULES: readonly Rule[] = ["R1", "R2", "R3"];
+const RULES: readonly Rule[] = ["R1", "R2", "R3", "R4"];
 
 const SOURCE = /\.tsx$/;
 const TEST_FILE = /\.test\.tsx$/;
@@ -41,6 +55,19 @@ const UI_MODULE = (name: string) =>
   );
 const TABS_MODULE = UI_MODULE("tabs");
 const CARD_MODULE = UI_MODULE("card");
+const LIST_PARTS = new Set([
+  "ListNotice",
+  "ListNoticeBody",
+  "ListTotalFooter",
+  "RowTile",
+]);
+// the pieces and the module that still reexports them: a namespace or a dynamic import of one of them is a use too
+const LIST_PART_MODULES = [
+  UI_MODULE("list-notice"),
+  UI_MODULE("list-total-footer"),
+  UI_MODULE("row-tile"),
+  /(?:^|\/)screen-parts(?:\.tsx?)?$/,
+];
 const CARD_NAMES = new Set([
   "Card",
   "CardContent",
@@ -62,6 +89,12 @@ const CLASS_CALL = /\b(?:cn|clsx|twMerge)\(/g;
 // a border on every side: `border`, `border-2`, `border-[1.5px]`; not `border-b`, `border-t`, `border-border` (a color)
 const BORDER =
   /(?:^|[\s"'`])(?:[\w[\]-]+:)*!?border(?:-(?:\d+|\[\d[^\]]*\]))?!?(?=[\s"'`]|$)/;
+// a plain `border-0` takes the border away at every width and state: it is not a border, and what is left decides
+const PLAIN_NO_BORDER = /(^|[\s"'`])border-0(?=[\s"'`]|$)/g;
+const isFrame = (classes: string) => {
+  const kept = ` ${classes.replace(PLAIN_NO_BORDER, "$1")} `;
+  return ROUNDED.test(kept) && BORDER.test(kept);
+};
 
 /** The text of the call whose `(` is at `open`, up to its matching `)`, skipping what is inside strings. */
 function callBody(code: string, open: number): { body: string; end: number } {
@@ -112,17 +145,21 @@ function classStrings(code: string): string[] {
 }
 
 const AS_KEYWORD = /\s+as\s+/;
+const TYPE_PREFIX = /^type\s+/;
+const DEBT_FILE = /"(src\/[^"]+)"/;
 const NAMED_IMPORTS = /\{([^}]*)\}/;
 
 function importedNames(clause: string): string[] {
   const named = clause.match(NAMED_IMPORTS)?.[1] ?? "";
   return named
     .split(",")
-    .map((part) => part.trim().split(AS_KEYWORD)[0] ?? "")
+    .map(
+      (part) => part.trim().replace(TYPE_PREFIX, "").split(AS_KEYWORD)[0] ?? ""
+    )
     .filter((name) => name !== "");
 }
 
-/** The rules a source breaks: R1 and R2 once each, R3 once per string of class with a frame written by hand. */
+/** The rules a source breaks: R1, R2 and R4 once each, R3 once per string of class with a frame written by hand. */
 export function ruleHits(text: string): Record<Rule, number> {
   const code = withoutComments(text);
   const imports = [
@@ -140,10 +177,77 @@ export function ruleHits(text: string): Record<Rule, number> {
       CARD_MODULE.test(specifier) &&
       (opens(clause) || importedNames(clause).some((n) => CARD_NAMES.has(n)))
   );
-  const r3 = classStrings(code).filter(
-    (classes) => ROUNDED.test(` ${classes} `) && BORDER.test(` ${classes} `)
-  ).length;
-  return { R1: r1 ? 1 : 0, R2: r2 ? 1 : 0, R3: r3 };
+  const r3 = classStrings(code).filter(isFrame).length;
+  const r4 = imports.some(
+    ({ clause, specifier }) =>
+      importedNames(clause).some((name) => LIST_PARTS.has(name)) ||
+      (opens(clause) && LIST_PART_MODULES.some((re) => re.test(specifier)))
+  );
+  return { R1: r1 ? 1 : 0, R2: r2 ? 1 : 0, R3: r3, R4: r4 ? 1 : 0 };
+}
+
+const BLOCK_TAG = /<Block(?![\w.])|<\/Block>/g;
+const LIST_BLOCK_BODY = /<ListBlock\b[\s\S]*?<\/ListBlock>/g;
+const ROW_MAP = /\.map\s*\(/;
+
+/** Where the opening tag that starts at `from` ends: its `>`, past the braces and strings of its attributes. */
+function openTagEnd(code: string, from: number): number {
+  let depth = 0;
+  let index = from;
+  while (index < code.length) {
+    const char = code[index];
+    if (char === '"' || char === "'" || char === "`") {
+      STICKY_LITERAL.lastIndex = index;
+      const literal = STICKY_LITERAL.exec(code);
+      index += literal ? literal[0].length : 1;
+      continue;
+    }
+    if (char === "{") {
+      depth += 1;
+    } else if (char === "}") {
+      depth -= 1;
+    } else if (char === ">" && depth === 0) {
+      return index;
+    }
+    index += 1;
+  }
+  return code.length;
+}
+
+/**
+ * How many `Block`s of the source hold a `.map(` of rows outside a `ListBlock` (R5, a warning): a list drawn by hand
+ * on the frame is the `ListBlock`'s job. `<BlockHeader` and the like are other tags; a self-closing `Block` has no body.
+ */
+export function blockMapHits(text: string): number {
+  const code = withoutComments(text);
+  const open: number[] = [];
+  let hits = 0;
+  for (const tag of code.matchAll(BLOCK_TAG)) {
+    const at = tag.index ?? 0;
+    if (tag[0] === "</Block>") {
+      const start = open.pop();
+      const body = start === undefined ? "" : code.slice(start, at);
+      if (ROW_MAP.test(body.replace(LIST_BLOCK_BODY, ""))) {
+        hits += 1;
+      }
+      continue;
+    }
+    const end = openTagEnd(code, at + tag[0].length);
+    if (code[end - 1] !== "/") {
+      open.push(end + 1);
+    }
+  }
+  return hits;
+}
+
+/** The warnings of R5 for the files that hold one: they do not fail the test. */
+export function r5Warnings(hits: ReadonlyMap<string, number>): string[] {
+  return [...hits]
+    .filter(([, count]) => count > 0)
+    .map(
+      ([file]) =>
+        `${file}: Block com .map de linhas fora de um ListBlock (R5, aviso): use o ListBlock`
+    );
 }
 
 /** The only reasons an exception of R3 may give: an image, and the bubble of a chart. */
@@ -188,92 +292,116 @@ export function exceptionFaults(
   });
 }
 
-/** The files of before the pattern, per rule: only shrinks, and each screen that migrates takes its files out. */
+/**
+ * The files of before the pattern, per rule: only shrinks, and each screen that migrates takes its files out. One
+ * comment line per folder starts each group, so two changes that take out files of different folders do not touch
+ * neighbouring lines.
+ */
 export const DEBT: Readonly<Record<Rule, readonly string[]>> = {
   R1: [
-    "src/catalog/product-dialog.tsx",
+    // catalog
     "src/catalog/product-import/import-preview-step.tsx",
-    "src/dashboard/dashboard-page.tsx",
-    "src/expenses/expenses-page.tsx",
   ],
   R2: [
+    // app-shell
     "src/app-shell/state-panel.tsx",
+    // catalog
     "src/catalog/category-form.tsx",
     "src/catalog/category-list.tsx",
     "src/catalog/product-list.tsx",
     "src/catalog/public-catalog-panels.tsx",
-    "src/catalog/screen-parts.tsx",
+    // customers
     "src/customers/customer-list.tsx",
+    // dashboard
     "src/dashboard/goal-card.tsx",
     "src/dashboard/goals-panel.tsx",
     "src/dashboard/result-chain.tsx",
-    "src/data-export/data-export-cards.tsx",
-    "src/data-export/data-export-list.tsx",
+    // data-export
+    // expenses
     "src/expenses/expense-by-category.tsx",
     "src/expenses/expense-categories-panel.tsx",
     "src/expenses/expense-rules-panel.tsx",
     "src/expenses/expenses-page.tsx",
+    // help
     "src/help/help-page.tsx",
+    // home
     "src/home/home-goal.tsx",
     "src/home/home-parts.tsx",
+    // inventory
     "src/inventory/inventory-page.tsx",
+    // offline
     "src/offline/attention-panel.tsx",
     "src/offline/logout-dialog.tsx",
     "src/offline/runtime/device-item.tsx",
     "src/offline/runtime/devices-page.tsx",
+    // organization
     "src/organization/close-store-section.tsx",
     "src/organization/closed-queue-section.tsx",
     "src/organization/closed-store-page.tsx",
+    // payment-profiles
     "src/payment-profiles/payment-profile-list.tsx",
-    "src/sales/offline-sale-panels.tsx",
-    "src/sales/sale-confirmed-panel.tsx",
-    "src/sales/sale-customer-panel.tsx",
-    "src/sales/sale-detail-page.tsx",
-    "src/sales/sale-history-empty.tsx",
-    "src/sales/sale-history-list.tsx",
-    "src/sales/sale-history-page.tsx",
+    // sales
     "src/sales/sale-id-missing.tsx",
     "src/sales/sale-item-editor.tsx",
     "src/sales/sale-page.tsx",
     "src/sales/sale-payment-section.tsx",
-    "src/sales/sale-receipt.tsx",
     "src/sales/sale-summary-panel.tsx",
-    "src/sales/sale-timeline.tsx",
+    // settings
     "src/settings/email-preference-card.tsx",
     "src/settings/settings-screen.tsx",
+    // sign-in
     "src/sign-in/change-password-page.tsx",
     "src/sign-in/entry-ui.tsx",
-    "src/subscription/subscription-commands.tsx",
-    "src/subscription/subscription-offer.tsx",
-    "src/subscription/subscription-page.tsx",
-    "src/subscription/subscription-parts.tsx",
-    "src/subscription/subscription-waiting.tsx",
+    // subscription
   ],
   R3: [
+    // app-shell
     "src/app-shell/action-strip.tsx",
     "src/app-shell/menu-progress.tsx",
-    "src/app-shell/store-card.tsx",
+    // catalog
     "src/catalog/product-form.tsx",
     "src/catalog/product-media-crop.tsx",
     "src/catalog/product-media-list.tsx",
     "src/catalog/product-media-panel.tsx",
     "src/catalog/product-variants-form.tsx",
+    // customers
     "src/customers/customer-form.tsx",
     "src/customers/customer-list.tsx",
-    "src/expenses/expense-filters.tsx",
+    // expenses
     "src/expenses/expense-list.tsx",
     "src/expenses/month-picker.tsx",
+    // home
     "src/home/home-figures.tsx",
+    // inventory
     "src/inventory/stock-command-panel.tsx",
     "src/inventory/stock-panel-fields.tsx",
+    // legal
     "src/legal/legal-page.tsx",
+    // offline
     "src/offline/runtime/logout-control.tsx",
     "src/offline/runtime/sync-status.tsx",
+    // payment-profiles
     "src/payment-profiles/payment-profile-list.tsx",
-    "src/sales/offline-sale-panels.tsx",
+    // sales
     "src/sales/sale-payment-section.tsx",
     "src/sales/sale-summary-panel.tsx",
-    "src/subscription/subscription-commands.tsx",
+    // subscription
+  ],
+  R4: [
+    // catalog
+    "src/catalog/category-list.tsx",
+    "src/catalog/product-list.tsx",
+    "src/catalog/public-catalog-page.tsx",
+    "src/catalog/screen-parts.tsx",
+    // customers
+    "src/customers/customer-list.tsx",
+    // expenses
+    "src/expenses/expense-list.tsx",
+    // offline
+    "src/offline/runtime/device-item.tsx",
+    // payment-profiles
+    "src/payment-profiles/payment-profile-list.tsx",
+    // sales
   ],
 };
 
@@ -350,6 +478,16 @@ describe("o padrão visual das telas (R1 a R3)", () => {
     );
   });
 
+  it("R5 (aviso): a árvore diz onde um Block ainda desenha linhas à mão, sem reprovar", () => {
+    const warnings = r5Warnings(
+      new Map(SCOPE.map((path) => [path, blockMapHits(read(path))]))
+    );
+    for (const warning of warnings) {
+      console.warn(warning);
+    }
+    expect(SCOPE.length).toBeGreaterThan(0);
+  });
+
   it("nada foge do padrão fora das listas, e nenhuma lista guarda o que já está limpo", () => {
     expect(listingFaults(HITS, { allowlist: ALLOWLIST, debt: DEBT })).toEqual(
       []
@@ -387,15 +525,13 @@ describe("o padrão visual das telas (R1 a R3)", () => {
       "src/customers/customer-list.tsx",
       "src/expenses/expense-list.tsx",
       "src/inventory/inventory-page.tsx",
-      "src/sales/sale-history-page.tsx",
-      "src/sales/sale-history-list.tsx",
     ]) {
       expect([...DEBT.R2, ...DEBT.R3], file).toContain(file);
     }
   });
 });
 
-const NONE = { R1: 0, R2: 0, R3: 0 };
+const NONE = { R1: 0, R2: 0, R3: 0, R4: 0 };
 
 describe("a trava reprova o que planto (controles)", () => {
   it.each([
@@ -420,13 +556,27 @@ describe("a trava reprova o que planto (controles)", () => {
     ["R1", 'import "@/ui/tabs";'],
     ["R2", 'export { Card } from "../ui/card";'],
     ["R3", "const c = cn('rounded border-[1.5px] bg-card');"],
+    ["R3", 'const c = "rounded border p-3";'],
+    ["R3", 'const c = "rounded border md:border-0";'],
+    ["R3", 'const c = "rounded border-0 data-[open]:border";'],
+    ["R4", 'import { ListNoticeBody } from "@/ui/list-notice";'],
+    [
+      "R4",
+      'import { ListTotalFooter } from "../catalog/screen-parts";\nexport const X = () => <ListTotalFooter count="" value={null} />;',
+    ],
+    ["R4", 'import { ListNotice, formatDate } from "./screen-parts";'],
+    ["R4", 'import { RowTile as Tile } from "@/ui/row-tile";'],
+    ["R4", 'import { type ListNotice } from "@/ui/list-notice";'],
+    ["R4", 'import * as Parts from "../catalog/screen-parts";'],
+    ["R4", 'const parts = await import("@/ui/list-total-footer");'],
+    ["R4", 'export { RowTile } from "@/ui/row-tile";'],
   ] as const)("%s: %s reprova", (rule, text) => {
     expect(ruleHits(text)[rule]).toBeGreaterThan(0);
     const hits = new Map([["src/x/tela.tsx", ruleHits(text)]]);
     expect(
       listingFaults(hits, {
         allowlist: [],
-        debt: { R1: [], R2: [], R3: [] },
+        debt: { R1: [], R2: [], R3: [], R4: [] },
       })
     ).toEqual([`src/x/tela.tsx: fora do padrão (${rule}) e fora da lista`]);
   });
@@ -446,6 +596,13 @@ describe("a trava reprova o que planto (controles)", () => {
     'const a = "borderless rounded";',
     'const a = "unrounded border";',
     'const a = "rounded-none border";',
+    'const a = "rounded border-0 bg-muted";',
+    'const a = cn("rounded-xl", "border-0", "p-2");',
+    'import { ListBlock } from "@/ui/list-block";',
+    'import { ListCountLine, LoadMoreButton } from "./screen-parts";',
+    'import { RowOpenButton, formatDate } from "../catalog/screen-parts";',
+    'import { RowTileSkeleton } from "./row-tile-skeleton";',
+    'import { Block, BlockPanel } from "@/ui/block";',
     'import { Card } from "./card";',
     'import { Tabs } from "./tabs";',
     'const a = cn("rounded-xl", "bg-card");\nconst b = cn("border", "p-2");',
@@ -468,7 +625,7 @@ describe("a trava reprova o que planto (controles)", () => {
         why: "a miniatura de uma imagem",
       },
     ] as const;
-    const debt = { R1: [], R2: [], R3: [] };
+    const debt = { R1: [], R2: [], R3: [], R4: [] };
     expect(listingFaults(hits, { allowlist, debt })).toEqual([]);
     expect(
       listingFaults(
@@ -486,7 +643,7 @@ describe("a trava reprova o que planto (controles)", () => {
     expect(
       listingFaults(hits, {
         allowlist: [],
-        debt: { R1: [], R2: ["src/x/tela.tsx"], R3: [] },
+        debt: { R1: [], R2: ["src/x/tela.tsx"], R3: [], R4: [] },
       })
     ).toEqual([
       "src/x/tela.tsx: limpo em R2 e ainda na lista de dívida: tire-o da lista",
@@ -500,7 +657,7 @@ describe("a trava reprova o que planto (controles)", () => {
     expect(
       listingFaults(hits, {
         allowlist: [],
-        debt: { R1: [], R2: [], R3: [] },
+        debt: { R1: [], R2: [], R3: [], R4: [] },
       })
     ).toEqual(["src/x/nova.tsx: fora do padrão (R2) e fora da lista"]);
   });
@@ -515,7 +672,7 @@ describe("a trava reprova o que planto (controles)", () => {
             why: "a bolha que acompanha o ponto do gráfico",
           },
         ],
-        debt: { R1: [], R2: [], R3: [] },
+        debt: { R1: [], R2: [], R3: [], R4: [] },
       })
     ).toEqual([
       "src/x/bolha.tsx: exceção de R3 sem uso no ALLOWLIST: tire-a da lista",
@@ -530,7 +687,7 @@ describe("a trava não isenta lista nem tabela (controles plantados)", () => {
     '  <Card><ul className="divide-y"><li>x</li></ul></Card>',
     ");",
   ].join("\n");
-  const none = { allowlist: [], debt: { R1: [], R2: [], R3: [] } };
+  const none = { allowlist: [], debt: { R1: [], R2: [], R3: [], R4: [] } };
 
   it("um arquivo de lista com Card reprova pela R2", () => {
     const hits = new Map([["src/x/lista.tsx", ruleHits(LIST_FILE)]]);
@@ -594,4 +751,220 @@ describe("a trava não isenta lista nem tabela (controles plantados)", () => {
       "src/x/a.tsx: fora do padrão (R2) e fora da lista"
     );
   });
+});
+
+describe("R4: as peças soltas da lista só vivem em ui/ (controles)", () => {
+  const none = { allowlist: [], debt: { R1: [], R2: [], R3: [], R4: [] } };
+
+  it("um arquivo plantado que importa o ListTotalFooter reprova pela R4", () => {
+    const planted = [
+      'import { ListTotalFooter } from "../catalog/screen-parts";',
+      'export const Total = () => <ListTotalFooter count="" value={null} />;',
+    ].join("\n");
+    expect(
+      listingFaults(new Map([["src/x/total.tsx", ruleHits(planted)]]), none)
+    ).toEqual(["src/x/total.tsx: fora do padrão (R4) e fora da lista"]);
+  });
+
+  it("o arquivo que só usa o ListBlock passa, e o que ficou na dívida de R4 sem usar reprova", () => {
+    const hits = new Map([
+      [
+        "src/x/lista.tsx",
+        ruleHits('import { ListBlock } from "@/ui/list-block";'),
+      ],
+    ]);
+    expect(
+      listingFaults(hits, {
+        ...none,
+        debt: { ...none.debt, R4: ["src/x/lista.tsx"] },
+      })
+    ).toEqual([
+      "src/x/lista.tsx: limpo em R4 e ainda na lista de dívida: tire-o da lista",
+    ]);
+  });
+
+  it("os arquivos da dívida de R4 são os de hoje: as 7 telas que ainda importam e o screen-parts que reexporta", () => {
+    expect(DEBT.R4).toEqual([
+      "src/catalog/category-list.tsx",
+      "src/catalog/product-list.tsx",
+      "src/catalog/public-catalog-page.tsx",
+      "src/catalog/screen-parts.tsx",
+      "src/customers/customer-list.tsx",
+      "src/expenses/expense-list.tsx",
+      "src/offline/runtime/device-item.tsx",
+      "src/payment-profiles/payment-profile-list.tsx",
+    ]);
+  });
+});
+
+describe("R5: Block com .map de linhas fora de um ListBlock (aviso)", () => {
+  const BLOCK_WITH_ROWS = [
+    'import { Block, BlockPanel } from "@/ui/block";',
+    "export const Lista = ({ rows }) => (",
+    '  <Block aria-labelledby="t">',
+    "    <BlockPanel>{rows.map((row) => <Linha key={row.id} />)}</BlockPanel>",
+    "  </Block>",
+    ");",
+  ].join("\n");
+
+  it("avisa o arquivo plantado e não o reprova", () => {
+    const hits = new Map([["src/x/lista.tsx", blockMapHits(BLOCK_WITH_ROWS)]]);
+    expect(r5Warnings(hits)).toEqual([
+      "src/x/lista.tsx: Block com .map de linhas fora de um ListBlock (R5, aviso): use o ListBlock",
+    ]);
+    expect(
+      listingFaults(new Map([["src/x/lista.tsx", ruleHits(BLOCK_WITH_ROWS)]]), {
+        allowlist: [],
+        debt: { R1: [], R2: [], R3: [], R4: [] },
+      })
+    ).toEqual([]);
+  });
+
+  it.each([
+    [
+      "o ListBlock com as linhas",
+      "<ListBlock>{rows.map((row) => <ListBlock.Row key={row} />)}</ListBlock>",
+    ],
+    ["um Block sem .map", '<Block aria-labelledby="t"><p>texto</p></Block>'],
+    ["o Block do plain", '<Block variant="plain">{x}</Block>'],
+    [
+      "um Block que se fecha sozinho",
+      '<Block aria-labelledby="t" />\n{rows.map(f)}',
+    ],
+    ["um .map fora do Block", '<Block aria-labelledby="t" />;\nrows.map(f);'],
+    [
+      "um .map só no comentário",
+      '<Block aria-labelledby="t">{/* rows.map(f) */}<p /></Block>',
+    ],
+    [
+      "um Block com .map só dentro de um ListBlock",
+      '<Block aria-labelledby="t"><ListBlock>{rows.map(f)}</ListBlock></Block>',
+    ],
+  ])("não avisa %s", (_name, text) => {
+    expect(blockMapHits(text)).toBe(0);
+  });
+
+  it.each([
+    [
+      "um Block dentro de outro",
+      '<Block aria-labelledby="a"><Block aria-labelledby="b">{rows.map(f)}</Block></Block>',
+      2,
+    ],
+    [
+      "um Block com atributo que tem > e uma função",
+      '<Block aria-labelledby="a" data-x={(a) => a > 1}>{rows.map(f)}</Block>',
+      1,
+    ],
+  ])("avisa %s", (_name, text, count) => {
+    expect(blockMapHits(text)).toBe(count);
+  });
+});
+
+const folderOf = (file: string) => file.split("/")[1] ?? "";
+
+/**
+ * The text of a list of the debt as the source writes it. With `comments` each folder in `folders` has its comment
+ * line, also when the last file of it is gone: the line that stays is what keeps the neighbour folders apart.
+ */
+function listText(
+  files: readonly string[],
+  comments: false | readonly string[]
+): string {
+  const lines: string[] = [];
+  if (comments === false) {
+    return `${files.map((file) => `    "${file}",`).join("\n")}\n`;
+  }
+  for (const folder of comments) {
+    lines.push(`    // ${folder}`);
+    for (const file of files.filter((entry) => folderOf(entry) === folder)) {
+      lines.push(`    "${file}",`);
+    }
+  }
+  return `${lines.join("\n")}\n`;
+}
+
+/** `git merge-file` of two edits of `base`: the merged text and whether it conflicted. */
+function mergeThreeWay(base: string, mine: string, theirs: string) {
+  const dir = mkdtempSync(join(tmpdir(), "debt-merge-"));
+  try {
+    for (const [name, text] of [
+      ["base", base],
+      ["mine", mine],
+      ["theirs", theirs],
+    ] as const) {
+      writeFileSync(join(dir, name), text);
+    }
+    const run = spawnSync(
+      "git",
+      ["merge-file", "-p", "mine", "base", "theirs"],
+      { cwd: dir, encoding: "utf8" }
+    );
+    if (run.error || run.status === null) {
+      throw new Error(`git merge-file não rodou: ${run.error?.message}`);
+    }
+    return { conflicted: run.status !== 0, text: run.stdout };
+  } finally {
+    rmSync(dir, { force: true, recursive: true });
+  }
+}
+
+describe("a dívida por pasta: tirar arquivos de pastas diferentes não conflita (AC-L0.8)", () => {
+  const folders = [...new Set(DEBT.R2.map(folderOf))];
+  const without = (folder: string | undefined) =>
+    DEBT.R2.filter((file) => folderOf(file) !== folder);
+
+  it("duas cópias da lista de R2, cada uma sem uma pasta vizinha diferente, mesclam sem conflito", () => {
+    expect(folders.length).toBeGreaterThan(5);
+    const base = listText(DEBT.R2, folders);
+    for (const [index, folder] of folders.slice(0, -1).entries()) {
+      const next = folders[index + 1];
+      const merged = mergeThreeWay(
+        base,
+        listText(without(folder), folders),
+        listText(without(next), folders)
+      );
+      expect(merged.conflicted, `${folder} e ${next}`).toBe(false);
+      expect(merged.text).toBe(
+        listText(
+          DEBT.R2.filter((file) => ![folder, next].includes(folderOf(file))),
+          folders
+        )
+      );
+    }
+  });
+
+  it("controle: sem a linha de comentário por pasta as mesmas duas edições conflitam", () => {
+    const [first, second] = folders;
+    const merged = mergeThreeWay(
+      listText(DEBT.R2, false),
+      listText(without(first), false),
+      listText(without(second), false)
+    );
+    expect(merged.conflicted).toBe(true);
+  });
+
+  it.each(RULES)(
+    "a lista de %s tem um comentário por pasta, no começo de cada grupo",
+    (rule) => {
+      const source = readFileSync(fileURLToPath(import.meta.url), "utf8");
+      const start = source.indexOf(`  ${rule}: [\n`);
+      const body = source.slice(start, source.indexOf("\n  ],", start));
+      const lines = body.split("\n").slice(1);
+      expect(lines.filter((line) => line.includes('"src/'))).toHaveLength(
+        DEBT[rule].length
+      );
+      let last = "";
+      for (const [index, line] of lines.entries()) {
+        const file = line.match(DEBT_FILE)?.[1];
+        if (file === undefined) {
+          continue;
+        }
+        const folder = folderOf(file);
+        if (folder !== last) {
+          expect(lines[index - 1]?.trim(), file).toBe(`// ${folder}`);
+        }
+        last = folder;
+      }
+    }
+  );
 });

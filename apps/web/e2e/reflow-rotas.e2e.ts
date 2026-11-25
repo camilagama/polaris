@@ -163,16 +163,7 @@ const KNOWN_FINDINGS_24: readonly KnownFinding[] = [
       "detalhe da venda trocar o cliente",
     ],
     scrollWidth: 274,
-    selector: 'main > section > div[data-slot="card"]',
-  },
-  {
-    clientWidth: 272,
-    reason:
-      'na Assinatura, o cartão "Plano Pro" tem 272 px e o conteúdo da oferta mede 310 px: passa 38 px da borda direita do cartão',
-    screens: ["assinatura oferta com Pix"],
-    scrollWidth: 310,
-    selector:
-      'div[data-slot="tabs"] > div[data-slot="tabs-content"] > div[data-slot="card"]',
+    selector: 'main > div[data-slot="card-frame"]',
   },
   {
     clientWidth: 272,

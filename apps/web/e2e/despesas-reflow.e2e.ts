@@ -375,6 +375,24 @@ test.describe("a 320 px com letra de 20 px", () => {
         true,
         true,
       ]);
+      const longLine = lines.filter({ hasText: LONG_CATEGORY });
+      await expect(longLine).toHaveCount(1);
+      const gap = await longLine.evaluate((element) => {
+        const money = [...element.querySelectorAll("[data-money]")].at(-1);
+        const valueGroup = money?.parentElement;
+        const name = valueGroup?.previousElementSibling;
+        if (!(valueGroup && name)) {
+          throw new Error("the amount group or the name is gone from the line");
+        }
+        return (
+          valueGroup.getBoundingClientRect().top -
+          name.getBoundingClientRect().bottom
+        );
+      });
+      expect(
+        gap,
+        "the amount group of the long category did not wrap under its name, so the right edge check below proves nothing about ml-auto"
+      ).toBeGreaterThanOrEqual(-1);
       const rightEdges = await lines.evaluateAll((elements) =>
         elements.map((element) => {
           const money = [...element.querySelectorAll("[data-money]")].at(-1);

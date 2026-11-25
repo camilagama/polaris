@@ -105,6 +105,39 @@ describe("pending sale attempt storage", () => {
     ).toBeUndefined();
   });
 
+  it("keeps the profile of each part of a sale paid in parts across a reload", () => {
+    const storage = memoryStorage();
+    const sent: SaleAttempt = {
+      ...attempt,
+      paymentProfiles: [{ expectedVersion: 3, id: "profile-1" }, null],
+    };
+    writeSaleAttempt(storage, organizationId, sent, true);
+    const reloaded = memoryStorage();
+    for (const [key, value] of storage.data) {
+      reloaded.setItem(key, value);
+    }
+    expect(readSaleAttempt(reloaded, organizationId, now)).toEqual(sent);
+  });
+
+  it("reads no part profiles from zero parts, three parts or a malformed part, and keeps the attempt", () => {
+    const storage = memoryStorage();
+    const key = `polaris.sale.attempt.v1:${organizationId}`;
+    const profile = { expectedVersion: 1, id: "profile-1" };
+    for (const paymentProfiles of [
+      [],
+      [profile, profile, profile],
+      [profile, { id: "p" }],
+      [profile, { expectedVersion: 1.5, id: "p" }],
+      [{ expectedVersion: 1, id: "" }],
+      "profile-1",
+    ]) {
+      storage.setItem(key, JSON.stringify({ ...attempt, paymentProfiles }));
+      const read = readSaleAttempt(storage, organizationId, now);
+      expect(read?.commandId).toBe(attempt.commandId);
+      expect(read?.paymentProfiles).toBeUndefined();
+    }
+  });
+
   it("returns the stored attempt after a reload", () => {
     const storage = memoryStorage();
     writeSaleAttempt(storage, organizationId, attempt);
