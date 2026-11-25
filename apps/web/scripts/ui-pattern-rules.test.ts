@@ -326,7 +326,6 @@ export const DEBT: Readonly<Record<Rule, readonly string[]>> = {
     "src/app-shell/menu-progress.tsx",
     // catalog
     // customers
-    "src/customers/customer-list.tsx",
     // expenses
     "src/expenses/expense-list.tsx",
     "src/expenses/month-picker.tsx",
@@ -536,7 +535,7 @@ describe("a trava reprova o que planto (controles)", () => {
     'const a = "rounded border-0 bg-muted";',
     'const a = cn("rounded-xl", "border-0", "p-2");',
     'import { ListBlock } from "@/ui/list-block";',
-    'import { ListCountLine, LoadMoreButton } from "./screen-parts";',
+    'import { useListPage, LoadMoreButton } from "./screen-parts";',
     'import { RowOpenButton, formatDate } from "../catalog/screen-parts";',
     'import { RowTileSkeleton } from "./row-tile-skeleton";',
     'import { Block, BlockPanel } from "@/ui/block";',

@@ -2095,9 +2095,12 @@ export function UiGallery() {
             <p className="max-w-prose text-muted-foreground text-support">
               Os dois únicos painéis dentro de um bloco, de um cartão ou de um
               diálogo. O bloco rebaixado (<code>InsetBlock</code>) é o cinza
-              cheio, sem borda, para o dado que se lê; o grupo de campos (
-              <code>FieldGroup</code>) é o <code>fieldset</code> com borda de 1
-              px e sem fundo, para os campos de um formulário.
+              cheio, sem borda, para o dado que se lê (com{" "}
+              <code>tone="destructive"</code>, a confirmação do que não tem
+              volta, na própria linha: o mesmo cinza com um anel de 1 px em
+              perigo); o grupo de campos (<code>FieldGroup</code>) é o{" "}
+              <code>fieldset</code> com borda de 1 px e sem fundo, para os
+              campos de um formulário.
             </p>
             <div className="grid items-start gap-4 md:grid-cols-2">
               <InsetBlock data-gallery-panel="inset">
@@ -2105,6 +2108,15 @@ export function UiGallery() {
                   <dt className="text-muted-foreground">Pagamento</dt>
                   <dd>Pix, R$ 111,80</dd>
                 </dl>
+              </InsetBlock>
+              <InsetBlock
+                data-gallery-panel="inset-destructive"
+                tone="destructive"
+              >
+                <p className="text-sm">
+                  Anonimizar não dá para desfazer. Confirmação na própria linha:
+                  o mesmo cinza, com anel de perigo.
+                </p>
               </InsetBlock>
               <FieldGroup data-gallery-panel="group">
                 <FieldLegend>Contato</FieldLegend>
