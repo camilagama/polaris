@@ -16,10 +16,17 @@ const noop = () => undefined;
 
 const TAB_TAG = /<button[^>]*role="tab"[^>]*>/g;
 const SCROLL_BOX = /overflow-x-auto[^>]*>\s*<div[^>]*role="tablist"/;
-const PHONE_PADDING = /\sp-0\.5\s/;
+const CLASS_ATTRIBUTE = /\sclass="([^"]*)"/;
+const WHITESPACE = /\s+/;
 const TAB_LIST_TAG = /<div[^>]*role="tablist"[^>]*>/;
 const TAB_LIST =
   /<div[^>]*role="tablist"[^>]*aria-label="Estado das categorias"/;
+
+function classTokens(tag: string) {
+  return (tag.match(CLASS_ATTRIBUTE)?.[1] ?? "")
+    .split(WHITESPACE)
+    .filter(Boolean);
+}
 
 function draw(value: (typeof OPTIONS)[number][0], disabled = false) {
   return renderToStaticMarkup(
@@ -104,10 +111,34 @@ describe("SegmentedFilter", () => {
       />
     );
     const list = compact.match(TAB_LIST_TAG)?.[0] ?? "";
-    expect(list).toMatch(PHONE_PADDING);
-    expect(list).toContain("sm:p-0.75");
-    const plain = draw("active").match(TAB_LIST_TAG)?.[0] ?? "";
-    expect(plain).not.toMatch(PHONE_PADDING);
+    expect(classTokens(list)).toContain("p-0.5");
+    expect(classTokens(list)).toContain("sm:p-0.75");
+    const plain = classTokens(draw("active").match(TAB_LIST_TAG)?.[0] ?? "");
+    expect(plain).not.toContain("p-0.5");
     expect(plain).not.toContain("sm:p-0.75");
+  });
+
+  it("reads a class by its whole token, wherever it sits in the list and never by a neighbour that contains it", () => {
+    for (const className of [
+      "p-0.5 flex gap-1",
+      "flex p-0.5 gap-1",
+      "flex gap-1 p-0.5",
+      "p-0.5",
+    ]) {
+      expect(
+        classTokens(`<div class="${className}" role="tablist">`)
+      ).toContain("p-0.5");
+    }
+    for (const className of [
+      "flex sm:p-0.5 gap-1",
+      "p-0.75",
+      "flex gap-1",
+      "",
+    ]) {
+      expect(
+        classTokens(`<div class="${className}" role="tablist">`)
+      ).not.toContain("p-0.5");
+    }
+    expect(classTokens('<div role="tablist">')).toEqual([]);
   });
 });
