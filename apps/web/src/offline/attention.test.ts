@@ -3,11 +3,13 @@ import { describe, expect, it } from "vitest";
 import { formatShortInstant } from "../lib/format";
 import { signOfflineLease } from "../lib/offline-lease-token";
 import { SUPPORT_EMAIL } from "../lib/support-contact";
+import { SALE_METHOD_CARDS } from "../sales/sale-form-model";
 import {
   type AttentionItem,
   buildAttention,
   discardAttentionItem,
   discardWarning,
+  PART_METHOD_LABELS,
   resubmitAttentionItem,
 } from "./attention";
 import { createOfflineCustomer } from "./customer-create";
@@ -696,10 +698,10 @@ describe("a sale paid in parts refused for the profile of a part", () => {
 
   it("once redone, only discard is left", async () => {
     const { command, outbox } = await splitSale(pix, card);
-    const item = buildAttention(
+    const [item] = buildAttention(
       await outbox.snapshot(),
       new Set([command.commandId])
-    ).items[0];
+    ).items;
     expect(item?.actions).toEqual(["discard"]);
     expect(item?.redone).toBe(true);
     expect(item?.detail).toContain("Você já refez esta venda");
@@ -732,6 +734,14 @@ describe("the title of a refused sale paid in parts", () => {
     expect(titles[0]).toMatch(SALE_TITLE);
     expect(titles[1]).toBe(
       `Venda de R$ 20,00 · Pix + Débito · ${formatShortInstant(now.toISOString())}`
+    );
+  });
+});
+
+describe("the names of the parts in Pendências", () => {
+  it("are the short names of the sale screen, method by method", () => {
+    expect([...PART_METHOD_LABELS]).toEqual(
+      SALE_METHOD_CARDS.map(([method, label]) => [method, label])
     );
   });
 });

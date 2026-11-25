@@ -1,6 +1,5 @@
 import { formatBrlAmount, formatShortInstant } from "../lib/format";
 import { SUPPORT_EMAIL } from "../lib/support-contact";
-import { SALE_METHOD_CARDS } from "../sales/sale-form-model";
 import type { LocalWriter } from "./bootstrap";
 import { discardPendingCustomer } from "./customer-create";
 import { discardPendingCustomerUpdate } from "./customer-update";
@@ -176,7 +175,18 @@ const STOCK_LABELS: Readonly<Record<string, string>> = {
   "stock.write_off": "Baixa de estoque",
 };
 
-const METHOD_LABELS = new Map<string, string>(SALE_METHOD_CARDS);
+/**
+ * The short names of the methods, as the sale screen writes them (`SALE_METHOD_CARDS`, which a test keeps equal). Not
+ * imported from the screen: the PostgreSQL gates import this module and must not reach the sale form.
+ */
+export const PART_METHOD_LABELS: ReadonlyMap<string, string> = new Map([
+  ["pix", "Pix"],
+  ["cash", "Dinheiro"],
+  ["credit_card", "Crédito"],
+  ["debit_card", "Débito"],
+  ["bank_transfer", "Transferência"],
+  ["other", "Outro"],
+]);
 
 /**
  * "Venda de R$ 89,90 · 01/11 14:20": the value and the moment tell two refused sales apart; the count of items when the
@@ -190,7 +200,7 @@ function saleTitle(command: OutboxCommand): string {
     ? formatBrlAmount(sale.totalDue)
     : `${count} ${count === 1 ? "item" : "itens"}`;
   const parts = partMethodsOf(command.payload)
-    ?.map((method) => METHOD_LABELS.get(method) ?? "Outro")
+    ?.map((method) => PART_METHOD_LABELS.get(method) ?? "Outro")
     .join(" + ");
   return [
     `Venda de ${what}`,
@@ -323,6 +333,25 @@ function detailOf(
   }
 }
 
+/**
+ * A sale refused for its profile: a single payment is sent again without it; a sale in parts is redone with both
+ * parts, and sent again without the profile only when the device knows which parts carry it.
+ */
+function profileRefusalActions(
+  split: SplitSaleFacts | null,
+  redone: boolean
+): AttentionAction[] {
+  if (split === null) {
+    return ["resubmit_without_profile", "discard"];
+  }
+  if (redone) {
+    return ["discard"];
+  }
+  return split.refusedParts === null
+    ? ["redo_sale", "discard"]
+    : ["redo_sale", "resubmit_without_profile", "discard"];
+}
+
 function actionsFor(
   cause: AttentionCause,
   kind: AttentionItem["kind"],
@@ -356,15 +385,7 @@ function actionsFor(
     kind === "sale" &&
     (cause === "profile_changed" || cause === "profile_unavailable")
   ) {
-    if (options.split === null) {
-      return ["resubmit_without_profile", "discard"];
-    }
-    if (options.redone) {
-      return ["discard"];
-    }
-    return options.split.refusedParts === null
-      ? ["redo_sale", "discard"]
-      : ["redo_sale", "resubmit_without_profile", "discard"];
+    return profileRefusalActions(options.split, options.redone);
   }
   return kind === "sale" && RESUBMITTABLE.has(cause)
     ? ["resubmit", "discard"]

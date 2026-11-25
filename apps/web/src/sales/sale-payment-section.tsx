@@ -425,7 +425,9 @@ function SplitStart({
       {blocker === null ? null : (
         <span
           className={
-            reasonShown ? "basis-full text-muted-foreground text-support" : "sr-only"
+            reasonShown
+              ? "basis-full text-muted-foreground text-support"
+              : "sr-only"
           }
           id={reasonId}
           role={reasonShown ? "note" : undefined}
