@@ -584,6 +584,21 @@ describe("a sale refused for its payment profile", () => {
       expect(after.commands[0]?.payload).not.toHaveProperty("paymentProfile");
     }
   );
+
+  it.each(["payment_profile_changed", "payment_profile_unavailable"])(
+    "%s on a sale of one payment keeps the generic discard warning, without the redo",
+    async (code) => {
+      const { outbox, refuse, sale } = await setup();
+      const refused = await sale();
+      await refuse(refused.commandId, code);
+      const item = await itemOf(outbox);
+
+      expect(item.actions).toEqual(["resubmit_without_profile", "discard"]);
+      const warning = discardWarning(item);
+      expect(warning).toContain("Confirme só se ela não aconteceu.");
+      expect(warning).not.toContain("Refazer");
+    }
+  );
 });
 
 describe("a sale paid in parts refused for the profile of a part", () => {
@@ -659,6 +674,13 @@ describe("a sale paid in parts refused for the profile of a part", () => {
     expect(discardWarning(await itemOf(outbox))).toContain(
       "use Refazer esta venda antes"
     );
+  });
+
+  it("tells, before a discard of a split sale with two different profiles and not redone, to redo it first", async () => {
+    const { outbox } = await splitSale(card, pix);
+    const item = await itemOf(outbox);
+    expect(item.actions).toEqual(["redo_sale", "discard"]);
+    expect(discardWarning(item)).toContain("use Refazer esta venda antes");
   });
 
   it("keeps the redone text for a split sale already redone", async () => {

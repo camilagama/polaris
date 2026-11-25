@@ -211,3 +211,23 @@ describe("Adicionar combinação, the last row of the list", () => {
     ).toBe(true);
   });
 });
+
+describe("each combination of the list", () => {
+  const withRows = {
+    ...emptyConfigurationDraft,
+    selectedOptions: ["color" as const],
+    valueLines: { ...emptyConfigurationDraft.valueLines, color: "Azul" },
+    variants: [{ values: { color: "Azul" } }, { values: { color: "Azul" } }],
+  };
+
+  it("is a field group named by its badge, so the reader says which combination the fields belong to", () => {
+    show(null, withRows);
+    for (const number of [1, 2]) {
+      const group = screen.getByRole("group", {
+        name: `Combinação ${number}`,
+      });
+      expect(group.getAttribute("data-slot")).toBe("field-group");
+      expect(group.tagName).toBe("FIELDSET");
+    }
+  });
+});
