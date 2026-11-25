@@ -14,6 +14,9 @@ import type { ExpenseFilters, ExpenseListState } from "./use-expense-list";
 const noop = () => undefined;
 const MONTH_BUTTON =
   /<button[^>]*aria-label="Mês de competência, Outubro de 2026"[^>]*aria-haspopup="dialog"[^>]*><svg.*<\/svg>Outubro de 2026<\/button>/;
+const VOIDING_TEXT = /Anulando…/g;
+const VOIDING_STATUS = /<p[^>]*role="status"[^>]*>Anulando…<\/p>/;
+const RESTORING_TEXT = /Reativando…/g;
 const AMOUNT = /R\$\s1\.500,50/;
 
 describe("MonthPicker", () => {
@@ -75,11 +78,12 @@ const state = (overrides: Partial<ExpenseListState>): ExpenseListState => ({
 const list = (
   listState: ExpenseListState,
   status = filters.status,
-  categoryId = filters.categoryId
+  categoryId = filters.categoryId,
+  busyKey: string | null = null
 ) =>
   renderToStaticMarkup(
     <ExpenseList
-      busyKey={null}
+      busyKey={busyKey}
       filters={{ ...filters, categoryId, status }}
       onClearFilters={noop}
       onEdit={noop}
@@ -219,6 +223,56 @@ describe("ExpenseList", () => {
     );
     expect(voided).not.toContain("Editar despesa");
     expect(voided).not.toContain("Mais ações");
+  });
+
+  it("saving the edit of a row does not say Anulando… on any row", () => {
+    const html = list(
+      state({
+        count: 2,
+        expenses: [expense({}), expense({ id: "e2" })],
+      }),
+      "active",
+      "",
+      "save:e1"
+    );
+    expect(html).not.toContain("Anulando");
+  });
+
+  it("voiding says Anulando… as a status on that row only", () => {
+    const html = list(
+      state({
+        count: 2,
+        expenses: [expense({}), expense({ description: "Energia", id: "e2" })],
+      }),
+      "active",
+      "",
+      "void:e1"
+    );
+    expect(html.match(VOIDING_TEXT)).toHaveLength(1);
+    expect(html).toMatch(VOIDING_STATUS);
+    const [first, second] = html.split('data-expense-id="e2"');
+    expect(first).toContain("Anulando…");
+    expect(second).not.toContain("Anulando…");
+  });
+
+  it("restoring says Reativando… on the voided row only", () => {
+    const html = list(
+      state({
+        count: 2,
+        expenses: [
+          expense({ status: "voided" }),
+          expense({ id: "e2", status: "voided" }),
+        ],
+      }),
+      "voided",
+      "",
+      "restore:e1"
+    );
+    expect(html.match(RESTORING_TEXT)).toHaveLength(1);
+    const [firstRow, secondRow] = html.split('data-expense-id="e2"');
+    expect(firstRow).toContain("Reativando…");
+    expect(secondRow).not.toContain("Reativando…");
+    expect(html).not.toContain("Anulando");
   });
 
   it("a generated occurrence carries the Recorrente badge", () => {

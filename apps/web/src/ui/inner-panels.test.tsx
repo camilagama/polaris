@@ -144,6 +144,21 @@ describe("CheckableOption", () => {
   it("quebra o texto comprido em vez de passar da borda", () => {
     expect(draw(false)).toContain("[overflow-wrap:anywhere]");
   });
+
+  it("desligada, o apagado fica só no texto e o cursor de bloqueio na linha", () => {
+    const html = draw(false, true);
+    expect(classesOf(html)).toEqual(
+      expect.arrayContaining([
+        "group/option",
+        "has-disabled:cursor-not-allowed",
+      ])
+    );
+    expect(html).toContain(
+      'class="[overflow-wrap:anywhere] group-has-disabled/option:opacity-50"'
+    );
+    expect(classesOf(html)).not.toContain("opacity-50");
+    expect(html).toContain("data-disabled:opacity-50");
+  });
 });
 
 describe("StepTile", () => {
