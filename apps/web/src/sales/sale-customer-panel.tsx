@@ -11,7 +11,8 @@ import {
 } from "react";
 import { Alert, AlertDescription } from "@/ui/alert";
 import { Button } from "@/ui/button";
-import { Card, CardContent } from "@/ui/card";
+import { Block, BlockHeader, BlockPanel } from "@/ui/block";
+import { BlockHeader as Heading } from "@/ui/block-header";
 import { TextLink } from "@/ui/text-link";
 import {
   Dialog,
@@ -302,18 +303,6 @@ function CustomerPicker({ disabled, onChange, selectedId, view }: PickerProps) {
       placeholder="Escolha"
       value={selectedId}
     />
-  );
-}
-
-function Frame({ children, framed }: { children: ReactNode; framed: boolean }) {
-  return framed ? (
-    <Card className="gap-0 py-0">
-      <CardContent className="grid gap-4 py-(--card-spacing)">
-        {children}
-      </CardContent>
-    </Card>
-  ) : (
-    <div className="grid gap-4">{children}</div>
   );
 }
 
@@ -684,12 +673,31 @@ function CustomerButtons({ link }: { link: SaleCustomerLink }) {
   );
 }
 
-/** The versions of the attribution of the sale, newest last, as the card shows them. */
-export function CustomerHistory({
+/** The rows of the attribution history, newest last: the list alone, under a title the caller draws. */
+export function CustomerHistoryRows({ link }: { link: SaleCustomerLink }) {
+  return (
+    <ol className="grid gap-2">
+      {link.history.map((row) => (
+        <li
+          className="flex flex-wrap justify-between gap-x-3 gap-y-0.5 border-border border-t pt-2 text-support [overflow-wrap:anywhere] first:border-t-0 first:pt-0"
+          key={row.key}
+        >
+          <span>
+            v{row.version} · {row.text}
+          </span>
+          <span className="text-muted-foreground">{row.dateText}</span>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+/** The versions of the attribution of the sale, newest last, as the panel shows them. */
+function CustomerHistory({
   level,
   link,
 }: {
-  level: 2 | 3 | 4;
+  level: 3 | 4;
   link: SaleCustomerLink;
 }) {
   const SubHeading = `h${level}` as const;
@@ -698,32 +706,115 @@ export function CustomerHistory({
   }
   return (
     <div className="grid gap-2">
-      <SubHeading className={level === 2 ? "text-section" : "font-medium"}>
-        Histórico de atribuição
-      </SubHeading>
-      <ol className="grid gap-2">
-        {link.history.map((row) => (
-          <li
-            className="flex flex-wrap justify-between gap-x-3 gap-y-0.5 border-border border-t pt-2 text-support [overflow-wrap:anywhere] first:border-t-0 first:pt-0"
-            key={row.key}
-          >
-            <span>
-              v{row.version} · {row.text}
-            </span>
-            <span className="text-muted-foreground">{row.dateText}</span>
-          </li>
-        ))}
-      </ol>
+      <SubHeading className="font-medium">Histórico de atribuição</SubHeading>
+      <CustomerHistoryRows link={link} />
     </div>
   );
 }
 
 interface SaleCustomerPanelProps {
-  /** In its own card (the detail and the customer page); inside another card (the confirmed sale) it has none. */
+  /** In its own block (the detail and the customer page); inside another block (the confirmed sale) it has none. */
   framed?: boolean;
   headingLevel: 2 | 3;
   organizationId: string;
   saleId: string;
+}
+
+/** What the panel says once its title is drawn: the current customer, the buttons, the status and the history. */
+function CustomerPanelBody({
+  headingLevel,
+  link,
+}: {
+  headingLevel: 2 | 3;
+  link: SaleCustomerLink;
+}) {
+  const { currentView, status } = link;
+  return (
+    <>
+      {currentView.kind === "error" ? (
+        <Alert variant="destructive">
+          <AlertDescription className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            {currentView.label}
+            <Button
+              onClick={link.handleRetry}
+              size="sm"
+              type="button"
+              variant="link"
+            >
+              <RefreshCwIcon aria-hidden="true" data-icon="inline-start" />
+              Tentar novamente
+            </Button>
+          </AlertDescription>
+        </Alert>
+      ) : (
+        <dl className="grid gap-3 sm:grid-cols-2">
+          <div className="grid gap-0.5">
+            <dt className="text-muted-foreground text-support">
+              Cliente atual
+            </dt>
+            <dd
+              className={
+                currentView.kind === "customer-error"
+                  ? "focus-ring flex flex-wrap items-center gap-x-3 gap-y-1 rounded-sm text-destructive"
+                  : "focus-ring rounded-sm font-medium [overflow-wrap:anywhere]"
+              }
+              ref={link.nameLine}
+              tabIndex={-1}
+            >
+              <span role="status">{currentView.label}</span>
+              {currentView.kind === "customer-error" ? (
+                <Button
+                  onClick={link.retryName}
+                  size="sm"
+                  type="button"
+                  variant="link"
+                >
+                  <RefreshCwIcon aria-hidden="true" data-icon="inline-start" />
+                  Tentar novamente
+                </Button>
+              ) : null}
+            </dd>
+          </div>
+          {currentView.detail ? (
+            <div className="grid gap-0.5">
+              <dt className="text-muted-foreground text-support">Situação</dt>
+              <dd>{currentView.detail}</dd>
+            </div>
+          ) : null}
+        </dl>
+      )}
+      <CurrentCustomerSummary
+        customerId={link.linkedCustomerId}
+        load={link.state.currentCustomer}
+      />
+      {link.ready ? (
+        <>
+          <CustomerButtons link={link} />
+          <CustomerDialogs link={link} />
+          <CustomerSaveError link={link} />
+        </>
+      ) : null}
+      <div aria-live="polite" role="status">
+        {status.kind === "success" || status.kind === "submitting" ? (
+          <p
+            className={
+              status.kind === "success"
+                ? "font-medium"
+                : "text-muted-foreground"
+            }
+          >
+            {status.message}
+          </p>
+        ) : null}
+      </div>
+      <CustomerHistory level={headingLevel === 2 ? 3 : 4} link={link} />
+      {link.ready && link.history.length === 0 ? (
+        <p className="text-muted-foreground text-support">
+          Ainda não há histórico: esta venda nunca teve cliente associado.
+        </p>
+      ) : null}
+    </>
+  );
 }
 
 /**
@@ -737,105 +828,37 @@ export function SaleCustomerPanel({
   saleId,
 }: SaleCustomerPanelProps) {
   const link = useSaleCustomerLink({ organizationId, saleId });
-  const Heading = headingLevel === 2 ? "h2" : "h3";
-  const { currentView, status } = link;
-  return (
-    <section aria-labelledby="sale-customer-title">
-      <Frame framed={framed}>
-        <div className="grid gap-1">
-          <Heading className="text-section" id="sale-customer-title">
-            Cliente da venda
-          </Heading>
-          <p className="text-muted-foreground text-support">
-            {VALUES_UNCHANGED_NOTE}
-          </p>
-        </div>
-        {currentView.kind === "error" ? (
-          <Alert variant="destructive">
-            <AlertDescription className="flex flex-wrap items-center gap-x-3 gap-y-1">
-              {currentView.label}
-              <Button
-                onClick={link.handleRetry}
-                size="sm"
-                type="button"
-                variant="link"
-              >
-                <RefreshCwIcon aria-hidden="true" data-icon="inline-start" />
-                Tentar novamente
-              </Button>
-            </AlertDescription>
-          </Alert>
-        ) : (
-          <dl className="grid gap-3 sm:grid-cols-2">
-            <div className="grid gap-0.5">
-              <dt className="text-muted-foreground text-support">
-                Cliente atual
-              </dt>
-              <dd
-                className={
-                  currentView.kind === "customer-error"
-                    ? "focus-ring flex flex-wrap items-center gap-x-3 gap-y-1 rounded-sm text-destructive"
-                    : "focus-ring rounded-sm font-medium [overflow-wrap:anywhere]"
-                }
-                ref={link.nameLine}
-                tabIndex={-1}
-              >
-                <span role="status">{currentView.label}</span>
-                {currentView.kind === "customer-error" ? (
-                  <Button
-                    onClick={link.retryName}
-                    size="sm"
-                    type="button"
-                    variant="link"
-                  >
-                    <RefreshCwIcon
-                      aria-hidden="true"
-                      data-icon="inline-start"
-                    />
-                    Tentar novamente
-                  </Button>
-                ) : null}
-              </dd>
-            </div>
-            {currentView.detail ? (
-              <div className="grid gap-0.5">
-                <dt className="text-muted-foreground text-support">Situação</dt>
-                <dd>{currentView.detail}</dd>
-              </div>
-            ) : null}
-          </dl>
-        )}
-        <CurrentCustomerSummary
-          customerId={link.linkedCustomerId}
-          load={link.state.currentCustomer}
+  const note = (
+    <p className="text-muted-foreground text-support">
+      {VALUES_UNCHANGED_NOTE}
+    </p>
+  );
+  if (framed) {
+    return (
+      <Block aria-labelledby="sale-customer-title">
+        <BlockHeader
+          id="sale-customer-title"
+          level={headingLevel}
+          title="Cliente da venda"
         />
-        {link.ready ? (
-          <>
-            <CustomerButtons link={link} />
-            <CustomerDialogs link={link} />
-            <CustomerSaveError link={link} />
-          </>
-        ) : null}
-        <div aria-live="polite" role="status">
-          {status.kind === "success" || status.kind === "submitting" ? (
-            <p
-              className={
-                status.kind === "success"
-                  ? "font-medium"
-                  : "text-muted-foreground"
-              }
-            >
-              {status.message}
-            </p>
-          ) : null}
-        </div>
-        <CustomerHistory level={headingLevel === 2 ? 3 : 4} link={link} />
-        {link.ready && link.history.length === 0 ? (
-          <p className="text-muted-foreground text-support">
-            Ainda não há histórico: esta venda nunca teve cliente associado.
-          </p>
-        ) : null}
-      </Frame>
+        <BlockPanel>
+          {note}
+          <CustomerPanelBody headingLevel={headingLevel} link={link} />
+        </BlockPanel>
+      </Block>
+    );
+  }
+  return (
+    <section aria-labelledby="sale-customer-title" className="grid gap-4">
+      <div className="grid gap-1">
+        <Heading
+          id="sale-customer-title"
+          level={headingLevel}
+          title="Cliente da venda"
+        />
+        {note}
+      </div>
+      <CustomerPanelBody headingLevel={headingLevel} link={link} />
     </section>
   );
 }

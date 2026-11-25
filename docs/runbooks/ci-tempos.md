@@ -53,3 +53,15 @@ Resultado a preencher na medição da execução (tabela antes/depois):
 | Job | Preparação p50 antes | Preparação p50 depois | Acerto do cache |
 | --- | ---: | ---: | :---: |
 | (a medir) | | | |
+
+## Chromium nos jobs de navegador
+
+O passo `.github/actions/chromium` restaura `~/.cache/ms-playwright` pela versão do `playwright-core` do `bun.lock` e roda `scripts/playwright-install.sh <app>`. No caminho normal não há apt: o runner `ubuntu-24.04` já traz as bibliotecas do Chrome e o navegador vem do cache da `main` ou da CDN do Playwright. O script:
+
+1. baixa o Chromium em até 2 tentativas que dividem o teto total de `PLAYWRIGHT_DOWNLOAD_TIMEOUT` (180 s, ou seja, 90 s cada) e, se as duas falham, termina com erro sem chamar o apt;
+2. confere com `ldd` os binários `chrome` e `chrome-headless-shell` do cache; sem `not found`, imprime "apt não usado" e termina;
+3. só com biblioteca faltando chama o apt (`playwright install-deps chromium`), com `Acquire::Retries 3` e `Timeout 30`, também em até 2 tentativas que dividem `PLAYWRIGHT_INSTALL_ATTEMPT_TIMEOUT` (450 s). O teto mata o Playwright, mas não o `apt-get` que ele lançou como root; antes da 2ª tentativa o `wait_for_apt` espera esse processo sair (45 s, `PLAYWRIGHT_INSTALL_APT_ORPHAN_GRACE`) e envia SIGTERM ao `apt-get` se ele ficar (o `dpkg` nunca é morto, para não deixar o banco de pacotes interrompido). Sem isso a 2ª tentativa cai em "Could not get lock /var/lib/apt/lists/lock".
+
+O passo também tem o seu próprio `timeout-minutes` no `ci.yml` (5 min nos usos de teste; o job de aquecimento só tem o do job), que corta o script inteiro. Com o download em ~40 s, uma 1ª tentativa do apt que estoura (225 s) já consome quase todo o passo: a 2ª tentativa só roda a tempo quando a 1ª falha rápido, e o apt-get que sobra de um estouro só é esperado se o passo ainda estiver vivo. O apt é exceção; o log mostra até onde chegou.
+
+`scripts/playwright-install.test.mjs` cobre os caminhos com `bunx`, `ldd`, `pgrep` e `sudo` de mentira (download que passa, que falha e repete, que estoura; biblioteca faltando; apt que estoura e repete depois do `wait_for_apt`).

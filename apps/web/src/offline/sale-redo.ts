@@ -119,7 +119,8 @@ export function buildRedoDraft(
   const sale = parsed.data;
   // The form here holds one payment: a sale paid in parts is not brought back
   // as one, and its parts are not dropped either.
-  if (sale.payment === undefined) {
+  const { payment } = sale;
+  if (payment === undefined) {
     return { kind: "unreadable" };
   }
   const byVariant = new Map(entries.map((entry) => [entry.variantId, entry]));
@@ -149,13 +150,11 @@ export function buildRedoDraft(
       items,
       occurredAtLocal: "",
       payment: {
-        anticipationRequested: sale.payment.anticipationRequested,
-        installmentPlan: sale.payment.installmentPlan ?? "",
+        anticipationRequested: payment.anticipationRequested,
+        installmentPlan: payment.installmentPlan ?? "",
         installments:
-          sale.payment.installments === null
-            ? ""
-            : String(sale.payment.installments),
-        method: sale.payment.method,
+          payment.installments === null ? "" : String(payment.installments),
+        method: payment.method,
       },
       profile: sale.paymentProfile
         ? {

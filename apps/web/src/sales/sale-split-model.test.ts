@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   centsOfMoney,
+  changeText,
   fieldTextOfCents,
   moneyOfCents,
   partMessages,
@@ -126,10 +127,10 @@ describe("the state of the parts", () => {
     const cashFirst = splitBalance({ ...over, methods: ["cash", "pix"] });
     expect(cashFirst.text).toBe("Passou R$ 50,00");
     expect(cashFirst.hint).toBe(
-      "Se for troco, a parte em dinheiro é R$ 100,00"
+      "Se for troco, a parte em dinheiro é R$ 100,00."
     );
     expect(splitBalanceSentence(cashFirst)).toBe(
-      "Passou R$ 50,00. Se for troco, a parte em dinheiro é R$ 100,00"
+      "Passou R$ 50,00. Se for troco, a parte em dinheiro é R$ 100,00."
     );
 
     const pixOnly = splitBalance({ ...over, methods: ["pix", "pix"] });
@@ -148,7 +149,46 @@ describe("the state of the parts", () => {
       total: brl("100", "00"),
     });
     expect(balance.text).toBe("Passou R$ 50,00");
-    expect(balance.hint).toBe("Se for troco, a parte em dinheiro é R$ 60,00");
+    expect(balance.hint).toBe("Se for troco, a parte em dinheiro é R$ 60,00.");
+    expect(balance.cashAdjust).toEqual({
+      amount: brl("60", "00"),
+      change: brl("50", "00"),
+      label: "Ajustar para R$ 60,00",
+      part: 2,
+    });
+  });
+
+  it("offers Ajustar para on the cash part when it is part 1, not only Tirar da parte 2", () => {
+    const balance = splitBalance({
+      first: brl("250", "00"),
+      methods: ["cash", "credit_card"],
+      second: brl("100", "00"),
+      total: brl("300", "00"),
+    });
+    expect(balance.hint).toBe("Se for troco, a parte em dinheiro é R$ 200,00.");
+    expect(balance.cashAdjust).toEqual({
+      amount: brl("200", "00"),
+      change: brl("50", "00"),
+      label: "Ajustar para R$ 200,00",
+      part: 1,
+    });
+    expect(changeText(balance.cashAdjust?.change ?? 0n)).toBe(
+      "Troco: R$ 50,00"
+    );
+  });
+
+  it("offers no Ajustar para without a single cash part", () => {
+    const over = {
+      first: brl("150", "00"),
+      second: 0n,
+      total: brl("100", "00"),
+    };
+    expect(
+      splitBalance({ ...over, methods: ["pix", "pix"] }).cashAdjust
+    ).toBeNull();
+    expect(
+      splitBalance({ ...over, methods: ["cash", "cash"] }).cashAdjust
+    ).toBeNull();
   });
 
   it("names no change when two parts are cash, or when the extra eats the whole cash part", () => {

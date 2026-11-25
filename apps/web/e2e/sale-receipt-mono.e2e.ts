@@ -222,7 +222,7 @@ const measureAmounts = (page: Page): Promise<Measured[]> =>
   page.evaluate((source) => {
     const AMOUNT = new RegExp(source);
     const receipt = document.querySelector(
-      'section[aria-labelledby="sale-detail-title"]'
+      '[data-block="plain"][role="region"]'
     );
     if (!receipt) {
       throw new Error("the receipt is not on the screen");
@@ -525,9 +525,7 @@ reflowTest(
     });
     expect(lines).toBeGreaterThan(1);
     const outside = await receipt.evaluate((root, source) => {
-      const card = root
-        .querySelector('[data-slot="card"]')
-        ?.getBoundingClientRect();
+      const card = root.closest('[data-slot="card"]')?.getBoundingClientRect();
       if (!card) {
         throw new Error("no card");
       }
@@ -566,7 +564,7 @@ interface Snapshot {
 const takeSnapshot = (page: Page): Promise<Snapshot> =>
   page.evaluate(() => {
     const receipt = document.querySelector(
-      'section[aria-labelledby="sale-detail-title"]'
+      '[data-block="plain"][role="region"]'
     );
     const boxes = [
       ...(receipt?.querySelectorAll("dt, dd, li, h2, h3, p") ?? []),

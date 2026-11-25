@@ -57,6 +57,7 @@ const INSTALL_STEP = new RegExp(
     "^Run version=.*@playwright/test",
     String.raw`^Run test "\$\((bunx|npx) playwright --version\)"`,
     "^Install Chromium$",
+    String.raw`^Chromium \(cache da main, sem apt\)$`,
   ].join("|")
 );
 

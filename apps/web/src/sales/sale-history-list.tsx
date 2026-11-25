@@ -1,8 +1,9 @@
 import ChevronRightIcon from "lucide-react/dist/esm/icons/chevron-right";
-import type { ReactNode } from "react";
+import type { ReactElement, ReactNode } from "react";
 import { Badge } from "@/ui/badge";
-import { Card } from "@/ui/card";
+import { ListBlock } from "@/ui/list-block";
 import { Money } from "@/ui/money";
+import { Skeleton } from "@/ui/skeleton";
 import { isPlainClick } from "../lib/plain-click";
 import type { HistoryRow } from "./sale-history-model";
 
@@ -49,12 +50,17 @@ export function SaleStatusBadges({
  * own (`@container` on the `li`) and in `rem`, so a bigger browser font reaches it on a wider window. A 320 px window
  * at the default font is 18 rem of row and keeps the layout beside the value; at 20 px the same window is about 14 rem
  * and wraps. From 20.5 rem (360 px, default font) up the avatar column fits.
+ *
+ * A sale paid in two parts always puts the methods and the count on the line under the name, with no "·" after the
+ * name: both methods ("Pix + Crédito") are what tells it from a sale of one part, so they are never left to share a
+ * line with a name that can cut them.
  */
 const ROW =
   "flex items-center gap-2 px-2.5 py-2.5 md:gap-3 md:px-4 @max-[17.9rem]:flex-wrap";
 const WRAPPED_DATA = "@max-[17.9rem]:basis-full @max-[17.9rem]:flex-none";
 const WRAPPED_LINE =
   "@max-[17.9rem]:block @max-[17.9rem]:[&>span]:inline @max-[17.9rem]:[&_span]:overflow-visible @max-[17.9rem]:[&_span]:whitespace-normal @max-[17.9rem]:[&_span]:[overflow-wrap:anywhere]";
+const SPLIT_METHODS_LINE = "@max-[17.9rem]:[&>span:last-child]:block";
 
 function RowBody({ chevron, row }: { chevron: boolean; row: HistoryRow }) {
   return (
@@ -89,13 +95,21 @@ function RowBody({ chevron, row }: { chevron: boolean; row: HistoryRow }) {
           />
         </div>
         <p
-          className={`flex min-w-0 flex-wrap gap-x-1 text-muted-foreground text-support ${WRAPPED_LINE}`}
+          className={`flex min-w-0 flex-wrap gap-x-1 text-muted-foreground text-support ${row.splitPayment ? `${WRAPPED_LINE} ${SPLIT_METHODS_LINE}` : WRAPPED_LINE}`}
         >
           <span className="flex min-w-0 max-w-full">
             <span className="truncate">{row.customerText}</span>
-            <span className="shrink-0 whitespace-pre">{" ·"}</span>
+            {row.splitPayment ? null : (
+              <span className="shrink-0 whitespace-pre">{" ·"}</span>
+            )}
           </span>
-          <span className="min-w-0 max-w-full">{` ${row.methodText} · ${row.itemCountText}`}</span>
+          <span
+            className={
+              row.splitPayment
+                ? "min-w-0 max-w-full basis-full"
+                : "min-w-0 max-w-full"
+            }
+          >{` ${row.methodText} · ${row.itemCountText}`}</span>
         </p>
       </div>
       <Money
@@ -154,31 +168,77 @@ function HistoryItem({
   );
 }
 
-/** Newest first, one card with a line per sale (the pattern of the products list). */
+/** The title of the history's frame: the period is what the screen is about, the filters narrow it. */
+const HISTORY_LIST_TITLE = "Vendas do período";
+
+/** The shape of a row while the list loads: the date and the line under it. */
+function HistoryRowShape() {
+  return (
+    <div className="grid gap-1.5">
+      <Skeleton className="h-3.5 w-2/3" />
+      <Skeleton className="h-3 w-1/3" />
+    </div>
+  );
+}
+
+type HistoryNoRows =
+  | { state: "loading" }
+  | { notice: ReactNode; state: "filtered-empty" };
+
+/**
+ * The frame of a history with no rows to draw: the skeleton while it loads, or the sentence of a list with no sales,
+ * and the total always last. `total` is a `ListBlock.Total` element: the frame only takes it as the total when it is
+ * one of its direct children.
+ */
+export function SaleHistoryNoRows({
+  count,
+  total,
+  ...body
+}: HistoryNoRows & { count: string; total: ReactElement }) {
+  if (body.state === "loading") {
+    return (
+      <ListBlock
+        count={count}
+        skeleton={<HistoryRowShape />}
+        state="loading"
+        title={HISTORY_LIST_TITLE}
+      >
+        {total}
+      </ListBlock>
+    );
+  }
+  return (
+    <ListBlock
+      count={count}
+      emptyNotice={body.notice}
+      state="filtered-empty"
+      title={HISTORY_LIST_TITLE}
+    >
+      {total}
+    </ListBlock>
+  );
+}
+
+/** Newest first, one line per sale in the frame of the history, and the total (a `ListBlock.Total`) as the last line. */
 export function SaleHistoryList({
+  count = "",
   footer,
   offline,
   onOpen,
   rows,
 }: {
-  footer?: ReactNode;
+  count?: string;
+  footer?: ReactElement | undefined;
   offline: boolean;
-  onOpen?: (saleId: string) => void;
+  onOpen?: ((saleId: string) => void) | undefined;
   rows: readonly HistoryRow[];
 }) {
   return (
-    <Card className="gap-0 py-0">
-      <ul aria-label="Vendas" className="divide-y divide-border">
-        {rows.map((row) => (
-          <HistoryItem
-            key={row.id}
-            offline={offline}
-            onOpen={onOpen}
-            row={row}
-          />
-        ))}
-      </ul>
+    <ListBlock count={count} state="rows" title={HISTORY_LIST_TITLE}>
+      {rows.map((row) => (
+        <HistoryItem key={row.id} offline={offline} onOpen={onOpen} row={row} />
+      ))}
       {footer}
-    </Card>
+    </ListBlock>
   );
 }

@@ -12,6 +12,7 @@ import {
 } from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
 import { useConnectionNoticeForm } from "../app-shell/connection-required-notice";
+import { ScreenTitle } from "../app-shell/screen-title";
 import { useConnectionReturn, workerAnswers } from "../lib/browser-connection";
 import { useCurrentOrganization } from "../lib/current-organization";
 import { orpcClient } from "../lib/orpc";
@@ -40,8 +41,6 @@ import {
   ProfileForm,
   SwitchCard,
 } from "./public-catalog-panels";
-import { ListNotice } from "./screen-parts";
-import { ScreenTitle } from "../app-shell/screen-title";
 
 interface LoadedState {
   products: ProductReadModel[];
@@ -325,11 +324,9 @@ export function PublicCatalogPage() {
         <LoadErrorNotice message={feedback.error} onRetry={handleRetry} />
       ) : null}
       {loading && !loaded && online ? (
-        <ListNotice>
-          <p className="text-muted-foreground" role="status">
-            Carregando…
-          </p>
-        </ListNotice>
+        <p className="sr-only" role="status">
+          Carregando…
+        </p>
       ) : null}
       {planBlocks ? (
         <Alert id={PLAN_NOTICE_ID} variant="warning">

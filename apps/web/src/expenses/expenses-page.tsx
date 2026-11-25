@@ -15,13 +15,12 @@ import { Button } from "@/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/ui/card";
 import { Dialog, DialogContent } from "@/ui/dialog";
 import { HelpTip } from "@/ui/help-tip";
-import { Tabs, TabsContent } from "@/ui/tabs";
+import { SectionTabContent, SectionTabs } from "@/ui/section-tabs";
 import {
   ScreenTitle,
   TITLE_ACTION_CLASS,
   TitleLine,
 } from "../app-shell/screen-title";
-import { ScreenTabList, ScreenTabTrigger } from "../app-shell/screen-tabs";
 import { connectionControlProps } from "../app-shell/connection-required-notice";
 import { useConnectionOnline } from "../lib/browser-connection";
 import { useCurrentOrganization } from "../lib/current-organization";
@@ -40,7 +39,7 @@ import { ExpenseForm } from "./expense-form";
 import { ExpenseFiltersBar, focusFilterAfterClear } from "./expense-filters";
 import { ExpenseList, ExpenseSummary } from "./expense-list";
 import {
-  categoryNamesDiffer,
+  categoryFieldsDiffer,
   type ExpenseDraft,
   type ExpenseInput,
   formatMonthLabel,
@@ -186,14 +185,14 @@ export function ExpensesPage() {
   const { categories: knownCategories, isLoading: categoriesLoading } =
     categories.state;
   const { totalsByCategory } = state;
-  // a rename in another tab leaves the local names behind the ones in the split: read the categories once per answer
+  // a rename or archive in another tab leaves the local categories behind the split: read them once per answer
   useEffect(() => {
     if (
       !online ||
       categoriesLoading ||
       totalsByCategory === undefined ||
       checkedTotals.current === totalsByCategory ||
-      !categoryNamesDiffer(totalsByCategory, knownCategories)
+      !categoryFieldsDiffer(totalsByCategory, knownCategories)
     ) {
       return;
     }
@@ -401,19 +400,18 @@ export function ExpensesPage() {
           onRetry={handleCategoriesRetry}
         />
       ) : null}
-      <Tabs className="min-w-0 gap-4" onValueChange={selectView} value={view}>
-        <ScreenTabList
-          label="Lançamentos, recorrentes e categorias"
-          value={view}
+      <SectionTabs
+        className="min-w-0 gap-4"
+        label="Lançamentos, recorrentes e categorias"
+        onValueChange={selectView}
+        tabs={EXPENSE_VIEWS}
+        value={view}
+      >
+        <SectionTabContent
+          className="grid gap-4"
+          keepMounted
+          value="lancamentos"
         >
-          {EXPENSE_VIEWS.map((item) => (
-            <ScreenTabTrigger key={item.value} value={item.value}>
-              {item.label}
-            </ScreenTabTrigger>
-          ))}
-        </ScreenTabList>
-
-        <TabsContent className="grid gap-4" keepMounted value="lancamentos">
           {/* the month, "Filtrar" and its pills share the line: the list and its first expense come in the first screen */}
           <ExpenseFiltersBar
             categories={categories.state.categories}
@@ -485,9 +483,9 @@ export function ExpensesPage() {
               />
             </CardContent>
           </Card>
-        </TabsContent>
+        </SectionTabContent>
 
-        <TabsContent keepMounted value="recorrentes">
+        <SectionTabContent keepMounted value="recorrentes">
           <ExpenseRulesPanel
             categories={categories.state.categories}
             enabled={rulesAsked}
@@ -495,17 +493,17 @@ export function ExpensesPage() {
             organizationId={organizationId}
             today={today}
           />
-        </TabsContent>
+        </SectionTabContent>
 
-        <TabsContent keepMounted value="categorias">
+        <SectionTabContent keepMounted value="categorias">
           <ExpenseCategoriesPanel
             onReload={reloadCategories}
             onUpsert={handleCategoryUpsert}
             organizationId={organizationId}
             state={categories.state}
           />
-        </TabsContent>
-      </Tabs>
+        </SectionTabContent>
+      </SectionTabs>
     </div>
   );
 }

@@ -728,6 +728,7 @@ describe("readBudgets", () => {
       "Catalog CSP browser test",
       "Changed areas",
       "Checks (lint, types, knip, build, tests)",
+      "Chromium cache (main)",
       "Dependency audit",
       "Lighthouse (mobile, simulated)",
       "Offline browser gate",

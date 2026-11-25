@@ -7,8 +7,8 @@ import {
   useState,
 } from "react";
 import { Alert, AlertDescription } from "@/ui/alert";
+import { Block, BlockHeader, BlockPanel } from "@/ui/block";
 import { Button } from "@/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/ui/card";
 import {
   Dialog,
   DialogBody,
@@ -46,9 +46,9 @@ import {
   closeRefusal,
   closureWarnings,
   confirmationLabel,
+  NAME_MISSING_TEXT,
   OTHER_DEVICES_TEXT,
   type QueueState,
-  NAME_MISSING_TEXT,
   queueNotice,
 } from "./closure-model";
 import { useDeviceQueue } from "./use-device-queue";
@@ -287,13 +287,13 @@ export function CloseStoreSection() {
   }, [online]);
 
   return (
-    <Card aria-labelledby={SECTION_TITLE_ID} role="region">
-      <CardHeader>
-        <CardTitle aria-level={3} id={SECTION_TITLE_ID} role="heading">
-          {CLOSE_SECTION_TITLE}
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="grid justify-items-start gap-3">
+    <Block aria-labelledby={SECTION_TITLE_ID}>
+      <BlockHeader
+        id={SECTION_TITLE_ID}
+        level={3}
+        title={CLOSE_SECTION_TITLE}
+      />
+      <BlockPanel className="items-start">
         <p className="text-muted-foreground">{CLOSE_SECTION_TEXT}</p>
         <Button
           onClick={handleOpen}
@@ -302,7 +302,7 @@ export function CloseStoreSection() {
         >
           {CLOSE_OPEN_BUTTON}
         </Button>
-      </CardContent>
+      </BlockPanel>
       <CloseDialog
         billingSelfService={billingSelfService}
         onOpenChange={setOpen}
@@ -310,6 +310,6 @@ export function CloseStoreSection() {
         organizationId={organizationId}
         storeName={organization.name}
       />
-    </Card>
+    </Block>
   );
 }

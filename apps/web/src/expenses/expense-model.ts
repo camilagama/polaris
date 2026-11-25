@@ -506,23 +506,27 @@ function nameOf(
 }
 
 /**
- * Whether the split by category carries a name for a category this screen has read that differs from the local one:
- * a rename elsewhere, which the filter chip (named from the local list) would not show.
+ * Whether the split by category carries a name or an archived flag for a category this screen has read that differs
+ * from the local one: a rename or an archive elsewhere, which the filter chip and the menu (built from the local
+ * list) would not show.
  */
-export function categoryNamesDiffer(
+export function categoryFieldsDiffer(
   entries: readonly ExpenseCategoryTotalReadModel[] | undefined,
   categories: readonly ExpenseCategoryReadModel[]
 ): boolean {
   if (entries === undefined) {
     return false;
   }
-  const localNames = new Map(categories.map((item) => [item.id, item.name]));
+  const locals = new Map(categories.map((item) => [item.id, item]));
   return entries.some((entry) => {
-    const local = localNames.get(entry.categoryId);
+    const local = locals.get(entry.categoryId);
+    if (local === undefined) {
+      return false;
+    }
     return (
-      local !== undefined &&
-      entry.categoryName !== undefined &&
-      entry.categoryName !== local
+      (entry.categoryName !== undefined && entry.categoryName !== local.name) ||
+      (entry.categoryArchived !== undefined &&
+        entry.categoryArchived !== (local.status === "archived"))
     );
   });
 }

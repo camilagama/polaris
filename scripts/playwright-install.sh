@@ -1,34 +1,32 @@
 #!/usr/bin/env bash
-# Instala o Chromium do Playwright com as dependências do sistema, sem deixar um espelho do apt
-# parado consumir o job inteiro: o apt desiste de conexão parada em 30 s e tenta 3 vezes, e cada
-# tentativa de instalação tem um teto de tempo. O teto mata o Playwright, mas não o apt-get que ele
-# lançou como root: antes de repetir, o script espera esse apt-get sair e o encerra se demorar (o
-# dpkg nunca é morto, para não deixar o banco interrompido); sem isso a nova tentativa cai em "Could
-# not get lock /var/lib/apt/lists/lock". Uso: scripts/playwright-install.sh <diretório do app>
-# (o diretório decide qual Playwright do lockfile instala o navegador).
+# Instala o Chromium do Playwright do lockfile sem passar pelo apt no caminho normal: o runner
+# ubuntu-24.04 já tem as bibliotecas do Chrome, e o navegador vem da CDN do Playwright (ou do
+# cache ~/.cache/ms-playwright). O download tem duas tentativas que dividem o mesmo teto total.
+# Só se faltar biblioteca (ldd "not found") o apt entra, também com duas tentativas dividindo o
+# teto total: o teto mata o Playwright, mas não o apt-get que ele lançou como root, então antes da
+# segunda tentativa o script espera esse apt-get sair (wait_for_apt) e o encerra se demorar; sem
+# isso a nova tentativa cai em "Could not get lock /var/lib/apt/lists/lock". O dpkg nunca é morto,
+# para não deixar o banco de pacotes interrompido.
+# Uso: scripts/playwright-install.sh <diretório do app>
+# Variáveis: PLAYWRIGHT_DOWNLOAD_TIMEOUT (teto total do download, 180 s),
+# PLAYWRIGHT_INSTALL_ATTEMPT_TIMEOUT (teto total do apt, 450 s), PLAYWRIGHT_INSTALL_ATTEMPTS
+# (tentativas de cada etapa, 2), PLAYWRIGHT_INSTALL_APT_ORPHAN_GRACE (espera pelo apt-get que
+# sobrou, 45 s), PLAYWRIGHT_INSTALL_RETRY_PAUSE (pausa entre tentativas, 5 s).
 set -euo pipefail
-
 app_dir="${1:?uso: scripts/playwright-install.sh <diretório do app>}"
 attempts="${PLAYWRIGHT_INSTALL_ATTEMPTS:-2}"
-attempt_timeout="${PLAYWRIGHT_INSTALL_ATTEMPT_TIMEOUT:-450}"
-first_attempt_timeout="${PLAYWRIGHT_INSTALL_FIRST_ATTEMPT_TIMEOUT:-$attempt_timeout}"
-
-if command -v apt-get >/dev/null 2>&1; then
-  sudo tee /etc/apt/apt.conf.d/99-playwright-install-timeouts >/dev/null <<'APT'
-Acquire::Retries "3";
-Acquire::http::Timeout "30";
-Acquire::https::Timeout "30";
-APT
-fi
-
+download_total="${PLAYWRIGHT_DOWNLOAD_TIMEOUT:-180}"
+apt_total="${PLAYWRIGHT_INSTALL_ATTEMPT_TIMEOUT:-450}"
 apt_orphan_grace="${PLAYWRIGHT_INSTALL_APT_ORPHAN_GRACE:-45}"
+retry_pause="${PLAYWRIGHT_INSTALL_RETRY_PAUSE:-5}"
+cd "$app_dir"
+if command -v bunx >/dev/null 2>&1; then runner=(bunx playwright); else runner=(npx playwright); fi
 
 apt_running() {
   pgrep -x 'apt-get|apt|dpkg' >/dev/null 2>&1
 }
 
 wait_for_apt() {
-  command -v apt-get >/dev/null 2>&1 || return 0
   local waited=0
   while apt_running && ((waited < apt_orphan_grace)); do
     sleep 2
@@ -48,31 +46,44 @@ wait_for_apt() {
   fi
 }
 
-cd "$app_dir"
+# Roda "playwright <args>" em até $attempts tentativas, cada uma com total/attempts segundos.
+run_attempts() {
+  local label="$1" total="$2" between="$3"
+  shift 3
+  local limit=$((total / attempts)) attempt started
+  ((limit >= 1)) || limit=1
+  for ((attempt = 1; attempt <= attempts; attempt++)); do
+    started="$(date +%s)"
+    echo "playwright install: $label, tentativa $attempt de $attempts (limite ${limit}s)"
+    if timeout --kill-after=10 "$limit" "${runner[@]}" "$@"; then
+      echo "playwright install: $label pronto em $(($(date +%s) - started))s"
+      return 0
+    fi
+    echo "playwright install: $label falhou ou estourou ${limit}s (levou $(($(date +%s) - started))s)" >&2
+    if ((attempt < attempts)); then
+      "$between"
+      sleep $((attempt * retry_pause))
+    fi
+  done
+  echo "playwright install: $attempts tentativas de $label falharam" >&2
+  return 1
+}
 
-if command -v bunx >/dev/null 2>&1; then
-  runner=(bunx playwright)
-else
-  runner=(npx playwright)
+nothing() { :; }
+
+run_attempts "download do Chromium" "$download_total" nothing install chromium
+
+cache="${PLAYWRIGHT_BROWSERS_PATH:-$HOME/.cache/ms-playwright}"
+missing="$(find "$cache" -type f \( -name chrome -o -name chrome-headless-shell \) -perm -u+x -print0 \
+  | xargs -0 -r ldd 2>/dev/null | awk '/not found/ {print $1}' | sort -u || true)"
+if [ -z "$missing" ]; then
+  echo "playwright install: nenhuma biblioteca faltando; apt não usado"
+  exit 0
 fi
-
-for ((attempt = 1; attempt <= attempts; attempt++)); do
-  limit="$attempt_timeout"
-  if ((attempt == 1)); then
-    limit="$first_attempt_timeout"
-  fi
-  started="$(date +%s)"
-  echo "playwright install: tentativa $attempt de $attempts (limite ${limit}s)"
-  if timeout --kill-after=10 "$limit" "${runner[@]}" install --with-deps chromium; then
-    echo "playwright install: tentativa $attempt passou em $(($(date +%s) - started))s"
-    exit 0
-  fi
-  echo "playwright install: tentativa $attempt falhou ou estourou ${limit}s (levou $(($(date +%s) - started))s)" >&2
-  if ((attempt < attempts)); then
-    wait_for_apt
-    sleep $((attempt * 5))
-  fi
-done
-
-echo "playwright install: $attempts tentativas falharam" >&2
-exit 1
+echo "playwright install: faltam bibliotecas ($missing); instalando dependências pelo apt" >&2
+sudo tee /etc/apt/apt.conf.d/99-playwright-install-timeouts >/dev/null <<'APT'
+Acquire::Retries "3";
+Acquire::http::Timeout "30";
+Acquire::https::Timeout "30";
+APT
+run_attempts "apt" "$apt_total" wait_for_apt install-deps chromium

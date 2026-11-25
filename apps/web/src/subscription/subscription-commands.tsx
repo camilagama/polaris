@@ -12,7 +12,6 @@ import {
 import { cn } from "@/lib/utils";
 import { Alert, AlertDescription } from "@/ui/alert";
 import { Button } from "@/ui/button";
-import { CardContent } from "@/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -22,6 +21,7 @@ import {
   DialogTitle,
 } from "@/ui/dialog";
 import { Field, FieldDescription, FieldLabel } from "@/ui/field";
+import { InsetBlock } from "@/ui/inset-block";
 import { Textarea } from "@/ui/textarea";
 import { TextLink } from "@/ui/text-link";
 import { orpcClient } from "../lib/orpc";
@@ -127,7 +127,7 @@ function useOwnerCommand<T>(
 /** What changes on the Free and what the store keeps: the same in both dialogs (AC-22 to AC-24). */
 function WhatChanges({ plan }: { plan: BillingPlanView }) {
   return (
-    <div className="grid gap-2 rounded-lg bg-muted/60 px-3 py-2.5">
+    <InsetBlock className="grid gap-2 p-3">
       <h3 className="m-0 font-medium text-sm">O que muda no Free</h3>
       <ul className="m-0 grid list-disc gap-1 pl-5 text-muted-foreground">
         {FREE_CHANGES.map((line) => (
@@ -136,7 +136,7 @@ function WhatChanges({ plan }: { plan: BillingPlanView }) {
       </ul>
       <h3 className="m-0 font-medium text-sm">O que fica guardado</h3>
       <p className="m-0 text-muted-foreground">{keptText(plan)}</p>
-    </div>
+    </InsetBlock>
   );
 }
 
@@ -429,7 +429,7 @@ function OverduePayment({
     return () => document.removeEventListener("visibilitychange", onVisible);
   }, [onReread, opened]);
   return (
-    <div className="grid justify-items-start gap-2 rounded-lg border px-3 py-2.5">
+    <InsetBlock className="grid justify-items-start gap-2 p-3">
       <p className="m-0 text-muted-foreground">{overdueText(plan)}</p>
       <Button
         aria-disabled={pending || undefined}
@@ -455,7 +455,7 @@ function OverduePayment({
         </p>
       ) : null}
       {refusal ? <RefusalAlert onReread={onReread} refusal={refusal} /> : null}
-    </div>
+    </InsetBlock>
   );
 }
 
@@ -541,7 +541,7 @@ export function PlanActions({
     return null;
   }
   return (
-    <CardContent className="grid gap-3 border-t pt-(--card-spacing)">
+    <div className="grid gap-3 border-t pt-(--card-spacing)">
       {outcomeText ? (
         <Alert className="focus-ring" ref={outcomeRef} tabIndex={-1}>
           <AlertDescription>{outcomeText}</AlertDescription>
@@ -555,9 +555,9 @@ export function PlanActions({
         />
       ) : null}
       {graceCancelled ? (
-        <p className="m-0 rounded-lg border px-3 py-2.5 text-muted-foreground">
-          {cancelledGraceText()}
-        </p>
+        <InsetBlock className="p-3">
+          <p className="m-0 text-muted-foreground">{cancelledGraceText()}</p>
+        </InsetBlock>
       ) : null}
       {cancel ? (
         <ActionRow hint={cancelHint(plan)}>
@@ -605,7 +605,7 @@ export function PlanActions({
           plan={plan}
         />
       )}
-    </CardContent>
+    </div>
   );
 }
 

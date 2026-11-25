@@ -42,6 +42,7 @@ const BUTTON_IN_BUTTON = /<button(?:(?!<\/button>).)*<button/s;
 const noop = () => undefined;
 type Props = ComponentProps<typeof CustomerList>;
 const base: Props = {
+  count: "1 cliente",
   customers: [customer(1, "Ana Lima")],
   isLoading: false,
   isOffline: false,
@@ -86,8 +87,23 @@ function menuTrigger(markup: string, name: string): string {
 describe("the list of customers", () => {
   it("says it is loading, and shows no row", () => {
     const html = render({ isLoading: true });
-    expect(html).toContain("Carregando clientes…");
+    expect(html).toContain("Clientes cadastrados");
+    expect(html).toContain('data-state="loading"');
+    expect(html).toContain("Carregando…");
+    expect(html).toContain('data-slot="skeleton"');
     expect(html).not.toContain("Ana Lima");
+  });
+
+  it("frames the rows with the title and the count, and the true empty list has no frame", () => {
+    const rows = render({ count: "2 de 5 clientes" });
+    expect(rows).toContain('data-list-block=""');
+    expect(rows).toContain('data-state="rows"');
+    expect(rows).toContain("Clientes cadastrados");
+    expect(rows).toContain("2 de 5 clientes");
+    expect(rows).toContain('data-customer-id="');
+    expect(render({ customers: [], count: "", total: 0 })).not.toContain(
+      "data-list-block"
+    );
   });
 
   it("says only what is missing in the empty list (no button), and that the archived one is empty", () => {
@@ -110,6 +126,7 @@ describe("the list of customers", () => {
   it("says what was searched when no customer matches, instead of saying there are none", () => {
     const html = render({ customers: [], query: " bia ", total: 3 });
     expect(html).toContain("Nenhum cliente com “bia”.");
+    expect(html).toContain('data-state="filtered-empty"');
     expect(html).not.toContain("Nenhum cliente ainda");
     expect(html).not.toContain("Novo cliente</button>");
   });

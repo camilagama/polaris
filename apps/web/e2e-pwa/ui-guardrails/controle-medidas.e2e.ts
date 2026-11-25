@@ -193,9 +193,9 @@ test.describe("controle: cada verificação pega a falha", () => {
     page,
   }) => {
     await openScreen(gallery, page);
-    expect(await focusFaults(page)).toEqual([]);
     await page.evaluate(() => {
-      const main = document.querySelector("main");
+      const probe = document.createElement("div");
+      probe.dataset.focusProbe = "";
       const bare = document.createElement("button");
       bare.textContent = "Sem foco visível";
       bare.style.outline = "none";
@@ -207,9 +207,11 @@ test.describe("controle: cada verificação pega a falha", () => {
       ring.textContent = "Com halo de 3 px";
       ring.style.outline = "none";
       ring.style.boxShadow = "0 0 0 3px rgb(0 100 200)";
-      main?.append(bare, soft, ring);
+      probe.append(bare, soft, ring);
+      document.querySelector("main")?.append(probe);
     });
-    expect((await focusFaults(page)).sort()).toEqual(
+    // the clean walk of the whole gallery is the gallery's own check (`screen-checks.ts`): here only the three buttons
+    expect((await focusFaults(page, "[data-focus-probe]")).sort()).toEqual(
       [
         'button "Só sombra suave" não mostra o contorno de foco de 3 px',
         'button "Sem foco visível" não mostra o contorno de foco de 3 px',
@@ -231,10 +233,13 @@ test.describe("controle: cada verificação pega a falha", () => {
       after.textContent = "Depois do campo";
       after.style.outline = "none";
       after.style.boxShadow = "0 0 0 3px rgb(0 100 200)";
-      document.querySelector("main")?.append(field, after);
+      const probe = document.createElement("div");
+      probe.dataset.focusProbe = "";
+      probe.append(field, after);
+      document.querySelector("main")?.append(probe);
     });
     // each part of the field is a stop of Tab on the same element: the button after it is still reached
-    expect(await focusFaults(page)).toEqual([]);
+    expect(await focusFaults(page, "[data-focus-probe]")).toEqual([]);
   });
 
   test("6. a volta de Tab começa no alto da página, mesmo depois de um clique no meio dela", async ({
@@ -277,9 +282,12 @@ test.describe("controle: cada verificação pega a falha", () => {
       const thief = document.createElement("button");
       thief.textContent = "Rouba o foco";
       thief.addEventListener("focus", () => thief.blur());
-      document.querySelector("main")?.append(thief);
+      const probe = document.createElement("div");
+      probe.dataset.focusProbe = "";
+      probe.append(thief);
+      document.querySelector("main")?.append(probe);
     });
-    expect(await focusFaults(page)).toEqual([
+    expect(await focusFaults(page, "[data-focus-probe]")).toEqual([
       'button "Rouba o foco" está na ordem de Tab e o teclado não chega nele',
     ]);
   });
