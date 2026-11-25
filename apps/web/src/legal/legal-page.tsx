@@ -7,6 +7,8 @@ import TriangleAlertIcon from "lucide-react/dist/esm/icons/triangle-alert";
 import { Fragment, type ReactNode } from "react";
 import { LEGAL_DOCUMENTS_IN_FORCE } from "@/lib/legal-in-force";
 import { Alert, AlertDescription } from "@/ui/alert";
+import { InsetBlock } from "@/ui/inset-block";
+import { Table } from "@/ui/table";
 import { currentLegalText } from "./legal-content";
 import { LegalFrame } from "./legal-frame";
 import {
@@ -58,41 +60,39 @@ function renderInline(nodes: readonly Inline[]): ReactNode {
 /** A table is one block that scrolls on its own if it must; on a phone each row is a card with the name of its columns. */
 function TableBlock({ block }: { block: Extract<Block, { kind: "table" }> }) {
   return (
-    <div className="overflow-x-auto rounded-lg border max-sm:border-0">
-      <table className="w-full border-collapse text-left max-sm:block">
-        <thead className="max-sm:sr-only">
-          <tr className="bg-muted/60">
-            {block.header.map((cell) => (
-              <th
-                className="px-3 py-2 align-top font-medium text-muted-foreground text-xs"
-                key={cell}
-                scope="col"
+    <Table className="border-collapse text-left text-sm/5 touch:text-base/6 max-sm:block">
+      <thead className="max-sm:sr-only">
+        <tr className="bg-muted/60">
+          {block.header.map((cell) => (
+            <th
+              className="px-3 py-2 align-top font-medium text-muted-foreground text-xs"
+              key={cell}
+              scope="col"
+            >
+              {cell}
+            </th>
+          ))}
+        </tr>
+      </thead>
+      <tbody className="max-sm:grid max-sm:gap-3">
+        {block.rows.map((row) => (
+          <tr
+            className="max-sm:block max-sm:overflow-hidden max-sm:rounded-lg max-sm:bg-muted sm:border-t"
+            key={row.map(cellKey).join("|")}
+          >
+            {row.map((cell, column) => (
+              <td
+                className="px-3 py-2 align-top max-sm:block max-sm:first:font-medium max-sm:not-first:before:block max-sm:not-first:before:text-muted-foreground max-sm:not-first:before:text-xs max-sm:not-first:before:content-[attr(data-label)]"
+                data-label={block.header[column]}
+                key={block.header[column]}
               >
-                {cell}
-              </th>
+                {renderInline(cell)}
+              </td>
             ))}
           </tr>
-        </thead>
-        <tbody className="max-sm:grid max-sm:gap-3">
-          {block.rows.map((row) => (
-            <tr
-              className="border-t max-sm:block max-sm:overflow-hidden max-sm:rounded-lg max-sm:border"
-              key={row.map(cellKey).join("|")}
-            >
-              {row.map((cell, column) => (
-                <td
-                  className="px-3 py-2 align-top max-sm:block max-sm:first:bg-muted/60 max-sm:first:font-medium max-sm:not-first:before:block max-sm:not-first:before:text-muted-foreground max-sm:not-first:before:text-xs max-sm:not-first:before:content-[attr(data-label)]"
-                  data-label={block.header[column]}
-                  key={block.header[column]}
-                >
-                  {renderInline(cell)}
-                </td>
-              ))}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+        ))}
+      </tbody>
+    </Table>
   );
 }
 
@@ -234,28 +234,26 @@ export function LegalDocumentView({ document, text }: LegalDocumentViewProps) {
         ) : null}
         {intro ? <SectionView section={intro} /> : null}
         {essential ? <SectionView section={essential} /> : null}
-        <nav
-          aria-labelledby="legal-summary-title"
-          className="rounded-lg border px-3 py-2.5"
-          id={SUMMARY_ID}
-        >
-          <h2 className="font-semibold text-section" id="legal-summary-title">
-            Sumário
-          </h2>
-          <ol className="m-0 mt-1 grid list-none p-0">
-            {numbered.map(({ heading }) =>
-              heading ? (
-                <li key={heading.id}>
-                  <a
-                    className={`${INLINE_LINK} touch-hit flex min-h-8 touch:min-h-11 items-center`}
-                    href={`#${heading.id}`}
-                  >
-                    {heading.text}
-                  </a>
-                </li>
-              ) : null
-            )}
-          </ol>
+        <nav aria-labelledby="legal-summary-title" id={SUMMARY_ID}>
+          <InsetBlock>
+            <h2 className="font-semibold text-section" id="legal-summary-title">
+              Sumário
+            </h2>
+            <ol className="m-0 mt-1 grid list-none p-0">
+              {numbered.map(({ heading }) =>
+                heading ? (
+                  <li key={heading.id}>
+                    <a
+                      className={`${INLINE_LINK} touch-hit flex min-h-8 touch:min-h-11 items-center`}
+                      href={`#${heading.id}`}
+                    >
+                      {heading.text}
+                    </a>
+                  </li>
+                ) : null
+              )}
+            </ol>
+          </InsetBlock>
         </nav>
         {numbered.map((section) => (
           <SectionView key={section.heading?.id} section={section} />

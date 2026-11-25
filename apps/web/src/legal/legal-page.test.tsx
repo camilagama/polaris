@@ -22,6 +22,8 @@ const essentialHeadingPattern = /id="o-essencial">O essencial<\/h2>/;
 const termsTitlePattern = /<h1[^>]*>Termos de Uso<\/h1>/;
 /** The text of a pending marker inside its `<mark>`, compared as text: no pattern is built from it. */
 const marker = (text: string) => `data-slot="legal-marker">${text}</mark>`;
+const summaryPattern =
+  /<nav aria-labelledby="legal-summary-title" id="sumario"><div class="[^"]*" data-slot="inset-block"><h2 [^>]*id="legal-summary-title">Sumário<\/h2>/;
 const tagStartPattern = /^\/?([a-z][a-z0-9]*)/i;
 const headingLowerPattern = /<h[3-6][ >]/g;
 const hrefPattern = /href="([^"#][^"]*)"/g;
@@ -127,6 +129,20 @@ describe("the tables (AC-16)", () => {
       count(html, /<td [^>]*data-label="[^"]+"/g)
     );
     expect(count(html, /<td /g)).toBeGreaterThan(30);
+  });
+
+  it("sit in the container of the table piece", () => {
+    expect(count(html, /data-slot="table-container"/g)).toBe(3);
+    expect(
+      count(html, /<div [^>]*data-slot="table-container"[^>]*><table /g)
+    ).toBe(3);
+  });
+});
+
+describe("the summary", () => {
+  it("is a navigation landmark with the set-back block inside it, named by its title", () => {
+    const html = render("terms");
+    expect(html).toMatch(summaryPattern);
   });
 });
 

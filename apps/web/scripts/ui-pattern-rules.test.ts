@@ -376,7 +376,6 @@ export const DEBT: Readonly<Record<Rule, readonly string[]>> = {
     "src/inventory/stock-command-panel.tsx",
     "src/inventory/stock-panel-fields.tsx",
     // legal
-    "src/legal/legal-page.tsx",
     // offline
     "src/offline/runtime/logout-control.tsx",
     "src/offline/runtime/sync-status.tsx",
