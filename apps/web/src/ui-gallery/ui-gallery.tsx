@@ -19,6 +19,7 @@ import {
   useState,
 } from "react";
 import { cn } from "@/lib/utils";
+import { ActionStrip } from "@/ui/action-strip";
 import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
 import { AnimatedFigure } from "@/ui/animated-figure";
 import { Badge } from "@/ui/badge";
@@ -2151,6 +2152,24 @@ export function UiGallery() {
               <CheckableOptionExamples />
               <StepTileExamples />
             </div>
+          </Section>
+
+          <Section title="Aviso de ação">
+            <p className="max-w-prose text-muted-foreground text-support">
+              O aviso <code>ActionStrip</code> ("Precisa de ação") fica sob o
+              título da tela: o triângulo, o nome e uma linha com os números,
+              cada um um link quando leva a uma lista. Só existe quando há o que
+              fazer.
+            </p>
+            <ActionStrip>
+              <TextLink href="/ajuda" inline>
+                3 produtos com custo desconhecido
+              </TextLink>
+              {" · "}
+              <TextLink href="/ajuda" inline>
+                2 sem saldo
+              </TextLink>
+            </ActionStrip>
           </Section>
 
           <Section title="Block sem moldura">
