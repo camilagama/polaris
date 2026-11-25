@@ -40,6 +40,25 @@ const ADMIN_REFERENCE = /apps\/admin|\.\.\/admin\/|admin\/ui/;
 const PROSE_REFERENCE =
   /(?:\.\.\/)+(?:docs?|DESIGN|PRODUCT|CONTEXT|AGENTS)\b|["'`/]docs?\/|\.md["'`]/;
 const MIN_SCREEN_IMPORTS = 1000;
+const MIN_IMPORTS_BY_SCREEN = {
+  acceptance: 77,
+  attention: 62,
+  "closed-store": 85,
+  customers: 88,
+  dashboard: 190,
+  expenses: 82,
+  help: 7,
+  home: 177,
+  inventory: 97,
+  legal: 23,
+  products: 140,
+  sale: 101,
+  "sale-detail": 81,
+  "sale-history": 86,
+  settings: 144,
+  "sign-in": 25,
+  "ui-gallery": 128,
+};
 const MIN_SPEC_APP_IMPORTS = 50;
 const MIN_APP_SOURCES_SCANNED = 350;
 const CONFIGS = [
@@ -485,12 +504,20 @@ describe("guarda do mapa de cobertura", () => {
         }
       }
     }
-    for (const [screen, imported] of Object.entries(importedByScreen)) {
-      expect(
-        imported,
-        `${screen}: a varredura não achou arquivo nenhum importado pelo ponto de entrada da tela (a regex IMPORT perdeu o formato?)`
-      ).toBeGreaterThanOrEqual(1);
-    }
+    expect(
+      Object.keys(MIN_IMPORTS_BY_SCREEN).sort(),
+      "MIN_IMPORTS_BY_SCREEN tem de listar exatamente as telas de SCREEN_ENTRY_POINTS: tela nova entra com o piso dela (cerca de 70% do que a varredura acha hoje)"
+    ).toEqual(Object.keys(SCREEN_ENTRY_POINTS).sort());
+    const belowFloor = Object.entries(MIN_IMPORTS_BY_SCREEN)
+      .filter(([screen, floor]) => importedByScreen[screen] < floor)
+      .map(
+        ([screen, floor]) =>
+          `${screen}: ${importedByScreen[screen]} arquivos importados, piso ${floor}`
+      );
+    expect(
+      belowFloor,
+      "a varredura achou menos arquivos importados pelo ponto de entrada da tela do que o piso dela: ou a regex IMPORT perdeu um formato de import, ou a tela encolheu de verdade (então baixe o piso dela em MIN_IMPORTS_BY_SCREEN)"
+    ).toEqual([]);
     expect(
       Object.values(importedByScreen).reduce((sum, n) => sum + n, 0),
       "arquivos de código importados pelas telas e conferidos (soma por tela, com repetidos entre telas): abaixo do piso, a varredura de imports deixou de ler o código"
