@@ -308,7 +308,10 @@ function splitSale(parts: readonly unknown[]): OutboxCommand {
   };
   return {
     ...sale(),
-    payload: { ...single, payments: parts } as OutboxCommand["payload"],
+    payload: {
+      ...single,
+      payments: parts,
+    } as unknown as OutboxCommand["payload"],
     rejection: {
       at: "2026-11-02T11:00:00.000Z",
       code: "payment_profile_changed",

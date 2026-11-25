@@ -432,6 +432,47 @@ async function findSale(
 }
 
 /**
+ * The profile a refusal of a sale paid in parts is about, when the device can tell without the part: the sync keeps
+ * only the code, so it is known only when every part with a profile uses the same one. With two different profiles,
+ * or none, it is null and nothing is guessed: the way out is to redo the sale, which reprices every part with the
+ * current profiles.
+ */
+export function refusedProfileOfParts(
+  payments: readonly { paymentProfile: { id: string } | null }[]
+): string | null {
+  const ids = new Set(
+    payments.flatMap((part) =>
+      part.paymentProfile ? [part.paymentProfile.id] : []
+    )
+  );
+  return ids.size === 1 ? ([...ids][0] ?? null) : null;
+}
+
+/**
+ * The sale without the profile that was refused: a single payment loses the sale-level one; a sale in parts keeps its
+ * parts and their order, and only the parts priced with the refused profile lose it, so their fees and term become
+ * unknown (never zero) and the other part keeps its own.
+ */
+function withoutRefusedProfile<P extends OfflineSalePayload>(payload: P): P {
+  if (payload.payments === undefined) {
+    const { paymentProfile: _profile, ...rest } = payload;
+    return rest as P;
+  }
+  const refused = refusedProfileOfParts(payload.payments);
+  if (refused === null) {
+    throw new Error("split_sale_profile_unknown");
+  }
+  return {
+    ...payload,
+    payments: payload.payments.map((part) =>
+      part.paymentProfile?.id === refused
+        ? { ...part, paymentProfile: null }
+        : part
+    ),
+  };
+}
+
+/**
  * Sends the same sale again as a NEW command, after what made the server refuse
  * it was fixed (the missing stock was received, the product restored). The old
  * command is gone only once the new one is queued, so a crash in between leaves
@@ -447,7 +488,8 @@ export async function resubmitRejectedSale(
     newCommandId?: () => string;
     /**
      * Send it again without its payment profile (taxes and term unknown), the way
-     * out of a profile that changed or went away. Only for those refusals.
+     * out of a profile that changed or went away. Only for those refusals; a sale
+     * in parts loses only the refused profile (`refusedProfileOfParts`).
      */
     withoutProfile?: boolean;
   }
@@ -464,14 +506,7 @@ export async function resubmitRejectedSale(
     if (!PROFILE_REFUSALS.has(sale.rejection?.code ?? "")) {
       throw new Error("sale_not_profile_refused");
     }
-    // Which part loses its profile is not decided for a split sale: the sync
-    // keeps only the code, not the part, so it is refused rather than guessed.
-    if (sale.payload.payments !== undefined) {
-      throw new Error("split_sale_profile_refusal");
-    }
-    const { paymentProfile: _profile, ...rest } =
-      sale.payload as OfflineSalePayload;
-    payload = rest as typeof sale.payload;
+    payload = withoutRefusedProfile(sale.payload);
   }
   const next = await outbox.enqueue({
     baseVersion: null,

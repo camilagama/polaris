@@ -15,7 +15,7 @@ import { updateOfflineCustomer } from "./customer-update";
 import { MemoryOutboxStorage } from "./outbox/memory-storage";
 import { Outbox } from "./outbox/outbox";
 import { createOfflineProduct } from "./product-create";
-import { createOfflineSale } from "./sale-confirm";
+import { createOfflineSale, resubmitRejectedSale } from "./sale-confirm";
 import { countStockOffline, receiveStockOffline } from "./stock-commands";
 import { FakeWriter } from "./test-support";
 
@@ -578,4 +578,130 @@ describe("a sale refused for its payment profile", () => {
       expect(after.commands[0]?.payload).not.toHaveProperty("paymentProfile");
     }
   );
+});
+
+describe("a sale paid in parts refused for the profile of a part", () => {
+  const card = { expectedVersion: 2, id: uuid(801) };
+  const pix = { expectedVersion: 5, id: uuid(802) };
+
+  async function splitSale(
+    first: { expectedVersion: number; id: string } | null,
+    second: { expectedVersion: number; id: string } | null,
+    code = "payment_profile_changed"
+  ) {
+    const context = await setup();
+    const { command } = await createOfflineSale({
+      deviceId,
+      lease: context.lease,
+      lines: [{ quantity: 2, variantId }],
+      newCommandId: context.id,
+      now: () => now,
+      organizationId,
+      outbox: context.outbox,
+      payments: [
+        { amount: "5.00", method: "pix", paymentProfile: first },
+        {
+          amount: "15.00",
+          installmentPlan: "merchant",
+          installments: 2,
+          method: "credit_card",
+          paymentProfile: second,
+        },
+      ],
+      reader: context.writer,
+    });
+    await context.refuse(command.commandId, code);
+    return { ...context, command };
+  }
+
+  it("with the profile only on part 2, offers redo, resubmit without it and discard, and names the part", async () => {
+    const { outbox } = await splitSale(null, card);
+    const item = await itemOf(outbox);
+    expect(item.actions).toEqual([
+      "redo_sale",
+      "resubmit_without_profile",
+      "discard",
+    ]);
+    expect(item.detail).toContain("O perfil de pagamento da parte 2");
+    expect(item.detail).toContain("a venda inteira foi recusada");
+    expect(item.detail).toContain("Refazer esta venda");
+  });
+
+  it("resubmitting without the profile keeps the parts and their order and takes it only from the part that had it", async () => {
+    const { command, lease, outbox } = await splitSale(null, card);
+    await resubmitAttentionItem(await itemOf(outbox), { lease, outbox });
+    const [next] = (await outbox.snapshot()).commands;
+    expect(next?.commandId).not.toBe(command.commandId);
+    expect(next?.status).toBe("pending");
+    const sent = next?.payload as {
+      payments: { amount: string; method: string; paymentProfile: unknown }[];
+    };
+    expect(next?.payload).not.toHaveProperty("payment");
+    expect(next?.payload).not.toHaveProperty("paymentProfile");
+    expect(
+      sent.payments.map(({ amount, method, paymentProfile }) => ({
+        amount,
+        method,
+        paymentProfile,
+      }))
+    ).toEqual([
+      { amount: "5.00", method: "pix", paymentProfile: null },
+      { amount: "15.00", method: "credit_card", paymentProfile: null },
+    ]);
+  });
+
+  it("with the same profile on both parts, takes it from both and says so", async () => {
+    const { lease, outbox } = await splitSale(card, card);
+    const item = await itemOf(outbox);
+    expect(item.detail).toContain("das duas partes");
+    await resubmitAttentionItem(item, { lease, outbox });
+    const sent = (await outbox.snapshot()).commands[0]?.payload as {
+      payments: { paymentProfile: unknown }[];
+    };
+    expect(sent.payments.map((part) => part.paymentProfile)).toEqual([
+      null,
+      null,
+    ]);
+  });
+
+  it("with two different profiles, does not guess the part: only redo and discard, and the resubmit is refused with the sale kept", async () => {
+    const { command, lease, outbox } = await splitSale(pix, card);
+    const item = await itemOf(outbox);
+    expect(item.actions).toEqual(["redo_sale", "discard"]);
+    expect(item.detail).toContain("de uma das partes");
+    expect(item.detail).not.toContain("Reenviar sem perfil");
+    await expect(
+      resubmitRejectedSale(outbox, {
+        commandId: command.commandId,
+        lease,
+        withoutProfile: true,
+      })
+    ).rejects.toThrow("split_sale_profile_unknown");
+    const [kept] = (await outbox.snapshot()).commands;
+    expect(kept?.commandId).toBe(command.commandId);
+    expect(kept?.payload).toEqual(command.payload);
+  });
+
+  it("an archived profile reads as archived, with the same ways out", async () => {
+    const { outbox } = await splitSale(
+      null,
+      card,
+      "payment_profile_unavailable"
+    );
+    const item = await itemOf(outbox);
+    expect(item.cause).toBe("profile_unavailable");
+    expect(item.detail).toContain("foi arquivado ou removido");
+    expect(item.actions).toContain("redo_sale");
+  });
+
+  it("once redone, only discard is left", async () => {
+    const { command, outbox } = await splitSale(pix, card);
+    const item = buildAttention(
+      await outbox.snapshot(),
+      new Set([command.commandId])
+    ).items[0];
+    expect(item?.actions).toEqual(["discard"]);
+    expect(item?.redone).toBe(true);
+    expect(item?.detail).toContain("Você já refez esta venda");
+  });
 });

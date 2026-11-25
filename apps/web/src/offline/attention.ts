@@ -8,6 +8,7 @@ import type { Outbox, OutboxSnapshot } from "./outbox/outbox";
 import { discardPendingProduct } from "./product-create";
 import {
   discardPendingSale,
+  refusedProfileOfParts,
   refusedSaleFacts,
   resubmitRejectedSale,
 } from "./sale-confirm";
@@ -131,6 +132,42 @@ function field(command: OutboxCommand, name: string): unknown {
     : undefined;
 }
 
+/**
+ * A sale paid in parts, as the device keeps it: the ordinals (1, 2) of the parts priced with the profile a refusal is
+ * about, when the device can tell (`refusedProfileOfParts`), or null when it cannot. Null for a sale of one payment.
+ */
+interface SplitSaleFacts {
+  refusedParts: number[] | null;
+}
+
+function splitSaleFacts(command: OutboxCommand): SplitSaleFacts | null {
+  const payments = field(command, "payments");
+  if (!Array.isArray(payments)) {
+    return null;
+  }
+  const parts = payments.map((part) => {
+    const profile = (part as { paymentProfile?: unknown } | null)
+      ?.paymentProfile;
+    return {
+      paymentProfile:
+        typeof profile === "object" &&
+        profile !== null &&
+        typeof (profile as { id?: unknown }).id === "string"
+          ? { id: (profile as { id: string }).id }
+          : null,
+    };
+  });
+  const refused = refusedProfileOfParts(parts);
+  return {
+    refusedParts:
+      refused === null
+        ? null
+        : parts.flatMap((part, index) =>
+            part.paymentProfile?.id === refused ? [index + 1] : []
+          ),
+  };
+}
+
 const STOCK_LABELS: Readonly<Record<string, string>> = {
   "stock.count": "Contagem de estoque",
   "stock.receive": "Entrada de estoque",
@@ -183,15 +220,50 @@ const REDONE_DETAIL =
 
 const PLAN_DETAIL_WITHOUT_SUBSCRIPTION = `O plano desta loja não permite mais este registro; nada foi perdido. Regularize o plano com o suporte (${SUPPORT_EMAIL}) e toque em Tentar novamente.`;
 
+function partsText(parts: readonly number[]): string {
+  return parts.length === 1 ? `da parte ${parts[0]}` : "das duas partes";
+}
+
+/**
+ * A sale paid in parts refused for a profile: the whole sale was refused. Redo brings both parts back to Vender with
+ * the current profiles; sending it again without the profile exists only when the device knows which parts it is.
+ */
+function splitProfileDetail(
+  cause: "profile_changed" | "profile_unavailable",
+  split: SplitSaleFacts
+): string {
+  const what =
+    cause === "profile_changed"
+      ? "mudou (taxas ou prazo) depois que este aparelho o viu"
+      : "foi arquivado ou removido";
+  const redo =
+    "Toque em Refazer esta venda: as duas partes voltam a Vender com os perfis atuais, para você revisar a prévia de cada uma, e depois de confirmar a nova você descarta esta.";
+  if (split.refusedParts === null) {
+    return `O perfil de pagamento de uma das partes desta venda ${what}, e a venda inteira foi recusada. ${redo}`;
+  }
+  const parts = partsText(split.refusedParts);
+  return `O perfil de pagamento ${parts} desta venda ${what}, e a venda inteira foi recusada. ${redo} Ou toque em Reenviar sem perfil de pagamento: as taxas e o prazo ${parts} ficam desconhecidos, e a outra parte não muda.`;
+}
+
 function detailOf(
   cause: AttentionCause,
   kind: AttentionItem["kind"],
   code: string,
-  options: { redone: boolean; subscriptionAvailable: boolean }
+  options: {
+    redone: boolean;
+    split: SplitSaleFacts | null;
+    subscriptionAvailable: boolean;
+  }
 ): string {
-  const { redone, subscriptionAvailable } = options;
-  if (redone && kind === "sale" && code === REVOKED_CODE) {
+  const { redone, split, subscriptionAvailable } = options;
+  if (redone && kind === "sale" && (code === REVOKED_CODE || split !== null)) {
     return REDONE_DETAIL;
+  }
+  if (
+    split !== null &&
+    (cause === "profile_changed" || cause === "profile_unavailable")
+  ) {
+    return splitProfileDetail(cause, split);
   }
   switch (cause) {
     case "insufficient_stock":
@@ -240,7 +312,12 @@ function detailOf(
 function actionsFor(
   cause: AttentionCause,
   kind: AttentionItem["kind"],
-  options: { code: string; redone: boolean; subscriptionAvailable: boolean }
+  options: {
+    code: string;
+    redone: boolean;
+    split: SplitSaleFacts | null;
+    subscriptionAvailable: boolean;
+  }
 ): AttentionAction[] {
   if (cause === "entitlement_changed") {
     // the refusal is not stored: once the plan allows it, the same command goes through; without the Assinatura tab
@@ -265,7 +342,15 @@ function actionsFor(
     kind === "sale" &&
     (cause === "profile_changed" || cause === "profile_unavailable")
   ) {
-    return ["resubmit_without_profile", "discard"];
+    if (options.split === null) {
+      return ["resubmit_without_profile", "discard"];
+    }
+    if (options.redone) {
+      return ["discard"];
+    }
+    return options.split.refusedParts === null
+      ? ["redo_sale", "discard"]
+      : ["redo_sale", "resubmit_without_profile", "discard"];
   }
   return kind === "sale" && RESUBMITTABLE.has(cause)
     ? ["resubmit", "discard"]
@@ -297,11 +382,13 @@ export function buildAttention(
     const code = command.rejection?.code ?? "rejected";
     const cause = causeOf(code);
     const isRedone = kind === "sale" && redone.has(command.commandId);
+    const split = kind === "sale" ? splitSaleFacts(command) : null;
     return [
       {
         actions: actionsFor(cause, kind, {
           code,
           redone: isRedone,
+          split,
           subscriptionAvailable,
         }),
         blocksQueue: snapshot.blockedBy?.commandId === command.commandId,
@@ -310,6 +397,7 @@ export function buildAttention(
         commandId: command.commandId,
         detail: detailOf(cause, kind, code, {
           redone: isRedone,
+          split,
           subscriptionAvailable,
         }),
         kind,
