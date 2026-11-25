@@ -7,7 +7,7 @@ import {
   useEffect,
   useRef,
 } from "react";
-import { Card } from "@/ui/card";
+import { Block } from "@/ui/block";
 import {
   isMarkedEntry,
   pushAddress,
@@ -20,8 +20,8 @@ import {
   listedTabs,
   namesTab,
   requestedTab,
-  SETTINGS_TITLE,
   type ScreenTab,
+  SETTINGS_TITLE,
 } from "../app-shell/navigation-model";
 import { ScreenTabs, type TabPanel } from "../app-shell/screen-tabs";
 import type { TitleBack } from "../app-shell/screen-title";
@@ -193,15 +193,18 @@ function SettingsMenu({
   }, [focus]);
   return (
     <div ref={root}>
-      <Card className="gap-0 py-0">
-        <ul aria-label={SETTINGS_TITLE} className="divide-y divide-border">
+      <Block className="gap-0 py-0" variant="plain">
+        <ul
+          aria-label={SETTINGS_TITLE}
+          className="-mx-(--card-spacing) divide-y divide-border"
+        >
           {tabs.map((tab) => (
             <li key={tab.value}>
               <SettingsRow focus={focus} tab={tab} />
             </li>
           ))}
         </ul>
-      </Card>
+      </Block>
     </div>
   );
 }

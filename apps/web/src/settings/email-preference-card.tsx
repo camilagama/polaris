@@ -5,8 +5,8 @@ import {
   useRef,
   useState,
 } from "react";
+import { Block, BlockHeader, BlockPanel } from "@/ui/block";
 import { Button } from "@/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/ui/card";
 import { FieldError } from "@/ui/field";
 import { Label } from "@/ui/label";
 import { Separator } from "@/ui/separator";
@@ -198,13 +198,9 @@ export function EmailPreferenceCard({
   );
 
   return (
-    <Card aria-labelledby={TITLE_ID} role="region">
-      <CardHeader>
-        <CardTitle aria-level={3} id={TITLE_ID} role="heading">
-          E-mails que você recebe
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="grid gap-4">
+    <Block aria-labelledby={TITLE_ID}>
+      <BlockHeader id={TITLE_ID} level={3} title="E-mails que você recebe" />
+      <BlockPanel>
         <div className="grid gap-1">
           <p className="font-medium">{NOTICES_LABEL}</p>
           <p className="text-muted-foreground">{NOTICES_HELP}</p>
@@ -252,7 +248,7 @@ export function EmailPreferenceCard({
             Enviados até agora: {preference.sent} de 3.
           </p>
         ) : null}
-        <div className="empty:-mt-4" role="status">
+        <div className="empty:-mt-(--card-spacing)" role="status">
           {outcome === "saved" ? (
             <p className="text-muted-foreground">{SAVED_TEXT}</p>
           ) : null}
@@ -260,7 +256,7 @@ export function EmailPreferenceCard({
         {outcome === "failed" ? (
           <FieldError>{SAVE_FAILED_TEXT}</FieldError>
         ) : null}
-      </CardContent>
-    </Card>
+      </BlockPanel>
+    </Block>
   );
 }

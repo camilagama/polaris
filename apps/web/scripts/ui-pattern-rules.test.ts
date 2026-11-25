@@ -306,7 +306,6 @@ export const DEBT: Readonly<Record<Rule, readonly string[]>> = {
     // app-shell
     "src/app-shell/state-panel.tsx",
     // catalog
-    "src/catalog/public-catalog-panels.tsx",
     // customers
     // data-export
     // expenses
@@ -324,11 +323,7 @@ export const DEBT: Readonly<Record<Rule, readonly string[]>> = {
     "src/offline/runtime/device-item.tsx",
     "src/offline/runtime/devices-page.tsx",
     // organization
-    "src/organization/close-store-section.tsx",
-    "src/organization/closed-queue-section.tsx",
-    "src/organization/closed-store-page.tsx",
     // payment-profiles
-    "src/payment-profiles/payment-profile-list.tsx",
     // sales
     "src/sales/sale-id-missing.tsx",
     "src/sales/sale-item-editor.tsx",
@@ -336,8 +331,6 @@ export const DEBT: Readonly<Record<Rule, readonly string[]>> = {
     "src/sales/sale-payment-section.tsx",
     "src/sales/sale-summary-panel.tsx",
     // settings
-    "src/settings/email-preference-card.tsx",
-    "src/settings/settings-screen.tsx",
     // sign-in
     "src/sign-in/change-password-page.tsx",
     "src/sign-in/entry-ui.tsx",
@@ -366,7 +359,6 @@ export const DEBT: Readonly<Record<Rule, readonly string[]>> = {
     "src/offline/runtime/logout-control.tsx",
     "src/offline/runtime/sync-status.tsx",
     // payment-profiles
-    "src/payment-profiles/payment-profile-list.tsx",
     // sales
     "src/sales/sale-payment-section.tsx",
     "src/sales/sale-summary-panel.tsx",
@@ -374,7 +366,6 @@ export const DEBT: Readonly<Record<Rule, readonly string[]>> = {
   ],
   R4: [
     // catalog
-    "src/catalog/public-catalog-page.tsx",
     "src/catalog/screen-parts.tsx",
     // customers
     // expenses
@@ -382,7 +373,6 @@ export const DEBT: Readonly<Record<Rule, readonly string[]>> = {
     // offline
     "src/offline/runtime/device-item.tsx",
     // payment-profiles
-    "src/payment-profiles/payment-profile-list.tsx",
     // sales
   ],
 };
@@ -762,13 +752,11 @@ describe("R4: as peças soltas da lista só vivem em ui/ (controles)", () => {
     ]);
   });
 
-  it("os arquivos da dívida de R4 são os de hoje: as 5 telas que ainda importam e o screen-parts que reexporta", () => {
+  it("os arquivos da dívida de R4 são os de hoje: as 2 telas que ainda importam e o screen-parts que reexporta", () => {
     expect(DEBT.R4).toEqual([
-      "src/catalog/public-catalog-page.tsx",
       "src/catalog/screen-parts.tsx",
       "src/expenses/expense-list.tsx",
       "src/offline/runtime/device-item.tsx",
-      "src/payment-profiles/payment-profile-list.tsx",
     ]);
   });
 });

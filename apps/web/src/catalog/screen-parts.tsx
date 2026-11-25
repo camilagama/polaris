@@ -4,7 +4,6 @@ import { focusLater } from "../lib/focus";
 import { LIST_PAGE_SIZE, type ListPage, listPage } from "./list-page-model";
 
 // biome-ignore lint/performance/noBarrelFile: the screens still import the list parts from this path; each folder moves to the `ListBlock` and drops its import
-export { ListNotice } from "@/ui/list-notice";
 export { ListTotalFooter } from "@/ui/list-total-footer";
 export { RowTile } from "@/ui/row-tile";
 
