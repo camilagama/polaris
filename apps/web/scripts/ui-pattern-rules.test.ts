@@ -460,9 +460,14 @@ describe("o padrão visual das telas (R1 a R3)", () => {
     }
   });
 
-  it("as listas e tabelas principais ficam na dívida: elas saem só quando a tela vai para o Block", () => {
-    for (const file of ["src/customers/customer-list.tsx"]) {
-      expect([...DEBT.R2, ...DEBT.R3], file).toContain(file);
+  it("as listas principais de Clientes e Despesas, já no Block, não voltam para a dívida", () => {
+    const owed = Object.values(DEBT).flat();
+    for (const file of [
+      "src/customers/customer-list.tsx",
+      "src/expenses/expense-list.tsx",
+    ]) {
+      expect(existsSync(join(web, file)), file).toBe(true);
+      expect(owed, file).not.toContain(file);
     }
   });
 });
