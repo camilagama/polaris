@@ -16,6 +16,7 @@ const noop = () => undefined;
 
 const TAB_TAG = /<button[^>]*role="tab"[^>]*>/g;
 const SCROLL_BOX = /overflow-x-auto[^>]*>\s*<div[^>]*role="tablist"/;
+const TAB_LIST_TAG = /<div[^>]*role="tablist"[^>]*>/;
 const TAB_LIST =
   /<div[^>]*role="tablist"[^>]*aria-label="Estado das categorias"/;
 
@@ -89,5 +90,23 @@ describe("SegmentedFilter", () => {
     );
     expect(compact).toContain("text-xs");
     expect(draw("active")).not.toContain("text-xs");
+  });
+
+  it("gives the strip of a shared line its breathing room, 2 px on a phone and 3 px from 640 px, and no other strip", () => {
+    const compact = renderToStaticMarkup(
+      <SegmentedFilter
+        compact
+        label="Situação"
+        onSelect={noop}
+        options={OPTIONS}
+        value="active"
+      />
+    );
+    const list = compact.match(TAB_LIST_TAG)?.[0] ?? "";
+    expect(list).toContain("p-0.5");
+    expect(list).toContain("sm:p-0.75");
+    const plain = draw("active").match(TAB_LIST_TAG)?.[0] ?? "";
+    expect(plain).not.toContain("p-0.5");
+    expect(plain).not.toContain("sm:p-0.75");
   });
 });
