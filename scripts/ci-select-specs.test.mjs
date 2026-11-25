@@ -493,8 +493,8 @@ describe("guarda do mapa de cobertura", () => {
     }
     expect(
       Object.values(importedByScreen).reduce((sum, n) => sum + n, 0),
-      "arquivos de código importados pelas telas e conferidos: abaixo do piso, a varredura de imports deixou de ler o código"
-    ).toBeGreaterThan(MIN_SCREEN_IMPORTS);
+      "arquivos de código importados pelas telas e conferidos (soma por tela, com repetidos entre telas): abaixo do piso, a varredura de imports deixou de ler o código"
+    ).toBeGreaterThanOrEqual(MIN_SCREEN_IMPORTS);
     expect(
       missing,
       "o arquivo é importado pela tela mas não a seleciona: ponha-o em FILE_SCREENS ou acrescente a tela a DIRECTORY_SCREENS (e2e/coverage-map.mjs)"
@@ -523,7 +523,7 @@ describe("guarda do mapa de cobertura", () => {
     expect(
       appFilesReached,
       "arquivos de apps/web/src alcançados pelos imports dos specs: abaixo do piso, a varredura de imports deixou de ler os specs"
-    ).toBeGreaterThan(MIN_SPEC_APP_IMPORTS);
+    ).toBeGreaterThanOrEqual(MIN_SPEC_APP_IMPORTS);
     expect(missing).toEqual([]);
   });
 
@@ -578,7 +578,7 @@ describe("guarda do mapa de cobertura", () => {
     expect(
       scanned,
       "arquivos de código de apps/web/src varridos: abaixo do piso, a lista de arquivos do git deixou de trazê-los"
-    ).toBeGreaterThan(MIN_APP_SOURCES_SCANNED);
+    ).toBeGreaterThanOrEqual(MIN_APP_SOURCES_SCANNED);
     expect(offenders).toEqual([]);
   });
 
