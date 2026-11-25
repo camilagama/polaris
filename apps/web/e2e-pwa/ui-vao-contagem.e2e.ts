@@ -5,8 +5,8 @@ import { productStates } from "./ui-product-states";
 import { stockStates } from "./ui-stock-states";
 
 /**
- * The gap between the list and what sits above its frame is 16 px at 360 px. On Produtos the count is in the header
- * of the frame, so the 16 px is between the line of controls (the filter of the state) and the frame. On Estoque the
+ * The gap between the list and what sits above its frame is 16 px at 360 px (and, on Produtos, at 1280 px too). On
+ * Produtos the count is in the header of the frame, so the 16 px is between the line of controls (the filter of the state) and the frame. On Estoque the
  * count is in the title of the frame too, so the 16 px is between the controls (search and filters) and the frame;
  * the notice of the open panel lives inside the panel, so nothing sits between them, and the gap does not change with
  * the "Precisa de ação" strip above. Clientes counts in the title of its `ListBlock`, with no line of its own.
@@ -52,6 +52,26 @@ async function gapBelowControls(page: Page) {
   const frame = await page.locator("[data-list-block]").boundingBox();
   return controls && frame
     ? { gap: frame.y - (controls.y + controls.height) }
+    : null;
+}
+
+/** The line of controls of Produtos at the desktop width: the search on the left, the filter of the state on the right. */
+async function controlsAbove(page: Page) {
+  const [search, filter, frame] = await Promise.all([
+    page.getByRole("searchbox", { name: "Buscar produto" }).boundingBox(),
+    page.getByRole("tablist", { name: "Estado dos produtos" }).boundingBox(),
+    page.locator("[data-list-block]").boundingBox(),
+  ]);
+  return search && filter && frame
+    ? {
+        filterLeft: filter.x,
+        filterRight: filter.x + filter.width,
+        frameRight: frame.x + frame.width,
+        gap:
+          frame.y -
+          Math.max(search.y + search.height, filter.y + filter.height),
+        searchRight: search.x + search.width,
+      }
     : null;
 }
 
@@ -115,5 +135,22 @@ test.describe("o vão entre a contagem e a lista a 360 px", () => {
     ).toHaveAccessibleDescription(OPEN_REASON);
     const open = await gapBelowControls(page);
     expect(open?.gap).toBeCloseTo(GAP, 0);
+  });
+});
+
+test.describe("o vão entre os controles e a lista a 1280 px", () => {
+  test.use({ viewport: { height: 800, width: 1280 } });
+
+  test("Produtos: busca à esquerda, filtro à direita e 16 px até a moldura", async ({
+    page,
+  }) => {
+    await productStates.list(page);
+    const controls = await controlsAbove(page);
+    expect(controls).not.toBeNull();
+    expect(controls?.searchRight ?? Number.POSITIVE_INFINITY).toBeLessThan(
+      controls?.filterLeft ?? 0
+    );
+    expect(controls?.filterRight).toBeCloseTo(controls?.frameRight ?? 0, 0);
+    expect(controls?.gap).toBeCloseTo(GAP, 0);
   });
 });
