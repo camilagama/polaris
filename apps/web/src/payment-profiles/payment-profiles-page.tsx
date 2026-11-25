@@ -240,7 +240,7 @@ export function PaymentProfilesPage() {
   const newButtonRef = useRef<HTMLButtonElement>(null);
   // where the focus goes back to when the form closes without a message to read: what opened it
   const originRef = useRef<() => HTMLElement | null>(() => null);
-  // the list stays on screen while it is read again after a save; "Carregando perfis…" is for the first read
+  // the list stays on screen while it is read again after a save; the first read shows the skeleton, with "Carregando…" only for the screen reader
   const readOnce = useRef<boolean>(false);
   const [listRead, setListRead] = useState(false);
   const profilesRequest = useRef(0);
