@@ -557,6 +557,18 @@ describe("a sale paid in parts, made offline", () => {
     ]);
   });
 
+  it("lists the methods of the parts in order for the panels, and none for a sale of one payment", async () => {
+    const { outbox, sell } = await setup();
+    await sell([{ quantity: 1, variantId: shirt }]);
+    await sell([{ quantity: 2, variantId: shirt }], {
+      payment: undefined,
+      payments: parts,
+    });
+    expect(
+      (await pendingSales(outbox)).map((sale) => sale.partMethods)
+    ).toEqual([null, ["pix", "debit_card"]]);
+  });
+
   it("refuses both forms of payment, neither, or a sale-level profile next to parts, and queues nothing", async () => {
     const { outbox, sell } = await setup();
     const lines = [{ quantity: 2, variantId: shirt }];

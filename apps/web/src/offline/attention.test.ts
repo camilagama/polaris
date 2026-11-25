@@ -705,3 +705,33 @@ describe("a sale paid in parts refused for the profile of a part", () => {
     expect(item?.detail).toContain("Você já refez esta venda");
   });
 });
+
+describe("the title of a refused sale paid in parts", () => {
+  it("names the parts between the value and the moment; a sale of one payment keeps its title", async () => {
+    const context = await setup();
+    const single = await context.sale();
+    const { command } = await createOfflineSale({
+      deviceId,
+      lease: context.lease,
+      lines: [{ quantity: 2, variantId }],
+      newCommandId: context.id,
+      now: () => now,
+      organizationId,
+      outbox: context.outbox,
+      payments: [
+        { amount: "5.00", method: "pix", paymentProfile: null },
+        { amount: "15.00", method: "debit_card", paymentProfile: null },
+      ],
+      reader: context.writer,
+    });
+    await context.refuse(single.commandId, "insufficient_stock");
+    await context.refuse(command.commandId, "insufficient_stock");
+    const titles = buildAttention(await context.outbox.snapshot()).items.map(
+      (item) => item.title
+    );
+    expect(titles[0]).toMatch(SALE_TITLE);
+    expect(titles[1]).toBe(
+      `Venda de R$ 20,00 · Pix + Débito · ${formatShortInstant(now.toISOString())}`
+    );
+  });
+});

@@ -314,6 +314,8 @@ export interface PendingSale {
   /** Lines of the sale. */
   lineCount: number;
   occurredAt: string;
+  /** The method of each part of a sale paid in parts, in order; null for a sale paid in one go. */
+  partMethods?: string[] | null;
   state: Exclude<OfflineSaleState, "confirmed">;
   /** What the customer owes, as the server computes it from the same lines and adjustments; null if it cannot be computed. */
   totalDue: string | null;
@@ -327,6 +329,21 @@ function isSalePayload(value: unknown): value is OfflineSalePayload {
   }
   const row = value as Record<string, unknown>;
   return Array.isArray(row.items) && typeof row.occurredAt === "string";
+}
+
+/** The methods of the parts, in order, when the sale the device kept is paid in parts; null otherwise. */
+export function partMethodsOf(payload: unknown): string[] | null {
+  const payments =
+    typeof payload === "object" && payload !== null
+      ? (payload as { payments?: unknown }).payments
+      : undefined;
+  if (!Array.isArray(payments) || payments.length < 2) {
+    return null;
+  }
+  return payments.map((part) => {
+    const method = (part as { method?: unknown } | null)?.method;
+    return typeof method === "string" ? method : "";
+  });
 }
 
 /** The units of a payload the device kept: a line whose quantity is not a whole number counts as zero, never as NaN. */
@@ -391,6 +408,7 @@ export async function pendingSales(outbox: Outbox): Promise<PendingSale[]> {
             commandId: command.commandId,
             lineCount: command.payload.items.length,
             occurredAt: command.payload.occurredAt,
+            partMethods: partMethodsOf(command.payload),
             state: stateOf(command),
             totalDue: totalDueOf(command.payload),
             unitCount: unitCountOf(command.payload.items),

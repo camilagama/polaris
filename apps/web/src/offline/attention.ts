@@ -1,5 +1,6 @@
 import { formatBrlAmount, formatShortInstant } from "../lib/format";
 import { SUPPORT_EMAIL } from "../lib/support-contact";
+import { SALE_METHOD_CARDS } from "../sales/sale-form-model";
 import type { LocalWriter } from "./bootstrap";
 import { discardPendingCustomer } from "./customer-create";
 import { discardPendingCustomerUpdate } from "./customer-update";
@@ -8,6 +9,7 @@ import type { Outbox, OutboxSnapshot } from "./outbox/outbox";
 import { discardPendingProduct } from "./product-create";
 import {
   discardPendingSale,
+  partMethodsOf,
   refusedProfileOfParts,
   refusedSaleFacts,
   resubmitRejectedSale,
@@ -174,7 +176,12 @@ const STOCK_LABELS: Readonly<Record<string, string>> = {
   "stock.write_off": "Baixa de estoque",
 };
 
-/** "Venda de R$ 89,90 · 01/11 14:20": the value and the moment tell two refused sales apart; the count of items when the payload has no total. */
+const METHOD_LABELS = new Map<string, string>(SALE_METHOD_CARDS);
+
+/**
+ * "Venda de R$ 89,90 · 01/11 14:20": the value and the moment tell two refused sales apart; the count of items when the
+ * payload has no total. A sale paid in parts names its parts ("Venda de R$ 300,00 · Pix + Crédito · 01/11 14:20").
+ */
 function saleTitle(command: OutboxCommand): string {
   const sale = refusedSaleFacts(command);
   const items = field(command, "items");
@@ -182,9 +189,16 @@ function saleTitle(command: OutboxCommand): string {
   const what = sale?.totalDue
     ? formatBrlAmount(sale.totalDue)
     : `${count} ${count === 1 ? "item" : "itens"}`;
-  return sale
-    ? `Venda de ${what} · ${formatShortInstant(sale.occurredAt)}`
-    : `Venda de ${what}`;
+  const parts = partMethodsOf(command.payload)
+    ?.map((method) => METHOD_LABELS.get(method) ?? "Outro")
+    .join(" + ");
+  return [
+    `Venda de ${what}`,
+    parts,
+    sale ? formatShortInstant(sale.occurredAt) : undefined,
+  ]
+    .filter(Boolean)
+    .join(" · ");
 }
 
 function titleOf(command: OutboxCommand, kind: AttentionItem["kind"]): string {
