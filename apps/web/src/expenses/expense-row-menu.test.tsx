@@ -107,7 +107,12 @@ describe("o menu … da linha de uma despesa", () => {
     const onVoid = vi.fn();
     render(list(null, onVoid));
     await user.tab();
-    expect(document.activeElement?.getAttribute("data-expense-edit")).toBe("");
+    expect(document.activeElement).toBe(
+      screen.getByRole("button", { name: `Editar despesa ${NAME}` })
+    );
+    expect(document.activeElement?.hasAttribute("data-expense-edit")).toBe(
+      true
+    );
     await user.tab();
     const trigger = screen.getByRole("button", {
       name: `Mais ações para ${NAME}`,
