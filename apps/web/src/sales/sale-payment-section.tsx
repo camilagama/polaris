@@ -1130,7 +1130,7 @@ export function PaymentSection({
     [onAnticipationChange]
   );
   return (
-    <Block aria-labelledby="sale-payment-title">
+    <Block aria-labelledby="sale-payment-title" className="gap-4">
       {/* outside the fieldset: a locked sale disables its controls, not the (i) that explains them */}
       <BlockHeader
         help={{

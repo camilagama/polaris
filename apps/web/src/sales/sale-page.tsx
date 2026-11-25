@@ -1156,7 +1156,7 @@ export function SalePage() {
         onSubmit={handleSubmitEvent}
       >
         <div className="grid min-w-0 gap-4">
-          <Block aria-labelledby="sale-items-title">
+          <Block aria-labelledby="sale-items-title" className="gap-4">
             <BlockHeader
               action={
                 <RefreshButton
