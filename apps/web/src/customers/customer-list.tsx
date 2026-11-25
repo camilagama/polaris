@@ -13,6 +13,7 @@ import {
   DropdownMenuTrigger,
 } from "@/ui/dropdown-menu";
 import { EmptyState } from "@/ui/empty-state";
+import { InsetBlock } from "@/ui/inset-block";
 import { ListBlock } from "@/ui/list-block";
 import { Skeleton } from "@/ui/skeleton";
 import { TextLink } from "@/ui/text-link";
@@ -115,10 +116,12 @@ function AnonymizeConfirm({
   onConfirm,
 }: AnonymizeConfirmProps) {
   return (
-    <fieldset className="mb-2.5 grid min-w-0 gap-3 rounded-lg border border-destructive/30 bg-destructive/10 p-3">
-      <legend className="sr-only">
-        Confirmar a anonimização de {customer.name}
-      </legend>
+    <InsetBlock
+      aria-label={`Confirmar a anonimização de ${customer.name}`}
+      className="mb-2.5 grid gap-3 p-3"
+      role="group"
+      tone="destructive"
+    >
       <p className="text-support">
         Anonimizar remove o nome, o telefone, o email e as observações deste
         cliente. <strong>Não dá para desfazer.</strong> As vendas ligadas a ele
@@ -142,7 +145,7 @@ function AnonymizeConfirm({
           Anonimizar definitivamente
         </Button>
       </div>
-    </fieldset>
+    </InsetBlock>
   );
 }
 

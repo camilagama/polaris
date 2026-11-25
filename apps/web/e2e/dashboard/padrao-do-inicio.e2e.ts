@@ -216,6 +216,20 @@ test.describe("Como chegamos: nenhum fio sob o cabeçalho do bloco (AC-4.1)", ()
       await expect(heading).toHaveCount(1);
       await expect(frameHeader).toHaveCSS("border-bottom-width", "0px");
       await expect(heading).toHaveCSS("border-bottom-width", "0px");
+      const panel = chain(page).locator('[data-slot="card-frame-panel"]');
+      const firstRow = chain(page).locator("tbody tr").first();
+      await expect(panel).toHaveCount(1);
+      await expect(panel).toHaveCSS("border-top-width", "0px");
+      await expect(firstRow).toHaveCSS("border-top-width", "0px");
+      const cellTops = await firstRow
+        .locator("th, td")
+        .evaluateAll((cells) =>
+          cells.map((cell) => getComputedStyle(cell).borderTopWidth)
+        );
+      expect(cellTops.length).toBeGreaterThanOrEqual(2);
+      expect(new Set(cellTops), "as células da 1ª linha").toEqual(
+        new Set(["0px"])
+      );
     });
   }
 });
