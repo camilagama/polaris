@@ -46,9 +46,8 @@ const configured = {
   ],
 } as unknown as ProductVariantConfigurationReadModel;
 
-const HAND_DRAWN_BOX = /(^|\s)(border(-[a-z0-9]+)*|rounded(-[a-z0-9]+)*)(\s|$)/;
-const EXTRA_EDGE =
-  /(^|\s)(border(-[a-z0-9]+)*|ring(-[a-z0-9]+)*|shadow(-[a-z0-9]+)*)(\s|$)/;
+const APPEARANCE = /(^|[\s:])(border|rounded|ring|shadow|outline|bg-)\S*/;
+const EXTRA_EDGE = /(^|[\s:])(border|ring|shadow|outline)\S*/;
 
 function renderConfiguredList() {
   getVariants.mockResolvedValue(configured);
@@ -82,10 +81,22 @@ describe("a lista Variantes cadastradas", () => {
     for (const item of items) {
       const block = item.firstElementChild;
       expect(block?.getAttribute("data-slot")).toBe("inset-block");
-      expect(item.className).not.toMatch(HAND_DRAWN_BOX);
+      expect(item.className).not.toMatch(APPEARANCE);
       expect(block?.className ?? "").not.toMatch(EXTRA_EDGE);
     }
-    expect(list.className).not.toMatch(HAND_DRAWN_BOX);
+    expect(list.className).not.toMatch(APPEARANCE);
+  });
+
+  it.each([
+    "rounded-lg bg-muted",
+    "md:rounded-md",
+    "rounded-[8px]",
+    "border-[1px]",
+    "ring",
+    "shadow-sm",
+    "outline",
+  ])("o controle reconhece a caixa à mão em %s", (classes) => {
+    expect(`flex ${classes}`).toMatch(APPEARANCE);
   });
 
   it("diz cada variante pelas opções e o rótulo delas", async () => {

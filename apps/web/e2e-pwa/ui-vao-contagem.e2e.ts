@@ -6,8 +6,9 @@ import { stockStates } from "./ui-stock-states";
 
 /**
  * The gap between the list and what sits above its frame is 16 px at 360 px (and, on Produtos, at 1280 px too). On
- * Produtos the count is in the header of the frame, so the 16 px is between the line of controls (the filter of the state) and the frame. On Estoque the
- * count is in the title of the frame too, so the 16 px is between the controls (search and filters) and the frame;
+ * Produtos the count is in the header of the frame, so the 16 px is between the line of controls (the filter of the
+ * state) and the frame. On Estoque the count is in the title of the frame too, so the 16 px is between the controls
+ * (search and filters) and the frame;
  * the notice of the open panel lives inside the panel, so nothing sits between them, and the gap does not change with
  * the "Precisa de ação" strip above. Clientes counts in the title of its `ListBlock`, with no line of its own.
  */
@@ -22,7 +23,7 @@ test.use({ viewport: { height: 740, width: 360 } });
 test.beforeEach(({ browserName }, testInfo) => {
   test.skip(
     browserName !== "chromium" || testInfo.project.name !== "chromium-desktop",
-    "the gap is a layout measure, taken once at 360 px"
+    "the gap is a layout measure, taken once per width"
   );
 });
 
