@@ -332,6 +332,7 @@ function ItemCard({
             ref={confirmRef}
             role="alertdialog"
             tabIndex={-1}
+            tone="destructive"
           >
             <p>{discardWarning(item)}</p>
             <div className="flex flex-wrap gap-3">

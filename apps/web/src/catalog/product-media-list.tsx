@@ -141,10 +141,11 @@ function ProductMediaItem({
           ) : null}
         </div>
         {confirming ? (
-          <div
+          <InsetBlock
             aria-label={`Confirmar ${confirming === "remove" ? "remoção" : "substituição"} da imagem ${position}`}
-            className="col-span-full grid gap-3 border-destructive/30 border-t pt-3"
+            className="col-span-full grid gap-3 p-3"
             role="alertdialog"
+            tone="destructive"
           >
             <p className="text-support">
               {confirming === "remove"
@@ -170,7 +171,7 @@ function ProductMediaItem({
                 {confirmButtonLabel(confirming, confirmRunning)}
               </Button>
             </div>
-          </div>
+          </InsetBlock>
         ) : (
           <fieldset className="col-span-full flex min-w-0 flex-wrap gap-3">
             <legend className="sr-only">Ações da imagem {position}</legend>

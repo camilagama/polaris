@@ -516,3 +516,34 @@ describe.each([
     }
   );
 });
+
+/**
+ * The ring of `InsetBlock tone="destructive"` (the confirmation of what cannot be undone, in the row itself): the
+ * opacity is read from the component, not copied here, and `destructive` at that opacity over the `--muted` the block
+ * is filled with has to keep the 3:1 of a graphic element (WCAG 1.4.11) in both themes.
+ */
+const insetSource = readFileSync(
+  new URL("../ui/inset-block.tsx", import.meta.url),
+  "utf8"
+);
+const DESTRUCTIVE_RING = /ring-destructive\/(\d+)/g;
+
+describe.each([
+  ["Tema claro", tokens(block(":root"))],
+  [
+    "Tema escuro",
+    new Map([...tokens(block(":root")), ...tokens(block(".dark"))]),
+  ],
+])("contraste do anel da confirmação destrutiva, %s", (_section, palette) => {
+  it("o anel destructive sobre --muted fica em pelo menos 3:1", () => {
+    const rings = [...insetSource.matchAll(DESTRUCTIVE_RING)].map(
+      (match) => match[1] as string
+    );
+    expect(rings).toHaveLength(1);
+    const measured = ratio(
+      color(`\`destructive/${rings[0]} sobre muted\``, palette),
+      color("`muted`", palette)
+    );
+    expect(measured).toBeGreaterThanOrEqual(3);
+  });
+});
