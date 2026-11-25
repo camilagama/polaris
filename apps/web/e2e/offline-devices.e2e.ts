@@ -417,6 +417,45 @@ test("com a senha ligada, 'Segurança' vem depois da lista, com 'Trocar senha' c
   }
 });
 
+test("'Trocar senha' tem a largura do próprio conteúdo a 1280 px e a do painel no celular", async ({
+  page,
+}) => {
+  const state = scenario({ devices: twoDevices() });
+  await page.route("**/api/auth-methods", (route) =>
+    route.fulfill({
+      body: JSON.stringify({
+        emailPassword: true,
+        google: true,
+        turnstileSiteKey: null,
+      }),
+      contentType: "application/json",
+      headers: { ...WORKER_MARK },
+    })
+  );
+  await page.setViewportSize({ height: 800, width: 1280 });
+  await openDevices(page, state);
+
+  const section = page.getByRole("region", { name: "Segurança" });
+  const link = section.getByRole("link", { name: "Trocar senha" });
+  await expect(link).toBeVisible();
+  const panel = link.locator("..");
+  const wide = {
+    button: (await link.boundingBox())?.width ?? 0,
+    panel: (await panel.boundingBox())?.width ?? 0,
+  };
+  expect(wide.panel).toBeGreaterThan(600);
+  expect(wide.button).toBeLessThan(wide.panel / 2);
+
+  await page.setViewportSize({ height: 740, width: 360 });
+  await expect
+    .poll(async () => {
+      const button = (await link.boundingBox())?.width ?? 0;
+      const box = (await panel.boundingBox())?.width ?? 0;
+      return box > 0 && Math.abs(button - box) <= 2;
+    })
+    .toBe(true);
+});
+
 test("lista os aparelhos, pede confirmação clara e revoga um deles sem a opção", async ({
   page,
 }) => {
