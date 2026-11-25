@@ -1,6 +1,7 @@
 import CalendarClockIcon from "lucide-react/dist/esm/icons/calendar-clock";
 import SparklesIcon from "lucide-react/dist/esm/icons/sparkles";
 import { type MouseEvent, useSyncExternalStore } from "react";
+import { Badge } from "@/ui/badge";
 import { dialogEntries } from "@/ui/dialog-history";
 import { PlanCard as PlanCardBox } from "@/ui/plan-card";
 import { ProgressRing } from "@/ui/progress-ring";
@@ -86,10 +87,7 @@ function TrialItem({ chargeDay }: { chargeDay: string }) {
         <span className="grid min-w-0 flex-1 gap-0.5 group-data-[collapsible=icon]:sr-only">
           <span className="flex items-center justify-between gap-2">
             <span className="truncate">Teste grátis</span>
-            {/* drawn as the small button of the design: the whole line is the link */}
-            <span className="inline-flex h-6 shrink-0 items-center rounded-md border border-input bg-background px-2 font-medium text-foreground text-xs">
-              Assinatura
-            </span>
+            <Badge>Assinatura</Badge>
           </span>
           <span className="truncate text-muted-foreground text-xs">
             1ª cobrança em {chargeDay}
