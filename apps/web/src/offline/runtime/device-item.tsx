@@ -229,10 +229,7 @@ export function DeviceItem({
       tile={<DeviceIcon kind={row.kind} />}
     >
       <div
-        className={cn(
-          ROW_BODY_CLASS,
-          "max-[40rem]:basis-[calc(100%-3rem)] min-[40rem]:items-center"
-        )}
+        className={cn(ROW_BODY_CLASS, "max-[40rem]:basis-[calc(100%-3rem)]")}
       >
         <div className={ROW_TEXT_CLASS}>
           <p className="font-medium [overflow-wrap:anywhere]">
