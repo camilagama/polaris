@@ -616,7 +616,7 @@ const OPTION_NAMES = [
   LONG_OPTION,
 ] as const;
 
-/** The options of the image of a product, as the tab "Imagens" lists them: each one on its own, one of them off. */
+/** The options of the image of a product, as the tab "Imagens" lists them: each one on its own, two of them off (unmarked and marked). */
 function CheckableOptionExamples() {
   const [marked, setMarked] = useState<string[]>(["Azul / M"]);
   const toggle = useCallback(

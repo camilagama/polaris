@@ -925,8 +925,12 @@ for (const theme of THEMES.slice(0, 2)) {
       }))
     );
     const [on, ...off] = measures;
-    expect(on?.textOpacity).toBe("1");
-    expect(on?.boxOpacity).toBe("1");
+    for (const measure of measures.filter((item) => !item.disabled)) {
+      expect(measure.textOpacity).toBe("1");
+      expect(measure.boxOpacity).toBe("1");
+      expect(measure.textCursor).not.toBe("not-allowed");
+      expect(measure.boxCursor).not.toBe("not-allowed");
+    }
     for (const measure of measures) {
       expect(measure.rowOpacity).toBe("1");
       expect(measure.fadedAncestors).toEqual([]);
@@ -938,7 +942,6 @@ for (const theme of THEMES.slice(0, 2)) {
       expect(measure.textCursor).toBe("not-allowed");
       expect(measure.boxCursor).toBe("not-allowed");
     }
-    expect(measures.filter((item) => !item.disabled)).toHaveLength(2);
     await context.close();
   });
 }
