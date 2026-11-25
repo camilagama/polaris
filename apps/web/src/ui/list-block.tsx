@@ -32,8 +32,8 @@ type ListBlockProps = ListBlockStateProps & {
   /** The `ListBlock.Header`, the `ListBlock.Row`s and the `ListBlock.Total`, as direct children: one wrapped in a component or a fragment is taken for a row. */
   children?: ReactNode;
   className?: string | undefined;
-  /** "1.248 produtos": the support text beside the title, announced when it changes. Empty while it is unknown, and the block drops it by itself while loading (keeping its width on a phone, so the header wraps the same way once the text arrives). */
-  count: string;
+  /** "1.248 produtos": the support text beside the title, announced when it changes. Empty while it is unknown, and the block drops it by itself while loading (keeping its width on a phone, so the header wraps the same way once the text arrives). Left out (undefined) by a list that never has one: with no action either, and outside loading, the paragraph and its reserved width are not drawn. */
+  count?: string | undefined;
   help?: ComponentProps<typeof BlockHeader>["help"];
   id?: string;
   /** How many times the `skeleton` is drawn while loading. */
@@ -176,6 +176,7 @@ function ListBlockRoot({
   const { header, rows, total } = sortParts(children);
   const { overflows, ref } = useOverflowX();
   const loading = stateProps.state === "loading";
+  const showCount = count !== undefined || action || loading;
   return (
     <Block
       aria-labelledby={headingId}
@@ -189,18 +190,20 @@ function ListBlockRoot({
       <BlockHeader
         action={action}
         aside={
-          <p
-            aria-live="polite"
-            className={cn(
-              "min-h-5 text-muted-foreground text-support md:text-right",
-              action
-                ? ["max-md:grow", loading ? "min-w-28" : "md:min-w-28"]
-                : "min-w-28"
-            )}
-            data-list-count=""
-          >
-            {loading ? "" : count}
-          </p>
+          showCount ? (
+            <p
+              aria-live="polite"
+              className={cn(
+                "min-h-5 text-muted-foreground text-support md:text-right",
+                action
+                  ? ["max-md:grow", loading ? "min-w-28" : "md:min-w-28"]
+                  : "min-w-28"
+              )}
+              data-list-count=""
+            >
+              {loading ? "" : (count ?? "")}
+            </p>
+          ) : undefined
         }
         className="border-border border-b px-3 py-3 md:border-b-0 md:p-0"
         help={help}
