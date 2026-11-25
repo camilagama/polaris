@@ -317,7 +317,7 @@ export const DEBT: Readonly<Record<Rule, readonly string[]>> = {
     "src/expenses/expense-rules-panel.tsx",
     "src/expenses/expenses-page.tsx",
     // help
-    "src/help/help-page.tsx",
+    // inventory
     // offline
     // organization
     // payment-profiles
@@ -329,8 +329,6 @@ export const DEBT: Readonly<Record<Rule, readonly string[]>> = {
     "src/sales/sale-summary-panel.tsx",
     // settings
     // sign-in
-    "src/sign-in/change-password-page.tsx",
-    "src/sign-in/entry-ui.tsx",
     // subscription
   ],
   R3: [
@@ -874,7 +872,7 @@ describe("a dívida por pasta: tirar arquivos de pastas diferentes não conflita
     DEBT.R2.filter((file) => folderOf(file) !== folder);
 
   it("duas cópias da lista de R2, cada uma sem uma pasta vizinha diferente, mesclam sem conflito", () => {
-    expect(folders.length).toBeGreaterThan(5);
+    expect(folders.length).toBeGreaterThan(2);
     const base = listText(DEBT.R2, folders);
     for (const [index, folder] of folders.slice(0, -1).entries()) {
       const next = folders[index + 1];
