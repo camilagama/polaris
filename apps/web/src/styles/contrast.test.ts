@@ -586,6 +586,8 @@ describe("badgePair: a ordem das classes e as utilidades de tamanho", () => {
     expect(() => badgePair("bg-card text-nao-existe", palette, false)).toThrow(
       "is not a text-<token> of theme.css"
     );
+  });
+});
 
 /**
  * The ring of `InsetBlock tone="destructive"` (the confirmation of what cannot be undone, in the row itself): the
