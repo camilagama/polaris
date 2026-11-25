@@ -5,11 +5,11 @@ import { productStates } from "./ui-product-states";
 import { stockStates } from "./ui-stock-states";
 
 /**
- * The gap between the line that counts the list ("25 produtos") and the card of the list is 16 px at 360 px on
- * Produtos (Clientes counts in the title of its `ListBlock`, with no line of its own). On Estoque the count is in the
- * title of the frame, so the 16 px is between the controls (search and filters) and the frame; the notice of the
- * open panel lives inside the panel, so nothing sits between them, and the gap does not change with the "Precisa de
- * ação" strip above.
+ * The gap between the list and what sits above its frame is 16 px at 360 px. On Produtos the count is in the header
+ * of the frame, so the 16 px is between the line of controls (the filter of the state) and the frame. On Estoque the
+ * count is in the title of the frame too, so the 16 px is between the controls (search and filters) and the frame;
+ * the notice of the open panel lives inside the panel, so nothing sits between them, and the gap does not change with
+ * the "Precisa de ação" strip above. Clientes counts in the title of its `ListBlock`, with no line of its own.
  */
 const GAP = 16;
 const TOLERANCE = 1;
@@ -26,33 +26,25 @@ test.beforeEach(({ browserName }, testInfo) => {
   );
 });
 
-/**
- * From the bottom of the line of the count (the element that holds the live count, or the row that holds it with
- * "Atualizar") to the top of the card of the list. The line is the ancestor of the count that is a sibling of the card.
- */
-function gapBelowCount(page: Page) {
+/** From the bottom of the filter of the products (the last of the line of controls) to the top of the frame of the list. */
+function gapBelowFilter(page: Page) {
   return page.evaluate(() => {
-    const live = document.querySelector(
-      '[aria-live="polite"][role="status"], p[aria-live="polite"]'
+    const filter = document.querySelector(
+      '[role="tablist"][aria-label="Estado dos produtos"]'
     );
-    const card = document
-      .querySelector("ul[aria-label]")
-      ?.closest('[data-slot="card"]');
-    if (!(live && card)) {
+    const frame = document.querySelector("[data-list-block]");
+    if (!(filter && frame)) {
       return null;
-    }
-    let line: Element = live;
-    while (line.parentElement && !line.parentElement.contains(card)) {
-      line = line.parentElement;
     }
     return {
       gap:
-        card.getBoundingClientRect().top - line.getBoundingClientRect().bottom,
+        frame.getBoundingClientRect().top -
+        filter.getBoundingClientRect().bottom,
     };
   });
 }
 
-/** From the bottom of the controls of the list (the search and the filters) to the top of the frame of the list. */
+/** From the bottom of the controls of the stock (the search and the filters) to the top of the frame of the list. */
 async function gapBelowControls(page: Page) {
   const controls = await page
     .getByRole("search", { name: "Filtrar estoque" })
@@ -64,19 +56,23 @@ async function gapBelowControls(page: Page) {
 }
 
 test.describe("o vão entre a contagem e a lista a 360 px", () => {
-  test("Estoque e Produtos têm o mesmo vão de 16 px", async ({ page }) => {
+  test("Produtos: a moldura da lista fica a 16 px da linha de controles", async ({
+    page,
+  }) => {
+    await productStates.list(page);
+    const products = await gapBelowFilter(page);
+    expect(products).not.toBeNull();
+    expect(products?.gap).toBeCloseTo(GAP, 0);
+  });
+
+  test("Estoque: o vão entre a contagem e a lista é de 16 px", async ({
+    page,
+  }) => {
     await stockStates.list(page);
     await expect(page.locator('[data-slot="action-strip"]')).toBeVisible();
     const stock = await gapBelowControls(page);
 
-    await productStates.list(page);
-    const products = await gapBelowCount(page);
-
     expect(stock?.gap).toBeCloseTo(GAP, 0);
-    expect(
-      Math.abs((stock?.gap ?? 0) - (products?.gap ?? 99))
-    ).toBeLessThanOrEqual(TOLERANCE);
-    expect(products?.gap).toBeCloseTo(GAP, 0);
   });
 
   test("no Estoque o vão é o mesmo com e sem a faixa Precisa de ação (sem ela, com o aviso de indisponível no lugar)", async ({
