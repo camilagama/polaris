@@ -1372,32 +1372,37 @@ test.describe("com toque", () => {
       name: "Mais ações para Despesa 1",
     });
     await trigger.scrollIntoViewIfNeeded();
-    const reach = await tapReaches(trigger, TOUCH_AREA / 2 - TOUCH_SLACK);
-    expect(
-      reach.across,
-      "um toque 21,5 px ao lado do gatilho … cai fora dele"
-    ).toBe(true);
-    expect(
-      reach.down,
-      "um toque 21,5 px acima ou abaixo do gatilho … cai fora dele"
-    ).toBe(true);
-    expect(
-      reach.diagonal,
-      "um toque 21,5 px na diagonal do gatilho … (canto da área de toque) cai nele"
-    ).toBe(true);
-
-    const triggerBox = await boxOrFail(trigger);
-    await page.touchscreen.tap(
-      triggerBox.x + triggerBox.width / 2 + (TOUCH_AREA / 2 - TOUCH_SLACK),
-      triggerBox.y + triggerBox.height / 2 + (TOUCH_AREA / 2 - TOUCH_SLACK)
-    );
     const item = page.getByRole("menuitem", {
       name: "Anular despesa Despesa 1",
     });
-    await expect(
-      item,
-      "o toque no canto da área do gatilho … abre o menu"
-    ).toBeVisible();
+    const reach = await tapReaches(trigger, TOUCH_AREA / 2 - TOUCH_SLACK);
+    await test.step("eixos da área de toque do gatilho", () => {
+      expect(
+        reach.across,
+        "um toque 21,5 px ao lado do gatilho … cai fora dele"
+      ).toBe(true);
+      expect(
+        reach.down,
+        "um toque 21,5 px acima ou abaixo do gatilho … cai fora dele"
+      ).toBe(true);
+    });
+
+    await test.step("canto da área de toque do gatilho", async () => {
+      expect
+        .soft(
+          reach.diagonal,
+          "um toque 21,5 px na diagonal do gatilho … (canto da área de toque) cai nele"
+        )
+        .toBe(true);
+      const triggerBox = await boxOrFail(trigger);
+      await page.touchscreen.tap(
+        triggerBox.x + triggerBox.width / 2 + (TOUCH_AREA / 2 - TOUCH_SLACK),
+        triggerBox.y + triggerBox.height / 2 + (TOUCH_AREA / 2 - TOUCH_SLACK)
+      );
+      await expect
+        .soft(item, "o toque no canto da área do gatilho … abre o menu")
+        .toBeVisible();
+    });
     await page.keyboard.press("Escape");
     await expect(item).toBeHidden();
 
