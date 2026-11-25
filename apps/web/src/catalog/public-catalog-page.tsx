@@ -11,6 +11,8 @@ import {
   useState,
 } from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
+import { Block, BlockHeader, BlockPanel } from "@/ui/block";
+import { Skeleton } from "@/ui/skeleton";
 import { useConnectionNoticeForm } from "../app-shell/connection-required-notice";
 import { ScreenTitle } from "../app-shell/screen-title";
 import { useConnectionReturn, workerAnswers } from "../lib/browser-connection";
@@ -67,6 +69,79 @@ const INPUT_OF_FIELD = {
   slug: "public-slug",
   whatsapp: "public-whatsapp",
 } as const;
+
+function FieldShape({ tall = false }: { tall?: boolean }) {
+  return (
+    <div className="grid gap-1.5">
+      <Skeleton className="h-3.5 w-28" />
+      <Skeleton className={tall ? "h-20 w-full" : "h-9 w-full"} />
+    </div>
+  );
+}
+
+function ProductRowShape() {
+  return (
+    <div className="flex items-center justify-between gap-3 border-border border-t py-2.5 first:border-t-0">
+      <Skeleton className="h-4 w-40 max-w-full" />
+      <Skeleton className="h-8 w-36 shrink-0" />
+    </div>
+  );
+}
+
+/** The three blocks of the page in the layout they take once read, drawn while the first read runs; the screen reader hears only the status. */
+function CatalogSkeleton() {
+  return (
+    <div
+      aria-hidden="true"
+      className="grid items-start gap-4 md:grid-cols-[minmax(0,1.1fr)_minmax(18rem,0.9fr)]"
+      data-catalog-skeleton=""
+    >
+      <Block aria-labelledby="catalog-skeleton-profile" className="min-w-0">
+        <BlockHeader id="catalog-skeleton-profile" title="Perfil público" />
+        <BlockPanel>
+          <div className="grid gap-4">
+            <div className="grid gap-1.5">
+              <Skeleton className="h-3.5 w-full" />
+              <Skeleton className="h-3.5 w-2/3" />
+            </div>
+            <FieldShape />
+            <FieldShape />
+            <FieldShape tall />
+            <FieldShape />
+            <FieldShape />
+            <Skeleton className="h-9 w-32" />
+          </div>
+        </BlockPanel>
+      </Block>
+      <Block aria-labelledby="catalog-skeleton-switch" className="min-w-0">
+        <BlockHeader id="catalog-skeleton-switch" title="Catálogo" />
+        <BlockPanel>
+          <div className="grid gap-4">
+            <Skeleton className="h-4 w-3/4" />
+            <Skeleton className="h-9 w-40" />
+          </div>
+        </BlockPanel>
+      </Block>
+      <Block
+        aria-labelledby="catalog-skeleton-products"
+        className="min-w-0 md:col-span-2"
+      >
+        <BlockHeader id="catalog-skeleton-products" title="Produtos" />
+        <BlockPanel>
+          <div className="grid gap-4">
+            <Skeleton className="h-4 w-2/3" />
+            <Skeleton className="h-9 w-full" />
+            <div>
+              <ProductRowShape />
+              <ProductRowShape />
+              <ProductRowShape />
+            </div>
+          </div>
+        </BlockPanel>
+      </Block>
+    </div>
+  );
+}
 
 /** The feedback of one command, or nothing when the last message came from another. */
 function feedbackOf(feedback: Feedback | null, where: Action) {
@@ -324,9 +399,12 @@ export function PublicCatalogPage() {
         <LoadErrorNotice message={feedback.error} onRetry={handleRetry} />
       ) : null}
       {loading && !loaded && online ? (
-        <p className="sr-only" role="status">
-          Carregando…
-        </p>
+        <>
+          <p className="sr-only" role="status">
+            Carregando…
+          </p>
+          <CatalogSkeleton />
+        </>
       ) : null}
       {planBlocks ? (
         <Alert id={PLAN_NOTICE_ID} variant="warning">
