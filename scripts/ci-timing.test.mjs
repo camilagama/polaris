@@ -112,6 +112,78 @@ function namedChromiumSteps(workflow) {
   return names;
 }
 
+const JOB_KEY = /^ {2}([\w-]+):\s*(?:#.*)?$/;
+const STEPS_KEY = /^ {4}steps:\s*$/;
+const STEP_RUN = /^(?: {6}- | {8})run:\s*(.*?)\s*$/;
+const BLOCK_SCALAR = /^[|>][+-]?\d*$/;
+
+/** The name the Actions API gives a step: its `name`, else `Run <uses>`, else `Run <first line of run>`. */
+function apiStepName(raw) {
+  if (raw.name) {
+    return raw.name.replace(QUOTES, "$2");
+  }
+  if (raw.uses) {
+    return `Run ${raw.uses}`;
+  }
+  return `Run ${raw.run}`;
+}
+
+/** The jobs of a workflow as `{ id, steps: [{ name, uses }] }`, with each step named as the API returns it. */
+function workflowJobs(workflow) {
+  const jobs = [];
+  let current = null;
+  let raw = null;
+  let inSteps = false;
+  let readingRun = false;
+  const flush = () => {
+    if (raw && current) {
+      current.steps.push({ name: apiStepName(raw), uses: raw.uses });
+    }
+    raw = null;
+  };
+  for (const line of workflow.split("\n")) {
+    const key = JOB_KEY.exec(line);
+    if (key) {
+      flush();
+      current = { id: key[1], steps: [] };
+      jobs.push(current);
+      inSteps = false;
+      continue;
+    }
+    if (STEPS_KEY.test(line)) {
+      inSteps = true;
+      continue;
+    }
+    if (!(inSteps && current)) {
+      continue;
+    }
+    if (STEP_START.test(line)) {
+      flush();
+      raw = {};
+      readingRun = false;
+    }
+    if (!raw) {
+      continue;
+    }
+    if (readingRun && raw.run === undefined && line.trim() !== "") {
+      raw.run = line.trim();
+      readingRun = false;
+    }
+    raw.name ??= STEP_NAME.exec(line)?.[1];
+    raw.uses ??= STEP_USES.exec(line)?.[1];
+    const run = STEP_RUN.exec(line)?.[1];
+    if (run !== undefined && raw.run === undefined) {
+      if (BLOCK_SCALAR.test(run)) {
+        readingRun = true;
+      } else {
+        raw.run = run;
+      }
+    }
+  }
+  flush();
+  return jobs;
+}
+
 describe("percentile", () => {
   it("interpolates between ranks", () => {
     expect(percentile([10, 20, 30, 40], 50)).toBe(25);
@@ -285,6 +357,44 @@ describe("splitJob", () => {
         parts.preparation,
         `o passo "${name}" do ci.yml não entra na preparação: ajuste INSTALL_STEP em ci-timing.mjs`
       ).toBe(90 - 5);
+    }
+  });
+
+  it("counts every step before the Chromium step of each job of the real ci.yml as preparation, the cache restore and the conditional install included", () => {
+    const text = readFileSync(
+      new URL("../.github/workflows/ci.yml", import.meta.url),
+      "utf8"
+    );
+    const withChromium = workflowJobs(text).filter((workflowJob) =>
+      workflowJob.steps.some(
+        (s) => s.uses === CHROMIUM_ACTION && s.name !== `Run ${CHROMIUM_ACTION}`
+      )
+    );
+    expect(withChromium.length).toBeGreaterThanOrEqual(4);
+    for (const workflowJob of withChromium) {
+      const end = workflowJob.steps.findIndex(
+        (s) => s.uses === CHROMIUM_ACTION
+      );
+      const names = workflowJob.steps.slice(0, end + 1).map((s) => s.name);
+      const steps = [
+        step("Set up job", 0, 2),
+        ...names.map((name, index) =>
+          step(name, 2 + index * 10, 12 + index * 10)
+        ),
+        step("Run bun run test", 2 + names.length * 10, 695),
+      ];
+      const parts = splitJob({
+        completed_at: at(700),
+        conclusion: "success",
+        created_at: at(0),
+        name: workflowJob.id,
+        started_at: at(0),
+        steps,
+      });
+      expect(
+        parts.preparation,
+        `o job ${workflowJob.id} do ci.yml tem passo de preparação fora de INSTALL_STEP (ajuste-o ou dê name ao passo): ${names.join(" | ")}`
+      ).toBe(2 + names.length * 10);
     }
   });
 
