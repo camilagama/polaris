@@ -212,7 +212,7 @@ test.describe("o esqueleto tem a altura do pronto (AC-C3.5)", () => {
       await settled(page);
       const skeleton = {
         chain: await placeOf(
-          page.locator('[data-slot="card"][aria-hidden="true"]').last()
+          page.locator('[data-slot="card-frame"][aria-hidden="true"]').last()
         ),
         chart: await placeOf(page.locator('[data-slot="card-frame"]').first()),
         kpi: await placeOf(page.locator("[data-kpi-row]").first()),
