@@ -675,6 +675,77 @@ function GalleryOption({
   );
 }
 
+const LOOSE_BOXES = [
+  { checked: false, disabled: false, name: "Solta, ligada, desmarcada" },
+  { checked: true, disabled: false, name: "Solta, ligada, marcada" },
+  { checked: false, disabled: true, name: "Solta, desligada, desmarcada" },
+  { checked: true, disabled: true, name: "Solta, desligada, marcada" },
+] as const;
+
+/** The check box, the radio and the switch off: each root is a span, so they fade through `data-disabled`, once and never inside a faded card or field. */
+function DisabledControlExamples() {
+  return (
+    <div className="grid items-start gap-4 md:grid-cols-2">
+      <div className="grid gap-8" data-gallery-panel="loose-boxes">
+        {LOOSE_BOXES.map((box) => (
+          <div className="flex items-center gap-2" key={box.name}>
+            <Checkbox
+              aria-label={box.name}
+              defaultChecked={box.checked}
+              disabled={box.disabled}
+            />
+            <span aria-hidden="true">{box.name}</span>
+          </div>
+        ))}
+        <Field data-disabled="true" orientation="horizontal">
+          <Checkbox
+            aria-describedby="galeria-campo-desligado-ajuda"
+            defaultChecked
+            disabled
+            id="galeria-campo-desligado"
+          />
+          <FieldContent>
+            <FieldLabel htmlFor="galeria-campo-desligado">
+              Dentro de um campo desligado
+            </FieldLabel>
+            <FieldDescription id="galeria-campo-desligado-ajuda">
+              O campo apaga o texto; a caixa apaga uma vez só.
+            </FieldDescription>
+          </FieldContent>
+        </Field>
+      </div>
+      <div className="grid gap-5" data-gallery-panel="off-choices">
+        <RadioGroup
+          aria-label="Forma desligada"
+          defaultValue="pix"
+          disabled
+          name="galeria-forma-desligada"
+        >
+          <FieldLabel
+            className="has-data-disabled:opacity-50"
+            htmlFor="galeria-forma-desligada-pix"
+          >
+            <Field orientation="horizontal">
+              <FieldContent>
+                <FieldTitle>Cartão desligado</FieldTitle>
+              </FieldContent>
+              <RadioGroupItem id="galeria-forma-desligada-pix" value="pix" />
+            </Field>
+          </FieldLabel>
+        </RadioGroup>
+        <Field orientation="horizontal">
+          <FieldContent>
+            <FieldLabel htmlFor="galeria-chave-desligada">
+              Chave desligada
+            </FieldLabel>
+          </FieldContent>
+          <Switch defaultChecked disabled id="galeria-chave-desligada" />
+        </Field>
+      </div>
+    </div>
+  );
+}
+
 const STEP_EXAMPLES = [
   { Icon: StoreIcon, label: "Loja criada", state: "done" },
   { Icon: TagIcon, label: "Cadastrar o 1º produto", state: "current" },
@@ -2151,6 +2222,15 @@ export function UiGallery() {
               <CheckableOptionExamples />
               <StepTileExamples />
             </div>
+          </Section>
+
+          <Section title="Controles desligados">
+            <p className="max-w-prose text-muted-foreground text-support">
+              Caixa de marcar, botão de rádio e chave desligados ficam a 50 % e
+              mostram o cursor de bloqueio, soltos ou dentro de um campo ou
+              cartão que já apaga o texto.
+            </p>
+            <DisabledControlExamples />
           </Section>
 
           <Section title="Block sem moldura">

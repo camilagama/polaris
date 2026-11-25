@@ -1359,7 +1359,6 @@ function SinglePayment({
         <Checkbox
           aria-describedby="sale-anticipation-hint"
           checked={form.payment.anticipationRequested}
-          className="data-disabled:opacity-50"
           disabled={disabled || !card}
           id="sale-anticipation"
           onCheckedChange={onAnticipationChange}

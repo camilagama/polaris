@@ -946,6 +946,91 @@ for (const theme of THEMES.slice(0, 2)) {
   });
 }
 
+const measureOffControl = (control: Element) => {
+  const fadedAncestors: string[] = [];
+  for (
+    let node: Element | null = control.parentElement;
+    node;
+    node = node.parentElement
+  ) {
+    if (Number(getComputedStyle(node).opacity) < 1) {
+      fadedAncestors.push(node.tagName);
+    }
+  }
+  const style = getComputedStyle(control);
+  return { cursor: style.cursor, fadedAncestors, opacity: style.opacity };
+};
+
+const OFF_BOXES = [
+  { disabled: false, name: "Solta, ligada, desmarcada" },
+  { disabled: false, name: "Solta, ligada, marcada" },
+  { disabled: true, name: "Solta, desligada, desmarcada" },
+  { disabled: true, name: "Solta, desligada, marcada" },
+  { disabled: true, name: "Dentro de um campo desligado" },
+] as const;
+
+for (const theme of THEMES.slice(0, 2)) {
+  test(`tema ${theme.name}: a caixa desligada apaga a 50 % uma vez só e mostra cursor de bloqueio, solta ou dentro de campo desligado`, async ({
+    browser,
+  }) => {
+    const context = await browser.newContext({
+      colorScheme: theme.colorScheme,
+    });
+    const page = await context.newPage();
+    await openGallery(page, theme.stored);
+    const measures = await Promise.all(
+      OFF_BOXES.map(async (state) => {
+        const box = page.getByRole("checkbox", { name: state.name });
+        return {
+          ...(await box.evaluate(measureOffControl)),
+          disabled: await box.evaluate(
+            (node) =>
+              node.hasAttribute("data-disabled") &&
+              node.getAttribute("aria-disabled") === "true"
+          ),
+          name: state.name,
+        };
+      })
+    );
+    measures.forEach((measure, index) => {
+      const off = OFF_BOXES[index]?.disabled ?? false;
+      expect(measure.disabled, measure.name).toBe(off);
+      expect(measure.fadedAncestors, measure.name).toEqual([]);
+      expect(measure.opacity, measure.name).toBe(off ? "0.5" : "1");
+      expect(measure.cursor === "not-allowed", measure.name).toBe(off);
+    });
+    await context.close();
+  });
+
+  test(`tema ${theme.name}: o rádio de um cartão desligado e a chave desligada apagam a 50 %, sem somar`, async ({
+    browser,
+  }) => {
+    const context = await browser.newContext({
+      colorScheme: theme.colorScheme,
+    });
+    const page = await context.newPage();
+    await openGallery(page, theme.stored);
+    const radio = await page
+      .getByRole("radio", { name: "Cartão desligado" })
+      .evaluate(measureOffControl);
+    const card = await page
+      .getByRole("radio", { name: "Cartão desligado" })
+      .locator("xpath=ancestor::label")
+      .evaluate((label) => getComputedStyle(label).opacity);
+    expect(card).toBe("0.5");
+    expect(radio.opacity).toBe("1");
+    expect(radio.fadedAncestors).toEqual(["LABEL"]);
+    expect(radio.cursor).toBe("not-allowed");
+    const toggle = await page
+      .getByRole("switch", { name: "Chave desligada" })
+      .evaluate(measureOffControl);
+    expect(toggle.opacity).toBe("0.5");
+    expect(toggle.fadedAncestors).toEqual([]);
+    expect(toggle.cursor).toBe("not-allowed");
+    await context.close();
+  });
+}
+
 test("controle: o axe desta página acusa uma imagem sem texto alternativo", async ({
   page,
 }) => {
