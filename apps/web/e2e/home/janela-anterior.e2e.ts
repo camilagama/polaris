@@ -268,7 +268,10 @@ test.describe("janela anterior do Início: uma despesa neste aparelho", () => {
   const voidExpense = async (page: Page) => {
     await page.goto("/expenses");
     await page
-      .getByRole("button", { name: "Anular despesa Conta de luz" })
+      .getByRole("button", { name: "Mais ações para Conta de luz" })
+      .click();
+    await page
+      .getByRole("menuitem", { name: "Anular despesa Conta de luz" })
       .click();
     await expect(
       page.getByText("Despesa “Conta de luz” anulada.")
