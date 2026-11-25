@@ -6,7 +6,7 @@ import PlusIcon from "lucide-react/dist/esm/icons/plus";
 import { useCallback, useState } from "react";
 import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
-import { Card, CardContent } from "@/ui/card";
+import { Block } from "@/ui/block";
 import { Checkbox } from "@/ui/checkbox";
 import { Dialog, DialogContent } from "@/ui/dialog";
 import { Field, FieldLabel } from "@/ui/field";
@@ -352,60 +352,58 @@ export function ExpenseRulesPanel({
     busy === "rule-create" || (busy?.startsWith("rule-save:") ?? false);
 
   return (
-    <Card>
-      <CardContent className="grid gap-4">
-        <RulesIntro />
-        {/* while the form is open it covers this part of the screen: what the commands say is said inside it */}
-        <ActionNotice feedback={form.open ? null : feedback} />
-        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
-          <Field className="min-h-ctl-md w-auto" orientation="horizontal">
-            <Checkbox
-              checked={showPaused}
-              id="expense-rules-paused"
-              onCheckedChange={setShowPaused}
-            />
-            <FieldLabel htmlFor="expense-rules-paused">
-              Mostrar pausadas
-            </FieldLabel>
-          </Field>
-          <Button
-            data-rule-new=""
+    <Block variant="plain">
+      <RulesIntro />
+      {/* while the form is open it covers this part of the screen: what the commands say is said inside it */}
+      <ActionNotice feedback={form.open ? null : feedback} />
+      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+        <Field className="min-h-ctl-md w-auto" orientation="horizontal">
+          <Checkbox
+            checked={showPaused}
+            id="expense-rules-paused"
+            onCheckedChange={setShowPaused}
+          />
+          <FieldLabel htmlFor="expense-rules-paused">
+            Mostrar pausadas
+          </FieldLabel>
+        </Field>
+        <Button
+          data-rule-new=""
+          disabled={busy !== null}
+          onClick={handleNew}
+          type="button"
+          variant="outline"
+        >
+          <PlusIcon aria-hidden="true" data-icon="inline-start" />
+          Nova despesa recorrente
+        </Button>
+      </div>
+      <Dialog disablePointerDismissal {...form.dialog}>
+        <DialogContent finalFocus={form.finalFocus} layout="form">
+          <ExpenseRuleForm
+            categories={categories}
             disabled={busy !== null}
-            onClick={handleNew}
-            type="button"
-            variant="outline"
-          >
-            <PlusIcon aria-hidden="true" data-icon="inline-start" />
-            Nova despesa recorrente
-          </Button>
-        </div>
-        <Dialog disablePointerDismissal {...form.dialog}>
-          <DialogContent finalFocus={form.finalFocus} layout="form">
-            <ExpenseRuleForm
-              categories={categories}
-              disabled={busy !== null}
-              editing={editing}
-              feedback={feedback?.kind === "error" ? feedback : null}
-              key={form.formKey}
-              keptDraft={form.keptDraft}
-              onCancel={closeForm}
-              onDraftChange={form.onDraftChange}
-              onSave={handleSave}
-              saving={isSaving}
-              today={today}
-            />
-          </DialogContent>
-        </Dialog>
-        <RuleList
-          busyKey={busy}
-          onEdit={openForm}
-          onRetry={handleRetry}
-          onToggle={handleToggle}
-          rules={state.rules}
-          showPaused={showPaused}
-          state={state}
-        />
-      </CardContent>
-    </Card>
+            editing={editing}
+            feedback={feedback?.kind === "error" ? feedback : null}
+            key={form.formKey}
+            keptDraft={form.keptDraft}
+            onCancel={closeForm}
+            onDraftChange={form.onDraftChange}
+            onSave={handleSave}
+            saving={isSaving}
+            today={today}
+          />
+        </DialogContent>
+      </Dialog>
+      <RuleList
+        busyKey={busy}
+        onEdit={openForm}
+        onRetry={handleRetry}
+        onToggle={handleToggle}
+        rules={state.rules}
+        showPaused={showPaused}
+        state={state}
+      />
+    </Block>
   );
 }

@@ -2,7 +2,7 @@ import type { ExpenseReadModel } from "@polaris/contracts";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { EMPTY_TITLE_MAX } from "@/ui/empty-state";
-import { ExpenseList, ExpenseSummary } from "./expense-list";
+import { ExpenseList } from "./expense-list";
 import { MonthPicker } from "./month-picker";
 import type { ExpenseFilters, ExpenseListState } from "./use-expense-list";
 
@@ -14,7 +14,22 @@ import type { ExpenseFilters, ExpenseListState } from "./use-expense-list";
 const noop = () => undefined;
 const MONTH_BUTTON =
   /<button[^>]*aria-label="Mês de competência, Outubro de 2026"[^>]*aria-haspopup="dialog"[^>]*><svg.*<\/svg>Outubro de 2026<\/button>/;
+const VOIDING_TEXT = /Anulando…/g;
+const VOIDING_STATUS = /<p[^>]*role="status"[^>]*>Anulando…<\/p>/;
+const RESTORING_TEXT = /Reativando…/g;
 const AMOUNT = /R\$\s1\.500,50/;
+
+const rowOf = (html: string, id: string): string => {
+  const row = html
+    .split("<li ")
+    .slice(1)
+    .map((chunk) => chunk.split("</li>")[0] ?? "")
+    .find((chunk) => chunk.includes(`data-expense-id="${id}"`));
+  if (row === undefined) {
+    throw new Error(`no row with data-expense-id="${id}" in the list`);
+  }
+  return row;
+};
 
 describe("MonthPicker", () => {
   it("says the month in words in a button that opens the grid, with no arrows beside it and no native month field", () => {
@@ -75,11 +90,12 @@ const state = (overrides: Partial<ExpenseListState>): ExpenseListState => ({
 const list = (
   listState: ExpenseListState,
   status = filters.status,
-  categoryId = filters.categoryId
+  categoryId = filters.categoryId,
+  busyKey: string | null = null
 ) =>
   renderToStaticMarkup(
     <ExpenseList
-      busyKey={null}
+      busyKey={busyKey}
       filters={{ ...filters, categoryId, status }}
       onClearFilters={noop}
       onEdit={noop}
@@ -114,23 +130,26 @@ const expense = (overrides: Partial<ExpenseReadModel>): ExpenseReadModel => ({
 const EMPTY_TITLE = /data-empty-title="" id="[^"]*">([^<]*)</;
 
 describe("ExpenseList", () => {
-  it("says it is loading on the first read, as a status", () => {
+  it("says it is loading on the first read, as a status, inside the frame with its title", () => {
     const html = list(state({ isLoading: true }));
     expect(html).toContain('role="status"');
-    expect(html).toContain("Carregando despesas…");
+    expect(html).toContain("Carregando…");
+    expect(html).toContain("Despesas do período");
+    expect(html).toContain('data-state="loading"');
   });
 
-  it("the loading line is for the screen reader only, three skeleton lines are drawn, and the empty list stays drawn", () => {
-    expect(list(state({ isLoading: true }))).toContain(
-      '<span class="sr-only">Carregando despesas…</span>'
-    );
+  it("the loading line is for the screen reader only, the rows are skeletons that no one reads, the count is not drawn and the empty list keeps the frame", () => {
     const loading = list(state({ isLoading: true }));
-    expect(loading.match(/data-slot="skeleton"/g)).toHaveLength(3);
-    expect(loading.match(/aria-hidden="true"/g)).toHaveLength(3);
+    expect(loading).toContain(
+      '<p class="sr-only" role="status">Carregando…</p>'
+    );
+    expect(loading).toContain('data-slot="skeleton"');
     expect(loading).toContain('aria-busy="true"');
+    expect(loading).not.toContain("0 despesas");
     const empty = list(state({}));
-    expect(empty).not.toContain("sr-only");
+    expect(empty).not.toContain("Carregando…");
     expect(empty).toContain("data-empty-state");
+    expect(empty).toContain('data-state="filtered-empty"');
   });
 
   it("a failed read says why and offers to read again, never the empty list", () => {
@@ -138,6 +157,8 @@ describe("ExpenseList", () => {
     expect(html).toContain('role="alert"');
     expect(html).toContain("Tentar novamente");
     expect(html).not.toContain("Nenhuma despesa");
+    expect(html).not.toContain("data-list-block");
+    expect(html).not.toContain("data-list-total");
   });
 
   it("the empty period is a short sentence only: the button that creates is the title line's, and no phrase names it", () => {
@@ -185,20 +206,23 @@ describe("ExpenseList", () => {
     expect(html).not.toContain("Operacional");
   });
 
-  it("Anular does not look like Editar, so the two are not the same press", () => {
+  it('Anular is not a button of the row: the row has Editar and the "…" menu that holds it', () => {
     const html = list(state({ count: 1, expenses: [expense({})] }));
     const buttons = html.match(/<button[^>]*>/g) ?? [];
-    const edit = buttons.find((tag) => tag.includes("Editar despesa")) ?? "";
-    const cancel = buttons.find((tag) => tag.includes("Anular despesa")) ?? "";
-    expect(edit).toContain("border-border");
-    expect(cancel).not.toContain("border-border");
-    expect(cancel).toContain("text-destructive");
+    expect(buttons.find((tag) => tag.includes("Editar despesa"))).toContain(
+      "border-border"
+    );
+    expect(
+      buttons.find((tag) => tag.includes("Mais ações para Aluguel de outubro"))
+    ).toContain('aria-haspopup="menu"');
+    expect(html).not.toContain("Anular despesa");
+    expect(html).not.toContain("text-destructive");
   });
 
-  it("a voided expense is read only, with Reativar; an active one has Editar and Anular", () => {
+  it("a voided expense is read only, with Reativar; an active one has Editar and the menu", () => {
     const active = list(state({ count: 1, expenses: [expense({})] }));
     expect(active).toContain('aria-label="Editar despesa Aluguel de outubro"');
-    expect(active).toContain('aria-label="Anular despesa Aluguel de outubro"');
+    expect(active).toContain('aria-label="Mais ações para Aluguel de outubro"');
     expect(active).toMatch(AMOUNT);
 
     const voided = list(
@@ -210,6 +234,62 @@ describe("ExpenseList", () => {
       'aria-label="Reativar despesa Aluguel de outubro"'
     );
     expect(voided).not.toContain("Editar despesa");
+    expect(voided).not.toContain("Mais ações");
+  });
+
+  it("saving the edit of a row does not say Anulando… on any row", () => {
+    const html = list(
+      state({
+        count: 2,
+        expenses: [expense({}), expense({ id: "e2" })],
+      }),
+      "active",
+      "",
+      "save:e1"
+    );
+    expect(html).not.toContain("Anulando");
+  });
+
+  describe.each([
+    ["e1, e2", [{}, { description: "Energia", id: "e2" }]],
+    ["e2, e1", [{ description: "Energia", id: "e2" }, {}]],
+  ] as const)("with the rows in the order %s", (_order, rows) => {
+    it("voiding says Anulando… as a status on that row only", () => {
+      const html = list(
+        state({ count: 2, expenses: rows.map((row) => expense(row)) }),
+        "active",
+        "",
+        "void:e1"
+      );
+      expect(html.match(VOIDING_TEXT)).toHaveLength(1);
+      expect(html).toMatch(VOIDING_STATUS);
+      expect(rowOf(html, "e1"), "row e1 is the one being voided").toContain(
+        "Anulando…"
+      );
+      expect(rowOf(html, "e2"), "row e2 is not being voided").not.toContain(
+        "Anulando…"
+      );
+    });
+
+    it("restoring says Reativando… on the voided row only", () => {
+      const html = list(
+        state({
+          count: 2,
+          expenses: rows.map((row) => expense({ ...row, status: "voided" })),
+        }),
+        "voided",
+        "",
+        "restore:e1"
+      );
+      expect(html.match(RESTORING_TEXT)).toHaveLength(1);
+      expect(rowOf(html, "e1"), "row e1 is the one being restored").toContain(
+        "Reativando…"
+      );
+      expect(rowOf(html, "e2"), "row e2 is not being restored").not.toContain(
+        "Reativando…"
+      );
+      expect(html).not.toContain("Anulando");
+    });
   });
 
   it("a generated occurrence carries the Recorrente badge", () => {
@@ -220,18 +300,33 @@ describe("ExpenseList", () => {
   });
 });
 
-describe("ExpenseSummary", () => {
-  it("is the total with the count; the month is in the picker above and only said to a screen reader", () => {
-    const html = renderToStaticMarkup(
-      <ExpenseSummary
-        filters={filters}
-        state={state({ count: 3, total: "4562.00" })}
-      />
+describe("the total of the period", () => {
+  it("is the first line of the panel and the count is the frame's, beside the title; the month is only said to a screen reader", () => {
+    const html = list(
+      state({
+        count: 3,
+        expenses: [expense({})],
+        total: "4562.00",
+      })
     );
     expect(html).toContain("Total do período");
-    expect(html).toContain('role="status"');
-    expect(html).toContain("3 despesas");
+    expect(html).toContain('data-money-number="">4.562<');
     expect(html).toContain('<span class="sr-only"> em outubro de 2026</span>');
+    expect(html).toContain('data-list-count="">3 despesas</p>');
+    expect(html.indexOf("Total do período")).toBeLessThan(
+      html.indexOf("data-list-block-row")
+    );
+    expect(html.indexOf("data-list-block-row")).toBeLessThan(
+      html.indexOf("data-list-total")
+    );
+  });
+
+  it("says anuladas in the label when the status is Anuladas", () => {
+    const html = list(
+      state({ count: 1, expenses: [expense({ status: "voided" })] }),
+      "voided"
+    );
+    expect(html).toContain("Total do período (anuladas)");
   });
 });
 
@@ -273,10 +368,12 @@ describe("the total of the rows on the screen", () => {
     expect(foot(empty)).toContain("min-h-5");
   });
 
-  it("while the first page loads it is a dash, and after a failed read it is not a zero", () => {
-    expect(foot(list(state({ isLoading: true })))).toContain("…");
-    const failed = foot(list(state({ error: "Falhou." })));
-    expect(failed).toContain("—");
+  it("while the first page loads it is a skeleton, and after a failed read there is no total at all, never a zero", () => {
+    expect(list(state({ isLoading: true }))).toContain(
+      "data-list-total-skeleton"
+    );
+    const failed = list(state({ error: "Falhou." }));
+    expect(failed).not.toContain("data-list-total");
     expect(failed).not.toContain("R$ 0,00");
   });
 });

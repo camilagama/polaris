@@ -6,7 +6,6 @@ import TriangleAlertIcon from "lucide-react/dist/esm/icons/triangle-alert";
 import { useCallback, useState } from "react";
 import { cn } from "@/lib/utils";
 import { Button, buttonVariants } from "@/ui/button";
-import { CardDescription } from "@/ui/card";
 import { FieldDescription } from "@/ui/field";
 import { MoneyText } from "@/ui/hidden-values";
 import { ProductThumbnail } from "../catalog/product-thumbnail";
@@ -383,9 +382,12 @@ function ChosenItemFields({
  */
 export function ItemsCount({ count }: { count: SaleCount }) {
   return (
-    <CardDescription>
+    <div
+      className="text-muted-foreground text-support"
+      data-slot="card-description"
+    >
       {count.lines > 0 ? <SaleCountLabel count={count} /> : "\u00a0"}
-    </CardDescription>
+    </div>
   );
 }
 

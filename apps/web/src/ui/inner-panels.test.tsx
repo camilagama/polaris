@@ -13,10 +13,15 @@ const FRACTION_OF_GREY = /bg-muted\//;
 const LEGEND = /<legend[^>]*>Endereço<\/legend>/;
 const DISABLED_FIELDSET = /<fieldset[^>]*disabled/;
 const SVG = /<svg[\s\S]*<\/svg>/;
+const LABEL_SPAN = /<span class="([^"]*)">Azul \/ M<\/span>/;
 const noop = () => undefined;
 
 function classesOf(html: string): string[] {
   return (CLASS.exec(html)?.[1] ?? "").split(" ");
+}
+
+function labelClassesOf(html: string): string[] {
+  return (LABEL_SPAN.exec(html)?.[1] ?? "").split(" ");
 }
 
 describe("InsetBlock", () => {
@@ -143,6 +148,25 @@ describe("CheckableOption", () => {
 
   it("quebra o texto comprido em vez de passar da borda", () => {
     expect(draw(false)).toContain("[overflow-wrap:anywhere]");
+  });
+
+  it("desligada, o apagado fica só no texto e o cursor de bloqueio na linha", () => {
+    const html = draw(false, true);
+    expect(classesOf(html)).toEqual(
+      expect.arrayContaining([
+        "group/option",
+        "has-disabled:cursor-not-allowed",
+      ])
+    );
+    expect(labelClassesOf(html)).toEqual(
+      expect.arrayContaining([
+        "[overflow-wrap:anywhere]",
+        "group-has-disabled/option:opacity-50",
+      ])
+    );
+    expect(labelClassesOf(html)).not.toContain("opacity-50");
+    expect(classesOf(html)).not.toContain("opacity-50");
+    expect(html).toContain("data-disabled:opacity-50");
   });
 });
 

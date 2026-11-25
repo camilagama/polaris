@@ -306,21 +306,12 @@ export const DEBT: Readonly<Record<Rule, readonly string[]>> = {
     // customers
     // data-export
     // expenses
-    "src/expenses/expense-by-category.tsx",
-    "src/expenses/expense-categories-panel.tsx",
-    "src/expenses/expense-rules-panel.tsx",
-    "src/expenses/expenses-page.tsx",
     // help
     // inventory
     // offline
     // organization
     // payment-profiles
     // sales
-    "src/sales/sale-id-missing.tsx",
-    "src/sales/sale-item-editor.tsx",
-    "src/sales/sale-page.tsx",
-    "src/sales/sale-payment-section.tsx",
-    "src/sales/sale-summary-panel.tsx",
     // settings
     // sign-in
     // subscription
@@ -332,14 +323,10 @@ export const DEBT: Readonly<Record<Rule, readonly string[]>> = {
     // catalog
     // customers
     // expenses
-    "src/expenses/expense-list.tsx",
-    "src/expenses/month-picker.tsx",
     // legal
     // offline
     // payment-profiles
     // sales
-    "src/sales/sale-payment-section.tsx",
-    "src/sales/sale-summary-panel.tsx",
     // subscription
   ],
   R4: [
@@ -347,7 +334,6 @@ export const DEBT: Readonly<Record<Rule, readonly string[]>> = {
     "src/catalog/screen-parts.tsx",
     // customers
     // expenses
-    "src/expenses/expense-list.tsx",
     // offline
     // payment-profiles
     // sales
@@ -467,9 +453,14 @@ describe("o padrão visual das telas (R1 a R3)", () => {
     }
   });
 
-  it("as listas e tabelas principais ficam na dívida: elas saem só quando a tela vai para o Block", () => {
-    for (const file of ["src/expenses/expense-list.tsx"]) {
-      expect([...DEBT.R2, ...DEBT.R3], file).toContain(file);
+  it("as listas principais de Clientes e Despesas, já no Block, não voltam para a dívida", () => {
+    const owed = Object.values(DEBT).flat();
+    for (const file of [
+      "src/customers/customer-list.tsx",
+      "src/expenses/expense-list.tsx",
+    ]) {
+      expect(existsSync(join(web, file)), file).toBe(true);
+      expect(owed, file).not.toContain(file);
     }
   });
 });
@@ -726,11 +717,8 @@ describe("R4: as peças soltas da lista só vivem em ui/ (controles)", () => {
     ]);
   });
 
-  it("os arquivos da dívida de R4 são os de hoje: a 1 tela que ainda importa e o screen-parts que reexporta", () => {
-    expect(DEBT.R4).toEqual([
-      "src/catalog/screen-parts.tsx",
-      "src/expenses/expense-list.tsx",
-    ]);
+  it("os arquivos da dívida de R4 são os de hoje: o screen-parts que reexporta", () => {
+    expect(DEBT.R4).toEqual(["src/catalog/screen-parts.tsx"]);
   });
 });
 
@@ -846,13 +834,21 @@ function mergeThreeWay(base: string, mine: string, theirs: string) {
 }
 
 describe("a dívida por pasta: tirar arquivos de pastas diferentes não conflita (AC-L0.8)", () => {
-  const folders = [...new Set(DEBT.R2.map(folderOf))];
+  // a list of its own: the live debt shrinks to fewer than three folders as the screens migrate
+  const GROUPED_DEBT = [
+    "src/alfa/um.tsx",
+    "src/alfa/dois.tsx",
+    "src/beta/tres.tsx",
+    "src/gama/quatro.tsx",
+    "src/gama/cinco.tsx",
+  ];
+  const folders = [...new Set(GROUPED_DEBT.map(folderOf))];
   const without = (folder: string | undefined) =>
-    DEBT.R2.filter((file) => folderOf(file) !== folder);
+    GROUPED_DEBT.filter((file) => folderOf(file) !== folder);
 
   it("duas cópias da lista de R2, cada uma sem uma pasta vizinha diferente, mesclam sem conflito", () => {
-    expect(folders.length).toBeGreaterThanOrEqual(2);
-    const base = listText(DEBT.R2, folders);
+    expect(folders.length).toBeGreaterThan(2);
+    const base = listText(GROUPED_DEBT, folders);
     for (const [index, folder] of folders.slice(0, -1).entries()) {
       const next = folders[index + 1];
       const merged = mergeThreeWay(
@@ -863,7 +859,9 @@ describe("a dívida por pasta: tirar arquivos de pastas diferentes não conflita
       expect(merged.conflicted, `${folder} e ${next}`).toBe(false);
       expect(merged.text).toBe(
         listText(
-          DEBT.R2.filter((file) => ![folder, next].includes(folderOf(file))),
+          GROUPED_DEBT.filter(
+            (file) => ![folder, next].includes(folderOf(file))
+          ),
           folders
         )
       );
@@ -873,7 +871,7 @@ describe("a dívida por pasta: tirar arquivos de pastas diferentes não conflita
   it("controle: sem a linha de comentário por pasta as mesmas duas edições conflitam", () => {
     const [first, second] = folders;
     const merged = mergeThreeWay(
-      listText(DEBT.R2, false),
+      listText(GROUPED_DEBT, false),
       listText(without(first), false),
       listText(without(second), false)
     );
