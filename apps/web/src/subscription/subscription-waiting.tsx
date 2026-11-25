@@ -1,8 +1,8 @@
 import { useCallback, useState } from "react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/ui/badge";
+import { Block } from "@/ui/block";
 import { Button, buttonVariants } from "@/ui/button";
-import { Card, CardContent } from "@/ui/card";
 import { Field, FieldDescription, FieldLabel } from "@/ui/field";
 import { Input } from "@/ui/input";
 import { WRAPS } from "./subscription-parts";
@@ -83,7 +83,7 @@ export function PixWaiting({
     </Field>
   );
   return (
-    <CardContent className="grid grid-cols-1 gap-3 border-t pt-(--card-spacing)">
+    <div className="grid grid-cols-1 gap-3 border-t pt-(--card-spacing)">
       <div className="flex flex-wrap items-center gap-2">
         <h3 className="m-0 font-medium text-sm">Pix Automático</h3>
         <Badge
@@ -139,7 +139,7 @@ export function PixWaiting({
           Escolher outra forma de pagamento
         </Button>
       </div>
-    </CardContent>
+    </div>
   );
 }
 
@@ -182,8 +182,8 @@ export function CardConfirming({
   waitedOut: boolean;
 }) {
   return (
-    <Card>
-      <CardContent className="grid gap-2">
+    <Block variant="plain">
+      <div className="grid gap-2">
         <p className="m-0 font-medium" role="status">
           Confirmando o pagamento…
         </p>
@@ -193,7 +193,7 @@ export function CardConfirming({
         {waitedOut ? (
           <WaitingLine onReread={onReread} text="" waitedOut />
         ) : null}
-      </CardContent>
-    </Card>
+      </div>
+    </Block>
   );
 }
