@@ -1,13 +1,12 @@
 /// <reference lib="dom" />
 import type { Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
-import { customerStates } from "./ui-lot2-states";
 import { productStates } from "./ui-product-states";
 import { stockStates } from "./ui-stock-states";
 
 /**
- * The gap between the line that counts the list ("25 variantes") and the card of the list is the same on Estoque,
- * Produtos and Clientes: 16 px at 360 px. The notice of the open panel lives inside the panel, so nothing sits
+ * The gap between the line that counts the list ("25 variantes") and the card of the list is the same on Estoque and
+ * Produtos: 16 px at 360 px (Clientes counts in the title of its `ListBlock`, with no line of its own). The notice of the open panel lives inside the panel, so nothing sits
  * between the count and the list, and the gap does not change with the "Precisa de ação" strip above.
  */
 const GAP = 16;
@@ -52,9 +51,7 @@ function gapBelowCount(page: Page) {
 }
 
 test.describe("o vão entre a contagem e a lista a 360 px", () => {
-  test("Estoque, Produtos e Clientes têm o mesmo vão de 16 px", async ({
-    page,
-  }) => {
+  test("Estoque e Produtos têm o mesmo vão de 16 px", async ({ page }) => {
     await stockStates.list(page);
     await expect(page.locator('[data-slot="action-strip"]')).toBeVisible();
     const stock = await gapBelowCount(page);
@@ -62,18 +59,11 @@ test.describe("o vão entre a contagem e a lista a 360 px", () => {
     await productStates.list(page);
     const products = await gapBelowCount(page);
 
-    await customerStates.list(page);
-    const customers = await gapBelowCount(page);
-
     expect(stock?.gap).toBeCloseTo(GAP, 0);
     expect(
       Math.abs((stock?.gap ?? 0) - (products?.gap ?? 99))
     ).toBeLessThanOrEqual(TOLERANCE);
-    expect(
-      Math.abs((stock?.gap ?? 0) - (customers?.gap ?? 99))
-    ).toBeLessThanOrEqual(TOLERANCE);
     expect(products?.gap).toBeCloseTo(GAP, 0);
-    expect(customers?.gap).toBeCloseTo(GAP, 0);
   });
 
   test("no Estoque o vão é o mesmo com e sem a faixa Precisa de ação (sem ela, com o aviso de indisponível no lugar)", async ({
