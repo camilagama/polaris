@@ -285,20 +285,20 @@ test.describe("a 320 px com letra de 20 px", () => {
         exact: true,
         name: "Filtrar despesas",
       });
-      const segmented = bar.getByRole("group", {
+      const segmented = bar.getByRole("tablist", {
         exact: true,
         name: "Situação",
       });
-      const voided = segmented.getByRole("button", {
+      const voided = segmented.getByRole("tab", {
         exact: true,
         name: "Anuladas",
       });
       await expect(
-        segmented.getByRole("button", { exact: true, name: "Ativas" })
+        segmented.getByRole("tab", { exact: true, name: "Ativas" })
       ).toBeInViewport({ ratio: 1 });
       await expect(voided).toBeInViewport({ ratio: 1 });
       await voided.click();
-      await expect(voided).toHaveAttribute("aria-pressed", "true");
+      await expect(voided).toHaveAttribute("aria-selected", "true");
 
       await bar.getByRole("button", { name: FILTER_BUTTON_NAME }).click();
       await page
