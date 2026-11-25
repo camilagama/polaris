@@ -197,7 +197,10 @@ reflowTest(
     expect(onlyPhone?.text).toBe("(11) 91234-5678");
     const onlyEmail = await contactBoxes(page, NO_PHONE.id);
     expect(onlyEmail?.text).toBe(ONLY_EMAIL);
-    const list = page.getByRole("list", { name: "Clientes" });
+    const list = page.getByRole("list", {
+      exact: true,
+      name: "Clientes cadastrados",
+    });
     await assertNothingClipped(list);
     await assertNoEllipsis(list.locator("[data-customer-id]"));
     await assertNoPageScroll(page);
@@ -223,7 +226,10 @@ reflowTest(
     await expect(
       anonymized.getByRole("button", { name: EDIT_NAME })
     ).toHaveCount(0);
-    const list = page.getByRole("list", { name: "Clientes" });
+    const list = page.getByRole("list", {
+      exact: true,
+      name: "Clientes cadastrados",
+    });
     await assertNothingClipped(list);
     await assertNoEllipsis(list.locator("[data-customer-id]"));
     await assertNoPageScroll(page);
@@ -341,10 +347,40 @@ for (const [width, font] of [
     async ({ page }) => {
       await openArchived(page, width, font);
       expectBadgesBelow(await rowGeometries(page, ARCHIVED_ROW), 2);
-      const list = page.getByRole("list", { name: "Clientes" });
+      const list = page.getByRole("list", {
+        exact: true,
+        name: "Clientes cadastrados",
+      });
       await assertNothingClipped(list);
       await assertNoEllipsis(list.locator(ARCHIVED_ROW));
       await assertNoPageScroll(page);
     }
   );
 }
+
+reflowTest(
+  "a busca sem resultado troca o texto da contagem no mesmo nó, e limpá-la o devolve",
+  async ({ page }) => {
+    await openCustomers(page, 360, 16);
+    const count = page.locator("[data-list-count]");
+    await expect(count).toHaveText(`${ACTIVE.length} clientes`);
+    const node = await count.elementHandle();
+    const search = page.getByLabel("Buscar cliente");
+    await search.fill("zzzz sem cliente");
+    await expect(
+      page.getByText("Nenhum cliente com “zzzz sem cliente”.")
+    ).toBeVisible();
+    await expect(count).toHaveText("");
+    expect(
+      await node?.evaluate((element) => element.isConnected),
+      "o nó da contagem é o mesmo depois da busca sem resultado"
+    ).toBe(true);
+    await search.fill("");
+    await expect(count).toHaveText(`${ACTIVE.length} clientes`);
+    expect(
+      await node?.evaluate((element) => element.isConnected),
+      "o nó da contagem é o mesmo depois de limpar a busca"
+    ).toBe(true);
+    expect(await node?.textContent()).toBe(`${ACTIVE.length} clientes`);
+  }
+);

@@ -246,16 +246,44 @@ const LONG_LIST = Array.from(
 /** The state filter of a list: the strip of the tabs with no panel; the list below is the screen's. */
 function GallerySegmentedFilter() {
   const [state, setState] = useState<"active" | "archived">("active");
+  const [status, setStatus] = useState<"active" | "voided">("active");
+  const [rows, setRows] = useState("all");
   return (
-    <SegmentedFilter
-      label="Estado dos produtos"
-      onSelect={setState}
-      options={[
-        ["active", "Ativos"],
-        ["archived", "Arquivados"],
-      ]}
-      value={state}
-    />
+    <div className="grid gap-4">
+      <SegmentedFilter
+        label="Estado dos produtos"
+        onSelect={setState}
+        options={[
+          ["active", "Ativos"],
+          ["archived", "Arquivados"],
+        ]}
+        value={state}
+      />
+      <SegmentedFilter
+        compact
+        label="Situação"
+        onSelect={setStatus}
+        options={[
+          ["active", "Ativas"],
+          ["voided", "Anuladas"],
+        ]}
+        value={status}
+      />
+      <div className="w-60 max-w-full">
+        <SegmentedFilter
+          label="Linhas do arquivo"
+          onSelect={setRows}
+          options={[
+            ["all", "Todas (9)"],
+            ["error", "Com erro (1)"],
+            ["exists", "Já existem (2)"],
+            ["no_category", "Sem categoria (1)"],
+            ["over_limit", "Fora do limite (3)"],
+          ]}
+          value={rows}
+        />
+      </div>
+    </div>
   );
 }
 

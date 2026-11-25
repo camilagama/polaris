@@ -2,8 +2,7 @@ import TriangleAlertIcon from "lucide-react/dist/esm/icons/triangle-alert";
 import { type ReactNode, type Ref, useMemo, useState } from "react";
 import { Alert, AlertDescription } from "@/ui/alert";
 import { Button } from "@/ui/button";
-import { Tabs, TabsContent } from "@/ui/tabs";
-import { ScreenTabList, ScreenTabTrigger } from "../../app-shell/screen-tabs";
+import { SegmentedFilter } from "@/ui/segmented-filter";
 import { LimitHelp } from "../../subscription/limit-help";
 import type { LimitHelpView } from "../../subscription/limit-help-model";
 import { IMPORT_OFFLINE_ID, StepFrame } from "./import-frame";
@@ -95,6 +94,7 @@ export function ImportPreviewStep({
   const rows = useMemo(() => previewTableRows(plan), [plan]);
   const { counts, first, shown } = useMemo(() => filtersOf(rows), [rows]);
   const [filter, setFilter] = useState<Filter>(first);
+  const selected = FILTERS.find(([value]) => value === filter)?.[1] ?? "";
   const limit = overLimitText(plan);
   const noCategory = noCategoryText(plan);
   const notes = headerNotes(plan);
@@ -180,31 +180,24 @@ export function ImportPreviewStep({
           ))}
         </ul>
       ) : null}
-      <Tabs className="min-w-0" onValueChange={setFilter} value={filter}>
-        <ScreenTabList
-          label="Linhas do arquivo"
-          signature={shown.map(([value]) => value).join()}
-          surface="popover"
-          value={filter}
-        >
-          {shown.map(([value, label]) => (
-            <ScreenTabTrigger key={value} value={value}>
-              {label} ({counts.get(value) ?? 0})
-            </ScreenTabTrigger>
-          ))}
-        </ScreenTabList>
-        {shown.map(([value, label]) => (
-          <TabsContent key={value} value={value}>
-            <ImportRowsTable
-              caption={`Linhas do arquivo: ${label}`}
-              markHeader="Situação"
-              rows={rows
-                .filter((row) => value === "all" || row.situation === value)
-                .map(tableRow)}
-            />
-          </TabsContent>
-        ))}
-      </Tabs>
+      <SegmentedFilter
+        label="Linhas do arquivo"
+        onSelect={setFilter}
+        options={shown.map(
+          ([value, label]) =>
+            [value, `${label} (${counts.get(value) ?? 0})`] as const
+        )}
+        surface="popover"
+        value={filter}
+      />
+      <ImportRowsTable
+        key={filter}
+        caption={`Linhas do arquivo: ${selected}`}
+        markHeader="Situação"
+        rows={rows
+          .filter((row) => filter === "all" || row.situation === filter)
+          .map(tableRow)}
+      />
     </StepFrame>
   );
 }
