@@ -376,7 +376,7 @@ const SCREENS: Record<Path, (page: Page) => Locator[]> = {
   ],
   "/sales/history": (page) => [
     page.getByRole("heading", { level: 1, name: "Histórico de vendas" }),
-    page.getByRole("list", { name: "Vendas" }),
+    page.getByRole("list", { exact: true, name: "Vendas do período" }),
   ],
 };
 const DESTINATIONS: Path[] = [

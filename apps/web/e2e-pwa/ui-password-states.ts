@@ -23,7 +23,7 @@ const TOKEN = "tok-de-teste";
 const SHORT_PASSWORD = "curta";
 
 const newPasswordField = (page: Page) =>
-  page.getByLabel("Nova senha", { exact: true });
+  page.locator("input").and(page.getByLabel("Nova senha", { exact: true }));
 const submit = (page: Page, name: string) =>
   page.getByRole("button", { exact: true, name }).click();
 const title = (page: Page, name: string) =>

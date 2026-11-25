@@ -9,8 +9,8 @@ import {
   useState,
 } from "react";
 import { cn } from "@/lib/utils";
+import { Block, BlockHeader, BlockPanel } from "@/ui/block";
 import { Button, buttonVariants } from "@/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/ui/card";
 import { Separator } from "@/ui/separator";
 import {
   ACCOUNT_HREF,
@@ -113,8 +113,8 @@ function RecentLoginRequired() {
   return (
     <>
       <UiBlock>
-        <Card>
-          <CardContent className="grid gap-3">
+        <Block variant="plain">
+          <div className="grid gap-3">
             <EntryAlert>{CHANGE_RECENT_REQUIRED}</EntryAlert>
             {logout.message ? (
               <p className="text-muted-foreground text-support">
@@ -130,8 +130,8 @@ function RecentLoginRequired() {
             >
               {CHANGE_RECENT_BUTTON}
             </Button>
-          </CardContent>
-        </Card>
+          </div>
+        </Block>
       </UiBlock>
       {logout.blocked ? (
         <LogoutDialog
@@ -148,7 +148,7 @@ function RecentLoginRequired() {
   );
 }
 
-function ChangePasswordForm() {
+export function ChangePasswordForm() {
   const [current, setCurrent] = useState("");
   const [next, setNext] = useState("");
   const [currentVisible, toggleCurrent, hideCurrent] = useReveal();
@@ -162,6 +162,8 @@ function ChangePasswordForm() {
   const currentId = useId();
   const nextId = useId();
   const pauseAlertId = useId();
+  const titleId = useId();
+  const inTab = useInTab();
   const currentRef = useRef<HTMLInputElement>(null);
   const nextRef = useRef<HTMLInputElement>(null);
   const paused = pause !== null;
@@ -295,17 +297,21 @@ function ChangePasswordForm() {
       ) : null}
       {notice?.kind === "recent" || notice?.kind === "no-password" ? null : (
         <UiBlock>
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <KeyRoundIcon
-                  aria-hidden="true"
-                  className="size-4 text-muted-foreground"
-                />
-                {CHANGE_CARD_TITLE}
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
+          <Block aria-labelledby={titleId}>
+            <BlockHeader
+              id={titleId}
+              level={inTab ? 3 : 2}
+              title={
+                <span className="flex items-center gap-2">
+                  <KeyRoundIcon
+                    aria-hidden="true"
+                    className="size-4 text-muted-foreground"
+                  />
+                  {CHANGE_CARD_TITLE}
+                </span>
+              }
+            />
+            <BlockPanel>
               <form
                 className="flex flex-col gap-4"
                 noValidate
@@ -350,8 +356,8 @@ function ChangePasswordForm() {
                   <CancelLink />
                 </div>
               </form>
-            </CardContent>
-          </Card>
+            </BlockPanel>
+          </Block>
         </UiBlock>
       )}
     </>
