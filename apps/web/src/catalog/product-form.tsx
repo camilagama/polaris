@@ -16,6 +16,7 @@ import {
   CollapsibleTrigger,
 } from "@/ui/collapsible";
 import { FieldLegend, FieldSeparator, FieldSet } from "@/ui/field";
+import { FieldGroup } from "@/ui/field-group";
 import { focusLater } from "../lib/focus";
 import { SelectField } from "../sales/sale-fields";
 import { ProductTextAreaField, ProductTextField } from "./product-fields";
@@ -209,10 +210,12 @@ export function ProductForm({
         </>
       )}
       <Collapsible
-        className="col-span-full grid gap-4 rounded-lg border border-border"
+        className="col-span-full gap-4 p-0"
         onOpenChange={setDetailsOpen}
         open={detailsOpen}
+        render={<FieldGroup />}
       >
+        <FieldLegend className="sr-only">Mais detalhes</FieldLegend>
         <CollapsibleTrigger
           className="h-auto min-h-ctl-lg w-full justify-between whitespace-normal px-3 text-left"
           render={<Button type="button" variant="ghost" />}
@@ -225,8 +228,7 @@ export function ProductForm({
         </CollapsibleTrigger>
         {/* kept mounted while closed: what was typed in it survives closing and opening */}
         <CollapsiblePanel className="px-3 pb-3" keepMounted>
-          <FieldSet className={SECTION_CLASS}>
-            <FieldLegend className="sr-only">Mais detalhes</FieldLegend>
+          <div className={SECTION_CLASS}>
             <SelectField
               id="product-category"
               label="Categoria"
@@ -243,7 +245,7 @@ export function ProductForm({
               optional
               value={draft.description}
             />
-          </FieldSet>
+          </div>
         </CollapsiblePanel>
       </Collapsible>
       {editing ? null : (

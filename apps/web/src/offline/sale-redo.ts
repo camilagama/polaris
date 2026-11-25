@@ -3,6 +3,7 @@ import {
   type OfflineSalePayload,
   offlineSalePayloadSchema,
 } from "@polaris/contracts";
+import { calculateSaleAdjustments } from "@polaris/domain/sales/sale-adjustments";
 import { variantFullLabel } from "../inventory/stock-target";
 import { formatBrlAmount } from "../lib/format";
 import { priceFieldText } from "../sales/last-prices-model";
@@ -10,15 +11,20 @@ import {
   type AdjustmentDraft,
   type ItemDraft,
   NO_PROFILE_CHOICE,
+  type PaymentDraft,
+  type ProfileSelectionDraft,
   type SaleFormState,
 } from "../sales/sale-form-model";
+import type { SplitDraft } from "../sales/sale-split-model";
 import { itemChangesForEntry } from "../sales/sale-variant-picker-model";
 import type { OutboxCommand } from "./outbox/command";
 
 /**
- * Redoing a sale the server refused for its authorization: the sale the device still holds becomes the form of
- * Vender again, and confirming it makes a NEW sale (a new command ID). The refused command is never sent again and
- * nothing is removed here: the person discards it only once the new sale is recorded or kept.
+ * Redoing a sale the server refused for its authorization, or a sale paid in parts refused for the profile of a part:
+ * the sale the device still holds becomes the form of Vender again (with its parts, each with the profile and the
+ * version it was priced with, so the form asks to review the one that changed), and confirming it makes a NEW sale (a
+ * new command ID). The refused command is never sent again and nothing is removed here: the person discards it only
+ * once the new sale is recorded or kept.
  *
  * The form is filled only when every line can be sold as it was: a line whose variant left the catalog or whose
  * product was archived, or whose quantity the stock no longer covers, is said and the form is not filled at all, so
@@ -106,6 +112,80 @@ export function variantIdsOf(command: OutboxCommand): string[] {
     : [];
 }
 
+type StoredPayment = NonNullable<OfflineSalePayload["payment"]>;
+
+function paymentDraft(payment: StoredPayment): PaymentDraft {
+  return {
+    anticipationRequested: payment.anticipationRequested,
+    installmentPlan: payment.installmentPlan ?? "",
+    installments:
+      payment.installments === null ? "" : String(payment.installments),
+    method: payment.method,
+  };
+}
+
+/**
+ * The profile chosen with the version the device saw: when the profile changed since, the form asks for the review of
+ * that part ("Revisei a prévia da parte N"), and when it left the list the form says so in that part.
+ */
+function profileDraft(
+  profile: { expectedVersion: number; id: string } | null | undefined
+): ProfileSelectionDraft {
+  return profile
+    ? {
+        choice: profile.id,
+        reviewNotice: null,
+        seenVersion: profile.expectedVersion,
+      }
+    : { choice: NO_PROFILE_CHOICE, reviewNotice: null, seenVersion: null };
+}
+
+function totalDueOf(sale: OfflineSalePayload): string | null {
+  try {
+    return calculateSaleAdjustments({
+      adjustments: sale.adjustments,
+      items: sale.items,
+    }).totalDue;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The payment of the form: a sale of one payment as it always was; a sale paid in parts comes back split, part 1 in the
+ * payment of the form and part 2 typed (it does not follow the rest), each with its own profile. Null for a payload
+ * that has neither, which the contract does not allow.
+ */
+function paymentOfForm(
+  sale: OfflineSalePayload
+): Pick<SaleFormState, "payment" | "profile" | "split"> | null {
+  if (sale.payment !== undefined) {
+    return {
+      payment: paymentDraft(sale.payment),
+      profile: profileDraft(sale.paymentProfile),
+      split: null,
+    };
+  }
+  const [first, second, ...more] = sale.payments ?? [];
+  if (first === undefined || second === undefined || more.length > 0) {
+    return null;
+  }
+  const split: SplitDraft = {
+    firstAmount: priceFieldText(first.amount),
+    second: {
+      amount: priceFieldText(second.amount),
+      payment: paymentDraft(second),
+      profile: profileDraft(second.paymentProfile),
+    },
+    totalSeen: totalDueOf(sale),
+  };
+  return {
+    payment: paymentDraft(first),
+    profile: profileDraft(first.paymentProfile),
+    split,
+  };
+}
+
 /** The form of Vender for a refused sale, from the catalog and balances the server has now (the refused sale is not in them). */
 export function buildRedoDraft(
   command: OutboxCommand,
@@ -117,10 +197,8 @@ export function buildRedoDraft(
     return { kind: "unreadable" };
   }
   const sale = parsed.data;
-  // The form here holds one payment: a sale paid in parts is not brought back
-  // as one, and its parts are not dropped either.
-  const { payment } = sale;
-  if (payment === undefined) {
+  const payment = paymentOfForm(sale);
+  if (payment === null) {
     return { kind: "unreadable" };
   }
   const byVariant = new Map(entries.map((entry) => [entry.variantId, entry]));
@@ -149,21 +227,7 @@ export function buildRedoDraft(
       ),
       items,
       occurredAtLocal: "",
-      payment: {
-        anticipationRequested: payment.anticipationRequested,
-        installmentPlan: payment.installmentPlan ?? "",
-        installments:
-          payment.installments === null ? "" : String(payment.installments),
-        method: payment.method,
-      },
-      profile: sale.paymentProfile
-        ? {
-            choice: sale.paymentProfile.id,
-            reviewNotice: null,
-            seenVersion: sale.paymentProfile.expectedVersion,
-          }
-        : { choice: NO_PROFILE_CHOICE, reviewNotice: null, seenVersion: null },
-      split: null,
+      ...payment,
     },
     kind: "ready",
   };

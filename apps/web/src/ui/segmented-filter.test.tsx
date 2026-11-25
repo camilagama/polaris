@@ -15,6 +15,7 @@ const OPTIONS = [
 const noop = () => undefined;
 
 const TAB_TAG = /<button[^>]*role="tab"[^>]*>/g;
+const SCROLL_BOX = /overflow-x-auto[^>]*>\s*<div[^>]*role="tablist"/;
 const TAB_LIST =
   /<div[^>]*role="tablist"[^>]*aria-label="Estado das categorias"/;
 
@@ -69,5 +70,24 @@ describe("SegmentedFilter", () => {
     expect(tabs.every((tab) => tab.includes('aria-disabled="true"'))).toBe(
       true
     );
+  });
+
+  it("sits in the scroll box of the tabs, so a long set of options never widens the page", () => {
+    const markup = draw("active");
+    expect(markup).toMatch(SCROLL_BOX);
+  });
+
+  it("writes the smaller type and padding of a shared line only when asked", () => {
+    const compact = renderToStaticMarkup(
+      <SegmentedFilter
+        compact
+        label="Situação"
+        onSelect={noop}
+        options={OPTIONS}
+        value="active"
+      />
+    );
+    expect(compact).toContain("text-xs");
+    expect(draw("active")).not.toContain("text-xs");
   });
 });

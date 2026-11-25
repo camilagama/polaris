@@ -25,20 +25,18 @@ const EDGE_FADE_FROM = {
 } as const;
 
 /**
- * The list of tabs of a screen, on one line: on a narrow phone it scrolls sideways, with room
- * above and below for the 44 px touch area of each tab. The tab that opened
- * is brought into view, again when the set of tabs or the way they are drawn changes (`signature`), and a fade at the
- * edge that hides tabs says there are more to reach.
+ * The box a list of tabs scrolls in when it does not fit, with room above and below for the 44 px touch area of each
+ * tab. The tab that opened is brought into view, again when the set of tabs or the way they are drawn changes
+ * (`signature`), and a fade at the edge that hides tabs says there are more to reach. The screen's tabs and the state
+ * filter of a list share it, so neither widens the page on a narrow phone.
  */
-export function ScreenTabList({
+export function ScrollingTabList({
   children,
-  label,
   signature = "",
   surface = "page",
   value,
 }: {
   children: ReactNode;
-  label: string;
   /** Changes when the tabs of the list change (one more, one less): the open tab is placed again. */
   signature?: string;
   /** What the list sits on: the page, or a dialog (`bg-popover`); the fade at the edges takes its color. */
@@ -94,9 +92,7 @@ export function ScreenTabList({
         onScroll={measure}
         ref={scroller}
       >
-        <TabsList aria-label={label} variant="line">
-          {children}
-        </TabsList>
+        {children}
       </div>
       {hidden.start ? (
         <span
@@ -113,6 +109,29 @@ export function ScreenTabList({
         />
       ) : null}
     </div>
+  );
+}
+
+/** The list of tabs of a screen, on one line, in the scroll box. */
+export function ScreenTabList({
+  children,
+  label,
+  signature = "",
+  surface = "page",
+  value,
+}: {
+  children: ReactNode;
+  label: string;
+  signature?: string;
+  surface?: keyof typeof EDGE_FADE_FROM;
+  value: string;
+}) {
+  return (
+    <ScrollingTabList signature={signature} surface={surface} value={value}>
+      <TabsList aria-label={label} variant="line">
+        {children}
+      </TabsList>
+    </ScrollingTabList>
   );
 }
 

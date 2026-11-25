@@ -2,6 +2,7 @@
 import type { Locator, Page, Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 import { applyEditor, onPhone } from "./filter-bar-editor";
+import { chooseSelectOption } from "./select-option";
 import { serveLabWorker, WORKER_MARK } from "./worker-mark";
 
 const SHIRT_OPTION = /Camiseta do laboratório · Azul/;
@@ -493,10 +494,7 @@ async function payWith(page: Page, method: string) {
 
 /** The profile is a Base UI Select: open it, then pick the option. */
 async function chooseProfile(page: Page, option: string) {
-  await page
-    .getByRole("combobox", { exact: true, name: "Perfil de pagamento" })
-    .click();
-  await page.getByRole("option", { exact: true, name: option }).click();
+  await chooseSelectOption(page.locator("body"), "Perfil de pagamento", option);
 }
 
 const summary = (page: Page) =>
@@ -599,17 +597,20 @@ test.describe("venda", () => {
   }) => {
     await openSaleLab(page, `user-${crypto.randomUUID()}`);
     await page.getByLabel("Rede disponível").uncheck();
+    const saved = page.getByRole("region", {
+      name: "Vendas guardadas neste aparelho",
+    });
     await fillShirtSale(page, 1);
     await keepSale(page).click();
     await expect(
       page.getByText("Venda guardada neste aparelho.")
     ).toBeVisible();
+    await expect(saved).toBeFocused();
     await fillShirtSale(page, 3);
+    await expect(saved).not.toBeFocused();
     await keepSale(page).click();
+    await expect(saved).toBeFocused();
 
-    const saved = page.getByRole("region", {
-      name: "Vendas guardadas neste aparelho",
-    });
     const lines = saved.getByRole("listitem");
     await expect(lines).toHaveCount(2);
     // the one kept just now is the first, and the only one that speaks as a status
