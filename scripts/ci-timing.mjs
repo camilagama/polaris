@@ -53,7 +53,8 @@ const TIMINGS_ARTIFACT = /^playwright-timings-/;
 const TIMINGS_FILE = /^timings-(.+)\.json$/;
 const INSTALL_STEP = new RegExp(
   [
-    "^Run (actions/(checkout|setup-node)@|actions/cache(/restore|/save)?@|oven-sh/setup-bun@|(bun|npm|pnpm) install|(bunx|npx) playwright install)",
+    "^Run (actions/(checkout|setup-node)@|actions/cache(/restore|/save)?@|oven-sh/setup-bun@|(bun|npm|pnpm) i(nstall)?( |$)|(bunx|npx) playwright install)",
+    String.raw`^Run \./\.github/actions/chromium$`,
     String.raw`^Install dependencies \(cache miss\)$`,
     "^Run version=.*@playwright/test",
     String.raw`^Run test "\$\((bunx|npx) playwright --version\)"`,
