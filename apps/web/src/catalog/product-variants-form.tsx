@@ -160,11 +160,12 @@ function CombinationRow({
       onValueChange(index, name, value),
     [index, onValueChange]
   );
+  const labelId = `product-variant-${productId}-${index}-label`;
   return (
     <li>
-      <FieldGroup>
+      <FieldGroup aria-labelledby={labelId}>
         <div className="flex items-center justify-between gap-2">
-          <Badge>Combinação {index + 1}</Badge>
+          <Badge id={labelId}>Combinação {index + 1}</Badge>
           <Button
             aria-label={`Remover combinação ${index + 1}`}
             disabled={isPending}

@@ -2,6 +2,7 @@ import type { ProductReadModel } from "@polaris/contracts";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { emptyDraft, ProductForm, productFormHasErrors } from "./product-form";
+import { ProductMediaCropField } from "./product-media-crop";
 
 /**
  * The form of a product, drawn without a browser: which fields a new product shows at first sight and which wait
@@ -96,6 +97,48 @@ describe("form of a new product", () => {
 
   it("is the form the footer of the dialog submits, from any tab", () => {
     expect(tagWith(markup, "<form")).toContain('id="product-form"');
+  });
+});
+
+describe("Mais detalhes", () => {
+  const markup = draw(null);
+
+  it("is named once: the trigger carries the name and the group around it carries none", () => {
+    expect(markup.split("Mais detalhes")).toHaveLength(2);
+    const group = tagWith(markup, 'data-slot="collapsible"');
+    expect(group).toContain('role="none"');
+    expect(group).not.toContain("aria-label");
+  });
+});
+
+describe("the pieces of the dialog of a product", () => {
+  it("the form groups its fields with the field group and the field set, not with a div drawn by hand", () => {
+    const markup = draw(null);
+    expect(markup.split('data-slot="field-set"')).toHaveLength(3);
+    const details = tagWith(markup, 'data-slot="collapsible"');
+    expect(details.startsWith("<fieldset")).toBe(true);
+    expect(details).toContain("rounded-lg border border-border");
+  });
+
+  it("the crop of an image holds the picture in the inset block", () => {
+    const markup = renderToStaticMarkup(
+      <ProductMediaCropField
+        adjusting={false}
+        announcement=""
+        crop={{ height: 1, width: 1, x: 0, y: 0 }}
+        dimensions={{ height: 100, width: 100 }}
+        disabled={false}
+        onKeyDown={noop}
+        onPointerCancel={noop}
+        onPointerDown={noop}
+        onPointerMove={noop}
+        onPointerUp={noop}
+        onToggleAdjusting={noop}
+        onUseFullImage={noop}
+        previewUrl="blob:preview"
+      />
+    );
+    expect(markup).toContain('data-slot="inset-block"');
   });
 });
 

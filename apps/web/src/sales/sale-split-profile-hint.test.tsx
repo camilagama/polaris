@@ -6,10 +6,10 @@ import {
   startSplit,
 } from "./sale-form-model";
 import {
-  PaymentSection,
   SPLIT_PROFILE_HINT,
   SPLIT_PROFILE_HINT_ID,
-} from "./sale-payment-section";
+} from "./sale-payment-hints";
+import { PaymentSection } from "./sale-payment-section";
 
 vi.mock("../lib/orpc", () => ({ orpcClient: {} }));
 

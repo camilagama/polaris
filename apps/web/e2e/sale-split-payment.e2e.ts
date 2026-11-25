@@ -1,6 +1,7 @@
 /// <reference lib="dom" />
 import type { Page, Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
+import { SPLIT_PROFILE_HINT } from "../src/sales/sale-payment-hints";
 import { chooseSelectOption } from "./select-option";
 import { serveLabWorker, WORKER_MARK } from "./worker-mark";
 
@@ -17,8 +18,6 @@ const SUM_RULE =
 const REVIEW_BUTTON = /^Revisei a prévia da parte/;
 const OWN_DATE_REFUSAL = /tem data própria/;
 const PART_2_PROFILE = /^Parte 2: O perfil de pagamento foi editado/;
-const SPLIT_PROFILE_HINT =
-  "O perfil define taxas e prazo estimados de cada parte. Sem perfil, ficam desconhecidos.";
 const SPLIT_MISMATCH =
   "A soma das partes não fecha o total da venda. Confira o valor de cada parte e confirme de novo.";
 
