@@ -324,7 +324,7 @@ export const stockStates = {
     });
     await page
       .getByRole("status")
-      .getByText("Carregando o estoque…")
+      .getByText("Carregando…")
       .waitFor({ state: "attached" });
     await showScreenAlone(page);
   },
