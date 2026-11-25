@@ -634,7 +634,7 @@ const RIGHT_EDGE_TOLERANCE = 1;
 /** Count and action share a line: their centers differ by rounding only. */
 const SAME_LINE_TOLERANCE = 2;
 
-/** A title as wide as the header: the count and the action no longer fit on its line, and without the phone rule that makes their group grow and align to the end, the group would stand at the left of the line below. */
+/** A title as wide as the header: the count and the action no longer fit on its line, so their group wraps to a line of its own. That only forces the wrap; each phone rule of the group is proven by its own test below. */
 async function widenTitle(page: Page, name: string) {
   await page
     .getByRole("region", { exact: true, name })
@@ -669,6 +669,9 @@ async function headerActionBoxes(page: Page, name: string) {
       const headerBox = header.getBoundingClientRect();
       return {
         action: box(action),
+        contentLeft:
+          headerBox.left +
+          Number.parseFloat(getComputedStyle(header).paddingLeft),
         contentRight:
           headerBox.right -
           Number.parseFloat(getComputedStyle(header).paddingRight),
@@ -722,6 +725,62 @@ for (const size of LIST_SIZES) {
     });
   }
 }
+
+const WRAPPED_HEADER_SIZE = { height: 740, width: 360 } as const;
+
+/** Wraps the group of count and action below a full-width title, then optionally stops the count from growing, so only the group's own alignment can place the action. */
+async function wrapGroup(page: Page, name: string, countGrows: boolean) {
+  await page.setViewportSize(WRAPPED_HEADER_SIZE);
+  await openGallery(page, null);
+  await widenTitle(page, name);
+  if (!countGrows) {
+    await page
+      .getByRole("region", { exact: true, name })
+      .locator("[data-list-count]")
+      .evaluate((count) => {
+        count.style.flexGrow = "0";
+      });
+  }
+  const boxes = await headerActionBoxes(page, name);
+  expect(boxes).not.toBeNull();
+  return boxes;
+}
+
+test('o ListBlock "Tabela larga" a 360 px: a contagem cresce e fica na borda esquerda da linha, a ação na direita', async ({
+  page,
+}) => {
+  const boxes = await wrapGroup(page, "Tabela larga", true);
+  if (!boxes) {
+    return;
+  }
+  expect(boxes.title.bottom).toBeLessThanOrEqual(
+    boxes.action.top + SIDE_BY_SIDE_TOLERANCE
+  );
+  expect(Math.abs(boxes.count.left - boxes.contentLeft)).toBeLessThanOrEqual(
+    RIGHT_EDGE_TOLERANCE
+  );
+  expect(Math.abs(boxes.action.right - boxes.contentRight)).toBeLessThanOrEqual(
+    RIGHT_EDGE_TOLERANCE
+  );
+});
+
+test('o ListBlock "Tabela larga" a 360 px: sem a contagem crescer, só o alinhamento do grupo põe a ação na borda direita', async ({
+  page,
+}) => {
+  const boxes = await wrapGroup(page, "Tabela larga", false);
+  if (!boxes) {
+    return;
+  }
+  expect(boxes.title.bottom).toBeLessThanOrEqual(
+    boxes.action.top + SIDE_BY_SIDE_TOLERANCE
+  );
+  expect(Math.abs(boxes.action.right - boxes.contentRight)).toBeLessThanOrEqual(
+    RIGHT_EDGE_TOLERANCE
+  );
+  expect(boxes.count.left).toBeGreaterThan(
+    boxes.contentLeft + RIGHT_EDGE_TOLERANCE
+  );
+});
 
 test("o ListBlock: o título é o único h2 da lista, a contagem não é título e axe não acusa a página", async ({
   page,
