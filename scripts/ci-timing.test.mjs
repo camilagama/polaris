@@ -337,6 +337,24 @@ describe("splitJob", () => {
     });
   });
 
+  it("keeps a test or init step out of the preparation, even right after an install", () => {
+    const parts = splitJob({
+      completed_at: at(100),
+      conclusion: "success",
+      created_at: at(0),
+      name: "x",
+      started_at: at(0),
+      steps: [
+        step("Set up job", 0, 2),
+        step("Run npm i -g playwright", 2, 12),
+        step("Run ./.github/actions/chromium", 12, 30),
+        step("Run bun init", 30, 40),
+        step("Run bun run test", 40, 95),
+      ],
+    });
+    expect(parts.preparation).toBe(30);
+  });
+
   it("counts every named Chromium step of the real ci.yml as preparation", () => {
     const text = readFileSync(
       new URL("../.github/workflows/ci.yml", import.meta.url),
@@ -366,11 +384,12 @@ describe("splitJob", () => {
       "utf8"
     );
     const withChromium = workflowJobs(text).filter((workflowJob) =>
-      workflowJob.steps.some(
-        (s) => s.uses === CHROMIUM_ACTION && s.name !== `Run ${CHROMIUM_ACTION}`
-      )
+      workflowJob.steps.some((s) => s.uses === CHROMIUM_ACTION)
     );
-    expect(withChromium.length).toBeGreaterThanOrEqual(4);
+    expect(withChromium.map((workflowJob) => workflowJob.id)).toContain(
+      "chromium-cache"
+    );
+    expect(withChromium.length).toBeGreaterThanOrEqual(5);
     for (const workflowJob of withChromium) {
       const end = workflowJob.steps.findIndex(
         (s) => s.uses === CHROMIUM_ACTION
