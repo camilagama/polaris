@@ -37,7 +37,7 @@ import type { SplitBalance } from "./sale-split-model";
 function Unknown({ children }: { children: ReactNode }) {
   return (
     <Badge
-      className="inline overflow-visible whitespace-normal rounded-sm border-warning/60 border-dashed bg-transparent px-1.5 py-px italic leading-[inherit]"
+      className="inline overflow-visible whitespace-normal rounded-sm border-warning/60 border-dashed bg-transparent px-1.5 py-px italic leading-4"
       variant="warning"
     >
       {children}
