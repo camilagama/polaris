@@ -79,7 +79,9 @@ export const sidebar = (page: Page): Locator =>
   page.getByRole("navigation", { exact: true, name: "Principal" });
 
 export const historyRows = (page: Page): Locator =>
-  page.getByRole("list", { name: "Vendas" }).getByRole("listitem");
+  page
+    .getByRole("list", { exact: true, name: "Vendas do período" })
+    .getByRole("listitem");
 
 export const periodPill = (page: Page, label: string): Locator =>
   page.getByRole("button", { exact: true, name: `Período: ${label}, editar` });
