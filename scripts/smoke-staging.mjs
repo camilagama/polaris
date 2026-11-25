@@ -637,6 +637,11 @@ export async function send(check, fetchImpl, target = STAGING_TARGET) {
   });
 }
 
+/** Cancels what a response did not read, so its socket is freed now and not when the garbage collector gets to it. */
+async function discardBody(response) {
+  await response?.body?.cancel().catch(() => undefined);
+}
+
 /** The shell is compared as bytes, as published; the answers of the Worker are read as text. */
 async function bodyOf(check, response) {
   if (check.readBody === "bytes") {
@@ -673,9 +678,10 @@ export async function attempt(
 ) {
   let outcome = "";
   for (let tries = 1; tries <= ATTEMPTS; tries += 1) {
+    let response;
     try {
       // biome-ignore lint/performance/noAwaitInLoops: the attempts are sequential by design
-      const response = await send(check, fetchImpl, target);
+      response = await send(check, fetchImpl, target);
       if (check.platform && isPlatformFailure(response)) {
         return { outcome: `cpu/plataforma ${response.status}`, passed: false };
       }
@@ -686,6 +692,8 @@ export async function attempt(
       outcome = `${response.status} ${verdict}`;
     } catch (error) {
       outcome = reasonOf(error);
+    } finally {
+      await discardBody(response);
     }
     if (tries < ATTEMPTS) {
       await pause();
@@ -720,7 +728,7 @@ async function releaseRead(check, release, fetchImpl, target) {
   } catch {
     return { active: null, state: "other" };
   } finally {
-    await response?.body?.cancel().catch(() => undefined);
+    await discardBody(response);
   }
   return { active: null, state: "other" };
 }

@@ -1180,6 +1180,26 @@ function propagating(clock, arrivesAt, { shell = true } = {}) {
   return { calls, fetchImpl };
 }
 
+/** A new stream for each response, as the real fetch has, and the count of those that were cancelled unread. */
+function trackedBodies() {
+  const state = {
+    cancelled: 0,
+    made: 0,
+    next: () => {
+      state.made += 1;
+      return new ReadableStream({
+        cancel() {
+          state.cancelled += 1;
+        },
+        pull(controller) {
+          controller.enqueue(new Uint8Array(8));
+        },
+      });
+    },
+  };
+  return state;
+}
+
 const webReleaseCheck = () =>
   smokeChecks(origins, {
     release: RELEASE,
@@ -1361,23 +1381,55 @@ describe("the wait for the release to reach the edge", () => {
     ["error", 503, {}],
   ])(
     "cancels the body of a read that is %s, so the socket is not held until the garbage collector",
-    async (_name, status, headers) => {
-      const state = { cancelled: false };
-      const body = new ReadableStream({
-        cancel() {
-          state.cancelled = true;
-        },
-        pull(controller) {
-          controller.enqueue(new Uint8Array(8));
-        },
-      });
+    async (name, status, headers) => {
+      const bodies = trackedBodies();
+      let reads = 0;
       await awaitRelease(
         webReleaseCheck(),
         RELEASE,
-        () => Promise.resolve(fromWorker(status, headers, body)),
+        () => {
+          reads += 1;
+          return Promise.resolve(fromWorker(status, headers, bodies.next()));
+        },
         fakeClock()
       );
-      expect(state.cancelled).toBe(true);
+      expect(bodies.cancelled).toBe(reads);
+      if (name === "stale") {
+        expect(reads).toBeGreaterThan(1);
+      }
+    }
+  );
+
+  it.each([
+    ["a check that does not read the body", { readBody: false }, 200],
+    [
+      "an answer of the Worker without a request id",
+      { readBody: true, worker: true },
+      200,
+    ],
+    ["a failure of the platform", { platform: true, readBody: true }, 503],
+    [
+      "a check that passes without reading",
+      { passes: true, readBody: false },
+      200,
+    ],
+  ])(
+    "cancels the body that attempt discards on %s",
+    async (_name, { passes = false, ...flags }, status) => {
+      const bodies = trackedBodies();
+      const check = {
+        ...flags,
+        expect: () => passes || "no",
+        name: "probe",
+        url: `${origins.web}/health`,
+      };
+      await attempt(
+        check,
+        () => Promise.resolve(answer(status, {}, bodies.next())),
+        noPause
+      );
+      expect(bodies.made).toBeGreaterThan(0);
+      expect(bodies.cancelled).toBe(bodies.made);
     }
   );
 
