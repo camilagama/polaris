@@ -686,7 +686,7 @@ const LOOSE_BOXES = [
 function DisabledControlExamples() {
   return (
     <div className="grid items-start gap-4 md:grid-cols-2">
-      <div className="grid gap-3" data-gallery-panel="loose-boxes">
+      <div className="grid gap-8" data-gallery-panel="loose-boxes">
         {LOOSE_BOXES.map((box) => (
           <div className="flex items-center gap-2" key={box.name}>
             <Checkbox
@@ -714,7 +714,7 @@ function DisabledControlExamples() {
           </FieldContent>
         </Field>
       </div>
-      <div className="grid gap-3" data-gallery-panel="off-choices">
+      <div className="grid gap-5" data-gallery-panel="off-choices">
         <RadioGroup
           aria-label="Forma desligada"
           defaultValue="pix"
