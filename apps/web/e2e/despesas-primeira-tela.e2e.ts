@@ -9,6 +9,7 @@ import { json, serve } from "./shell-server";
  */
 const FIRST_ROW_LIMIT = 400;
 const LINE_SPARE = 8;
+/** The touch area of a half of the segmented is read by what the browser hits at its edges (the clip of the strip counts), not by its box and `::before`. */
 const TOUCH_TARGET = 44;
 const NOW = "2026-11-14T12:00:00.000Z";
 const MONTHS = Array.from({ length: 12 }, (_, index) => index + 1);
@@ -146,27 +147,33 @@ for (const month of MONTHS) {
 
     const halves = await segmented.getByRole("tab").all();
     expect(halves).toHaveLength(2);
-    const halfAreas = await Promise.all(
+    const allHits = await Promise.all(
       halves.map((half) =>
-        half.evaluate((tab) => {
+        half.evaluate((tab, target) => {
           const box = tab.getBoundingClientRect();
-          const before = getComputedStyle(tab, "::before");
-          return {
-            height:
-              box.height +
-              Math.abs(Number.parseFloat(before.top)) +
-              Math.abs(Number.parseFloat(before.bottom)),
-            width:
-              box.width +
-              Math.abs(Number.parseFloat(before.left)) +
-              Math.abs(Number.parseFloat(before.right)),
+          const centreX = box.x + box.width / 2;
+          const centreY = box.y + box.height / 2;
+          const reach = target / 2 - 0.5;
+          const owns = (x: number, y: number) => {
+            const hit = document.elementFromPoint(x, y);
+            return hit !== null && tab.contains(hit);
           };
-        })
+          return {
+            bottom: owns(centreX, centreY + reach),
+            left: owns(centreX - reach, centreY),
+            right: owns(centreX + reach, centreY),
+            top: owns(centreX, centreY - reach),
+          };
+        }, TOUCH_TARGET)
       )
     );
-    for (const area of halfAreas) {
-      expect(area.width).toBeGreaterThanOrEqual(TOUCH_TARGET);
-      expect(area.height).toBeGreaterThanOrEqual(TOUCH_TARGET);
+    for (const hits of allHits) {
+      expect(hits).toEqual({
+        bottom: true,
+        left: true,
+        right: true,
+        top: true,
+      });
     }
 
     const first = await page.locator("[data-expense-id]").first().boundingBox();
