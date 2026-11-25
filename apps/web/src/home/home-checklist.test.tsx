@@ -112,6 +112,7 @@ describe("the checklist of the Início marks the step of the hour", () => {
   it("every icon is 16 px and sits in a box of 28 px", () => {
     for (const row of render(null)) {
       expect(box(row)).toContain("size-7");
+      expect(box(row)).toContain("[&amp;&gt;svg]:size-4");
       expect(row).toContain("<svg");
     }
   });
