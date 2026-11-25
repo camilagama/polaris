@@ -330,7 +330,6 @@ export const DEBT: Readonly<Record<Rule, readonly string[]>> = {
     "src/customers/customer-list.tsx",
     // expenses
     // legal
-    "src/legal/legal-page.tsx",
     // offline
     // payment-profiles
     // sales
