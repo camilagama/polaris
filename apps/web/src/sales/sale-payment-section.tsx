@@ -15,8 +15,11 @@ import { focusLater } from "../lib/focus";
 import { useSettledText } from "./sale-summary-panel";
 import { useStoreToday } from "../lib/use-store-today";
 import { Alert, AlertDescription } from "@/ui/alert";
+import { Badge } from "@/ui/badge";
+import { Block, BlockHeader, BlockPanel } from "@/ui/block";
 import { Button } from "@/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/ui/card";
+import { FieldGroup } from "@/ui/field-group";
+import { InsetBlock } from "@/ui/inset-block";
 import { Checkbox } from "@/ui/checkbox";
 import {
   Collapsible,
@@ -33,7 +36,6 @@ import {
   FieldTitle,
 } from "@/ui/field";
 import { RadioGroup, RadioGroupItem } from "@/ui/radio-group";
-import { HelpTip } from "@/ui/help-tip";
 import { Separator } from "@/ui/separator";
 import {
   CatalogNotice,
@@ -160,7 +162,7 @@ function AdjustmentEditor({
     [adjustment.draftId, onRemove]
   );
   return (
-    <fieldset className="grid min-w-0 gap-3 rounded-lg border border-border p-3">
+    <FieldGroup>
       <legend className="sr-only">Ajuste {index + 1}</legend>
       <div className="flex items-center justify-between gap-2">
         <span className="font-medium text-muted-foreground text-support">
@@ -217,7 +219,7 @@ function AdjustmentEditor({
           />
         </div>
       </div>
-    </fieldset>
+    </FieldGroup>
   );
 }
 
@@ -592,7 +594,7 @@ function PartFields({
   const prefix = `sale-part-${ordinal}`;
   const card = payment.method === "credit_card";
   return (
-    <fieldset className="grid min-w-0 gap-4 rounded-lg border border-border p-3">
+    <FieldGroup className="gap-4">
       <legend className="px-1 font-medium text-sm">Parte {ordinal}</legend>
       <div className="@container">
         <div className="grid @[24.5rem]:grid-cols-2 gap-4">
@@ -684,7 +686,7 @@ function PartFields({
           onAcknowledge={profile.choice === "" ? null : onAcknowledgeReview}
         />
       ) : null}
-    </fieldset>
+    </FieldGroup>
   );
 }
 
@@ -837,7 +839,7 @@ function SplitEnd({ onEnd }: SplitEndProps) {
     );
   }
   return (
-    <div className="grid justify-items-start gap-2 rounded-lg border border-border p-3">
+    <InsetBlock className="grid justify-items-start gap-2 p-3">
       <p className="mb-0" id="sale-split-end-question">
         Voltar a um pagamento só? A parte 2 sai da venda.
       </p>
@@ -863,7 +865,7 @@ function SplitEnd({ onEnd }: SplitEndProps) {
           Manter as duas partes
         </Button>
       </div>
-    </div>
+    </InsetBlock>
   );
 }
 
@@ -1128,24 +1130,22 @@ export function PaymentSection({
     [onAnticipationChange]
   );
   return (
-    <Card className="gap-4">
+    <Block aria-labelledby="sale-payment-title">
       {/* outside the fieldset: a locked sale disables its controls, not the (i) that explains them */}
-      <CardHeader>
-        <div className="flex items-center gap-1">
-          <CardTitle aria-level={2} id="sale-payment-title" role="heading">
-            Pagamento
-          </CardTitle>
-          <HelpTip about="Pagamento" className="-my-1">
-            {splitOn ? SPLIT_PAYMENT_HELP : SINGLE_PAYMENT_HELP}
-          </HelpTip>
-        </div>
-      </CardHeader>
-      <fieldset
-        aria-labelledby="sale-payment-title"
-        className="grid min-w-0 gap-4"
-        disabled={disabled}
-      >
-        <CardContent className="grid gap-5">
+      <BlockHeader
+        help={{
+          about: "Pagamento",
+          text: splitOn ? SPLIT_PAYMENT_HELP : SINGLE_PAYMENT_HELP,
+        }}
+        id="sale-payment-title"
+        title="Pagamento"
+      />
+      <BlockPanel>
+        <fieldset
+          aria-labelledby="sale-payment-title"
+          className="grid min-w-0 gap-5"
+          disabled={disabled}
+        >
           {splitOn ? (
             <SplitParts
               disabled={disabled}
@@ -1233,9 +1233,9 @@ export function PaymentSection({
             }
             summary={saleExtrasSummary(form, offline)}
           />
-        </CardContent>
-      </fieldset>
-    </Card>
+        </fieldset>
+      </BlockPanel>
+    </Block>
   );
 }
 
@@ -1300,13 +1300,13 @@ function SinglePayment({
                 <FieldContent>
                   <FieldTitle>
                     {keysEnabled && index < MAX_KEYED_METHODS ? (
-                      <span
+                      <Badge
                         aria-hidden="true"
-                        className="@min-[21rem]:@max-[26.5rem]:inline-flex @min-[32rem]:inline-flex hidden h-4 min-w-4 items-center justify-center rounded-sm border px-1 font-sans text-muted-foreground text-xs leading-none"
+                        className="@min-[21rem]:@max-[26.5rem]:inline-flex @min-[32rem]:inline-flex hidden h-4 min-w-4 rounded-sm bg-transparent px-1 font-normal font-sans text-muted-foreground"
                         data-method-key={index + 1}
                       >
                         {index + 1}
-                      </span>
+                      </Badge>
                     ) : null}
                     <span>{label}</span>
                   </FieldTitle>

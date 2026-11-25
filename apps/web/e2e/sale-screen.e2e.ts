@@ -730,7 +730,7 @@ test("Pagamento: cada forma traz o número decorativo e aria-keyshortcuts, o nom
   await expect(keys.first()).toHaveAttribute("aria-hidden", "true");
 
   const card = page
-    .locator('[data-slot="card"]')
+    .locator('[data-slot="card-frame"]')
     .filter({ has: methods })
     .first();
   const heights = async () =>
@@ -772,4 +772,68 @@ test("Pagamento: abaixo de 760 px ou com toque não há número, aria-keyshortcu
   await pix.focus();
   await page.keyboard.press("2");
   await expect(methods.getByRole("radio", { checked: true })).toHaveCount(0);
+});
+
+const LAB_ROW_LABELS = [
+  { option: SHIRT_OPTION, search: "camiseta azul" },
+  { option: /Camiseta do laboratório · Vermelha/, search: "camiseta vermelha" },
+  { option: SHIRT_OPTION, search: "camiseta azul" },
+] as const;
+
+async function pickLines(page: Page) {
+  await page.getByLabel("Rede disponível").uncheck();
+  for (const [index, row] of LAB_ROW_LABELS.entries()) {
+    if (index > 0) {
+      // biome-ignore lint/performance/noAwaitInLoops: one line after the other, each opens from the one before
+      await page.getByRole("button", { name: "Adicionar item" }).click();
+    }
+    const item = page.getByRole("group", {
+      exact: true,
+      name: `Item ${index + 1}`,
+    });
+    await item.getByLabel("Produto ou variante").fill(row.search);
+    await page.getByRole("option", { name: row.option }).click();
+    await expect(item.getByLabel("Quantidade")).toBeVisible();
+  }
+  await page.getByLabel("Rede disponível").check();
+}
+
+/** How far below the window the first screen of the sale leaves "Confirmar venda": zero or less means it shows. */
+async function confirmOverflow(page: Page): Promise<number> {
+  const confirm = page
+    .getByRole("complementary", { name: "Resumo" })
+    .getByRole("button", { name: "Confirmar venda" });
+  await expect(confirm).toBeVisible();
+  await page.evaluate(() => window.scrollTo(0, 0));
+  return confirm.evaluate(
+    (node) => node.getBoundingClientRect().bottom - window.innerHeight
+  );
+}
+
+/**
+ * "Confirmar venda" sits 303 px above the bottom of the window in this lab on the main before the blocks (497 of 800 px):
+ * it must show, and the blocks may push it down by 24 px at most.
+ */
+const CONFIRM_ROOM_BEFORE = 303;
+const CONFIRM_ROOM_BUDGET = 24;
+
+test("AC-7.1: a 1280 × 800, com 3 itens e o pagamento fechado, o botão Confirmar venda aparece sem rolar e desce no máximo 24 px", async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name.includes("mobile"), "a janela é de mesa");
+  await page.setViewportSize({ height: 800, width: 1280 });
+  await openSaleLab(page, "claro");
+  await pickLines(page);
+  await expect(
+    page.getByRole("group", { exact: true, name: "Item 3" })
+  ).toBeVisible();
+  const overflow = await confirmOverflow(page);
+  testInfo.annotations.push({
+    description: `${overflow.toFixed(1)} px`,
+    type: "confirmar-abaixo-da-janela",
+  });
+  expect(overflow).toBeLessThanOrEqual(0);
+  expect(-overflow).toBeGreaterThanOrEqual(
+    CONFIRM_ROOM_BEFORE - CONFIRM_ROOM_BUDGET
+  );
 });

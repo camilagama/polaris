@@ -1,4 +1,4 @@
-import { Card } from "@/ui/card";
+import { Block } from "@/ui/block";
 import { TextLink } from "@/ui/text-link";
 import {
   INVALID_SALE_ID_MESSAGE,
@@ -13,13 +13,15 @@ export function SaleIdMissing({
   param: Exclude<SaleIdParam, { kind: "valid" }>;
 }) {
   return (
-    <Card className="items-center gap-2 px-(--card-spacing) text-center">
-      <p className="text-muted-foreground">
-        {param.kind === "invalid"
-          ? INVALID_SALE_ID_MESSAGE
-          : SALE_ID_MISSING_MESSAGE}
-      </p>
-      <TextLink href="/sales/history">Abrir o histórico de vendas</TextLink>
-    </Card>
+    <Block variant="plain">
+      <div className="grid justify-items-center gap-2 text-center">
+        <p className="text-muted-foreground">
+          {param.kind === "invalid"
+            ? INVALID_SALE_ID_MESSAGE
+            : SALE_ID_MISSING_MESSAGE}
+        </p>
+        <TextLink href="/sales/history">Abrir o histórico de vendas</TextLink>
+      </div>
+    </Block>
   );
 }

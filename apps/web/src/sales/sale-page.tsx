@@ -11,7 +11,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/ui/card";
+import { Block, BlockHeader, BlockPanel } from "@/ui/block";
 import { RefreshButton } from "@/ui/refresh-button";
 import { deviceSaleKept } from "../app-shell/first-steps";
 import { useCurrentOrganization } from "../lib/current-organization";
@@ -1156,24 +1156,25 @@ export function SalePage() {
         onSubmit={handleSubmitEvent}
       >
         <div className="grid min-w-0 gap-4">
-          <Card>
-            <fieldset
-              aria-labelledby="sale-items-title"
-              className="grid min-w-0 gap-4"
-              disabled={locked}
-            >
-              <CardHeader className="grid-cols-[minmax(0,1fr)_auto] items-center">
-                <CardTitle aria-level={2} id="sale-items-title" role="heading">
-                  Itens
-                </CardTitle>
+          <Block aria-labelledby="sale-items-title">
+            <BlockHeader
+              action={
                 <RefreshButton
-                  className="row-span-2"
+                  disabled={locked}
                   object="estoque e perfis"
                   onClick={handleRefresh}
                 />
+              }
+              id="sale-items-title"
+              title="Itens"
+            />
+            <BlockPanel>
+              <fieldset
+                aria-labelledby="sale-items-title"
+                className="grid min-w-0 gap-4"
+                disabled={locked}
+              >
                 <ItemsCount count={chosen} />
-              </CardHeader>
-              <CardContent className="grid gap-4">
                 {form.items.map((item, index) => (
                   <ItemEditor
                     canAdjustStock={canAdjustStock}
@@ -1204,9 +1205,9 @@ export function SalePage() {
                   onAdd={handleAddItem}
                   total={itemCount}
                 />
-              </CardContent>
-            </fieldset>
-          </Card>
+              </fieldset>
+            </BlockPanel>
+          </Block>
           <PaymentSection
             disabled={locked}
             errors={evaluation.errors}
