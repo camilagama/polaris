@@ -634,7 +634,7 @@ const RIGHT_EDGE_TOLERANCE = 1;
 /** Count and action share a line: their centers differ by rounding only. */
 const SAME_LINE_TOLERANCE = 2;
 
-/** A title as wide as the header: the count and the action no longer fit on its line, and without the grow rule of their group (`max-md:grow max-md:justify-end`) the group would stand at the left of the line below. */
+/** A title as wide as the header: the count and the action no longer fit on its line, and without the phone rule that makes their group grow and align to the end, the group would stand at the left of the line below. */
 async function widenTitle(page: Page, name: string) {
   await page
     .getByRole("region", { exact: true, name })
