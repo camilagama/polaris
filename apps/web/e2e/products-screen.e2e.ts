@@ -813,7 +813,10 @@ test("lista longa: 50 de cada vez com 'Carregar mais', o total no alto com milha
   const count = page.getByText("1.248 produtos", { exact: true });
   await expect(count).toBeVisible();
   // the count sits beside the frame's title, above the rows, and is read before them
-  const list = page.getByRole("list", { name: "Produtos" });
+  const list = page.getByRole("list", {
+    exact: true,
+    name: "Produtos cadastrados",
+  });
   const [countBox, listBox] = await Promise.all([
     count.boundingBox(),
     list.boundingBox(),
