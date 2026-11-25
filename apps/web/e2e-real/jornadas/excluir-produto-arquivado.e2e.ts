@@ -177,7 +177,10 @@ test("excluir produto arquivado: sai da lista, libera a vaga, a venda antiga seg
 
   // o Histórico segue listando as vendas do produto excluído; a venda abre com o nome guardado e aceita cancelamento
   await page.goto("/sales/history");
-  const sales = page.getByRole("list", { name: "Vendas" });
+  const sales = page.getByRole("list", {
+    exact: true,
+    name: "Vendas do período",
+  });
   await expect(sales.getByRole("listitem")).toHaveCount(2);
   const saleLink = (id: string) =>
     sales.locator(`a[href="/sales/detail?saleId=${id}"]`);

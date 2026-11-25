@@ -622,6 +622,166 @@ for (const size of LIST_SIZES) {
   });
 }
 
+const HEADER_ACTION_EXAMPLES = [
+  ...LIST_EXAMPLES,
+  { name: "Tabela larga", state: "rows", total: true },
+] as const;
+
+/** Sub-pixel rounding of the layout: the count may touch the action, never overlap it. */
+const SIDE_BY_SIDE_TOLERANCE = 0.5;
+/** How far the action may stand from the right edge of the header's content box on a phone. */
+const RIGHT_EDGE_TOLERANCE = 1;
+/** Count and action share a line: their centers differ by rounding only. */
+const SAME_LINE_TOLERANCE = 2;
+
+/** A title as wide as the header: the count and the action no longer fit on its line, so their group wraps to a line of its own. That only forces the wrap; each phone rule of the group is proven by its own test below. */
+async function widenTitle(page: Page, name: string) {
+  await page
+    .getByRole("region", { exact: true, name })
+    .getByRole("heading", { level: 2 })
+    .evaluate((heading) => {
+      heading.style.width = "100%";
+      heading.parentElement?.style.setProperty("width", "100%");
+    });
+}
+
+/** Where the title, the count, the action and the content box of a `ListBlock` header are, in pixels: the padding of a phone (`px-3`) is the block header's, not the frame's. */
+async function headerActionBoxes(page: Page, name: string) {
+  return await page
+    .getByRole("region", { exact: true, name })
+    .evaluate((region) => {
+      const header = region.querySelector('[data-slot="block-header"]');
+      const count = region.querySelector("[data-list-count]");
+      const action = [...(header?.querySelectorAll("button") ?? [])].find(
+        (button) => button.textContent?.trim() === "Exportar"
+      );
+      if (!(header && count && action)) {
+        return null;
+      }
+      const title = header.querySelector("h2");
+      if (!title) {
+        return null;
+      }
+      const box = (element: Element) => {
+        const { bottom, left, right, top } = element.getBoundingClientRect();
+        return { bottom, centerY: (top + bottom) / 2, left, right, top };
+      };
+      const headerBox = header.getBoundingClientRect();
+      return {
+        action: box(action),
+        contentLeft:
+          headerBox.left +
+          Number.parseFloat(getComputedStyle(header).paddingLeft),
+        contentRight:
+          headerBox.right -
+          Number.parseFloat(getComputedStyle(header).paddingRight),
+        count: box(count),
+        title: box(title),
+      };
+    });
+}
+
+for (const size of LIST_SIZES) {
+  for (const example of HEADER_ACTION_EXAMPLES) {
+    test(`o ListBlock "${example.name}" a ${size.width} px: a contagem fica à esquerda da ação do cabeçalho e, no celular, a ação encosta à direita`, async ({
+      page,
+    }) => {
+      await page.setViewportSize(size);
+      await openGallery(page, null);
+      const label = `${example.name} a ${size.width} px`;
+      const forcesWrap = example.name === "Tabela larga" && size.width < 760;
+      if (forcesWrap) {
+        await widenTitle(page, example.name);
+      }
+      const boxes = await headerActionBoxes(page, example.name);
+      expect(boxes, label).not.toBeNull();
+      if (!boxes) {
+        return;
+      }
+      if (forcesWrap) {
+        expect(boxes.title.bottom, label).toBeLessThanOrEqual(
+          boxes.action.top + SIDE_BY_SIDE_TOLERANCE
+        );
+      }
+      expect(boxes.count.right, label).toBeLessThanOrEqual(
+        boxes.action.left + SIDE_BY_SIDE_TOLERANCE
+      );
+      if (size.width >= 760) {
+        expect(boxes.action.right, label).toBeLessThanOrEqual(
+          boxes.contentRight + RIGHT_EDGE_TOLERANCE
+        );
+        return;
+      }
+      expect(
+        Math.abs(boxes.action.right - boxes.contentRight),
+        label
+      ).toBeLessThanOrEqual(RIGHT_EDGE_TOLERANCE);
+      if (example.state === "rows") {
+        expect(
+          Math.abs(boxes.count.centerY - boxes.action.centerY),
+          label
+        ).toBeLessThanOrEqual(SAME_LINE_TOLERANCE);
+      }
+    });
+  }
+}
+
+const WRAPPED_HEADER_SIZE = { height: 740, width: 360 } as const;
+
+/** Wraps the group of count and action below a full-width title, then optionally stops the count from growing, so only the group's own alignment can place the action. */
+async function wrapGroup(page: Page, name: string, countGrows: boolean) {
+  await page.setViewportSize(WRAPPED_HEADER_SIZE);
+  await openGallery(page, null);
+  await widenTitle(page, name);
+  if (!countGrows) {
+    await page
+      .getByRole("region", { exact: true, name })
+      .locator("[data-list-count]")
+      .evaluate((count) => {
+        count.style.flexGrow = "0";
+      });
+  }
+  const boxes = await headerActionBoxes(page, name);
+  expect(boxes).not.toBeNull();
+  return boxes;
+}
+
+test('o ListBlock "Tabela larga" a 360 px: a contagem cresce e fica na borda esquerda da linha, a ação na direita', async ({
+  page,
+}) => {
+  const boxes = await wrapGroup(page, "Tabela larga", true);
+  if (!boxes) {
+    return;
+  }
+  expect(boxes.title.bottom).toBeLessThanOrEqual(
+    boxes.action.top + SIDE_BY_SIDE_TOLERANCE
+  );
+  expect(Math.abs(boxes.count.left - boxes.contentLeft)).toBeLessThanOrEqual(
+    RIGHT_EDGE_TOLERANCE
+  );
+  expect(Math.abs(boxes.action.right - boxes.contentRight)).toBeLessThanOrEqual(
+    RIGHT_EDGE_TOLERANCE
+  );
+});
+
+test('o ListBlock "Tabela larga" a 360 px: sem a contagem crescer, só o alinhamento do grupo põe a ação na borda direita', async ({
+  page,
+}) => {
+  const boxes = await wrapGroup(page, "Tabela larga", false);
+  if (!boxes) {
+    return;
+  }
+  expect(boxes.title.bottom).toBeLessThanOrEqual(
+    boxes.action.top + SIDE_BY_SIDE_TOLERANCE
+  );
+  expect(Math.abs(boxes.action.right - boxes.contentRight)).toBeLessThanOrEqual(
+    RIGHT_EDGE_TOLERANCE
+  );
+  expect(boxes.count.left).toBeGreaterThan(
+    boxes.contentLeft + RIGHT_EDGE_TOLERANCE
+  );
+});
+
 test("o ListBlock: o título é o único h2 da lista, a contagem não é título e axe não acusa a página", async ({
   page,
 }) => {

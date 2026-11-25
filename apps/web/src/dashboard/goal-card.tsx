@@ -8,9 +8,9 @@ import {
 import type { GoalReadModel } from "@polaris/contracts";
 import { useCallback, useState } from "react";
 import { Badge } from "@/ui/badge";
+import { Block } from "@/ui/block";
 import { Button } from "@/ui/button";
 import { PaceLine } from "@/ui/pace-line";
-import { Card, CardContent } from "@/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -69,7 +69,7 @@ function GoalHeader({ goal, today }: { goal: GoalReadModel; today: string }) {
   return (
     <div className="grid gap-0.5">
       <div className="flex flex-wrap items-center gap-2">
-        <h4 className="text-section">{goalTitle(goal)}</h4>
+        <h3 className="text-section">{goalTitle(goal)}</h3>
         <Badge variant={goalBadgeVariant(goal.status, goal.paused)}>
           {goal.paused ? "Pausada pelo plano" : goalStatusLabel(goal.status)}
         </Badge>
@@ -209,25 +209,23 @@ export function SettledGoalCard({
   const [historyOpen, setHistoryOpen] = useState(false);
   const handleHistory = useCallback(() => setHistoryOpen((open) => !open), []);
   return (
-    <Card className="bg-muted/30 shadow-none">
-      <CardContent className="grid gap-3">
-        <GoalHeader goal={goal} today={today} />
-        <SettledResult goal={goal} timezone={timezone} />
-        <div className={ACTIONS}>
-          <GoalHistoryToggle
-            goal={goal}
-            onToggle={handleHistory}
-            open={historyOpen}
-          />
-        </div>
-        <GoalHistoryBody
+    <Block className="bg-muted/30 shadow-none" variant="plain">
+      <GoalHeader goal={goal} today={today} />
+      <SettledResult goal={goal} timezone={timezone} />
+      <div className={ACTIONS}>
+        <GoalHistoryToggle
           goal={goal}
+          onToggle={handleHistory}
           open={historyOpen}
-          organizationId={organizationId}
-          timezone={timezone}
         />
-      </CardContent>
-    </Card>
+      </div>
+      <GoalHistoryBody
+        goal={goal}
+        open={historyOpen}
+        organizationId={organizationId}
+        timezone={timezone}
+      />
+    </Block>
   );
 }
 
@@ -403,43 +401,41 @@ export function ActiveGoalCard({
   const handleHistory = useCallback(() => setHistoryOpen((open) => !open), []);
 
   return (
-    <Card>
-      <CardContent className="grid gap-3">
-        <GoalHeader goal={goal} today={today} />
-        <GoalProgress goal={goal} pausedHelp={pausedHelp} today={today} />
-        {mode === "edit" ? (
-          <GoalEditForm
-            disabled={busyKey !== null}
-            goal={goal}
-            key={goal.version}
-            onCancel={handleCloseEdit}
-            onSave={handleSave}
-            saving={busyKey === `update:${goal.id}`}
-          />
-        ) : null}
-        <ActiveActions
-          busyKey={busyKey}
+    <Block variant="plain">
+      <GoalHeader goal={goal} today={today} />
+      <GoalProgress goal={goal} pausedHelp={pausedHelp} today={today} />
+      {mode === "edit" ? (
+        <GoalEditForm
+          disabled={busyKey !== null}
           goal={goal}
-          historyOpen={historyOpen}
-          mode={mode}
-          onAskCancel={handleAskCancel}
-          onEdit={handleEdit}
-          onHistory={handleHistory}
+          key={goal.version}
+          onCancel={handleCloseEdit}
+          onSave={handleSave}
+          saving={busyKey === `update:${goal.id}`}
         />
-        <GoalHistoryBody
-          goal={goal}
-          open={historyOpen}
-          organizationId={organizationId}
-          timezone={timezone}
-        />
-        <CancelDialog
-          busyKey={busyKey}
-          goal={goal}
-          onConfirm={handleCancelConfirm}
-          onOpenChange={handleDialog}
-          open={mode === "cancel"}
-        />
-      </CardContent>
-    </Card>
+      ) : null}
+      <ActiveActions
+        busyKey={busyKey}
+        goal={goal}
+        historyOpen={historyOpen}
+        mode={mode}
+        onAskCancel={handleAskCancel}
+        onEdit={handleEdit}
+        onHistory={handleHistory}
+      />
+      <GoalHistoryBody
+        goal={goal}
+        open={historyOpen}
+        organizationId={organizationId}
+        timezone={timezone}
+      />
+      <CancelDialog
+        busyKey={busyKey}
+        goal={goal}
+        onConfirm={handleCancelConfirm}
+        onOpenChange={handleDialog}
+        open={mode === "cancel"}
+      />
+    </Block>
   );
 }

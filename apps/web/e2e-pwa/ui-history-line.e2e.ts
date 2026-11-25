@@ -118,7 +118,7 @@ for (const width of WIDTHS) {
         false
       );
       const dates = page
-        .getByRole("list", { name: "Vendas" })
+        .getByRole("list", { exact: true, name: "Vendas do período" })
         .getByText(DATE_AND_TIME);
       expect(await dates.count()).toBe(4);
       const measures = await Promise.all(
@@ -129,7 +129,7 @@ for (const width of WIDTHS) {
         expect(measured.lines).toBeLessThan(1.05);
       }
       const times = page
-        .getByRole("list", { name: "Vendas" })
+        .getByRole("list", { exact: true, name: "Vendas do período" })
         .getByText(TIME_PIECE);
       expect(await times.count()).toBe(4);
       const timeMeasures = await Promise.all(
@@ -170,14 +170,18 @@ test.describe("em 360 px", () => {
   }) => {
     await historyStates.offline(page);
     const rows = page
-      .getByRole("list", { name: "Vendas" })
+      .getByRole("list", { exact: true, name: "Vendas do período" })
       .getByRole("listitem");
     await expect(rows.first()).toBeVisible();
     await expect(
-      page.getByRole("list", { name: "Vendas" }).getByRole("link")
+      page
+        .getByRole("list", { exact: true, name: "Vendas do período" })
+        .getByRole("link")
     ).toHaveCount(0);
     await expect(
-      page.getByRole("list", { name: "Vendas" }).locator("svg")
+      page
+        .getByRole("list", { exact: true, name: "Vendas do período" })
+        .locator("svg")
     ).toHaveCount(0);
   });
 });
@@ -194,7 +198,7 @@ for (const [width, height] of [
     }) => {
       await historyStates.list(page);
       const links = page
-        .getByRole("list", { name: "Vendas" })
+        .getByRole("list", { exact: true, name: "Vendas do período" })
         .getByRole("link");
       const withCustomer = links.filter({ hasText: "Ângela Souza" });
       const without = links.filter({ hasText: "Sem cliente" });
@@ -253,7 +257,10 @@ for (const [width, height] of [
       page,
     }) => {
       await historyStates.list(page);
-      const list = page.getByRole("list", { name: "Vendas" });
+      const list = page.getByRole("list", {
+        exact: true,
+        name: "Vendas do período",
+      });
       await expect(list.getByRole("link")).toHaveCount(4);
       await expect(list.locator("[data-slot='badge']")).toHaveText([
         "Cancelada",
@@ -272,7 +279,7 @@ for (const [width, height] of [
     }) => {
       await historyStates.list(page);
       const links = page
-        .getByRole("list", { name: "Vendas" })
+        .getByRole("list", { exact: true, name: "Vendas do período" })
         .getByRole("link");
       const withoutBadge = links.filter({ hasText: "Ângela Souza" });
       const withBadge = links.filter({ hasText: "Cancelada" });

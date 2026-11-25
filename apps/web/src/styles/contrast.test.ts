@@ -397,3 +397,122 @@ describe.each([
     }
   );
 });
+
+const badgeSource = readFileSync(
+  new URL("../ui/badge.tsx", import.meta.url),
+  "utf8"
+);
+const BADGE_VARIANTS = /variant:\s*\{([\s\S]*?)\n\s*\}/;
+const WHITESPACE = /\s+/;
+const DARK_PREFIX = /^dark:/;
+const BADGE_COLOR_CLASS = /^[a-z]+-([a-z-]+?)(?:\/(\d+))?$/;
+const BADGE_VARIANT_ENTRY = /(\w+):\s*"([^"]*)"/g;
+const BADGE_VARIANT_KEY = /^\s*[\w"'`]+:/gm;
+
+const badgeBlock = BADGE_VARIANTS.exec(badgeSource)?.[1] ?? "";
+const badgeVariants = [...badgeBlock.matchAll(BADGE_VARIANT_ENTRY)].map(
+  ([, name, classes]) => ({
+    classes: classes as string,
+    name: name as string,
+  })
+);
+
+function badgePair(
+  classes: string,
+  palette: ReturnType<typeof tokens>,
+  dark: boolean
+) {
+  const applied = classes.split(WHITESPACE).filter((item) => {
+    const [first, ...rest] = item.split(":");
+    return rest.length === 0 || (dark && first === "dark" && rest.length === 1);
+  });
+  const pick = (utility: string) => {
+    const found = applied
+      .map((item) => item.replace(DARK_PREFIX, ""))
+      .filter((item) => item.startsWith(`${utility}-`))
+      .map((item) => {
+        const match = BADGE_COLOR_CLASS.exec(item);
+        if (!(match && palette.has(match[1] as string))) {
+          throw new Error(
+            `class "${item}" is not a ${utility}-<token> of theme.css`
+          );
+        }
+        return match;
+      });
+    return found.at(-1);
+  };
+  const fill = pick("bg");
+  const text = pick("text");
+  if (!(fill && text)) {
+    return null;
+  }
+  if (text[2]) {
+    throw new Error(
+      `text-${text[1]}/${text[2]} has an opacity on the text: use a plain text-<token> so the pair is measured`
+    );
+  }
+  const background = fill[2] ? `${fill[1]}/${fill[2]} sobre sidebar` : fill[1];
+  return {
+    background: `\`${background}\``,
+    foreground: `\`${text[1]}\``,
+  };
+}
+
+describe("variantes do Badge lidas de ui/badge.tsx", () => {
+  it("lê toda variante do arquivo, sem cortar nem pular nenhuma", () => {
+    expect(badgeVariants.map((item) => item.name)).toEqual(
+      expect.arrayContaining([
+        "destructive",
+        "ink",
+        "outline",
+        "secondary",
+        "warning",
+      ])
+    );
+    expect(
+      badgeVariants.length,
+      'a variant of src/ui/badge.tsx was not read: write each as `name: "classes"` on one line of the `variant` object'
+    ).toBe(badgeBlock.match(BADGE_VARIANT_KEY)?.length);
+  });
+});
+
+/**
+ * The `Badge` (src/ui/badge.tsx): the pair of each variant is read from the classes of the variant in the source, so
+ * a color changed there is measured and a variant added there is measured too. The text is the `text-*` token and the
+ * fill the `bg-*` token (`dark:bg-*` replaces it in the dark theme); a fill with an opacity is a tint over the header
+ * (`sidebar`, where the sync chip sits), a plain one is solid. All are text (4.5:1, WCAG 1.4.3) and each pair must be
+ * a row of the tables above, so a token change that breaks one is read there too.
+ */
+describe.each([
+  ["Tema claro", tokens(block(":root")), false],
+  [
+    "Tema escuro",
+    new Map([...tokens(block(":root")), ...tokens(block(".dark"))]),
+    true,
+  ],
+] as const)("contraste do Badge, %s", (section, palette, dark) => {
+  const rows = pairs(section);
+
+  it.each(badgeVariants)(
+    "variante $name reaches 4.5:1 and is in the map",
+    ({ classes, name }) => {
+      const pair = badgePair(classes, palette, dark);
+      expect(
+        pair,
+        `Badge variant "${name}" in src/ui/badge.tsx has no readable pair: give it a bg-<token> and a text-<token> class of theme.css`
+      ).not.toBeNull();
+      const { background, foreground } = pair as NonNullable<typeof pair>;
+      const row = rows.find(
+        (item) =>
+          item.foreground === foreground && item.background === background
+      );
+      expect(
+        row,
+        `Badge variant "${name}": ${foreground} / ${background} is not in "${section}" of docs/design/contraste-v5.1.md; add the row with its measured ratio, or use a pair already in the map`
+      ).toBeDefined();
+      expect(
+        ratio(color(foreground, palette), color(background, palette))
+      ).toBeGreaterThanOrEqual(4.5);
+    }
+  );
+});

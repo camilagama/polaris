@@ -3,6 +3,7 @@
 import type { Page, Route } from "@playwright/test";
 import { showScreenAlone } from "./show-screen-alone";
 import { serveLabWorker, WORKER_MARK } from "./worker-mark";
+import { chooseProfileAction } from "../e2e/payment-profile-actions";
 
 /**
  * The states of the payment profiles screen the interface guardrails measure: the screen in the lab of the screens
@@ -121,9 +122,7 @@ export const paymentStates = {
   /** The edit of the profile with the credit rule: the form filled with both fees of each rule. */
   async edit(page: Page) {
     await openProfilesLab(page);
-    await page
-      .getByRole("button", { name: "Editar perfil Maquininha da loja" })
-      .click();
+    await chooseProfileAction(page, "Editar", "Maquininha da loja");
     await page.getByRole("heading", { name: "Editar perfil" }).waitFor();
     await page.getByLabel("Valor fixo por pagamento").waitFor();
     await showScreenAlone(page);

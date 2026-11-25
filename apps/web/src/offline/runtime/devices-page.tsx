@@ -5,10 +5,12 @@ import CloudOffIcon from "lucide-react/dist/esm/icons/cloud-off";
 import RefreshCwIcon from "lucide-react/dist/esm/icons/refresh-cw";
 import TriangleAlertIcon from "lucide-react/dist/esm/icons/triangle-alert";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { cn } from "@/lib/utils";
 import { Alert, AlertDescription } from "@/ui/alert";
+import { Block, BlockHeader, BlockPanel } from "@/ui/block";
 import { Button, buttonVariants } from "@/ui/button";
-import { Card } from "@/ui/card";
 import { EmptyState } from "@/ui/empty-state";
+import { ListBlock } from "@/ui/list-block";
 import { orpcClient } from "../../lib/orpc";
 import { signInPath } from "../../lib/sign-in-path";
 import { loadAuthMethods } from "../../sign-in/sign-in-model";
@@ -79,20 +81,20 @@ function SecuritySection() {
     };
   }, []);
   return passwordOn ? (
-    <section
-      aria-labelledby="device-security-title"
-      className="grid justify-items-start gap-2"
-    >
-      <h2 className="text-section" id="device-security-title">
-        Segurança
-      </h2>
-      <a
-        className={buttonVariants({ variant: "outline" })}
-        href={tabHref("account", "senha")}
-      >
-        Trocar senha
-      </a>
-    </section>
+    <Block aria-labelledby="device-security-title">
+      <BlockHeader id="device-security-title" title="Segurança" />
+      <BlockPanel>
+        <a
+          className={cn(
+            buttonVariants({ variant: "outline" }),
+            "self-start max-sm:w-full"
+          )}
+          href={tabHref("account", "senha")}
+        >
+          Trocar senha
+        </a>
+      </BlockPanel>
+    </Block>
   ) : null;
 }
 
@@ -116,14 +118,7 @@ function SignInAgain({ onDismiss, panel }: SignInAgainProps) {
   }, [logout, panel.kind, runtime]);
   return (
     <>
-      <Card
-        aria-labelledby="devices-sign-in-title"
-        className="gap-3 px-(--card-spacing)"
-        role="alert"
-      >
-        <h2 className="text-section" id="devices-sign-in-title">
-          {panel.title}
-        </h2>
+      <Block role="alert" title={panel.title} variant="plain">
         <p>{panel.body}</p>
         {logout.message ? <p>{logout.message}</p> : null}
         <div className="flex flex-wrap gap-3">
@@ -141,7 +136,7 @@ function SignInAgain({ onDismiss, panel }: SignInAgainProps) {
             </Button>
           ) : null}
         </div>
-      </Card>
+      </Block>
       {logout.blocked ? (
         <LogoutDialog
           blocked={logout.blocked}
@@ -165,14 +160,7 @@ function BrowserLeft({ keptWork }: { keptWork: boolean }) {
     [runtime]
   );
   return (
-    <Card
-      aria-labelledby="devices-left-title"
-      className="gap-3 px-(--card-spacing)"
-      role="alert"
-    >
-      <h2 className="text-section" id="devices-left-title">
-        {SESSION_ENDED_PANEL.title}
-      </h2>
+    <Block role="alert" title={SESSION_ENDED_PANEL.title} variant="plain">
       <p>{SESSION_ENDED_PANEL.body}</p>
       {keptWork ? <p>{SESSION_ENDED_PANEL.keptWork}</p> : null}
       <div className="flex flex-wrap gap-3">
@@ -180,7 +168,7 @@ function BrowserLeft({ keptWork }: { keptWork: boolean }) {
           Entrar de novo
         </Button>
       </div>
-    </Card>
+    </Block>
   );
 }
 
@@ -291,13 +279,9 @@ function ListSection({
     <>
       {panel ? <SignInAgain onDismiss={onDismiss} panel={panel} /> : null}
       {loading ? (
-        <Card
-          aria-busy="true"
-          className="items-center px-(--card-spacing) text-center"
-          role="status"
-        >
-          <p className="text-muted-foreground">{LOADING_TEXT}</p>
-        </Card>
+        <Block aria-busy="true" role="status" variant="plain">
+          <p className="text-center text-muted-foreground">{LOADING_TEXT}</p>
+        </Block>
       ) : null}
       {loadFailed && online && !panel ? (
         <Alert variant="destructive">
@@ -334,8 +318,8 @@ function ListSection({
           {SESSION_GONE_LIST_TEXT}
         </p>
       ) : null}
-      {devices ? (
-        <ul aria-label="Aparelhos" className="grid gap-3">
+      {devices && rows.length > 0 ? (
+        <ListBlock count="" state="rows" title="Aparelhos desta conta">
           {rows.map((row) => (
             <DeviceItem
               actionError={confirming === row.id ? actionError : null}
@@ -349,7 +333,7 @@ function ListSection({
               {...shared}
             />
           ))}
-        </ul>
+        </ListBlock>
       ) : null}
     </>
   );

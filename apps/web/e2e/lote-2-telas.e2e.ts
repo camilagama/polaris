@@ -723,7 +723,9 @@ for (const viewport of FORM_VIEWPORTS) {
       }),
     };
 
-    await expect(page.getByText("Carregando clientes…")).toBeVisible();
+    await expect(
+      page.locator("[data-list-block][data-state=loading]")
+    ).toBeVisible();
     await expect(parts.button).toHaveCount(1);
     const reading = await placesOf(parts);
 

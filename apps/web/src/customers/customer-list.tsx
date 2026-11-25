@@ -2,9 +2,9 @@ import type { CustomerReadModel } from "@polaris/contracts";
 import MoreHorizontalIcon from "lucide-react/dist/esm/icons/ellipsis";
 import UsersIcon from "lucide-react/dist/esm/icons/users";
 import { type ReactNode, useCallback, useState } from "react";
+import { cn } from "@/lib/utils";
 import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
-import { Card } from "@/ui/card";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -13,10 +13,11 @@ import {
   DropdownMenuTrigger,
 } from "@/ui/dropdown-menu";
 import { EmptyState } from "@/ui/empty-state";
+import { ListBlock } from "@/ui/list-block";
+import { Skeleton } from "@/ui/skeleton";
 import { TextLink } from "@/ui/text-link";
 import { productInitials } from "../catalog/product-search-model";
 import {
-  ListNotice,
   OPENABLE_ROW_CLASS,
   ROW_BODY_CLASS,
   ROW_TEXT_CLASS,
@@ -482,8 +483,8 @@ function CustomerRow({
   }, [customer, onAnonymize]);
 
   return (
-    <li
-      className={`grid px-3 md:px-4 ${isAnonymized ? "" : OPENABLE_ROW_CLASS}`}
+    <ListBlock.Row
+      className={cn("grid gap-0 py-0", isAnonymized ? "" : OPENABLE_ROW_CLASS)}
       data-customer-id={customer.id}
     >
       <div className="flex items-center gap-3">
@@ -524,11 +525,13 @@ function CustomerRow({
           onConfirm={handleConfirm}
         />
       ) : null}
-    </li>
+    </ListBlock.Row>
   );
 }
 
 interface CustomerListProps extends RowActions {
+  /** "5 clientes" or "2 de 5 clientes": the support text beside the title; empty while the list loads or finds nothing. */
+  count: string;
   /** The customers that match the search. */
   customers: CustomerReadModel[];
   isLoading: boolean;
@@ -548,7 +551,23 @@ interface CustomerListProps extends RowActions {
   updateStates: ReadonlyMap<string, PendingCustomerUpdate>;
 }
 
+/** The shape of a row, drawn while the list loads: the circle and two lines. */
+function CustomerRowSkeleton() {
+  return (
+    <div className="flex items-center gap-3">
+      <Skeleton className="size-9 shrink-0 rounded-full" />
+      <div className="grid min-w-0 flex-1 gap-1.5">
+        <Skeleton className="h-4 w-40 max-w-full" />
+        <Skeleton className="h-3.5 w-56 max-w-full" />
+      </div>
+    </div>
+  );
+}
+
+const LIST_TITLE = "Clientes cadastrados";
+
 export function CustomerList({
+  count,
   customers,
   isLoading,
   isOffline,
@@ -563,11 +582,12 @@ export function CustomerList({
 }: CustomerListProps) {
   if (isLoading) {
     return (
-      <ListNotice>
-        <p className="text-muted-foreground" role="status">
-          Carregando clientes…
-        </p>
-      </ListNotice>
+      <ListBlock
+        count=""
+        skeleton={<CustomerRowSkeleton />}
+        state="loading"
+        title={LIST_TITLE}
+      />
     );
   }
   if (total === 0) {
@@ -586,30 +606,33 @@ export function CustomerList({
   }
   if (customers.length === 0) {
     return (
-      <ListNotice>
-        <p className="text-muted-foreground" role="status">
-          Nenhum cliente com “{query.trim()}”.
-        </p>
-      </ListNotice>
+      <ListBlock
+        count={count}
+        emptyNotice={
+          <p className="text-muted-foreground" role="status">
+            Nenhum cliente com “{query.trim()}”.
+          </p>
+        }
+        state="filtered-empty"
+        title={LIST_TITLE}
+      />
     );
   }
   return (
-    <Card className="gap-0 py-0">
-      <ul aria-label="Clientes" className="divide-y divide-border">
-        {customers.map((customer) => (
-          <CustomerRow
-            {...actions}
-            customer={customer}
-            isOffline={isOffline}
-            isPending={pendingAction !== null}
-            key={customer.id}
-            pendingAction={pendingAction}
-            syncState={syncStates.get(customer.id)}
-            today={today}
-            updateState={updateStates.get(customer.id)}
-          />
-        ))}
-      </ul>
-    </Card>
+    <ListBlock count={count} state="rows" title={LIST_TITLE}>
+      {customers.map((customer) => (
+        <CustomerRow
+          {...actions}
+          customer={customer}
+          isOffline={isOffline}
+          isPending={pendingAction !== null}
+          key={customer.id}
+          pendingAction={pendingAction}
+          syncState={syncStates.get(customer.id)}
+          today={today}
+          updateState={updateStates.get(customer.id)}
+        />
+      ))}
+    </ListBlock>
   );
 }

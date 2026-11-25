@@ -176,7 +176,10 @@ test("sem conexão: a faixa diz que a tela precisa de internet e 'Arquivar' fica
   page,
 }) => {
   const scene = await openScreen(page);
-  const archive = page.getByRole("button", {
+  await page
+    .getByRole("button", { name: "Mais ações para Maquininha da loja" })
+    .click();
+  const archive = page.getByRole("menuitem", {
     name: "Arquivar perfil Maquininha da loja",
   });
   await expect(archive).toBeVisible();
@@ -207,6 +210,8 @@ test("sem conexão: a faixa diz que a tela precisa de internet e 'Arquivar' fica
     page.getByText("Perfil “Maquininha da loja” arquivado.")
   ).toHaveCount(0);
   expect(scene.writes).toEqual([]);
+  await page.keyboard.press("Escape");
+  await expect(archive).toHaveCount(0);
 
   // "Novo perfil" and "Editar" only open the form, which keeps the draft in memory: what writes is its button
   await page.getByRole("button", { name: "Novo perfil" }).click();
@@ -302,8 +307,11 @@ test("a rede volta: a lista que não carregava é lida de novo, sem recarregar a
   await expect(page.getByText(NOT_LOADED)).toHaveCount(0);
   await expect(page.getByText(STRIP_TEXT)).toHaveCount(0);
   expect(scene.listReads()).toBe(2);
+  await page
+    .getByRole("button", { name: "Mais ações para Maquininha da loja" })
+    .click();
   await expect(
-    page.getByRole("button", { name: "Arquivar perfil Maquininha da loja" })
+    page.getByRole("menuitem", { name: "Arquivar perfil Maquininha da loja" })
   ).not.toHaveAttribute("aria-disabled", "true");
   expect(scene.writes).toEqual([]);
 });

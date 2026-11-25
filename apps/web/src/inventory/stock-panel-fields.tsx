@@ -333,7 +333,7 @@ export function Confirmation({ state }: { state: StockCommandState }) {
   }
   return (
     <>
-      <dl className="grid gap-2 rounded-md border bg-card p-3 text-support sm:grid-cols-2">
+      <dl className="grid gap-2 border-border border-t pt-3 text-support sm:grid-cols-2">
         {stockSummary(body, state.target).map((line) => (
           <div className="grid gap-0.5" key={line.label}>
             <dt className="text-muted-foreground">{line.label}</dt>

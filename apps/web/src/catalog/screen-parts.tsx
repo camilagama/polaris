@@ -4,9 +4,7 @@ import { focusLater } from "../lib/focus";
 import { LIST_PAGE_SIZE, type ListPage, listPage } from "./list-page-model";
 
 // biome-ignore lint/performance/noBarrelFile: the screens still import the list parts from this path; each folder moves to the `ListBlock` and drops its import
-export { ListNotice } from "@/ui/list-notice";
 export { ListTotalFooter } from "@/ui/list-total-footer";
-export { RowTile } from "@/ui/row-tile";
 
 /* The parts the list screens share (Categorias, Clientes, Produtos, Despesas, Estoque): the date as the lists write
    it, the rows drawn so far and the buttons of a row. */
@@ -37,38 +35,23 @@ export function useListPage<T>(
   return { ...listPage(items, size), loadMore };
 }
 
-/**
- * The count above a list ("1.248 produtos"), read before the rows. The line stays while the list loads and while a
- * search finds nothing, empty, so the rows do not move when the number arrives and the live region is already
- * there to announce it; it takes no room only when the list has no row at all (`shown` false).
- */
-export function ListCountLine({
-  shown,
-  text,
-}: {
-  shown: boolean;
-  text: string | null;
-}) {
-  if (!shown) {
-    return null;
-  }
-  return (
-    <p
-      aria-live="polite"
-      className="min-h-5 text-muted-foreground text-support"
-    >
-      {text}
-    </p>
-  );
-}
+type LoadMoreListProps =
+  | {
+      /** The id of the title of the `ListBlock` the button feeds: the focus goes to the first new row in its list. */
+      listHeadingId: string;
+      listLabel?: never;
+    }
+  | {
+      listHeadingId?: never;
+      /** The `aria-label` of a list that has no `ListBlock`. */
+      listLabel: string;
+    };
 
-interface LoadMoreButtonProps {
-  /** The `aria-label` of the list the button feeds: the focus goes to the first new row in it. */
-  listLabel: string;
+type LoadMoreButtonProps = LoadMoreListProps & {
   onClick: () => void;
   /** How many rows are drawn before the click: the index of the first new one. */
   shown: number;
-}
+};
 
 /**
  * Below a list with more rows than drawn: the same button as the Estoque, here with no wait (the rows are on hand).
@@ -76,6 +59,7 @@ interface LoadMoreButtonProps {
  * on the last page, when the button leaves the page, the focus does not fall to the body.
  */
 export function LoadMoreButton({
+  listHeadingId,
   listLabel,
   onClick,
   shown,
@@ -83,12 +67,14 @@ export function LoadMoreButton({
   const handleClick = useCallback(() => {
     onClick();
     focusLater(() => {
-      const rows = document.querySelectorAll(
-        `ul[aria-label="${listLabel}"] > li`
-      );
+      const list =
+        listHeadingId === undefined
+          ? `ul[aria-label="${listLabel}"]`
+          : `ul[aria-labelledby="${listHeadingId}"]`;
+      const rows = document.querySelectorAll(`${list} > li`);
       rows[shown]?.querySelector<HTMLElement>("button, a[href]")?.focus();
     });
-  }, [listLabel, onClick, shown]);
+  }, [listHeadingId, listLabel, onClick, shown]);
   return (
     <Button
       className="justify-self-start"
