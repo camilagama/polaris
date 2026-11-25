@@ -17,6 +17,7 @@ import {
 import { polarisContract } from "../packages/contracts/src/index.ts";
 import {
   attempt,
+  awaitRelease,
   BILLING_WEBHOOK_PROVIDERS,
   COMMIT_REFUSAL,
   CREATE_INITIAL_INPUT,
@@ -26,6 +27,7 @@ import {
   planOf,
   productionTarget,
   REFUSAL,
+  RELEASE_WAIT_CEILING_MS,
   refusalOf,
   runSmoke,
   STAGING_ACCESS_TEAM,
@@ -66,14 +68,32 @@ const toAccessLogin = (path) =>
     location: `https://${STAGING_ACCESS_TEAM}/cdn-cgi/access/login/admin.araute.app?kid=x&redirect_url=${encodeURIComponent(path)}`,
   });
 
+/** A clock that moves only when something sleeps, so no test waits for real. */
+function fakeClock() {
+  let elapsed = 0;
+  const sleeps = [];
+  return {
+    advance: (ms) => {
+      elapsed += ms;
+    },
+    now: () => elapsed,
+    sleep: (ms) => {
+      sleeps.push(ms);
+      elapsed += ms;
+      return Promise.resolve();
+    },
+    sleeps,
+  };
+}
+
 let buildDir = "";
-let options = { buildDir: "", commit: COMMIT };
+let options = { buildDir: "", clock: fakeClock(), commit: COMMIT };
 
 beforeAll(async () => {
   buildDir = await mkdtemp(join(tmpdir(), "smoke-staging-"));
   await writeFile(join(buildDir, "index.html"), INDEX);
   await writeFile(join(buildDir, "sw.js"), SERVICE_WORKER);
-  options = { buildDir, commit: COMMIT };
+  options = { buildDir, clock: fakeClock(), commit: COMMIT };
 });
 
 afterAll(async () => {
@@ -193,7 +213,7 @@ describe("the staging smoke", () => {
   it("passes when every check answers as expected, with twenty checks", async () => {
     const fetchImpl = vi.fn(fakeStaging());
     expect(await runSmoke(origins, options, fetchImpl, noPause)).toEqual([]);
-    expect(fetchImpl).toHaveBeenCalledTimes(20);
+    expect(fetchImpl).toHaveBeenCalledTimes(22);
   });
 
   it("runs the anonymous /rpc calls that build Better Auth last, after the get-session", () => {
@@ -258,13 +278,14 @@ describe("the staging smoke", () => {
       },
     });
     expect(await runSmoke(origins, options, fetchImpl, noPause)).toEqual([]);
-    expect(healthCalls).toBe(2);
+    expect(healthCalls).toBe(3);
 
     const stale = fakeStaging({
       [`${origins.web}/health`]: () =>
         fromWorker(200, { "x-polaris-release": "0123456789ab" }),
     });
     expect(await runSmoke(origins, options, stale, noPause)).toEqual([
+      `release wait (web): the release ${RELEASE} did not reach the edge in 120 s; active: 0123456789ab`,
       "web /health (release of the Worker): 200 release different",
     ]);
   });
@@ -573,8 +594,8 @@ describe("the staging smoke", () => {
     expect(await runSmoke(origins, options, fetchImpl, noPause)).toEqual([
       "web /api/auth/get-session (auth configured, no session): 503 not 200",
     ]);
-    // nineteen checks pass at once, the failing one is tried three times
-    expect(fetchImpl).toHaveBeenCalledTimes(22);
+    // nineteen checks pass at once, the failing one is tried three times, and the release wait reads two Workers
+    expect(fetchImpl).toHaveBeenCalledTimes(24);
     expect(
       await runSmoke(
         origins,
@@ -773,7 +794,11 @@ describe("the staging smoke", () => {
     const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
     const fetchImpl = fakeStaging({
       [`${origins.web}/health`]: () =>
-        fromWorker(200, { "x-polaris-release": "deadbeefcafe" }, "secret-body"),
+        fromWorker(
+          200,
+          { "x-polaris-release": "deadbeef-secret" },
+          "secret-body"
+        ),
       [`${origins.web}/api/auth-methods`]: () =>
         fromWorker(
           200,
@@ -785,7 +810,7 @@ describe("the staging smoke", () => {
     const printed = log.mock.calls.flat().join("\n");
     for (const leaked of [
       "secret-body",
-      "deadbeefcafe",
+      "deadbeef-secret",
       RELEASE,
       COMMIT,
       REQUEST_ID,
@@ -849,7 +874,7 @@ describe("the staging smoke", () => {
       if (url === `${origins.web}/health`) {
         healthCalls += 1;
         return Promise.resolve(
-          healthCalls === 1
+          healthCalls <= 2
             ? fromWorker(503)
             : fromWorker(200, { "x-polaris-release": RELEASE })
         );
@@ -857,7 +882,7 @@ describe("the staging smoke", () => {
       return fakeStaging()(url, init);
     };
     expect(await runSmoke(origins, options, fetchImpl, pause)).toEqual([]);
-    expect(healthCalls).toBe(2);
+    expect(healthCalls).toBe(3);
     expect(pause).toHaveBeenCalledOnce();
     expect(signals.every((signal) => signal instanceof AbortSignal)).toBe(true);
   });
@@ -1123,6 +1148,251 @@ describe("the staging smoke", () => {
       expect(failures).toEqual(refused("catalog"));
     }
     expect(fetchImpl).not.toHaveBeenCalled();
+  });
+});
+
+const OLD_RELEASE = "0123456789ab";
+const OLD_INDEX = "<!doctype html><title>Old</title>";
+const WAIT_CEILING_SECONDS = 120;
+
+const waitFailure = (worker, active = OLD_RELEASE) =>
+  `release wait (${worker}): the release ${RELEASE} did not reach the edge in ${WAIT_CEILING_SECONDS} s; active: ${active}`;
+
+/** The edge shows the new release and the new shell once the fake clock reaches `arrivesAt`. */
+function propagating(clock, arrivesAt, { shell = true } = {}) {
+  const arrived = () => clock.now() >= arrivesAt;
+  const release = () => (arrived() ? RELEASE : OLD_RELEASE);
+  const page = () => (arrived() && shell ? INDEX : OLD_INDEX);
+  const calls = { catalog: 0, health: 0 };
+  const fetchImpl = fakeStaging({
+    [`${origins.catalog}/robots.txt`]: () => {
+      calls.catalog += 1;
+      return answer(200, { "x-polaris-release": release() }, "User-agent: *\n");
+    },
+    [`${origins.web}/`]: () =>
+      answer(200, { "content-security-policy": SHELL_CSP_WITH_SENTRY }, page()),
+    [`${origins.web}/entrar`]: () => answer(200, {}, page()),
+    [`${origins.web}/health`]: () => {
+      calls.health += 1;
+      return fromWorker(200, { "x-polaris-release": release() }, "{}");
+    },
+  });
+  return { calls, fetchImpl };
+}
+
+const webReleaseCheck = () =>
+  smokeChecks(origins, {
+    release: RELEASE,
+    shell: { index: "", serviceWorker: "" },
+  }).find(({ awaitsRelease }) => awaitsRelease === "web");
+
+describe("the wait for the release to reach the edge", () => {
+  beforeEach(() => {
+    vi.spyOn(console, "log").mockImplementation(() => undefined);
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("(a) passes when the release arrives on the second read, waiting only what it took", async () => {
+    const clock = fakeClock();
+    const { calls, fetchImpl } = propagating(clock, 2000);
+    const pause = vi.fn(noPause);
+    expect(
+      await runSmoke(origins, { ...options, clock }, fetchImpl, pause)
+    ).toEqual([]);
+    expect(calls.health).toBe(3);
+    expect(calls.catalog).toBe(3);
+    expect(clock.sleeps).toEqual([2000, 2000]);
+    expect(pause).not.toHaveBeenCalled();
+  });
+
+  it("waits for the web and the catalog side by side: both are read before the first pause", async () => {
+    const clock = fakeClock();
+    const events = [];
+    const { sleep } = clock;
+    clock.sleep = (ms) => {
+      events.push("sleep");
+      return sleep(ms);
+    };
+    const { fetchImpl } = propagating(clock, 2000);
+    const traced = (url, init) => {
+      const target = String(url);
+      if (target.endsWith("/health")) {
+        events.push("web");
+      } else if (target.endsWith("/robots.txt")) {
+        events.push("catalog");
+      }
+      return fetchImpl(url, init);
+    };
+    await runSmoke(origins, { ...options, clock }, traced, noPause);
+    expect(events.slice(0, 3)).toEqual(["web", "catalog", "sleep"]);
+  });
+
+  it("(a) control: the three tries of the check alone do not outlast a release that takes 30 s", async () => {
+    const clock = fakeClock();
+    const { fetchImpl } = propagating(clock, 30_000);
+    const pause = () => {
+      clock.advance(5000);
+      return Promise.resolve();
+    };
+    expect(await attempt(webReleaseCheck(), fetchImpl, pause)).toEqual({
+      outcome: "200 release different",
+      passed: false,
+    });
+  });
+
+  it("(b) fails with the release, the seconds waited and the active one when it never arrives", async () => {
+    const clock = fakeClock();
+    const stale = fakeStaging({
+      [`${origins.catalog}/robots.txt`]: () =>
+        answer(200, { "x-polaris-release": OLD_RELEASE }),
+      [`${origins.web}/health`]: () =>
+        fromWorker(200, { "x-polaris-release": OLD_RELEASE }),
+    });
+    const failures = await runSmoke(
+      origins,
+      { ...options, clock },
+      stale,
+      noPause
+    );
+    expect(failures).toEqual([
+      waitFailure("web"),
+      waitFailure("catalog"),
+      "web /health (release of the Worker): 200 release different",
+      "catalog /robots.txt (release of the Worker): 200 release different",
+    ]);
+  });
+
+  it("(b) pauses grow, never pass 15 s, and the whole wait stops at the ceiling", async () => {
+    const clock = fakeClock();
+    const reason = await awaitRelease(
+      webReleaseCheck(),
+      RELEASE,
+      fakeStaging({
+        [`${origins.web}/health`]: () =>
+          fromWorker(200, { "x-polaris-release": OLD_RELEASE }),
+      }),
+      clock
+    );
+    expect(reason).toBe(waitFailure("web"));
+    expect(clock.sleeps).toEqual([
+      2000, 4000, 8000, 15_000, 15_000, 15_000, 15_000, 15_000, 15_000, 15_000,
+      1000,
+    ]);
+    expect(clock.sleeps.reduce((sum, ms) => sum + ms, 0)).toBe(
+      RELEASE_WAIT_CEILING_MS
+    );
+  });
+
+  it("(c) keeps failing the shell checks when the release arrives but the shell differs", async () => {
+    const clock = fakeClock();
+    const { fetchImpl } = propagating(clock, 2000, { shell: false });
+    expect(
+      await runSmoke(origins, { ...options, clock }, fetchImpl, noPause)
+    ).toEqual([
+      "web / (SPA shell with CSP, equal to the artifact): 200 shell different",
+      "web /entrar (the shell, equal to the artifact): 200 shell different",
+    ]);
+  });
+
+  it("keeps the normal path as fast as before: the release is already there, so nothing sleeps", async () => {
+    const clock = fakeClock();
+    const fetchImpl = vi.fn(fakeStaging());
+    const pause = vi.fn(noPause);
+    expect(
+      await runSmoke(origins, { ...options, clock }, fetchImpl, pause)
+    ).toEqual([]);
+    expect(clock.sleeps).toEqual([]);
+    expect(clock.now()).toBe(0);
+    expect(pause).not.toHaveBeenCalled();
+    expect(fetchImpl).toHaveBeenCalledTimes(22);
+  });
+
+  it("keeps waiting when a read fails after another release was seen, and stops at the new one", async () => {
+    const clock = fakeClock();
+    const replies = [
+      () => fromWorker(200, { "x-polaris-release": OLD_RELEASE }),
+      () => fromWorker(503),
+      () => Promise.reject(new TypeError("fetch failed")),
+      () => fromWorker(200, { "x-polaris-release": RELEASE }),
+    ];
+    let reads = 0;
+    const reason = await awaitRelease(
+      webReleaseCheck(),
+      RELEASE,
+      fakeStaging({
+        [`${origins.web}/health`]: () => {
+          const reply = replies[Math.min(reads, replies.length - 1)];
+          reads += 1;
+          return reply();
+        },
+      }),
+      clock
+    );
+    expect(reason).toBeNull();
+    expect(reads).toBe(4);
+    expect(clock.sleeps).toEqual([2000, 4000, 8000]);
+  });
+
+  it("names the last release seen when the reads fail until the ceiling", async () => {
+    const clock = fakeClock();
+    let reads = 0;
+    const reason = await awaitRelease(
+      webReleaseCheck(),
+      RELEASE,
+      fakeStaging({
+        [`${origins.web}/health`]: () => {
+          reads += 1;
+          return reads === 1
+            ? fromWorker(200, { "x-polaris-release": OLD_RELEASE })
+            : fromWorker(503);
+        },
+      }),
+      clock
+    );
+    expect(reason).toBe(waitFailure("web"));
+  });
+
+  it("does not wait for what is not an older release: no header, an error or no answer go to the check", async () => {
+    const answers = [
+      () => answer(200),
+      () => fromWorker(503),
+      () => answer(200, { "x-polaris-release": "not-a-release" }),
+      () => Promise.reject(new TypeError("fetch failed")),
+    ];
+    for (const reply of answers) {
+      const clock = fakeClock();
+      // biome-ignore lint/performance/noAwaitInLoops: each case on its own, for a clear failure
+      await runSmoke(
+        origins,
+        { ...options, clock },
+        fakeStaging({ [`${origins.web}/health`]: reply }),
+        noPause
+      );
+      expect(clock.sleeps).toEqual([]);
+    }
+  });
+
+  it("does not read the release before the checks while production declares none", async () => {
+    const { target } = productionTarget({
+      ...productionEnv,
+      PRODUCTION_EXPECT_RELEASE_HEADER: "false",
+    });
+    const fetchImpl = vi.fn((url, init) => {
+      const response = productionAnswer(url, init);
+      response.headers.delete("x-polaris-release");
+      return Promise.resolve(response);
+    });
+    expect(
+      await runSmoke(
+        productionOrigins,
+        { ...options, target },
+        fetchImpl,
+        noPause
+      )
+    ).toEqual([]);
+    expect(fetchImpl).toHaveBeenCalledTimes(20);
   });
 });
 
@@ -1394,7 +1664,7 @@ describe("the production smoke", () => {
     expect(
       await runSmoke(productionOrigins, productionOptions(), fetchImpl, noPause)
     ).toEqual([]);
-    expect(fetchImpl).toHaveBeenCalledTimes(20);
+    expect(fetchImpl).toHaveBeenCalledTimes(22);
     const productionHosts = Object.values(productionOrigins).map(
       (origin) => new URL(origin).host
     );
@@ -1840,6 +2110,8 @@ const STARTUP_SLACK_SECONDS = 15;
 const ATTEMPTS_PATTERN = /^const ATTEMPTS = ([\d_]+);/m;
 const PAUSE_PATTERN = /^const wait = .*setTimeout\(resolve, ([\d_]+)\)/m;
 const REQUEST_TIMEOUT_PATTERN = /^const TIMEOUT_MS = ([\d_]+);/m;
+const RELEASE_WAIT_PATTERN =
+  /^export const RELEASE_WAIT_CEILING_MS = ([\d_]+);/m;
 const WORKFLOW_STEP_SPLIT = /\n {6}- /;
 const SMOKE_STEP_NAME = /^(?:if: .*\n {8})?name: Smoke$/m;
 const STEP_TIMEOUT_PATTERN = /^ {8}timeout-minutes: (\d+)$/m;
@@ -1859,6 +2131,12 @@ function smokeTiming() {
       numberAfter(SMOKE_SOURCE, PAUSE_PATTERN, "the pause of wait") / 1000,
     requestSeconds:
       numberAfter(SMOKE_SOURCE, REQUEST_TIMEOUT_PATTERN, "TIMEOUT_MS") / 1000,
+    waitSeconds:
+      numberAfter(
+        SMOKE_SOURCE,
+        RELEASE_WAIT_PATTERN,
+        "RELEASE_WAIT_CEILING_MS"
+      ) / 1000,
   };
 }
 
@@ -1872,12 +2150,17 @@ function smokeStepMinutes(workflow) {
   return numberAfter(step, STEP_TIMEOUT_PATTERN, "timeout-minutes");
 }
 
-/** Worst case: every check times out on every try (a `platform` check that times out is repeated like the others). */
+/**
+ * Worst case: the release wait runs to its ceiling and its last read times out, then every check times out on every
+ * try (a `platform` check that times out is repeated like the others).
+ */
 function worstCaseSeconds(
   checkCount,
-  { attempts, pauseSeconds, requestSeconds }
+  { attempts, pauseSeconds, requestSeconds, waitSeconds }
 ) {
   return (
+    waitSeconds +
+    requestSeconds +
     checkCount * (attempts * requestSeconds + (attempts - 1) * pauseSeconds)
   );
 }
@@ -1909,6 +2192,7 @@ describe("the worst case of the smoke against the timeout of its step", () => {
       attempts: 3,
       pauseSeconds: 5,
       requestSeconds: 10,
+      waitSeconds: 120,
     });
   });
 
@@ -2015,20 +2299,20 @@ describe("the worst cases of the smoke and of verify-deployed-sha against the ti
     );
   });
 
-  it("sums the step Smoke at its timeout-minutes (840 s), not at its worst case", () => {
-    expect(smokeSeconds()).toBe(840);
+  it("sums the step Smoke at its timeout-minutes (960 s), not at its worst case", () => {
+    expect(smokeSeconds()).toBe(960);
     expect(
       smokeSeconds() +
         verifyWorstCaseSeconds(STAGING_WORKERS.length) +
         REST_OF_THE_JOB_SECONDS
-    ).toBe(1440);
+    ).toBe(1560);
   });
 
   it("control: a step Smoke three minutes longer overflows the job", () => {
     const verdict = budget({
       smokeMinutes: smokeStepMinutes(DEPLOY_WORKFLOW) + 3,
     });
-    expect(verdict).toContain("1020 s of smoke (timeout-minutes: 17");
+    expect(verdict).toContain("1140 s of smoke (timeout-minutes: 19");
   });
 
   it("control: a job of 18 minutes overflows", () => {

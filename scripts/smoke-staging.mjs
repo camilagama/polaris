@@ -13,8 +13,11 @@ import { pathToFileURL } from "node:url";
  * behind Cloudflare Access (amendments to ADR 0097 and ADR 0070): without a sign-in, its health and its API must be
  * answered by Access with a redirect to the login of the staging team, never by the Worker. The billing webhooks of
  * Asaas and Woovi get a POST without a token or a signature, which the Worker must refuse with 401 before storing
- * anything (a 503 says a provider secret is missing). Prints the check, the status and a fixed reason, never a body
- * or a header.
+ * anything (a 503 says a provider secret is missing). Before the checks that compare the release or the shell, a
+ * Worker that still answers with another release is waited for, up to `RELEASE_WAIT_CEILING_MS`: the edge shows a
+ * new version some seconds after the deploy says it is active. Prints the check, the status and a fixed reason,
+ * never a body or a header; the one value taken from a header is the release a Worker still serves, and only when
+ * it is 12 hex characters.
  *
  * `--env production` runs the same checks against the production Workers. The production domain is not defined in the repository,
  * so no host is written in this file: the hosts, the Access team of the Admin, the expected sign-in methods and release header come
@@ -172,7 +175,8 @@ const refusedWebhook = (response, body) => {
 /**
  * The checks, in order. `web` and `catalog` are the origins of the environment (`target`, staging by default); `release` is the 12 characters each Worker
  * must declare and `shell` the sha256 of `index.html` and `sw.js` of the build artifact. `worker: true` marks an
- * answer of the web Worker, which always carries an `X-Request-Id`. `platform: true` marks the anonymous /rpc
+ * answer of the web Worker, which always carries an `X-Request-Id`. `awaitsRelease` names the Worker whose release the
+ * smoke waits for before the checks run. `platform: true` marks the anonymous /rpc
  * calls that build Better Auth: on the Workers Free plan a cold isolate may exceed its CPU (error 1102, a 503
  * of the platform), and repeating it only spends more CPU, so a 503 or an answer without `X-Request-Id` fails at
  * once as `cpu/plataforma`. They run last, after the get-session has warmed the auth path.
@@ -188,6 +192,7 @@ export function smokeChecks(
   const sameOrigin = { origin: appOrigin };
   return [
     {
+      awaitsRelease: "web",
       expect: (response) =>
         response.status === 200
           ? releaseReason(response, release, declaresRelease)
@@ -323,6 +328,7 @@ export function smokeChecks(
       url: `${catalog}/`,
     },
     {
+      awaitsRelease: "catalog",
       expect: (response) =>
         response.status === 200
           ? releaseReason(response, release, declaresRelease)
@@ -391,6 +397,15 @@ export const STAGING_FIXED_HOST = {
 };
 const ATTEMPTS = 3;
 const TIMEOUT_MS = 10_000;
+
+/**
+ * Total time the smoke waits for the edge to serve the new release, counted from the first read of each Worker (the
+ * Workers wait side by side). The wait is by condition: it ends when the Worker declares the new release.
+ */
+export const RELEASE_WAIT_CEILING_MS = 120_000;
+const RELEASE_WAIT_FIRST_PAUSE_MS = 2000;
+const RELEASE_WAIT_LAST_PAUSE_MS = 15_000;
+const RELEASE_VALUE = /^[0-9a-f]{12}$/;
 
 /**
  * An https origin of a Worker of the environment, with no path, query or credentials, whose host is the fixed host
@@ -681,6 +696,69 @@ export async function attempt(
 
 const wait = () => new Promise((resolve) => setTimeout(resolve, 5000));
 
+/** The time of the release wait; the tests give it a clock that moves only when it sleeps. */
+const SYSTEM_CLOCK = {
+  now: () => Date.now(),
+  sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+};
+
+/**
+ * What a Worker declares as its release: `arrived` is the new one, `stale` is an answer 200 with another release (the
+ * version is still propagating), and `other` is anything else (no header, an error, no answer).
+ */
+async function releaseRead(check, release, fetchImpl, target) {
+  try {
+    const response = await send(check, fetchImpl, target);
+    const declared = response.headers.get(RELEASE_HEADER) ?? "";
+    if (response.status === 200 && declared === release) {
+      return { active: declared, state: "arrived" };
+    }
+    if (response.status === 200 && RELEASE_VALUE.test(declared)) {
+      return { active: declared, state: "stale" };
+    }
+  } catch {
+    return { active: null, state: "other" };
+  }
+  return { active: null, state: "other" };
+}
+
+/**
+ * Reads the release of one Worker until it declares the new one, with a pause that doubles up to
+ * `RELEASE_WAIT_LAST_PAUSE_MS`. A first read that is neither the new release nor another one (no header, an error, no
+ * answer) ends the wait, and the check judges it as it always did; once another release was seen, a failed read does
+ * not end it, because the Worker is still propagating. Returns null when the wait is over, or the failure when
+ * `RELEASE_WAIT_CEILING_MS` ran out (only a release of 12 hex characters is printed, never another header value).
+ */
+export async function awaitRelease(
+  check,
+  release,
+  fetchImpl,
+  clock,
+  target = STAGING_TARGET
+) {
+  const started = clock.now();
+  let active = null;
+  for (let step = 0; ; step += 1) {
+    // biome-ignore lint/performance/noAwaitInLoops: the reads are sequential, each one after its pause
+    const read = await releaseRead(check, release, fetchImpl, target);
+    if (read.state === "arrived" || (read.state === "other" && !active)) {
+      return null;
+    }
+    active = read.active ?? active;
+    const remaining = RELEASE_WAIT_CEILING_MS - (clock.now() - started);
+    if (remaining <= 0) {
+      return `release wait (${check.awaitsRelease}): the release ${release} did not reach the edge in ${RELEASE_WAIT_CEILING_MS / 1000} s; active: ${active}`;
+    }
+    await clock.sleep(
+      Math.min(
+        RELEASE_WAIT_FIRST_PAUSE_MS * 2 ** step,
+        RELEASE_WAIT_LAST_PAUSE_MS,
+        remaining
+      )
+    );
+  }
+}
+
 /** The sha256 of the shell files of the web build the deploy published (`apps/web/dist/client`). */
 async function shellOf(buildDir) {
   const [index, serviceWorker] = await Promise.all(
@@ -695,7 +773,7 @@ async function shellOf(buildDir) {
  */
 export async function runSmoke(
   origins,
-  { buildDir, commit, target = STAGING_TARGET },
+  { buildDir, clock = SYSTEM_CLOCK, commit, target = STAGING_TARGET },
   fetchImpl = fetch,
   pause = wait
 ) {
@@ -715,12 +793,26 @@ export async function runSmoke(
       "web build: index.html and sw.js of the published build were not found",
     ];
   }
-  const failures = [];
-  for (const check of smokeChecks(
+  const checks = smokeChecks(
     origins,
     { release: releaseOf(commit), shell },
     target
-  )) {
+  );
+  const failures = [];
+  const waits = target.declaresRelease
+    ? await Promise.all(
+        checks
+          .filter((check) => check.awaitsRelease)
+          .map((check) =>
+            awaitRelease(check, releaseOf(commit), fetchImpl, clock, target)
+          )
+      )
+    : [];
+  for (const failure of waits.filter((reason) => reason !== null)) {
+    console.log(`FAIL ${failure}`);
+    failures.push(failure);
+  }
+  for (const check of checks) {
     // biome-ignore lint/performance/noAwaitInLoops: one check at a time, for a readable log
     const { passed, outcome } = await attempt(check, fetchImpl, pause, target);
     console.log(`${passed ? "ok" : "FAIL"} ${check.name}: ${outcome}`);
