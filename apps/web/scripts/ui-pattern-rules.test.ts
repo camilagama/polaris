@@ -486,9 +486,7 @@ describe("o padrão visual das telas (R1 a R3)", () => {
   });
 
   it("as listas e tabelas principais ficam na dívida: elas saem só quando a tela vai para o Block", () => {
-    for (const file of [
-      "src/expenses/expense-list.tsx",
-    ]) {
+    for (const file of ["src/expenses/expense-list.tsx"]) {
       expect([...DEBT.R2, ...DEBT.R3], file).toContain(file);
     }
   });
