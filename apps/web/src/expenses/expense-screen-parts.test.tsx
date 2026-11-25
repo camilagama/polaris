@@ -19,6 +19,18 @@ const VOIDING_STATUS = /<p[^>]*role="status"[^>]*>Anulando…<\/p>/;
 const RESTORING_TEXT = /Reativando…/g;
 const AMOUNT = /R\$\s1\.500,50/;
 
+const rowOf = (html: string, id: string): string => {
+  const row = html
+    .split("<li ")
+    .slice(1)
+    .map((chunk) => chunk.split("</li>")[0] ?? "")
+    .find((chunk) => chunk.includes(`data-expense-id="${id}"`));
+  if (row === undefined) {
+    throw new Error(`no row with data-expense-id="${id}" in the list`);
+  }
+  return row;
+};
+
 describe("MonthPicker", () => {
   it("says the month in words in a button that opens the grid, with no arrows beside it and no native month field", () => {
     const html = renderToStaticMarkup(
@@ -250,9 +262,12 @@ describe("ExpenseList", () => {
     );
     expect(html.match(VOIDING_TEXT)).toHaveLength(1);
     expect(html).toMatch(VOIDING_STATUS);
-    const [first, second] = html.split('data-expense-id="e2"');
-    expect(first).toContain("Anulando…");
-    expect(second).not.toContain("Anulando…");
+    expect(rowOf(html, "e1"), "row e1 is the one being voided").toContain(
+      "Anulando…"
+    );
+    expect(rowOf(html, "e2"), "row e2 is not being voided").not.toContain(
+      "Anulando…"
+    );
   });
 
   it("restoring says Reativando… on the voided row only", () => {
@@ -269,9 +284,12 @@ describe("ExpenseList", () => {
       "restore:e1"
     );
     expect(html.match(RESTORING_TEXT)).toHaveLength(1);
-    const [firstRow, secondRow] = html.split('data-expense-id="e2"');
-    expect(firstRow).toContain("Reativando…");
-    expect(secondRow).not.toContain("Reativando…");
+    expect(rowOf(html, "e1"), "row e1 is the one being restored").toContain(
+      "Reativando…"
+    );
+    expect(rowOf(html, "e2"), "row e2 is not being restored").not.toContain(
+      "Reativando…"
+    );
     expect(html).not.toContain("Anulando");
   });
 
