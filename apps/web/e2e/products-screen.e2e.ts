@@ -612,13 +612,15 @@ test("Produtos a 1280 px: o filtro Estado dos produtos fica no mesmo lugar em At
   ).toBeLessThanOrEqual(STATUS_FILTER_JUMP);
 });
 
-const TITLE_LINE_DISPLAY = {
-  desktop: { display: "flex", width: 1280, height: 800 },
-  phone: { display: "contents", width: 360, height: 740 },
+const PAGE_GRID_GAP = 16;
+
+const TITLE_LINE_VIEWS = {
+  desktop: { width: 1280, height: 800 },
+  phone: { width: 360, height: 740 },
 } as const;
 
-for (const [name, view] of Object.entries(TITLE_LINE_DISPLAY)) {
-  test(`Produtos em Arquivados a ${view.width} px: a linha do título ${view.display === "contents" ? "não ocupa lugar na grade" : "guarda a altura do botão"}`, async ({
+for (const [name, view] of Object.entries(TITLE_LINE_VIEWS)) {
+  test(`Produtos em Arquivados a ${view.width} px: a linha do título ${name === "phone" ? "não ocupa lugar na grade" : "guarda a altura do botão"}`, async ({
     page,
   }) => {
     await page.setViewportSize({ height: view.height, width: view.width });
@@ -633,13 +635,24 @@ for (const [name, view] of Object.entries(TITLE_LINE_DISPLAY)) {
     await expect(page.getByText("Produto 01").first()).toBeVisible();
     const line = page.locator("[data-title-line]").first();
     await expect(line).toHaveCSS("display", name === "phone" ? "grid" : "flex");
+    const filter = page.locator('[aria-label="Estado dos produtos"]');
+    const newProduct = page.getByRole("button", { name: "Novo produto" });
+    const activeTop = (await filter.boundingBox())?.y ?? Number.NaN;
+    const buttonHeight = (await newProduct.boundingBox())?.height ?? Number.NaN;
     await statusTab(page, "Arquivados").click();
     await expect(statusTab(page, "Arquivados")).toHaveAttribute(
       "aria-selected",
       "true"
     );
     await expect(page.getByText("Produto 02").first()).toBeVisible();
-    await expect(line).toHaveCSS("display", view.display);
+    const archivedTop = (await filter.boundingBox())?.y ?? Number.NaN;
+    const expectedRise = name === "phone" ? buttonHeight + PAGE_GRID_GAP : 0;
+    expect(
+      Math.abs(activeTop - archivedTop - expectedRise),
+      name === "phone"
+        ? "no toque o filtro sobe só o botão e o espaço dele, sem o item vazio da linha"
+        : "a partir de 760 px o filtro não sobe"
+    ).toBeLessThanOrEqual(STATUS_FILTER_JUMP);
     await expect(
       page.getByRole("heading", { exact: true, level: 2, name: "Produtos" })
     ).toHaveCount(1);
