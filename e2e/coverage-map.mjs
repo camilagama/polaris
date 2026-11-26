@@ -777,6 +777,12 @@ export const SPEC_SCREENS = {
     "dashboard",
     "expenses",
   ],
+  "apps/web/e2e-real/jornadas/produto-duas-variantes.e2e.ts": [
+    "home",
+    "sale",
+    "products",
+    "inventory",
+  ],
   "apps/web/e2e-real/jornadas/produto.e2e.ts": ["home", "sale", "products"],
   "apps/web/e2e-real/jornadas/resultado-historico-offline.e2e.ts": [
     "home",
