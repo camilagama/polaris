@@ -612,6 +612,40 @@ test("Produtos a 1280 px: o filtro Estado dos produtos fica no mesmo lugar em At
   ).toBeLessThanOrEqual(STATUS_FILTER_JUMP);
 });
 
+const TITLE_LINE_DISPLAY = {
+  desktop: { display: "flex", width: 1280, height: 800 },
+  phone: { display: "contents", width: 360, height: 740 },
+} as const;
+
+for (const [name, view] of Object.entries(TITLE_LINE_DISPLAY)) {
+  test(`Produtos em Arquivados a ${view.width} px: a linha do título ${view.display === "contents" ? "não ocupa lugar na grade" : "guarda a altura do botão"}`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: view.height, width: view.width });
+    await openServerScreen(page, {
+      lists: [
+        answerByStatus({
+          active: [product(1, "Produto 01")],
+          archived: [product(2, "Produto 02")],
+        }),
+      ],
+    });
+    await expect(page.getByText("Produto 01").first()).toBeVisible();
+    const line = page.locator("[data-title-line]").first();
+    await expect(line).toHaveCSS("display", name === "phone" ? "grid" : "flex");
+    await statusTab(page, "Arquivados").click();
+    await expect(statusTab(page, "Arquivados")).toHaveAttribute(
+      "aria-selected",
+      "true"
+    );
+    await expect(page.getByText("Produto 02").first()).toBeVisible();
+    await expect(line).toHaveCSS("display", view.display);
+    await expect(
+      page.getByRole("heading", { exact: true, level: 2, name: "Produtos" })
+    ).toHaveCount(1);
+  });
+}
+
 // ---- the addresses: ?produto=<uuid> and ?novo=1 ----------------------------------------------------------------
 
 const variantsOf = {

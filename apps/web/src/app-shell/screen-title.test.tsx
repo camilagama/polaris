@@ -217,7 +217,7 @@ describe("TitleLine decide sozinho se o título é só para o leitor de tela", (
     expect(screenOf(html).lineClasses).not.toContain("contents");
   });
 
-  it("tela que pode ter ação, sem ação agora: a linha segue na grade", () => {
+  it("tela que pode ter ação, sem ação agora: sem caixa no toque e com a altura do botão a partir de 760 px", () => {
     const html = renderToStaticMarkup(
       <TabPanelScope>
         <TitleLine canHaveAction tabNamesIt>
@@ -227,7 +227,9 @@ describe("TitleLine decide sozinho se o título é só para o leitor de tela", (
     );
     const { drawn, lineClasses: classes } = screenOf(html);
     expect(drawn).toBe(false);
-    expect(classes).not.toContain("contents");
+    expect(classes).toContain("contents");
+    expect(classes).not.toContain("grid");
+    expect(classes).toContain("min-[47.5rem]:flex");
     expect(classes).toContain("min-[47.5rem]:min-h-ctl-md");
   });
 
