@@ -51,7 +51,9 @@ function saleLayout(page: Page) {
     const form = document.querySelector("[data-sale-form]");
     const container = form?.parentElement;
     const bar = document.querySelector("[data-submit-bar]");
-    const aside = form?.querySelector("aside");
+    const aside = form?.querySelector(
+      '[data-block="plain"][role="region"]'
+    )?.parentElement;
     const confirm = aside?.querySelector('button[type="submit"]');
     const control = form?.querySelector("button");
     const shown = (element: Element | null | undefined) =>

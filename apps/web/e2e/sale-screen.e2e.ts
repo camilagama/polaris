@@ -21,7 +21,6 @@ const HAS_TWO = /2/;
 const SHIRT_OPTION = /Camiseta do laboratório · Azul/;
 const LAB_PROFILE = /Maquininha do laboratório/;
 const ANY_ID = /.+/;
-const BLANK_LINE = /^\s*$/;
 const FIX_FIELDS = /Corrija \d+ campos?/;
 
 const THEMES = [
@@ -83,7 +82,7 @@ async function pickShirt(page: Page): Promise<Locator> {
 }
 
 async function useEveryControl(page: Page) {
-  const summary = page.getByRole("complementary", { name: "Resumo" });
+  const summary = page.getByRole("region", { exact: true, name: "Resumo" });
   // the summary shows only what was chosen: nothing yet, so no payment, profile or date line
   await expect(summary).not.toContainText("Perfil de pagamento");
   await expect(summary).not.toContainText("ainda não escolhido");
@@ -350,11 +349,11 @@ test("a venda vazia não mostra o contador nem Adicionar item, e escolher o 1º 
   const items = page.getByRole("group", { exact: true, name: "Item 1" });
   const addItem = page.getByRole("button", { name: "Adicionar item" });
   const count = page
-    .getByRole("group", { exact: true, name: "Itens" })
-    .locator("[data-slot=card-description]");
+    .getByRole("region", { exact: true, name: "Itens" })
+    .locator("[data-slot=items-count]");
   await expect(items.getByLabel("Produto ou variante")).toBeVisible();
   await expect(addItem).toHaveCount(0);
-  await expect(count).toHaveText(BLANK_LINE);
+  await expect(count).toHaveCount(0);
 
   // the "Venda em andamento" bar above the card appears with the first choice, so the gap to the card's own title
   // is what shows whether the counter pushed the item
@@ -363,23 +362,34 @@ test("a venda vazia não mostra o contador nem Adicionar item, e escolher o 1º 
     ((await items.boundingBox())?.y ?? Number.NaN) -
     ((await title.boundingBox())?.y ?? Number.NaN);
   const before = await top();
-  const lineHeight = (await count.boundingBox())?.height ?? Number.NaN;
-  expect(lineHeight).toBeGreaterThan(0);
   await pickShirt(page);
   const quantity = items.getByLabel("Quantidade");
   await expect(quantity).toBeVisible();
   await expectCount(count, "1 linha · 1 unidade", "1 linha, 1 unidade");
   await expect(addItem).toBeVisible();
   expect(Math.abs((await top()) - before)).toBeLessThanOrEqual(1);
-  expect(
-    Math.abs(((await count.boundingBox())?.height ?? Number.NaN) - lineHeight)
-  ).toBeLessThanOrEqual(1);
 
   await addItem.click();
   await expect(
     page.getByRole("group", { exact: true, name: "Item 2" })
   ).toBeVisible();
   await expectCount(count, "1 linha · 1 unidade", "1 linha, 1 unidade");
+});
+
+test("Itens, Pagamento e Resumo são anunciados uma vez só pelo nome: região sem grupo nem complementar com o mesmo nome", async ({
+  page,
+}) => {
+  await openSaleLab(page, "claro");
+  const names = ["Itens", "Pagamento", "Resumo"];
+  await Promise.all(
+    names.flatMap((name) => [
+      expect(page.getByRole("region", { exact: true, name })).toHaveCount(1),
+      expect(page.getByRole("group", { exact: true, name })).toHaveCount(0),
+      expect(
+        page.getByRole("complementary", { exact: true, name })
+      ).toHaveCount(0),
+    ])
+  );
 });
 
 async function chooseNoProfile(page: Page) {
@@ -801,7 +811,7 @@ async function pickLines(page: Page) {
 /** How far below the window the first screen of the sale leaves "Confirmar venda": zero or less means it shows. */
 async function confirmOverflow(page: Page): Promise<number> {
   const confirm = page
-    .getByRole("complementary", { name: "Resumo" })
+    .getByRole("region", { exact: true, name: "Resumo" })
     .getByRole("button", { name: "Confirmar venda" });
   await expect(confirm).toBeVisible();
   await page.evaluate(() => window.scrollTo(0, 0));

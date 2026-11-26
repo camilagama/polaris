@@ -1158,6 +1158,7 @@ export function SalePage() {
         <div className="grid min-w-0 gap-4">
           <Block aria-labelledby="sale-items-title" className="gap-4">
             <BlockHeader
+              aside={<ItemsCount count={chosen} />}
               action={
                 <RefreshButton
                   disabled={locked}
@@ -1169,12 +1170,7 @@ export function SalePage() {
               title="Itens"
             />
             <BlockPanel>
-              <fieldset
-                aria-labelledby="sale-items-title"
-                className="grid min-w-0 gap-4"
-                disabled={locked}
-              >
-                <ItemsCount count={chosen} />
+              <fieldset className="grid min-w-0 gap-4" disabled={locked}>
                 {form.items.map((item, index) => (
                   <ItemEditor
                     canAdjustStock={canAdjustStock}

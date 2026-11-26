@@ -258,7 +258,7 @@ function RequestCard({
         <p className="text-muted-foreground">{EXPORT_SUPPORT_TEXT}</p>
         <FieldSet
           aria-describedby={formatsError ? FORMATS_ERROR_ID : undefined}
-          className="gap-3"
+          className="gap-3 touch:gap-6"
         >
           <legend className="sr-only">Formatos</legend>
           {EXPORT_FORMAT_OPTIONS.map((option) => (

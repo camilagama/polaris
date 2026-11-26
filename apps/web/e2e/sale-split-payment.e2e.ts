@@ -191,7 +191,7 @@ test('o exemplo do usuário: total 300, Parte 1 = 100, a Parte 2 já mostra 200,
   await expect(profileOf(2)).toHaveAccessibleDescription(SPLIT_PROFILE_HINT);
   const status = page.locator("#sale-split-balance");
   await expect(status).toContainText("Fechou: R$ 300,00");
-  const summary = page.getByRole("complementary", { name: "Resumo" });
+  const summary = page.getByRole("region", { exact: true, name: "Resumo" });
   await expect(summary).toContainText("Pagamento em 2 partes");
   await expect(summary).toContainText("Parte 1 · Pix");
   await expect(summary).toContainText("Parte 2 · Dinheiro");
@@ -328,7 +328,7 @@ test("perfil por parte: cada parte tem o seu no Resumo; a recusa do servidor diz
   await chooseSelectOption(part(page, 1), "Perfil de pagamento", LAB_PROFILE);
   await chooseSelectOption(part(page, 2), "Método", "Dinheiro");
   await chooseSelectOption(part(page, 2), "Perfil de pagamento", LAB_PROFILE);
-  const summary = page.getByRole("complementary", { name: "Resumo" });
+  const summary = page.getByRole("region", { exact: true, name: "Resumo" });
   await expect(summary).toContainText("Parte 1 · Pix");
   await expect(summary.getByText("Maquininha do laboratório")).toHaveCount(2);
   await page.getByRole("button", { name: "Confirmar venda" }).click();
@@ -477,7 +477,7 @@ test("sem internet, cada parte usa os perfis da última conexão: o Resumo mostr
       .getByRole("note")
       .filter({ hasText: "estes são os perfis da última vez com conexão" })
   ).toHaveCount(1);
-  const summary = page.getByRole("complementary", { name: "Resumo" });
+  const summary = page.getByRole("region", { exact: true, name: "Resumo" });
   await expect(summary).toContainText("Parte 1 · Pix");
   await expect(summary).toContainText("Parte 2 · Cartão de débito");
   await expect(summary.getByText("Maquininha do laboratório")).toHaveCount(1);
