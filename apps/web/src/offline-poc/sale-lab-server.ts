@@ -117,7 +117,10 @@ function pricedProfiles(payload: unknown): PricedProfile[] {
   return [
     paymentProfile,
     ...(payments ?? []).map((part) => part.paymentProfile),
-  ].filter((profile): profile is PricedProfile => profile != null);
+  ].filter(
+    (profile): profile is PricedProfile =>
+      profile !== undefined && profile !== null
+  );
 }
 
 export class SaleLabServer extends FakeStockServer {
