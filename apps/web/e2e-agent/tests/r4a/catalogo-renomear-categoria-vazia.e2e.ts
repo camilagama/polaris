@@ -2,7 +2,7 @@ import { test } from "@e2e-dev/web";
 import { expect } from "e2e";
 
 /**
- * Achado da área 3 (Catálogo): ao renomear uma categoria e apagar o nome, Salvar não diz nada.
+ * Ao renomear uma categoria e apagar o nome, Salvar não diz nada.
  * Esperado: "Informe o nome da categoria.", como no campo "Nova categoria".
  */
 const ADD = /^Adicionar categoria$/;

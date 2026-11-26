@@ -1,7 +1,7 @@
 import { test } from "@e2e-dev/web";
 import { expect } from "e2e";
 
-/** Área 2: filtrar por Canceladas numa loja sem venda cancelada dá a frase de vazio e Limpar filtros devolve a lista. */
+/** Filtrar por Canceladas numa loja sem venda cancelada dá a frase de vazio e Limpar filtros devolve a lista. */
 const SITUATION = /^Situação/;
 const LIST = /^Vendas/;
 const EMPTY = "Nenhuma venda encontrada com estes filtros.";

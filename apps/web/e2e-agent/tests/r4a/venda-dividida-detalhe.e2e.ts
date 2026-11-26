@@ -2,7 +2,7 @@ import { test } from "@e2e-dev/web";
 import { expect } from "e2e";
 
 /**
- * Áreas 1 e 2: uma venda em 2 partes (Pix e Dinheiro) confirmada em Vender abre no Histórico e no Detalhe com as
+ * Uma venda em 2 partes (Pix e Dinheiro) confirmada em Vender abre no Histórico e no Detalhe com as
  * duas partes, e o cancelamento a marca como cancelada no Histórico.
  */
 const SHIRT = /Camiseta/;

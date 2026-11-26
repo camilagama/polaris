@@ -253,11 +253,11 @@ Mesma ferramenta, pilha e regras da rodada 2. Partiu da branch do PR 707 com a `
 - **8 sessões de explore** (Sonnet 5.5, `--agent explorador`, 1 passo cada), 6 áreas. **Total: 2.961.800 tokens**, 98,7% do teto de 3 milhões; os testes de achado (só locators) custaram 0.
 - **Passos: 1 por área, 2 nas áreas 1 e 5**, e não 3 em cada uma. Um passo custou entre 273 e 469 mil tokens (média 370 mil): 6 áreas × 3 passos dariam cerca de 6,7 milhões. Gastei o segundo passo na Nova venda dividida (o explorador parou no aviso de perfil, antes de confirmar) e na Conta (o primeiro passo tentou endereços que não existem). O que o passo não alcançou foi coberto por testes de locators.
 - **Achados dos exploradores: 3** (1 no Catálogo, 2 na Conta e loja). Com teste: **1 confirmado, 2 desenhados** (a mesma causa). Nenhum falso positivo com bug e nenhum conhecido.
-- O que os 11 testes (7 novos, mais as 4 sessões do setup) mostram: **9 passam, 2 falham de propósito** (os dois achados). Não é para virar spec.
+- O que os 11 testes (7 novos, mais as 4 sessões do setup, uma por loja que os testes consomem: `bb-r4a-achados-1` a `-4`) mostram: **9 passam, 2 falham de propósito** (os dois achados). Não é para virar spec.
 
 ### Mudanças na pilha desde a rodada 2
 
-- **Lojas desta rodada:** `bb-r4a-venda`, `bb-r4a-historico`, `bb-r4a-catalogo`, `bb-r4a-despesas`, `bb-r4a-conta`, `bb-r4a-inicio` (uma por área, com a semeadura padrão) e `bb-r4a-achados-1` a `bb-r4a-achados-4`, uma por teste que muda dados.
+- **Lojas desta rodada:** `bb-r4a-venda`, `bb-r4a-historico`, `bb-r4a-catalogo`, `bb-r4a-despesas`, `bb-r4a-conta`, `bb-r4a-inicio` (uma por área, com a semeadura padrão) e `bb-r4a-achados-1` a `bb-r4a-achados-6`, semeadas (os testes usam da 1 a 4: uma por teste que muda dados; os de leitura dividem a sessão).
 - **Sem mudança de código da pilha:** `pilha/preparar.ts`, `com-pilha.sh` e a config seguem os da rodada 2. Os testes novos estão em `tests/r4a/` (a suíte `tests/rodada2` e a `fumaca` consomem lojas `bb-achados-N` e não rodam junto: o e2e recusa sessão sem setup).
 - **A pilha não liga o runtime offline nem o plano Pro**, e o motor do e2e não corta a rede: o fluxo sem internet (S5) não cabe nela. Rodei no lugar a jornada real do e2e-real, `e2e-real/jornadas/venda-dividida-sem-conexao.e2e.ts`, no projeto `runtime-ligado` com um segundo cluster PostgreSQL descartável: **2 passam** (guardar a venda dividida no aparelho sem conexão; recusa por `payment_profile_changed` e Refazer volta com as duas partes). O contorno do inotify (`CHOKIDAR_USEPOLLING` em `run-environment.ts`) ficou só local e foi revertido.
 
@@ -293,9 +293,9 @@ Todos os testes estão em `apps/web/e2e-agent/tests/r4a/`, com a tag `r4a`, só 
 |---|---|---|---|---|---|
 | 1 | 3 | Renomear uma categoria e apagar o nome: Salvar não diz nada | `catalogo-renomear-categoria-vazia.e2e.ts` | **Falha** (em todas as execuções): `getByText("Informe o nome da categoria.")` sem nó | **Confirmado** (menor) |
 | controle | 3 | Adicionar categoria com o nome vazio | mesmo arquivo | Passa | a mensagem existe na criação |
-| 2 | 5 | O menu "Loja, conta e ajuda" não tem Minha conta (nem Aparelhos), e `/conta` abre o Início | `conta-menu-minha-conta.e2e.ts` | **Falha** (em todas as execuções): `menuitem "Minha conta"` sem nó | **Desenhado** |
+| 2 | 5 | O menu "Loja, conta e ajuda" não tem Minha conta, e `/conta` abre o Início | `conta-menu-minha-conta.e2e.ts` | **Falha** (em todas as execuções): `menuitem "Minha conta"` sem nó | **Desenhado** |
 | controle | 5 | `/conta` abre o Início e o menu mostra "Ajuda e contato" | mesmo arquivo | Passa | prova que o menu abre e que a falta é de Minha conta |
-| 3 | 5 | O menu da conta não tem "Sair" | (o mesmo teste do 2) | — | **Desenhado** (mesma causa) |
+| 3 | 5 | O menu da conta não tem "Sair" | `conta-menu-minha-conta.e2e.ts` (o controle confere `menuitem "Sair"` ausente) | Passa a ausência | **Desenhado** (mesma causa) |
 | — | 1, 2 | Venda dividida em Pix R$ 20,00 e Dinheiro R$ 29,90: confirma, abre no Histórico e no Detalhe com "Pagamento em 2 partes", cancela e o Histórico mostra "Cancelada" | `venda-dividida-detalhe.e2e.ts` | **Passa** | sem achado |
 | — | 2 | Filtro Canceladas sem venda cancelada: "Nenhuma venda encontrada com estes filtros." e "Limpar filtros" traz a lista | `historico-filtro-sem-vendas.e2e.ts` | **Passa** | sem achado |
 
@@ -304,7 +304,7 @@ Todos os testes estão em `apps/web/e2e-agent/tests/r4a/`, com a tag `r4a`, só 
 - **Onde:** `/products?aba=categorias`, "Mais ações para {categoria}", Renomear.
 - **Passos do teste:** criar "Acessórios QA", abrir Renomear, limpar o campo "Novo nome para Acessórios QA", tocar em Salvar e procurar "Informe o nome da categoria.".
 - **Observado:** nada muda na tela: sem mensagem, só o contador "0/100 caracteres". O controle prova que a criação com o nome vazio mostra a frase.
-- **Causa:** `RenameForm.handleSubmit` (`apps/web/src/catalog/category-list.tsx`) só chama `onSubmit` com `value.trim() !== ""` e não guarda nem mostra nada no caso vazio; o botão Salvar só desliga acima de 100 caracteres.
+- **Causa:** `RenameForm.handleSubmit` (`apps/web/src/catalog/category-list.tsx`) só chama `onSubmit` com `value.trim() !== ""` e não guarda nem mostra nada no caso vazio; o botão Salvar só desliga acima de 100 caracteres (ou com ação em curso), e o envio também exige conexão.
 - **Já conhecido?** Não achei em `ux-pendencias.md`. O DESIGN.md (§ Categorias) promete "Informe o nome da categoria." para o campo "Nova categoria"; para Renomear diz só que o campo abre na linha com Salvar e Cancelar. É lacuna do desenho, não decisão.
 - **Decisão pendente:** mostrar a frase (como na criação) ou desligar Salvar com o campo vazio. É de UX e fica para a correção.
 

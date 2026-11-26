@@ -2,8 +2,8 @@ import { test } from "@e2e-dev/web";
 import { expect } from "e2e";
 
 /**
- * Achado da área 5 (Conta e loja): o menu "Loja, conta e ajuda" não lista Minha conta e /conta abre o Início.
- * Esperado pelo explorador: o item "Minha conta" no menu. Na pilha local a senha está desligada e o runtime offline
+ * O menu "Loja, conta e ajuda" não lista Minha conta e /conta abre o Início.
+ * Esperado: o item "Minha conta" no menu. Na pilha local a senha está desligada e o runtime offline
  * não está ligado, e Minha conta só tem as abas Senha e Aparelhos.
  */
 const MENU = /^Loja, conta e ajuda: /;
@@ -31,4 +31,5 @@ test("controle: sem aba de Minha conta, /conta abre o Início e o menu mostra Aj
   await expect(
     screen.getByRole("menuitem", { name: "Minha conta" })
   ).toBeHidden();
+  await expect(screen.getByRole("menuitem", { name: "Sair" })).toBeHidden();
 });
