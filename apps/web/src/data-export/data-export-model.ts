@@ -1,3 +1,4 @@
+import { formatFileSize } from "../lib/format";
 import {
   isConnectionFailure,
   isPlatformCut,
@@ -94,17 +95,6 @@ function shortFormats(formats: readonly ExportFormat[]): string {
     return names.join("");
   }
   return `${names.slice(0, -1).join(", ")} e ${names.at(-1)}`;
-}
-
-const KB = 1000;
-const MB = 1_000_000;
-
-/** A size the way the screen writes it: "820 KB", "1,2 MB". */
-export function formatFileSize(bytes: number): string {
-  if (bytes < MB) {
-    return `${Math.max(1, Math.round(bytes / KB))} KB`;
-  }
-  return `${(bytes / MB).toFixed(1).replace(".", ",")} MB`;
 }
 
 function instantIn(value: string, timeZone: string): string {

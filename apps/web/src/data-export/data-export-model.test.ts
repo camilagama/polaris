@@ -9,7 +9,6 @@ import {
   exportFileHref,
   exportView,
   FAILED_TEXT,
-  formatFileSize,
   formatsProblem,
   FRESH_SESSION_TEXT,
   LIMIT_REACHED_TEXT,
@@ -248,12 +247,6 @@ describe("the download (AC-4)", () => {
     ).toBe(
       "/api/data-exports/0199c2d0-0000-7000-8000-0000000000aa/files/2?organizationId=0199c2d0-0000-7000-8000-00000000a001"
     );
-  });
-
-  it("writes sizes in KB under a megabyte and in MB with a comma above", () => {
-    expect(formatFileSize(300)).toBe("1 KB");
-    expect(formatFileSize(820_400)).toBe("820 KB");
-    expect(formatFileSize(16_777_216)).toBe("16,8 MB");
   });
 });
 
