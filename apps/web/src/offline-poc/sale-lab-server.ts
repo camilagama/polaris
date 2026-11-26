@@ -91,7 +91,7 @@ const recentSalesWindow: SaleListEntryReadModel[] = [
 ];
 
 /** The version of the payment profile the lab's server has, whatever a device saw. */
-const LAB_PROFILE_SERVER_VERSION = 3;
+export const LAB_PROFILE_SERVER_VERSION = 3;
 
 export class SaleLabServer extends FakeStockServer {
   override recentSales() {
