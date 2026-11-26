@@ -612,8 +612,6 @@ test("Produtos a 1280 px: o filtro Estado dos produtos fica no mesmo lugar em At
   ).toBeLessThanOrEqual(STATUS_FILTER_JUMP);
 });
 
-const PAGE_GRID_GAP = 16;
-
 const TITLE_LINE_VIEWS = {
   desktop: { width: 1280, height: 800 },
   phone: { width: 360, height: 740 },
@@ -639,6 +637,14 @@ for (const [name, view] of Object.entries(TITLE_LINE_VIEWS)) {
     const newProduct = page.getByRole("button", { name: "Novo produto" });
     const activeTop = (await filter.boundingBox())?.y ?? Number.NaN;
     const buttonHeight = (await newProduct.boundingBox())?.height ?? Number.NaN;
+    const pageGridGap = await page
+      .locator(".products-page > div")
+      .first()
+      .evaluate((grid) => Number.parseFloat(getComputedStyle(grid).rowGap));
+    expect(
+      pageGridGap,
+      "o gap da grade da página vem do estilo"
+    ).toBeGreaterThan(0);
     await statusTab(page, "Arquivados").click();
     await expect(statusTab(page, "Arquivados")).toHaveAttribute(
       "aria-selected",
@@ -646,7 +652,7 @@ for (const [name, view] of Object.entries(TITLE_LINE_VIEWS)) {
     );
     await expect(page.getByText("Produto 02").first()).toBeVisible();
     const archivedTop = (await filter.boundingBox())?.y ?? Number.NaN;
-    const expectedRise = name === "phone" ? buttonHeight + PAGE_GRID_GAP : 0;
+    const expectedRise = name === "phone" ? buttonHeight + pageGridGap : 0;
     expect(
       Math.abs(activeTop - archivedTop - expectedRise),
       name === "phone"
