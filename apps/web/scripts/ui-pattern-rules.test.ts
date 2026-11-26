@@ -35,8 +35,8 @@ type Rule = "R1" | "R2" | "R3" | "R4";
 
 const RULES: readonly Rule[] = ["R1", "R2", "R3", "R4"];
 
-const SOURCE = /\.tsx$/;
-const TEST_FILE = /\.test\.tsx$/;
+const SOURCE = /\.tsx?$/;
+const TEST_FILE = /\.(?:test|testing)\.tsx?$/;
 const OUTSIDE = ["src/ui/", "src/ui-gallery/"] as const;
 
 // a string is matched first so a `/*` or a `//` inside it (`accept="image/*"`, a URL) does not start a comment
@@ -376,6 +376,8 @@ export function listingFaults(
   return faults;
 }
 
+const isScanned = (name: string) => SOURCE.test(name) && !TEST_FILE.test(name);
+
 const sourcesUnder = (dir: string): string[] =>
   readdirSync(join(web, dir), { withFileTypes: true })
     .sort((a, b) => a.name.localeCompare(b.name, "en"))
@@ -384,9 +386,7 @@ const sourcesUnder = (dir: string): string[] =>
       if (entry.isDirectory()) {
         return sourcesUnder(path);
       }
-      return SOURCE.test(entry.name) && !TEST_FILE.test(entry.name)
-        ? [path]
-        : [];
+      return isScanned(entry.name) ? [path] : [];
     });
 
 const SCOPE = sourcesUnder("src").filter(
@@ -404,6 +404,7 @@ describe("o padrão visual das telas (R1 a R3)", () => {
   it("a árvore de src foi lida e a galeria e ui/ ficaram de fora", () => {
     expect(SCOPE.length).toBeGreaterThan(150);
     expect(SCOPE).toContain("src/home/home-parts.tsx");
+    expect(SCOPE).toContain("src/lib/focus.ts");
     expect(SCOPE.some((path) => path.startsWith("src/ui/"))).toBe(false);
     expect(SCOPE.some((path) => path.startsWith("src/ui-gallery/"))).toBe(
       false
@@ -463,6 +464,35 @@ describe("o padrão visual das telas (R1 a R3)", () => {
 });
 
 const NONE = { R1: 0, R2: 0, R3: 0, R4: 0 };
+
+describe("a trava lê os .ts e não lê os testes (controles)", () => {
+  it.each(["tela.tsx", "modelo.ts"])("%s é fonte varrida", (name) => {
+    expect(isScanned(name)).toBe(true);
+  });
+
+  it.each([
+    "tela.test.tsx",
+    "modelo.test.ts",
+    "wrangler-config.testing.ts",
+    "tela.testing.tsx",
+    "estilo.css",
+    "esquema.js",
+  ])("%s não é fonte varrida", (name) => {
+    expect(isScanned(name)).toBe(false);
+  });
+
+  it("uma moldura à mão numa constante de .ts reprova em R3 e fora da dívida", () => {
+    const text = 'export const FRAME = "rounded border p-3";';
+    expect(ruleHits(text).R3).toBe(1);
+    const hits = new Map([["src/x/modelo.ts", ruleHits(text)]]);
+    expect(
+      listingFaults(hits, {
+        allowlist: [],
+        debt: { R1: [], R2: [], R3: [], R4: [] },
+      })
+    ).toEqual([expect.stringContaining("src/x/modelo.ts")]);
+  });
+});
 
 describe("a trava reprova o que planto (controles)", () => {
   it.each([
