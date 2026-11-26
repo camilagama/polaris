@@ -1,6 +1,6 @@
 import type { Api, Problem } from "../api";
 import { PROBLEM_TEXT } from "../api";
-import { tableRow } from "../blocks";
+import { sectionTitle, tableRow } from "../blocks";
 import { type Dom, hasControlCharacter, labelName } from "../dom";
 import { brasiliaMomentText, caseKindText } from "../format";
 import { createNotice } from "../notice";
@@ -82,6 +82,8 @@ export function supportCasesView(
   api: Api,
   options: {
     canRead: boolean;
+    /** The level of the section's title, one below the title of the block that holds it. */
+    heading?: "h3" | "h4";
     onRead: (choice: CaseChoice) => void;
     /** The sentence that says what a read leaves behind: shown right above the list whose buttons make the read. */
     readHint: HTMLElement | null;
@@ -233,7 +235,7 @@ export function supportCasesView(
     element: dom.el(
       "div",
       { class: "cases" },
-      dom.el("h3", {}, "Atendimento de suporte"),
+      sectionTitle(dom, options.heading ?? "h3", "Atendimento de suporte"),
       listButton,
       notice.element,
       dom.el("div", { class: "results" }, options.readHint, list)

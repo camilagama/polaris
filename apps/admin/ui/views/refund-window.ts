@@ -1,6 +1,6 @@
 import { PROBLEM_TEXT } from "../api";
 import type { ScreenTools } from "../app";
-import { facts } from "../blocks";
+import { facts, sectionTitle } from "../blocks";
 import { type Dom, labelName, storeName } from "../dom";
 import {
   billingStateText,
@@ -125,15 +125,19 @@ function windowFacts(dom: Dom, view: RefundWindowView, choice: CaseChoice) {
  * actions come only after the read (`billing-actions.ts`). A refusal does not say whether the case was closed or of
  * another store.
  */
-export function refundWindowView(tools: ScreenTools): RefundWindowArea {
+export function refundWindowView(
+  tools: ScreenTools,
+  placement: "alone" | "inside-card" = "alone"
+): RefundWindowArea {
   const { api, can, dom } = tools;
+  const inside = placement === "inside-card";
   const capabilities = {
     manageCases: can("support_case:manage"),
     readWindow: can("billing:operate"),
   };
   const notice = createNotice(dom);
   const title = dom.el(
-    "h2",
+    inside ? "h3" : "h2",
     { id: "reembolso-titulo", tabindex: "-1" },
     "Cancelar renovação e reembolsar"
   );
@@ -147,6 +151,7 @@ export function refundWindowView(tools: ScreenTools): RefundWindowArea {
 
   const cases = supportCasesView(dom, api, {
     canRead: capabilities.readWindow,
+    heading: inside ? "h4" : "h3",
     onRead: (choice) => {
       read(choice);
     },
@@ -202,7 +207,7 @@ export function refundWindowView(tools: ScreenTools): RefundWindowArea {
       });
       dom.fill(
         result,
-        dom.el("h3", {}, "Cobrança lida"),
+        sectionTitle(dom, inside ? "h4" : "h3", "Cobrança lida"),
         shown,
         dom.el("p", { class: "hint" }, SEPARATE_ACTIONS),
         actions.element

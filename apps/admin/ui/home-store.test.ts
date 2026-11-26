@@ -16,6 +16,7 @@ import {
 import type {
   PrivacyCasePage,
   PrivacyCaseSummary,
+  RefundWindowView,
   SupportCasePage,
   SupportCaseSummary,
 } from "./types";
@@ -39,6 +40,7 @@ const HOSTILE = [
   "‮abc",
   '"><svg onload=1>',
 ];
+const LEVEL = /^h([1-4])$/;
 const ACTION_IN_ATENDIMENTO = /(ação|ações) do atendimento aberto desta loja/;
 const NEVER_CREATED = ["script", "img", "svg", "iframe"];
 const MANAGE_ONLY = {
@@ -539,6 +541,104 @@ describe("Loja", () => {
       }
     }
   );
+
+  describe("the refund block set back inside Cobrança", () => {
+    const WINDOW: RefundWindowView = {
+      currentChargeAmount: "1234.5",
+      firstChargeAmount: "1234.5",
+      firstChargeAt: "2026-10-24T18:30:00.000Z",
+      method: "card",
+      now: "2026-10-28T15:07:12.000Z",
+      refundable: true,
+      refundRequestedAt: null,
+      refundsHere: true,
+      renewal: {
+        accessUntil: null,
+        renewsOn: "2026-11-24",
+        resubscribeFrom: null,
+        status: "renewing",
+      },
+      request: null,
+      state: "active",
+      window: { open: true, until: "2026-11-02T02:59:59.000Z" },
+    };
+
+    const outline = (root: Parameters<typeof allElements>[0]) =>
+      allElements(root)
+        .filter((element) => LEVEL.test(element.tagName))
+        .map((element) => ({
+          level: Number(LEVEL.exec(element.tagName)?.[1]),
+          text: element.textContent,
+        }));
+
+    const billingRead = async () => {
+      const { root } = await storeScreen([
+        json(page([summaryOf()])),
+        json(diagnostics({ id: STORE, name: "Loja da Ana" })),
+        json(page([summaryOf()])),
+        json(WINDOW),
+      ]);
+      await flush();
+      const billing = allElements(root).find(
+        (element) =>
+          element.getAttribute("aria-labelledby") === "cobranca-titulo"
+      );
+      if (billing === undefined) {
+        throw new Error("the Cobrança card is missing");
+      }
+      buttons(billing, "Ver atendimentos abertos desta loja")[0]?.click();
+      await flush();
+      buttons(billing, "Ler a cobrança")[0]?.click();
+      await flush();
+      return billing;
+    };
+
+    it("goes down one level at a time, h2 to h3 to h4, and keeps the title's id, tabindex and focus target", async () => {
+      const billing = await billingRead();
+
+      const levels = outline(billing);
+      expect(levels.map((heading) => heading.level)).toEqual([2, 3, 4, 4]);
+      expect(levels.map((heading) => heading.text)).toEqual([
+        "Cobrança",
+        `Cancelar renovação e reembolsar: Loja da Ana ${STORE}`,
+        "Atendimento de suporte",
+        "Cobrança lida",
+      ]);
+      for (const [index, heading] of levels.entries()) {
+        expect(heading.level - (levels[index - 1]?.level ?? 1)).toBeLessThan(2);
+      }
+      const title = byId(billing, "reembolso-titulo");
+      expect(title.tagName).toBe("h3");
+      expect(title.getAttribute("tabindex")).toBe("-1");
+    });
+
+    it("keeps the review's own title at h4 beside Cobrança lida, with no jump", async () => {
+      const billing = await billingRead();
+      buttons(billing, "Cancelar a renovação")[0]?.click();
+      await flush();
+
+      const levels = outline(billing);
+      expect(levels.map((heading) => heading.level)).toEqual([2, 3, 4, 4, 4]);
+      for (const [index, heading] of levels.entries()) {
+        expect(heading.level - (levels[index - 1]?.level ?? 1)).toBeLessThan(2);
+      }
+    });
+
+    it("keeps the size of the h3 on the h4s that replace it, and only those", async () => {
+      const billing = await billingRead();
+
+      const demoted = byTag(billing, "h4");
+      expect(demoted.map((heading) => heading.getAttribute("class"))).toEqual([
+        "section-title",
+        "section-title",
+      ]);
+      for (const tag of ["h2", "h3"]) {
+        for (const heading of byTag(billing, tag)) {
+          expect(heading.getAttribute("class")).toBeNull();
+        }
+      }
+    });
+  });
 
   it("reads only the diagnostics without the capability to manage cases", async () => {
     const { calls, root } = await storeScreen(
