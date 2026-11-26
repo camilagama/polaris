@@ -84,6 +84,8 @@ export interface BillingActionsOptions {
   /** Turns the area's own buttons off while a command is on its way, so nothing else is asked meanwhile. */
   busy: (on: boolean) => void;
   choice: CaseChoice;
+  /** Level of the review's title: one below the section that holds the actions. */
+  reviewHeading?: "h4" | "h5";
   notice: Notice;
   organization: { id: string; name: string };
   /** The refund was held for this store (`After.holdRefund`): no refund button, with the reason. */
@@ -466,7 +468,7 @@ export function billingActionsView(
       sent: false,
     };
     const heading = dom.el(
-      "h4",
+      options.reviewHeading ?? "h4",
       { id: "cobranca-revisao", tabindex: "-1" },
       kind === "cancel" ? CANCEL_TITLE : REFUND_TITLE
     );

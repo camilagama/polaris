@@ -53,7 +53,7 @@
     list-style: decimal;
   }
 
-  .content :where(h2, h3, h4) {
+  .content :where(h2, h3, h4, h5) {
     margin: 1rem 0 0.5rem;
   }
 
@@ -62,7 +62,7 @@
     @apply text-section;
   }
 
-  .content :where(h4) {
+  .content :where(h4, h5) {
     /* dash: apps/web/src/ui/toast.tsx */
     @apply font-semibold text-sm;
   }
