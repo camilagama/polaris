@@ -24,6 +24,8 @@ const SPLIT_MISMATCH =
 const NOW = new Date("2026-10-01T12:00:00-03:00");
 const STAMP = NOW.toISOString();
 
+const LAB_SERVER_PROFILE_VERSION = 3;
+
 const PROFILE = {
   archivedAt: null,
   createdAt: STAMP,
@@ -552,6 +554,53 @@ test("sem internet, a venda de 1 parte segue como hoje", async ({ page }) => {
   expect(recorded).toHaveLength(1);
   expect(recorded[0]?.payments).toEqual([
     expect.objectContaining({ method: "pix", paymentProfile: null }),
+  ]);
+});
+
+test("sem internet, a venda de 1 parte com perfil leva o id e a versão dele até o que o servidor guardou", async ({
+  page,
+}) => {
+  const chosen = {
+    expectedVersion: LAB_SERVER_PROFILE_VERSION,
+    id: PROFILE.id,
+  };
+  await openSaleLab(page, undefined, { current: chosen.expectedVersion });
+  await sellShirtFor300(page);
+  await expect(
+    page.getByRole("combobox", { exact: true, name: "Perfil de pagamento" })
+  ).toBeVisible();
+  await page.getByLabel("Rede disponível").uncheck();
+  await page
+    .getByRole("radiogroup", { name: "Método de pagamento" })
+    .getByRole("radio", { name: "Pix" })
+    .check();
+  await chooseSelectOption(
+    page.locator("form"),
+    "Perfil de pagamento",
+    LAB_PROFILE
+  );
+  await page
+    .getByRole("button", { name: "Guardar venda neste aparelho" })
+    .click();
+  await expect(
+    page
+      .getByRole("status")
+      .filter({ hasText: "Venda guardada neste aparelho" })
+  ).toBeVisible();
+  const [queued] = await queuedPayloads(page);
+  expect(queued?.paymentProfile).toEqual(chosen);
+
+  await page.getByLabel("Rede disponível").check();
+  await expect(page.getByTestId("server-records")).toHaveText("1", {
+    timeout: 20_000,
+  });
+  const recorded = await recordedSales(page);
+  expect(recorded).toHaveLength(1);
+  expect(recorded[0]?.payments).toEqual([
+    expect.objectContaining({
+      method: "pix",
+      paymentProfile: chosen,
+    }),
   ]);
 });
 
