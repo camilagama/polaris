@@ -363,7 +363,12 @@ describe("a store's diagnostics (AC-5)", () => {
         diagnostics({
           quotas: [
             { key: "goals.active.max", limit: 50, status: "ok", used: 12 },
-            { key: "goals.active.max", limit: 50, status: "novo", used: 12 },
+            {
+              key: "goals.active.max",
+              limit: 50,
+              status: "novo" as never,
+              used: 12,
+            },
           ],
         })
       )
