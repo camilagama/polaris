@@ -163,6 +163,20 @@ function fourteenDayCells(
   };
 }
 
+/**
+ * The two cells of the M3, each key only when the function sent its cell. They are not checked against the cohort's
+ * stores: they were frozen weeks ago and the stores are read live, so a store purged or marked internal since then
+ * leaves the frozen pair above the live count (ADR 0106, limits accepted).
+ */
+function returnCells(cohort: RawActivationFunnel["cohorts"][number]) {
+  const returned = optionalCount(cohort.returned);
+  const neverReturned = optionalCount(cohort.neverReturned);
+  return {
+    ...(neverReturned && { neverReturned }),
+    ...(returned && { returned }),
+  };
+}
+
 /** The route's answer from the function's: same numbers, `null` with a reason where there is none, and the shares. */
 export function activationFunnelView(
   raw: RawActivationFunnel
@@ -191,6 +205,7 @@ export function activationFunnelView(
       const fourteenDays = fourteenDayCells(cohort, stores);
       return {
         ...fourteenDays.cells,
+        ...returnCells(cohort),
         activatedIn7Days,
         inProgress: cohort.inProgress,
         percent: {

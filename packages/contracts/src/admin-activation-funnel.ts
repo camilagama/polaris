@@ -13,7 +13,9 @@ import { z } from "zod";
  *   its own, not a customer's activity (ADR 0071 amended).
  *
  * The "up to 14 days" and Pro trial cells of a cohort are optional in both shapes: the Admin is deployed before the
- * function that writes them, and an answer without them keeps the shape it had.
+ * function that writes them, and an answer without them keeps the shape it had. So are the two cells of the M3, the
+ * stores that did and did not come back to the app (ADR 0106, D9): a week the function froze no row for is `null`
+ * with a reason, never 0.
  */
 
 // The pages run under a CSP without 'unsafe-eval' and the Worker never allows it: no code generation (as in ./index).
@@ -74,6 +76,24 @@ function trialCellsTogether(cohort: {
   );
 }
 
+/**
+ * The M3 cells of a cohort, read from the frozen counter. Optional on the way in for the same reason as the cells
+ * above, and the two come together or not at all: a week is frozen with both numbers or with neither.
+ */
+const rawReturnCells = {
+  neverReturned: rawCell.optional(),
+  returned: rawCell.optional(),
+};
+
+function returnCellsTogether(cohort: {
+  neverReturned?: unknown;
+  returned?: unknown;
+}): boolean {
+  return (
+    (cohort.returned === undefined) === (cohort.neverReturned === undefined)
+  );
+}
+
 const rawRetention = z
   .object({ week2: rawCell, week3: rawCell, week5: rawCell })
   .strict();
@@ -89,6 +109,7 @@ export const rawActivationFunnel = z
           .object({
             ...rawWeek,
             ...rawFourteenDayCells,
+            ...rawReturnCells,
             activatedIn7Days: rawCell,
             retention: rawRetention,
             stores: rawCell,
@@ -99,6 +120,7 @@ export const rawActivationFunnel = z
           })
           .strict()
           .refine(trialCellsTogether)
+          .refine(returnCellsTogether)
       )
       .max(26),
     generatedAt: z.string(),
@@ -153,6 +175,11 @@ const fourteenDayCells = {
   trialStarted: funnelCount.optional(),
 };
 
+const returnCells = {
+  neverReturned: funnelCount.optional(),
+  returned: funnelCount.optional(),
+};
+
 /** What the numbers leave out, said with them (AC-12 moves to the screen; the JSON says it already). */
 export const ACTIVATION_FUNNEL_NOT_COUNTED = Object.freeze({
   internalStores:
@@ -173,6 +200,7 @@ export const activationFunnelResponse = z
           .object({
             ...week,
             ...fourteenDayCells,
+            ...returnCells,
             activatedIn7Days: funnelCount,
             percent: z
               .object({
@@ -209,6 +237,7 @@ export const activationFunnelResponse = z
           })
           .strict()
           .refine(trialCellsTogether)
+          .refine(returnCellsTogether)
       )
       .max(26),
     internalStoresExcluded: count,

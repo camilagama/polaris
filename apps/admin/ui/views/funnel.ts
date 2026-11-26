@@ -77,6 +77,12 @@ const hasFourteenDays = (funnel: ActivationFunnelResponse) =>
 const hasTrial = (funnel: ActivationFunnelResponse) =>
   funnel.cohorts.some((cohort) => cohort.trialStarted !== undefined);
 
+const hasReturn = (funnel: ActivationFunnelResponse) =>
+  funnel.cohorts.some(
+    (cohort) =>
+      cohort.returned !== undefined || cohort.neverReturned !== undefined
+  );
+
 /** A week the answer carries no number for in a column the other weeks have: said, never an empty cell. */
 const NOT_SENT = "não disponível";
 
@@ -187,6 +193,19 @@ function trialTable(dom: Dom, funnel: ActivationFunnelResponse) {
   );
 }
 
+function returnTable(dom: Dom, funnel: ActivationFunnelResponse) {
+  return funnelTable(
+    dom,
+    RETURN_CAPTION,
+    ["Semana", "Voltaram ao app", "Nunca voltaram"],
+    funnel.cohorts.map((cohort) => [
+      weekText(cohort),
+      optionalCountAndShare(cohort.returned, undefined),
+      optionalCountAndShare(cohort.neverReturned, undefined),
+    ])
+  );
+}
+
 function activeTable(dom: Dom, funnel: ActivationFunnelResponse) {
   return funnelTable(
     dom,
@@ -198,6 +217,10 @@ function activeTable(dom: Dom, funnel: ActivationFunnelResponse) {
     ])
   );
 }
+
+const RETURN_CAPTION = "Voltou ao app, por semana de criação da loja";
+const RETURN_NOTE =
+  "Entre as lojas da semana sem venda em 14 dias, só a 1ª loja da dona e sem teste do Pro nem plano pago: por isso as duas colunas somam menos que as lojas sem venda. Voltou: a sessão da dona foi usada em algum dia depois do da criação da loja, numa sessão criada até 14 dias depois. O M3 é um piso de “voltou”: sair do app e revogar um aparelho apagam a sessão, a sessão se renova só uma vez por dia e o app aberto sem conexão não a toca. Isso infla o “nunca voltou”, e a série de e-mails não liga só porque “nunca voltou” está alto.";
 
 const FOURTEEN_DAYS_NOTE =
   'Ativação em 14 dias: lojas da semana com a 1ª venda confirmada até 14 dias depois de criadas. Enquanto o prazo corre, a semana aparece como "não disponível". A ativação em 7 e 14 dias é hipótese a ajustar com a linha de base.';
@@ -338,6 +361,13 @@ export function funnelView(dom: Dom, api: Api): HTMLElement {
       firstSaleTable(dom, funnel),
       ...(hasTrial(funnel)
         ? [dom.el("h3", {}, "Teste do Pro"), trialTable(dom, funnel)]
+        : []),
+      ...(hasReturn(funnel)
+        ? [
+            dom.el("h3", {}, "Voltou ao app"),
+            dom.el("p", { class: "hint" }, RETURN_NOTE),
+            returnTable(dom, funnel),
+          ]
         : []),
       dom.el("h3", {}, "Lojas ativas"),
       activeTable(dom, funnel),
