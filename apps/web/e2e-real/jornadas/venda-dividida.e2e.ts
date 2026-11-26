@@ -17,6 +17,8 @@ const NET_SALES = "(=) Vendas líquidas";
 const GROSS_SALES = "Vendas brutas";
 const PERIOD_LABEL = "Vendas líquidas do período";
 const SCREEN_LABEL = "Total na tela";
+const PART_PIX = /^Parte 1: Pix\s*R\$\s*100,00/;
+const PART_CASH = /^Parte 2: Dinheiro\s*R\$\s*200,00/;
 const TOTAL_CENTS = 30_000;
 
 /** The first amount a piece of text says, in cents; refuses text with none. */
@@ -213,15 +215,7 @@ test("venda dividida: o Resultado soma 300 uma vez, o Histórico lista uma venda
   const parts = page
     .getByRole("list", { exact: true, name: "Pagamento em 2 partes" })
     .getByRole("listitem");
-  await expect(parts).toHaveCount(2);
-  await expect(parts.nth(0)).toContainText("Pix");
-  expect(amountIn(await parts.nth(0).locator("p").first().innerText())).toBe(
-    10_000
-  );
-  await expect(parts.nth(1)).toContainText("Dinheiro");
-  expect(amountIn(await parts.nth(1).locator("p").first().innerText())).toBe(
-    20_000
-  );
+  await expect(parts).toHaveText([PART_PIX, PART_CASH]);
   await expect(
     page.getByRole("list", { exact: true, name: "Pagamento em 2 partes" })
   ).not.toContainText("300,00");
