@@ -1,7 +1,7 @@
 import type { SaleListEntryReadModel } from "@polaris/contracts";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { ListTotalFooter } from "../catalog/screen-parts";
+import { ListTotalFooter } from "@/ui/list-total-footer";
 import { SaleHistoryList } from "./sale-history-list";
 import { historyRows, historyTotal } from "./sale-history-model";
 

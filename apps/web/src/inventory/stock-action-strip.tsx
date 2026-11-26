@@ -1,5 +1,5 @@
 import { type MouseEvent, useCallback } from "react";
-import { ActionStrip } from "../app-shell/action-strip";
+import { ActionStrip } from "@/ui/action-strip";
 import type { StockAttentionLink } from "./stock-list-model";
 import { TextLink } from "@/ui/text-link";
 
