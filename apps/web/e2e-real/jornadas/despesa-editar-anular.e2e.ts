@@ -109,9 +109,9 @@ test("despesa editada e anulada: o banco, a lista e o Resultado concordam em cen
   await page.goto("/expenses");
   await registerExpense(page, { amount: "100,00", competenceOn: today });
   await expect(expenseRow(page, DESCRIPTION)).toContainText("R$ 100,00");
-  expect(await stored()).toEqual([
-    { amount: 10_000, version: 1, voided: false },
-  ]);
+  await expect
+    .poll(stored)
+    .toEqual([{ amount: 10_000, version: 1, voided: false }]);
   await expectResultExpenses(page, 10_000);
 
   // edit to 120,50: the amount is in cents in the table, the version went up, list and Resultado say 120,50
@@ -170,8 +170,9 @@ test("despesa editada e anulada: o banco, a lista e o Resultado concordam em cen
 });
 
 /**
- * Two devices of the same user: the second saves while the first has the edit open. The first save is on an old
- * version, so it is refused with the screen's message and the table keeps only the second one.
+ * A concurrent edit made straight through `rpc.expense.update` while the screen has the edit open. The screen's save
+ * is on an old version, so it is refused with the screen's message and the table keeps only the rpc edit. Syncing
+ * between tabs or devices is not exercised here.
  */
 test("despesa editada sobre uma versão antiga: a tela avisa e o banco guarda só a outra edição", async ({
   browser,

@@ -151,9 +151,12 @@ const POSSIBLE_DUPLICATES = "Encontramos possíveis clientes existentes";
 /**
  * The suggestion of a possible duplicate (same e-mail without regard to case) is inside the store: "Criar mesmo
  * assim" makes a second customer and merges nothing, and another store that registers the same e-mail is not
- * offered anyone and keeps its row under its own organization.
+ * offered anyone and keeps its row under its own organization. With the offline runtime on, the screen looks for
+ * duplicates in the device's own storage and each store here is its own browser profile, so the screen only shows
+ * that the local search offers nothing for the other store; the isolation of the server search between stores is
+ * proven by calling `customer.findPossibleDuplicates` directly.
  */
-test("cliente: duplicado sugerido na mesma loja, sem sugestão na outra", async ({
+test("cliente: duplicado sugerido na mesma loja; sem sugestão local na outra e busca do servidor isolada por loja", async ({
   browser,
   sql,
 }, testInfo) => {
@@ -214,6 +217,23 @@ test("cliente: duplicado sugerido na mesma loja, sem sugestão na outra", async 
       expect.objectContaining({ name: third, organization_id: organizationB }),
     ]);
   expect(await customersOf(sql, organizationA)).toEqual(rowsA);
+
+  const searchOf = (store: typeof storeA, organizationId: string) =>
+    store.user.rpc.customer.findPossibleDuplicates({
+      email: typedSecond,
+      organizationId,
+    });
+  const foundInA = await searchOf(storeA, organizationA);
+  expect(
+    foundInA.matches.map((match) => match.customer.id).sort(),
+    "a busca do servidor acha o e-mail dentro da loja A"
+  ).toEqual(rowsA.map((row) => row.id).sort());
+  expect(
+    (await searchOf(storeB, organizationB)).matches.map(
+      (match) => match.customer.name
+    ),
+    "a busca do servidor na loja B não devolve cliente da loja A"
+  ).toEqual([third]);
 });
 
 /**

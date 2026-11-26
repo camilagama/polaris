@@ -17,14 +17,18 @@ const READ_TIMEOUT_MS = 15_000;
 
 const shortDate = (date: string) => `${date.slice(8, 10)}/${date.slice(5, 7)}`;
 
-/** A sale is accepted up to 30 calendar days back: on the 31st the last day of last month is out of reach. */
+/**
+ * A sale is accepted up to 30 calendar days back, counted by the server's real clock, while the dates here come from
+ * T0. A run that crosses midnight in São Paulo would move the server a day past T0, so one day of margin is kept:
+ * on the 30th and 31st the last day of last month is out of reach.
+ */
 function lastDayOfLastMonthIsInReach(): boolean {
   const today = localDate(runT0(), ZONE);
   const lastEnd = addDays(monthStart(today), -1);
   return (
     (Date.parse(`${today}T12:00:00Z`) - Date.parse(`${lastEnd}T12:00:00Z`)) /
       86_400_000 <=
-    SALE_WINDOW_DAYS
+    SALE_WINDOW_DAYS - 1
   );
 }
 
@@ -76,7 +80,7 @@ test("o Resultado troca de período: este mês e o mês passado somam só o que 
 }, testInfo) => {
   test.skip(
     !lastDayOfLastMonthIsInReach(),
-    "a venda do último dia do mês passado passou da janela retroativa de 30 dias"
+    "a venda do último dia do mês passado está na borda da janela retroativa de 30 dias (ou além dela), sem 1 dia de folga"
   );
   const journey = await openJourney(browser, testInfo, "resultado-periodo", {
     organization: { timezone: ZONE },

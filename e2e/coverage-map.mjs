@@ -819,7 +819,13 @@ export const SPEC_SCREENS = {
     "sale",
     "inventory",
   ],
-  "apps/web/e2e-real/jornadas/venda-dividida.e2e.ts": ["home", "sale"],
+  "apps/web/e2e-real/jornadas/venda-dividida.e2e.ts": [
+    "home",
+    "sale",
+    "dashboard",
+    "sale-history",
+    "sale-detail",
+  ],
   "apps/web/e2e-real/jornadas/venda-dividida-sem-conexao.e2e.ts": [
     "home",
     "sale",
