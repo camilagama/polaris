@@ -243,14 +243,64 @@ describe("each combination of the list", () => {
 const FADES_WHOLE = "has-data-disabled:opacity-50";
 const BOX_STAYS_AT_1 = "group-has-data-disabled/label:opacity-100!";
 const BOX_FADES_ALONE = "data-disabled:opacity-50";
+const AFTER_DISABLED_PEER = "peer-disabled:opacity-50";
+const IN_DISABLED_GROUP = "group-data-[disabled=true]:opacity-50";
+const IN_DISABLED_FIELD = "group-data-[disabled=true]/field:opacity-50";
+const KNOWN_OPACITY_CLASSES = [
+  FADES_WHOLE,
+  BOX_STAYS_AT_1,
+  BOX_FADES_ALONE,
+  AFTER_DISABLED_PEER,
+  IN_DISABLED_GROUP,
+  IN_DISABLED_FIELD,
+];
+
+const insideDisabledGroup = (element: Element, group: string) => {
+  for (
+    let ancestor = element.parentElement;
+    ancestor;
+    ancestor = ancestor.parentElement
+  ) {
+    if (
+      ancestor.classList.contains(group) &&
+      ancestor.getAttribute("data-disabled") === "true"
+    ) {
+      return true;
+    }
+  }
+  return false;
+};
+
+const followsDisabledPeer = (element: Element) => {
+  for (
+    let sibling = element.previousElementSibling;
+    sibling;
+    sibling = sibling.previousElementSibling
+  ) {
+    if (sibling.classList.contains("peer") && sibling.matches(":disabled")) {
+      return true;
+    }
+  }
+  return false;
+};
 
 /**
  * Tailwind is not compiled here: the opacity of each element of the row is read from the classes it renders, with the
  * rule each variant has in the generated CSS (`has-data-disabled` holds a disabled child, `data-disabled` is on the
  * element itself, `group-has-data-disabled/label` is a label above that holds one), and the chain is multiplied the
- * way the browser stacks it.
+ * way the browser stacks it (`peer-disabled` is a disabled `.peer` sibling before it, `group-data-[disabled=true]` an
+ * ancestor `.group` carrying `data-disabled="true"`, and `/field` the ancestor named `group/field`). An opacity class
+ * this table does not know throws, so a new way of fading the row has to be taught here instead of silently
+ * counting as 1.
  */
 function opacityOf(element: Element): number {
+  for (const name of element.classList) {
+    if (/(^|:)!?opacity-/.test(name) && !KNOWN_OPACITY_CLASSES.includes(name)) {
+      throw new Error(
+        `opacityOf does not know the opacity class "${name}"; add its rule to the table`
+      );
+    }
+  }
   const rules = [
     {
       important: false,
@@ -274,10 +324,73 @@ function opacityOf(element: Element): number {
       name: BOX_STAYS_AT_1,
       value: 1,
     },
+    {
+      important: false,
+      matches: followsDisabledPeer(element),
+      name: AFTER_DISABLED_PEER,
+      value: 0.5,
+    },
+    {
+      important: false,
+      matches: insideDisabledGroup(element, "group"),
+      name: IN_DISABLED_GROUP,
+      value: 0.5,
+    },
+    {
+      important: false,
+      matches: insideDisabledGroup(element, "group/field"),
+      name: IN_DISABLED_FIELD,
+      value: 0.5,
+    },
   ].filter((rule) => rule.matches && element.classList.contains(rule.name));
   const important = rules.filter((rule) => rule.important);
   return (important.length > 0 ? important : rules).at(-1)?.value ?? 1;
 }
+
+describe("opacityOf", () => {
+  it("throws naming an opacity class it has no rule for", () => {
+    for (const name of [
+      "peer-disabled:opacity-25",
+      "group-data-[disabled=true]/label:opacity-50",
+      "aria-disabled:opacity-50",
+    ]) {
+      const element = document.createElement("div");
+      element.className = `flex ${FADES_WHOLE} ${name}`;
+      expect(() => opacityOf(element)).toThrow(name);
+    }
+  });
+
+  it("reads the opacity classes that depend on a disabled peer or group from the tree", () => {
+    const group = document.createElement("div");
+    group.className = "group/field";
+    group.setAttribute("data-disabled", "true");
+    const box = document.createElement("span");
+    box.className = IN_DISABLED_FIELD;
+    group.append(box);
+    expect(opacityOf(box)).toBe(0.5);
+    group.setAttribute("data-disabled", "false");
+    expect(opacityOf(box)).toBe(1);
+
+    const peer = document.createElement("input");
+    peer.className = "peer";
+    const label = document.createElement("label");
+    label.className = AFTER_DISABLED_PEER;
+    document.createElement("div").append(peer, label);
+    expect(opacityOf(label)).toBe(1);
+    peer.disabled = true;
+    expect(opacityOf(label)).toBe(0.5);
+  });
+
+  it("still reads 1 for an element with no opacity class and the known ones", () => {
+    const plain = document.createElement("div");
+    plain.className = "flex gap-2";
+    expect(opacityOf(plain)).toBe(1);
+    const known = document.createElement("div");
+    known.className = KNOWN_OPACITY_CLASSES.join(" ");
+    known.setAttribute("data-disabled", "");
+    expect(() => opacityOf(known)).not.toThrow();
+  });
+});
 
 const rowOpacity = (box: Element) =>
   opacityOf(box.closest("label") ?? box) * opacityOf(box);
