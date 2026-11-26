@@ -4,6 +4,11 @@ import type {
   SyncCommandOutcome,
 } from "@polaris/db/sync-command-repository";
 import { buildOfflineLeaseClaims } from "@polaris/domain/offline/offline-lease";
+import {
+  type NormalizedConfirmSaleCommand,
+  normalizeConfirmSaleCommand,
+  SaleCommandConflictError,
+} from "@polaris/domain/sales/confirm-sale";
 import { PaymentProfileVersionConflictError } from "@polaris/domain/sales/payment-profile";
 import { describe, expect, it, vi } from "vitest";
 import { signOfflineLease } from "../../lib/offline-lease-token";
@@ -475,5 +480,158 @@ describe("a single payment made offline, next to parts", () => {
     });
     expect(input.paymentProfile).toEqual(profile);
     expect(input).not.toHaveProperty("payments");
+  });
+});
+
+/**
+ * The sales table of the server, as `confirmSale` reads it: a command ID already recorded is replayed only when the
+ * normalized command is the same (instants, lines, adjustments, and each part in its position), and is a command conflict
+ * otherwise. The comparison of the real repository is the database gate's.
+ */
+function salesTable() {
+  const recorded = new Map<
+    string,
+    { command: NormalizedConfirmSaleCommand; saleId: string }
+  >();
+  const sameSale = (
+    a: NormalizedConfirmSaleCommand,
+    b: NormalizedConfirmSaleCommand
+  ) =>
+    JSON.stringify([
+      a.occurredAt,
+      a.recordedAt,
+      a.items,
+      a.adjustments,
+      a.payments,
+    ]) ===
+    JSON.stringify([
+      b.occurredAt,
+      b.recordedAt,
+      b.items,
+      b.adjustments,
+      b.payments,
+    ]);
+  const confirm = vi.fn((...args: unknown[]) => {
+    const command = normalizeConfirmSaleCommand(
+      args[2] as Parameters<typeof normalizeConfirmSaleCommand>[0],
+      now
+    );
+    const earlier = recorded.get(command.commandId);
+    if (earlier && !sameSale(earlier.command, command)) {
+      return Promise.reject(new SaleCommandConflictError());
+    }
+    const saleId = earlier?.saleId ?? `sale-${recorded.size + 1}`;
+    recorded.set(command.commandId, { command, saleId });
+    return Promise.resolve({
+      replayed: earlier !== undefined,
+      sale: { confirmedAt: now, id: saleId },
+      totals: { totalDue: "100.00" },
+    });
+  });
+  return { confirm, recorded };
+}
+
+describe("a sale in parts locked with no answer and kept on the device", () => {
+  /**
+   * What the screen sent online: the device keeps the same command ID, instant and parts (the screen side of that
+   * copy is `sales/queue-offline-sale.test.ts`).
+   */
+  const sentParts: OfflineSalePaymentPart[] = [
+    {
+      amount: "30.00",
+      anticipationRequested: false,
+      installmentPlan: null,
+      installments: null,
+      method: "pix",
+      paymentProfile: null,
+    },
+    {
+      amount: "70.00",
+      anticipationRequested: false,
+      installmentPlan: "issuer",
+      installments: 3,
+      method: "credit_card",
+      paymentProfile: profile,
+    },
+  ];
+  const line = {
+    chargedUnitPrice: "50.00",
+    listedUnitPrice: "50.00",
+    quantity: 2,
+    variantId,
+  };
+  const commandId = uuid(101);
+
+  /** The screen sent the sale online, the server recorded it and the answer was lost; the sale is kept on the device. */
+  async function sentOnlineThenKept(keptParts: OfflineSalePaymentPart[]) {
+    const table = salesTable();
+    const device = await setup();
+    device.serve(
+      createSaleConfirmHandler({ confirmSale: table.confirm as never })
+    );
+    const online = await table.confirm(
+      {},
+      {},
+      {
+        adjustments: [],
+        commandId,
+        commandVersion: 1,
+        items: [line],
+        occurredAt: now.toISOString(),
+        payments: sentParts,
+        recordedAt: now.toISOString(),
+      }
+    );
+    const recordedParts = structuredClone(
+      table.recorded.get(commandId)?.command.payments
+    );
+    await device.sell({
+      lines: [line],
+      newCommandId: () => commandId,
+      payments: keptParts,
+    });
+    return { device, online, recordedParts, table };
+  }
+
+  it("is the same sale on the server: the device's command replays it, with both parts, and no second sale", async () => {
+    const { device, online, table } = await sentOnlineThenKept(sentParts);
+
+    const summary = await device.sync();
+
+    expect(summary.accepted).toBe(1);
+    expect(table.confirm).toHaveBeenCalledTimes(2);
+    expect(await table.confirm.mock.results[1]?.value).toMatchObject({
+      replayed: true,
+      sale: { id: online.sale.id },
+    });
+    expect(table.recorded.size).toBe(1);
+    expect(table.recorded.get(commandId)?.command.payments).toHaveLength(2);
+    expect(device.frame.stored.get(commandId)?.outcome).toMatchObject({
+      result: { saleId: online.sale.id },
+      status: "accepted",
+    });
+    expect((await device.outbox.snapshot()).commands).toEqual([]);
+  });
+
+  it("with the second part of another amount under the same command ID, is a conflict and never a second sale", async () => {
+    const [first, second] = sentParts;
+    if (!(first && second)) {
+      throw new Error("two parts were sent");
+    }
+    const { device, recordedParts, table } = await sentOnlineThenKept([
+      { ...first, amount: "40.00" },
+      { ...second, amount: "60.00" },
+    ]);
+
+    const summary = await device.sync();
+
+    expect(summary.blockedBy?.rejection?.code).toBe("sale_command_conflict");
+    expect(table.recorded.size).toBe(1);
+    expect(recordedParts).toHaveLength(2);
+    expect(table.recorded.get(commandId)?.command.payments).toEqual(
+      recordedParts
+    );
+    const [kept] = (await device.outbox.snapshot()).commands;
+    expect(kept?.commandId).toBe(commandId);
   });
 });

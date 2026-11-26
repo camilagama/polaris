@@ -190,7 +190,35 @@ describe("keeping a locked sale on the device as the same sale", () => {
     ).toBe(true);
   });
 
-  it("is refused with a typed date, another instant, no attempt, a sale in parts, or any other state", () => {
+  it("is allowed for a locked sale in parts: the device command carries each part, in order, with its amount and profile", () => {
+    expect(
+      canKeepLockedSaleOnDevice(
+        locked,
+        attempt,
+        evaluation({ payments: [{ amount: "100.00" }, { amount: "200.00" }] })
+      )
+    ).toBe(true);
+  });
+
+  it("is refused for a sale in parts with a typed date, or another instant", () => {
+    const parts = [{ amount: "100.00" }, { amount: "200.00" }];
+    expect(
+      canKeepLockedSaleOnDevice(
+        locked,
+        attempt,
+        evaluation({ override: "2026-10-01T10:00:00.000Z", payments: parts })
+      )
+    ).toBe(false);
+    expect(
+      canKeepLockedSaleOnDevice(
+        locked,
+        { ...attempt, recordedAt: "2026-10-14T12:00:05.000Z" },
+        evaluation({ payments: parts })
+      )
+    ).toBe(false);
+  });
+
+  it("is refused with a typed date, another instant, no attempt, or any other state", () => {
     expect(
       canKeepLockedSaleOnDevice(
         locked,
@@ -206,13 +234,6 @@ describe("keeping a locked sale on the device as the same sale", () => {
       )
     ).toBe(false);
     expect(canKeepLockedSaleOnDevice(locked, null, evaluation())).toBe(false);
-    expect(
-      canKeepLockedSaleOnDevice(
-        locked,
-        attempt,
-        evaluation({ payments: [{ amount: "100.00" }, { amount: "200.00" }] })
-      )
-    ).toBe(false);
     expect(
       canKeepLockedSaleOnDevice(idleSubmission, attempt, evaluation())
     ).toBe(false);
