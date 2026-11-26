@@ -58,29 +58,31 @@ function ContactCard({
  */
 export function HelpPage() {
   return (
-    <div className="grid max-w-[40rem] gap-4">
-      <header className="grid gap-1">
-        <TitleLine>
-          <ScreenTitle>{HELP_LABEL}</ScreenTitle>
-        </TitleLine>
-        <p className="m-0 text-muted-foreground">{HELP_INTRO}</p>
-      </header>
-      <ContactCard
-        address={SUPPORT_EMAIL}
-        id="ajuda-suporte"
-        label="Escrever para o suporte"
-        title="Suporte"
-      >
-        {SUPPORT_LINE}
-      </ContactCard>
-      <ContactCard
-        address={DPO_EMAIL}
-        id="ajuda-dados-pessoais"
-        label="Escrever ao encarregado de dados"
-        title="Dados pessoais"
-      >
-        {DPO_LINE}
-      </ContactCard>
+    <div className="grid max-w-[40rem] gap-6">
+      <div className="grid gap-4">
+        <header className="grid gap-1">
+          <TitleLine>
+            <ScreenTitle>{HELP_LABEL}</ScreenTitle>
+          </TitleLine>
+          <p className="m-0 text-muted-foreground">{HELP_INTRO}</p>
+        </header>
+        <ContactCard
+          address={SUPPORT_EMAIL}
+          id="ajuda-suporte"
+          label="Escrever para o suporte"
+          title="Suporte"
+        >
+          {SUPPORT_LINE}
+        </ContactCard>
+        <ContactCard
+          address={DPO_EMAIL}
+          id="ajuda-dados-pessoais"
+          label="Escrever ao encarregado de dados"
+          title="Dados pessoais"
+        >
+          {DPO_LINE}
+        </ContactCard>
+      </div>
       <section aria-labelledby="ajuda-antes" className="grid gap-2">
         <h2 className="text-section" id="ajuda-antes">
           Antes de escrever
