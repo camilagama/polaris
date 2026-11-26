@@ -109,9 +109,12 @@ async function open(
 export const closedStoreStates = {
   /** Store that can still be recovered, the copy block with no copy yet. */
   recoverable: (page: Page) =>
-    open(page, { copies: [], store: closingStore() }, (current) =>
-      current.getByRole("button", { name: "Pedir cópia dos dados" }).waitFor()
-    ),
+    open(page, { copies: [], store: closingStore() }, async (current) => {
+      await current.getByText("Nenhuma cópia pedida ainda.").waitFor();
+      await current
+        .getByRole("button", { name: "Pedir cópia dos dados" })
+        .waitFor();
+    }),
   /** The same screen with one copy ready to download. */
   withCopy: (page: Page) =>
     open(page, { copies: [READY_COPY], store: closingStore() }, (current) =>
