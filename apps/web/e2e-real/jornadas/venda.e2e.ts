@@ -1,5 +1,6 @@
 import type { Page } from "@playwright/test";
-import { extremeTimeZone, localDate } from "../calendar";
+import { openDatePicker, touchDay } from "../../e2e/date-pickers";
+import { addDays, extremeTimeZone, localDate } from "../calendar";
 import { expect, openJourney, runT0, test } from "../fixtures";
 import {
   adjustedTotals,
@@ -15,7 +16,7 @@ import {
   type SaleAdjustmentInput,
   termValue,
 } from "../pages/venda";
-import { seedProduct, seedStock } from "../seed";
+import { seedCashSale, seedProduct, seedStock } from "../seed";
 
 const PENCIL = /Lápis preto/;
 const PEN = /Caneta azul/;
@@ -548,4 +549,280 @@ test("venda: desconto maior que o subtotal é recusado no formulário, nenhum co
       )
     ).rows[0]?.total
   ).toBe(movementsBefore);
+});
+
+const RETRO_LIMIT_MESSAGE = /limite retroativo de 30 dias/;
+const FUTURE_TIME_MESSAGE = /A data e hora da venda não podem estar no futuro/;
+const RETRO_TIME = "12:00";
+const NOON_MINUTE = 12 * 60;
+const LATE_TIME = "23:59";
+const DAY_MS = 86_400_000;
+
+/**
+ * The store is in the zone of the device that runs the browser: the day comes from the store's calendar and the time
+ * is typed in the device's clock, so with one zone for both the typed text is the store's local date and time on any
+ * runner (a shopkeeper with the phone in the shop's city).
+ */
+const DEVICE_ZONE = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+const SHIRT_LINE = [
+  { charged: "24,90", option: SHIRT, quantity: 1, search: "Camiseta" },
+];
+
+/**
+ * The moving average now is 12,50 (5 at 10,00 twenty days ago, then 5 at 15,00 yesterday): a cost taken as of the day
+ * of a retroactive sale would be 10,00, so the snapshot tells which of the two the server used.
+ */
+async function seedRetroStore(
+  journey: Awaited<ReturnType<typeof openJourney>>
+) {
+  const organizationId = journey.organizationId as string;
+  const today = localDate(runT0(), DEVICE_ZONE);
+  const shirt = await seedProduct(
+    journey.user.rpc,
+    organizationId,
+    "Camiseta lisa",
+    "25.00"
+  );
+  await seedStock(
+    journey.user.rpc,
+    organizationId,
+    shirt.variantId,
+    5,
+    "10.00",
+    addDays(today, -20)
+  );
+  await seedStock(
+    journey.user.rpc,
+    organizationId,
+    shirt.variantId,
+    5,
+    "15.00",
+    addDays(today, -1)
+  );
+  return { organizationId, shirt, today };
+}
+
+function minuteOfDay(instant: number, timeZone: string): number {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    hour: "2-digit",
+    hourCycle: "h23",
+    minute: "2-digit",
+    timeZone,
+  }).formatToParts(new Date(instant));
+  const part = (type: string) =>
+    Number(parts.find((entry) => entry.type === type)?.value);
+  return part("hour") * 60 + part("minute");
+}
+
+async function ledgerRows(sql: Sql, variantId: string) {
+  return (
+    await sql.query<{
+      movement_type: string;
+      quantity_delta: number;
+      unit_cost: string | null;
+    }>(
+      `SELECT movement_type, quantity_delta, unit_cost::text AS unit_cost
+         FROM stock_movements WHERE variant_id = $1 ORDER BY variant_sequence`,
+      [variantId]
+    )
+  ).rows;
+}
+
+async function refusalReason(call: Promise<unknown>): Promise<unknown> {
+  try {
+    await call;
+  } catch (error) {
+    return (error as { data?: { reason?: unknown } | null }).data?.reason;
+  }
+  throw new Error("The call was expected to be refused, and it answered.");
+}
+
+async function expectNothingWritten(
+  sql: Sql,
+  organizationId: string,
+  variantId: string
+) {
+  expect(await saleRows(sql, organizationId)).toHaveLength(0);
+  expect(await stockOf(sql, variantId)).toBe(10);
+  expect(await ledgerRows(sql, variantId)).toHaveLength(2);
+}
+
+test("venda retroativa: 5 dias atrás na tela grava o dia escolhido e o custo médio de agora", async ({
+  browser,
+  sql,
+}, testInfo) => {
+  const journey = await openJourney(browser, testInfo, "venda-retroativa", {
+    organization: { timezone: DEVICE_ZONE },
+  });
+  const { page } = journey;
+  const { organizationId, shirt, today } = await seedRetroStore(journey);
+  // far from the 30-day edge on purpose: the server counts with its real clock and the journey with T0, so the edge
+  // would flake in a run that crosses midnight; the edge is proven in the database gate
+  const day = addDays(today, -5);
+
+  const confirmRequests = trackConfirmRequests(page);
+  await page.goto("/sales");
+  await fillSale(page, SHIRT_LINE, [], [], { day, time: RETRO_TIME });
+  const confirmed = await confirmSale(page);
+  expect(confirmRequests.length).toBeGreaterThan(0);
+  expect(cents(await termValue(confirmed, "Total devido").innerText())).toBe(
+    2490
+  );
+
+  await expect
+    .poll(async () => (await saleRows(sql, organizationId)).length)
+    .toBe(1);
+  const [sale] = await saleRows(sql, organizationId);
+  expect(sale?.occurred_on).toBe(day);
+  expect(sale?.occurred_on).not.toBe(today);
+  // the instant is the one the device reads from the typed text, in whatever zone the runner has
+  const typedInstant = await page.evaluate(
+    (text) => new Date(text).getTime(),
+    `${day}T${RETRO_TIME}`
+  );
+  expect(
+    Number(
+      (
+        await sql.query<{ occurred_at: string }>(
+          "SELECT (extract(epoch FROM occurred_at) * 1000)::bigint::text AS occurred_at FROM sales WHERE id = $1",
+          [sale?.id]
+        )
+      ).rows[0]?.occurred_at
+    )
+  ).toBe(typedInstant);
+
+  const [item] = (
+    await sql.query<{ unit_cost: string }>(
+      "SELECT unit_cost::text AS unit_cost FROM sale_items WHERE sale_id = $1",
+      [sale?.id]
+    )
+  ).rows;
+  expect(item?.unit_cost).toMatch(UNIT_COST_12_50);
+  expect(await stockOf(sql, shirt.variantId)).toBe(9);
+  const ledger = await ledgerRows(sql, shirt.variantId);
+  expect(ledger.map((row) => row.movement_type)).toEqual([
+    "receipt",
+    "receipt",
+    "sale",
+  ]);
+  expect(ledger[2]).toMatchObject({ quantity_delta: -1 });
+  expect(ledger[2]?.unit_cost).toMatch(UNIT_COST_12_50);
+});
+
+test("venda retroativa: 40 dias atrás mostra o limite de 30 dias e nada é gravado", async ({
+  browser,
+  sql,
+}, testInfo) => {
+  const journey = await openJourney(
+    browser,
+    testInfo,
+    "venda-retroativa-antiga",
+    { organization: { timezone: DEVICE_ZONE } }
+  );
+  const { page } = journey;
+  const { organizationId, shirt, today } = await seedRetroStore(journey);
+
+  const confirmRequests = trackConfirmRequests(page);
+  await page.goto("/sales");
+  await fillSale(page, SHIRT_LINE, [], [], {
+    day: addDays(today, -40),
+    time: RETRO_TIME,
+  });
+  await page.getByRole("button", { name: "Confirmar venda" }).click();
+  await expect(page.getByText(RETRO_LIMIT_MESSAGE).first()).toBeVisible();
+  await expect(
+    page.getByRole("region", { name: "Venda confirmada" })
+  ).toHaveCount(0);
+
+  // control: the refusal came from the server, so the command did leave the browser
+  expect(confirmRequests.length).toBeGreaterThan(0);
+  await expectNothingWritten(sql, organizationId, shirt.variantId);
+});
+
+test("venda retroativa: o calendário não deixa escolher dia à frente e o servidor recusa futuro e passado fora da janela", async ({
+  browser,
+  sql,
+}, testInfo) => {
+  const journey = await openJourney(
+    browser,
+    testInfo,
+    "venda-retroativa-futuro",
+    { organization: { timezone: DEVICE_ZONE } }
+  );
+  const { page, user } = journey;
+  const { organizationId, shirt, today } = await seedRetroStore(journey);
+
+  await page.goto("/sales");
+  await fillSale(page, SHIRT_LINE, [], []);
+  await page.getByRole("button", { name: "Alterar data e ajustes" }).click();
+  const popup = await openDatePicker(page, "Dia");
+  const ahead = addDays(today, 2);
+  await touchDay(popup, ahead, { force: true });
+  const aheadButton = popup.locator(`button[data-day="${ahead}"]`);
+  await expect(aheadButton).toHaveAttribute("aria-disabled", "true");
+  await expect(aheadButton).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(popup).toBeHidden();
+  await expect(
+    page.getByRole("button", { name: "Dia, Escolher data" })
+  ).toBeVisible();
+
+  const item = [{ price: "24.90", quantity: 1, variantId: shirt.variantId }];
+  expect(
+    await refusalReason(
+      seedCashSale(
+        user.rpc,
+        organizationId,
+        item,
+        new Date(runT0() + 2 * DAY_MS).toISOString()
+      )
+    )
+  ).toBe("sale_occurred_in_future");
+  expect(
+    await refusalReason(
+      seedCashSale(
+        user.rpc,
+        organizationId,
+        item,
+        new Date(runT0() - 40 * DAY_MS).toISOString()
+      )
+    )
+  ).toBe("sale_occurred_too_old");
+  await expectNothingWritten(sql, organizationId, shirt.variantId);
+});
+
+test("venda retroativa: hora de hoje depois de agora é recusada no formulário, sem comando e sem gravar", async ({
+  browser,
+  sql,
+}, testInfo) => {
+  const journey = await openJourney(
+    browser,
+    testInfo,
+    "venda-retroativa-hora-futura",
+    { organization: { timezone: DEVICE_ZONE } }
+  );
+  const { page } = journey;
+  const { organizationId, shirt, today } = await seedRetroStore(journey);
+
+  // the page's clock goes to noon of the store's day of T0 before the screen loads: a time later today then exists
+  // at any hour the run started, and noon is far from a daylight-saving gap
+  await page.clock.setSystemTime(
+    runT0() + (NOON_MINUTE - minuteOfDay(runT0(), DEVICE_ZONE)) * 60_000
+  );
+
+  const confirmRequests = trackConfirmRequests(page);
+  await page.goto("/sales");
+  await fillSale(page, SHIRT_LINE, [], [], {
+    day: today,
+    time: LATE_TIME,
+  });
+  await page.getByRole("button", { name: "Confirmar venda" }).click();
+  await expect(page.getByText(FUTURE_TIME_MESSAGE).first()).toBeVisible();
+  await expect(
+    page.getByRole("region", { name: "Venda confirmada" })
+  ).toHaveCount(0);
+
+  expect(confirmRequests).toEqual([]);
+  await expectNothingWritten(sql, organizationId, shirt.variantId);
 });
