@@ -62,6 +62,9 @@ const VISUAL_STATES = [
   ["trocar senha", "trocar-senha"],
   ["seus dados com cópias", "seus-dados"],
   ["configurações lista", "configuracoes"],
+  ["venda pagamento dividido", "venda-dividida"],
+  ["resultado metas", "resultado-metas"],
+  ["assinatura Pro ativo", "assinatura-pro-ativo"],
 ] as const;
 
 /**
