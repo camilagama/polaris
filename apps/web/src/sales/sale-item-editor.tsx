@@ -384,7 +384,10 @@ export function ItemsCount({ count }: { count: SaleCount }) {
     return null;
   }
   return (
-    <div className="text-muted-foreground text-support" data-slot="items-count">
+    <div
+      className="text-muted-foreground text-support max-md:mr-auto"
+      data-slot="items-count"
+    >
       <SaleCountLabel count={count} />
     </div>
   );
