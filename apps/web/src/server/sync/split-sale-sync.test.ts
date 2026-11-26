@@ -491,7 +491,7 @@ describe("a single payment made offline, next to parts", () => {
 
 /**
  * The sales table of the server, as `confirmSale` reads it: a command ID already recorded is replayed only when the
- * normalized command is the same (instants, lines, and each part in its position), and is a command conflict
+ * normalized command is the same (instants, lines, adjustments, and each part in its position), and is a command conflict
  * otherwise. The comparison of the real repository is the database gate's.
  */
 function salesTable() {
@@ -503,8 +503,20 @@ function salesTable() {
     a: NormalizedConfirmSaleCommand,
     b: NormalizedConfirmSaleCommand
   ) =>
-    JSON.stringify([a.occurredAt, a.recordedAt, a.items, a.payments]) ===
-    JSON.stringify([b.occurredAt, b.recordedAt, b.items, b.payments]);
+    JSON.stringify([
+      a.occurredAt,
+      a.recordedAt,
+      a.items,
+      a.adjustments,
+      a.payments,
+    ]) ===
+    JSON.stringify([
+      b.occurredAt,
+      b.recordedAt,
+      b.items,
+      b.adjustments,
+      b.payments,
+    ]);
   const confirm = vi.fn((...args: unknown[]) => {
     const command = normalizeConfirmSaleCommand(
       args[2] as Parameters<typeof normalizeConfirmSaleCommand>[0],

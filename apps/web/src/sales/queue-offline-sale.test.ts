@@ -398,4 +398,54 @@ describe("a locked sale in parts kept on the device", () => {
     expect(stored).not.toHaveProperty("payment");
     expect(stored).not.toHaveProperty("paymentProfile");
   });
+
+  it("is another attempt, which the screen does not queue, when a part is not the one sent", () => {
+    const sent = prepareConfirmation({
+      body: body(card.expectedVersion),
+      createId: () => uuid(101),
+      now,
+      organizationId,
+      previousAttempt: null,
+    });
+    if (!sent.ok) {
+      throw new Error("the sent body is valid");
+    }
+    const [first, second] = body(card.expectedVersion).payments ?? [];
+    if (!(first && second)) {
+      throw new Error("the body has two parts");
+    }
+    const changed = [
+      {
+        ...body(card.expectedVersion),
+        payments: [
+          { ...first, amount: "30.00" },
+          { ...second, amount: "60.00" },
+        ],
+      },
+      { ...body(card.expectedVersion), payments: [second, first] },
+      {
+        ...body(card.expectedVersion),
+        payments: [
+          first,
+          { ...second, paymentProfile: { expectedVersion: 1, id: uuid(602) } },
+        ],
+      },
+    ];
+    for (const other of changed) {
+      const kept = prepareConfirmation({
+        attemptUnsettled: true,
+        body: other,
+        createId: () => uuid(999),
+        now,
+        occurredAtOverride: null,
+        organizationId,
+        previousAttempt: sent.attempt,
+      });
+      if (!kept.ok) {
+        throw new Error("the changed body is valid");
+      }
+      expect(kept.attempt).not.toBe(sent.attempt);
+      expect(kept.request.commandId).not.toBe(sent.request.commandId);
+    }
+  });
 });
