@@ -39,6 +39,9 @@ describe("TitleLine with back", () => {
   });
 });
 
+const TITLE_LAST_IN_LINE =
+  /^<div class="[^"]*" data-title-line=""><h2\b[^>]*>Assinatura<\/h2><\/div>$/;
+
 const OPENING_TAG = /<(h[12])\s+class="([^"]*)"/;
 
 function titleTag(html: string) {
@@ -121,7 +124,7 @@ describe("ScreenTitle", () => {
     );
     expect(html.split("Assinatura")).toHaveLength(2);
     expect(html).toContain('id="titulo-assinatura"');
-    expect(html).toContain(">Assinatura</h2>");
+    expect(html).toMatch(TITLE_LAST_IN_LINE);
   });
 });
 
@@ -212,6 +215,20 @@ describe("TitleLine decide sozinho se o título é só para o leitor de tela", (
     );
     expect(screenOf(html).drawn).toBe(false);
     expect(screenOf(html).lineClasses).not.toContain("contents");
+  });
+
+  it("tela que pode ter ação, sem ação agora: a linha segue na grade", () => {
+    const html = renderToStaticMarkup(
+      <TabPanelScope>
+        <TitleLine canHaveAction tabNamesIt>
+          <ScreenTitle>Produtos</ScreenTitle>
+        </TitleLine>
+      </TabPanelScope>
+    );
+    const { drawn, lineClasses: classes } = screenOf(html);
+    expect(drawn).toBe(false);
+    expect(classes).not.toContain("contents");
+    expect(classes).toContain("min-[47.5rem]:min-h-ctl-md");
   });
 
   it("o ScreenTitle não aceita a flag: ela só existe no TitleLine", () => {

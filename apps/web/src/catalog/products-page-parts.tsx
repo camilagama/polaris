@@ -109,6 +109,7 @@ export function ProductsHeader({
   const wide = !useIsMobile();
   return (
     <TitleLine
+      canHaveAction
       tabNamesIt
       action={
         showNew ? (

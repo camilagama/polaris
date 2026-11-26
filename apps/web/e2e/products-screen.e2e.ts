@@ -575,6 +575,43 @@ for (const viewport of CATEGORIES_VIEWPORTS) {
   });
 }
 
+const STATUS_FILTER_JUMP = 1;
+
+test("Produtos a 1280 px: o filtro Estado dos produtos fica no mesmo lugar em Ativos e em Arquivados, com e sem o botão Novo produto", async ({
+  page,
+}) => {
+  await page.setViewportSize({ height: 800, width: 1280 });
+  await openServerScreen(page, {
+    lists: [
+      answerByStatus({
+        active: [product(1, "Produto 01")],
+        archived: [product(2, "Produto 02")],
+      }),
+    ],
+  });
+  const filter = page.locator('[aria-label="Estado dos produtos"]');
+  const newProduct = page.getByRole("button", { name: "Novo produto" });
+  await expect(newProduct).toBeVisible();
+  await expect(page.getByText("Produto 01").first()).toBeVisible();
+  const activeTop = (await filter.boundingBox())?.y ?? Number.NaN;
+  await statusTab(page, "Arquivados").click();
+  await expect(statusTab(page, "Arquivados")).toHaveAttribute(
+    "aria-selected",
+    "true"
+  );
+  await expect(newProduct).toHaveCount(0);
+  const archivedTop = (await filter.boundingBox())?.y ?? Number.NaN;
+  expect(
+    Math.abs(archivedTop - activeTop),
+    "o filtro não sobe quando o botão some"
+  ).toBeLessThanOrEqual(STATUS_FILTER_JUMP);
+  await statusTab(page, "Ativos").click();
+  await expect(newProduct).toBeVisible();
+  expect(
+    Math.abs(((await filter.boundingBox())?.y ?? Number.NaN) - activeTop)
+  ).toBeLessThanOrEqual(STATUS_FILTER_JUMP);
+});
+
 // ---- the addresses: ?produto=<uuid> and ?novo=1 ----------------------------------------------------------------
 
 const variantsOf = {

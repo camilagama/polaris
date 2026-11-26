@@ -116,15 +116,22 @@ function BackButton({ href, label, onClick, ref }: TitleBack) {
 export function TitleLine({
   action,
   back,
+  canHaveAction = false,
   children,
   tabNamesIt = false,
 }: {
   action?: ReactNode;
   back?: TitleBack | undefined;
+  /**
+   * The screen has an action in some state (Produtos has none on Arquivados): the line keeps its box when the action is
+   * missing, so what is under it does not move when the action comes and goes.
+   */
+  canHaveAction?: boolean;
   children: ReactNode;
   /**
    * The tab this screen is drawn in already carries its name: the `ScreenTitle` inside stays for a screen reader only,
-   * and without an action the line draws no box, so it takes no room in the grid of the page. Outside a tab it does nothing.
+   * and without an action, on a screen that never has one, the line draws no box, so it takes no room in the grid of
+   * the page. Outside a tab it does nothing.
    */
   tabNamesIt?: boolean;
 }) {
@@ -133,7 +140,7 @@ export function TitleLine({
     <TabNamesTitleContext.Provider value={tabNamesIt}>
       <div
         className={
-          titleHidden && !action
+          titleHidden && !action && !canHaveAction
             ? "contents"
             : "grid gap-3 min-[47.5rem]:flex min-[47.5rem]:min-h-ctl-md min-[47.5rem]:items-center min-[47.5rem]:justify-between min-[47.5rem]:gap-x-3"
         }
