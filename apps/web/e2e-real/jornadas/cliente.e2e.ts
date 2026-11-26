@@ -223,17 +223,26 @@ test("cliente: duplicado sugerido na mesma loja; sem sugestão local na outra e 
       email: typedSecond,
       organizationId,
     });
-  const foundInA = await searchOf(storeA, organizationA);
-  expect(
-    foundInA.matches.map((match) => match.customer.id).sort(),
-    "a busca do servidor acha o e-mail dentro da loja A"
-  ).toEqual(rowsA.map((row) => row.id).sort());
-  expect(
-    (await searchOf(storeB, organizationB)).matches.map(
-      (match) => match.customer.name
-    ),
-    "a busca do servidor na loja B não devolve cliente da loja A"
-  ).toEqual([third]);
+  await expect
+    .poll(
+      async () =>
+        (await searchOf(storeA, organizationA)).matches
+          .map((match) => match.customer.id)
+          .sort(),
+      { message: "a busca do servidor acha o e-mail dentro da loja A" }
+    )
+    .toEqual(rowsA.map((row) => row.id).sort());
+  await expect
+    .poll(
+      async () =>
+        (await searchOf(storeB, organizationB)).matches.map(
+          (match) => match.customer.name
+        ),
+      {
+        message: "a busca do servidor na loja B não devolve cliente da loja A",
+      }
+    )
+    .toEqual([third]);
 });
 
 /**
