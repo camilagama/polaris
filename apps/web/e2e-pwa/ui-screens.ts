@@ -1,13 +1,14 @@
 /// <reference lib="dom" />
 // Only types from Playwright: the source rules (scripts/ui-source-rules.test.ts) read this list under Vitest.
 import type { BrowserContext, Locator, Page } from "@playwright/test";
+import { openSaleAction } from "./sale-detail-fixture";
 import {
   acceptanceStates,
   firstAccessStates,
   legalStates,
   organizationGateStates,
 } from "./ui-account-states";
-import { openSaleAction } from "./sale-detail-fixture";
+import { closedStoreStates } from "./ui-closed-store-states";
 import { attentionStates, deviceStates } from "./ui-device-states";
 import { entryStates, settle } from "./ui-entry-states";
 import { expenseStates } from "./ui-expense-states";
@@ -766,6 +767,15 @@ const settingsScreen = (name: string, open: UiScreen["open"]): UiScreen => ({
   sourceDirs: SETTINGS_SOURCES,
 });
 
+/** The files of "Loja encerrada" and of its copies of the data (`ui-closed-store-states.ts`). */
+const CLOSED_STORE_SOURCES = ["src/organization", "src/data-export"];
+
+const closedStoreScreen = (name: string, open: UiScreen["open"]): UiScreen => ({
+  name: `loja encerrada ${name}`,
+  open,
+  sourceDirs: CLOSED_STORE_SOURCES,
+});
+
 /** One state of the first access, the acceptance or a legal page (`ui-account-states.ts`). */
 const accountScreen = (name: string, open: UiScreen["open"]): UiScreen => ({
   name,
@@ -1051,6 +1061,8 @@ export const SCREENS: UiScreen[] = [
   settingsScreen("ajuda", settingsStates.help),
   settingsScreen("configurações lista", settingsStates.list),
   settingsScreen("seus dados com cópias", settingsStates.yourData),
+  closedStoreScreen("recuperável sem cópias", closedStoreStates.recoverable),
+  closedStoreScreen("recuperável com cópia", closedStoreStates.withCopy),
   {
     name: "peças do shell loja que não abriu",
     open: organizationGateStates.failed,
