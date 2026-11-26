@@ -23,10 +23,11 @@ import {
    The button opens a Popover with the year ("‹ 2026 ›") over a grid of 3 x 4 months and, in the footer,
    "Este mês" (the store's current month, like the "Hoje" of the DatePicker); a touch or a click on a month chooses it
    and closes. The month is written by the screen, never by the browser's locale, so there is no native month field
-   and no fallback for the browsers that lack one. The phone uses the same Popover; the full-screen Dialog comes
-   later. The grid goes back to January 2000 (the same floor as the Data de competência) and forward to any year: the
-   list of the expenses reads any month, future ones included. The arrows of the year inside the grid are the panel's
-   own navigation, like the ones inside the calendar of a period. */
+   and no fallback for the browsers that lack one. The phone uses the same Popover by a UX decision: choosing a month
+   is one touch on a grid of 12 that fits at 320 px with 44 px targets, and a full-screen Dialog would add a close
+   step to a choice that already closes by itself. The grid goes back to January 2000 (the same floor as the Data de
+   competência) and forward to any year: the list of the expenses reads any month, future ones included. The arrows of
+   the year inside the grid are the panel's own navigation, like the ones inside the calendar of a period. */
 
 const MONTH_NUMBERS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12] as const;
 const FIRST_YEAR = Number(EARLIEST_EXPENSE_MONTH.slice(0, 4));

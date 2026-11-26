@@ -5,6 +5,7 @@ import {
   type ScheduledJobId,
   windowIndex,
 } from "@polaris/domain/scheduling/scheduled-jobs";
+import { configureLogging } from "@polaris/observability/logger";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   type JobHandler,
@@ -431,23 +432,25 @@ describe("a scheduler tick", () => {
       );
     });
 
-    it("names a failure by its class and code only, never its message", async () => {
+    const leakyMessage = "cliente Maria Souza, 11 99999-0000, falhou";
+
+    async function failedOutboxLog(): Promise<string> {
       const { store } = memoryStore(clock);
-      const secret = Object.assign(
-        new Error("cliente Maria Souza, 11 99999-0000, falhou"),
-        { code: "23505" }
-      );
+      const secret = Object.assign(new Error(leakyMessage), { code: "23505" });
       const handlers = handlersFor("outbox", () =>
         Promise.resolve({ failures: [secret], status: "failed" })
       );
       await expect(tick("outbox", handlers, store)).rejects.toBe(secret);
-      const logged = JSON.stringify([
+      return JSON.stringify([
         vi.mocked(console.info).mock.calls,
         vi.mocked(console.warn).mock.calls,
         vi.mocked(console.error).mock.calls,
       ]);
+    }
+
+    function expectClassAndCodeOnly(logged: string) {
       expect(logged).not.toContain("Maria");
-      expect(logged).not.toContain("99999");
+      expect(logged).not.toContain("99999-0000");
       expect(console.error).toHaveBeenCalledWith(
         expect.objectContaining({
           errorCode: "23505",
@@ -457,6 +460,24 @@ describe("a scheduler tick", () => {
           outcome: "failure",
         })
       );
+    }
+
+    it("names a failure by its class and code only, never its message", async () => {
+      expectClassAndCodeOnly(await failedOutboxLog());
+    });
+
+    it("does not mistake a commit hash with digits in a row for a leaked message", async () => {
+      vi.stubEnv("COMMIT_SHA", "");
+      vi.stubEnv("GITHUB_SHA", "f1899999678");
+      configureLogging({ service: "polaris" });
+      try {
+        const logged = await failedOutboxLog();
+        expect(logged).toContain("f1899999678");
+        expectClassAndCodeOnly(logged);
+      } finally {
+        vi.unstubAllEnvs();
+        configureLogging({ service: "polaris" });
+      }
     });
   });
 });
