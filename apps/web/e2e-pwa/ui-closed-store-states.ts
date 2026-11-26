@@ -18,7 +18,13 @@ import { serveHealth } from "./worker-mark";
 const STORE_ID = CLOSED_STORE_ID;
 const PATH = `/loja-encerrada?loja=${STORE_ID}`;
 const RPC_PREFIX = /^.*\/rpc\//;
-const DOWNLOAD = /^Baixar dados\.json/;
+const DOWNLOAD = /^Baixar dados\.json \(820 KB\)$/;
+/** What `READY_COPY` reads as on the screen: a change in the shared answer that the screen does not follow fails here. */
+const READY_COPY_ON_SCREEN = [
+  "Pedida em 30/10/2026 11:10",
+  "JSON e planilha",
+  "Sua cópia está pronta. Baixe até 31/10/2026 11:40.",
+];
 const procedureOf = (route: Route) =>
   new URL(route.request().url()).pathname.replace(RPC_PREFIX, "");
 const rpc = (body: unknown) => json(200, { json: body, meta: [] });
@@ -87,7 +93,19 @@ export const closedStoreStates = {
     }),
   /** The same screen with one copy ready to download. */
   withCopy: (page: Page) =>
-    open(page, { copies: [READY_COPY], store: closingStore() }, (current) =>
-      current.getByRole("link", { name: DOWNLOAD }).waitFor()
+    open(
+      page,
+      { copies: [READY_COPY], store: closingStore() },
+      async (current) => {
+        await current.getByRole("link", { name: DOWNLOAD }).waitFor();
+        await Promise.all(
+          READY_COPY_ON_SCREEN.map((text) =>
+            current
+              .getByRole("region", { name: "Suas cópias" })
+              .getByText(text, { exact: true })
+              .waitFor()
+          )
+        );
+      }
     ),
 };
