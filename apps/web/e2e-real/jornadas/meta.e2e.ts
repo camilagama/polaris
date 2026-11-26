@@ -93,8 +93,8 @@ test("meta de número de vendas: criada pela tela, conclui com a 2ª venda e nã
   await expect(datePickerButton(form, "Período da meta")).toHaveAccessibleName(
     `Período da meta, ${dayAndMonth(firstDay)} a ${dayAndMonth(lastDay)}`
   );
-  await form.locator("#goal-create-name").fill("Duas vendas no mês");
-  await form.locator("#goal-create-target").fill("2");
+  await form.getByRole("textbox", { name: "Nome Opcional" }).fill("Duas vendas no mês");
+  await form.getByLabel("Alvo").fill("2");
   await form.getByRole("button", { name: "Criar meta" }).click();
   await expect(page.getByText("Meta criada.")).toBeVisible();
 
@@ -123,7 +123,7 @@ test("meta de número de vendas: criada pela tela, conclui com a 2ª venda e nã
 
   // Free plan: one goal in progress is the limit
   await page.getByRole("button", { name: "Nova meta" }).click();
-  await form.locator("#goal-create-target").fill("5");
+  await form.getByLabel("Alvo").fill("5");
   await form.getByRole("button", { name: "Criar meta" }).click();
   await expect(form.getByRole("alert")).toContainText(LIMIT_REFUSAL);
   await form.getByRole("button", { name: "Cancelar" }).click();

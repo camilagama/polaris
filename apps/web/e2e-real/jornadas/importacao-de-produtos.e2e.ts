@@ -155,8 +155,7 @@ test("importação de planilha: a prévia não grava, a confirmação cria 2 pro
   await expect(
     dialog
       .getByRole("table", { name: "Linhas do arquivo: Com erro" })
-      .getByRole("row")
-      .nth(1)
+      .getByRole("row", { name: new RegExp(BAD_ROW) })
   ).toContainText("Preço de tabela: Informe um valor em reais, como 59,90.");
   // the preview wrote nothing
   expect(await productCount(sql, organizationId)).toBe(0);
