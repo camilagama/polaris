@@ -1217,7 +1217,11 @@ export async function configureProductVariants(
   }
 
   const [defaultVariant] = await transaction
-    .select({ id: productVariants.id, sku: productVariants.sku })
+    .select({
+      id: productVariants.id,
+      listPrice: productVariants.listPrice,
+      sku: productVariants.sku,
+    })
     .from(productVariants)
     .where(
       and(
@@ -1325,6 +1329,8 @@ export async function configureProductVariants(
     .values(
       configuration.variants.map((_, position) => ({
         isDefault: false,
+        // the default variant is deleted below: its price would be lost with it
+        listPrice: defaultVariant.listPrice,
         organizationId: identity.organizationId,
         position,
         productId: input.id,

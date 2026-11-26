@@ -66,8 +66,8 @@ const stockRowOf = (page: Page, size: string) =>
 
 /**
  * A product with two variants (P and M) made on screen, each with its own opening stock, then one unit of P sold on
- * screen: the stock screen shows both with the right balance, and the sale takes the unit from P only (screen and
- * ledger), M untouched.
+ * screen: the stock screen shows both with the right balance, the sale finds P with the list price the product was
+ * created with, and it takes the unit from P only (screen and ledger), M untouched.
  */
 test("produto com duas variantes: criar na tela, estoque de cada uma, vender uma baixa só ela", async ({
   browser,
@@ -120,7 +120,6 @@ test("produto com duas variantes: criar na tela, estoque de cada uma, vender uma
     [
       {
         charged: PRICE,
-        listed: PRICE,
         option: SALE_OPTION_P,
         quantity: 1,
         search: "Camiseta de",
@@ -128,6 +127,11 @@ test("produto com duas variantes: criar na tela, estoque de cada uma, vender uma
     ],
     []
   );
+  await expect(
+    page
+      .getByRole("group", { exact: true, name: "Item 1" })
+      .getByLabel("Preço de tabela")
+  ).toHaveValue(PRICE);
   await confirmSale(page);
 
   await expect
