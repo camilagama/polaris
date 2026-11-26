@@ -9,6 +9,7 @@ const IMPORT_DIALOG = "Importar planilha";
 const SHIRT = "Camiseta básica";
 const SOCKS = "Meia listrada";
 const BAD_ROW = "Boné";
+const BELT = "Cinto de couro";
 const SHIRT_PRICE = "49,90";
 const SOCKS_PRICE = "12,00";
 
@@ -37,11 +38,11 @@ const dialogOf = (page: Page) =>
 const statusIn = (dialog: Locator, text: string | RegExp) =>
   dialog.getByRole("status").filter({ hasText: text });
 
-async function chooseFile(page: Page) {
+async function chooseFile(page: Page, lines: readonly string[] = FILE_LINES) {
   await dialogOf(page)
     .locator('input[type="file"]')
     .setInputFiles({
-      buffer: Buffer.from(`${FILE_LINES.join("\r\n")}\r\n`, "utf8"),
+      buffer: Buffer.from(`${lines.join("\r\n")}\r\n`, "utf8"),
       mimeType: "text/csv",
       name: "produtos.csv",
     });
@@ -220,4 +221,36 @@ test("importação de planilha: a prévia não grava, a confirmação cria 2 pro
   ).toHaveAttribute("aria-disabled", "true");
   expect(await productCount(sql, organizationId)).toBe(2);
   expect(await productsOf(sql, organizationId)).toEqual(products);
+
+  // a file with a row of a product that exists (another price and stock) and a new one: only the new one is created,
+  // the existing one stays exactly as it was
+  await page.goto("/products");
+  await page.getByRole("button", { name: IMPORT_DIALOG }).click();
+  await chooseFile(page, [
+    FILE_LINES[0],
+    `${SHIRT};99,90;50;1,00`,
+    `${BELT};35,00;3;9,00`,
+  ]);
+  await dialogOf(page).getByRole("button", { name: "Ver a prévia" }).click();
+  await expectLines(dialogOf(page), [
+    "2 linhas no arquivo",
+    "1 vai entrar",
+    "1 já existe (fica como está)",
+  ]);
+  await dialogOf(page)
+    .getByRole("button", { name: "Importar 1 produto" })
+    .click();
+  await expect(statusIn(dialogOf(page), "Importamos 1 produto.")).toBeVisible({
+    timeout: 60_000,
+  });
+  const afterMixed = await productsOf(sql, organizationId);
+  expect(afterMixed.map((product) => product.name).sort()).toEqual(
+    [BELT, SHIRT, SOCKS].sort()
+  );
+  expect(afterMixed.filter((product) => product.name !== BELT)).toEqual(
+    products
+  );
+  const belt = afterMixed.find((product) => product.name === BELT);
+  expect(numericCents(belt?.listPrice ?? "")).toBe(cents("35,00"));
+  expect(belt?.balance).toBe(3);
 });

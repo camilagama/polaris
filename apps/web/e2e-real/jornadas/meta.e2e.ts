@@ -2,7 +2,6 @@ import type { Page } from "@playwright/test";
 import { datePickerButton } from "../../e2e/date-pickers";
 import { addDays, extremeTimeZone, localDate, monthStart } from "../calendar";
 import { expect, openJourney, runT0, test } from "../fixtures";
-import { numericCents } from "../oracle";
 import { openSaleAction } from "../pages/detalhe-da-venda";
 import { choose } from "../pages/venda";
 import { seedCashSale, seedProduct, seedStock } from "../seed";
@@ -154,7 +153,7 @@ test("meta de número de vendas: criada pela tela, conclui com a 2ª venda e nã
     .poll(async () => (await goalsOf(sql, organizationId))[0])
     .toMatchObject({ settled: true, status: "completed", target: "2" });
   const [settled] = await goalsOf(sql, organizationId);
-  expect(numericCents(settled?.achieved ?? "")).toBe(200);
+  expect(Number(settled?.achieved)).toBe(2);
 
   // cancelling one of the two sales does not reopen it
   await page.goto(`/sales/detail?saleId=${firstSale}`);
@@ -171,6 +170,14 @@ test("meta de número de vendas: criada pela tela, conclui com a 2ª venda e nã
       return rows[0]?.cancelled;
     })
     .toBe(1);
+  // the cancelled sale left the count: one confirmed sale stands, so the goal's target of 2 is no longer met
+  const { rows: standing } = await sql.query<{ total: number }>(
+    `SELECT count(*)::int AS total FROM sales s
+      WHERE s.organization_id = $1
+        AND NOT EXISTS (SELECT 1 FROM sale_cancellations c WHERE c.sale_id = s.id)`,
+    [organizationId]
+  );
+  expect(standing[0]?.total).toBe(1);
 
   await openGoals(page);
   await refresh(page);
