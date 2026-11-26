@@ -373,7 +373,7 @@ Decisão do usuário. A cor da marca (`--mark`, `--chart-1`, o ponto do `Logo` e
 - R4: `ListTotalFooter`, `ListNotice` e `RowTile` só vivem em `ui/`; a tela usa o `ListBlock`.
 - R5 (aviso, não reprova): um `Block` com `.map(` de linhas fora de um `ListBlock`.
 
-Os arquivos de antes do padrão ficam numa lista de dívida por regra, que só encolhe: arquivo novo fora do padrão reprova, e arquivo já limpo ainda na lista também. Exceção que fica vai no `ALLOWLIST` de R3, só com o motivo `chart-bubble` ou `thumbnail`, e reprova quando deixa de ser usada. Lista e tabela nunca são exceção: o teste reprova a exceção cujo arquivo desenha `<ul>`, `<ol>`, `<Table>`, `role="list"` ou `divide-y`, porque uma lista também é um bloco com título.
+Os arquivos de antes do padrão ficam numa lista de dívida por regra, que só encolhe: arquivo novo fora do padrão reprova, e arquivo já limpo ainda na lista também. Exceção que fica vai no `ALLOWLIST` de R3, só com o motivo `chart-bubble` ou `thumbnail`, e reprova quando deixa de ser usada. Lista e tabela nunca são exceção: o teste reprova a exceção cujo arquivo desenha `<ul>`, `<ol>`, `<Table>`, `<table>`, `role="list"` ou `divide-y`, porque uma lista também é um bloco com título. A trava tem limite: um `bg-muted` sem `border` aplicado à mão no lugar do bloco rebaixado (`InsetBlock`) o teste não vê, e isso fica na revisão de código.
 
 **O que não decide.** O ritmo da página segue em aberto com o usuário. Também não muda o `DESIGN.md`, e o estado de entrega e os PRs ficam em `doc/status-implementacao.md`.
 

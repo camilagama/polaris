@@ -1,6 +1,6 @@
 # Verificações automáticas de tela
 
-O que o revisor de UX acha medindo vira teste que falha no CI, sem IA. São dez verificações, mais um caso de controle para cada uma (um teste que injeta a falha e prova que a verificação a pega: verificação que nunca falha não prova nada). Este runbook diz o que cada uma mede, como rodar, como acrescentar uma tela e o que ela ainda não cobre.
+O que o revisor de UX acha medindo vira teste que falha no CI, sem IA. São onze verificações, mais um caso de controle para cada uma (um teste que injeta a falha e prova que a verificação a pega: verificação que nunca falha não prova nada). Este runbook diz o que cada uma mede, como rodar, como acrescentar uma tela e o que ela ainda não cobre.
 
 ## O que roda e onde
 
