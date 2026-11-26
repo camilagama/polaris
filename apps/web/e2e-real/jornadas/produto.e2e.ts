@@ -1,3 +1,4 @@
+import type { Page } from "@playwright/test";
 import { localDate } from "../calendar";
 import { expect, openJourney, runT0, test } from "../fixtures";
 import { cents, numericCents } from "../oracle";
@@ -154,4 +155,230 @@ test("produto: categoria, produto, preço e estoque de abertura num passo aparec
   await expect(option).toBeVisible();
   await option.click();
   await expect(item.getByLabel("Preço de tabela")).toHaveValue(price);
+});
+
+const DUPLICATE_NAME = "Já existe uma categoria com esse nome nesta loja.";
+const PRODUCTS_LINKED =
+  "Desvincule os produtos desta categoria antes de removê-la.";
+
+interface CategoryRow {
+  archived: boolean;
+  deleted: boolean;
+  id: string;
+  name: string;
+  updated_at: string;
+}
+
+interface Sql {
+  query: (text: string, values: string[]) => Promise<{ rows: unknown[] }>;
+}
+
+async function categoriesOf(
+  sql: Sql,
+  organizationId: string
+): Promise<CategoryRow[]> {
+  const { rows } = await sql.query(
+    `SELECT id, name, archived_at IS NOT NULL AS archived, deleted_at IS NOT NULL AS deleted,
+            updated_at::text AS updated_at
+       FROM categories
+      WHERE organization_id = $1
+      ORDER BY name`,
+    [organizationId]
+  );
+  return rows as CategoryRow[];
+}
+
+async function addCategory(page: Page, name: string) {
+  await page.getByLabel("Nova categoria").fill(name);
+  await page.getByRole("button", { name: "Adicionar categoria" }).click();
+}
+
+async function addCategoryAndWait(page: Page, name: string) {
+  await addCategory(page, name);
+  await expect(
+    page.getByRole("status").filter({ hasText: `Categoria “${name}” criada.` })
+  ).toBeVisible();
+}
+
+async function chooseRowAction(page: Page, name: string, action: string) {
+  await page.getByRole("button", { name: `Mais ações para ${name}` }).click();
+  await page.getByRole("menuitem", { exact: true, name: action }).click();
+}
+
+const categoryRow = (page: Page, name: string) =>
+  page.locator("li[data-category-id]", { hasText: name });
+
+const refusal = (page: Page, text: string) =>
+  page.getByRole("alert").filter({ hasText: text });
+
+async function showCategories(
+  page: Page,
+  tab: "Arquivadas" | "Ativas" | "Removidas"
+) {
+  const option = page
+    .getByRole("tablist", { exact: true, name: "Estado das categorias" })
+    .getByRole("tab", { exact: true, name: tab });
+  await option.click();
+  await expect(option).toHaveAttribute("aria-selected", "true");
+}
+
+/**
+ * Category names are unique per organization without case or outer spaces, and a rename onto another name is refused
+ * the same way: what the database holds does not change when the screen says "Já existe".
+ */
+test("categoria: nome repetido e renomear em cima de outra são recusados e não mudam o banco", async ({
+  browser,
+  sql,
+}, testInfo) => {
+  const journey = await openJourney(browser, testInfo, "categoria-nome", {
+    organization: { timezone: ZONE },
+  });
+  const { page } = journey;
+  const organizationId = journey.organizationId as string;
+  const first = `Camisetas ${journey.name}`;
+  const second = `Bonés ${journey.name}`;
+
+  await page.goto("/categories");
+  await addCategoryAndWait(page, first);
+
+  await addCategory(page, `  ${first.toLowerCase()}  `);
+  await expect(refusal(page, DUPLICATE_NAME)).toBeVisible();
+  expect(await categoriesOf(sql, organizationId)).toEqual([
+    expect.objectContaining({ deleted: false, name: first }),
+  ]);
+
+  await addCategoryAndWait(page, second);
+  const before = await categoriesOf(sql, organizationId);
+  expect(before.map((row) => row.name)).toEqual([second, first]);
+
+  await chooseRowAction(page, second, "Renomear");
+  await page.getByLabel(`Novo nome para ${second}`).fill(first);
+  await page.getByRole("button", { exact: true, name: "Salvar" }).click();
+  await expect(refusal(page, DUPLICATE_NAME)).toBeVisible();
+  expect(await categoriesOf(sql, organizationId)).toEqual(before);
+});
+
+/** Archiving takes the category off the active list and restoring brings the same row back, with the same id. */
+test("categoria: arquivar e restaurar mantêm o mesmo id", async ({
+  browser,
+  sql,
+}, testInfo) => {
+  const journey = await openJourney(browser, testInfo, "categoria-arquivar", {
+    organization: { timezone: ZONE },
+  });
+  const { page } = journey;
+  const organizationId = journey.organizationId as string;
+  const name = `Camisetas ${journey.name}`;
+
+  await page.goto("/categories");
+  await addCategoryAndWait(page, name);
+  const [created] = await categoriesOf(sql, organizationId);
+  expect(created).toMatchObject({ archived: false, deleted: false, name });
+
+  await chooseRowAction(page, name, "Arquivar");
+  await expect(
+    page
+      .getByRole("status")
+      .filter({ hasText: `Categoria “${name}” arquivada.` })
+  ).toBeVisible();
+  await expect(categoryRow(page, name)).toHaveCount(0);
+  expect(await categoriesOf(sql, organizationId)).toEqual([
+    expect.objectContaining({
+      archived: true,
+      deleted: false,
+      id: created?.id,
+    }),
+  ]);
+  await showCategories(page, "Arquivadas");
+  await expect(categoryRow(page, name)).toBeVisible();
+
+  await chooseRowAction(page, name, "Restaurar");
+  await expect(
+    page
+      .getByRole("status")
+      .filter({ hasText: `Categoria “${name}” restaurada.` })
+  ).toBeVisible();
+  expect(await categoriesOf(sql, organizationId)).toEqual([
+    expect.objectContaining({
+      archived: false,
+      deleted: false,
+      id: created?.id,
+    }),
+  ]);
+  await showCategories(page, "Ativas");
+  await expect(categoryRow(page, name)).toBeVisible();
+});
+
+/**
+ * A category with a product cannot be removed; one without goes off the list but its row stays (a tombstone) and
+ * its name stays reserved.
+ */
+test("categoria: remover com produto é recusado; sem produto vira tombstone e reserva o nome", async ({
+  browser,
+  sql,
+}, testInfo) => {
+  const journey = await openJourney(browser, testInfo, "categoria-remover", {
+    organization: { timezone: ZONE },
+  });
+  const { page, user } = journey;
+  const organizationId = journey.organizationId as string;
+  const used = `Com produto ${journey.name}`;
+  const free = `Sem produto ${journey.name}`;
+  const productName = `Camiseta ${journey.name}`;
+
+  const usedCategory = await user.rpc.category.create({
+    name: used,
+    organizationId,
+  });
+  await user.rpc.product.create({
+    categoryId: usedCategory.id,
+    name: productName,
+    organizationId,
+  });
+
+  await page.goto("/categories");
+  await addCategoryAndWait(page, free);
+
+  await chooseRowAction(page, used, "Remover");
+  await page.getByRole("button", { name: "Remover categoria" }).click();
+  await expect(refusal(page, PRODUCTS_LINKED)).toBeVisible();
+  expect(await categoriesOf(sql, organizationId)).toEqual([
+    expect.objectContaining({
+      deleted: false,
+      id: usedCategory.id,
+      name: used,
+    }),
+    expect.objectContaining({ deleted: false, name: free }),
+  ]);
+  const { rows: linked } = await sql.query<{ category_id: string }>(
+    "SELECT category_id FROM products WHERE organization_id = $1 AND name = $2",
+    [organizationId, productName]
+  );
+  expect(linked).toEqual([{ category_id: usedCategory.id }]);
+
+  await page.getByRole("button", { name: "Cancelar" }).click();
+  await chooseRowAction(page, free, "Remover");
+  await page.getByRole("button", { name: "Remover categoria" }).click();
+  await expect(
+    page.getByRole("status").filter({ hasText: `Categoria “${free}” removida` })
+  ).toBeVisible();
+  await expect(categoryRow(page, free)).toHaveCount(0);
+  expect(await categoriesOf(sql, organizationId)).toEqual([
+    expect.objectContaining({
+      deleted: false,
+      id: usedCategory.id,
+      name: used,
+    }),
+    expect.objectContaining({ deleted: true, name: free }),
+  ]);
+
+  await showCategories(page, "Removidas");
+  await expect(categoryRow(page, free)).toContainText(
+    "Histórico preservado; não pode ser restaurada."
+  );
+  await showCategories(page, "Ativas");
+
+  await addCategory(page, free);
+  await expect(refusal(page, DUPLICATE_NAME)).toBeVisible();
+  expect(await categoriesOf(sql, organizationId)).toHaveLength(2);
 });
