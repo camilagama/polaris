@@ -391,6 +391,79 @@ describe("opacityOf", () => {
     known.setAttribute("data-disabled", "");
     expect(() => opacityOf(known)).not.toThrow();
   });
+
+  it("reads the value of each known class: 1 until its condition holds, then what the class says", () => {
+    const withClass = (name: string, tag = "div") => {
+      const element = document.createElement(tag);
+      element.className = name;
+      return element;
+    };
+    const disabledChild = () => {
+      const child = document.createElement("span");
+      child.setAttribute("data-disabled", "");
+      return child;
+    };
+    const asked: string[] = [];
+    const read = (
+      name: string,
+      off: Element,
+      on: Element,
+      expected: number
+    ) => {
+      asked.push(name);
+      expect(opacityOf(off), `${name} off`).toBe(1);
+      expect(opacityOf(on), `${name} on`).toBe(expected);
+    };
+
+    const holder = withClass(FADES_WHOLE);
+    const holderOn = withClass(FADES_WHOLE);
+    holderOn.append(disabledChild());
+    read(FADES_WHOLE, holder, holderOn, 0.5);
+
+    const alone = withClass(BOX_FADES_ALONE);
+    const aloneOn = withClass(BOX_FADES_ALONE);
+    aloneOn.setAttribute("data-disabled", "");
+    read(BOX_FADES_ALONE, alone, aloneOn, 0.5);
+
+    const stays = `${BOX_FADES_ALONE} ${BOX_STAYS_AT_1}`;
+    const stayOff = withClass(stays);
+    stayOff.setAttribute("data-disabled", "");
+    const stayOn = withClass(stays);
+    stayOn.setAttribute("data-disabled", "");
+    const label = document.createElement("label");
+    label.append(stayOn);
+    expect(opacityOf(stayOff), "the box alone fades").toBe(0.5);
+    expect(opacityOf(stayOn), "the box in a label with a disabled child").toBe(
+      1
+    );
+    asked.push(BOX_STAYS_AT_1);
+
+    const peer = document.createElement("input");
+    peer.className = "peer";
+    const afterPeer = withClass(AFTER_DISABLED_PEER, "label");
+    document.createElement("div").append(peer, afterPeer);
+    const peerOff = opacityOf(afterPeer);
+    peer.disabled = true;
+    expect(peerOff, `${AFTER_DISABLED_PEER} off`).toBe(1);
+    expect(opacityOf(afterPeer), `${AFTER_DISABLED_PEER} on`).toBe(0.5);
+    asked.push(AFTER_DISABLED_PEER);
+
+    for (const [name, group] of [
+      [IN_DISABLED_GROUP, "group"],
+      [IN_DISABLED_FIELD, "group/field"],
+    ] as const) {
+      const owner = withClass(group);
+      const inside = withClass(name, "span");
+      owner.append(inside);
+      owner.setAttribute("data-disabled", "false");
+      expect(opacityOf(inside), `${name} off`).toBe(1);
+      owner.setAttribute("data-disabled", "true");
+      expect(opacityOf(inside), `${name} on`).toBe(0.5);
+      asked.push(name);
+    }
+
+    expect(asked.sort()).toEqual([...KNOWN_OPACITY_CLASSES].sort());
+  });
 });
 
 const rowOpacity = (box: Element) =>

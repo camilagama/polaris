@@ -116,6 +116,102 @@ describe("the Admin's sheet", () => {
   });
 });
 
+/**
+ * The declarations of the rule written with exactly this selector (alone or in a list), by selector and property:
+ * a rule that was deleted, or lost the property that gives the measure, is what the layout tests below cannot see in a
+ * jsdom, and the sheet test above only compares the file with its source.
+ */
+function declarationsOf(sheet: string, selector: string): string[] {
+  const rule = sheet.match(
+    new RegExp(
+      `(?:^|[,{}]\\s*)${escapeRegExp(selector)}\\s*(?:,[^{}]*)?\\{([^{}]*)\\}`,
+      "m"
+    )
+  );
+  return (rule?.[1] ?? "")
+    .split(";")
+    .map((line) => line.trim().replace(WHITESPACE_RUN, " "))
+    .filter(Boolean);
+}
+
+/** The at-rules (`@container (…)`, `@layer …`) open around the first rule with this selector, outermost first. */
+function enclosingAtRules(sheet: string, selector: string): string[] {
+  const at = sheet.indexOf(`${selector} {`);
+  const open: string[] = [];
+  let prelude = "";
+  for (const char of at < 0 ? "" : sheet.slice(0, at)) {
+    if (char === "{") {
+      open.push(prelude.trim());
+      prelude = "";
+    } else if (char === "}") {
+      open.pop();
+      prelude = "";
+    } else if (char === ";") {
+      prelude = "";
+    } else {
+      prelude += char;
+    }
+  }
+  return open.filter((rule) => rule.startsWith("@"));
+}
+
+const WHITESPACE_RUN = /\s+/g;
+const SPECIAL = /[.*+?^${}()|[\]\\]/g;
+function escapeRegExp(text: string): string {
+  return text.replace(SPECIAL, "\\$&");
+}
+
+describe("the rules that give the Admin's nested area and quota rows their measure", () => {
+  const sheet = read(ADMIN_SHEET_OUTPUT);
+
+  it("keeps `.area .area` as the lowered block: a radius, the muted ground and no shadow", () => {
+    expect(declarationsOf(sheet, ".area .area")).toEqual([
+      "border-radius: var(--radius)",
+      "background-color: var(--muted)",
+      "box-shadow: none",
+    ]);
+  });
+
+  it("keeps `.grid.quotas tr` as a grid of the name and three auto columns, and its cells in one line", () => {
+    expect(declarationsOf(sheet, ".grid.quotas tr")).toEqual([
+      "display: grid",
+      "grid-template-columns: minmax(6rem, 1fr) auto auto auto",
+      "align-items: baseline",
+      "row-gap: 0.125rem",
+    ]);
+    expect(enclosingAtRules(sheet, ".grid.quotas tr")).toContain(
+      "@container (max-width: 40rem)"
+    );
+    expect(declarationsOf(sheet, ".grid.quotas td")).toEqual(
+      expect.arrayContaining([
+        "display: block",
+        "padding: 0",
+        "white-space: nowrap",
+      ])
+    );
+  });
+
+  it("sees a rule that is gone or lost its property (control)", () => {
+    const planted =
+      "@container (max-width: 40rem) {\n  .grid.quotas tr {\n    display: grid;\n    row-gap: 0.125rem;\n  }\n}\n.area .area {\n  box-shadow: none;\n}\n";
+    expect(declarationsOf(planted, ".grid.quotas tr")).toEqual([
+      "display: grid",
+      "row-gap: 0.125rem",
+    ]);
+    expect(declarationsOf(planted, ".area .area")).toEqual([
+      "box-shadow: none",
+    ]);
+    expect(declarationsOf(planted, ".quotas tr")).toEqual([]);
+    expect(enclosingAtRules(planted, ".grid.quotas tr")).toEqual([
+      "@container (max-width: 40rem)",
+    ]);
+    expect(enclosingAtRules(planted, ".area .area")).toEqual([]);
+    expect(
+      declarationsOf(planted.replace("display: grid;", ""), ".grid.quotas tr")
+    ).toEqual(["row-gap: 0.125rem"]);
+  });
+});
+
 describe("the classes the Admin borrows from the dash", () => {
   const source = read(ADMIN_SHEET_SOURCE);
   const borrowed = borrowedOf(source);
