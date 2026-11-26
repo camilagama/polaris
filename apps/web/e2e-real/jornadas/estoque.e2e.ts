@@ -1,4 +1,6 @@
-import { localDate } from "../calendar";
+import type { Locator, Page } from "@playwright/test";
+import { pickDate } from "../../e2e/date-pickers";
+import { addDays, localDate } from "../calendar";
 import { expect, openJourney, refusedWith, runT0, test } from "../fixtures";
 import { fillSale } from "../pages/venda";
 import { nextCommandId, seedCashSale, seedProduct, seedStock } from "../seed";
@@ -13,7 +15,114 @@ const UNIT_COST_12_50 = /^12\.50*$/;
 const SEM_CUSTO = /sem custo$/;
 const CAMISETA_OPTION = /Camiseta básica/;
 
+const OTHER_NEEDS_A_NOTE = "Descreva o motivo em “Outro”.";
+const COUNT_WITH_DIFFERENCE =
+  /Contagem registrada \(\+2 unidades\)\. Saldo atual: 7/;
+const COUNT_WITHOUT_DIFFERENCE =
+  /Contagem registrada, sem diferença\. Saldo atual: 7/;
+const UNIT_COST_16_447368 = /^16\.447368$/;
+
 const ZONE = "America/Sao_Paulo";
+
+type Sql = Parameters<Parameters<typeof test>[2]>[0]["sql"];
+
+interface Movement {
+  delta: number;
+  note: string | null;
+  occurredOn: string;
+  physical: number | null;
+  reason: string | null;
+  type: string;
+  unitCost: string | null;
+}
+
+/** The ledger of one variant in the order the server confirmed it. */
+async function ledger(sql: Sql, variantId: string): Promise<Movement[]> {
+  return (
+    await sql.query<{
+      delta: number;
+      note: string | null;
+      occurred_on: string;
+      physical: number | null;
+      reason: string | null;
+      type: string;
+      unit_cost: string | null;
+    }>(
+      `SELECT movement_type AS type, quantity_delta AS delta, reason_code AS reason, reason_note AS note,
+              physical_quantity AS physical, unit_cost::text AS unit_cost, occurred_on::text AS occurred_on
+         FROM stock_movements WHERE variant_id = $1 ORDER BY variant_sequence`,
+      [variantId]
+    )
+  ).rows.map((row) => ({
+    delta: row.delta,
+    note: row.note,
+    occurredOn: row.occurred_on,
+    physical: row.physical,
+    reason: row.reason,
+    type: row.type,
+    unitCost: row.unit_cost,
+  }));
+}
+
+async function balanceOf(sql: Sql, variantId: string) {
+  return (
+    await sql.query<{ cost: string | null; quantity: number }>(
+      "SELECT quantity, moving_average_cost::text AS cost FROM inventory_balances WHERE variant_id = $1",
+      [variantId]
+    )
+  ).rows[0];
+}
+
+async function expenseCount(sql: Sql, organizationId: string) {
+  return (
+    await sql.query<{ count: number }>(
+      "SELECT count(*)::int AS count FROM expenses WHERE organization_id = $1",
+      [organizationId]
+    )
+  ).rows[0]?.count;
+}
+
+/** The movement panel of a row: the trigger is named by the verb, the product and the variant. */
+async function openStockPanel(
+  page: Page,
+  verb: "Baixar" | "Contar" | "Receber",
+  productName: string
+): Promise<void> {
+  await page
+    .getByRole("button", {
+      exact: true,
+      name: `${verb} estoque de ${productName}, Variante padrão`,
+    })
+    .click();
+}
+
+async function chooseReason(page: Page, option: string): Promise<void> {
+  await page
+    .getByRole("combobox", { exact: true, name: "Motivo da baixa" })
+    .click();
+  await page.getByRole("option", { exact: true, name: option }).click();
+}
+
+async function reviewAndConfirm(page: Page, confirm: string): Promise<void> {
+  await page.getByRole("button", { name: "Revisar" }).click();
+  await page.getByRole("button", { name: confirm }).click();
+}
+
+const successMessage = (page: Page, text: string | RegExp): Locator =>
+  page.getByRole("status").filter({ hasText: text });
+
+/** Half-up to six places of (units × cost + added × addedCost) / (units + added), all in integer micro-reais. */
+function averageCostText(
+  held: { cents: number; units: number },
+  added: { cents: number; units: number }
+): string {
+  const numerator =
+    BigInt(held.units * held.cents + added.units * added.cents) * 10_000n;
+  const denominator = BigInt(held.units + added.units);
+  const micro = (numerator * 2n + denominator) / (denominator * 2n);
+  const whole = micro / 1_000_000n;
+  return `${whole}.${String(micro % 1_000_000n).padStart(6, "0")}`;
+}
 
 /** Journey 3: a receipt with cost raises the balance; a write-off above it is refused and the balance stays. */
 test("estoque: entrada com custo, saída maior que o saldo recusada e saldo intacto", async ({
@@ -300,4 +409,258 @@ test("estoque: o custo médio aparece ao centavo na mensagem, na linha e na Vend
     []
   );
   await expect(page.getByText("Custo médio: R$ 19,39.")).toBeVisible();
+});
+
+/**
+ * A write-off that goes through (docs/business-rules/inventory.md, Baixa): 4 of 10 units at an average cost of
+ * R$ 12,50, reason "Avariado". One movement of −4 with the reason, the cost snapshot is the average at the time and
+ * the average itself does not move; no expense is created.
+ */
+test("estoque: baixa com motivo grava o movimento, mantém o custo médio e não cria despesa", async ({
+  browser,
+  sql,
+}, testInfo) => {
+  const journey = await openJourney(browser, testInfo, "estoque-baixa", {
+    organization: { timezone: ZONE },
+  });
+  const { page } = journey;
+  const organizationId = journey.organizationId as string;
+  const product = await seedProduct(
+    journey.user.rpc,
+    organizationId,
+    "Caneca esmaltada",
+    "35.00"
+  );
+  await seedStock(
+    journey.user.rpc,
+    organizationId,
+    product.variantId,
+    10,
+    "12.50",
+    localDate(runT0(), ZONE)
+  );
+  expect(await expenseCount(sql, organizationId)).toBe(0);
+
+  await page.goto("/inventory");
+  await openStockPanel(page, "Baixar", product.productName);
+  await page.getByLabel("Quantidade a baixar").fill("4");
+  await chooseReason(page, "Avariado");
+  await reviewAndConfirm(page, "Confirmar baixa");
+  await expect(
+    successMessage(page, "Baixa registrada. Saldo atual: 6")
+  ).toBeVisible();
+
+  await expect
+    .poll(() => balanceOf(sql, product.variantId))
+    .toMatchObject({
+      quantity: 6,
+    });
+  const balance = await balanceOf(sql, product.variantId);
+  expect(balance?.cost).toMatch(UNIT_COST_12_50);
+  const movements = await ledger(sql, product.variantId);
+  expect(movements).toHaveLength(2);
+  expect(movements[1]).toMatchObject({
+    delta: -4,
+    note: null,
+    occurredOn: localDate(runT0(), ZONE),
+    reason: "damaged",
+    type: "write_off",
+  });
+  expect(movements[1]?.unitCost).toMatch(UNIT_COST_12_50);
+  expect(await expenseCount(sql, organizationId)).toBe(0);
+});
+
+/**
+ * "Outro (descreva)" asks for a note: without it the panel refuses on screen and nothing is written; with it, typed
+ * with spaces at both ends, the note is stored trimmed.
+ */
+test("estoque: baixa por Outro exige a observação e grava a nota aparada", async ({
+  browser,
+  sql,
+}, testInfo) => {
+  const journey = await openJourney(browser, testInfo, "estoque-outro", {
+    organization: { timezone: ZONE },
+  });
+  const { page } = journey;
+  const organizationId = journey.organizationId as string;
+  const product = await seedProduct(
+    journey.user.rpc,
+    organizationId,
+    "Vaso de cerâmica",
+    "80.00"
+  );
+  await seedStock(
+    journey.user.rpc,
+    organizationId,
+    product.variantId,
+    10,
+    "12.50",
+    localDate(runT0(), ZONE)
+  );
+
+  await page.goto("/inventory");
+  await openStockPanel(page, "Baixar", product.productName);
+  await page.getByLabel("Quantidade a baixar").fill("2");
+  await chooseReason(page, "Outro (descreva)");
+  await page.getByRole("button", { name: "Revisar" }).click();
+  await expect(page.getByText(OTHER_NEEDS_A_NOTE)).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Confirmar baixa" })
+  ).toHaveCount(0);
+  expect(await ledger(sql, product.variantId)).toHaveLength(1);
+  expect(await balanceOf(sql, product.variantId)).toMatchObject({
+    quantity: 10,
+  });
+
+  await page
+    .getByLabel("Observação (obrigatória para “Outro”)")
+    .fill("   Caixa molhada no depósito   ");
+  await reviewAndConfirm(page, "Confirmar baixa");
+  await expect(
+    successMessage(page, "Baixa registrada. Saldo atual: 8")
+  ).toBeVisible();
+  await expect.poll(() => ledger(sql, product.variantId)).toHaveLength(2);
+  const movements = await ledger(sql, product.variantId);
+  expect(movements[1]).toMatchObject({
+    delta: -2,
+    note: "Caixa molhada no depósito",
+    reason: "other",
+    type: "write_off",
+  });
+  expect(await balanceOf(sql, product.variantId)).toMatchObject({
+    quantity: 8,
+  });
+});
+
+/**
+ * The count replaces the balance and stays in the history even with no difference: 5 counted as 7 is an adjustment
+ * of +2; counting 7 again writes a movement of delta 0.
+ */
+test("estoque: contagem substitui o saldo e a sem diferença fica no histórico", async ({
+  browser,
+  sql,
+}, testInfo) => {
+  const journey = await openJourney(browser, testInfo, "estoque-contagem", {
+    organization: { timezone: ZONE },
+  });
+  const { page } = journey;
+  const organizationId = journey.organizationId as string;
+  const product = await seedProduct(
+    journey.user.rpc,
+    organizationId,
+    "Pote de vidro",
+    "20.00"
+  );
+  await seedStock(
+    journey.user.rpc,
+    organizationId,
+    product.variantId,
+    5,
+    "12.50",
+    localDate(runT0(), ZONE)
+  );
+
+  await page.goto("/inventory");
+  await openStockPanel(page, "Contar", product.productName);
+  await page.getByLabel("Quantidade contada").fill("7");
+  await reviewAndConfirm(page, "Confirmar contagem");
+  await expect(successMessage(page, COUNT_WITH_DIFFERENCE)).toBeVisible();
+  await expect.poll(() => ledger(sql, product.variantId)).toHaveLength(2);
+  expect(await balanceOf(sql, product.variantId)).toMatchObject({
+    quantity: 7,
+  });
+  expect((await ledger(sql, product.variantId))[1]).toMatchObject({
+    delta: 2,
+    physical: 7,
+    type: "inventory_count",
+  });
+
+  await page.getByRole("button", { name: CLOSE_BUTTON }).click();
+  await openStockPanel(page, "Contar", product.productName);
+  await page.getByLabel("Quantidade contada").fill("7");
+  await reviewAndConfirm(page, "Confirmar contagem");
+  await expect(successMessage(page, COUNT_WITHOUT_DIFFERENCE)).toBeVisible();
+  await expect.poll(() => ledger(sql, product.variantId)).toHaveLength(3);
+  expect(await balanceOf(sql, product.variantId)).toMatchObject({
+    quantity: 7,
+  });
+  expect((await ledger(sql, product.variantId))[2]).toMatchObject({
+    delta: 0,
+    physical: 7,
+    type: "inventory_count",
+  });
+});
+
+/**
+ * A receipt dated yesterday does not rewrite the cost snapshot of a sale already made: 10 units at R$ 12,50, one sold
+ * (snapshot 12,50), then 10 at R$ 20,00 with yesterday's date. The snapshot stays and the new average is
+ * (9 × 1250 + 10 × 2000) / 19 half-up to six places, computed here in integers.
+ */
+test("estoque: recebimento com data de ontem não reescreve o custo da venda anterior", async ({
+  browser,
+  sql,
+}, testInfo) => {
+  const journey = await openJourney(browser, testInfo, "estoque-retroativo", {
+    organization: { timezone: ZONE },
+  });
+  const { page } = journey;
+  const organizationId = journey.organizationId as string;
+  const today = localDate(runT0(), ZONE);
+  const yesterday = addDays(today, -1);
+  const product = await seedProduct(
+    journey.user.rpc,
+    organizationId,
+    "Camiseta básica",
+    "30.00"
+  );
+  await seedStock(
+    journey.user.rpc,
+    organizationId,
+    product.variantId,
+    10,
+    "12.50",
+    today
+  );
+  const saleId = await seedCashSale(
+    journey.user.rpc,
+    organizationId,
+    [{ price: "30.00", quantity: 1, variantId: product.variantId }],
+    new Date(runT0()).toISOString()
+  );
+  const snapshot = async () =>
+    (
+      await sql.query<{ unit_cost: string }>(
+        "SELECT unit_cost::text FROM sale_items WHERE sale_id = $1",
+        [saleId]
+      )
+    ).rows[0]?.unit_cost;
+  expect(await snapshot()).toMatch(UNIT_COST_12_50);
+
+  await page.goto("/inventory");
+  await openStockPanel(page, "Receber", product.productName);
+  await page.getByLabel("Quantidade recebida").fill("10");
+  await page.getByLabel("Custo unitário (R$)").fill("20,00");
+  await pickDate(page, "Data", yesterday);
+  await reviewAndConfirm(page, "Confirmar recebimento");
+  await expect(
+    successMessage(page, "Recebimento registrado. Saldo atual: 19")
+  ).toBeVisible();
+
+  const expectedAverage = averageCostText(
+    { cents: 1250, units: 9 },
+    { cents: 2000, units: 10 }
+  );
+  expect(expectedAverage).toMatch(UNIT_COST_16_447368);
+  await expect
+    .poll(() => balanceOf(sql, product.variantId))
+    .toEqual({ cost: expectedAverage, quantity: 19 });
+  expect(await snapshot()).toMatch(UNIT_COST_12_50);
+  const movements = await ledger(sql, product.variantId);
+  expect(movements.map((movement) => movement.type)).toEqual([
+    "receipt",
+    "sale",
+    "receipt",
+  ]);
+  expect(movements[1]?.unitCost).toMatch(UNIT_COST_12_50);
+  expect(movements[2]).toMatchObject({ delta: 10, occurredOn: yesterday });
 });
