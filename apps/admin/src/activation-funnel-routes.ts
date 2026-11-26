@@ -3,9 +3,11 @@ import {
   type ActivationFunnelCount,
   type ActivationFunnelPercent,
   type ActivationFunnelResponse,
+  type ActivationFunnelReturnCount,
   activationFunnelResponse,
   type RawActivationFunnel,
   type RawActivationFunnelCell,
+  type RawActivationFunnelReturnCell,
   rawActivationFunnel,
 } from "@polaris/contracts/admin-activation-funnel";
 import type { PlatformCapability } from "@polaris/domain/admin/platform-capabilities";
@@ -132,6 +134,17 @@ function optionalCount(
   return cell === undefined ? undefined : count(cell);
 }
 
+function optionalReturnCount(
+  cell: RawActivationFunnelReturnCell | undefined
+): ActivationFunnelReturnCount | undefined {
+  if (cell === undefined) {
+    return undefined;
+  }
+  return cell.state === "unavailable"
+    ? { reason: cell.reason, value: null }
+    : count(cell);
+}
+
 /**
  * The cells the function may or may not send (the "up to 14 days" band and the Pro trial) and their shares, each key
  * only when the function sent its cell: an old function's answer gives the old shape, with no key made up.
@@ -169,8 +182,8 @@ function fourteenDayCells(
  * leaves the frozen pair above the live count (ADR 0106, limits accepted).
  */
 function returnCells(cohort: RawActivationFunnel["cohorts"][number]) {
-  const returned = optionalCount(cohort.returned);
-  const neverReturned = optionalCount(cohort.neverReturned);
+  const returned = optionalReturnCount(cohort.returned);
+  const neverReturned = optionalReturnCount(cohort.neverReturned);
   return {
     ...(neverReturned && { neverReturned }),
     ...(returned && { returned }),

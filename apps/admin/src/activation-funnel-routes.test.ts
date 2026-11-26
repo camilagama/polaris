@@ -3,6 +3,7 @@ import {
   type ActivationFunnelResponse,
   activationFunnelResponse,
   type RawActivationFunnel,
+  rawActivationFunnel,
 } from "@polaris/contracts/admin-activation-funnel";
 import { describe, expect, it, vi } from "vitest";
 import {
@@ -393,6 +394,58 @@ describe("GET /api/funnel", () => {
     });
     expect(JSON.stringify(nextBody)).not.toMatch(ZERO_VALUE);
     expect(nextBody.cohorts[0]).not.toHaveProperty("percent.returned");
+  });
+
+  it("answers a week the weekly freeze never wrote with the M3's own reason, not the one of the open window", async () => {
+    const notFrozen = {
+      reason: "not_frozen" as const,
+      state: "unavailable" as const,
+    };
+    const response = await setup(
+      vi.fn(() =>
+        Promise.resolve(
+          withReturns(raw(), { neverReturned: notFrozen, returned: notFrozen })
+        )
+      )
+    ).get("?weeks=2");
+    const body = (await response.json()) as ActivationFunnelResponse;
+    expect(response.status).toBe(200);
+    expect(activationFunnelResponse.parse(body)).toEqual(body);
+    expect(body.cohorts[0]?.returned).toEqual({
+      reason: "not_frozen",
+      value: null,
+    });
+    expect(body.cohorts[0]?.neverReturned).toEqual({
+      reason: "not_frozen",
+      value: null,
+    });
+    expect(JSON.stringify(body)).not.toMatch(ZERO_VALUE);
+  });
+
+  it("refuses the M3's reason in a cell that is not of the M3, on the way in and on the way out", () => {
+    const notFrozen = {
+      reason: "not_frozen" as const,
+      state: "unavailable" as const,
+    };
+    const answer = raw();
+    expect(
+      rawActivationFunnel.safeParse({
+        ...answer,
+        cohorts: answer.cohorts.map((cohort, index) =>
+          index === 0 ? { ...cohort, withFirstSale: notFrozen } : cohort
+        ),
+      }).success
+    ).toBe(false);
+    const view = activationFunnelView(raw());
+    const refused = activationFunnelResponse.safeParse({
+      ...view,
+      cohorts: view.cohorts.map((cohort, index) =>
+        index === 0
+          ? { ...cohort, stores: { reason: "not_frozen", value: null } }
+          : cohort
+      ),
+    });
+    expect(refused.success).toBe(false);
   });
 
   it("passes on a frozen pair above the live stores of the week, since the counter was frozen weeks before", async () => {

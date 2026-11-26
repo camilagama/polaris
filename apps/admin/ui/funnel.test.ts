@@ -30,7 +30,11 @@ const FUNNEL = screenContext({ screen: "funil" });
 
 const shown = (value: number) => ({ reason: null, value });
 const missing = (
-  reason: "activation_window_open" | "suppressed" | "week_not_closed"
+  reason:
+    | "activation_window_open"
+    | "not_frozen"
+    | "suppressed"
+    | "week_not_closed"
 ) => ({ reason, value: null });
 
 /**
@@ -40,7 +44,7 @@ const missing = (
 function funnel(
   weeks = 2,
   fourteenDays = false,
-  returns: "none" | "shown" | "mixed" = "none"
+  returns: "none" | "shown" | "mixed" | "not-frozen" = "none"
 ): ActivationFunnelResponse {
   const week = (index: number) => ({
     inProgress: index === weeks - 1,
@@ -62,14 +66,19 @@ function funnel(
         soldInTrial: index === 0 ? shown(5) : missing("suppressed"),
         trialStarted: index === 0 ? shown(6) : missing("suppressed"),
       }),
-      ...(returns !== "none" && {
-        neverReturned:
-          index === 0 ? shown(6) : missing("activation_window_open"),
-        returned:
-          index === 0 && returns === "shown"
-            ? shown(5)
-            : missing(index === 0 ? "suppressed" : "activation_window_open"),
+      ...(returns === "not-frozen" && {
+        neverReturned: missing("not_frozen"),
+        returned: missing("not_frozen"),
       }),
+      ...(returns !== "none" &&
+        returns !== "not-frozen" && {
+          neverReturned:
+            index === 0 ? shown(6) : missing("activation_window_open"),
+          returned:
+            index === 0 && returns === "shown"
+              ? shown(5)
+              : missing(index === 0 ? "suppressed" : "activation_window_open"),
+        }),
       activatedIn7Days:
         index === 0 ? shown(6) : missing("activation_window_open"),
       percent: {
@@ -497,6 +506,17 @@ describe("what the funnel shows (AC-8)", () => {
     ]);
     expect(rows.flat()).not.toContain("0");
     expect(rows.flat()).not.toContain("");
+  });
+
+  it("says a week that was never frozen is not frozen, not that the deadline still runs", async () => {
+    const page = await openFunnel([json(funnel(2, false, "not-frozen"))]);
+    const rows = cells(page.root, RETURN_CAPTION);
+    expect(rows[0]).toEqual([
+      "semana de 05/10/2026",
+      "não disponível (semana não congelada)",
+      "não disponível (semana não congelada)",
+    ]);
+    expect(rows.flat().join(" ")).not.toContain("prazo ainda corre");
   });
 
   it("shows exactly 5, the smallest count the function shows, as 5", async () => {

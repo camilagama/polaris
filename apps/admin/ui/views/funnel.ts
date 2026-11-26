@@ -200,8 +200,12 @@ function returnTable(dom: Dom, funnel: ActivationFunnelResponse) {
     ["Semana", "Voltaram ao app", "Nunca voltaram"],
     funnel.cohorts.map((cohort) => [
       weekText(cohort),
-      optionalCountAndShare(cohort.returned, undefined),
-      optionalCountAndShare(cohort.neverReturned, undefined),
+      cohort.returned === undefined
+        ? NOT_SENT
+        : funnelCountText(cohort.returned),
+      cohort.neverReturned === undefined
+        ? NOT_SENT
+        : funnelCountText(cohort.neverReturned),
     ])
   );
 }
