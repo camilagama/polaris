@@ -535,13 +535,18 @@ export class FakeStockServer implements BootstrapSource {
     };
   }
 
-  /** Sales confirmed, by command ID. */
-  readonly sales = new Map<string, { saleId: string }>();
+  /** Sales confirmed, by command ID, with the payments the command carried. */
+  readonly sales = new Map<
+    string,
+    { payments: readonly unknown[]; saleId: string }
+  >();
 
   /** A sale takes stock from every line or is refused whole (no partial sale). */
   private executeSale(command: PushCommandReadModel): PushResultReadModel {
-    const { items } = command.payload as {
+    const { items, payment, payments } = command.payload as {
       items: { quantity: number; variantId: string }[];
+      payment?: unknown;
+      payments?: unknown[];
     };
     const draft = new Map<string, { quantity: number; version: number }>();
     for (const item of items) {
@@ -572,7 +577,10 @@ export class FakeStockServer implements BootstrapSource {
       });
     }
     const saleId = `0199c2d0-0000-7000-8000-${String(this.sales.size + 1).padStart(12, "0")}`;
-    this.sales.set(command.commandId, { saleId });
+    this.sales.set(command.commandId, {
+      payments: payments ?? (payment === undefined ? [] : [payment]),
+      saleId,
+    });
     return {
       code: null,
       commandId: command.commandId,
