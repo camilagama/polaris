@@ -188,7 +188,7 @@ describe("product RPCs", () => {
         {
           id: "0199c2d0-0000-7000-8000-000000000005",
           isDefault: false,
-          listPrice: "49.90",
+          listPrice: null,
           position: 0,
           sku: null,
           values: [
@@ -245,10 +245,8 @@ describe("product RPCs", () => {
 
     const result = await client.product.configureVariants(configureInput);
 
-    expect(result).toMatchObject({
-      configuration,
-      product: { version: 2 },
-    });
+    expect(result.configuration).toEqual(configuration);
+    expect(result.product.version).toBe(2);
     expect(observedCapability).toBe("product:update");
     expect(configureProductVariants).toHaveBeenCalledWith({}, identity, {
       expectedVersion: configureInput.expectedVersion,
