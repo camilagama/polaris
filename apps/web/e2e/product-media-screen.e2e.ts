@@ -150,7 +150,7 @@ test("abre pelo menu na aba Imagens do produto, com o foco na aba, com as imagen
   ).toBeVisible();
   await expect(page.getByRole("tab", { name: "Imagens" })).toBeFocused();
   await expect(page.getByText("Imagem 1 de 3")).toBeVisible();
-  await expect(page.getByText("1000 × 800 · 0,3 MB").first()).toBeVisible();
+  await expect(page.getByText("1000 × 800 · 280 KB").first()).toBeVisible();
   const first = page.getByRole("img", { name: "Camiseta do teste, imagem 1" });
   await expect(first).toBeVisible();
   await expect

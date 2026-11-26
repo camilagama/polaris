@@ -792,6 +792,8 @@ describe("the staging smoke", () => {
 
   it("never logs a body or a header value: only the check, the status and a fixed reason", async () => {
     const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
+    // The header value is not 12 hex on purpose: a 12-hex release may be printed, but only on the 'release wait' line,
+    // so a value of that shape would not prove that nothing else is logged.
     const fetchImpl = fakeStaging({
       [`${origins.web}/health`]: () =>
         fromWorker(
@@ -820,6 +822,26 @@ describe("the staging smoke", () => {
       expect(printed).not.toContain(leaked);
     }
     expect(printed).toContain(
+      "FAIL web /health (release of the Worker): 200 release different"
+    );
+  });
+
+  it("prints an old release of 12 hex on the 'release wait' line and on no other line", async () => {
+    const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
+    const stale = fakeStaging({
+      [`${origins.catalog}/robots.txt`]: () =>
+        answer(200, { "x-polaris-release": OLD_RELEASE }, "User-agent: *\n"),
+      [`${origins.web}/health`]: () =>
+        fromWorker(200, { "x-polaris-release": OLD_RELEASE }, "{}"),
+    });
+    await runSmoke(origins, options, stale, noPause);
+    const lines = log.mock.calls.flat().join("\n").split("\n");
+    const withRelease = lines.filter((line) => line.includes(OLD_RELEASE));
+    expect(withRelease).toEqual([
+      `FAIL release wait (web): the release ${RELEASE} did not reach the edge in 120 s; active: ${OLD_RELEASE}`,
+      `FAIL release wait (catalog): the release ${RELEASE} did not reach the edge in 120 s; active: ${OLD_RELEASE}`,
+    ]);
+    expect(lines).toContain(
       "FAIL web /health (release of the Worker): 200 release different"
     );
   });
