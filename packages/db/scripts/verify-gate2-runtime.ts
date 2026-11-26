@@ -1784,6 +1784,13 @@ async function main() {
     const [skuVariantA, skuVariantB] = concurrentVariantConfiguration.variants;
     assert.ok(skuVariantA && skuVariantB);
     assert.equal(concurrentVariantConfiguration.productVersion, 2);
+    assert.deepEqual(
+      concurrentVariantConfiguration.variants.map(
+        (variant) => variant.listPrice
+      ),
+      [null, null],
+      "a default variant without a list price leaves the combinations unpriced"
+    );
 
     const assignedVariantSku = await withAuthorizedTenantTransaction(
       runtimeDb,
