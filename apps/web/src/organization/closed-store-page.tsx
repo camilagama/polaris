@@ -744,7 +744,7 @@ export function ClosedStorePage() {
             onRefresh={handleRefresh}
             reading={reading}
           />
-          <footer className="mt-4 flex flex-wrap items-center gap-x-6 gap-y-2 border-border border-t pt-4">
+          <footer className="mt-4 flex flex-wrap items-center gap-x-6 gap-y-4 border-border border-t pt-4">
             <a className={TEXT_LINK} href={NEW_STORE_PATH}>
               {NEW_STORE_LINK}
             </a>
