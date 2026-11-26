@@ -466,6 +466,11 @@ describe("a scheduler tick", () => {
       expectClassAndCodeOnly(await failedOutboxLog());
     });
 
+    function restoreLogging() {
+      vi.unstubAllEnvs();
+      configureLogging({ service: "polaris" });
+    }
+
     it("does not mistake a commit hash with digits in a row for a leaked message", async () => {
       vi.stubEnv("COMMIT_SHA", "");
       vi.stubEnv("GITHUB_SHA", "f1899999678");
@@ -475,9 +480,12 @@ describe("a scheduler tick", () => {
         expect(logged).toContain("f1899999678");
         expectClassAndCodeOnly(logged);
       } finally {
-        vi.unstubAllEnvs();
-        configureLogging({ service: "polaris" });
+        restoreLogging();
       }
+      for (const method of ["info", "warn", "error"] as const) {
+        vi.mocked(console[method]).mockClear();
+      }
+      expect(await failedOutboxLog()).not.toContain("f1899999678");
     });
   });
 });
