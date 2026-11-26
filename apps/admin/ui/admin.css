@@ -1009,6 +1009,12 @@
     --tw-font-weight: var(--font-weight-semibold);
     font-weight: var(--font-weight-semibold);
   }
+  .section-title {
+    font-size: var(--text-section);
+    line-height: var(--tw-leading, var(--text-section--line-height));
+    letter-spacing: var(--tw-tracking, var(--text-section--letter-spacing));
+    font-weight: var(--tw-font-weight, var(--text-section--font-weight));
+  }
   .content :where(code) {
     font-family: var(--font-mono);
     font-size: var(--text-xs);
@@ -1113,6 +1119,11 @@
   .area > :last-child {
     margin-bottom: 0;
   }
+  .area .area {
+    border-radius: var(--radius);
+    background-color: var(--muted);
+    box-shadow: none;
+  }
   button {
     display: inline-flex;
     height: var(--h-md);
@@ -1194,6 +1205,43 @@
   }
   button.secondary[aria-expanded=true] {
     background-color: var(--accent);
+  }
+  .area .area button.secondary {
+    border-color: var(--border);
+    background-color: var(--card);
+    color: var(--foreground);
+    --tw-shadow: 0 1px 2px 0 var(--tw-shadow-color, oklch(var(--shadow-l) var(--shadow-c) 85 / calc(0.05 * var(--shadow-a))));
+    box-shadow:
+      var(--tw-inset-shadow),
+      var(--tw-inset-ring-shadow),
+      var(--tw-ring-offset-shadow),
+      var(--tw-ring-shadow),
+      var(--tw-shadow);
+  }
+  @media (hover: hover) {
+    .area .area button.secondary:hover {
+      background-color: var(--accent);
+    }
+  }
+  .area .area button.secondary[aria-expanded=true] {
+    background-color: var(--accent);
+  }
+  @media (prefers-color-scheme: dark) {
+    .area .area button.secondary {
+      background-color: var(--secondary);
+    }
+    @supports (color: color-mix(in lab, red, red)) {
+      .area .area button.secondary {
+        background-color: color-mix(in oklab, var(--secondary) 60%, transparent);
+      }
+    }
+  }
+  @media (prefers-color-scheme: dark) {
+    @media (hover: hover) {
+      .area .area button.secondary:hover {
+        background-color: var(--accent);
+      }
+    }
   }
   button.ghost {
     color: var(--foreground);
@@ -1549,7 +1597,7 @@
   }
   .facts {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(min(14rem, 100%), 1fr));
     gap: 0.5rem 1rem;
     margin: 0;
   }
@@ -1708,6 +1756,62 @@
       min-width: 7.5rem;
       max-width: 7.5rem;
       overflow-wrap: normal;
+    }
+    .grid.quotas tr {
+      display: grid;
+      grid-template-columns: minmax(6rem, 1fr) auto auto auto;
+      align-items: baseline;
+      row-gap: 0.125rem;
+    }
+    .grid.quotas td {
+      display: block;
+      padding: 0;
+      white-space: nowrap;
+    }
+    .grid.quotas td::before {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+    }
+    .grid.quotas td:first-child {
+      white-space: normal;
+      overflow-wrap: anywhere;
+    }
+    .grid.quotas td:nth-child(2),
+    .grid.quotas td:nth-child(3) {
+      --tw-numeric-spacing: tabular-nums;
+      font-variant-numeric: var(--tw-ordinal,) var(--tw-slashed-zero,) var(--tw-numeric-figure,) var(--tw-numeric-spacing,) var(--tw-numeric-fraction,);
+    }
+    .grid.quotas td:nth-child(2) {
+      margin-left: 0.375rem;
+    }
+    .grid.quotas td:nth-child(2)::after {
+      content: "\a0 de\a0";
+    }
+    .grid.quotas td:nth-child(4) {
+      margin-left: 0.25rem;
+      text-align: right;
+      white-space: normal;
+    }
+    .grid.quotas .quota-status {
+      --tw-font-weight: var(--font-weight-medium);
+      font-weight: var(--font-weight-medium);
+      color: var(--foreground);
+    }
+    .grid.quotas .quota-ok {
+      font-size: var(--text-support);
+      line-height: var(--tw-leading, var(--text-support--line-height));
+      color: var(--muted-foreground);
+      font-weight: 400;
+    }
+    @container (max-width: 18rem) {
+      .grid.quotas td:nth-child(4) {
+        grid-column: 1 / -1;
+        margin-left: 0;
+        text-align: left;
+      }
     }
   }
   .permissions {
@@ -1991,6 +2095,11 @@
 @property --tw-ring-offset-width { syntax: "<length>"; inherits: false; initial-value: 0px; }
 @property --tw-ring-offset-color { syntax: "*"; inherits: false; initial-value: #fff; }
 @property --tw-ring-offset-shadow { syntax: "*"; inherits: false; initial-value: 0 0 #0000; }
+@property --tw-ordinal { syntax: "*"; inherits: false; }
+@property --tw-slashed-zero { syntax: "*"; inherits: false; }
+@property --tw-numeric-figure { syntax: "*"; inherits: false; }
+@property --tw-numeric-spacing { syntax: "*"; inherits: false; }
+@property --tw-numeric-fraction { syntax: "*"; inherits: false; }
 @layer properties {
   @supports ((-webkit-hyphens: none) and (not (margin-trim: inline))) or ((-moz-orient: inline) and (not (color:rgb(from red r g b)))) {
     *,
@@ -2015,6 +2124,11 @@
       --tw-ring-offset-width: 0px;
       --tw-ring-offset-color: #fff;
       --tw-ring-offset-shadow: 0 0 #0000;
+      --tw-ordinal: initial;
+      --tw-slashed-zero: initial;
+      --tw-numeric-figure: initial;
+      --tw-numeric-spacing: initial;
+      --tw-numeric-fraction: initial;
     }
   }
 }

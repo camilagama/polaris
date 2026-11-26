@@ -342,15 +342,15 @@ async function expectCount(count: Locator, visible: string, spoken: string) {
   await expect(count.locator(".sr-only")).toHaveText(spoken);
 }
 
-test("a venda vazia não mostra o contador nem Adicionar item, e escolher o 1º produto não empurra o item", async ({
-  page,
-}) => {
-  await openSaleLab(page, "claro");
+/**
+ * Without a variant chosen the panel starts at its first field and draws no counter; the first choice brings the
+ * counter in and must leave the heading row and the item exactly where they were.
+ */
+async function expectCounterDoesNotPushItem(page: Page) {
   const items = page.getByRole("group", { exact: true, name: "Item 1" });
   const addItem = page.getByRole("button", { name: "Adicionar item" });
-  const count = page
-    .getByRole("region", { exact: true, name: "Itens" })
-    .locator("[data-slot=items-count]");
+  const region = page.getByRole("region", { exact: true, name: "Itens" });
+  const count = region.locator("[data-slot=items-count]");
   await expect(items.getByLabel("Produto ou variante")).toBeVisible();
   await expect(addItem).toHaveCount(0);
   await expect(count).toHaveCount(0);
@@ -358,15 +358,22 @@ test("a venda vazia não mostra o contador nem Adicionar item, e escolher o 1º 
   // the "Venda em andamento" bar above the card appears with the first choice, so the gap to the card's own title
   // is what shows whether the counter pushed the item
   const title = page.getByRole("heading", { exact: true, name: "Itens" });
+  const header = region.locator("[data-slot=block-header]");
   const top = async () =>
     ((await items.boundingBox())?.y ?? Number.NaN) -
     ((await title.boundingBox())?.y ?? Number.NaN);
+  const headerHeight = async () =>
+    (await header.boundingBox())?.height ?? Number.NaN;
   const before = await top();
+  const headerBefore = await headerHeight();
   await pickShirt(page);
   const quantity = items.getByLabel("Quantidade");
   await expect(quantity).toBeVisible();
   await expectCount(count, "1 linha · 1 unidade", "1 linha, 1 unidade");
   await expect(addItem).toBeVisible();
+  expect(Math.abs((await headerHeight()) - headerBefore)).toBeLessThanOrEqual(
+    1
+  );
   expect(Math.abs((await top()) - before)).toBeLessThanOrEqual(1);
 
   await addItem.click();
@@ -374,6 +381,21 @@ test("a venda vazia não mostra o contador nem Adicionar item, e escolher o 1º 
     page.getByRole("group", { exact: true, name: "Item 2" })
   ).toBeVisible();
   await expectCount(count, "1 linha · 1 unidade", "1 linha, 1 unidade");
+}
+
+test("a venda vazia não mostra o contador nem Adicionar item, e escolher o 1º produto não empurra o item", async ({
+  page,
+}) => {
+  await openSaleLab(page, "claro");
+  await expectCounterDoesNotPushItem(page);
+});
+
+test("a 360 px, escolher o 1º produto não muda a altura do cabeçalho de Itens nem empurra o item", async ({
+  page,
+}) => {
+  await page.setViewportSize({ height: 740, width: 360 });
+  await openSaleLab(page, "claro");
+  await expectCounterDoesNotPushItem(page);
 });
 
 test("Itens, Pagamento e Resumo são anunciados uma vez só pelo nome: região sem grupo nem complementar com o mesmo nome", async ({
