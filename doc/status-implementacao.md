@@ -3759,3 +3759,33 @@ Origem: achado B do Diego no Pixel 6 (28/10): a venda montada em Vender sumia ao
 | Telas | Concluído (PR 1427, 2fdc0e25) | O recibo do Detalhe e o Resumo logo depois de confirmar trocam o bloco de pagamento por uma lista de nome "Pagamento em 2 partes" (método por extenso e valor de cada parte, "3x · Parcelado pelo lojista" no crédito, perfil, regra, taxas e prazo da parte, sem linha de soma) quando a venda tem 2 partes; a linha do Histórico junta os métodos pela posição ("Pix + Crédito", "Pix + Pix"); a explicação da devolução ganha "Devolva o dinheiro pelo mesmo meio de cada parte." A venda de 1 parte não muda. Sem contrato nem banco novo. |
 | Provas | Concluído (PR 1427, 2fdc0e25) | Vitest do modelo da venda, do recibo, do Resumo, da linha do Histórico e da frase da devolução; e2e a 320 px (letra de 16 e de 20 px) do recibo (soma das partes = total devido, nome acessível, axe) e da linha do Histórico. |
 | Fora | Pendente | Valor da parcela ("3x de R$ …"), que pede uma regra de arredondamento que a venda não guarda; filtro por método (S6); offline do app (S5). |
+
+### Padronização visual das telas (cortes de 23/11; decisão do usuário G1 = A, G2 = B; sem migration)
+
+O comportamento está no `DESIGN.md` ("Peças de padrão"); aqui fica o estado de entrega. Sem migration, contrato nem regra de negócio.
+
+| Parte | Estado | O que há |
+| --- | --- | --- |
+| Peças `Block` e `SectionTabs` | Concluído (PR 1441, cf359671) | O cartão com moldura (`Block`) e a aba de tela (`SectionTabs`), em `ui/`, com galeria. |
+| Peça `ListBlock` | Concluído (PR 1472, 67997905) | A lista ou tabela principal na moldura, o `Block` plain e as peças da lista (`ListTotalFooter`, `ListNotice`, `RowTile`) em `ui/`. |
+| Painéis internos | Concluído (PR 1477, 426eb522) | `InsetBlock`, `FieldGroup`, `CheckableOption` e `StepTile` em `ui/`, com galeria e testes. |
+| Tom `destructive` | Concluído (PR 1533, 54a041cc) | A confirmação destrutiva na linha com um só desenho, anel a 60%. |
+| Aba de tela | Concluído (PR 1470, 7b849ff4; PR 1487, a31a7e84) | Resultado, Despesas e o diálogo do produto usam o `SectionTabs`; a aba é em linha, com traço de 2 px em tinta. |
+| Filtro | Concluído (PR 1502, c0aa9ec3) | Um só controle de filtro em Despesas e na prévia da importação. |
+| Início, Resultado e Metas | Concluído (PR 1504, d93e40a9) | Nos `Block`. |
+| Despesas | Concluído (PR 1534, decda028) | `Block` e `ListBlock`, Anular no menu "…" e o mês em `Button`. |
+| Produtos e Categorias | Concluído (PR 1503, b2c530c9) | Na `ListBlock`, o formulário de categoria no `Block`, painéis de variante e imagem em `InsetBlock`. |
+| Clientes | Concluído (PR 1493, d96e72fe) | Na `ListBlock`, duplicados no `FieldGroup`. |
+| Estoque | Concluído (PR 1495, 0987e380) | Na `ListBlock` "Saldos em estoque", vazio em `EmptyState`, painel de comando em `InsetBlock`. |
+| Configurações da loja | Concluído (PR 1499, 1b284523) | `Block` e `ListBlock`, menu "…" em Formas de receber. |
+| Assinatura e Seus dados | Concluído (PR 1498, 94ecfed9) | Em `Block` e `InsetBlock`. |
+| Troca de senha e Ajuda | Concluído (PR 1500, 9c5b1b5d) | Em `Block`, junto com a moldura de `entry-ui`. |
+| Aparelhos | Concluído (PR 1507, 8f60f346) | `Block` e `ListBlock`, Sair em `Button` e o chip da sincronização em `Badge`. |
+| Detalhe da venda | Concluído (PR 1494, 364d1e11) | O detalhe e os painéis internos em `Block` e `InsetBlock`. |
+| Histórico de vendas | Concluído (PR 1479, e5945ad4) | Na `ListBlock` "Vendas do período". |
+| Venda | Concluído (PR 1551, 6696da4f) | Itens e Pagamento em `Block`; o Resumo e o aviso sem id no `Block` plain. |
+| Moldura à mão (R3): legal | Concluído (PR 1505, 9cff901b) | A tabela no contêiner de `ui/table` e o Sumário em `InsetBlock`. |
+| Moldura à mão (R3): catálogo | Concluído (PR 1526, 406df572) | O diálogo do produto na `FieldGroup`, `CheckableOption` e `InsetBlock`. |
+| Moldura à mão (R3): menu | Concluído (PR 1561, a40212e5) | O selo "Assinatura" do menu no `Badge` e o `ActionStrip` em `ui/`. |
+| Trava `ui-pattern-rules.test.ts` | Concluído (PR 1441, cf359671; PR 1472, 67997905) | A trava e a lista de dívida (PR 1441) e as regras R4 e R5 (PR 1472): R1 a R5, com R5 só como aviso. A dívida é uma lista por regra que só encolhe; as exceções que ficam vão no `ALLOWLIST`, só com as razões `chart-bubble` e `thumbnail`. |
+| Fora | Pendente | Arquivos ainda na lista de dívida da trava em R2 e R4; o ritmo da página, que é decisão do usuário (Q5); a passada visual por área. |
