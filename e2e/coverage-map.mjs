@@ -769,8 +769,18 @@ export const SPEC_SCREENS = {
     "home",
     "dashboard",
   ],
+  "apps/web/e2e-real/jornadas/importacao-de-produtos.e2e.ts": [
+    "home",
+    "sale",
+    "products",
+  ],
   "apps/web/e2e-real/jornadas/inicio-grade.e2e.ts": ["home"],
   "apps/web/e2e-real/jornadas/inicio.e2e.ts": ["home"],
+  "apps/web/e2e-real/jornadas/meta.e2e.ts": [
+    "home",
+    "dashboard",
+    "sale-detail",
+  ],
   "apps/web/e2e-real/jornadas/onboarding.e2e.ts": [
     "home",
     "products",
