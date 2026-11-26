@@ -76,10 +76,11 @@ export function formatQuantity(value: number): string {
 const KB = 1000;
 const MB = 1_000_000;
 
-/** A file size the way screens write it: "820 KB" under a megabyte (never below "1 KB"), "1,2 MB" from a megabyte up. */
+/** A file size the way screens write it: "820 KB" under a megabyte (never below "1 KB", never "1000 KB"), "1,2 MB" once the KB figure would round to 1000. */
 export function formatFileSize(bytes: number): string {
-  if (bytes < MB) {
-    return `${Math.max(1, Math.round(bytes / KB))} KB`;
+  const kilobytes = Math.max(1, Math.round(bytes / KB));
+  if (kilobytes < MB / KB) {
+    return `${kilobytes} KB`;
   }
   return `${(bytes / MB).toFixed(1).replace(".", ",")} MB`;
 }
