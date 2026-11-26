@@ -2,6 +2,7 @@
 // Only types from Playwright: `ui-screens.ts` is read under Vitest by the source rules.
 import type { Page, Route } from "@playwright/test";
 import { hold, json, settle } from "./ui-entry-states";
+import { serveHealth } from "./worker-mark";
 
 /**
  * The states of the first access (no organization yet), of the acceptance (`/aceite`) and of the legal texts the
@@ -228,6 +229,28 @@ export const acceptanceStates = {
     await page.getByRole("checkbox").click();
     await page.getByRole("button", { name: "Aceitar e continuar" }).click();
     await page.getByRole("button", { name: "Registrando o aceite…" }).waitFor();
+    await settle(page);
+  },
+};
+
+/** The shell of someone signed in whose list of stores does not open: the panel "Não foi possível abrir o Polaris". */
+export const organizationGateStates = {
+  failed: async (page: Page) => {
+    await signedIn(page);
+    await serveHealth(page);
+    await page.route("**/rpc/**", (route) => {
+      if (procedureOf(route) === "organization/listMine") {
+        return route.fulfill(rpcError("INTERNAL_SERVER_ERROR", 500));
+      }
+      return route.abort("internetdisconnected");
+    });
+    await page.goto("/products");
+    await page
+      .getByRole("heading", {
+        level: 1,
+        name: "Não foi possível abrir o Polaris",
+      })
+      .waitFor();
     await settle(page);
   },
 };

@@ -5,6 +5,7 @@ import {
   acceptanceStates,
   firstAccessStates,
   legalStates,
+  organizationGateStates,
 } from "./ui-account-states";
 import { openSaleAction } from "./sale-detail-fixture";
 import { attentionStates, deviceStates } from "./ui-device-states";
@@ -1050,4 +1051,9 @@ export const SCREENS: UiScreen[] = [
   settingsScreen("ajuda", settingsStates.help),
   settingsScreen("configurações lista", settingsStates.list),
   settingsScreen("seus dados com cópias", settingsStates.yourData),
+  {
+    name: "peças do shell loja que não abriu",
+    open: organizationGateStates.failed,
+    sourceDirs: [...SHELL_PIECE_SOURCES, "src/app-shell/app-shell.tsx"],
+  },
 ];
