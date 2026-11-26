@@ -48,7 +48,7 @@ O evlog solta versões com frequência e o 3.0 está em beta; ele roda em todo W
 - **Changelog antes.** O PR cita as notas de cada versão entre a atual e a nova e diz o que muda em `initLogger`, nas chaves reservadas, no `environment`, na redação e no formato de saída. O que o logger recusa ou mascara não pode mudar sem o teste de `logger.test.ts` e `redaction.test.ts` dizendo o mesmo.
 - **Sem beta nem major sem rodada.** Pré-lançamento (`beta`, `rc`, `next`) não entra. Uma versão major, nem a 3.0 estável, entra sem desenho curto, revisão do Rodrigo (logs e dados pessoais) e um ADR que emenda este.
 - **Integridade no `bun.lock`.** O diff do `bun.lock` traz só a entrada do `evlog` (versão e `sha512`) e as transitivas que o changelog explica; `bun install --frozen-lockfile` passa e o `sha512` confere com o do registro (`bun pm view evlog@<versão> dist.integrity`). Vale também a idade mínima do `bunfig.toml`; atalho só pelo caminho de atualização urgente do [dependency-audit](../runbooks/dependency-audit.md).
-- **Prova.** `bun run --filter @polaris/observability test`, `bun run boundaries` e `bun run knip` verdes; o PR diz que a saída do `console` segue um objeto por chamada, com `event`, `level`, `service`, `timestamp` e `environment`.
+- **Prova.** `bunx vitest run packages/observability` (o pacote não tem script `test`; os testes rodam pelo vitest da raiz), `bun run boundaries` e `bun run knip` verdes; o PR diz que a saída do `console` segue um objeto por chamada, com `event`, `level`, `service`, `timestamp` e `environment`.
 
 ## Consequências
 
