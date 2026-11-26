@@ -756,6 +756,7 @@ Criar e verificar as configurações Hyperdrive (cache desativado, `AUTH_HYPERDR
 | Domínio, banco e RPC | Concluídos | `normalizeVariantListPrice`; migration 0044 (`list_price`, CHECK de escala e limite, GRANT de UPDATE só na coluna); `setProductVariantListPrice` (versionado, auditado, idempotente); `product.setVariantListPrice`; `listPrice` nas variantes e nas entradas de saldo. |
 | Interface | Concluída | Seção "Preço de tabela das variantes" no painel de variantes (vírgula ou ponto, vazio remove) e pré-preenchimento dos preços do item ao escolher a variante na venda. |
 | Gate Neon PostgreSQL 18 | Concluído | `gate2-runtime` cobre normalização, versão, repetição sem mudança, conflito de versão, valores inválidos e os CHECKs do banco; `read-models` continua verde. |
+| Combinações herdam o preço (t2000) | Em revisão | `configureProductVariants` grava em cada combinação criada o preço de tabela da variante padrão que ela substitui (sem preço continua sem preço); antes o preço sumia com a variante padrão. Sem migration, contrato ou tela; combinações criadas antes seguem sem preço e se corrigem em "Salvar preço". Prova: gate `inventory` da suíte `ci` (3 combinações a 49,90, variante padrão removida, versão 2, auditoria igual, trocar uma muda só ela; sem preço, nulo); o `gate2-runtime`, só de Neon, ganha a conferência do caso sem preço. |
 
 ### PR51 — Sync change log (implementação, gate Neon e verificações locais concluídos; publicação: ver linha abaixo)
 

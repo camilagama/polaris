@@ -31,8 +31,10 @@ import {
   configureProductVariants,
   createProduct,
   deleteProduct,
+  getProductVariants,
   listProducts,
   restoreProduct,
+  setProductVariantListPrice,
   setProductVariantSku,
 } from "../src/product-repository";
 import { stockMovements } from "../src/schema/inventory";
@@ -1357,6 +1359,113 @@ async function main(): Promise<void> {
           })
       ),
       ProductDefaultVariantStockHistoryConflictError
+    );
+
+    // The configuration deletes the default variant: its list price passes to every combination it creates.
+    const configureSizes = (productId: string) =>
+      withTenant(runtime.database, fixtureA, "product:update", (tx, identity) =>
+        configureProductVariants(tx, identity, {
+          expectedVersion: 1,
+          id: productId,
+          options: [{ name: "size", values: ["P", "M", "G"] }],
+          requestId: randomUUID(),
+          variants: [
+            { values: { size: "P" } },
+            { values: { size: "M" } },
+            { values: { size: "G" } },
+          ],
+        })
+      );
+    const readVariants = (productId: string) =>
+      withTenant(runtime.database, fixtureA, "catalog:read", (tx, identity) =>
+        getProductVariants(tx, identity, productId)
+      );
+    const pricedProduct = await withTenant(
+      runtime.database,
+      fixtureA,
+      "product:create",
+      (tx, identity) =>
+        createProduct(tx, identity, {
+          listPrice: "49.9",
+          name: `PR28 priced-variants ${randomUUID()}`,
+          requestId: randomUUID(),
+        })
+    );
+    const pricedDefaultId = await getDefaultVariantId(
+      runtime.database,
+      fixtureA,
+      pricedProduct.id
+    );
+    const pricedConfiguration = await configureSizes(pricedProduct.id);
+    assert.equal(pricedConfiguration.product.version, 2);
+    const pricedVariants = await readVariants(pricedProduct.id);
+    assert.equal(pricedVariants.productVersion, 2);
+    assert.deepEqual(
+      pricedVariants.variants.map((variant) => [
+        variant.isDefault,
+        variant.listPrice,
+      ]),
+      [
+        [false, "49.90"],
+        [false, "49.90"],
+        [false, "49.90"],
+      ],
+      "every combination starts with the default variant's list price"
+    );
+    assert.equal(
+      pricedVariants.variants.some((variant) => variant.id === pricedDefaultId),
+      false,
+      "the configuration still removes the default variant"
+    );
+    const pricedAudit = await admin.pool.query<{ event_type: string }>(
+      "SELECT event_type FROM public.tenant_audit_event " +
+        "WHERE organization_id = $1 AND entity_id = $2 ORDER BY event_type",
+      [fixtureA.organizationId, pricedProduct.id]
+    );
+    assert.deepEqual(
+      pricedAudit.rows.map((row) => row.event_type),
+      ["product.created", "product.variants_configured"]
+    );
+    const [pricedSmall, pricedMedium, pricedLarge] = pricedVariants.variants;
+    assert.ok(pricedSmall && pricedMedium && pricedLarge);
+    const repricedSmall = await withTenant(
+      runtime.database,
+      fixtureA,
+      "product:update",
+      (tx, identity) =>
+        setProductVariantListPrice(tx, identity, {
+          expectedVersion: 2,
+          id: pricedProduct.id,
+          listPrice: "59.90",
+          requestId: randomUUID(),
+          variantId: pricedSmall.id,
+        })
+    );
+    assert.equal(repricedSmall.changed, true);
+    assert.deepEqual(
+      (await readVariants(pricedProduct.id)).variants.map((variant) => [
+        variant.id,
+        variant.listPrice,
+      ]),
+      [
+        [pricedSmall.id, "59.90"],
+        [pricedMedium.id, "49.90"],
+        [pricedLarge.id, "49.90"],
+      ],
+      "repricing one inherited combination leaves the others alone"
+    );
+    const unpricedProductId = await createTestProduct(
+      runtime.database,
+      fixtureA,
+      "unpriced-variants"
+    );
+    await configureSizes(unpricedProductId);
+    assert.deepEqual(
+      (await readVariants(unpricedProductId)).variants.map(
+        (variant) => variant.listPrice
+      ),
+      [null, null, null],
+      "a default variant without a list price leaves the combinations unpriced"
     );
 
     const unknownCostProductId = await createTestProduct(

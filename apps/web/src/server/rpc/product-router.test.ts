@@ -188,7 +188,7 @@ describe("product RPCs", () => {
         {
           id: "0199c2d0-0000-7000-8000-000000000005",
           isDefault: false,
-          listPrice: null,
+          listPrice: "49.90",
           position: 0,
           sku: null,
           values: [
