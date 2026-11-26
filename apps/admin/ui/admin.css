@@ -994,7 +994,7 @@
   .content :where(ol) {
     list-style: decimal;
   }
-  .content :where(h2, h3, h4) {
+  .content :where(h2, h3, h4, h5) {
     margin: 1rem 0 0.5rem;
   }
   .content :where(h2, h3) {
@@ -1003,7 +1003,7 @@
     letter-spacing: var(--tw-tracking, var(--text-section--letter-spacing));
     font-weight: var(--tw-font-weight, var(--text-section--font-weight));
   }
-  .content :where(h4) {
+  .content :where(h4, h5) {
     font-size: var(--text-sm);
     line-height: var(--tw-leading, var(--text-sm--line-height));
     --tw-font-weight: var(--font-weight-semibold);

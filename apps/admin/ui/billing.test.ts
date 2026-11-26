@@ -181,6 +181,25 @@ async function confirmRefund(
   await flush();
 }
 
+const HEADING = /^h[1-6]$/;
+
+describe("the title of the review keeps the outline without a jump on the page of its own", () => {
+  it("goes h2 to h3 to h4 when the review opens, and keeps its id and tabindex", async () => {
+    const page = await read(billing());
+    openCancel(page);
+    const levels = allElements(page.section)
+      .filter((element) => HEADING.test(element.tagName))
+      .map((element) => Number(element.tagName.slice(1)));
+    expect(levels).toEqual([2, 3, 3, 4]);
+    for (const [index, level] of levels.entries()) {
+      expect(level - (levels[index - 1] ?? 1)).toBeLessThan(2);
+    }
+    const review = byId(page.section, "cobranca-revisao");
+    expect(review.tagName).toBe("h4");
+    expect(review.getAttribute("tabindex")).toBe("-1");
+  });
+});
+
 describe("the billing is read on a click, and the actions come after it (AC-P10.4)", () => {
   it("shows the facts of the renewal and offers the two actions, with the sentence that replaces the v1's", async () => {
     const page = await read(billing());

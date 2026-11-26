@@ -40,7 +40,7 @@ const HOSTILE = [
   "‮abc",
   '"><svg onload=1>',
 ];
-const LEVEL = /^h([1-4])$/;
+const LEVEL = /^h([1-5])$/;
 const ACTION_IN_ATENDIMENTO = /(ação|ações) do atendimento aberto desta loja/;
 const NEVER_CREATED = ["script", "img", "svg", "iframe"];
 const MANAGE_ONLY = {
@@ -612,16 +612,20 @@ describe("Loja", () => {
       expect(title.getAttribute("tabindex")).toBe("-1");
     });
 
-    it("keeps the review's own title at h4 beside Cobrança lida, with no jump", async () => {
+    it("puts the review's title one level under Cobrança lida, h3 to h4 to h5, and keeps its id, tabindex and focus", async () => {
       const billing = await billingRead();
       buttons(billing, "Cancelar a renovação")[0]?.click();
       await flush();
 
       const levels = outline(billing);
-      expect(levels.map((heading) => heading.level)).toEqual([2, 3, 4, 4, 4]);
+      expect(levels.map((heading) => heading.level)).toEqual([2, 3, 4, 4, 5]);
+      expect(levels.at(-1)?.text).toBe("Revise antes de cancelar a renovação");
       for (const [index, heading] of levels.entries()) {
         expect(heading.level - (levels[index - 1]?.level ?? 1)).toBeLessThan(2);
       }
+      const review = byId(billing, "cobranca-revisao");
+      expect(review.tagName).toBe("h5");
+      expect(review.getAttribute("tabindex")).toBe("-1");
     });
 
     it("keeps the size of the h3 on the h4s that replace it, and only those", async () => {
