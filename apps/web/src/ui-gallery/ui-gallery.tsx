@@ -186,7 +186,6 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/ui/tabs";
 import { TextLink } from "@/ui/text-link";
 import { Textarea } from "@/ui/textarea";
-import { ThemeSegmented } from "@/ui/theme-segmented";
 import { ThemeSwitch } from "@/ui/theme-switch";
 import { Thumbnail, type ThumbnailSize } from "@/ui/thumbnail";
 import { ToastProvider, toastManager } from "@/ui/toast";
@@ -1802,9 +1801,6 @@ export function UiGallery() {
                 <Logo />
                 Polaris
               </p>
-              <div className="w-60">
-                <ThemeSegmented />
-              </div>
             </div>
             {/* the parts of the sidebar that are not fixed to the window (the column itself is in the shell) */}
             <div className="w-60 rounded-lg bg-sidebar text-sidebar-foreground">

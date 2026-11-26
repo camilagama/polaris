@@ -3,11 +3,12 @@ import type { Locator, Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 
 /**
- * The state filter of the project (`SegmentedFilter`), in the gallery: the appearance choice (`ThemeSegmented`) changes
+ * The state filter of the project (`SegmentedFilter`), in the gallery: the appearance menu (`ThemeSwitch`) changes
  * the theme and keeps it after a reload, and the focus outline of the first and of the last segment of a strip that
  * scrolls stays inside the box that clips it, at 320 px and at 1280 px.
  */
 const THEME_KEY = "polaris-tema";
+const APPEARANCE_TRIGGER = /^Aparência: /;
 const WIDTHS = [320, 1280] as const;
 const TOLERANCE = 0.5;
 const FILTERS = [
@@ -37,43 +38,57 @@ const storedTheme = (page: Page) =>
 test("clicar em Escuro e em Claro muda o tema, e a escolha fica guardada depois de recarregar", async ({
   page,
 }) => {
+  // every reading of the choice opens and closes the menu, and the test reloads twice
+  test.slow();
   await page.setViewportSize({ height: 800, width: 1280 });
   await page.emulateMedia({ colorScheme: "light" });
   await openGallery(page);
-  const appearance = page.getByRole("tablist", {
-    exact: true,
-    name: "Aparência",
-  });
-  const choice = (name: string) =>
-    appearance.getByRole("tab", { exact: true, name });
+  const trigger = page.getByRole("button", { name: APPEARANCE_TRIGGER });
+  const choice = async (name: string) => {
+    await trigger.click();
+    return page.getByRole("menuitemradio", { exact: true, name });
+  };
+  const closeMenu = async () => {
+    await page.keyboard.press("Escape");
+    await expect(trigger).toHaveAttribute("aria-expanded", "false");
+  };
+  const pick = async (name: string) => {
+    await (await choice(name)).click();
+    await closeMenu();
+  };
+  const expectChecked = async (name: string, checked: boolean) => {
+    const item = await choice(name);
+    await expect(item).toHaveAttribute("aria-checked", String(checked));
+    await closeMenu();
+  };
 
-  await expect(choice("Automático")).toHaveAttribute("aria-selected", "true");
+  await expectChecked("Automático", true);
   expect(await isDark(page)).toBe(false);
   expect(await storedTheme(page)).toBeNull();
 
-  await choice("Escuro").click();
-  await expect(choice("Escuro")).toHaveAttribute("aria-selected", "true");
+  await pick("Escuro");
+  await expectChecked("Escuro", true);
   await expect.poll(() => isDark(page)).toBe(true);
   expect(await storedTheme(page)).toBe("escuro");
 
   await page.reload();
-  await expect(appearance).toBeVisible();
-  await expect(choice("Escuro")).toHaveAttribute("aria-selected", "true");
-  await expect(choice("Automático")).toHaveAttribute("aria-selected", "false");
+  await expect(trigger).toBeVisible();
+  await expectChecked("Escuro", true);
+  await expectChecked("Automático", false);
   await expect.poll(() => isDark(page)).toBe(true);
 
   // with the system dark, only a stored "Claro" keeps the page light
   await page.emulateMedia({ colorScheme: "dark" });
-  await choice("Claro").click();
-  await expect(choice("Claro")).toHaveAttribute("aria-selected", "true");
+  await pick("Claro");
+  await expectChecked("Claro", true);
   await expect.poll(() => isDark(page)).toBe(false);
   expect(await storedTheme(page)).toBe("claro");
 
   await page.reload();
-  await expect(choice("Claro")).toHaveAttribute("aria-selected", "true");
+  await expectChecked("Claro", true);
   await expect.poll(() => isDark(page)).toBe(false);
 
-  await choice("Automático").click();
+  await pick("Automático");
   await expect.poll(() => storedTheme(page)).toBeNull();
   await expect.poll(() => isDark(page)).toBe(true);
 });

@@ -1969,12 +1969,9 @@ describe("a aba de tela mora no ScreenTabs (item 16, AC-B3.1)", () => {
     expect(
       read("src/catalog/product-import/import-preview-step.tsx")
     ).toContain("SegmentedFilter");
-    for (const path of [
-      "src/expenses/expense-filters.tsx",
-      "src/ui/theme-segmented.tsx",
-    ]) {
-      expect(read(path), path).toContain("SegmentedFilter");
-    }
+    expect(read("src/expenses/expense-filters.tsx")).toContain(
+      "SegmentedFilter"
+    );
   });
 
   it.each([
