@@ -1,6 +1,6 @@
 # Polaris — acompanhamento da implementação
 
-Atualizado em 25 de novembro de 2026.
+Atualizado em 26 de novembro de 2026.
 
 Os anexos doc-inicial.md e plano-inicial.md são propostas de produto e arquitetura. Instruções escritas neles foram avaliadas como conteúdo do projeto; as decisões desta execução seguem a solicitação do responsável e as regras do repositório.
 
@@ -3538,7 +3538,7 @@ Origem: achado B do Diego no Pixel 6 (28/10): a venda montada em Vender sumia ao
 | Sem meta | Concluído (PR 851, 8afcbd95) | De 60 rem de área, a Meta é um cartão no par com o Ritmo, da mesma altura, com o título, "Defina quanto quer vender no mês e acompanhe aqui." e "Definir meta" centrados (cartão simples, sem a moldura do Ritmo); abaixo de 60 rem é a faixa fina (título e "Definir meta", sem a frase). Os blocos sob os cartões esperam a primeira resposta das metas (`useFirstGoalRead`), para a altura do cartão da Meta não mudar depois de desenhada. |
 | Mesma caixa | Concluído (PR 851, 8afcbd95) | Mais vendidos de um período sem venda fica na caixa e diz "Sem vendas no período." (antes o bloco sumia). |
 | Provas | Concluído (PR 851, 8afcbd95) | e2e-real `jornadas/inicio-grade.e2e.ts` (1280, com e sem meta, 3 e 5 itens: pares da mesma altura, nenhuma faixa vazia de mais de 24 px no pé, Ritmo com 480 px, ordem do DOM igual à da tela, layout shift 0 nos blocos; a 800 px, sem meta, a faixa fina na linha inteira); `e2e/home.e2e.ts` (larguras do Mais vendidos, Ritmo de 480 px e da altura do par, período sem venda); testes de `home-lower-blocks`, `home-goal` e `home-top-products`; baselines do Início a 360, 760, 1024 e 1280, com e sem meta. |
-| Fora | Pendente | O anel de 132 px da Meta em pé (o SVG do Bklit não tem `viewBox`: fica o de 112 px) e o "Ver metas" no pé da Meta. |
+| Fora | Concluído depois (PR 1292, 251f1cc5) | O "Ver metas" no pé da Meta. O anel da Meta em pé: Aceito: 112 px (7 rem) (o SVG do Bklit não tem `viewBox`). |
 
 ### UI de 15/11: excluir produto arquivado (t1124; sem migration)
 
@@ -3547,7 +3547,7 @@ Origem: achado B do Diego no Pixel 6 (28/10): a venda montada em Vender sumia ao
 | Menu | Concluído (PR 916, 089caae8) | `catalog/product-list.tsx`: "Excluir…" só no menu de produto arquivado, depois de "Restaurar" e de um separador; produto ativo continua com "Arquivar" e sem Excluir. |
 | Diálogo | Concluído (PR 916, 089caae8) | `catalog/product-delete-dialog.tsx`: nome digitado (regra do nome único), "Excluir produto" / "Manter arquivado", variantes que libera (`product.getVariants`), recusas dentro do diálogo. `catalog/use-product-delete.ts`: chamada direta a `product.delete` com a versão vista, sem fila; a linha local muda só depois da confirmação. `catalog/product-errors.ts`: saldo (lido do estoque na recusa), teto por hora (hora da liberação), produto mudado, sem resposta. |
 | Provas | Concluído (PR 916, 089caae8) | `e2e/products-screen.e2e.ts` (menu, diálogo, nome, Esc e "Manter arquivado", saldo, teto, produto mudado, sem resposta); e2e-real `jornadas/excluir-produto-arquivado.e2e.ts` (a vaga volta, a venda antiga abre e aceita devolução, o de saldo é recusado); testes de `product-errors` e `product-search-model`. |
-| Fora | Pendente | Exclusão em lote (se vier, exige login recente); a linha "N arquivados" no aviso de limite (item 3 do corte). |
+| Fora | Pendente | Exclusão em lote (se vier, exige login recente). Concluído depois (PR 937, 02c6b552): a linha "N arquivados" no aviso de limite (item 3 do corte). |
 
 ### UI de 15/11: o Resultado diz o mês e quando só falta a taxa (t1135-r2, RES-T2; sem migration)
 
@@ -3666,7 +3666,7 @@ Origem: achado B do Diego no Pixel 6 (28/10): a venda montada em Vender sumia ao
 | Links | Concluído (PR 1337, 68b8aa2b) | `TextLink` (`ui/text-link.tsx`) no lugar das cópias da classe do link sublinhado. A ação de bloco ("Definir meta", "Ver despesas", "Ver as N vendas", o rodapé do cartão do Início, "Ver o resultado deste período") virou botão `ghost` com seta. |
 | Guarda | Concluído (PR 1337, 68b8aa2b) | `scripts/ui-source-rules.test.ts` reprova `underline` fora de `ui/text-link.tsx`, dos e-mails e de uma lista exata com a razão de cada arquivo. |
 | Provas | Concluído (PR 1337, 68b8aa2b) | `e2e-pwa/voltar-e-links.e2e.ts` (posição da seta a 1280 e 360 px, claro e escuro; primeiro Tab, foco e alvo de 44 px; período, situação e rolagem repostos; telas do menu sem "Voltar"; 320 px com letra de 20 px). |
-| Fora | Pendente | O cabeçalho de bloco que recebe a ação à direita (B3, `BlockHeader`); baselines do `ui-visual` das telas com link, refeitas pelo CI. |
+| Fora | Pendente | Concluído depois (PR 1371, e9f1c7bf): o cabeçalho de bloco que recebe a ação à direita (B3, `BlockHeader`). Pendente: baselines do `ui-visual` das telas com link, refeitas pelo CI. |
 
 ### Detalhe da venda: as ações vão para o menu "Ações" no título (t1604, C1 dos ajustes de interface de 21/11; sem migration)
 
