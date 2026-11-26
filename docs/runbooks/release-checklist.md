@@ -290,7 +290,7 @@ O `deploy-production.yml` promove a ponta de `main` a produção, no molde do de
 
 ### 31. Medida "voltou ao app" (M3) no ar antes da primeira promoção (BLOCK, proposta)
 
-- Critério: vale para a primeira promoção a produção (go-live) e para toda promoção enquanto ela não tiver passado uma vez. O M3 do [ADR 0106](../adr/0106-avisos-de-ativacao-e-medida-de-comportamento.md) é a linha de base que a série de dicas vai comparar, e tem de estar no ar **desde o 1º dia da produção**, mesmo que a série nunca ligue. Isso exige no SHA candidato as três partes, nesta ordem:
+- Critério: vale para a primeira promoção a produção (go-live) e para toda promoção enquanto a medida não tiver estado no ar uma vez. O M3 do [ADR 0106](../adr/0106-avisos-de-ativacao-e-medida-de-comportamento.md) é a linha de base que a série de dicas vai comparar, e tem de estar no ar **desde o 1º dia da produção**, mesmo que a série nunca ligue. Isso exige no SHA candidato as três partes, nesta ordem:
   - (A) o contrato do funil e a tela do Admin aceitam e mostram a célula "voltou / nunca voltou" (célula ausente ou nula mostra "não disponível", nunca 0), com o texto do viés junto da coluna;
   - (B) a manutenção horária do Worker web chama `activation_return_freeze()`, antes do aviso de cobrança, e uma falha vai para a lista de falhas sem derrubar os outros passos;
   - (C) a migration que faz a função do funil ler `activation_return_weeks` (expand, sem leitura de `session` pelo Admin) aplicada.
