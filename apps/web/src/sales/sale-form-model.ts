@@ -3328,7 +3328,10 @@ export interface QueuedSaleView {
  * SAME sale (same command ID, same payload), which the server then recognizes
  * instead of recording twice, only when the device command can carry exactly
  * what was sent: the offline command carries the payment profile (by id and
- * version) but not a typed date, and records one instant for both times.
+ * version) and each part of a split payment, in order, with its amount and
+ * profile, but not a typed date, and records one instant for both times. The
+ * caller queues the body only if it resolves to the locked attempt itself (its
+ * signature covers the parts), so nothing of the sent body is recomputed.
  */
 export function canKeepLockedSaleOnDevice(
   state: SubmissionState,
@@ -3339,7 +3342,6 @@ export function canKeepLockedSaleOnDevice(
     state.phase === "locked" &&
     attempt !== null &&
     evaluation.body !== null &&
-    evaluation.body.payments === undefined &&
     evaluation.occurredAtOverride === null &&
     attempt.occurredAt === attempt.recordedAt
   );

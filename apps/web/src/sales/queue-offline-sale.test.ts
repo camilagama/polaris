@@ -8,7 +8,12 @@ import { pendingSales } from "../offline/sale-confirm";
 import { FakeWriter } from "../offline/test-support";
 import { confirmOnDevice } from "./confirm-outcome";
 import { queueOfflineSale } from "./queue-offline-sale";
-import type { PreparedConfirmation, SaleAttempt } from "./sale-form-model";
+import {
+  type PreparedConfirmation,
+  prepareConfirmation,
+  type SaleAttempt,
+  type SaleCommandBody,
+} from "./sale-form-model";
 
 const key = { id: "k1", secret: "s".repeat(40) };
 const userId = "user-1";
@@ -315,5 +320,82 @@ describe("a sale with a payment profile", () => {
       queueOfflineSale({ labels, request, stores })
     ).rejects.toThrow();
     expect((await outbox.snapshot()).commands).toHaveLength(0);
+  });
+});
+
+describe("a locked sale in parts kept on the device", () => {
+  const card = {
+    expectedVersion: 4,
+    id: "0199c2d0-0000-7000-8000-0000000000c1",
+  };
+  const body = (cardVersion: number): SaleCommandBody => ({
+    adjustments: [],
+    commandVersion: 1,
+    items: [
+      {
+        chargedUnitPrice: "45.00",
+        listedUnitPrice: "55.00",
+        quantity: 2,
+        variantId: shirt,
+      },
+    ],
+    payments: [
+      {
+        amount: "40.00",
+        anticipationRequested: false,
+        installmentPlan: null,
+        installments: null,
+        method: "pix",
+        paymentProfile: null,
+      },
+      {
+        amount: "50.00",
+        anticipationRequested: false,
+        installmentPlan: "merchant",
+        installments: 3,
+        method: "credit_card",
+        paymentProfile: { ...card, expectedVersion: cardVersion },
+      },
+    ],
+  });
+
+  it("queues the parts that were sent, deeply equal and in order, under the attempt's command ID and instant, even when the profile was edited since", async () => {
+    const { outbox, stores } = await setup();
+    const sent = prepareConfirmation({
+      body: body(card.expectedVersion),
+      createId: () => uuid(101),
+      now,
+      organizationId,
+      previousAttempt: null,
+    });
+    if (!sent.ok) {
+      throw new Error("the sent body is valid");
+    }
+    const kept = prepareConfirmation({
+      attemptUnsettled: true,
+      body: body(card.expectedVersion + 1),
+      createId: () => uuid(999),
+      now: new Date(now.getTime() + 60_000),
+      occurredAtOverride: null,
+      organizationId,
+      previousAttempt: sent.attempt,
+    });
+    if (!kept.ok) {
+      throw new Error("the kept body is valid");
+    }
+    expect(kept.attempt).toBe(sent.attempt);
+
+    const outcome = await confirmOnDevice(kept, stores, labels);
+
+    expect(outcome.completed).toBe(true);
+    const { commands } = await outbox.snapshot();
+    expect(commands).toHaveLength(1);
+    expect(commands[0]?.commandId).toBe(sent.request.commandId);
+    const stored = commands[0]?.payload as Record<string, unknown>;
+    expect(stored.payments).toEqual(sent.request.payments);
+    expect(stored.occurredAt).toBe(sent.request.occurredAt);
+    expect(stored.recordedAt).toBe(sent.request.recordedAt);
+    expect(stored).not.toHaveProperty("payment");
+    expect(stored).not.toHaveProperty("paymentProfile");
   });
 });

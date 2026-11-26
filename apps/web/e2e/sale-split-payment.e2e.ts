@@ -416,10 +416,20 @@ test("sem internet: Dividir pagamento fica ligado, a venda dividida é guardada 
   expect(calls.bodies).toHaveLength(0);
 });
 
-/** The payloads of the commands this page keeps to send (IndexedDB stores named `commands`). */
-function queuedPayloads(page: Page): Promise<Record<string, unknown>[]> {
+interface QueuedCommand {
+  commandId: string;
+  payload: Record<string, unknown>;
+}
+
+/** The payloads of the commands this page keeps to send. */
+async function queuedPayloads(page: Page): Promise<Record<string, unknown>[]> {
+  return (await queuedCommands(page)).map((command) => command.payload);
+}
+
+/** The commands this page keeps to send (IndexedDB stores named `commands`). */
+function queuedCommands(page: Page): Promise<QueuedCommand[]> {
   return page.evaluate(async () => {
-    const payloads: Record<string, unknown>[] = [];
+    const payloads: QueuedCommand[] = [];
     for (const { name } of await indexedDB.databases()) {
       if (!name) {
         continue;
@@ -440,7 +450,8 @@ function queuedPayloads(page: Page): Promise<Record<string, unknown>[]> {
           request.onsuccess = () => resolve(request.result);
         });
         for (const row of rows) {
-          payloads.push((row as { payload: Record<string, unknown> }).payload);
+          const { commandId, payload } = row as QueuedCommand;
+          payloads.push({ commandId, payload });
         }
       }
       database.close();
@@ -653,4 +664,70 @@ test("a rede cai com a venda já dividida: Guardar neste aparelho guarda a venda
   expect(calls.bodies).toHaveLength(0);
   await expect(page.getByText(OWN_DATE_REFUSAL)).toHaveCount(0);
   await expect(page.getByText("Dividir precisa de internet")).toHaveCount(0);
+});
+
+test("1 venda com 2 partes: travada sem resposta, guardada no aparelho com as partes enviadas e o mesmo ID, e o servidor a recebe uma vez", async ({
+  page,
+}) => {
+  const calls = await openSaleLab(page, (route) =>
+    route.abort("connectionreset")
+  );
+  await sellShirtFor300(page);
+  await splitButton(page).click();
+  await chooseSelectOption(part(page, 1), "Método", "Pix");
+  await part(page, 1).getByLabel("Valor").fill("100,00");
+  await chooseSelectOption(
+    part(page, 1),
+    "Perfil de pagamento",
+    "Sem perfil de pagamento"
+  );
+  await chooseSelectOption(part(page, 2), "Método", "Débito");
+  await chooseSelectOption(part(page, 2), "Perfil de pagamento", LAB_PROFILE);
+  await page.getByRole("button", { name: "Confirmar venda" }).click();
+
+  const keep = page.getByRole("button", {
+    name: "Guardar esta venda neste aparelho",
+  });
+  await expect(
+    page.getByRole("button", { name: "Tentar novamente (seguro)" })
+  ).toBeVisible();
+  await expect(keep).toBeVisible();
+  expect(calls.bodies).toHaveLength(1);
+  const [sent] = calls.bodies;
+  // the queue is read before it is sent: the connection comes back only after
+  await page.getByLabel("Rede disponível").uncheck();
+  await keep.click();
+  await expect(
+    page
+      .getByRole("status")
+      .filter({ hasText: "Venda guardada neste aparelho" })
+  ).toBeVisible();
+
+  const queued = await queuedCommands(page);
+  expect(queued).toHaveLength(1);
+  const [command] = queued;
+  expect(command?.commandId).toBe(sent?.commandId);
+  expect(command?.payload.occurredAt).toBe(sent?.occurredAt);
+  expect(command?.payload.recordedAt).toBe(sent?.recordedAt);
+  expect(command?.payload).not.toHaveProperty("payment");
+  expect(command?.payload.payments).toEqual(sent?.payments);
+  expect(command?.payload.payments).toEqual([
+    expect.objectContaining({
+      amount: "100.00",
+      method: "pix",
+      paymentProfile: null,
+    }),
+    expect.objectContaining({
+      amount: "200.00",
+      method: "debit_card",
+      paymentProfile: { expectedVersion: PROFILE.version, id: PROFILE.id },
+    }),
+  ]);
+
+  await page.getByLabel("Rede disponível").check();
+  await expect(page.getByTestId("server-records")).toHaveText("1", {
+    timeout: 20_000,
+  });
+  await expect.poll(() => queuedCommands(page)).toEqual([]);
+  expect(calls.bodies).toHaveLength(1);
 });
