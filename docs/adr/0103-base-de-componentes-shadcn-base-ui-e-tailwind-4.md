@@ -359,6 +359,24 @@ Uma biblioteca de DOM só para testes foi liberada pelo usuário em 17/11 (pedid
 
 Decisão do usuário. A cor da marca (`--mark`, `--chart-1`, o ponto do `Logo` e o ícone do app) passa do esmeralda ao vermelho do dgimports: `#e7000b` no claro e `#fb2c36` no escuro, sem token de texto da marca (o `--mark-foreground` que esta decisão criou saiu depois, por não ter uso). O vermelho fica só em marca e posição: o foco do teclado (`--ring`, `--sidebar-ring`) passa a ser a cor do texto, para um campo só focado não se parecer com um campo com erro (`--destructive` tem o mesmo matiz), e os botões seguem em tinta. O verde deixa de ser a marca e fica só como vendas nos gráficos (`--chart-sales`, `--chart-heat-*`) e no chip de variação que sobe (`--chart-sales-foreground`, novo). O passo atual de "Primeiros passos" usa tinta, não o vermelho. Os arquivos do ícone do app levam `v2` no nome para o ícone antigo não ficar no cache do manifesto. A tabela de contraste está em [contraste-v5.1.md](../design/contraste-v5.1.md).
 
+## Emenda: padrão de moldura das telas e a trava (cortes de 23/11, 23 a 25/11/2026)
+
+**Decisão.** Cada papel visual tem uma peça pública só, e a tela não escreve moldura à mão: o bloco com título é o `Block` (`apps/web/src/ui/block.tsx`), a lista ou tabela principal é o `ListBlock` (`ui/list-block.tsx`), a aba de tela é o `SectionTabs` (`ui/section-tabs.tsx`) e o painel rebaixado dentro de um bloco é o `InsetBlock` (`ui/inset-block.tsx`). A decisão do usuário de 23/11/2026 tem duas partes. G1, as abas: "como achar melhor para manter a aparência do projeto elegante", escolha delegada ao Arrascaeta, que adotou a opção A (aba de tela em linha e filtro de lista na faixa). G2, a moldura: "tudo que achar necessário. Tabelas, listas inclusive. Devemos manter um padrão no projeto inteiro", que vale como moldura em todo bloco com título e também nas listas e tabelas principais.
+
+**Razão.** Aba e moldura com aparências diferentes, feitas com `Card*` ou com `rounded` e `border` escritos à mão, fazem cada tela parecer de um projeto. Uma regra só, travada por teste, mantém o projeto inteiro igual sem depender de uma revisão visual a cada PR. O comportamento de cada peça está no `DESIGN.md`; aqui fica o porquê.
+
+**A trava.** `apps/web/scripts/ui-pattern-rules.test.ts` varre `src/**` fora de `ui/`, da galeria e dos testes:
+
+- R1: aba de tela e filtro não importam o `Tabs` cru (`@/ui/tabs`); só `ui/` o importa.
+- R2: nenhuma tela importa `Card`, `CardHeader`, `CardContent`, `CardTitle` nem `CardDescription`; a moldura é o `Block`.
+- R3: nenhuma tela escreve à mão uma moldura (`rounded` e `border` de largura simples na mesma string de classe; `border-0` tira a borda e não conta).
+- R4: `ListTotalFooter`, `ListNotice` e `RowTile` só vivem em `ui/`; a tela usa o `ListBlock`.
+- R5 (aviso, não reprova): um `Block` com `.map(` de linhas fora de um `ListBlock`.
+
+Os arquivos de antes do padrão ficam numa lista de dívida por regra, que só encolhe: arquivo novo fora do padrão reprova, e arquivo já limpo ainda na lista também. Exceção que fica vai no `ALLOWLIST` de R3, só com o motivo `chart-bubble` ou `thumbnail`, e reprova quando deixa de ser usada. Lista e tabela nunca são exceção: o teste reprova a exceção cujo arquivo desenha `<ul>`, `<ol>`, `<Table>`, `role="list"` ou `divide-y`, porque uma lista também é um bloco com título.
+
+**O que não decide.** O ritmo da página segue em aberto com o usuário. Também não muda o `DESIGN.md`, e o estado de entrega e os PRs ficam em `doc/status-implementacao.md`.
+
 ## Consequências
 
 - Uma base única de componentes acessíveis (Base UI) com identidade nossa; o DESIGN.md passa a descrever tokens no vocabulário do shadcn e deixa de ter duas tabelas de cores (`--category-*` e `--payment-*`) quando a última tela migrar.
