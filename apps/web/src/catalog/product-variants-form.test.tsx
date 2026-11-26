@@ -246,6 +246,7 @@ const BOX_FADES_ALONE = "data-disabled:opacity-50";
 const AFTER_DISABLED_PEER = "peer-disabled:opacity-50";
 const IN_DISABLED_GROUP = "group-data-[disabled=true]:opacity-50";
 const IN_DISABLED_FIELD = "group-data-[disabled=true]/field:opacity-50";
+const OPACITY_UTILITY = /(^|:)!?opacity-/;
 const KNOWN_OPACITY_CLASSES = [
   FADES_WHOLE,
   BOX_STAYS_AT_1,
@@ -295,7 +296,7 @@ const followsDisabledPeer = (element: Element) => {
  */
 function opacityOf(element: Element): number {
   for (const name of element.classList) {
-    if (/(^|:)!?opacity-/.test(name) && !KNOWN_OPACITY_CLASSES.includes(name)) {
+    if (OPACITY_UTILITY.test(name) && !KNOWN_OPACITY_CLASSES.includes(name)) {
       throw new Error(
         `opacityOf does not know the opacity class "${name}"; add its rule to the table`
       );
