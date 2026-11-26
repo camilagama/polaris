@@ -93,6 +93,36 @@ const recentSalesWindow: SaleListEntryReadModel[] = [
 /** The version of the payment profile the lab's server has, whatever a device saw. */
 export const LAB_PROFILE_SERVER_VERSION = 3;
 
+export const LAB_SECOND_PROFILE_ID = "0199c2d0-0000-7000-8000-0000000000c2";
+
+/** The second profile of the lab is at a version other than the first, so a part cannot borrow the version of another. */
+export const LAB_SECOND_PROFILE_SERVER_VERSION = 5;
+
+const serverVersionOf = (profileId: string): number =>
+  profileId === LAB_SECOND_PROFILE_ID
+    ? LAB_SECOND_PROFILE_SERVER_VERSION
+    : LAB_PROFILE_SERVER_VERSION;
+
+interface PricedProfile {
+  expectedVersion: number;
+  id: string;
+}
+
+/** The profiles a sale command was priced with: the one of the sale, or the one of each part that has one. */
+function pricedProfiles(payload: unknown): PricedProfile[] {
+  const { paymentProfile, payments } = payload as {
+    paymentProfile?: PricedProfile | null;
+    payments?: { paymentProfile?: PricedProfile | null }[];
+  };
+  return [
+    paymentProfile,
+    ...(payments ?? []).map((part) => part.paymentProfile),
+  ].filter(
+    (profile): profile is PricedProfile =>
+      profile !== undefined && profile !== null
+  );
+}
+
 export class SaleLabServer extends FakeStockServer {
   override recentSales() {
     return Promise.resolve(recentSalesWindow);
@@ -112,20 +142,15 @@ export class SaleLabServer extends FakeStockServer {
       this.seed(UNPRICED, 8, 1);
     }
     const accept = this.push;
-    // A sale priced with a profile version that is not the server's is refused, like the real server.
+    // A sale priced with a profile version that is not the server's is refused, like the real server: the sale-level profile and the profile of each part.
     this.push = (input) => {
-      const stale = input.commands.find((command) => {
-        const profile = (
-          command.payload as {
-            paymentProfile?: { expectedVersion: number; id: string };
-          }
-        ).paymentProfile;
-        return (
+      const stale = input.commands.find(
+        (command) =>
           command.type === "sale.confirm" &&
-          profile !== undefined &&
-          profile.expectedVersion !== LAB_PROFILE_SERVER_VERSION
-        );
-      });
+          pricedProfiles(command.payload).some(
+            (profile) => profile.expectedVersion !== serverVersionOf(profile.id)
+          )
+      );
       if (!stale) {
         return accept(input);
       }
