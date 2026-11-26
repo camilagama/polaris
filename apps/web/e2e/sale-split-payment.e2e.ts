@@ -543,6 +543,16 @@ test("sem internet, a venda de 1 parte segue como hoje", async ({ page }) => {
       .getByRole("status")
       .filter({ hasText: "Venda guardada neste aparelho" })
   ).toBeVisible();
+
+  await page.getByLabel("Rede disponível").check();
+  await expect(page.getByTestId("server-records")).toHaveText("1", {
+    timeout: 20_000,
+  });
+  const recorded = await recordedSales(page);
+  expect(recorded).toHaveLength(1);
+  expect(recorded[0]?.payments).toEqual([
+    expect.objectContaining({ method: "pix", paymentProfile: null }),
+  ]);
 });
 
 test("sem item: Dividir pagamento fica desligado e diz por quê", async ({
