@@ -619,7 +619,7 @@ test("sem internet, a venda de 1 parte com perfil leva o id e a versão dele at�
 test("sem internet, a venda dividida com 2 perfis leva o id e a versão do perfil escolhido em cada parte, e não os do 1º", async ({
   page,
 }) => {
-  const first = { expectedVersion: LAB_SERVER_PROFILE_VERSION, id: PROFILE.id };
+  const first = { expectedVersion: LAB_PROFILE_SERVER_VERSION, id: PROFILE.id };
   const second = {
     expectedVersion: SECOND_PROFILE.version,
     id: SECOND_PROFILE.id,
