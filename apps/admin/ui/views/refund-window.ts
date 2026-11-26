@@ -196,6 +196,7 @@ export function refundWindowView(
         notice,
         organization,
         refundHeld: held.has(organization.id),
+        reviewHeading: inside ? "h5" : "h4",
         settled: (next) => {
           if (builtFor === turn) {
             read(choice, next);
