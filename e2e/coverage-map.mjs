@@ -765,6 +765,12 @@ export const SPEC_SCREENS = {
     "sale-detail",
     "products",
   ],
+  "apps/web/e2e-real/jornadas/forma-de-receber.e2e.ts": [
+    "home",
+    "sale",
+    "dashboard",
+    "settings",
+  ],
   "apps/web/e2e-real/jornadas/historico-total-liquido.e2e.ts": [
     "home",
     "dashboard",
