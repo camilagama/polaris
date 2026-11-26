@@ -109,6 +109,7 @@ export function ProductsHeader({
   const wide = !useIsMobile();
   return (
     <TitleLine
+      tabNamesIt
       action={
         showNew ? (
           <>
@@ -133,7 +134,7 @@ export function ProductsHeader({
         ) : null
       }
     >
-      <ScreenTitle tabNamesIt>Produtos</ScreenTitle>
+      <ScreenTitle>Produtos</ScreenTitle>
     </TitleLine>
   );
 }

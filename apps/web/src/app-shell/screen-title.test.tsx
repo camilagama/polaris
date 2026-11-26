@@ -1,11 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import {
-  ScreenTitle,
-  TabPanelScope,
-  TitleLine,
-  useTitleHidden,
-} from "./screen-title";
+import { ScreenTitle, TabPanelScope, TitleLine } from "./screen-title";
 
 const BACK = { href: "/sales/history", label: "Voltar para o histórico" };
 const WORD_ON_SCREEN = />\s*Voltar/;
@@ -54,7 +49,11 @@ function titleTag(html: string) {
 describe("ScreenTitle", () => {
   it("fora de aba é o h1 da página, em text-title, e nunca fica só para o leitor de tela, mesmo com tabNamesIt", () => {
     const { classes, tag } = titleTag(
-      renderToStaticMarkup(<ScreenTitle tabNamesIt>Assinatura</ScreenTitle>)
+      renderToStaticMarkup(
+        <TitleLine tabNamesIt>
+          <ScreenTitle>Assinatura</ScreenTitle>
+        </TitleLine>
+      )
     );
     expect(tag).toBe("h1");
     expect(classes).toContain("text-title");
@@ -80,7 +79,9 @@ describe("ScreenTitle", () => {
     const { classes, tag } = titleTag(
       renderToStaticMarkup(
         <TabPanelScope>
-          <ScreenTitle tabNamesIt>Assinatura</ScreenTitle>
+          <TitleLine tabNamesIt>
+            <ScreenTitle>Assinatura</ScreenTitle>
+          </TitleLine>
         </TabPanelScope>
       )
     );
@@ -93,9 +94,9 @@ describe("ScreenTitle", () => {
     const hidden = titleTag(
       renderToStaticMarkup(
         <TabPanelScope>
-          <ScreenTitle className="mb-2" tabNamesIt>
-            Assinatura
-          </ScreenTitle>
+          <TitleLine tabNamesIt>
+            <ScreenTitle className="mb-2">Assinatura</ScreenTitle>
+          </TitleLine>
         </TabPanelScope>
       )
     );
@@ -113,14 +114,14 @@ describe("ScreenTitle", () => {
   it("leva o texto como filho, uma só vez, e repassa os atributos ao título", () => {
     const html = renderToStaticMarkup(
       <TabPanelScope>
-        <ScreenTitle id="titulo-assinatura" tabNamesIt>
-          Assinatura
-        </ScreenTitle>
+        <TitleLine tabNamesIt>
+          <ScreenTitle id="titulo-assinatura">Assinatura</ScreenTitle>
+        </TitleLine>
       </TabPanelScope>
     );
     expect(html.split("Assinatura")).toHaveLength(2);
     expect(html).toContain('id="titulo-assinatura"');
-    expect(html.endsWith(">Assinatura</h2>")).toBe(true);
+    expect(html).toContain(">Assinatura</h2>");
   });
 });
 
@@ -134,9 +135,11 @@ describe("TitleLine with a title only for a screen reader", () => {
   it("takes no room in the grid of the page when it has no action", () => {
     const classes = lineClasses(
       renderToStaticMarkup(
-        <TitleLine titleHidden>
-          <h2 className="sr-only">Categorias</h2>
-        </TitleLine>
+        <TabPanelScope>
+          <TitleLine tabNamesIt>
+            <ScreenTitle>Categorias</ScreenTitle>
+          </TitleLine>
+        </TabPanelScope>
       )
     );
     expect(classes).toEqual(["contents"]);
@@ -152,9 +155,11 @@ describe("TitleLine with a title only for a screen reader", () => {
     );
     const withAction = lineClasses(
       renderToStaticMarkup(
-        <TitleLine action={<button type="button">Novo</button>} titleHidden>
-          <h2 className="sr-only">Produtos</h2>
-        </TitleLine>
+        <TabPanelScope>
+          <TitleLine action={<button type="button">Novo</button>} tabNamesIt>
+            <ScreenTitle>Produtos</ScreenTitle>
+          </TitleLine>
+        </TabPanelScope>
       )
     );
     expect(drawn).toContain("min-[47.5rem]:min-h-ctl-md");
@@ -164,22 +169,58 @@ describe("TitleLine with a title only for a screen reader", () => {
   });
 });
 
-function HiddenProbe({ tabNamesIt }: { tabNamesIt: boolean }) {
-  return <p>{String(useTitleHidden(tabNamesIt))}</p>;
+const OPEN_TITLE = /<h[12] class="([^"]*)"/;
+
+function screenOf(html: string): { drawn: boolean; lineClasses: string[] } {
+  const title = (OPEN_TITLE.exec(html)?.[1] ?? "").split(" ");
+  return { drawn: !title.includes("sr-only"), lineClasses: lineClasses(html) };
 }
 
-describe("useTitleHidden", () => {
-  it("is true only in a tab that names the screen, as ScreenTitle draws it for a screen reader", () => {
-    const inTab = (tabNamesIt: boolean) =>
-      renderToStaticMarkup(
-        <TabPanelScope>
-          <HiddenProbe tabNamesIt={tabNamesIt} />
-        </TabPanelScope>
+describe("TitleLine decide sozinho se o título é só para o leitor de tela", () => {
+  const cases = [
+    { inTab: true, tabNamesIt: true },
+    { inTab: true, tabNamesIt: false },
+    { inTab: false, tabNamesIt: true },
+    { inTab: false, tabNamesIt: false },
+  ];
+
+  it.each(cases)(
+    "em aba: $inTab, a aba diz o nome: $tabNamesIt, a linha some da grade se e só se o título não é desenhado",
+    ({ inTab, tabNamesIt }) => {
+      const line = (
+        <TitleLine tabNamesIt={tabNamesIt}>
+          <ScreenTitle>Categorias</ScreenTitle>
+        </TitleLine>
       );
-    expect(inTab(true)).toBe("<p>true</p>");
-    expect(inTab(false)).toBe("<p>false</p>");
-    expect(renderToStaticMarkup(<HiddenProbe tabNamesIt />)).toBe(
-      "<p>false</p>"
+      const { drawn, lineClasses: classes } = screenOf(
+        renderToStaticMarkup(
+          inTab ? <TabPanelScope>{line}</TabPanelScope> : line
+        )
+      );
+      expect(drawn).toBe(!(inTab && tabNamesIt));
+      expect(classes.includes("contents")).toBe(!drawn);
+    }
+  );
+
+  it("com ação a linha segue na grade mesmo com o título só para o leitor de tela", () => {
+    const html = renderToStaticMarkup(
+      <TabPanelScope>
+        <TitleLine action={<button type="button">Novo</button>} tabNamesIt>
+          <ScreenTitle>Produtos</ScreenTitle>
+        </TitleLine>
+      </TabPanelScope>
     );
+    expect(screenOf(html).drawn).toBe(false);
+    expect(screenOf(html).lineClasses).not.toContain("contents");
+  });
+
+  it("o ScreenTitle não aceita a flag: ela só existe no TitleLine", () => {
+    const html = renderToStaticMarkup(
+      <TabPanelScope>
+        {/* @ts-expect-error a flag é do TitleLine */}
+        <ScreenTitle tabNamesIt>Assinatura</ScreenTitle>
+      </TabPanelScope>
+    );
+    expect(titleTag(html).classes).not.toContain("sr-only");
   });
 });

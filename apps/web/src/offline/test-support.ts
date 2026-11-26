@@ -543,9 +543,10 @@ export class FakeStockServer implements BootstrapSource {
 
   /** A sale takes stock from every line or is refused whole (no partial sale). */
   private executeSale(command: PushCommandReadModel): PushResultReadModel {
-    const { items, payment, payments } = command.payload as {
+    const { items, payment, paymentProfile, payments } = command.payload as {
       items: { quantity: number; variantId: string }[];
-      payment?: unknown;
+      payment?: Record<string, unknown>;
+      paymentProfile?: unknown;
       payments?: unknown[];
     };
     const draft = new Map<string, { quantity: number; version: number }>();
@@ -578,7 +579,11 @@ export class FakeStockServer implements BootstrapSource {
     }
     const saleId = `0199c2d0-0000-7000-8000-${String(this.sales.size + 1).padStart(12, "0")}`;
     this.sales.set(command.commandId, {
-      payments: payments ?? (payment === undefined ? [] : [payment]),
+      payments:
+        payments ??
+        (payment === undefined
+          ? []
+          : [{ ...payment, paymentProfile: paymentProfile ?? null }]),
       saleId,
     });
     return {

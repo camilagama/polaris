@@ -412,6 +412,7 @@ for (const context of CONTEXTS.slice(0, 2)) {
  * a tab already names stays for a screen reader only and its line holds no height.
  */
 const WITHOUT_ACTION: readonly {
+  afterHeader?: number;
   afterTitle: number;
   heading: string;
   hiddenFrom1280: boolean;
@@ -424,6 +425,7 @@ const WITHOUT_ACTION: readonly {
     screen: "categorias lista",
   },
   {
+    afterHeader: HEADER_GAP,
     afterTitle: INTRO_GAP,
     heading: "Aparelhos",
     hiddenFrom1280: false,
@@ -442,6 +444,7 @@ const WITHOUT_ACTION: readonly {
     screen: "assinatura oferta com Pix",
   },
   {
+    afterHeader: HEADER_GAP,
     afterTitle: INTRO_GAP,
     heading: "Ajuda e contato",
     hiddenFrom1280: false,
@@ -450,6 +453,7 @@ const WITHOUT_ACTION: readonly {
 ];
 
 interface LineShape {
+  afterHeader: number | null;
   afterLine: number;
   headingBox: Box;
   headingVisible: boolean;
@@ -473,7 +477,14 @@ function lineOf(page: Page, heading: string): Promise<LineShape> {
         (candidate) => candidate.textContent?.trim() === headingText
       ) as HTMLElement;
       const line = title.closest("[data-title-line]") as HTMLElement;
+      const header = line.parentElement;
+      const afterHeader =
+        header?.tagName === "HEADER" && header.nextElementSibling
+          ? header.nextElementSibling.getBoundingClientRect().top -
+            header.getBoundingClientRect().bottom
+          : null;
       return {
+        afterHeader,
         afterLine:
           (line.nextElementSibling as HTMLElement).getBoundingClientRect().top -
           line.getBoundingClientRect().bottom,
@@ -530,6 +541,12 @@ for (const entry of WITHOUT_ACTION) {
             entry.afterTitle,
             0
           );
+          if (entry.afterHeader !== undefined) {
+            expect(
+              shape.afterHeader,
+              "do cabeçalho ao primeiro bloco"
+            ).toBeCloseTo(entry.afterHeader, 0);
+          }
         }
       });
     });
