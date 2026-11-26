@@ -65,7 +65,7 @@ const fieldVariants = cva(
       orientation: {
         horizontal:
           "flex-row items-center has-[>[data-slot=field-content]]:items-start *:data-[slot=field-label]:flex-auto has-[>[data-slot=field-content]]:[&>[role=checkbox],[role=radio]]:mt-px",
-        vertical: "flex-col *:w-full [&>.sr-only]:w-auto",
+        vertical: "flex-col *:w-full [&>.sr-only]:w-px",
       },
     },
   }
@@ -106,7 +106,7 @@ function FieldLabel({ className, ...props }: React.ComponentProps<"label">) {
   return (
     <Label
       className={cn(
-        "group/field-label peer/field-label flex w-fit gap-2 leading-snug has-[>[data-slot=field]]:has-[:focus-visible]:outline-3 has-[>[data-slot=field]]:has-[:focus-visible]:outline-ring has-[>[data-slot=field]]:has-[:focus-visible]:outline-offset-2 has-[>[data-slot=field]]:w-full has-[>[data-slot=field]]:flex-col has-[>[data-slot=field]]:rounded-md has-[>[data-slot=field]]:border has-data-checked:border-foreground/70 has-[>[data-slot=field]]:bg-card has-data-checked:ring-1 has-data-checked:ring-foreground/10 motion-full:has-[>[data-slot=field]]:transition-[border-color,box-shadow] has-[>[data-slot=field]]:not-has-[:disabled,[data-disabled]]:hover:border-input *:data-[slot=field]:px-3 *:data-[slot=field]:py-2 group-data-[disabled=true]/field:opacity-50",
+        "group/field-label peer/field-label flex gap-2 leading-snug has-[>[data-slot=field]]:has-[:focus-visible]:outline-3 has-[>[data-slot=field]]:has-[:focus-visible]:outline-ring has-[>[data-slot=field]]:has-[:focus-visible]:outline-offset-2 has-[>[data-slot=field]]:w-full has-[>[data-slot=field]]:flex-col has-[>[data-slot=field]]:rounded-md has-[>[data-slot=field]]:border has-data-checked:border-foreground/70 has-[>[data-slot=field]]:bg-card has-data-checked:ring-1 has-data-checked:ring-foreground/10 motion-full:has-[>[data-slot=field]]:transition-[border-color,box-shadow] has-[>[data-slot=field]]:not-has-[:disabled,[data-disabled]]:hover:border-input *:data-[slot=field]:px-3 *:data-[slot=field]:py-2 group-data-[disabled=true]/field:opacity-50 [&:where(:not(.sr-only))]:w-fit",
         className
       )}
       data-slot="field-label"

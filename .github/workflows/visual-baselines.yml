@@ -1,5 +1,7 @@
 # Gera e commita no ramo de um PR as capturas do ui-visual que mudaram.
 # Só por disparo manual, nunca na main, nunca em fork; o revisor confere as capturas pelo diff de PNG do PR, e o artefato de diffs é só apoio.
+# O teste que confere a pasta contra a lista de estados fica de fora da geração (com estado novo ele reprova antes de as
+# imagens existirem) e roda depois, sobre a pasta já com as capturas novas; o ci.yml continua exigindo-o sem exceção.
 # Dois jobs: "gerar" roda o código do ramo só com leitura;
 # "publicar" tem escrita e não roda nada do ramo, só confere os PNGs do artefato e faz o push.
 name: Visual baselines
@@ -66,9 +68,9 @@ jobs:
       - name: Install Chromium
         timeout-minutes: 16
         run: scripts/playwright-install.sh apps/web
-      - name: Gera só as capturas que mudaram (imagem fixada do ui-visual)
+      - name: Gera só as capturas que mudaram e as que faltam (imagem fixada do ui-visual)
         working-directory: apps/web
-        run: bun run test:visual:update
+        run: bun run test:visual:update --grep-invert "a pasta de baselines tem exatamente as imagens da lista"
       - name: Separa os PNGs que mudaram
         id: lista
         run: |
@@ -82,6 +84,9 @@ jobs:
           sed 's/^.. //' <<<"$changed" | while IFS= read -r f; do cp -- "$f" "$RUNNER_TEMP/capturas/"; done
           { echo "### Capturas regravadas"; echo; sed 's/^.. /- /' <<<"$changed"; } >> "$GITHUB_STEP_SUMMARY"
           echo "mudou=true" >> "$GITHUB_OUTPUT"
+      - name: A pasta de baselines tem exatamente as imagens da lista (já com as capturas novas)
+        working-directory: apps/web
+        run: bun run test:visual --grep "a pasta de baselines tem exatamente as imagens da lista"
       - name: Capturas para o job de publicação
         if: steps.lista.outputs.mudou == 'true'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

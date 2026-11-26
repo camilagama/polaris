@@ -245,10 +245,8 @@ describe("product RPCs", () => {
 
     const result = await client.product.configureVariants(configureInput);
 
-    expect(result).toMatchObject({
-      configuration,
-      product: { version: 2 },
-    });
+    expect(result.configuration).toEqual(configuration);
+    expect(result.product.version).toBe(2);
     expect(observedCapability).toBe("product:update");
     expect(configureProductVariants).toHaveBeenCalledWith({}, identity, {
       expectedVersion: configureInput.expectedVersion,
