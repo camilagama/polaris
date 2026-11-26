@@ -782,6 +782,7 @@ export const SPEC_SCREENS = {
   ],
   "apps/web/e2e-real/jornadas/inicio-grade.e2e.ts": ["home"],
   "apps/web/e2e-real/jornadas/inicio.e2e.ts": ["home"],
+  "apps/web/e2e-real/jornadas/limite-de-variantes.e2e.ts": ["home", "products"],
   "apps/web/e2e-real/jornadas/meta.e2e.ts": [
     "home",
     "dashboard",
