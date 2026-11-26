@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import type { ProductReadModel } from "@polaris/contracts";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { StaticOrganizationProvider } from "../lib/current-organization";
@@ -11,7 +11,9 @@ import {
   type VariantConfigurationDraft,
 } from "./product-variants-model";
 
-vi.mock("../lib/orpc", () => ({ orpcClient: {} }));
+const readPlan = vi.hoisted(() => vi.fn());
+
+vi.mock("../lib/orpc", () => ({ orpcClient: { billing: { readPlan } } }));
 
 const noop = () => undefined;
 const configuration = (sku: string | null) => ({
@@ -32,16 +34,21 @@ const configuration = (sku: string | null) => ({
   ],
 });
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  readPlan.mockReset();
+});
 
 const formOf = (
   sku: string | null,
   draft: VariantConfigurationDraft = {
     ...emptyConfigurationDraft,
     selectedOptions: ["color"],
-  }
+  },
+  billingSelfService = false
 ) => (
   <StaticOrganizationProvider
+    billingSelfService={billingSelfService}
     organization={{ id: "o1", name: "Loja", role: "owner", timezone: "UTC" }}
   >
     <ProductVariantConfigurationForm
@@ -72,8 +79,9 @@ const show = (
   draft: VariantConfigurationDraft = {
     ...emptyConfigurationDraft,
     selectedOptions: ["color"],
-  }
-) => render(formOf(sku, draft));
+  },
+  billingSelfService = false
+) => render(formOf(sku, draft, billingSelfService));
 
 describe("warning of the SKU of the default variant", () => {
   it("the button that clears it names the SKU that will be erased", () => {
@@ -228,6 +236,82 @@ describe("each combination of the list", () => {
       });
       expect(group.getAttribute("data-slot")).toBe("field-group");
       expect(group.tagName).toBe("FIELDSET");
+    }
+  });
+});
+
+const FADES_WHOLE = "has-data-disabled:opacity-50";
+const BOX_STAYS_AT_1 = "group-has-data-disabled/label:opacity-100!";
+const BOX_FADES_ALONE = "data-disabled:opacity-50";
+
+/**
+ * Tailwind is not compiled here: the opacity of each element of the row is read from the classes it renders, with the
+ * rule each variant has in the generated CSS (`has-data-disabled` holds a disabled child, `data-disabled` is on the
+ * element itself, `group-has-data-disabled/label` is a label above that holds one), and the chain is multiplied the
+ * way the browser stacks it.
+ */
+function opacityOf(element: Element): number {
+  const rules = [
+    {
+      important: false,
+      matches: element.querySelector("[data-disabled]") !== null,
+      name: FADES_WHOLE,
+      value: 0.5,
+    },
+    {
+      important: false,
+      matches: element.hasAttribute("data-disabled"),
+      name: BOX_FADES_ALONE,
+      value: 0.5,
+    },
+    {
+      important: true,
+      matches: Boolean(
+        element.parentElement
+          ?.closest("label")
+          ?.querySelector("[data-disabled]")
+      ),
+      name: BOX_STAYS_AT_1,
+      value: 1,
+    },
+  ].filter((rule) => rule.matches && element.classList.contains(rule.name));
+  const important = rules.filter((rule) => rule.important);
+  return (important.length > 0 ? important : rules).at(-1)?.value ?? 1;
+}
+
+const rowOpacity = (box: Element) =>
+  opacityOf(box.closest("label") ?? box) * opacityOf(box);
+
+describe("the row of an option while the form is busy", () => {
+  const draft = {
+    ...emptyConfigurationDraft,
+    selectedOptions: ["color" as const],
+    valueLines: { ...emptyConfigurationDraft.valueLines, color: "Azul\nPreta" },
+  };
+
+  it("fades whole, label and box at 50%, never the box alone and never 25%", () => {
+    readPlan.mockReturnValue(new Promise(() => undefined));
+    show(null, draft, true);
+    const boxes = screen.getAllByRole("checkbox");
+    expect(boxes.length).toBeGreaterThan(1);
+    for (const box of boxes) {
+      expect(rowOpacity(box), "idle").toBe(1);
+    }
+    const readsBefore = readPlan.mock.calls.length;
+    fireEvent.click(screen.getByRole("button", { name: ADD_ALL }));
+    expect(readPlan.mock.calls.length).toBeGreaterThan(readsBefore);
+    for (const box of boxes) {
+      const label = box.closest("label");
+      expect(label, "the box is inside a label").not.toBeNull();
+      if (!label) {
+        continue;
+      }
+      expect(box.hasAttribute("data-disabled")).toBe(true);
+      expect(label.classList.contains(FADES_WHOLE)).toBe(true);
+      expect(box.classList.contains(BOX_STAYS_AT_1)).toBe(true);
+      expect(opacityOf(label), "label").toBe(0.5);
+      expect(opacityOf(box), "box").toBe(1);
+      expect(rowOpacity(box)).toBe(0.5);
     }
   });
 });
