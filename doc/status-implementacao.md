@@ -1789,10 +1789,10 @@ Pacote `@polaris/http-security` e [ADR 0090](../docs/adr/0090-headers-de-seguran
 | Módulo | Concluído | `packages/http-security`: perfis `app-shell`, `api`, `admin`, `public-document` e `public-media`; nonce por resposta; origens extras só por `connectSources`/`imgSources`, exatas e em https. |
 | Web | Concluído | `public/_headers` gerado pelo módulo (teste de igualdade); o Worker aplica o perfil `api` a toda resposta e `no-store` quando o handler não escolheu outro `Cache-Control`. |
 | Admin | Concluído | Perfil `admin` (CSP fechada, HSTS, COOP/CORP, sem referrer, `no-store`) em toda resposta, inclusive 401, 403 e 404. |
-| Catálogo | Concluído | Entrada `src/server.ts` (o `main` do Worker) com nonce por requisição e CSP sem `'unsafe-inline'`; páginas nunca em cache compartilhado; imagem pública com `sandbox` e `Cross-Origin-Resource-Policy: cross-origin`; prova de navegador da CSP com nonce em `apps/catalog/e2e` (`bun run --filter @polaris/catalog test:e2e`, ainda fora do CI). |
+| Catálogo | Concluído | Entrada `src/server.ts` (o `main` do Worker) com nonce por requisição e CSP sem `'unsafe-inline'`; páginas nunca em cache compartilhado; imagem pública com `sandbox` e `Cross-Origin-Resource-Policy: cross-origin`; prova de navegador da CSP com nonce em `apps/catalog/e2e` (`bun run --filter @polaris/catalog test:e2e`, que roda no CI, no job `offline-catalog-csp-browser`). |
 | Testes | Concluídos | Unitários do módulo (nenhum curinga, `unsafe-inline` ou esquema solto em nenhum perfil) e de integração nas respostas dos três apps. |
 | Gate de navegador | Ver o PR | CSP do shell inalterada na parte de script, estilo e conexão; o resultado de `test:offline-poc` e `test:pwa` está na seção "Verificação" do PR. |
-| Limites | Registrados | Teste de navegador do catálogo com nonce (`apps/catalog/e2e`, ADR 0090) ainda fora do CI; sem `report-uri`; o Sentry do navegador só abre o host de ingestão num build com `VITE_SENTRY_DSN` ([ADR 0098](../docs/adr/0098-sentry-no-navegador-so-erros-e-sanitizado.md)); o `_headers` commitado segue sem origem. |
+| Limites | Registrados | Teste de navegador do catálogo com nonce (`apps/catalog/e2e`, ADR 0090) roda no CI, no job `offline-catalog-csp-browser`; sem `report-uri`; o Sentry do navegador só abre o host de ingestão num build com `VITE_SENTRY_DSN` ([ADR 0098](../docs/adr/0098-sentry-no-navegador-so-erros-e-sanitizado.md)); o `_headers` commitado segue sem origem. |
 
 ### Fase 12C — esquema canônico de eventos largos (PR115; implementação local concluída; nada criado na conta Cloudflare)
 
