@@ -381,4 +381,12 @@ test("categoria: remover com produto é recusado; sem produto vira tombstone e r
   await addCategory(page, free);
   await expect(refusal(page, DUPLICATE_NAME)).toBeVisible();
   expect(await categoriesOf(sql, organizationId)).toHaveLength(2);
+
+  await addCategory(page, free.toUpperCase());
+  await expect(refusal(page, DUPLICATE_NAME)).toBeVisible();
+  expect(await categoriesOf(sql, organizationId)).toHaveLength(2);
+
+  await addCategory(page, `  ${free}  `);
+  await expect(refusal(page, DUPLICATE_NAME)).toBeVisible();
+  expect(await categoriesOf(sql, organizationId)).toHaveLength(2);
 });
