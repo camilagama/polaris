@@ -1,26 +1,43 @@
-import type { Page } from "@playwright/test";
+import type { Locator, Page } from "@playwright/test";
 import { pickDate } from "../../e2e/date-pickers";
 import { addDays, extremeTimeZone, localDate, monthStart } from "../calendar";
-import { expect, openJourney, runT0, test } from "../fixtures";
+import { expect, openJourney, refusedWith, runT0, test } from "../fixtures";
 import { cents, numericCents } from "../oracle";
 import { chainValue } from "../pages/resultado";
 import { choose } from "../pages/venda";
 
 const BRL_VALUE = /R\$/;
+const FILTER_BUTTON = /^Filtrar( despesas)?$/;
+const CATEGORY_ITEM = /^Categoria/;
 const EXPENSES_OF_PERIOD = "(−) Despesas do período (sem venda)";
 
-/** Categorias, a part of the Despesas tab: the new category in its dialog, then back to Lançamentos. */
-async function addCategory(page: Page, categoryName: string): Promise<void> {
+/** The dialog "Nova categoria" of the Categorias tab, filled and not yet sent. */
+async function openNewCategory(
+  page: Page,
+  categoryName: string,
+  group: string
+): Promise<Locator> {
   await page.getByRole("tab", { name: "Categorias" }).click();
-  const categories = page.getByRole("tabpanel", { name: "Categorias" });
-  await categories
+  await page
+    .getByRole("tabpanel", { name: "Categorias" })
     .getByRole("button", { exact: true, name: "Nova categoria" })
     .click();
   const form = page.getByRole("dialog", { name: "Nova categoria" });
-  await choose(page, form, "Grupo", "Operacional/Administrativa");
+  await choose(page, form, "Grupo", group);
   await form.getByLabel("Nome da categoria").fill(categoryName);
+  return form;
+}
+
+/** Categorias, a part of the Despesas tab: the new category in its dialog, then back to Lançamentos. */
+async function addCategory(
+  page: Page,
+  categoryName: string,
+  group = "Operacional/Administrativa"
+): Promise<void> {
+  const form = await openNewCategory(page, categoryName, group);
   await form.getByRole("button", { name: "Adicionar categoria" }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
+  const categories = page.getByRole("tabpanel", { name: "Categorias" });
   await expect(
     categories.getByText(categoryName, { exact: true })
   ).toBeVisible();
@@ -347,4 +364,292 @@ test("despesa recorrente vencida: aparece em Lançamentos sem abrir Recorrentes"
       .getByRole("heading", { exact: true, name: "Mensalidade do sistema" })
   ).toBeVisible();
   await expect.poll(() => ruleReads).toBeGreaterThan(0);
+});
+
+type Sql = Parameters<Parameters<typeof test>[2]>[0]["sql"];
+
+const CATEGORY_CONFLICT =
+  "Já existe uma categoria com esse nome, ou ela mudou em outra solicitação. A lista foi atualizada.";
+
+interface CategoryRow {
+  archived: boolean;
+  group_key: string;
+  id: string;
+  name: string;
+  updated_at: string;
+  version: number;
+}
+
+/** The categories the person made (the ones the organization started with have a `system_key`), as the database holds them. */
+async function categoriesOf(
+  sql: Sql,
+  organizationId: string
+): Promise<CategoryRow[]> {
+  const { rows } = await sql.query<CategoryRow>(
+    `SELECT id, name, group_key, archived_at IS NOT NULL AS archived, version, updated_at::text AS updated_at
+       FROM expense_categories
+      WHERE organization_id = $1 AND system_key IS NULL
+      ORDER BY name`,
+    [organizationId]
+  );
+  return rows;
+}
+
+async function expensesOf(
+  sql: Sql,
+  organizationId: string
+): Promise<{ amount: number; category_id: string }[]> {
+  const { rows } = await sql.query<{ amount: string; category_id: string }>(
+    "SELECT amount::text, category_id FROM expenses WHERE organization_id = $1 ORDER BY description",
+    [organizationId]
+  );
+  return rows.map((row) => ({
+    amount: numericCents(row.amount),
+    category_id: row.category_id,
+  }));
+}
+
+const categoryAlert = (scope: Locator, text: string) =>
+  scope.getByRole("alert").filter({ hasText: text });
+
+/**
+ * The name of a category is one per organization, whatever the group and the letter case; a new name onto another
+ * category's is refused the same way. The screen says so and the database keeps what it had.
+ */
+test("categoria de despesa: nome repetido na loja (outra caixa, outro grupo) e renomear em cima de outra são recusados", async ({
+  browser,
+  sql,
+}, testInfo) => {
+  const journey = await openJourney(browser, testInfo, "despesa-cat-nome", {
+    organization: { timezone: extremeTimeZone(runT0()) },
+  });
+  const { page } = journey;
+  const organizationId = journey.organizationId as string;
+  const first = `Aluguel ${journey.name}`;
+  const second = `Comissao ${journey.name}`;
+
+  await page.goto("/expenses");
+  await addCategory(page, first, "Operacional/Administrativa");
+  const [created] = await categoriesOf(sql, organizationId);
+  expect(created).toMatchObject({ group_key: "operational", name: first });
+
+  const repeated = await openNewCategory(
+    page,
+    `  ${first.toUpperCase()}  `,
+    "Comercial"
+  );
+  await repeated.getByRole("button", { name: "Adicionar categoria" }).click();
+  await expect(categoryAlert(repeated, CATEGORY_CONFLICT)).toBeVisible();
+  expect(await categoriesOf(sql, organizationId)).toEqual([created]);
+  await repeated.getByRole("button", { name: "Cancelar" }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+
+  await addCategory(page, second, "Comercial");
+  const before = await categoriesOf(sql, organizationId);
+  expect(before.map((row) => [row.name, row.group_key])).toEqual([
+    [first, "operational"],
+    [second, "commercial"],
+  ]);
+
+  await page
+    .getByRole("button", { exact: true, name: `Renomear categoria ${second}` })
+    .click();
+  const rename = page.getByRole("dialog", { name: "Renomear categoria" });
+  await rename.getByLabel("Nome da categoria").fill(first.toLowerCase());
+  await rename.getByRole("button", { name: "Salvar alterações" }).click();
+  await expect(categoryAlert(rename, CATEGORY_CONFLICT)).toBeVisible();
+  expect(await categoriesOf(sql, organizationId)).toEqual(before);
+});
+
+/** Renaming changes the name and nothing else: the id and the group are the ones from before. */
+test("categoria de despesa: renomear muda o nome e o banco guarda o mesmo id e o mesmo grupo", async ({
+  browser,
+  sql,
+}, testInfo) => {
+  const journey = await openJourney(browser, testInfo, "despesa-cat-renomear", {
+    organization: { timezone: extremeTimeZone(runT0()) },
+  });
+  const { page } = journey;
+  const organizationId = journey.organizationId as string;
+  const name = `Contador ${journey.name}`;
+  const renamed = `Contabilidade ${journey.name}`;
+
+  await page.goto("/expenses");
+  await addCategory(page, name, "Impostos");
+  const [created] = await categoriesOf(sql, organizationId);
+  expect(created).toMatchObject({ group_key: "taxes", name });
+
+  await page
+    .getByRole("button", { exact: true, name: `Renomear categoria ${name}` })
+    .click();
+  const form = page.getByRole("dialog", { name: "Renomear categoria" });
+  await form.getByLabel("Nome da categoria").fill(renamed);
+  await form.getByRole("button", { name: "Salvar alterações" }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(
+    page.getByRole("status").filter({ hasText: "Categoria renomeada." })
+  ).toBeVisible();
+
+  await expect
+    .poll(async () => categoriesOf(sql, organizationId))
+    .toEqual([
+      expect.objectContaining({
+        group_key: "taxes",
+        id: created?.id,
+        name: renamed,
+      }),
+    ]);
+  const panel = page.getByRole("tabpanel", { name: "Categorias" });
+  await expect(panel.getByText(renamed, { exact: true })).toBeVisible();
+  await expect(panel.getByText(name, { exact: true })).toHaveCount(0);
+});
+
+/**
+ * A category is never deleted, only archived: the row stays with the same id and a mark, and "Restaurar" takes the
+ * mark off. An expense that was already in it stays in the list and in the Resultado of the month, to the cent; a new
+ * one cannot be put in it, neither on the form (it is not offered) nor by a client that sends it (the server refuses).
+ */
+test("categoria de despesa: arquivar não apaga, a despesa lançada fica e a nova não é aceita; restaurar devolve", async ({
+  browser,
+  sql,
+}, testInfo) => {
+  const zone = extremeTimeZone(runT0());
+  const journey = await openJourney(browser, testInfo, "despesa-cat-arquivar", {
+    organization: { timezone: zone },
+  });
+  const { page } = journey;
+  const organizationId = journey.organizationId as string;
+  const { rpc } = journey.user;
+  const today = localDate(runT0(), zone);
+  const name = `Marketing ${journey.name}`;
+
+  await page.goto("/expenses");
+  await addCategory(page, name, "Comercial");
+  const [created] = await categoriesOf(sql, organizationId);
+  expect(created).toMatchObject({ archived: false, group_key: "commercial" });
+  const categoryId = created?.id as string;
+  await rpc.expense.create({
+    amount: "321.45",
+    categoryId,
+    competenceOn: today,
+    description: "Anuncio de antes",
+    organizationId,
+  });
+
+  const panel = page.getByRole("tabpanel", { name: "Categorias" });
+  await panel
+    .getByRole("button", { exact: true, name: `Arquivar categoria ${name}` })
+    .click();
+  await expect(
+    page.getByRole("status").filter({ hasText: "Categoria arquivada." })
+  ).toBeVisible();
+  await expect(panel.getByText(name)).toHaveCount(0);
+  await panel
+    .getByRole("checkbox", { name: "Mostrar categorias arquivadas" })
+    .check();
+  const row = panel.locator("[data-category-id]").filter({ hasText: name });
+  await expect(row.getByText("Arquivada", { exact: true })).toBeVisible();
+  await expect
+    .poll(async () => categoriesOf(sql, organizationId))
+    .toEqual([
+      expect.objectContaining({
+        archived: true,
+        group_key: "commercial",
+        id: categoryId,
+      }),
+    ]);
+
+  // the expense from before is still there, in the list and in the Resultado, with the same value
+  await page.getByRole("tab", { name: "Lançamentos" }).click();
+  await expect(
+    page
+      .getByRole("region", { name: "Despesas do período" })
+      .filter({ hasText: "Anuncio de antes" })
+  ).toContainText(name);
+  expect(await expensesOf(sql, organizationId)).toEqual([
+    { amount: 32_145, category_id: categoryId },
+  ]);
+  const filters = page.getByRole("search", {
+    exact: true,
+    name: "Filtrar despesas",
+  });
+  await filters.getByRole("button", { name: FILTER_BUTTON }).click();
+  await page
+    .getByRole("menu", { name: "Filtrar por" })
+    .getByRole("menuitem", { name: CATEGORY_ITEM })
+    .click();
+  const chooser = page.getByRole("dialog", { name: "Categoria" });
+  await expect(
+    chooser.getByRole("button", { exact: true, name: `${name} (arquivada)` })
+  ).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(chooser).toHaveCount(0);
+
+  // a new expense is not offered the archived category, and the server refuses it when a client sends it
+  await page
+    .getByRole("button", { exact: true, name: "Nova despesa" })
+    .and(page.locator("[data-expense-new]"))
+    .click();
+  const form = page.getByRole("dialog", { name: "Nova despesa" });
+  await form.getByRole("combobox", { exact: true, name: "Categoria" }).click();
+  await expect(
+    page.getByRole("option", { exact: true, name: "Aluguel" })
+  ).toBeVisible();
+  await expect(page.getByRole("option", { name })).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("listbox")).toHaveCount(0);
+  await form.getByRole("button", { name: "Cancelar" }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  expect(
+    await refusedWith(
+      rpc.expense.create({
+        amount: "10.00",
+        categoryId,
+        competenceOn: today,
+        description: "Anuncio depois",
+        organizationId,
+      })
+    )
+  ).toBe("CONFLICT");
+  expect(await expensesOf(sql, organizationId)).toEqual([
+    { amount: 32_145, category_id: categoryId },
+  ]);
+
+  await page.goto("/dashboard");
+  await expect(chainValue(page, EXPENSES_OF_PERIOD)).toHaveText(BRL_VALUE);
+  await expect
+    .poll(async () =>
+      cents(await chainValue(page, EXPENSES_OF_PERIOD).innerText())
+    )
+    .toBe(32_145);
+
+  // restoring brings the same row back with the mark off
+  await page.goto("/expenses");
+  await page.getByRole("tab", { name: "Categorias" }).click();
+  await panel
+    .getByRole("checkbox", { name: "Mostrar categorias arquivadas" })
+    .check();
+  await panel
+    .getByRole("button", { exact: true, name: `Restaurar categoria ${name}` })
+    .click();
+  await expect(
+    page.getByRole("status").filter({ hasText: "Categoria restaurada." })
+  ).toBeVisible();
+  await expect
+    .poll(async () => categoriesOf(sql, organizationId))
+    .toEqual([
+      expect.objectContaining({
+        archived: false,
+        group_key: "commercial",
+        id: categoryId,
+      }),
+    ]);
+  await expect(row).toBeVisible();
+  await expect(
+    panel.getByRole("button", {
+      exact: true,
+      name: `Arquivar categoria ${name}`,
+    })
+  ).toBeVisible();
+  await expect(row.getByText("Arquivada", { exact: true })).toHaveCount(0);
 });
