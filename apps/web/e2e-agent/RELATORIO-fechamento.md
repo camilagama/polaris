@@ -243,3 +243,88 @@ A sessão não achou defeito. Como ela não chegou a desfazer o arquivamento, es
 - **Lojas:** uma loja por teste que muda dados (a Caneca já existe depois da primeira execução e o cadastro dá CONFLICT).
 
 ## Total de tokens da rodada 2: 2.666.700
+
+## Rodada R4a (26/11): as telas que mudaram desde 12/11
+
+Mesma ferramenta, pilha e regras da rodada 2. Partiu da branch do PR 707 com a `origin/main` de 26/11/2026 (`f63874de8`) mesclada nela (merge, não rebase; o único conflito foi a lista do relógio dos testes, resolvido a favor da `main`, mantendo só a entrada de `pilha/preparar.ts`). Nenhum bug foi corrigido, nada mudou no CI nem na `main`, e **o PR continua em rascunho, com `segurar`**. Alvo: só a pilha local do e2e-real com dados fictícios (PostgreSQL 18 descartável na porta 5444); nunca o staging, o Google ou dados reais. O Admin ficou fora. Entendimento em `~/tasks/t1944.entendimento.md`.
+
+### Resumo
+
+- **8 sessões de explore** (Sonnet 5.5, `--agent explorador`, 1 passo cada), 6 áreas. **Total: 2.961.800 tokens**, 98,7% do teto de 3 milhões; os testes de achado (só locators) custaram 0.
+- **Passos: 1 por área, 2 nas áreas 1 e 5**, e não 3 em cada uma. Um passo custou entre 273 e 469 mil tokens (média 370 mil): 6 áreas × 3 passos dariam cerca de 6,7 milhões. Gastei o segundo passo na Nova venda dividida (o explorador parou no aviso de perfil, antes de confirmar) e na Conta (o primeiro passo tentou endereços que não existem). O que o passo não alcançou foi coberto por testes de locators.
+- **Achados dos exploradores: 3** (1 no Catálogo, 2 na Conta e loja). Com teste: **1 confirmado, 2 desenhados** (a mesma causa). Nenhum falso positivo com bug e nenhum conhecido.
+- O que os 11 testes (7 novos, mais as 4 sessões do setup) mostram: **9 passam, 2 falham de propósito** (os dois achados). Não é para virar spec.
+
+### Mudanças na pilha desde a rodada 2
+
+- **Lojas desta rodada:** `bb-r4a-venda`, `bb-r4a-historico`, `bb-r4a-catalogo`, `bb-r4a-despesas`, `bb-r4a-conta`, `bb-r4a-inicio` (uma por área, com a semeadura padrão) e `bb-r4a-achados-1` a `bb-r4a-achados-4`, uma por teste que muda dados.
+- **Sem mudança de código da pilha:** `pilha/preparar.ts`, `com-pilha.sh` e a config seguem os da rodada 2. Os testes novos estão em `tests/r4a/` (a suíte `tests/rodada2` e a `fumaca` consomem lojas `bb-achados-N` e não rodam junto: o e2e recusa sessão sem setup).
+- **A pilha não liga o runtime offline nem o plano Pro**, e o motor do e2e não corta a rede: o fluxo sem internet (S5) não cabe nela. Rodei no lugar a jornada real do e2e-real, `e2e-real/jornadas/venda-dividida-sem-conexao.e2e.ts`, no projeto `runtime-ligado` com um segundo cluster PostgreSQL descartável: **2 passam** (guardar a venda dividida no aparelho sem conexão; recusa por `payment_profile_changed` e Refazer volta com as duas partes). O contorno do inotify (`CHOKIDAR_USEPOLLING` em `run-environment.ts`) ficou só local e foi revertido.
+
+### Por área
+
+| Área | Loja | Passos | Ações / chamadas | Tokens (cache) | Tempo do explore | Achados do explorador |
+|---|---|---|---|---|---|---|
+| 1. Nova venda com pagamento dividido | `bb-r4a-venda` | 2 de 2 (342,9 mil + 357,5 mil) | 18 + 18 chamadas | 700,4 mil (82% e 77%) | 1 min 15 s + 1 min 14 s | 0 |
+| 2. Histórico e Detalhe da venda | `bb-r4a-historico` | 1 | 18 chamadas | 468,7 mil (84%) | 51 s | 0 |
+| 3. Catálogo | `bb-r4a-catalogo` | 1 | 15 chamadas | 373,2 mil (89%) | 1 min 16 s | 1 |
+| 4. Despesas, Clientes e Estoque | `bb-r4a-despesas` | 1 | 16 chamadas | 323,5 mil (86%) | 1 min 0 s | 0 |
+| 5. Conta e loja | `bb-r4a-conta` | 2 de 2 (272,7 mil + 373,6 mil) | 14 + 15 chamadas | 646,3 mil (82% e 74%) | 1 min 5 s + 1 min 53 s | 2 (no 2º passo) |
+| 6. Início, Resultado e Metas | `bb-r4a-inicio` | 1 | 18 chamadas | 449,7 mil (54%) | 2 min 7 s | 0 |
+| **Total** | | 8 passos | | **2.961,8 mil** | 11 min | 3 |
+
+Os testes (locators, sem `agent.act`) custaram 0 token. Cada execução da pilha (build, preview, semeadura, testes e explore) levou de 3 a 4 minutos.
+
+### O que cada sessão cobriu e o que ficou de fora
+
+- **Nova venda com pagamento dividido:** montou Camiseta e Meia (R$ 62,40), tocou em "Dividir pagamento", pôs Pix R$ 40,00 na Parte 1, viu o restante (R$ 22,40, Dinheiro) na Parte 2, conferiu o resumo e o total e, no 2º passo, confirmou a venda depois de escolher "Sem perfil de pagamento" e leu o comprovante com as 2 partes. **Ficou de fora:** Refazer, valor zero, vazio e com vírgula nas partes, estoque depois da venda (os dois passos pararam no limite). Coberto por teste: a venda dividida confirma, abre no Histórico e no Detalhe com as 2 partes e o cancelamento a marca como Cancelada (abaixo); a jornada real S5 cobre Refazer.
+  - **"erro claro de perfil" na Parte 2:** o explorador viu um aviso até escolher o perfil. É o desenho: o perfil de cada parte é obrigatório para confirmar, e "Sem perfil de pagamento" é uma escolha (`e2e/sale-split-payment.e2e.ts`, `e2e-real/jornadas/venda-dividida.e2e.ts`). Sem achado.
+- **Histórico e Detalhe:** lista, filtros de Situação, Cliente e Produto, totais e estados vazios, sem defeito. **Ficou de fora** (limite de 1 passo): atalhos e calendário do período, o Detalhe, cancelar e a venda em 2 partes; os dois últimos e o filtro sem resultado têm teste.
+- **Catálogo:** criou e renomeou uma categoria (1 achado). **Ficou de fora:** produto novo com 2 variantes, editar produto (variantes, imagens), arquivar e restaurar, importação. Sem teste novo; a rodada 2 já cobre arquivar e restaurar.
+- **Despesas, Clientes e Estoque:** só Despesas (cadastro, validações de valor, totais por mês e situação; o explorador não achou campo de busca em Despesas e não conferi se o desenho a prevê). **Ficou de fora:** Clientes, Estoque, Editar e Anular despesa e a persistência depois de recarregar. Não coberto por teste.
+- **Conta e loja:** no 1º passo tentou `/assinatura` e `/aparelhos`, que não existem (os endereços são `/configuracoes?aba=assinatura` e a aba Aparelhos de Minha conta); leu Configurações (Formas de receber, Catálogo público, Seus dados), a tela de Ajuda e a versão no fim. No 2º passo, com os endereços certos, reportou Minha conta inalcançável (achado 2). **Ficou de fora:** troca de senha, Aparelhos, leitura da Assinatura.
+- **Início, Resultado e Metas:** leu KPIs, gráficos e a cadeia "Como chegamos a este resultado"; os números do Início e do Resultado bateram. **Ficou de fora:** mudar o período do Resultado e criar meta (o passo foi todo de leitura, com o cache em 54%). Não coberto por teste.
+
+## Achados R4a
+
+Todos os testes estão em `apps/web/e2e-agent/tests/r4a/`, com a tag `r4a`, só com locators. Resultado da última execução, do zero (banco novo): 11 testes, 9 passam, 2 falham.
+
+| # | Área | Achado | Teste | Resultado | Veredito |
+|---|---|---|---|---|---|
+| 1 | 3 | Renomear uma categoria e apagar o nome: Salvar não diz nada | `catalogo-renomear-categoria-vazia.e2e.ts` | **Falha** (em todas as execuções): `getByText("Informe o nome da categoria.")` sem nó | **Confirmado** (menor) |
+| controle | 3 | Adicionar categoria com o nome vazio | mesmo arquivo | Passa | a mensagem existe na criação |
+| 2 | 5 | O menu "Loja, conta e ajuda" não tem Minha conta (nem Aparelhos), e `/conta` abre o Início | `conta-menu-minha-conta.e2e.ts` | **Falha** (em todas as execuções): `menuitem "Minha conta"` sem nó | **Desenhado** |
+| controle | 5 | `/conta` abre o Início e o menu mostra "Ajuda e contato" | mesmo arquivo | Passa | prova que o menu abre e que a falta é de Minha conta |
+| 3 | 5 | O menu da conta não tem "Sair" | (o mesmo teste do 2) | — | **Desenhado** (mesma causa) |
+| — | 1, 2 | Venda dividida em Pix R$ 20,00 e Dinheiro R$ 29,90: confirma, abre no Histórico e no Detalhe com "Pagamento em 2 partes", cancela e o Histórico mostra "Cancelada" | `venda-dividida-detalhe.e2e.ts` | **Passa** | sem achado |
+| — | 2 | Filtro Canceladas sem venda cancelada: "Nenhuma venda encontrada com estes filtros." e "Limpar filtros" traz a lista | `historico-filtro-sem-vendas.e2e.ts` | **Passa** | sem achado |
+
+### 1. Renomear categoria com o nome vazio (confirmado, menor)
+
+- **Onde:** `/products?aba=categorias`, "Mais ações para {categoria}", Renomear.
+- **Passos do teste:** criar "Acessórios QA", abrir Renomear, limpar o campo "Novo nome para Acessórios QA", tocar em Salvar e procurar "Informe o nome da categoria.".
+- **Observado:** nada muda na tela: sem mensagem, só o contador "0/100 caracteres". O controle prova que a criação com o nome vazio mostra a frase.
+- **Causa:** `RenameForm.handleSubmit` (`apps/web/src/catalog/category-list.tsx`) só chama `onSubmit` com `value.trim() !== ""` e não guarda nem mostra nada no caso vazio; o botão Salvar só desliga acima de 100 caracteres.
+- **Já conhecido?** Não achei em `ux-pendencias.md`. O DESIGN.md (§ Categorias) promete "Informe o nome da categoria." para o campo "Nova categoria"; para Renomear diz só que o campo abre na linha com Salvar e Cancelar. É lacuna do desenho, não decisão.
+- **Decisão pendente:** mostrar a frase (como na criação) ou desligar Salvar com o campo vazio. É de UX e fica para a correção.
+
+### 2 e 3. Minha conta e Sair fora do menu (desenhado)
+
+- **Observado pelo explorador:** `/conta` cai no Início, o menu não lista Minha conta nem Aparelhos nem Sair, e `/assinatura` e `/aparelhos` dão 404.
+- **Teste e controle:** `menuitem "Minha conta"` não existe no menu, e o controle mostra o Início em `/conta` e "Ajuda e contato" no menu.
+- **Por que não é bug:** Minha conta só tem as abas Senha (atrás da flag de senha, desligada até o domínio de e-mail de produção, `decisoes.md`) e Aparelhos (só com o runtime offline); sem nenhuma aba o endereço abre o Início e o item do menu não aparece (`.claude/skills/verify-polaris/features/conta.md`). "Sair" também só existe com o runtime offline ligado (DESIGN.md, § menu da conta). A pilha local do piloto liga nenhuma das duas coisas. `/assinatura` e `/aparelhos` não são endereços do app: a Assinatura é a aba de `/configuracoes?aba=assinatura`.
+- **Para UX, se quiser:** nada além de a pilha do piloto ligar a senha e o runtime em uma rodada própria para ver essas telas.
+
+## O que vazou ou poderia vazar (R4a)
+
+- **Chave:** `E2E_ANTHROPIC_API_KEY` só no comando do e2e (`com-pilha.sh` já tira do build, do preview e do preparar), nunca impressa, gravada ou commitada. Instalação com `env -u`; o Playwright da jornada S5 e a criação do banco também rodaram com `env -u`.
+- **Antes do push:** `gitleaks detect --no-git --source apps/web/e2e-agent` e varredura própria de valores (a chave inteira e os últimos 12 caracteres, o segredo do run, as senhas dos logins, os cookies): ver o corpo do PR.
+- **Para a Anthropic:** a instrução, a árvore de acessibilidade e capturas de telas locais com dados fictícios (lojas `Loja bb-r4a-…`, `qa-bb-r4a-…@e2e.invalid`).
+
+## Para a próxima rodada (R4b)
+
+- **Profundidade:** o limite foi o teto de 3 milhões, não a ferramenta: 370 mil tokens por passo, 1 passo por área.
+- **Sem cobertura:** Refazer da venda dividida, produto com 2 variantes e importação, Clientes e Estoque, Editar e Anular despesa, período do Resultado e Metas, troca de senha e Aparelhos (pedem a pilha com senha e runtime ligados) e o período sem vendas por intervalo de datas.
+- **Passos curtos:** objetivos de uma tela só, com os endereços certos, em vez de uma área inteira por passo.
+
+## Total de tokens da R4a: 2.961.800
