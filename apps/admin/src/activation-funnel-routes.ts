@@ -3,9 +3,11 @@ import {
   type ActivationFunnelCount,
   type ActivationFunnelPercent,
   type ActivationFunnelResponse,
+  type ActivationFunnelReturnCount,
   activationFunnelResponse,
   type RawActivationFunnel,
   type RawActivationFunnelCell,
+  type RawActivationFunnelReturnCell,
   rawActivationFunnel,
 } from "@polaris/contracts/admin-activation-funnel";
 import type { PlatformCapability } from "@polaris/domain/admin/platform-capabilities";
@@ -132,6 +134,17 @@ function optionalCount(
   return cell === undefined ? undefined : count(cell);
 }
 
+function optionalReturnCount(
+  cell: RawActivationFunnelReturnCell | undefined
+): ActivationFunnelReturnCount | undefined {
+  if (cell === undefined) {
+    return undefined;
+  }
+  return cell.state === "unavailable"
+    ? { reason: cell.reason, value: null }
+    : count(cell);
+}
+
 /**
  * The cells the function may or may not send (the "up to 14 days" band and the Pro trial) and their shares, each key
  * only when the function sent its cell: an old function's answer gives the old shape, with no key made up.
@@ -163,6 +176,20 @@ function fourteenDayCells(
   };
 }
 
+/**
+ * The two cells of the M3, each key only when the function sent its cell. They are not checked against the cohort's
+ * stores: they were frozen weeks ago and the stores are read live, so a store purged or marked internal since then
+ * leaves the frozen pair above the live count (ADR 0106, limits accepted).
+ */
+function returnCells(cohort: RawActivationFunnel["cohorts"][number]) {
+  const returned = optionalReturnCount(cohort.returned);
+  const neverReturned = optionalReturnCount(cohort.neverReturned);
+  return {
+    ...(neverReturned && { neverReturned }),
+    ...(returned && { returned }),
+  };
+}
+
 /** The route's answer from the function's: same numbers, `null` with a reason where there is none, and the shares. */
 export function activationFunnelView(
   raw: RawActivationFunnel
@@ -191,6 +218,7 @@ export function activationFunnelView(
       const fourteenDays = fourteenDayCells(cohort, stores);
       return {
         ...fourteenDays.cells,
+        ...returnCells(cohort),
         activatedIn7Days,
         inProgress: cohort.inProgress,
         percent: {

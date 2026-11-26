@@ -30,14 +30,22 @@ const FUNNEL = screenContext({ screen: "funil" });
 
 const shown = (value: number) => ({ reason: null, value });
 const missing = (
-  reason: "activation_window_open" | "suppressed" | "week_not_closed"
+  reason:
+    | "activation_window_open"
+    | "not_frozen"
+    | "suppressed"
+    | "week_not_closed"
 ) => ({ reason, value: null });
 
 /**
  * Two weeks of the contract. The shares do not match the counts on purpose (7 of 10 is said to be 33.3%): the page
  * must show the server's share, never one of its own.
  */
-function funnel(weeks = 2, fourteenDays = false): ActivationFunnelResponse {
+function funnel(
+  weeks = 2,
+  fourteenDays = false,
+  returns: "none" | "shown" | "mixed" | "not-frozen" = "none"
+): ActivationFunnelResponse {
   const week = (index: number) => ({
     inProgress: index === weeks - 1,
     week: `2026-W${String(41 + index).padStart(2, "0")}`,
@@ -58,6 +66,19 @@ function funnel(weeks = 2, fourteenDays = false): ActivationFunnelResponse {
         soldInTrial: index === 0 ? shown(5) : missing("suppressed"),
         trialStarted: index === 0 ? shown(6) : missing("suppressed"),
       }),
+      ...(returns === "not-frozen" && {
+        neverReturned: missing("not_frozen"),
+        returned: missing("not_frozen"),
+      }),
+      ...(returns !== "none" &&
+        returns !== "not-frozen" && {
+          neverReturned:
+            index === 0 ? shown(6) : missing("activation_window_open"),
+          returned:
+            index === 0 && returns === "shown"
+              ? shown(5)
+              : missing(index === 0 ? "suppressed" : "activation_window_open"),
+        }),
       activatedIn7Days:
         index === 0 ? shown(6) : missing("activation_window_open"),
       percent: {
@@ -437,6 +458,79 @@ describe("what the funnel shows (AC-8)", () => {
     expect(text).not.toContain("Ativação em 14 dias");
     expect(text).not.toContain("Teste do Pro");
     expect(text).not.toContain("hipótese");
+  });
+
+  const RETURN_CAPTION = "Voltou ao app, por semana de criação da loja";
+  const BIAS =
+    "O M3 é um piso de “voltou”: sair do app e revogar um aparelho apagam a sessão, a sessão se renova só uma vez por dia e o app aberto sem conexão não a toca. Isso infla o “nunca voltou”, e a série de e-mails não liga só porque “nunca voltou” está alto.";
+
+  it("shows the voltou / nunca voltou table, with the bias said next to it, when the answer carries the cells", async () => {
+    const page = await openFunnel([json(funnel(2, false, "shown"))]);
+    expect(cells(page.root, RETURN_CAPTION)).toEqual([
+      ["semana de 05/10/2026", "5", "6"],
+      [
+        "semana de 12/10/2026 (em andamento)",
+        "não disponível (o prazo ainda corre)",
+        "não disponível (o prazo ainda corre)",
+      ],
+    ]);
+    expect(headers(page.root, RETURN_CAPTION)).toEqual([
+      "Semana",
+      "Voltaram ao app",
+      "Nunca voltaram",
+    ]);
+    const text = visibleText(page.root);
+    expect(text).toContain(BIAS);
+    const region = byTag(page.root, "table").find(
+      (table) => table.querySelector("caption")?.textContent === RETURN_CAPTION
+    )?.parent as FakeElement;
+    const siblings = region.parent?.children ?? [];
+    const heading = siblings.findIndex(
+      (element) =>
+        element.tagName === "h3" && element.textContent === "Voltou ao app"
+    );
+    expect(siblings[heading + 1]?.textContent).toContain(BIAS);
+    expect(siblings[heading + 1]?.textContent).toContain(
+      "só a 1ª loja da dona e sem teste do Pro nem plano pago"
+    );
+    expect(siblings[heading + 2]).toBe(region);
+  });
+
+  it("says a suppressed or open week is not available, never 0, and shows a real count under the same cell", async () => {
+    const page = await openFunnel([json(funnel(2, false, "mixed"))]);
+    const rows = cells(page.root, RETURN_CAPTION);
+    expect(rows[0]).toEqual([
+      "semana de 05/10/2026",
+      "não disponível (grupo pequeno)",
+      "6",
+    ]);
+    expect(rows.flat()).not.toContain("0");
+    expect(rows.flat()).not.toContain("");
+  });
+
+  it("says a week that was never frozen is not frozen, not that the deadline still runs", async () => {
+    const page = await openFunnel([json(funnel(2, false, "not-frozen"))]);
+    const rows = cells(page.root, RETURN_CAPTION);
+    expect(rows[0]).toEqual([
+      "semana de 05/10/2026",
+      "não disponível (semana não congelada)",
+      "não disponível (semana não congelada)",
+    ]);
+    expect(rows.flat().join(" ")).not.toContain("prazo ainda corre");
+  });
+
+  it("shows exactly 5, the smallest count the function shows, as 5", async () => {
+    const page = await openFunnel([json(funnel(2, false, "shown"))]);
+    expect(cells(page.root, RETURN_CAPTION)[0]?.[1]).toBe("5");
+  });
+
+  it("shows nothing of the M3, nor its bias, when the answer carries none of the cells", async () => {
+    const page = await openFunnel([json(funnel())]);
+    const text = visibleText(page.root);
+    expect(text).not.toContain("Voltou ao app");
+    expect(text).not.toContain("Voltaram ao app");
+    expect(text).not.toContain("piso");
+    expect(byTag(byId(page.root, "funil-corpo"), "table")).toHaveLength(4);
   });
 
   it("says what the numbers leave out, with the count of internal stores of the answer", async () => {
